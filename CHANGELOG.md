@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.10.31.9] - 2026-10-31
+
+### Added
+
+- **Why?** next to "N AI requests failed in the last 24 hours" on the [Admin overview](/admin) and in the mailbox's command center (primary admin): the failures grouped by cause, each with the features, provider and model, how often and when, the likely cause and a link to the setting that fixes it, worked out by Kite without asking an AI. **Ask AI** in it opens the assistant with that summary (codes and counts, no email) ready to send, and says why when the assistant can't answer either. No migration.
+
+### Changed
+
+- Files in received and imported mail are no longer stored a second time: when Kite can verify a file's bytes inside the stored raw message, it is served from exactly that part of the message, so a message with attachments takes about a third less storage. Downloads, previews, inline images, large-attachment links, JMAP, Save to Drive, forwarding and sending return the same bytes as before, and "Show original" is unchanged. Files Kite cannot verify there (quoted-printable, uuencode) keep a copy of their own, and a file whose stored copy has gone missing, for example after restoring an older backup, is rebuilt from the raw message the next time it is opened. No migration is needed; while migration 0088 is still pending, new mail keeps storing copies. The new environment variable `ATTACHMENT_RAW_INDEX=off` makes new mail store a copy of each file again; it is on by default.
+- **Do not roll back to a release before 2026.10.31.3 once this one has run**: those releases cannot open files served from the raw message and show them as missing. Fix forward instead, or follow the [recovery runbook](https://github.com/midego1/kite/blob/main/docs/runbooks/recovery.md#rolling-back-past-raw-backed-attachments) first. The earlier warning about rolling back past attachment sharing still applies.
+- The command center in the empty reading pane now sits calmly in every style and theme: its cards are quiet raised surfaces with a hairline edge and a faint glow of the style's accent, the counts are plain pills with a coloured dot, the quick actions match them, and a warning under **Needs attention** (or a waiting database update) is one amber callout that reads well on dark and light surfaces alike, instead of the solid blue and brown blocks Kite classic showed in dark mode.
+
 ## [2026.10.31.8] - 2026-10-31
 
 ### Added

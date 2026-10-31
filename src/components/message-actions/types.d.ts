@@ -1,6 +1,7 @@
 import type { BulkMessageAction } from "@/app/api/messages/bulk/types";
 import type { Message, MessageDirection } from "@/hooks/types";
 import type { LucideIcon } from "lucide-react";
+import type { ReaderPrint } from "@/components/messages/print/print-menu-types";
 
 export type MessageActionsProps = {
 	messageId: string;
@@ -22,6 +23,8 @@ export type MessageActionsProps = {
 	bodyHtml?: string | null;
 	/** Shows "Summarize this message" in the overflow menu when the message can be summarised. */
 	onSummarizeMessage?: () => void;
+	/** Print and Download PDF in the overflow menu, and Ctrl/Cmd+P. */
+	print?: ReaderPrint;
 };
 
 export type ForwardDraftInput = {

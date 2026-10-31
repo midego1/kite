@@ -19,7 +19,7 @@ await build({
 	target: "node22",
 	logLevel: "silent",
 });
-const { findSequenceMatch, isBrowserChord, isModifierKey } = await import(
+const { findChordMatch, findSequenceMatch, isBrowserChord, isModifierKey } = await import(
 	pathToFileURL(join(bundleDirectory, "entry.mjs")).href
 );
 
@@ -65,4 +65,34 @@ test("a bare key is handled only when no Cmd, Ctrl or Alt chord is held", () => 
 	assert.equal(press("3", { altKey: true }), true);
 	assert.equal(press(" ", { altKey: true }), true);
 	assert.equal(press("F4", { altKey: true }), true);
+});
+
+test("a Cmd/Ctrl chord matches only the modifiers its shortcut names", () => {
+	const print = { key: "p", modifiers: ["meta", "ctrl"] };
+	const macOnly = { key: "s", modifiers: ["meta"] };
+	const ctrlOnly = { key: "l", modifiers: ["ctrl"] };
+	const shifted = { key: "z", modifiers: ["ctrl", "shift"] };
+	const bare = { key: "e" };
+	const list = [bare, print, macOnly, ctrlOnly, shifted];
+	const chord = (key, modifiers = {}) =>
+		findChordMatch({ key, metaKey: false, ctrlKey: false, altKey: false, shiftKey: false, ...modifiers }, list);
+	assert.equal(chord("p", { ctrlKey: true }), print);
+	assert.equal(chord("P", { metaKey: true }), print);
+	// Ctrl+Shift+P opens a private window in Firefox and Alt chords type characters: both stay the browser's.
+	assert.equal(chord("p", { ctrlKey: true, shiftKey: true }), undefined);
+	assert.equal(chord("p", { ctrlKey: true, altKey: true }), undefined);
+	assert.equal(chord("p"), undefined);
+	assert.equal(chord("s", { metaKey: true }), macOnly);
+	assert.equal(chord("s", { ctrlKey: true }), undefined);
+	assert.equal(chord("l", { ctrlKey: true }), ctrlOnly);
+	assert.equal(chord("l", { metaKey: true }), undefined);
+	assert.equal(chord("z", { ctrlKey: true, shiftKey: true }), shifted);
+	assert.equal(chord("z", { ctrlKey: true }), undefined);
+	assert.equal(chord("e", { ctrlKey: true }), undefined);
+	assert.equal(
+		findChordMatch({ key: "x", metaKey: false, ctrlKey: true, altKey: false, shiftKey: false }, [
+			{ key: "x", modifiers: ["alt", "ctrl"] },
+		]),
+		undefined,
+	);
 });

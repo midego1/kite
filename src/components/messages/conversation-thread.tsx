@@ -301,6 +301,7 @@ export function ConversationMessageCard({
 						ownAddress={ownAddress}
 						ownAddresses={ownAddresses}
 						starOnly={!expanded}
+						remoteImagesShown={remoteImagesShown}
 					/>
 				</div>
 				{expanded && body && (

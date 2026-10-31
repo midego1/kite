@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { createSignedInAccount, okJson } from "./support/auto-read";
 import { ADMIN, BASE_URL, DOMAIN, STORAGE_STATE } from "./support/constants";
+import { contrastBetween } from "./support/contrast";
 import { apiContext, deliverInbound, uniqueToken } from "./support/helpers";
 import { restoreModules, setModuleState } from "./support/modules";
 
@@ -58,6 +59,45 @@ test("the pane greets the account, counts the mail and still says what to do", a
 	await expect(attention).toBeVisible();
 	await expect(attention.getByRole("link", { name: "Admin overview" })).toHaveAttribute("href", "/admin");
 });
+
+// The cards, chips, quick actions and the warning sit on their own surfaces (the --cc-* tokens in globals.css),
+// which every style and theme sets; their text must stay readable (WCAG AA, 4.5:1) on each of them.
+for (const style of ["kite", "lavender", "classic"] as const) {
+	for (const theme of ["light", "dark"] as const) {
+		test(`the pane is readable in the ${style} style, ${theme} theme`, async ({ page }) => {
+			await page.addInitScript(
+				([s, t]) => {
+					localStorage.setItem("kite-style", s);
+					localStorage.setItem("kite-theme", t);
+				},
+				[style, theme],
+			);
+			await page.route("**/api/admin/overview", async (route) => {
+				const response = await route.fetch();
+				const body = (await response.json()) as Record<string, unknown>;
+				await route.fulfill({ response, json: { ...body, aiErrors: { recent: 3, capped: false } } });
+			});
+			await openInbox(page);
+			await expect(page.locator("html")).toHaveAttribute("data-style", style);
+			await expect(page.locator("html")).toHaveClass(theme === "dark" ? /dark/ : /^(?!.*dark)/);
+			const center = pane(page);
+			const chip = center.locator("[data-chip=unread]");
+			const card = center.getByTestId("command-center-attention");
+			const warning = center.getByTestId("command-center-attention-ai-errors");
+			const tile = center.locator("[data-quick-action=compose]");
+			await expect(warning).toBeVisible();
+			expect(await contrastBetween(chip)).toBeGreaterThanOrEqual(4.5);
+			expect(await contrastBetween(card.getByRole("heading", { level: 3 }), card)).toBeGreaterThanOrEqual(4.5);
+			expect(await contrastBetween(card.getByRole("link", { name: "Admin overview" }), card)).toBeGreaterThanOrEqual(
+				4.5,
+			);
+			expect(await contrastBetween(warning.locator("p").first(), warning)).toBeGreaterThanOrEqual(4.5);
+			expect(await contrastBetween(warning.getByRole("link"), warning)).toBeGreaterThanOrEqual(4.5);
+			expect(await contrastBetween(tile.locator("span.truncate"), tile)).toBeGreaterThanOrEqual(4.5);
+			expect(await contrastBetween(tile.locator("kbd"))).toBeGreaterThanOrEqual(4.5);
+		});
+	}
+}
 
 test("quick actions open the composer and focus the search", async ({ page }) => {
 	await openInbox(page);

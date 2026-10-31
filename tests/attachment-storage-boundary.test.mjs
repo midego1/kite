@@ -17,6 +17,7 @@ const OBJECT_COPIERS = [
 	"src/lib/backups/objects.ts",
 	"src/lib/storage/migration.ts",
 	"src/lib/storage/stores.ts",
+	"src/lib/email/attachment-storage-report.ts",
 	ACCESSOR,
 ];
 

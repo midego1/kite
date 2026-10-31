@@ -59,3 +59,17 @@ export interface SharedAttachmentRow {
 	disposition: "attachment" | "inline";
 	contentId: string | null;
 }
+
+/** How attachments are stored (`GET /api/admin/attachment-storage`). */
+export interface AttachmentStorageCounts {
+	/** Rows with an object; `keys` objects behind them, `storedBytes` their size counted once per object. */
+	objects: { rows: number; keys: number; bytes: number; storedBytes: number };
+	/** Rows served from a range of their raw message, with no object of their own. */
+	raw: { rows: number; bytes: number };
+}
+
+/** Referenced object keys looked up in storage, and the ones that were not there. */
+export interface AttachmentObjectsVerification {
+	checked: number;
+	missing: { key: string; messageIds: string[] }[];
+}

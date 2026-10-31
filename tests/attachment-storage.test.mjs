@@ -26,6 +26,10 @@ await build({
 			export { FileBucket } from "./server/runtime/file-bucket.ts";
 			export { openAttachment, openRawAttachment, readAttachmentBytes } from "./src/lib/email/attachment-storage.ts";
 			export { deleteUnreferencedObjects } from "./src/lib/email/attachment-storage.ts";
+			export {
+				getAttachmentStorageCounts,
+				verifyAttachmentObjects,
+			} from "./src/lib/email/attachment-storage-report.ts";
 			export { deleteMessageWithObjects } from "./src/lib/email/message-cleanup.ts";
 			export { permanentlyDeleteMessages } from "./src/lib/email/permanent-delete.ts";
 			export { getDb } from "./src/db/index.ts";
@@ -599,3 +603,32 @@ test("deleting unreferenced objects never throws once the rows are gone", async 
 	};
 	await silenced(() => m.deleteUnreferencedObjects(env, { attachmentKeys: ["attachments/x/y"], ownedKeys: ["b"] }));
 });
+
+for (const migrated of [false, true]) {
+	test(`the storage report counts shared objects once and finds missing ones ${migrated ? "after" : "before"} 0088`, async () => {
+		const { env, bucket, database } = await setup({ migrated });
+		const [original] = await m.storeMessageAttachments(env, "msg-in", [
+			{ filename: "a.txt", type: "text/plain", content: encoder.encode("12345").buffer },
+		]);
+		await m.copyMessageAttachments(env, "msg-in", "msg-draft");
+		const raw = migrated
+			? await rawFixture(env, database, "related inside alternative inside mixed, with an inline cid image")
+			: [];
+		const counts = await m.getAttachmentStorageCounts(env);
+		assert.deepEqual(counts.objects, {
+			rows: 2,
+			keys: migrated ? 1 : 2,
+			bytes: 10,
+			storedBytes: migrated ? 5 : 10,
+		});
+		assert.deepEqual(counts.raw, {
+			rows: raw.length,
+			bytes: raw.reduce((total, row) => total + row.size, 0),
+		});
+		assert.deepEqual((await m.verifyAttachmentObjects(env)).missing, []);
+		await bucket.delete(original.r2Key);
+		const { checked, missing } = await m.verifyAttachmentObjects(env);
+		assert.equal(checked, migrated ? 1 : 2);
+		assert.deepEqual(missing, [{ key: original.r2Key, messageIds: migrated ? ["msg-in", "msg-draft"] : ["msg-in"] }]);
+	});
+}

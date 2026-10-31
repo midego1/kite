@@ -51,7 +51,8 @@ async function pruneInBatches(
 
 /**
  * The MCP tool call rows that crossed the retention cutoff in the last `MCP_AUDIT_SLICE_MS`: a bounded range of
- * `audit_logs_created_idx`, so each run reads only those rows, not every older audit row.
+ * `audit_logs_action_created_idx` (migration 0087; `audit_logs_created_idx` before it), so each run reads only
+ * those rows, not every older audit row.
  * @public Test-only: exported so the query plan can be checked.
  */
 export function mcpAuditSliceCondition(cutoff: Date): SQL {

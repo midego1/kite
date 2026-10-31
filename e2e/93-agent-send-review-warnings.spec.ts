@@ -47,7 +47,7 @@ test("the send review says the AI wrote the draft and warns about a recipient th
 	const subject = `Review warning ${uniqueToken()}`;
 	const draftId = await createAgentDraft(stranger, subject);
 	await page.goto(`/drafts/${draftId}`);
-	await expect(page.getByLabel("Subject")).toHaveValue(subject);
+	await expect(page.getByLabel("Subject", { exact: true })).toHaveValue(subject);
 	await page.getByRole("button", { name: "Review send" }).click();
 
 	const dialog = page.getByRole("dialog", { name: "Review email before sending" });

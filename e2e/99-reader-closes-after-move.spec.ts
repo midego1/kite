@@ -120,6 +120,36 @@ test("trashing the open message from its row empties the reader too", async ({ p
 	}
 });
 
+test("the focus hand-off waits for a row that is still in the list after the move", async ({ page }) => {
+	const { api, subject } = await deliver("Slow row trash");
+	try {
+		await openFromList(page, subject);
+		// The list refetch after the move is held back, so the trashed row (with the focused Trash button) stays in
+		// the list well after the left-view event; the focus must still end up in the list once the row has gone.
+		let held = 0;
+		await page.route(
+			(url) => url.pathname === "/api/messages",
+			async (route) => {
+				if (route.request().method() === "GET" && held++ === 0)
+					await new Promise((resolve) => setTimeout(resolve, 1_500));
+				await route.continue();
+			},
+		);
+		const row = rows(page, subject).first();
+		await row.hover();
+		await row.getByRole("button", { name: "Trash", exact: true }).click();
+		await expect(page.getByText(EMPTY_READER)).toBeVisible({ timeout: SLOW_NAVIGATION_MS / 2 });
+		// Still in the list while the refetch is held, and the page did not steal the focus meanwhile.
+		await expect(row).toBeVisible();
+		expect(await page.evaluate(() => document.activeElement?.closest('[role="list"]') !== null)).toBe(true);
+		await expect(rows(page, subject)).toHaveCount(0);
+		await expect.poll(() => page.evaluate(() => !!document.activeElement?.closest('[role="list"]'))).toBe(true);
+		expect(await page.evaluate(() => document.activeElement === document.body)).toBe(false);
+	} finally {
+		await api.dispose();
+	}
+});
+
 test("trashing a deep-linked older message of a conversation hands the focus to the next row", async ({ page }) => {
 	await page.addInitScript(() => localStorage.setItem("kite-conversation-view", "on"));
 	const api = await apiContext(STORAGE_STATE);

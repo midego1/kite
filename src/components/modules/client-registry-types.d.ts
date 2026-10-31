@@ -36,7 +36,11 @@ export type ModuleAttachmentSlot = {
 	Overlay: ComponentType<AttachmentSlotContext & { open: boolean; onOpenChange: (open: boolean) => void }>;
 };
 
-/** All a reading pane card learns about where it is shown: the mailbox selected, null for all mailboxes. */
+/**
+ * All a reading pane card learns about where it is shown: the mailbox selected, null for all mailboxes. Calendar's
+ * Today and Money Watch's cards ignore it, because their data is the viewer's rather than a mailbox's; it is
+ * there for a card that is about the mailbox in view.
+ */
 export type ReadingPaneSlotContext = { mailboxId: string | null };
 
 /**

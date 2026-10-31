@@ -40,7 +40,7 @@ export function TodayCard(_context: ReadingPaneSlotContext) {
 	}, [day]);
 
 	if (!events) return null;
-	const { lines, more, empty } = todayLines(events, { now: day.now, dayEnd: day.end, timeZone: day.timeZone });
+	const { lines, more, empty } = todayLines(events, { now: day.now, dayStart: day.start, timeZone: day.timeZone });
 	return (
 		<CommandCenterCard title="Today" action={{ label: "Calendar", href: "/calendar" }} testId="command-center-today">
 			{lines.length === 0 ? (

@@ -1,3 +1,4 @@
+import { assessAttachmentRisk } from "@/lib/email/attachment-risk";
 import type { MessageAttachment } from "@/app/(dashboard)/inbox/[messageId]/types";
 import type { AttachmentPreviewKind } from "./message-attachment-viewer-types";
 
@@ -11,7 +12,16 @@ export function getAttachmentFileUrl(
 	return `/api/messages/${messageId}/attachments/${attachmentId}${suffix}`;
 }
 
-export function getAttachmentPreviewKind(attachment: Pick<MessageAttachment, "type">): AttachmentPreviewKind {
+/**
+ * How the viewer shows a file, from its declared type. A name the risk check flags (`setup.exe` declared `image/png`)
+ * is never previewed: the server refuses to render it inline, so it only downloads, after its warning.
+ */
+export function getAttachmentPreviewKind(
+	attachment: Pick<MessageAttachment, "type"> & { filename?: string },
+): AttachmentPreviewKind {
+	const { filename } = attachment;
+	if (filename !== undefined && assessAttachmentRisk({ filename, type: attachment.type }).level !== "ok")
+		return "unsupported";
 	if (attachment.type === "application/pdf") return "pdf";
 	if (attachment.type.startsWith("audio/")) return "audio";
 	if (attachment.type.startsWith("video/")) return "video";

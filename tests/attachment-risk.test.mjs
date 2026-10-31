@@ -7,7 +7,7 @@ const risk = await bundleModules("kite-attachment-risk-", [
 		"assessAttachmentRisk, inspectZipDirectory, isExecutableFilename, isWebPageFilename, hasDecoyExtension, isZipAttachment, locateZipDirectory, mergeRisks, needsRiskReview, stripHiddenCharacters",
 		"src/lib/email/attachment-risk.ts",
 	],
-	["assessStoredAttachment, attachmentDownloadGate", "src/lib/email/attachment-risk-store.ts"],
+	["assessStoredAttachment, attachmentDownloadGate, servesInline", "src/lib/email/attachment-risk-store.ts"],
 	["attachmentObjectKey, sanitizeFilename, truncateFilename", "src/lib/email/attachment-name-utils.ts"],
 	["getContentDisposition", "src/lib/http/content-disposition-utils.ts"],
 ]);
@@ -16,7 +16,7 @@ const RLO = String.fromCharCode(0x202e);
 const encoder = new TextEncoder();
 
 /** A minimal ZIP: only the central directory and the end record matter to the inspector. */
-function zip(names, { encrypted = false, prefix = 0 } = {}) {
+function zip(names, { encrypted = false, prefix = 0, declaredEntries = names.length } = {}) {
 	const entries = names.map((name) => {
 		const nameBytes = Buffer.from(name);
 		const entry = Buffer.alloc(46 + nameBytes.length);
@@ -29,7 +29,7 @@ function zip(names, { encrypted = false, prefix = 0 } = {}) {
 	const directory = Buffer.concat(entries);
 	const end = Buffer.alloc(22);
 	end.writeUInt32LE(0x06054b50, 0);
-	end.writeUInt16LE(names.length, 10);
+	end.writeUInt16LE(declaredEntries, 10);
 	end.writeUInt32LE(directory.length, 12);
 	end.writeUInt32LE(prefix, 16);
 	return new Uint8Array(Buffer.concat([Buffer.alloc(prefix), directory, end]));
@@ -201,7 +201,10 @@ test("the download gate answers the assessment and refuses an unacknowledged fla
 	assert.equal(info.cancelled, true);
 
 	assert.equal(await risk.attachmentDownloadGate(env, new Request(`${url}?acknowledge=1`), exe, stream(), false), null);
-	assert.equal(await risk.attachmentDownloadGate(env, new Request(url), exe, stream(), true), null, "inline is shown");
+	const inlineExe = stream();
+	const gatedInline = await risk.attachmentDownloadGate(env, new Request(url), exe, inlineExe, true);
+	assert.equal(gatedInline.status, 409, "a flagged name never takes the inline shortcut");
+	assert.equal(inlineExe.cancelled, true);
 	const pdf = { ...exe, filename: "a.pdf", contentType: "application/pdf" };
 	assert.equal(await risk.attachmentDownloadGate(env, new Request(url), pdf, stream(), false), null);
 });
@@ -233,4 +236,79 @@ test("Content-Disposition drops hidden characters and caps long names", () => {
 	assert.ok(long.length < 1200, `header stays bounded (${long.length})`);
 	assert.match(long, /\.pdf$/);
 	assert.equal(risk.getContentDisposition(RLO, true), "inline; filename=\"attachment\"; filename*=UTF-8''attachment");
+});
+
+test("a flagged name declared as an image is gated and never rendered inline", async () => {
+	const env = bucketOf(new Uint8Array(0));
+	const url = "https://mail.example.com/api/messages/m/attachments/a?preview=1";
+	for (const filename of ["setup.exe", "invoice.pdf.exe"]) {
+		const attachment = { filename, contentType: "image/png", size: 10, r2Key: "k" };
+		assert.equal(risk.servesInline(attachment, true), false, filename);
+		const response = await risk.attachmentDownloadGate(env, new Request(url), attachment, stream(), true);
+		assert.equal(response.status, 409, filename);
+		const acknowledged = new Request(`${url}&acknowledge=1`);
+		assert.equal(await risk.attachmentDownloadGate(env, acknowledged, attachment, stream(), false), null, filename);
+	}
+	const png = { filename: "photo.png", contentType: "image/png", size: 10, r2Key: "k" };
+	assert.equal(risk.servesInline(png, true), true);
+	assert.equal(risk.servesInline(png, false), false);
+	assert.equal(await risk.attachmentDownloadGate(env, new Request(url), png, stream(), true), null);
+});
+
+test("the wider lists: add-ins, data connections, shortcuts, installers, program types and stream names", () => {
+	for (const filename of [
+		"addin.xll",
+		"query.iqy",
+		"sheet.slk",
+		"app.jnlp",
+		"console.msc",
+		"search.library-ms",
+		"open.settingcontent-ms",
+		"fix.diagcab",
+		"deploy.application",
+		"format.ps1xml",
+		"run.ws",
+		"run.wsc",
+		"macro.vb",
+		"script.py",
+		"launcher.desktop",
+		"package.deb",
+		"package.rpm",
+		"link.webloc",
+		"help.hlp",
+		"book.xlsb",
+		"setup.exe:notes.txt",
+	]) {
+		assert.equal(risk.assessAttachmentRisk({ filename }).level, "danger", filename);
+	}
+	assert.equal(risk.assessAttachmentRisk({ filename: "notebook.onepkg" }).level, "warning");
+	assert.equal(
+		risk.assessAttachmentRisk({ filename: "notes.txt:Zone.Identifier" }).level,
+		"ok",
+		"a stream of a text file",
+	);
+	for (const type of [
+		"application/x-msi",
+		"application/java-archive",
+		"application/x-executable",
+		"application/x-elf",
+		"application/x-mach-binary",
+		"application/vnd.android.package-archive",
+	]) {
+		assert.equal(risk.assessAttachmentRisk({ filename: "file.bin", type }).level, "danger", type);
+	}
+	for (const filename of ["letter.doc", "budget.xls", "slides.ppt"]) {
+		assert.equal(risk.assessAttachmentRisk({ filename }).level, "ok", `${filename}: legacy Office is not flagged`);
+	}
+});
+
+test("a ZIP that understates its entry count cannot hide an entry", () => {
+	const bytes = zip(["readme.txt", "setup.exe"], { declaredEntries: 1 });
+	const located = risk.locateZipDirectory(bytes);
+	const found = risk.inspectZipDirectory(located, bytes.subarray(located.offset, located.offset + located.size));
+	assert.equal(found.level, "danger");
+	assert.ok(found.reasons.some((reason) => reason.includes("setup.exe")));
+	const trailing = new Uint8Array([...bytes.subarray(located.offset, located.offset + located.size), 1, 2, 3]);
+	const partial = risk.inspectZipDirectory({ ...located, size: trailing.length }, trailing);
+	assert.ok(partial.reasons.some((reason) => /could not be fully checked/.test(reason)));
 });

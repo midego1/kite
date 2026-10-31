@@ -21,7 +21,7 @@ export function SaveToDriveDialog({
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 }) {
-	const risk = useAttachmentRisk(open ? attachmentContentUrl(attachmentId) : null);
+	const { risk, loading } = useAttachmentRisk(open ? attachmentContentUrl(attachmentId) : null);
 	const flagged = !!risk && risk.level !== "ok";
 	const [acknowledged, setAcknowledged] = useState(false);
 	return (
@@ -35,7 +35,7 @@ export function SaveToDriveDialog({
 			description="Choose the folder to save a copy of this attachment in. It counts against your Drive storage."
 			verb="Save"
 			notice={<AttachmentRiskNotice risk={risk} acknowledged={acknowledged} onAcknowledgedChange={setAcknowledged} />}
-			chooseDisabled={flagged && !acknowledged}
+			chooseDisabled={loading || (flagged && !acknowledged)}
 			onChoose={async (folder) => {
 				await saveAttachment(attachmentId, folder?.id ?? null, flagged && acknowledged);
 				toast.success(folder ? `Saved to ${folder.name}` : "Saved to My Drive");

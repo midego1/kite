@@ -7,11 +7,12 @@
  */
 import type { AttachmentRisk, AttachmentRiskLevel } from "./attachment-risk-types";
 
-/** Run code when opened. */
+/** Run code when opened, including shortcuts, installers, scripts and add-ins (`.xll` is a DLL for Excel). */
 const PROGRAM_EXTENSIONS: ReadonlySet<string> = new Set([
-	"app",
 	"apk",
+	"app",
 	"appimage",
+	"application",
 	"appx",
 	"bat",
 	"chm",
@@ -19,42 +20,65 @@ const PROGRAM_EXTENSIONS: ReadonlySet<string> = new Set([
 	"com",
 	"command",
 	"cpl",
+	"deb",
+	"desktop",
+	"diagcab",
 	"dll",
 	"dmg",
 	"exe",
 	"gadget",
+	"hlp",
 	"hta",
 	"inf",
 	"jar",
+	"jnlp",
 	"js",
 	"jse",
+	"library-ms",
 	"lnk",
+	"msc",
 	"msi",
 	"msix",
 	"msp",
 	"pif",
 	"pkg",
 	"ps1",
+	"ps1xml",
 	"psm1",
+	"py",
 	"reg",
+	"rpm",
 	"scf",
 	"scr",
+	"settingcontent-ms",
 	"sh",
 	"url",
+	"vb",
 	"vbe",
 	"vbs",
+	"webloc",
+	"ws",
+	"wsc",
 	"wsf",
 	"wsh",
+	"xll",
 ]);
-/** Office formats that carry macros. */
+/**
+ * Office formats that carry macros or pull in live data (`.iqy`, `.slk`). The legacy binary formats (`.doc`, `.xls`,
+ * `.ppt`) can carry macros too but are not flagged: their name cannot tell a macro-free file apart, they are still
+ * common, and Office opens downloaded files with macros blocked.
+ */
 const MACRO_EXTENSIONS: ReadonlySet<string> = new Set([
 	"docm",
 	"dotm",
+	"iqy",
 	"potm",
 	"ppam",
 	"pptm",
 	"sldm",
+	"slk",
 	"xlam",
+	"xlsb",
 	"xlsm",
 	"xltm",
 ]);
@@ -71,7 +95,7 @@ const WEB_PAGE_EXTENSIONS: ReadonlySet<string> = new Set([
 	"svgz",
 	"xhtml",
 ]);
-const OTHER_CONTAINER_EXTENSIONS: ReadonlySet<string> = new Set(["one"]);
+const OTHER_CONTAINER_EXTENSIONS: ReadonlySet<string> = new Set(["one", "onepkg"]);
 const ARCHIVE_EXTENSIONS: ReadonlySet<string> = new Set([
 	"7z",
 	"ace",
@@ -104,10 +128,16 @@ const DOCUMENT_LOOKING_EXTENSIONS: ReadonlySet<string> = new Set([
 	"xlsx",
 ]);
 const PROGRAM_TYPES: ReadonlySet<string> = new Set([
+	"application/java-archive",
+	"application/vnd.android.package-archive",
 	"application/vnd.microsoft.portable-executable",
 	"application/x-dosexec",
+	"application/x-elf",
+	"application/x-executable",
+	"application/x-mach-binary",
 	"application/x-msdos-program",
 	"application/x-msdownload",
+	"application/x-msi",
 	"application/x-sh",
 ]);
 /**
@@ -136,9 +166,12 @@ const DIRECTORY_ENTRY = 0x02014b50;
 
 const RANK: Record<AttachmentRiskLevel, number> = { ok: 0, warning: 1, danger: 2 };
 
-/** Lower-cased extensions after the first dot; trailing dots and spaces are dropped, as Windows drops them. */
+/**
+ * Lower-cased extensions after the first dot. Trailing dots and spaces are dropped, as Windows drops them, and the name
+ * ends at the first `:`, because NTFS stores `setup.exe:notes.txt` as `setup.exe` with an alternate data stream.
+ */
 function fileExtensions(filename: string): string[] {
-	const base = filename.split(/[/\\]/).pop() ?? "";
+	const base = (filename.split(/[/\\]/).pop() ?? "").split(":", 1)[0];
 	return base
 		.toLowerCase()
 		.replace(/[.\s]+$/, "")
@@ -185,7 +218,8 @@ export function assessAttachmentRisk(attachment: { filename: string; type?: stri
 	if (hasHiddenCharacters(attachment.filename))
 		raise("danger", "The file name contains hidden characters that can disguise its real type.");
 	if (PROGRAM_EXTENSIONS.has(last)) raise("danger", `.${last} files run programs when opened.`);
-	else if (MACRO_EXTENSIONS.has(last)) raise("danger", `.${last} documents can run macros.`);
+	else if (MACRO_EXTENSIONS.has(last))
+		raise("danger", `.${last} files can run macros or load content from the internet.`);
 	else if (DISK_IMAGE_EXTENSIONS.has(last)) raise("warning", `.${last} files open like a disk and can hide programs.`);
 	else if (WEB_PAGE_EXTENSIONS.has(last))
 		raise("warning", `.${last} files open in a browser and can show a fake login page.`);
@@ -254,34 +288,47 @@ export function inspectZipDirectory(
 	const refusal = zipDirectoryRefusal(located);
 	if (refusal) return refusal;
 	if (!directory) return { level: "warning", reasons: ["This archive could not be checked."] };
-	const view = new DataView(directory.buffer, directory.byteOffset, directory.byteLength);
-	const decoder = new TextDecoder("utf-8", { fatal: false });
-	const found: AttachmentRisk[] = [];
-	let encrypted = false;
-	let position = 0;
-	for (let seen = 0; seen < located.entries && position + 46 <= directory.byteLength; seen += 1) {
-		if (view.getUint32(position, true) !== DIRECTORY_ENTRY) break;
-		const flags = view.getUint16(position + 8, true);
-		const nameLength = view.getUint16(position + 28, true);
-		const extraLength = view.getUint16(position + 30, true);
-		const commentLength = view.getUint16(position + 32, true);
-		if (position + 46 + nameLength > directory.byteLength) break;
-		if (flags & 1) encrypted = true;
-		const name = decoder.decode(directory.subarray(position + 46, position + 46 + nameLength));
+	const listing = readZipNames(directory);
+	const found: AttachmentRisk[] = listing.names.map((name) => {
 		const inner = assessAttachmentRisk({ filename: name.split("/").pop() || name });
-		if (inner.level !== "ok")
-			found.push({
-				level: inner.level,
-				reasons: inner.reasons.map((reason) => `Inside the archive, ${name}: ${reason}`),
-			});
-		position += 46 + nameLength + extraLength + commentLength;
-	}
-	if (encrypted)
+		return { level: inner.level, reasons: inner.reasons.map((reason) => `Inside the archive, ${name}: ${reason}`) };
+	});
+	if (listing.encrypted)
 		found.push({
 			level: "warning",
 			reasons: ["This archive is password protected, so its contents could not be checked."],
 		});
+	if (listing.overflow)
+		found.push({ level: "warning", reasons: ["This archive holds too many files to check them all."] });
+	else if (!listing.complete) found.push({ level: "warning", reasons: ["This archive could not be fully checked."] });
 	return mergeRisks(...found);
+}
+
+/**
+ * The entry names in a central directory, walked by its bytes rather than the end record's entry count, which a
+ * crafted archive can understate to hide entries. `complete` is false when the walk stopped before the end.
+ */
+function readZipNames(directory: Uint8Array): {
+	names: string[];
+	encrypted: boolean;
+	complete: boolean;
+	overflow: boolean;
+} {
+	const view = new DataView(directory.buffer, directory.byteOffset, directory.byteLength);
+	const decoder = new TextDecoder("utf-8", { fatal: false });
+	const names: string[] = [];
+	let encrypted = false;
+	let position = 0;
+	while (position + 46 <= directory.byteLength && view.getUint32(position, true) === DIRECTORY_ENTRY) {
+		if (names.length >= MAX_ZIP_ENTRIES) return { names, encrypted, complete: false, overflow: true };
+		const nameLength = view.getUint16(position + 28, true);
+		const next = position + 46 + nameLength + view.getUint16(position + 30, true) + view.getUint16(position + 32, true);
+		if (next > directory.byteLength) break;
+		if (view.getUint16(position + 8, true) & 1) encrypted = true;
+		names.push(decoder.decode(directory.subarray(position + 46, position + 46 + nameLength)));
+		position = next;
+	}
+	return { names, encrypted, complete: position === directory.byteLength, overflow: false };
 }
 
 /**

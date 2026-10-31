@@ -1,5 +1,5 @@
 import { getDb } from "@/db";
-import { attachmentDownloadGate } from "@/lib/email/attachment-risk-store";
+import { attachmentDownloadGate, servesInline } from "@/lib/email/attachment-risk-store";
 import { getInlineContentType } from "@/lib/http/content-type-utils";
 import type { SessionUser } from "@/lib/auth/types";
 import { getDriveItem, getDriveRole } from "./access";
@@ -128,12 +128,16 @@ export async function attachmentResponse(
 	const source = await readableAttachment(env, user, id);
 	if (!source) return notFoundResponse();
 	const download = new URL(request.url).searchParams.get("disposition") === "attachment";
-	const inline = !download && getInlineContentType(source.attachment.contentType) !== null;
+	const inline = servesInline(
+		source.attachment,
+		!download && getInlineContentType(source.attachment.contentType) !== null,
+	);
 	const refused = await attachmentDownloadGate(env, request, source.attachment, source.object, inline);
 	if (refused) return refused;
+	// A flagged name declared as an image still downloads as an attachment.
 	return streamAttachment(
 		{ ...source.attachment, createdAt: source.attachment.createdAt ?? undefined },
 		source.object,
-		download,
+		!inline,
 	);
 }

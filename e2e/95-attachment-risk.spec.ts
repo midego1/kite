@@ -39,6 +39,7 @@ async function deliverWithAttachments(api: APIRequestContext, subject: string) {
 			{ filename: "invoice.pdf.exe", contentType: "application/octet-stream", content: "MZ not really a program" },
 			{ filename: "invoice.zip", contentType: "application/zip", content: zipOf(["readme.txt", "bin/setup.exe"]) },
 			{ filename: "notes.txt", contentType: "text/plain", content: "Plain notes." },
+			{ filename: "setup.exe", contentType: "image/png", disposition: "inline", content: "MZ claims to be a PNG" },
 		],
 	});
 	const { attachments } = await json<Detail>(await api.get(`/api/messages/${message.id}`));
@@ -74,6 +75,14 @@ test("a flagged attachment is refused by the server until the warning is acknowl
 		expect(risk.level).toBe("danger");
 		expect(risk.reasons.some((reason) => reason.includes("bin/setup.exe"))).toBe(true);
 		expect((await api.get(route("invoice.zip"))).status()).toBe(409);
+	});
+
+	await test.step("a program declared as an inline image is gated and never rendered inline", async () => {
+		expect((await api.get(route("setup.exe"))).status()).toBe(409);
+		expect((await api.get(`${route("setup.exe")}?preview=1`)).status()).toBe(409);
+		const allowed = await api.get(`${route("setup.exe")}?preview=1&acknowledge=1`);
+		expect(allowed.status()).toBe(200);
+		expect(allowed.headers()["content-disposition"]).toMatch(/^attachment;/);
 	});
 
 	await test.step("a plain file is not gated", async () => {

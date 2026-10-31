@@ -1,7 +1,7 @@
 import { getCurrentUser } from "@/lib/auth/cookies";
 import { getEnv } from "@/lib/cloudflare";
 import { getAttachmentForUser } from "@/lib/email/attachments";
-import { attachmentDownloadGate } from "@/lib/email/attachment-risk-store";
+import { attachmentDownloadGate, servesInline } from "@/lib/email/attachment-risk-store";
 import { getDownloadContentType, getInlineContentType } from "@/lib/http/content-type-utils";
 import type { AttachmentRouteParams } from "./types";
 import { getContentDisposition } from "@/lib/http/content-disposition-utils";
@@ -23,7 +23,11 @@ export async function GET(request: Request, { params }: AttachmentRouteParams) {
 	// The sandbox policy below is a second layer, not the guard: on the Node runtime the global API policy from
 	// next.config may be what the browser sees.
 	const inlineType = downloadRequested ? null : getInlineContentType(attachment.contentType);
-	const inline = inlineType !== null && (attachment.disposition === "inline" || previewRequested);
+	// A flagged name (`setup.exe` declared `image/png`) is never rendered inline; it downloads after the warning.
+	const inline = servesInline(
+		attachment,
+		inlineType !== null && (attachment.disposition === "inline" || previewRequested),
+	);
 	// Programs, macro documents, disguised names and archives download only after the reader has seen why.
 	const refused = await attachmentDownloadGate(env, request, attachment, object, inline);
 	if (refused) return refused;

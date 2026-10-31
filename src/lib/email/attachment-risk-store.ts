@@ -48,9 +48,22 @@ export async function assessStoredAttachment(
 const NO_STORE = { "Cache-Control": "private, no-store" };
 
 /**
+ * Whether a file the route would render inline may skip the gate: only when its name and declared type are clean, so
+ * `setup.exe` declared `image/png` is gated and downloaded like any other flagged file (no IO, unlike the ZIP check).
+ */
+export function servesInline(attachment: { filename: string; contentType: string }, inlineCandidate: boolean): boolean {
+	return (
+		inlineCandidate &&
+		assessAttachmentRisk({ filename: attachment.filename, type: attachment.contentType }).level === "ok"
+	);
+}
+
+/**
  * The download gate shared by the mail attachment route and Drive's mail attachments: `?risk=1` answers the
- * assessment, and a flagged file that is not shown inline answers 409 unless the request carries `?acknowledge=1`,
- * so a direct link cannot skip the warning. Null means serve the file. A refusal cancels the unread body.
+ * assessment, and a flagged file answers 409 unless the request carries `?acknowledge=1`, so a link in a message
+ * cannot start the download in one click. Only an inline file whose name and type are clean (`servesInline`) skips
+ * it. Null means serve the file. A refusal cancels the unread body. `acknowledge=1` guards against accidents; it is
+ * not a security boundary, since the user can always add it.
  */
 export async function attachmentDownloadGate(
 	env: CloudflareEnv,
@@ -61,7 +74,7 @@ export async function attachmentDownloadGate(
 ): Promise<Response | null> {
 	const params = new URL(request.url).searchParams;
 	const riskRequested = params.get("risk") === "1";
-	if (inline && !riskRequested) return null;
+	if (servesInline(attachment, inline) && !riskRequested) return null;
 	const risk = await assessStoredAttachment(env, attachment);
 	if (riskRequested) {
 		await object.body.cancel().catch(() => undefined);

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Download, ExternalLink, Mail } from "lucide-react";
 import { AttachmentRiskNotice } from "@/components/attachment-risk-notice";
 import { acknowledgedUrl, useAttachmentRisk } from "@/components/use-attachment-risk";
+import { assessAttachmentRisk } from "@/lib/email/attachment-risk";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { formatDriveSize } from "@/lib/drive/name-utils";
 import { previewKind } from "./drive-utils";
@@ -16,7 +17,7 @@ export function DrivePreviewBody({
 	name,
 }: {
 	src: string;
-	/** Null while a risk warning above is not acknowledged. */
+	/** Null while the risk check runs or its warning above is not acknowledged. */
 	downloadHref: string | null;
 	contentType: string;
 	name: string;
@@ -48,7 +49,7 @@ export function DrivePreviewBody({
 					Download
 				</a>
 			) : (
-				<p>Tick the warning above to download it.</p>
+				<p>Download unlocks once the file is checked and any warning above is ticked.</p>
 			)}
 		</div>
 	);
@@ -67,10 +68,11 @@ export type PreviewTarget = {
 };
 
 export function DrivePreviewDialog({ target, onClose }: { target: PreviewTarget; onClose: () => void }) {
-	const risk = useAttachmentRisk(target.riskUrl ?? null);
+	const { risk, loading } = useAttachmentRisk(target.riskUrl ?? null);
 	const flagged = !!risk && risk.level !== "ok";
 	const [acknowledged, setAcknowledged] = useState(false);
-	const downloadHref = !flagged ? target.downloadHref : acknowledged ? acknowledgedUrl(target.downloadHref) : null;
+	const blocked = loading || (flagged && !acknowledged);
+	const downloadHref = blocked ? null : flagged ? acknowledgedUrl(target.downloadHref) : target.downloadHref;
 	return (
 		<Dialog
 			open
@@ -124,7 +126,12 @@ export function DrivePreviewDialog({ target, onClose }: { target: PreviewTarget;
 					<DrivePreviewBody
 						src={target.src}
 						downloadHref={downloadHref}
-						contentType={target.contentType}
+						// A flagged mail attachment is never rendered inline, whatever type it declares.
+						contentType={
+							target.riskUrl && assessAttachmentRisk({ filename: target.name, type: target.contentType }).level !== "ok"
+								? "application/octet-stream"
+								: target.contentType
+						}
 						name={target.name}
 					/>
 				</div>

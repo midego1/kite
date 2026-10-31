@@ -96,14 +96,14 @@ function ViewerDownload({
 	downloadUrl: string;
 	riskUrl: string | null;
 }) {
-	const risk = useAttachmentRisk(riskUrl);
+	const { risk, loading } = useAttachmentRisk(riskUrl);
 	const flagged = !!risk && risk.level !== "ok";
 	const [acknowledged, setAcknowledged] = useState(false);
 	return (
 		<>
 			<AttachmentRiskNotice risk={risk} acknowledged={acknowledged} onAcknowledgedChange={setAcknowledged} />
 			<div className="flex shrink-0 justify-end">
-				{downloadUrl && (!flagged || acknowledged) ? (
+				{downloadUrl && !loading && (!flagged || acknowledged) ? (
 					<Button asChild>
 						<a href={flagged ? acknowledgedUrl(downloadUrl) : downloadUrl} download={filename}>
 							<ArrowDownToLine className="h-4 w-4" />
@@ -111,7 +111,7 @@ function ViewerDownload({
 						</a>
 					</Button>
 				) : (
-					// A local file's copy is still being made, or the warning is not acknowledged yet.
+					// A local file's copy is still being made, the check is running, or the warning is not acknowledged yet.
 					<Button disabled>
 						<ArrowDownToLine className="h-4 w-4" />
 						Download

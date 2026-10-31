@@ -279,14 +279,19 @@ function modelsText(group: AiFailureGroup): string {
 export function aiFailurePrompt(groups: AiFailureGroup[], total: number, capped: boolean): string {
 	const header = `Kite recorded ${capped ? `at least ${total}` : total} failed AI ${total === 1 ? "request" : "requests"} in the last 24 hours. Explain the causes and what I should change in Kite to fix them. The diagnosis, facts and feature notes below come from Kite's own records and code: build on them and name the Kite setting to change (they are in Admin → Agent) instead of giving general advice. This summary has error codes, counts and settings only, no email content.`;
 	const described = new Set<string>();
-	const more = (count: number) => (count > 0 ? `\n\nAnd ${count} more kinds of failure.` : "");
+	const more = (count: number) =>
+		count > 0 ? `\n\nAnd ${count} more ${count === 1 ? "kind" : "kinds"} of failure.` : "";
 	let text = header;
 	let kept = 0;
 	for (const group of groups.slice(0, MAX_PROMPT_GROUPS)) {
-		const fresh = group.features.filter((entry) => AI_FEATURE_NOTES[entry.feature] && !described.has(entry.feature));
+		// The notes are about output caps and thinking, so only a cut-off group carries them, once per feature.
+		const fresh =
+			group.code === "cut_off"
+				? group.features.filter((entry) => AI_FEATURE_NOTES[entry.feature] && !described.has(entry.feature))
+				: [];
 		const block = groupBlock(group, kept + 1, fresh);
-		// Whole groups only: one that does not fit, with the count of the rest, is left out rather than cut.
-		if ((text + block + more(groups.length - kept - 1)).length > MAX_PROMPT_CHARS) break;
+		// Whole groups only: one that does not fit is counted with the rest rather than cut, and a later one may fit.
+		if ((text + block + more(groups.length - kept - 1)).length > MAX_PROMPT_CHARS) continue;
 		text += block;
 		kept += 1;
 		for (const entry of fresh) described.add(entry.feature);

@@ -40,8 +40,9 @@ function Actions({ compact }: { compact: boolean }) {
 	const buttonClassName = compact ? "h-[22px] w-6 rounded p-0" : undefined;
 	return (
 		<div
+			data-update-actions=""
 			className={clsx(
-				"absolute z-10 flex items-center gap-1 opacity-0 transition-opacity pointer-events-none group-hover:pointer-events-auto group-hover:opacity-100 group-has-[:focus-visible]:pointer-events-auto group-has-[:focus-visible]:opacity-100 pointer-coarse:pointer-events-auto pointer-coarse:opacity-100",
+				"absolute z-10 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-has-[:focus-visible]:opacity-100 pointer-coarse:opacity-100",
 				compact
 					? "-right-1 -top-1.5 h-6 gap-0 rounded-md border border-neutral-200 bg-white shadow-sm pointer-coarse:-bottom-0.5 pointer-coarse:top-auto"
 					: "right-6 top-1/2 -translate-y-1/2 bg-[#f2f6fc] pl-3",
@@ -175,11 +176,10 @@ export function UpdateNoticeRow({ compact, density = "default" }: { compact: boo
 						>
 							{subject}
 						</span>
-						{stackedDensity.showPreview && (
-							<span className="reading-font mt-0.5 block truncate text-xs text-neutral-500 pointer-coarse:pr-14">
-								{preview}
-							</span>
-						)}
+						{/* Always shown, as a message's one-line summary is: it says what to do. */}
+						<span className="reading-font mt-0.5 block truncate text-xs text-neutral-500 pointer-coarse:pr-14">
+							{preview}
+						</span>
 					</Opener>
 					<Actions compact />
 				</div>

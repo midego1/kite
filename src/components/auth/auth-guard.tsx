@@ -7,6 +7,7 @@ import { getAuthGuardDecision } from "./auth-guard-utils";
 import { LoadingTransition } from "@/components/loading-transition";
 import { endReloadReturn } from "@/components/reload-return-utils";
 import { StartupFailure } from "@/components/startup-failure";
+import { publishStartupStats, resetStartupStats } from "@/components/startup-stats";
 import { ModulesProvider } from "@/components/modules/modules-context";
 import { useAuthMe } from "@/hooks/use-auth-me";
 import { saveUserTimeZonePreference } from "@/lib/time/client";
@@ -62,6 +63,12 @@ export function AuthGuard({
 	useEffect(() => {
 		if (user?.id) saveUserTimeZonePreference(user.id, user.timeZone ?? null);
 	}, [user?.id, user?.timeZone]);
+
+	// The startup screen's "Signed in" line names the account (never its address); a sign-out forgets everything.
+	useEffect(() => {
+		if (user?.name) publishStartupStats({ sessionName: user.name });
+		else if (session.data === null) resetStartupStats();
+	}, [user?.name, session.data]);
 
 	useEffect(() => {
 		if (!decision.redirect) return;

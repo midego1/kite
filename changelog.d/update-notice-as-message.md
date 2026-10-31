@@ -1,3 +1,0 @@
-### Changed
-
-- "Kite was updated" at the top of a message list now looks like a message from Kite: the Kite logo as the avatar, the time the update was noticed, the subject ("Kite 2026.11.01.0 is ready" when the release changed) and a preview line with the first new note, unread until you open it. **Reload** and **Dismiss** are row actions that show on hover (always on touch screens). Opening the row shows what's new in the reader like an opened email, with the new release's notes as the body and **Reload** and **Dismiss** under them; on a phone it opens full screen with Back. It is still not a message: it is not counted, selected or moved, and `j`/`k` skip it.

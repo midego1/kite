@@ -34,13 +34,10 @@ function viaCondition(value: string): SQL {
  * Translate a search string into WHERE conditions on `messages`. Text goes to
  * the FTS5 index by rowid; everything else is a plain column predicate, so the
  * caller ANDs these with its own scope (mailbox access, folder, status).
- * `connectedAccounts: false` (before migration 0079, `viaSearchAvailable`) makes `via:` match nothing.
+ * `connectedAccounts` says whether `via:` may read the connected-account tables (`viaSearchAvailable`, false before
+ * migration 0079, when `via:` matches nothing). It is required, so no caller can forget to ask.
  */
-export function buildSearchConditions(
-	raw: string,
-	timeZone = "UTC",
-	options: { connectedAccounts?: boolean } = {},
-): SQL[] {
+export function buildSearchConditions(raw: string, timeZone: string, options: { connectedAccounts: boolean }): SQL[] {
 	const parsed = parseSearchQuery(raw, timeZone);
 	const conditions: SQL[] = [];
 
@@ -66,7 +63,7 @@ export function buildSearchConditions(
 	if (parsed.starred) conditions.push(eq(messages.starred, true));
 	if (parsed.after) conditions.push(gte(messages.createdAt, parsed.after));
 	if (parsed.before) conditions.push(lt(messages.createdAt, parsed.before));
-	if (parsed.via) conditions.push(options.connectedAccounts === false ? sql`0` : viaCondition(parsed.via));
+	if (parsed.via) conditions.push(!options.connectedAccounts ? sql`0` : viaCondition(parsed.via));
 
 	return conditions.length ? [and(...conditions)!] : [];
 }

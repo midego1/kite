@@ -44,12 +44,13 @@ On each account, **Check now** checks at once (at most once a minute), and **Pau
 
 ### The Spam folder
 
-**Also sync the Spam folder** on an account (off by default) checks the provider's Spam folder with the Inbox, for when you want to see what the provider filed away by mistake. Kite finds the folder by its special-use mark (`\Junk`, as Gmail's `[Gmail]/Spam` has) or, on servers without one, by its name (Spam, Junk, Junk E-mail, Bulk Mail, …).
+**Also sync the Spam folder** on an account (off by default) checks the provider's Spam folder with the Inbox, for when you want to see what the provider filed away by mistake. Kite finds the folder by its special-use mark (`\Junk`, as Gmail's `[Gmail]/Spam` has) or, on servers without one, by its name (Spam, Junk, Junk E-mail, Junk Mail or Bulk Mail, at the top level or directly under the Inbox, such as `INBOX.Junk`). A folder of your own further down, such as `Projects/Spam`, never counts.
 
 - Mail from the provider's Spam folder always lands in Kite's **Spam**, whatever Kite's own filter makes of it. Kite still runs its spam filter on it and keeps the result, with "The provider filed this message in its Spam folder" added, so the message's spam details show both. Your mailbox rules and the Screener do not move it, and it brings no notification and no `message.inbound` webhook, like any spam. Use **Not spam** to rescue a false positive.
 - It starts when you turn it on: what was already in the provider's Spam folder stays out, and so does what collected there while the switch was off. The switch needs no password and takes effect at the next check.
 - A message moved out of the provider's Spam folder into its Inbox after Kite fetched it is not fetched again (Kite already has it), and stays in Kite's Spam.
-- If the provider has no folder Kite can recognise as its Spam folder, only the Inbox is checked.
+- If the provider has no folder Kite can recognise as its Spam folder, only the Inbox is checked. If the provider renames its Spam folder, Kite finds the new one and starts it afresh.
+- The Inbox always comes first. A Spam folder the provider will not open, or any other problem with it, never stops new Inbox mail: the check still counts as working and the account's recent problems say "Kite could not check the Spam folder this time; the Inbox was checked". Only a sign-in or certificate that stops working fails the check, as it would for the Inbox. When a check stops early (you may no longer bring in mail, or there is more Inbox mail than one check takes), the Spam folder waits for a later check.
 
 ## Which account mail came through
 

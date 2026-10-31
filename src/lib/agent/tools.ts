@@ -6,6 +6,7 @@ import { buildSnippet } from "@/lib/email/parse";
 import { getAuthorizedSenderAddress } from "@/lib/email/sender";
 import { buildReplyReferences, formatMessageIdHeader, parseMessageIdList } from "@/lib/email/threading";
 import { buildSearchConditions } from "@/lib/search/conditions";
+import { viaSearchAvailable } from "@/lib/external-accounts/via";
 import { SCREENING_STATUS } from "@/lib/screener/screener-utils";
 import { newId } from "@/lib/ids";
 import { deleteMessageWithObjects } from "@/lib/email/message-cleanup";
@@ -215,6 +216,13 @@ function mailboxFolderConditions(context: AgentToolContext, folder: string | und
 	return conditions;
 }
 
+/** The search grammar's conditions; `via:` matches nothing before the connected-account tables exist. */
+async function searchConditions(context: AgentToolContext, query: string): Promise<SQL[]> {
+	return buildSearchConditions(query, context.timeZone ?? "UTC", {
+		connectedAccounts: await viaSearchAvailable(context.env, query),
+	});
+}
+
 export async function runEmailTool(
 	context: AgentToolContext,
 	name: EmailToolName,
@@ -226,7 +234,7 @@ export async function runEmailTool(
 	if (name === "count_emails") {
 		await requireAccess(context);
 		const conditions = mailboxFolderConditions(context, input.folder as string | undefined);
-		if (input.query) conditions.push(...buildSearchConditions(input.query as string, context.timeZone));
+		if (input.query) conditions.push(...(await searchConditions(context, input.query as string)));
 		if (typeof input.unread === "boolean") conditions.push(eq(messages.read, !input.unread));
 		const [row] = await db
 			.select({ value: count() })
@@ -242,7 +250,7 @@ export async function runEmailTool(
 	if (name === "list_emails" || name === "search_emails") {
 		await requireAccess(context);
 		const conditions = mailboxFolderConditions(context, input.folder as string | undefined);
-		if (name === "search_emails") conditions.push(...buildSearchConditions(input.query as string, context.timeZone));
+		if (name === "search_emails") conditions.push(...(await searchConditions(context, input.query as string)));
 		if (input.cursor) {
 			const cursor = await ownMessage(context, input.cursor as string, INVALID_CURSOR_MESSAGE);
 			conditions.push(lt(messages.createdAt, cursor.createdAt));

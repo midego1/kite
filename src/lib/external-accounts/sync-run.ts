@@ -7,6 +7,7 @@ import { imapLimits, type ImapMessageSummary } from "@/lib/imap/protocol-utils";
 import { openImapSession, type ImapSession } from "@/lib/imap/session";
 import type { ImapFetchedMessage, ImapLimits } from "@/lib/imap/types";
 import { createLogger } from "@/lib/logger.mjs";
+import { MailServerRefusedError } from "@/lib/net/errors";
 import { openSetting, SecretBoxError } from "@/lib/security/secret-box";
 import { shortServerText } from "./connection-utils";
 import { assertMailServerHost } from "./host-guard";
@@ -16,6 +17,7 @@ import {
 	baselineLastUid,
 	commandCapMs,
 	externalRawKey,
+	classifySyncError,
 	fetchRange,
 	findJunkFolder,
 	planFetchSteps,
@@ -199,14 +201,50 @@ export async function runSync(
 	const clock: RunClock = { limits, commandCap, started, deadline };
 	const connection = await FolderConnection.open(env, account, limits);
 	try {
-		await syncFolder(env, connection, account, options, outcome, clock);
-		if (account.syncJunk && !outcome.more && !outOfTime(options, clock)) {
-			const junk = await openJunkFolder(env, connection, account);
-			if (junk) await syncFolder(env, connection, account, options, outcome, clock);
-		}
+		const inbox = await syncFolder(env, connection, account, options, outcome, clock);
+		// Only after a complete INBOX pass: a refused or unfinished one leaves the Spam folder for a later run.
+		if (account.syncJunk && inbox === "done" && !outcome.more && !outOfTime(options, clock))
+			await syncJunkFolder(env, connection, account, options, outcome, clock);
 		return outcome;
 	} finally {
 		await connection.close();
+	}
+}
+
+/**
+ * The Spam-folder pass. Its own problems (a folder the server will not open, a LIST over the connection's limits, a
+ * folder rebuilt mid-run, reconnects used up) never fail the check: INBOX was checked, so the run notes it once and
+ * still counts as a success. Only what stops the account as a whole is passed on: a refusal, or a reconnect whose
+ * sign-in or certificate no longer works.
+ */
+async function syncJunkFolder(
+	env: CloudflareEnv,
+	connection: FolderConnection,
+	account: ExternalAccountRow,
+	options: RunOptions,
+	outcome: RunOutcome,
+	clock: RunClock,
+): Promise<void> {
+	try {
+		// The INBOX pass may have saved its cursor without asking (a baseline, nothing new), so ask before this one.
+		await assertMayDeliver(env, account);
+		if (await openJunkFolder(env, connection, account))
+			await syncFolder(env, connection, account, options, outcome, clock);
+	} catch (error) {
+		if (error instanceof StopRun) return;
+		if (error instanceof SyncRefusedError) throw error;
+		const problem = classifySyncError(error, {
+			refused: error instanceof MailServerRefusedError,
+			host: account.imapHost,
+		});
+		if (problem.class === "auth" || problem.class === "tls") throw error;
+		logger.warn("external.sync.junk_failed", {
+			accountId: account.id,
+			// The error's name only: its message may carry server text.
+			error: error instanceof Error ? error.name : "unknown",
+		});
+		const reason = error instanceof Error && error.message ? `: ${shortServerText(error.message)}` : "";
+		outcome.notes.push(`Kite could not check the Spam folder this time; the Inbox was checked${reason}`);
 	}
 }
 
@@ -252,7 +290,10 @@ async function openJunkFolder(
 	return true;
 }
 
-/** The folder the connection has open, from its cursor: a baseline, nothing new, new messages or a reset. */
+/**
+ * The folder the connection has open, from its cursor: a baseline, nothing new, new messages or a reset. "stopped"
+ * when the account was refused part way, or time ran out (`outcome.more` then says so).
+ */
 async function syncFolder(
 	env: CloudflareEnv,
 	connection: FolderConnection,
@@ -260,7 +301,7 @@ async function syncFolder(
 	options: RunOptions,
 	outcome: RunOutcome,
 	clock: RunClock,
-): Promise<void> {
+): Promise<"done" | "stopped"> {
 	const { state, folder } = connection;
 	const db = getDb(env);
 	const [cursor] = await db
@@ -274,11 +315,11 @@ async function syncFolder(
 		const uids =
 			state.uidNext === null && state.exists !== 0 ? (await connection.session.searchUids()).map(Number) : [];
 		await save(baselineLastUid(state.uidNext, uids));
-		return;
+		return "done";
 	}
 	if (plan.kind === "unchanged") {
 		await save(cursor!.lastUid!);
-		return;
+		return "done";
 	}
 	let lastUid = plan.kind === "fetch" ? plan.fromUid - 1 : 0;
 	if (plan.kind === "reset") {
@@ -292,7 +333,7 @@ async function syncFolder(
 	const range = fetchRange(state, lastUid);
 	if (!range) {
 		await save(lastUid);
-		return;
+		return "done";
 	}
 	const { take, more } = selectNewMessages(await connection.session.fetchSummaries(range.from, range.to), lastUid);
 	outcome.more = more;
@@ -315,7 +356,7 @@ async function syncFolder(
 		for (const step of steps) {
 			if (progress.outOfTime()) {
 				outcome.more = true;
-				break;
+				return "stopped";
 			}
 			await assertMayDeliver(env, account);
 			if (step.kind === "skip") skipTooLarge(step.entry, outcome);
@@ -325,7 +366,9 @@ async function syncFolder(
 	} catch (error) {
 		if (!(error instanceof StopRun)) throw error;
 		outcome.more = error.message === "out_of_time";
+		return "stopped";
 	}
+	return "done";
 }
 
 /** What a step needs from the run: whether time is up, and how to move the cursor (refusal checked first). */

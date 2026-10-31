@@ -113,12 +113,11 @@ export async function GET(request: Request) {
 	if (query || title) {
 		// Operators (from:, has:attachment, before:) and free text go through the
 		// full-text index; `title` is the legacy subject filter and is folded in.
+		const search = title ? `${query ?? ""} subject:"${title}"` : (query ?? "");
 		conditions.push(
-			...buildSearchConditions(
-				title ? `${query ?? ""} subject:"${title}"` : (query ?? ""),
-				getRequestTimeZone(request, user.timeZone),
-				{ connectedAccounts: await viaSearchAvailable(env, query) },
-			),
+			...buildSearchConditions(search, getRequestTimeZone(request, user.timeZone), {
+				connectedAccounts: await viaSearchAvailable(env, search),
+			}),
 		);
 	}
 	const where = and(...conditions);

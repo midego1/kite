@@ -92,7 +92,7 @@ test("the via: condition matches messages by their account, and before migration
 		INSERT INTO messages VALUES ('m1', 'a1'), ('m2', 'a2'), ('m3', 'a3'), ('m4', 'a4'), ('m5', NULL);
 	`);
 	const db = drizzle(sqlite);
-	const find = (query, options) =>
+	const find = (query, options = { connectedAccounts: true }) =>
 		db
 			.select({ id: messages.id })
 			.from(messages)
@@ -120,7 +120,7 @@ test("the Spam folder's messages have keys of their own, and INBOX keeps the key
 	assert.equal(parseExternalRawKey("external/xacct_1/sent/7/42.eml"), null);
 });
 
-test("a run finds the Spam folder by its \\Junk attribute first, then by name, never INBOX", () => {
+test("a run finds the Spam folder by its \\Junk attribute first, then by a top-level or INBOX.<name> name, never INBOX", () => {
 	const entry = (name, attributes = [], delimiter = "/") => ({ name, delimiter, attributes });
 	assert.equal(
 		findJunkFolder([entry("INBOX"), entry("[Gmail]/Spam", ["\\HasNoChildren", "\\Junk"]), entry("Spam")]),
@@ -132,6 +132,12 @@ test("a run finds the Spam folder by its \\Junk attribute first, then by name, n
 	assert.equal(findJunkFolder([entry("[Gmail]", ["\\Noselect", "\\Junk"]), entry("Archive")]), null);
 	assert.equal(findJunkFolder([entry("INBOX", ["\\Junk"]), entry("Projects/Spam filters")]), null);
 	assert.equal(findJunkFolder([]), null);
+	// By name only at the top level or directly under INBOX; a user's own folder deeper down never counts.
+	assert.equal(findJunkFolder([entry("INBOX"), entry("INBOX.Junk", [], ".")]), "INBOX.Junk");
+	assert.equal(findJunkFolder([entry("inbox/Spam")]), "inbox/Spam");
+	assert.equal(findJunkFolder([entry("Projects/Spam"), entry("Clients/Acme/Junk")]), null);
+	assert.equal(findJunkFolder([entry("INBOX/Old/Spam")]), null);
+	assert.equal(findJunkFolder([entry("Bulk"), entry("bulk")]), null, "bare Bulk is too common a folder name");
 });
 
 test("the forwarding guide covers each provider with real https settings pages and fills in the Kite address", () => {

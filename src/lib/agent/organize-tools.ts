@@ -6,7 +6,7 @@ import { insertFolder } from "@/lib/folders/insert";
 import { newId } from "@/lib/ids";
 import { createAuditLog, createAuditLogs } from "@/lib/mailboxes/audit";
 import { updateMessageStatusForUser } from "@/lib/user";
-import { FOLDER_COLOR_NAMES, folderColorValue } from "./organize-tools-utils";
+import { folderColorValue } from "./organize-tools-utils";
 import { ownMessage, publicMessage, requireAccess } from "./tool-messages";
 import type { AgentToolContext, EmailToolName } from "./types";
 
@@ -134,12 +134,14 @@ async function folderNamed(context: AgentToolContext, name: string) {
 async function createFolder(context: AgentToolContext, input: Input) {
 	const access = await requireAccess(context, false, true);
 	const name = (input.name as string).trim();
-	const colorName = (input.color as string | undefined) ?? FOLDER_COLOR_NAMES[0];
-	const color = folderColorValue(colorName) ?? DEFAULT_FOLDER_COLOR;
+	const colorName = input.color as string | undefined;
+	const color = (colorName && folderColorValue(colorName)) || DEFAULT_FOLDER_COLOR;
 	const existing = await folderNamed(context, name);
 	if (existing) throw new Error(`A folder named "${name}" already exists; its folderId is ${existing.id}`);
-	// The proposal keeps the colour's name, which is what approving passes back to this tool.
-	if (context.origin === "chat") return { action: "create_folder", status: "pending_approval", name, color: colorName };
+	// The proposal keeps the colour's name, which is what approving passes back to this tool; none when none was asked
+	// for, so the approved folder is not stored as a picked colour.
+	if (context.origin === "chat")
+		return { action: "create_folder", status: "pending_approval", name, ...(colorName ? { color: colorName } : {}) };
 	const folderId = context.folderId ?? newId("fld");
 	try {
 		await insertFolder(getDb(context.env), {
@@ -148,7 +150,7 @@ async function createFolder(context: AgentToolContext, input: Input) {
 			mailboxId: context.mailboxId,
 			name,
 			color,
-			colorIsCustom: input.color !== undefined,
+			colorIsCustom: Boolean(colorName),
 		});
 	} catch (error) {
 		// Another request created the same name since the check above; the unique index refused this one.

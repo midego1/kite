@@ -285,7 +285,16 @@ export function DashboardNav({
 			{!minimal && (
 				<NavSectionHeader label="Folders" open={foldersSectionOpen} onToggle={toggleFoldersSection}>
 					{folderMailboxId && (
-						<Dialog open={folderDialogOpen} onOpenChange={setFolderDialogOpen}>
+						<Dialog
+							open={folderDialogOpen}
+							onOpenChange={(open) => {
+								setFolderDialogOpen(open);
+								if (open) return;
+								// A swatch clicked and then abandoned is not a pick for the next folder.
+								setNewFolderColor(DEFAULT_FOLDER_COLOR);
+								setFolderColorPicked(false);
+							}}
+						>
 							<DialogTrigger asChild>
 								<button
 									type="button"

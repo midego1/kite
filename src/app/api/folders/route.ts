@@ -58,7 +58,7 @@ export async function POST(request: Request) {
 	const id = newId("fld");
 	const color = parsed.data.color ?? DEFAULT_FOLDER_COLOR;
 	const colorIsCustom = parsed.data.color !== undefined;
-	await insertFolder(db, {
+	const storedAsCustom = await insertFolder(db, {
 		id,
 		userId: access.mailboxUserId,
 		mailboxId: parsed.data.mailboxId,
@@ -67,5 +67,5 @@ export async function POST(request: Request) {
 		colorIsCustom,
 	});
 
-	return NextResponse.json({ id, mailboxId: parsed.data.mailboxId, name, color, colorIsCustom });
+	return NextResponse.json({ id, mailboxId: parsed.data.mailboxId, name, color, colorIsCustom: storedAsCustom });
 }

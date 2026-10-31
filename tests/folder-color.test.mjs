@@ -58,8 +58,11 @@ const base = { userId: "user-1", mailboxId: "mbx-1" };
 
 test("a picked colour is stored as custom, a folder without one is not, and a picked blue is told apart", async (t) => {
 	const db = await database(t, { migrated: true });
-	await kite.insertFolder(db, { ...base, id: "f-default", name: "Default" });
-	await kite.insertFolder(db, { ...base, id: "f-blue", name: "Blue", color: "#2563eb", colorIsCustom: true });
+	assert.equal(await kite.insertFolder(db, { ...base, id: "f-default", name: "Default" }), false);
+	assert.equal(
+		await kite.insertFolder(db, { ...base, id: "f-blue", name: "Blue", color: "#2563eb", colorIsCustom: true }),
+		true,
+	);
 	await kite.insertFolder(db, { ...base, id: "f-red", name: "Red", color: "#dc2626", colorIsCustom: true });
 	const rows = Object.fromEntries((await kite.selectRows(db, kite.folders)).map((row) => [row.id, row]));
 	assert.deepEqual([rows["f-default"].color, rows["f-default"].colorIsCustom], ["#2563eb", false]);
@@ -77,7 +80,11 @@ test("migration 0086 leaves existing folders as not picked", async (t) => {
 
 test("before migration 0086 folders still read and a picked colour still saves, as not picked", async (t) => {
 	const db = await database(t, { migrated: false });
-	await kite.insertFolder(db, { ...base, id: "f-red", name: "Red", color: "#dc2626", colorIsCustom: true });
+	// It reports what was stored, not what was asked for, so the response matches the next read.
+	assert.equal(
+		await kite.insertFolder(db, { ...base, id: "f-red", name: "Red", color: "#dc2626", colorIsCustom: true }),
+		false,
+	);
 	await kite.insertFolder(db, { ...base, id: "f-default", name: "Default" });
 	const rows = await kite.selectRows(db, kite.folders);
 	assert.equal(rows.length, 2);

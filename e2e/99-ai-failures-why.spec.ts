@@ -11,17 +11,30 @@ import { apiContext, uniqueToken } from "./support/helpers";
 // read stay theirs.
 
 const model = uniqueToken("why-model-");
+// A Claude model that thinks by default, cut off with a saved effort: Why? states the recorded budget.
+const claude = `claude-haiku-5-5-${model}`;
 const REPORT_API = "**/api/admin/agent/errors/report";
 
 function seedFailures() {
 	const at = Math.floor(Date.now() / 1000) - 2 * 60 * 60;
+	const budget = {
+		cap: 1_500,
+		thinkingRoom: 1_100,
+		extensionRoom: 0,
+		thinking: "on",
+		effort: "medium",
+		retried: false,
+		used: 1_500,
+		thinkingUsed: 1_460,
+	};
 	const rows = [
 		{ code: "provider_auth", feature: "auto_triage", status: 401 },
 		{ code: "provider_auth", feature: "auto_triage", status: 401 },
 		{ code: "provider_auth", feature: "summary", status: 401 },
 		{ code: "timeout", feature: "summary", status: null },
-	].map(({ code, feature, status }, index) => {
-		const metadata = JSON.stringify({ code, feature, model, provider: "openai", status, durationMs: 10 });
+		{ code: "cut_off", feature: "auto_triage", status: null, model: claude, provider: "anthropic", budget },
+	].map(({ code, feature, status, ...extra }, index) => {
+		const metadata = JSON.stringify({ code, feature, model, provider: "openai", status, durationMs: 10, ...extra });
 		return `('${uniqueToken("aud_")}', 'ai.error', '${metadata}', ${at + index})`;
 	});
 	sql(`INSERT INTO audit_logs (id, action, metadata, created_at) VALUES ${rows.join(", ")}`);
@@ -66,6 +79,22 @@ test("Why? on the admin overview groups the failures with a cause, a fix and a s
 		"/agent#ai-provider",
 	);
 	await expect(dialog.locator('[data-ai-failure-group="timeout"]')).toContainText("pick a faster model");
+	// A cut-off answer lists the facts Kite recorded, and the fix names the setting.
+	const cutOff = dialog.locator('[data-ai-failure-group="cut_off"]');
+	for (const [label, value] of [
+		["Output cap", "1,500 tokens (400 for the answer + 1,100 for thinking)"],
+		["Thinking", "on at effort medium"],
+		["Used", "1,500 output tokens, 1,460 of them thinking"],
+		["Retry", "none"],
+	]) {
+		await expect(cutOff.locator("dt", { hasText: label })).toBeVisible();
+		await expect(cutOff.locator("dd", { hasText: value })).toBeVisible();
+	}
+	await expect(cutOff).toContainText(`Clear ${claude}'s reasoning effort, or set it to minimal`);
+	await expect(cutOff.getByRole("link", { name: "Open automatic reading settings" })).toHaveAttribute(
+		"href",
+		"/agent#automatic-reading",
+	);
 	// Nobody is named: no account, no mailbox.
 	await expect(dialog).not.toContainText(ADMIN.email);
 	await expect(dialog).not.toContainText(`@${DOMAIN}`);
@@ -90,6 +119,8 @@ test("Ask AI from the overview opens the mailbox's assistant with the summary, u
 	const input = page.getByRole("region", { name: "Email assistant" }).getByRole("textbox", { name: "Message Kite AI" });
 	await expect(input).toHaveValue(/^Kite recorded \d+ failed AI requests in the last 24 hours\./);
 	await expect(input).toHaveValue(new RegExp(`provider_auth: \\d+ times[\\s\\S]*OpenAI · ${model}`));
+	await expect(input).toHaveValue(/Kite facts: Output cap: 1,500 tokens \(400 for the answer \+ 1,100 for thinking\)/);
+	await expect(input).toHaveValue(/About Automatic reading: /);
 	await expect(input).not.toHaveValue(new RegExp(`@${DOMAIN}`));
 	await expect(input).toBeFocused();
 	expect(chats).toEqual([]);

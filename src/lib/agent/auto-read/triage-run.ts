@@ -77,6 +77,7 @@ export async function runTriageModel(input: TriageRunInput): Promise<{ result: T
 			provider: selection.providerKind,
 			preset: selection.preset,
 			kind: "triage",
+			modelId: selection.modelId,
 			reasoningEffort: selection.reasoningEffort,
 			extension: callExtension(extensions, !!input.oneLine),
 		}),

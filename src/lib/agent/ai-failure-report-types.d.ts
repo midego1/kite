@@ -1,4 +1,5 @@
 import type { AiErrorCode, AiFeature } from "./ai-error-utils";
+import type { AiFailureFact } from "./cut-off-utils";
 
 /** A settings page that can fix a group of failures. */
 export type AiFailureLink = { href: string; label: string };
@@ -21,6 +22,8 @@ export type AiFailureGroup = {
 	cause: string;
 	fix: string;
 	link: AiFailureLink | null;
+	/** What Kite knows beyond the code, such as a cut-off answer's cap and thinking setting. */
+	facts: AiFailureFact[];
 };
 
 /** Whether Ask AI can run, and why not when it cannot. */

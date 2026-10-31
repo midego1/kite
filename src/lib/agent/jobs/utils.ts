@@ -3,7 +3,12 @@ import { and, desc, eq, gt, gte, or, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { agentDraftMetadata, agentJobs, mailboxAgentSettings, mailboxes, messages, users } from "@/db/schema";
 import { readMailboxAgentSettingsRow } from "../auto-read/mailbox-settings";
-import { ModelOutputTruncatedError } from "../auto-read/model-call-utils";
+import {
+	buildModelCallOptions,
+	callWithFallback,
+	ModelOutputTruncatedError,
+	outputBudgetOf,
+} from "../auto-read/model-call-utils";
 import { personalInstructionsFor } from "../user-ai-settings";
 import { styleDescriptionFor } from "../writing-style";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
@@ -37,9 +42,18 @@ async function generateRecordedDraft(
 	env: CloudflareEnv,
 	job: DraftJob,
 	selection: DraftSelection,
-	input: Omit<Parameters<typeof generateReplyDraft>[0], "onUsage">,
+	input: Omit<Parameters<typeof generateReplyDraft>[0], "onUsage" | "maxOutputTokens" | "providerOptions">,
 ): Promise<string> {
 	const trace = { feature: "auto_draft" as const, model: selection.modelId, provider: selection.provider };
+	// The same thinking choice as every automatic request: a Claude 5 model would otherwise think through the budget.
+	const options = buildModelCallOptions({
+		provider: selection.providerKind,
+		preset: selection.preset,
+		kind: "draft",
+		modelId: selection.modelId,
+		reasoningEffort: selection.reasoningEffort,
+	});
+	let sent = options;
 	const startedAt = Date.now();
 	let usage: LanguageModelUsage | undefined;
 	let finishReason: string | null = null;
@@ -57,12 +71,17 @@ async function generateRecordedDraft(
 		});
 	let generated: Awaited<ReturnType<typeof generateReplyDraft>>;
 	try {
-		generated = await generateReplyDraft({
-			...input,
-			onUsage: async (reported, reason) => {
-				usage = reported;
-				finishReason = reason;
-			},
+		generated = await callWithFallback(options, (current) => {
+			sent = current;
+			return generateReplyDraft({
+				...input,
+				maxOutputTokens: current.maxOutputTokens,
+				providerOptions: current.providerOptions,
+				onUsage: async (reported, reason) => {
+					usage = reported;
+					finishReason = reason;
+				},
+			});
 		});
 	} catch (error) {
 		await record(classifyAiError(error).code);
@@ -73,7 +92,7 @@ async function generateRecordedDraft(
 	if (generated.finishReason === "length") {
 		finishReason = "length";
 		await record("cut_off");
-		throw traceAiError(new ModelOutputTruncatedError(), trace);
+		throw traceAiError(new ModelOutputTruncatedError(outputBudgetOf(sent, generated)), trace);
 	}
 	if (!isCleanDraftBody(body)) {
 		await record("unusable_answer");

@@ -2,6 +2,7 @@ import { getLatestEmailContent, htmlToReadableText } from "@/lib/email/reply-con
 import { SUMMARY_SYSTEM_MARKER, SUMMARY_TRANSLATION_MARKER } from "../auto-read/request-markers";
 import { cleanGeneralInstructions, summaryPreferenceText } from "../instruction-utils";
 import { createNonce, markUntrustedLinks, stripDelimiters, wrapUntrusted } from "../untrusted-utils";
+import { SUMMARY_ANSWER_TOKENS } from "../output-budget-utils";
 import type { SummaryMessage, SummaryPrompt, SummaryPromptInput, TranslationPromptInput } from "./summary-types";
 import { languageName } from "./summary-utils";
 
@@ -18,7 +19,7 @@ const SUMMARY_EARLIER_LINES = 30;
  * keep (a 400-character overview and five 200-character points) is about 600 tokens in English and up to twice
  * that in other scripts; 400 cut long conversations off, which showed as a provider error.
  */
-export const SUMMARY_MAX_OUTPUT_TOKENS = 1_600;
+export const SUMMARY_MAX_OUTPUT_TOKENS = SUMMARY_ANSWER_TOKENS;
 
 /** Whether a message may be summarised: a summarised status and not judged spam. */
 export function isSummaryEligible(message: { status: string; spamVerdict?: string | null }): boolean {

@@ -55,10 +55,14 @@ export async function generateDraft(
 	const promptChars = draftPromptChars({ instructions: settings.instructions, preferences, thread });
 	const options = buildModelCallOptions({
 		provider: selection.providerKind,
+		preset: selection.preset,
 		kind: "draft",
+		modelId: selection.modelId,
 		reasoningEffort: selection.reasoningEffort,
 	});
+	let sent = options;
 	const generated = await callWithFallback(options, async (current) => {
+		sent = current;
 		// A parameter fallback is a new request, so the opt-in is checked again.
 		const model = await selectAutoReadModel(env, settings.modelId);
 		const reply = await withReservedSpend(
@@ -89,7 +93,7 @@ export async function generateDraft(
 		if (!reply) throw new SpendCapReachedError();
 		return reply;
 	});
-	return completedText(generated).trim();
+	return completedText(generated, sent).trim();
 }
 
 function threadReferences(thread: SourceMessage[]) {

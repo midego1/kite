@@ -19,6 +19,7 @@ import {
 } from "./ai-error-utils";
 import type { AiErrorRecord, RecentAiError } from "./ai-error-types";
 import type { AiFailureRow } from "./ai-failure-report-utils";
+import { readAiOutputBudget } from "./output-budget-utils";
 
 const logger = createLogger("agent");
 
@@ -127,6 +128,7 @@ export async function reportAiErrorClass(
 		inputTokens: context.usage?.inputTokens ?? null,
 		outputTokens: context.usage?.outputTokens ?? null,
 		finishReason: context.finishReason ?? null,
+		...(failure.budget ? { budget: failure.budget } : {}),
 	};
 	// A refusal before any provider call (a cap, a rate limit, a setting) is no provider or model failure: it is
 	// logged at most once a minute per user and never kept, so a spammed button neither writes to D1 on every
@@ -155,6 +157,11 @@ export async function reportAiErrorClass(
 	};
 }
 
+function budgetOf(raw: unknown): Pick<AiErrorMetadata, "budget"> {
+	const budget = readAiOutputBudget(raw);
+	return budget ? { budget } : {};
+}
+
 function parseMetadata(raw: string | null): AiErrorMetadata | null {
 	try {
 		const value = JSON.parse(raw ?? "null") as Partial<AiErrorMetadata> | null;
@@ -171,6 +178,7 @@ function parseMetadata(raw: string | null): AiErrorMetadata | null {
 			inputTokens: number(value.inputTokens),
 			outputTokens: number(value.outputTokens),
 			finishReason: text(value.finishReason),
+			...budgetOf(value.budget),
 		};
 	} catch {
 		return null;
@@ -225,7 +233,7 @@ export async function listAiFailuresSince(env: CloudflareEnv, since: Date): Prom
 	return rows.flatMap((row) => {
 		const metadata = parseMetadata(row.metadata);
 		if (!metadata) return [];
-		const { code, feature, model, provider, status } = metadata;
-		return [{ code, feature, model, provider, status, at: row.createdAt.toISOString() }];
+		const { code, feature, model, provider, status, budget } = metadata;
+		return [{ code, feature, model, provider, status, budget: budget ?? null, at: row.createdAt.toISOString() }];
 	});
 }

@@ -92,7 +92,7 @@
 	},
 	"dependencies": {
 		"@ai-sdk/anthropic": "^4.0.87",
-		"@ai-sdk/openai-compatible": "^3.0.67",
+		"@ai-sdk/openai-compatible": "^3.0.77",
 		"@modelcontextprotocol/server": "^2.4.0",
 		"@radix-ui/react-checkbox": "^1.4.1",
 		"@radix-ui/react-dialog": "^1.3.1",

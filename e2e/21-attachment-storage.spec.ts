@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { expect, test, type APIRequestContext } from "@playwright/test";
+import { createSignedInAccount } from "./support/auto-read";
 import { STORAGE_STATE, SUPPORT_ADDRESS } from "./support/constants";
 import { apiContext, deliverInbound, setSendingSettings, uniqueToken } from "./support/helpers";
 
@@ -136,7 +137,11 @@ test("sent and forwarded files share their object and survive deleting the draft
 				(await json<{ message: { status: string } }>(await api.get(`/api/messages/${sent.messageId}`))).message.status,
 		)
 		.toBe("sent");
+	const beforeDelete = await objectCounts(api);
 	await deleteForever(api, ours);
+	// The Sent copy's and the original's rows go, and with them their two objects (nothing else named them).
+	const afterDelete = await objectCounts(api);
+	expect([beforeDelete.rows - afterDelete.rows, beforeDelete.keys - afterDelete.keys]).toEqual([2, 2]);
 	expect((await api.get(`/api/messages/${original.id}/attachments/${originalFile.id}`)).status()).toBe(404);
 	const after = await verifyObjects(api);
 	expect(after.missing).toEqual([]);
@@ -148,6 +153,9 @@ test("the storage report is for admins only", async () => {
 	expect((await anonymous.get("/api/admin/attachment-storage")).status()).toBe(401);
 	await anonymous.dispose();
 	const api = await apiContext(STORAGE_STATE);
+	const member = await createSignedInAccount(api, `st${uniqueToken().slice(-8)}`);
+	expect((await member.api.get("/api/admin/attachment-storage?verify=1")).status()).toBe(403);
+	await member.api.dispose();
 	const objects = await objectCounts(api);
 	expect(objects.keys).toBeLessThanOrEqual(objects.rows);
 	expect(objects.storedBytes).toBeLessThanOrEqual(objects.bytes);

@@ -111,6 +111,52 @@ test("Print conversation prints every message of the thread, oldest first", asyn
 	await expect(frame.locator("article.print-message").nth(1).locator("h2")).toHaveText(`Re: Print plan ${token}`);
 });
 
+test("Print conversation shows an earlier message's remote images only after Show images on it", async ({ page }) => {
+	await stubPrint(page);
+	const api = await apiContext(STORAGE_STATE);
+	const token = uniqueToken();
+	const originalId = `<${token}@outside.test>`;
+	const imageUrl = `https://images.outside.test/pixel.png?print=${token}`;
+	const first = await deliverInbound(api, {
+		from: `"Image Thread" <images@outside.test>`,
+		to: SUPPORT_ADDRESS,
+		subject: `Print images ${token}`,
+		text: null,
+		html: `<p>Earlier with an image ${token}</p><img src="${imageUrl}" alt="remote pixel">`,
+		messageId: originalId,
+	});
+	await deliverInbound(api, {
+		from: `"Image Thread" <images@outside.test>`,
+		to: SUPPORT_ADDRESS,
+		subject: `Re: Print images ${token}`,
+		text: `Later without images ${token}`,
+		inReplyTo: originalId,
+	});
+	await api.dispose();
+
+	await page.goto("/inbox");
+	await openMessage(page, `Re: Print images ${token}`);
+	const earlier = page.getByRole("region", { name: "Earlier messages in this conversation" });
+	await earlier.getByRole("button", { name: /Image Thread/ }).click();
+	await expect(earlier.getByRole("button", { name: "Show images" })).toBeVisible();
+
+	const frame = page.frameLocator("#kite-print-frame");
+	await (await openMoreActions(page)).getByRole("button", { name: "Print conversation" }).click();
+	await expect.poll(() => printCount(page)).toBe(1);
+	await expect(frame.locator("article.print-message").nth(0)).toContainText(`Earlier with an image ${token}`);
+	await expect(frame.locator("img")).toHaveCount(0);
+
+	await earlier.getByRole("button", { name: "Show images" }).click();
+	await (await openMoreActions(page)).getByRole("button", { name: "Print conversation" }).click();
+	await expect.poll(() => printCount(page)).toBe(2);
+	const image = frame.locator("article.print-message").nth(0).locator("img");
+	await expect(image).toHaveCount(1);
+	await expect(image).toHaveAttribute(
+		"src",
+		`/api/remote-images?${new URLSearchParams({ message: first.id, url: imageUrl })}`,
+	);
+});
+
 test("Download PDF saves a PDF named after the subject", async ({ page }) => {
 	const api = await apiContext(STORAGE_STATE);
 	const token = uniqueToken();

@@ -287,6 +287,32 @@ test("attachment slots sit in the attachment menu under their own module id and 
 	}
 });
 
+test("reading pane slots are cards under their own module id, unique among all slots, and match the client slice", () => {
+	const ids = new Set(
+		MODULE_MANIFESTS.flatMap((manifest) => [
+			...manifest.composerSlots.map((slot) => slot.id),
+			...(manifest.messageSlots ?? []).map((slot) => slot.id),
+			...(manifest.attachmentSlots ?? []).map((slot) => slot.id),
+		]),
+	);
+	for (const manifest of MODULE_MANIFESTS) {
+		for (const slot of manifest.readingPaneSlots ?? []) {
+			assert.deepEqual(Object.keys(slot).sort(), ["id", "order", "slot"], slot.id);
+			assert.equal(slot.slot, "reading-pane", slot.id);
+			assert.ok(slot.id.startsWith(`${manifest.id}.`), slot.id);
+			assert.ok(!ids.has(slot.id), `duplicate slot ${slot.id}`);
+			ids.add(slot.id);
+			assert.ok(Number.isFinite(slot.order), slot.id);
+		}
+		const slice = CLIENT_MODULES.find((item) => item.id === manifest.id);
+		assert.deepEqual(slice?.readingPaneSlots ?? [], manifest.readingPaneSlots ?? [], manifest.id);
+	}
+	assert.deepEqual(
+		MODULE_MANIFESTS.flatMap((manifest) => (manifest.readingPaneSlots ?? []).map((slot) => slot.id)),
+		["calendar.today", "finance.renewals"],
+	);
+});
+
 test("manifests import nothing server-only, no zod and no React", () => {
 	const forbidden =
 		/from\s+["'](@\/db|@\/lib\/cloudflare|server-only|zod|react|react-dom|next|\.\.?\/(?:.*\/)?(?:schemas|server|capabilities))/;

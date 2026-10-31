@@ -58,7 +58,7 @@
 		"release:prepare": "node scripts/release-prepare.mjs",
 		"screenshots": "playwright test -c playwright.screenshots.config.ts",
 		"social:preview": "node scripts/screenshots/social-preview.mjs",
-		"demo:record": "KITE_RECORD_DEMO=1 playwright test -c playwright.screenshots.config.ts scripts/screenshots/demo.capture.ts && node scripts/screenshots/video-to-gif.mjs",
+		"demo:record": "KITE_RECORD_DEMO=1 playwright test -c playwright.screenshots.config.ts scripts/screenshots/demo.capture.ts && node scripts/screenshots/encode-demo.mjs",
 		"test:list": "playwright test --list && npm --workspace kite-email-relay run test:list"
 	},
 	"cloudflare": {

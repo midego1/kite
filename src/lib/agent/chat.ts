@@ -200,9 +200,10 @@ export async function createAgentChatStream(
 		onStepFinish: async ({ usage, finishReason }) => {
 			await spend.afterStep(usage, finishReason);
 		},
-		// A step refused at the spend cap is an expected end of the turn, not an error worth a stack trace.
+		// A step refused at the spend cap or by the external-provider opt-in is an expected end of the turn, not an
+		// error worth a stack trace; the turn's error event still logs and reports it.
 		onError: ({ error }) => {
-			if (!chatSpendCapError(error)) console.error(error);
+			if (!chatSpendCapError(error) && !(error instanceof InteractiveModelRefusedError)) console.error(error);
 		},
 	});
 	const encoder = new TextEncoder();

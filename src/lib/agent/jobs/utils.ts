@@ -10,7 +10,7 @@ import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { normalizeEmailAddress } from "@/lib/email/address";
 import { newId } from "@/lib/ids";
 import { getAgentModel } from "../model";
-import { getAgentEnabled } from "../provider";
+import { getAgentEnabled, getAgentProviderConfig } from "../provider";
 import { recordAiUsage } from "@/lib/ai/usage";
 import { claimAgentJob, failAndRequeueAgentJob, skipAgentJob } from "./lease";
 import { runEmailTool } from "../tools";
@@ -106,6 +106,8 @@ export async function scheduleAutoDraft(
 	)
 		return;
 	if (!(await getAgentEnabled(env))) return;
+	// Every job would only be skipped; nothing is queued, so Activity is not filled, until the provider is allowed.
+	if (await externalProviderRefused(env, (await getAgentProviderConfig(env)).provider)) return;
 	const db = getDb(env);
 	const settings = await readMailboxAgentSettingsRow(db, input.mailboxId);
 	const [mailbox] = await db.select().from(mailboxes).where(eq(mailboxes.id, input.mailboxId)).limit(1);
@@ -205,7 +207,8 @@ export async function processAgentDraftJob(env: CloudflareEnv, jobId: string) {
 		if (newer) return void (await skip("A newer message or sent reply superseded this draft"));
 		const selection = await getAgentModel(env, settings.modelId);
 		if (!selection) throw new InteractiveModelRefusedError("not_configured");
-		// Automatic work like automatic reading: an external provider needs the primary admin's opt-in.
+		// Automatic work like automatic reading: an external provider needs the primary admin's opt-in. Scheduling
+		// already checks it; this catches the opt-in turned off, or the provider switched, while the job waited.
 		if (await externalProviderRefused(env, selection.providerKind))
 			return void (await skip("external_provider_not_allowed"));
 		const body = await generateRecordedDraft(env, job, selection, {

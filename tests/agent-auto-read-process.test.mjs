@@ -241,11 +241,11 @@ test("a per-model reasoning hint is sent with the 1500-token budget", async (t) 
 	assert.equal(requests[0].body.max_tokens, 1_500);
 });
 
-test("a length finish fails the attempt without parsing or repair, and the retry succeeds", async (t) => {
+test("a length finish is asked once more at double the budget, never parsed or repaired, then retried", async (t) => {
 	const { db, env, sent } = await setup(t);
 	const { jobId, messageId } = insertJob(db, { text: `Long ${"y".repeat(1_600)}` });
 	// Complete, valid JSON: only the finish reason says it was cut off, so parsing it would have succeeded.
-	replies = [reply(JSON.stringify(benign), "length")];
+	replies = [reply(JSON.stringify(benign), "length"), reply(JSON.stringify(benign), "length")];
 	const before = nowSeconds();
 	await processAgentTriageJob(env, jobId);
 	const failed = jobOf(db, jobId);
@@ -254,14 +254,30 @@ test("a length finish fails the attempt without parsing or repair, and the retry
 	// Only the code is stored; Activity puts it in words.
 	assert.equal(failed.reason, "ai_error:cut_off");
 	assert.ok(failed.nextAttemptAt >= before + 4 && failed.nextAttemptAt <= before + 6, "first backoff is 5 s");
-	assert.equal(requests.length, 1, "no repair request");
+	// The same request again with double the budget, and no repair request.
+	assert.deepEqual(
+		requests.map((request) => request.body.max_tokens),
+		[400, 800],
+	);
 	assert.deepEqual(suggestionsOf(db, messageId), []);
 	assert.deepEqual(sent, [{ message: { kind: "agent.triage", jobId }, options: { delaySeconds: 6 } }]);
+	// The kept failure says what was sent, for Why? and Ask AI.
+	const [audit] = db.db.prepare("SELECT metadata FROM audit_logs WHERE action = 'ai.error'").all();
+	assert.deepEqual(JSON.parse(audit.metadata).budget, {
+		cap: 800,
+		thinkingRoom: 0,
+		extensionRoom: 0,
+		thinking: "default",
+		effort: null,
+		retried: true,
+		used: 30,
+		thinkingUsed: 0,
+	});
 
 	makeDue(db, jobId);
 	await processAgentTriageJob(env, jobId);
 	assert.equal(jobOf(db, jobId).status, "completed");
-	assert.equal(requests.length, 2);
+	assert.equal(requests.length, 3);
 	assert.equal(suggestionsOf(db, messageId).length, 1);
 });
 

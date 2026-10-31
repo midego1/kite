@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { createReadStream, createWriteStream } from "node:fs";
-import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, open, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { Readable } from "node:stream";
 import { finished, pipeline } from "node:stream/promises";
@@ -55,6 +55,7 @@ class FileObject {
 		return this.meta.etag;
 	}
 	get body(): ReadableStream<Uint8Array> {
+		if (this.range?.length === 0) return new ReadableStream({ start: (controller) => controller.close() });
 		const options = this.range
 			? { start: this.range.offset, end: this.range.offset + this.range.length - 1 }
 			: undefined;
@@ -63,10 +64,25 @@ class FileObject {
 	get bodyUsed() {
 		return false;
 	}
+	/** A ranged object reads only its range, so a slice of a 25 MiB raw message never loads the whole file. */
 	async arrayBuffer(): Promise<ArrayBuffer> {
-		const buffer = await readFile(this.path);
-		const slice = this.range ? buffer.subarray(this.range.offset, this.range.offset + this.range.length) : buffer;
-		return slice.buffer.slice(slice.byteOffset, slice.byteOffset + slice.byteLength) as ArrayBuffer;
+		if (!this.range) {
+			const buffer = await readFile(this.path);
+			return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer;
+		}
+		const bytes = new Uint8Array(Math.max(0, this.range.length));
+		const file = await open(this.path, "r");
+		try {
+			let read = 0;
+			while (read < bytes.length) {
+				const { bytesRead } = await file.read(bytes, read, bytes.length - read, this.range.offset + read);
+				if (bytesRead === 0) break;
+				read += bytesRead;
+			}
+			return bytes.buffer.slice(0, read);
+		} finally {
+			await file.close();
+		}
 	}
 	async text(): Promise<string> {
 		return Buffer.from(await this.arrayBuffer()).toString("utf8");

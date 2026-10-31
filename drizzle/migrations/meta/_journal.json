@@ -642,6 +642,13 @@
     {
       "idx": 91,
       "version": "6",
+      "when": 1793414400000,
+      "tag": "0088_attachment_raw_storage",
+      "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "6",
       "when": 1793500800000,
       "tag": "0089_add_external_identities",
       "breakpoints": true

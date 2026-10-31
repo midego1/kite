@@ -95,6 +95,7 @@ export function createNodeRuntime(): NodeRuntime {
 		URLHAUS_AUTH_KEY: optional("URLHAUS_AUTH_KEY"),
 		ABUSE_CH_AUTH_KEY: optional("ABUSE_CH_AUTH_KEY"),
 		OPERATIONAL_ALERTS: optional("OPERATIONAL_ALERTS"),
+		ATTACHMENT_SHARING: optional("ATTACHMENT_SHARING"),
 		AUTO_APPLY_MIGRATIONS: optional("AUTO_APPLY_MIGRATIONS"),
 		KITE_TELEMETRY: optional("KITE_TELEMETRY"),
 		// Not `optional`: an empty value is meaningful (send nothing), unlike an unset one (the default collector).

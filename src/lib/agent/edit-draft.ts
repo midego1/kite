@@ -11,6 +11,7 @@ import {
 	MAX_ATTACHMENT_COUNT,
 	MAX_TOTAL_ATTACHMENT_SIZE,
 	storeMessageAttachments,
+	storedAttachmentContent,
 } from "@/lib/email/attachments";
 import { ATTACHMENT_ROW_COLUMNS, readAttachmentBytes } from "@/lib/email/attachment-storage";
 import type { AttachmentContent } from "@/lib/email/attachment-types";
@@ -41,7 +42,8 @@ async function readSourceAttachment(
 	const found = await findAttachmentForUser(context.env, context.user, source.id, attachment.attachmentId);
 	const content = found?.disposition === "attachment" ? await readAttachmentBytes(context.env, found) : null;
 	if (!found || !content) throw new Error("Attachment not found on the source email");
-	return { filename: found.filename, type: found.contentType, content };
+	// Read from a row the user may read, so storing it on the draft shares that row's object.
+	return storedAttachmentContent({ ...found, contentId: null }, content);
 }
 
 export async function editAgentDraft(context: AgentToolContext, input: AgentDraftEditInput) {

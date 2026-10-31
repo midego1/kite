@@ -149,7 +149,7 @@ async function usageByClass(env: StoresEnv) {
 		sumOf(env, "SELECT count(*) AS objects, 0 AS bytes FROM messages WHERE raw_r2_key IS NOT NULL"),
 		sumOf(
 			env,
-			`SELECT count(*) AS objects, sum(size) AS bytes FROM message_attachments WHERE ${ATTACHMENT_OBJECT_ROWS_SQL}`,
+			`SELECT count(*) AS objects, sum(size) AS bytes FROM (SELECT max(size) AS size FROM message_attachments WHERE ${ATTACHMENT_OBJECT_ROWS_SQL} GROUP BY r2_key)`,
 		),
 		sumOf(env, "SELECT count(*) AS objects, sum(size) AS bytes FROM backups WHERE r2_key IS NOT NULL"),
 		callStorageHook<{ objects: number; bytes: number }>("drive", "usage", {}).catch(() => null),

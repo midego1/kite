@@ -57,9 +57,10 @@ async function beforeBodyColumn<T>(query: () => Promise<T>, whenPending: () => P
 const SOURCE_QUERIES = {
 	messages:
 		"SELECT DISTINCT raw_r2_key AS id, raw_r2_key AS key FROM messages WHERE raw_r2_key IS NOT NULL AND raw_r2_key > ?",
-	attachments: `SELECT id, r2_key AS key FROM message_attachments WHERE ${ATTACHMENT_OBJECT_ROWS_SQL} AND id > ?`,
-	// Several messages can share one raw object (copies in other mailboxes), so raw keys are walked by key: each is
-	// copied and counted once across all batches, and the index on raw_r2_key serves the order.
+	attachments: `SELECT DISTINCT r2_key AS id, r2_key AS key FROM message_attachments WHERE ${ATTACHMENT_OBJECT_ROWS_SQL} AND r2_key > ?`,
+	// Several messages can share one raw object (copies in other mailboxes), and several attachment rows one object
+	// (a forward, a send from a draft), so both are walked by key: each is copied and counted once across all
+	// batches, and the indexes on raw_r2_key and r2_key serve the order.
 	// A body's key is always its own (`htmlBodyObjectKey`), whatever the column holds.
 	bodies: `SELECT id, 'bodies/' || id || '.html' AS key FROM messages WHERE ${BODY_KEY_COLUMN} IS NOT NULL AND id > ?`,
 };
@@ -77,7 +78,7 @@ export async function estimateBackupObjects(env: CloudflareEnv): Promise<BackupO
 	const latest = `FROM messages WHERE raw_r2_key IS NOT NULL ORDER BY rowid DESC LIMIT ${ESTIMATE_SAMPLE}`;
 	const messages = await first<{ n: number }>("SELECT count(*) AS n FROM messages WHERE raw_r2_key IS NOT NULL");
 	const attachments = await first<{ n: number; bytes: number }>(
-		`SELECT count(*) AS n, coalesce(sum(size), 0) AS bytes FROM message_attachments WHERE ${ATTACHMENT_OBJECT_ROWS_SQL}`,
+		`SELECT count(*) AS n, coalesce(sum(size), 0) AS bytes FROM (SELECT max(size) AS size FROM message_attachments WHERE ${ATTACHMENT_OBJECT_ROWS_SQL} GROUP BY r2_key)`,
 	);
 	const sample = await beforeBodyColumn(
 		() =>

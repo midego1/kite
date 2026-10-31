@@ -20,6 +20,34 @@ objects and encryption keys as confidential; see [PII handling](../pii-handling.
    directions, pending jobs and backup schedule status. Record the revision and
    operator-confirmed results; do not infer success from build status alone.
 
+## Rolling back past attachment sharing
+
+Since attachment sharing (`docs/specs/attachments-once.md` §5.3), a message sent
+from a draft and a forward draft name the stored file of the row they came from
+instead of copying it, and deletes remove a file only when no row names it any
+more. Every earlier release deletes a message's attachment files unconditionally.
+Running one of them against data written by a sharing release loses files: deleting
+a forward draft deletes the original's attachment, sending a draft and then
+deleting the draft deletes the sent copy's file, and deleting either of two
+messages that share a file deletes it for both.
+
+1. Prefer fixing forward. A rollback is safe only to a release that already has
+   reference-checked deletion (this one or later).
+2. If an older release must run, first set `ATTACHMENT_SHARING=off` on the
+   current release (Worker variable, or the Node environment) so no new rows
+   share an object, and deploy that.
+3. Give every shared row its own copy before the rollback. The admin
+   "materialize" job (`docs/specs/attachments-once.md` §8 step 5) does this once it
+   exists: it copies each object that more than one row names to a new key per
+   extra row. Until it exists, do not roll back past this release; if you must,
+   expect files of forwarded and sent mail to go missing when drafts or messages
+   are deleted, and use `GET /api/admin/attachment-storage?verify=1` afterwards to
+   list the messages whose files are gone.
+4. Restoring a backup taken after this release into a database without migration
+   0088 fails on the unique `r2_key` index, because shared rows repeat a key. Apply
+   the pending migrations on the target first (Admin overview, or
+   `AUTO_APPLY_MIGRATIONS=1`), then restore.
+
 ## Backup or restore incident
 
 1. Review the latest successful backup record in **Admin → Backups**, its

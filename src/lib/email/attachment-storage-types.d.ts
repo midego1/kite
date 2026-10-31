@@ -33,3 +33,43 @@ export interface RawAttachmentLocation {
 	length: number;
 	encoding: MimeTransferEncoding;
 }
+
+/** What a delete may remove once its rows are gone (`deleteUnreferencedObjects`). */
+export interface ObjectDeletionCandidates {
+	/** Attachment rows' `r2Key`s; an object goes only when no remaining row names it, and `raw:` sentinels are skipped. */
+	attachmentKeys?: readonly string[];
+	/** Messages' `raw_r2_key`s; a raw message goes only when no remaining message names it. */
+	rawKeys?: readonly (string | null)[];
+	/** Keys only the deleted messages owned (offloaded HTML bodies), removed without a check. */
+	ownedKeys?: readonly string[];
+}
+
+/** The candidate keys that remaining rows still name. */
+export interface ReferencedObjectKeys {
+	attachmentKeys: string[];
+	rawKeys: string[];
+}
+
+/** A row that names another row's object instead of writing one (`shareAttachmentObject`). */
+export interface SharedAttachmentRow {
+	id: string;
+	messageId: string;
+	filename: string;
+	contentType: string;
+	disposition: "attachment" | "inline";
+	contentId: string | null;
+}
+
+/** How attachments are stored (`GET /api/admin/attachment-storage`). */
+export interface AttachmentStorageCounts {
+	/** Rows with an object; `keys` objects behind them, `storedBytes` their size counted once per object. */
+	objects: { rows: number; keys: number; bytes: number; storedBytes: number };
+	/** Rows served from a range of their raw message, with no object of their own. */
+	raw: { rows: number; bytes: number };
+}
+
+/** Referenced object keys looked up in storage, and the ones that were not there. */
+export interface AttachmentObjectsVerification {
+	checked: number;
+	missing: { key: string; messageIds: string[] }[];
+}

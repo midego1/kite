@@ -301,6 +301,8 @@ async function fixture(t) {
 	}
 	// A copy of message 1 in another mailbox shares its raw object: it is copied and counted once.
 	message.run("msg-zzz-copy", "inbound/1-raw.eml", null, null);
+	// So does a forward that shares an attachment's object (docs/specs/attachments-once.md §5.3).
+	attachment.run("att-zzz-forward", "msg-zzz-copy", 4, "attachments/msg-000-report..pdf");
 	// Named by the database, gone from storage: counted as missing rather than failing the copy.
 	delete objects["inbound/7-raw.eml"];
 	for (const [key, value] of Object.entries(objects)) await files.put(key, value);
@@ -360,7 +362,7 @@ test("a full backup copies raw mail, attachments and bodies with a manifest, and
 		parts.push(JSON.parse(await (await bucket.get(`${prefix}manifest/${String(index).padStart(6, "0")}.json`)).text()));
 	assert.ok(parts.some((part) => part.missing.includes("inbound/7-raw.eml")));
 	const listed = parts.flatMap((part) => part.objects.map((object) => object.key));
-	assert.equal(new Set(listed).size, listed.length, "a shared raw object is listed once");
+	assert.equal(new Set(listed).size, listed.length, "a shared raw or attachment object is listed once");
 	assert.equal(await (await bucket.get(`${prefix}files/attachments/msg-030-report..pdf`)).text(), "%PDF");
 
 	// Lose two objects and change one; the restore puts back what is missing and leaves the rest.

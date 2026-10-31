@@ -23,12 +23,3 @@ export function chunk<T>(items: T[], size: number): T[][] {
 	for (let index = 0; index < items.length; index += size) chunks.push(items.slice(index, index + size));
 	return chunks;
 }
-
-/**
- * The raw MIME keys of a batch that may be deleted from R2: present, unique,
- * and not also used by a message that is being kept.
- */
-export function selectDeletableRawKeys(rawKeys: (string | null)[], keptKeys: Iterable<string>): string[] {
-	const kept = new Set(keptKeys);
-	return [...new Set(rawKeys.filter((key): key is string => !!key))].filter((key) => !kept.has(key));
-}

@@ -1,6 +1,6 @@
 import { and, eq, isNotNull, notExists } from "drizzle-orm";
 import { getDb } from "@/db";
-import { agentDraftMetadata, messageAttachments, messages } from "@/db/schema";
+import { agentDraftMetadata, messages } from "@/db/schema";
 import { agentSuggestions } from "@/db/schema/agent-auto-read";
 import type { SessionUser } from "@/lib/auth/types";
 import { newId } from "@/lib/ids";
@@ -12,7 +12,8 @@ import { unmuteSender, untrustSender } from "./muted-senders";
 import type { AgentActionType } from "./policy-types";
 import type { UndoCounts } from "../chat-actions-types";
 import { notifySuggestionsQuietly } from "./suggestion-events";
-import { attachmentObjectKeys } from "@/lib/email/attachment-storage-utils";
+import { messageAttachmentKeys } from "@/lib/email/attachments";
+import { deleteUnreferencedObjects } from "@/lib/email/attachment-storage";
 import { undoCreateFolder, undoMarkRead, undoMove, undoSetFolder } from "./organize-undo";
 
 type SuggestionStatus = (typeof agentSuggestions.$inferSelect)["status"];
@@ -122,10 +123,7 @@ export async function discardAgentDraft(env: CloudflareEnv, draftId: string): Pr
 	if (!draft) return;
 	if (draft.status !== "draft") throw new AgentActionError("The draft was already sent, so Kite kept it", 409);
 	if (draft.humanEditedAt) throw new AgentActionError("The draft was edited, so Kite kept it", 409);
-	const attachments = await db
-		.select({ r2Key: messageAttachments.r2Key })
-		.from(messageAttachments)
-		.where(eq(messageAttachments.messageId, draftId));
+	const attachmentKeys = await messageAttachmentKeys(env, [draftId]);
 	// The delete re-checks both conditions, so a send or edit that lands after the read above wins.
 	const deleted = await db
 		.delete(messages)
@@ -143,8 +141,8 @@ export async function discardAgentDraft(env: CloudflareEnv, draftId: string): Pr
 		)
 		.returning({ rawR2Key: messages.rawR2Key });
 	if (deleted.length === 0) throw new AgentActionError("The draft changed, so Kite kept it", 409);
-	const keys = [...attachmentObjectKeys(attachments), deleted[0]?.rawR2Key];
-	await Promise.all(keys.filter((key): key is string => !!key).map((key) => env.BUCKET.delete(key)));
+	// The rows went first; an object another message still names (a sent copy) stays.
+	await deleteUnreferencedObjects(env, { attachmentKeys, rawKeys: [deleted[0]?.rawR2Key ?? null] });
 }
 
 /**

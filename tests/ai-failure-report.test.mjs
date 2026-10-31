@@ -356,3 +356,44 @@ test("a saved effort on a model that always thinks is cleared, not blamed on the
 	assert.match(group.fix, /^Clear claude-opus-5-5's reasoning effort, or set it to minimal/);
 	assert.match(group.fix, /Without an effort, Kite sends effort low, the least this model allows\.$/);
 });
+
+test("feature notes ride only on cut-off groups, so a busy day still leaves room for the cut-off facts", () => {
+	const at = (minute) => `2026-10-31T16:${String(minute).padStart(2, "0")}:00.000Z`;
+	const rows = [
+		...Array.from({ length: 8 }, (_, index) =>
+			row("provider_unavailable", at(index), {
+				feature: index % 2 ? "auto_draft" : "auto_triage",
+				model: "fake-triage",
+				provider: "custom",
+				status: 500,
+			}),
+		),
+		row("provider_auth", at(20), { status: 401 }),
+		row("provider_auth", at(21), { status: 401 }),
+		row("provider_auth", at(22), { status: 401, feature: "summary" }),
+		row("timeout", at(23), { feature: "summary" }),
+		haikuCutOff(at(24), {
+			budget: {
+				cap: 1_500,
+				thinkingRoom: 1_100,
+				extensionRoom: 0,
+				thinking: "on",
+				effort: "medium",
+				retried: false,
+				used: 1_500,
+				thinkingUsed: 1_460,
+			},
+		}),
+	];
+	const prompt = aiFailurePrompt(groupAiFailures(rows), rows.length, false);
+	const blocks = prompt.split(/\n\n(?=\d+\. )/).slice(1);
+	// The notes no longer crowd out the cut-off group; the small timeout group that does not fit is counted.
+	assert.equal(blocks.length, 3);
+	assert.match(prompt, /\n\nAnd 1 more kind of failure\.$/);
+	const unavailable = blocks.find((block) => block.includes("provider_unavailable"));
+	assert.doesNotMatch(unavailable, /About /);
+	const cutOff = blocks.find((block) => block.includes("cut_off"));
+	assert.match(cutOff, /Kite facts: Output cap: 1,500 tokens \(400 for the answer \+ 1,100 for thinking\)/);
+	assert.match(cutOff, /About Automatic reading: /);
+	assert.ok(prompt.length <= 3_500);
+});

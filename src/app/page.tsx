@@ -79,8 +79,8 @@ export default async function HomePage() {
 							</h1>
 							<p className="mx-auto mt-6 max-w-2xl text-lg leading-8 text-neutral-600">
 								{branding.appName} is a complete inbox for you@yourdomain: mail with a Screener and spam protection,
-								your Gmail, iCloud and IMAP accounts in the same place, AI that drafts but asks before it acts, and
-								Calendar, Drive, Booking and Money Watch beside it. It runs in your own Cloudflare account or in one
+								your Gmail, iCloud and other IMAP accounts in the same place, AI that drafts but asks before it acts,
+								and Calendar, Drive, Booking and Money Watch beside it. It runs in your own Cloudflare account or in one
 								Docker container.
 							</p>
 							<HomeHeroActions />

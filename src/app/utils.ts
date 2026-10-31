@@ -41,6 +41,7 @@ export function getHeroActions(isLoggedIn: boolean): HomeAction[] {
 export const heroFacts = [
 	"Open source, AGPL-3.0",
 	"Every feature included, no license keys",
+	"AI features need a provider you set up",
 	"Your Cloudflare account or one Docker container",
 	"Light and dark, on a phone too",
 ];
@@ -65,12 +66,12 @@ export const featureThemes: HomeFeatureTheme[] = [
 		icon: MailPlus,
 		title: "Your other accounts, in the same place",
 		summary:
-			"Connect Gmail, Google Workspace, iCloud Mail, Yahoo, AOL, Fastmail or any IMAP provider with an app password.",
+			"Connect Gmail, Google Workspace, iCloud Mail, Yahoo, AOL, Fastmail or any IMAP provider with an app password. Outlook.com, Hotmail and Microsoft 365 cannot be connected yet (they need OAuth).",
 		points: [
 			"New mail is checked every few minutes and delivered like mail Kite receives itself: spam filter, rules, Screener and notifications included.",
 			"Import existing mail in the background, folder by folder, and keep working while it runs.",
 			"Send as the account's address through the provider's own server, so it carries their SPF and DKIM.",
-			"Kite only reads at the provider. It never deletes, moves or marks anything there.",
+			"Apart from sending as that address (and an optional copy in its Sent folder), Kite only reads at the provider. It never deletes, moves or marks anything there.",
 		],
 	},
 	{
@@ -130,12 +131,12 @@ export const featureThemes: HomeFeatureTheme[] = [
 		wide: true,
 		title: "Your data, on your account",
 		summary:
-			"Mail lives in your own database and your own bucket. There is no update check, no license check and no third party in the path.",
+			"Mail lives in your own database and your own bucket. There is no update check or license check, and nothing leaves your install except what you configure.",
 		points: [
 			"HTML mail renders in a sandboxed frame without scripts; remote images stay blocked until you allow them.",
 			"Provider keys and account passwords are encrypted at rest; sessions live in an HttpOnly cookie; two-step sign-in with an authenticator app.",
 			"Besides the services you set up, Kite contacts only Gravatar for avatars and Cloudflare's DNS resolver for checks.",
-			"Usage statistics are pseudonymous counts, shown to the owner with a switch at setup and in Admin, and off with one click.",
+			"Usage statistics (rough counts, no content) are on by default and go once a day to the Kite project. Turn them off at setup or in Admin → General.",
 		],
 	},
 ];
@@ -166,7 +167,7 @@ export const runtimeCards: HomeRuntimeCard[] = [
 		icon: Scale,
 		title: "Open source, AGPL-3.0",
 		lines: [
-			"Every feature is free and the source is yours to read, run and change. Access is set by roles and mailbox sharing, never by a key.",
+			"Every feature is free and the source is yours to read, run and change. Access is set by roles and mailbox sharing, never by a license key.",
 			"Early beta: it works and it is tested on every change, with over 2,000 unit tests and 400 browser tests, and some things are still rough.",
 		],
 		link: { href: SOURCE_CODE_URL, label: "Source on GitHub" },

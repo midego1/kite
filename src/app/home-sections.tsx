@@ -17,7 +17,7 @@ export function HomeFeatures({ appName }: HomeSectionProps) {
 					One quiet place for your mail and what comes with it.
 				</h2>
 				<p className="mt-4 text-base leading-7 text-neutral-600">
-					Every part below is in the app now, documented and tested. Nothing here needs a plan, a seat or a key.
+					Every part below is in the app now, documented and tested. Nothing here needs a plan, a seat or a license key.
 				</p>
 			</div>
 			<ul className="mt-12 grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">

@@ -30,7 +30,7 @@ import { Switch } from "@/components/ui/switch";
 import { AgentTurnView } from "./agent-turn";
 import { KiteAvatar } from "./kite-avatar";
 import { ChatContext, ChatWelcome } from "./chat-welcome";
-import { ExternalProviderNotice } from "./external-provider-notice";
+import { AutoDraftProviderNote, ChatProviderNotice, chatProviderState, NO_PROVIDER } from "./external-provider-notice";
 import { CurrentEmailChip, useCurrentEmail } from "./current-email";
 import { useChatContentResize } from "./use-chat-content-resize";
 import { ConversationSkeleton } from "./conversation-skeleton";
@@ -95,10 +95,8 @@ export function AgentPanel({ open, fullSize, docked, onClose, onToggleFullSize }
 	const [reviewers, setReviewers] = useState<{ id: string; name: string; email: string }[]>([]);
 	const [canManage, setCanManage] = useState(false);
 	const [instructionContext, setInstructionContext] = useState<InstructionContext | null>(null);
-	const [providerConfigured, setProviderConfigured] = useState(false);
-	// The provider's name while chat is refused for an external provider the primary admin has not allowed.
-	const [externalBlocked, setExternalBlocked] = useState<string | null>(null);
-	const chatReady = providerConfigured && !externalBlocked;
+	const [provider, setProvider] = useState(NO_PROVIDER);
+	const chatReady = provider.configured && !provider.externalBlocked;
 	const [autoReplyEnabled, setAutoReplyEnabled] = useState(false);
 	const [conversationId, setConversationId] = useState<string | null>(null);
 	const [deletingConversationId, setDeletingConversationId] = useState<string | null>(null);
@@ -190,8 +188,7 @@ export function AgentPanel({ open, fullSize, docked, onClose, onToggleFullSize }
 			setModelNotice(modelFallbackText(data.unavailableModels?.chat));
 			setCanManage(data.canManage);
 			setInstructionContext(data.instructionContext ?? null);
-			setProviderConfigured(data.providerConfigured);
-			setExternalBlocked(data.externalProviderBlocked ? data.providerLabel : null);
+			setProvider(chatProviderState(data));
 			setAutoReplyEnabled(data.autoReplyEnabled);
 			setReviewers(data.reviewers ?? []);
 		}
@@ -704,14 +701,7 @@ export function AgentPanel({ open, fullSize, docked, onClose, onToggleFullSize }
 						className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-5 text-sm sm:px-5"
 					>
 						<div className="mx-auto max-w-3xl space-y-5">
-							{settings && !providerConfigured && (
-								<p className="rounded-2xl border border-amber-100 bg-amber-50 p-3 text-amber-800">
-									Configure an AI provider to use chat and auto-drafts.
-								</p>
-							)}
-							{settings && providerConfigured && externalBlocked && (
-								<ExternalProviderNotice providerLabel={externalBlocked} />
-							)}
+							{settings && <ChatProviderNotice provider={provider} />}
 							{loadingConversation && <ConversationSkeleton />}
 							{!loadingConversation && messages.length === 0 && settings && (
 								<ChatWelcome
@@ -913,11 +903,7 @@ export function AgentPanel({ open, fullSize, docked, onClose, onToggleFullSize }
 							{autoReplyEnabled && (
 								<p className="text-amber-700">Disable out-of-office auto-replies to enable AI drafts.</p>
 							)}
-							{settings.autoDraftEnabled && externalBlocked && (
-								<p className="text-amber-700">
-									Automatic drafts are skipped until the primary admin allows {externalBlocked} to read mail.
-								</p>
-							)}
+							<AutoDraftProviderNote enabled={settings.autoDraftEnabled} provider={provider} />
 							<MailboxInstructionsSetting
 								settings={settings}
 								canManage={canManage}

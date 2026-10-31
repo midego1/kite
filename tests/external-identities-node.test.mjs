@@ -32,6 +32,9 @@ const {
 	MAX_CODE_ATTEMPTS,
 	CODES_PER_ADDRESS,
 	CODES_PER_USER,
+	CODES_PER_ADDRESS_PER_DAY,
+	MAX_FAILED_CODES_PER_DAY,
+	sendViaSubmission,
 	serializeExternalAccount,
 	redactBackupRow,
 	restoredBackupRow,
@@ -49,10 +52,11 @@ const {
 	["resolveSendIdentity, listSendIdentities, isOwnConnectedAddress", "src/lib/external-accounts/identities.ts"],
 	["readIdentities", "src/lib/external-accounts/identity-store.ts"],
 	[
-		"generateIdentityCode, normalizeIdentityCode, parseIdentityAddress, parseIdentityName, hashIdentityCode, sameCodeHash, identityState, identityCodeMail, IDENTITY_CODE_TTL_MS, MAX_CODE_ATTEMPTS, CODES_PER_ADDRESS, CODES_PER_USER",
+		"generateIdentityCode, normalizeIdentityCode, parseIdentityAddress, parseIdentityName, hashIdentityCode, sameCodeHash, identityState, identityCodeMail, IDENTITY_CODE_TTL_MS, MAX_CODE_ATTEMPTS, CODES_PER_ADDRESS, CODES_PER_USER, CODES_PER_ADDRESS_PER_DAY, MAX_FAILED_CODES_PER_DAY",
 		"src/lib/external-accounts/identity-code-utils.ts",
 	],
 	["serializeExternalAccount", "src/lib/external-accounts/serialize-utils.ts"],
+	["sendViaSubmission", "src/lib/external-accounts/submit.ts"],
 	["redactBackupRow, restoredBackupRow", "src/lib/backups/external-accounts-utils.ts"],
 	["senderOptionLabel", "src/components/compose/sender-options-utils.ts"],
 	["ownAddressVerification, aliasesOf", "src/components/settings/connected-accounts/account-addresses-utils.ts"],
@@ -88,6 +92,8 @@ async function setup(t, { migrate = true } = {}) {
 			VALUES ('xacct-other', 'owner', 'mailbox-a', 'Own server', 'me@own.test', 'Pat', 'other', 'imap.own.test', 993, 'tls', 'smtp.own.test', 465, 'tls', 'me@own.test', 'enc:v1:x:y', 1, 1, 1);
 		INSERT INTO external_accounts (id, user_id, mailbox_id, label, address, preset, imap_host, imap_port, imap_security, smtp_host, smtp_port, smtp_security, username, secret, smtp_verified_at, created_at, updated_at)
 			VALUES ('xacct-gmail', 'owner', 'mailbox-a', 'Gmail', 'me@gmail.com', 'gmail', 'imap.gmail.com', 993, 'tls', 'smtp.gmail.com', 465, 'tls', 'me@gmail.com', 'enc:v1:x:y', 1, 1, 1);
+		INSERT INTO external_accounts (id, user_id, mailbox_id, label, address, preset, imap_host, imap_port, imap_security, smtp_host, smtp_port, smtp_security, username, secret, smtp_verified_at, created_at, updated_at)
+			VALUES ('xacct-theirs', 'other', 'mailbox-b', 'Theirs', 'them@own.test', 'other', 'imap.own.test', 993, 'tls', 'smtp.own.test', 465, 'tls', 'them@own.test', 'enc:v1:x:y', 1, 1, 1);
 	`);
 	const sent = [];
 	const env = {
@@ -238,6 +244,7 @@ test("a code is mailed only to the address, stored as an HMAC, and verifies it o
 	await removeExternalIdentity(env, owner, "xacct-other", identityId);
 	assert.equal(await resolveSendIdentity(env, { userId: "owner", mailboxId: "mailbox-a", address: ALIAS }), null);
 	assert.deepEqual(auditActions(db), [
+		"external_identity.code_attempted",
 		"external_identity.code_requested",
 		"external_identity.verify_failed",
 		"external_identity.verified",
@@ -343,20 +350,86 @@ test("parallel guesses never get past the attempt limit", async (t) => {
 	assert.ok(identityRow(db, identityId).attempts <= MAX_CODE_ATTEMPTS);
 });
 
-test("code mails are limited per address, whoever asks, and per user", async (t) => {
-	const { db, env } = await setup(t);
+const addAuditRows = (db, action, address, n, actor = "other") => {
+	const insert = db.db.prepare(
+		"INSERT INTO audit_logs (id, actor_user_id, action, metadata, created_at) VALUES (?, ?, ?, ?, ?)",
+	);
+	for (let i = 0; i < n; i++)
+		insert.run(
+			`aud-${action}-${i}-${Math.random()}`,
+			actor,
+			action,
+			JSON.stringify({ address }),
+			Math.floor(Date.now() / 1000),
+		);
+};
+
+test("code mails are limited per user, per user and address, and per address a day", async (t) => {
+	const { db, env, sent } = await setup(t);
 	const { identityId } = await addExternalIdentity(env, owner, "xacct-other", { address: ALIAS });
 	for (let i = 1; i < CODES_PER_ADDRESS; i++) await resendExternalIdentityCode(env, owner, "xacct-other", identityId);
 	const limited = await refusal(resendExternalIdentityCode(env, owner, "xacct-other", identityId));
 	assert.deepEqual([limited.status, limited.code], [429, "RATE_LIMITED"]);
+	assert.equal(sent.length, CODES_PER_ADDRESS);
+	// Another user's requests for the same address do not count against the owner's hour, nor the owner's against theirs.
+	await addExternalIdentity(env, other, "xacct-theirs", { address: ALIAS });
+	assert.equal(sent.length, CODES_PER_ADDRESS + 1);
 
+	// The user's own budget counts every request first, and a request refused there is not counted against the address.
 	db.db.exec("DELETE FROM audit_logs");
 	for (let i = 0; i < CODES_PER_USER; i++)
 		await addExternalIdentity(env, owner, "xacct-other", { address: `alias${i}@elsewhere.test` });
+	assert.equal((await refusal(resendExternalIdentityCode(env, owner, "xacct-other", identityId))).status, 429);
+	const aboutAlias = db.db
+		.prepare(
+			"SELECT count(*) AS n FROM audit_logs WHERE action = 'external_identity.code_requested' AND metadata LIKE ?",
+		)
+		.get(`%"${ALIAS}"%`).n;
+	assert.equal(aboutAlias, 0, "refused by the user limit, it never reached the address count");
+
+	// Per address a day, whoever asks.
+	db.db.exec("DELETE FROM audit_logs");
+	addAuditRows(db, "external_identity.code_requested", ALIAS, CODES_PER_ADDRESS_PER_DAY);
+	assert.match((await refusal(resendExternalIdentityCode(env, owner, "xacct-other", identityId))).message, /today/);
+});
+
+test("an address that collected ten wrong codes in a day gets no new code or try", async (t) => {
+	const { db, env, sent } = await setup(t);
+	const { identityId } = await addExternalIdentity(env, owner, "xacct-other", { address: ALIAS });
+	const code = codeIn(sent[0]);
+	addAuditRows(db, "external_identity.verify_failed", ALIAS, MAX_FAILED_CODES_PER_DAY);
+	const tries = await refusal(verifyExternalIdentity(env, owner, "xacct-other", identityId, { code }));
+	assert.deepEqual([tries.status, tries.code], [429, "RATE_LIMITED"]);
+	assert.equal(identityRow(db, identityId).attempts, 0, "no attempt was taken");
+	assert.equal((await refusal(resendExternalIdentityCode(env, owner, "xacct-other", identityId))).status, 429);
+	assert.equal(sent.length, 1);
+});
+
+test("a send waiting for an alias that was removed fails when it runs", async (t) => {
+	const { db, env, sent } = await setup(t);
+	const { identityId } = await addExternalIdentity(env, owner, "xacct-other", { address: ALIAS });
+	await verifyExternalIdentity(env, owner, "xacct-other", identityId, { code: codeIn(sent[0]) });
 	assert.equal(
-		(await refusal(addExternalIdentity(env, owner, "xacct-other", { address: "one-more@elsewhere.test" }))).status,
-		429,
+		(await resolveSendIdentity(env, { userId: "owner", mailboxId: "mailbox-a", address: ALIAS })).accountId,
+		"xacct-other",
 	);
+	await removeExternalIdentity(env, owner, "xacct-other", identityId);
+	const target = {
+		accountId: "xacct-other",
+		userId: "owner",
+		mailboxId: "mailbox-a",
+		messageId: "msg-1",
+		jobId: "job-1",
+	};
+	const message = { from: `Pat <${ALIAS}>`, to: ["friend@example.org"], subject: "Hi", text: "Hi", html: "<p>Hi</p>" };
+	const error = await sendViaSubmission(env, target, message).catch((caught) => caught);
+	assert.equal(error.name, "SubmissionError");
+	assert.equal(error.action, "fail");
+	assert.equal(error.message, `Not sent from ${ALIAS}. The address is no longer verified for this account.`);
+	// An address the account never verified fails the same way.
+	const never = await sendViaSubmission(env, target, { ...message, from: "stranger@elsewhere.test" }).catch((c) => c);
+	assert.match(never.message, /^Not sent from stranger@elsewhere\.test\. The address is no longer verified/);
+	assert.equal(db.db.prepare("SELECT status FROM external_accounts WHERE id = 'xacct-other'").get().status, "active");
 });
 
 test("refused: another user's account, a Kite domain, no SMTP, a list of addresses, no sender, before the migration", async (t) => {

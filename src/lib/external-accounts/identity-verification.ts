@@ -10,6 +10,9 @@ import { ExternalAccountRefusal, migrationPending } from "./errors";
 import {
 	CODE_WINDOW_MS,
 	CODES_PER_ADDRESS,
+	CODES_PER_ADDRESS_PER_DAY,
+	DAY_MS,
+	MAX_FAILED_CODES_PER_DAY,
 	CODES_PER_USER,
 	generateIdentityCode,
 	hashIdentityCode,
@@ -55,10 +58,36 @@ const auditFor = (account: ExternalAccountRow, identity: Pick<ExternalIdentityRo
 	accountAddress: identity.address === account.address,
 });
 
+const tooMany = (message: string) => new ExternalAccountRefusal(429, message, "RATE_LIMITED");
+
+/** Audit rows of `action` since `since`, of one actor and/or about one address. */
+async function countAudit(
+	env: CloudflareEnv,
+	action: string,
+	since: Date,
+	match: { actorId?: string; address?: string },
+): Promise<number> {
+	const [row] = await getDb(env)
+		.select({ total: count() })
+		.from(auditLogs)
+		.where(
+			and(
+				eq(auditLogs.action, action),
+				gt(auditLogs.createdAt, since),
+				match.actorId ? eq(auditLogs.actorUserId, match.actorId) : undefined,
+				match.address ? sql`json_extract(${auditLogs.metadata}, '$.address') = ${match.address}` : undefined,
+			),
+		);
+	return row?.total ?? 0;
+}
+
 /**
- * Counts one code mail against the user's and the address's limits (429 past either). As with connection tests, the
- * request is recorded first and counted afterwards, including it, so parallel requests can never all see room; every
- * request counts, refused ones too. The address limit holds whoever asks, so no number of users can flood one inbox.
+ * Counts one code mail against its limits (429 past any). As with connection tests, each step records the request
+ * first and counts afterwards, including it, so parallel requests can never all see room. The user's own budget comes
+ * first and counts every request, refused ones too (`code_attempted`, without the address); only a request within it
+ * is recorded against the address (`code_requested`) and counted there: per user and address an hour, and per address
+ * a day whoever asks. So nobody can hold another user's address at its hourly limit, flooding one inbox takes many
+ * users, and an address that collected `MAX_FAILED_CODES_PER_DAY` wrong codes gets no new code that day.
  */
 async function countCodeRequest(
 	env: CloudflareEnv,
@@ -66,31 +95,35 @@ async function countCodeRequest(
 	account: ExternalAccountRow,
 	identity: ExternalIdentityRow,
 ): Promise<void> {
+	const hour = new Date(Date.now() - CODE_WINDOW_MS);
+	const day = new Date(Date.now() - DAY_MS);
+	await auditExternalAccount(env, {
+		actorUserId: actorId,
+		action: "external_identity.code_attempted",
+		mailboxId: account.mailboxId,
+		metadata: { accountId: account.id, identityId: identity.id },
+	});
+	if ((await countAudit(env, "external_identity.code_attempted", hour, { actorId })) > CODES_PER_USER)
+		throw tooMany("Too many verification codes were asked for. Wait an hour before asking for another.");
+	if (
+		(await countAudit(env, "external_identity.verify_failed", day, { address: identity.address })) >=
+		MAX_FAILED_CODES_PER_DAY
+	)
+		throw tooMany("Too many wrong codes were entered for this address today. Try again tomorrow.");
 	await auditExternalAccount(env, {
 		actorUserId: actorId,
 		action: "external_identity.code_requested",
 		mailboxId: account.mailboxId,
 		metadata: auditFor(account, identity),
 	});
-	const since = new Date(Date.now() - CODE_WINDOW_MS);
-	const db = getDb(env);
-	const recent = and(eq(auditLogs.action, "external_identity.code_requested"), gt(auditLogs.createdAt, since));
-	const [[byUser], [byAddress]] = await Promise.all([
-		db
-			.select({ requests: count() })
-			.from(auditLogs)
-			.where(and(recent, eq(auditLogs.actorUserId, actorId))),
-		db
-			.select({ requests: count() })
-			.from(auditLogs)
-			.where(and(recent, sql`json_extract(${auditLogs.metadata}, '$.address') = ${identity.address}`)),
+	const [mine, everyone] = await Promise.all([
+		countAudit(env, "external_identity.code_requested", hour, { actorId, address: identity.address }),
+		countAudit(env, "external_identity.code_requested", day, { address: identity.address }),
 	]);
-	if ((byUser?.requests ?? 0) > CODES_PER_USER || (byAddress?.requests ?? 0) > CODES_PER_ADDRESS)
-		throw new ExternalAccountRefusal(
-			429,
-			"Too many verification codes were asked for. Wait an hour before asking for another.",
-			"RATE_LIMITED",
-		);
+	if (mine > CODES_PER_ADDRESS)
+		throw tooMany("Too many codes were sent to this address. Wait an hour before asking for another.");
+	if (everyone > CODES_PER_ADDRESS_PER_DAY)
+		throw tooMany("Too many codes were sent to this address today. Try again tomorrow.");
 }
 
 /**
@@ -255,6 +288,11 @@ export async function verifyExternalIdentity(
 	if (!code) throw new ExternalAccountRefusal(400, "Enter the 6-digit code from the email");
 	const identity = await ownIdentity(env, account.id, identityId);
 	if (identity.verifiedAt) return { account: await ownView(env, actor.id, account.id) };
+	const failedToday = await countAudit(env, "external_identity.verify_failed", new Date(Date.now() - DAY_MS), {
+		address: identity.address,
+	});
+	if (failedToday >= MAX_FAILED_CODES_PER_DAY)
+		throw tooMany("Too many wrong codes were entered for this address today. Try again tomorrow.");
 	const db = getDb(env);
 	const now = new Date();
 	const [claimed] = await db

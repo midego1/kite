@@ -9,10 +9,18 @@ export const MAX_CODE_ATTEMPTS = 5;
 /** Addresses one account can hold besides the ones its sign-in proves. */
 export const MAX_IDENTITIES_PER_ACCOUNT = 10;
 
-/** Codes mailed per user, and per address whoever asks, in `CODE_WINDOW_MS`: the form cannot be used to mail anyone. */
+/**
+ * Code mails per user an hour (every request), per user and address an hour, and per address a day whoever asks: the
+ * form cannot be used to mail anyone, and one user cannot hold another's address at its limit.
+ */
 export const CODES_PER_USER = 5;
 export const CODES_PER_ADDRESS = 3;
+export const CODES_PER_ADDRESS_PER_DAY = 10;
 export const CODE_WINDOW_MS = 60 * 60_000;
+export const DAY_MS = 24 * 60 * 60_000;
+
+/** Wrong codes an address may collect in a day, over all its codes; then it gets no new code or try until tomorrow. */
+export const MAX_FAILED_CODES_PER_DAY = 10;
 
 /**
  * One address and nothing else: no display name, list, comment, quoting or line break can reach the To of the code

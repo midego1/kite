@@ -3,13 +3,14 @@
 import { useEffect, useReducer, useRef, useState, type FormEvent, type KeyboardEvent, type MouseEvent } from "react";
 import { DemoFrame } from "./home-demo-frame";
 import { actionFromDataset, createDemoState, reduceDemo } from "./home-demo-state-utils";
-import type { DemoAction, DemoState, HomeDemoProps } from "./home-demo-types";
+import type { DemoAction, DemoClick, DemoState, HomeDemoProps } from "./home-demo-types";
 
 const TOAST_MS = 6000;
 const OPENS_DIALOG: DemoAction["type"][] = ["reply", "takeSuggestion", "toggleChat"];
 
-function initialState(action: DemoAction | null | undefined): DemoState {
+function initialState(click: DemoClick | null | undefined): DemoState {
 	const state = createDemoState();
+	const action = click ? actionFromDataset(click) : null;
 	return action ? reduceDemo(state, action) : state;
 }
 

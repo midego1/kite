@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useRef, useState, type ComponentType, type MouseEvent } from "react";
-import { actionFromDataset } from "./home-demo-state-utils";
-import type { DemoAction, DemoHostProps, HomeDemoProps } from "./home-demo-types";
+import type { DemoClick, DemoHostProps, HomeDemoProps } from "./home-demo-types";
 
 /** A selector for the element that had the focus, so the same button or the search box gets it back after the swap. */
 function focusSelector(element: Element | null): string | null {
@@ -26,10 +25,10 @@ function focusSelector(element: Element | null): string | null {
  */
 export function HomeDemoHost({ appName, children }: DemoHostProps) {
 	const [Demo, setDemo] = useState<ComponentType<HomeDemoProps> | null>(null);
-	const [initialAction, setInitialAction] = useState<DemoAction | null>(null);
+	const [initialAction, setInitialAction] = useState<DemoClick | null>(null);
 	const root = useRef<HTMLDivElement>(null);
 	const loading = useRef(false);
-	const pendingAction = useRef<DemoAction | null>(null);
+	const pendingAction = useRef<DemoClick | null>(null);
 	const pendingFocus = useRef<string | null>(null);
 
 	const load = () => {
@@ -46,7 +45,10 @@ export function HomeDemoHost({ appName, children }: DemoHostProps) {
 	const onClickCapture = (event: MouseEvent<HTMLDivElement>) => {
 		if (Demo) return;
 		const button = (event.target as HTMLElement).closest<HTMLElement>("[data-action]");
-		if (button) pendingAction.current = actionFromDataset(button.dataset);
+		if (button) {
+			const { action, id, view } = button.dataset;
+			pendingAction.current = { action, id, view };
+		}
 		load();
 	};
 

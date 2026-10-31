@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { demoViewTitles } from "./home-demo-data";
 import { suggestedMessages } from "./home-demo-state-utils";
-import { FOCUS_RING } from "./home-demo-parts";
+import { FOCUS_RING, GHOST_BUTTON, PRIMARY_BUTTON, SECONDARY_BUTTON } from "./home-demo-parts";
 import type {
 	DemoFrameProps,
 	DemoMessage,
@@ -72,29 +72,14 @@ function ForYouCard({ message }: { message: DemoMessage }) {
 				{suggestion.title}
 			</p>
 			<p className="mt-1 text-sm leading-6 text-neutral-700">{suggestion.text}</p>
-			<p className="mt-3 flex flex-wrap gap-2 text-xs font-medium">
-				<button
-					type="button"
-					data-action="takeSuggestion"
-					data-id={message.id}
-					className={`rounded-lg bg-blue-600 px-2.5 py-1.5 text-white hover:bg-blue-700 ${FOCUS_RING}`}
-				>
+			<p className="mt-3 flex flex-wrap gap-2">
+				<button type="button" data-action="takeSuggestion" data-id={message.id} className={PRIMARY_BUTTON}>
 					{suggestion.actionLabel}
 				</button>
-				<button
-					type="button"
-					data-action="open"
-					data-id={message.id}
-					className={`rounded-lg border border-neutral-200 bg-white px-2.5 py-1.5 text-neutral-800 hover:bg-neutral-100 ${FOCUS_RING}`}
-				>
+				<button type="button" data-action="open" data-id={message.id} className={SECONDARY_BUTTON}>
 					Open email
 				</button>
-				<button
-					type="button"
-					data-action="dismissSuggestion"
-					data-id={message.id}
-					className={`rounded-lg px-2.5 py-1.5 text-neutral-600 hover:bg-neutral-100 ${FOCUS_RING}`}
-				>
+				<button type="button" data-action="dismissSuggestion" data-id={message.id} className={GHOST_BUTTON}>
 					Dismiss
 				</button>
 			</p>

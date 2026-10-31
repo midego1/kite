@@ -11,6 +11,9 @@ import type { DemoFrameProps, DemoPartProps, DemoRowProps, DemoSidebarItem, Demo
 
 export const FOCUS_RING =
 	"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1";
+export const PRIMARY_BUTTON = `rounded-lg bg-blue-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-blue-700 ${FOCUS_RING}`;
+export const SECONDARY_BUTTON = `rounded-lg border border-neutral-200 bg-white px-2.5 py-1.5 text-xs font-medium text-neutral-800 hover:bg-neutral-100 ${FOCUS_RING}`;
+export const GHOST_BUTTON = `rounded-lg px-2.5 py-1.5 text-xs font-medium text-neutral-600 hover:bg-neutral-100 ${FOCUS_RING}`;
 
 function SidebarItem({ item, state, count }: { item: DemoSidebarItem; state: DemoState; count?: number }) {
 	const Icon = item.icon;
@@ -172,20 +175,10 @@ function DemoRow({ message, selected, screener }: DemoRowProps) {
 			</button>
 			{screener && (
 				<span className="flex shrink-0 flex-col justify-center gap-1 pr-3">
-					<button
-						type="button"
-						data-action="approve"
-						data-id={message.id}
-						className={`rounded-lg bg-blue-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-blue-700 ${FOCUS_RING}`}
-					>
+					<button type="button" data-action="approve" data-id={message.id} className={PRIMARY_BUTTON}>
 						Approve
 					</button>
-					<button
-						type="button"
-						data-action="deny"
-						data-id={message.id}
-						className={`rounded-lg border border-neutral-200 bg-white px-2.5 py-1 text-xs font-medium text-neutral-800 hover:bg-neutral-100 ${FOCUS_RING}`}
-					>
+					<button type="button" data-action="deny" data-id={message.id} className={SECONDARY_BUTTON}>
 						Deny
 					</button>
 				</span>

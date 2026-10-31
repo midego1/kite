@@ -15,14 +15,12 @@ import {
 	X,
 } from "lucide-react";
 import { findMessage } from "./home-demo-state-utils";
-import { FOCUS_RING } from "./home-demo-parts";
+import { FOCUS_RING, PRIMARY_BUTTON, SECONDARY_BUTTON } from "./home-demo-parts";
 import type { DemoMessage, DemoPartProps, DemoPerson, DemoState } from "./home-demo-types";
 
 /* The reading pane and the composer of the demo, in the classes of the real reader (reader-thread-header.tsx). */
 
 const TOOL_BUTTON = `flex h-8 w-8 items-center justify-center rounded-lg bg-neutral-100 text-neutral-700 hover:bg-neutral-200 ${FOCUS_RING}`;
-const PRIMARY_BUTTON = `rounded-lg bg-blue-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-blue-700 ${FOCUS_RING}`;
-const SECONDARY_BUTTON = `rounded-lg border border-neutral-200 bg-white px-2.5 py-1.5 text-xs font-medium text-neutral-800 hover:bg-neutral-100 ${FOCUS_RING}`;
 
 function Avatar({ person, size = "h-9 w-9 text-sm" }: { person: DemoPerson; size?: string }) {
 	return (

@@ -249,7 +249,7 @@ export function reduceDemo(state: DemoState, action: DemoAction): DemoState {
 }
 
 /** Reads a button's `data-action`, `data-id` and `data-view` into an action; null for anything else. */
-export function actionFromDataset(dataset: DOMStringMap): DemoAction | null {
+export function actionFromDataset(dataset: { action?: string; id?: string; view?: string }): DemoAction | null {
 	const type = dataset.action as DemoActionType | undefined;
 	if (!type || !(type in HANDLERS)) return null;
 	return { type, id: dataset.id, view: dataset.view as DemoView | undefined };

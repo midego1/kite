@@ -153,6 +153,9 @@ export type DemoAction = {
 	direction?: 1 | -1;
 };
 
+/** What a clicked button carries; the host keeps it as plain strings so it never imports the demo's code. */
+export type DemoClick = { action?: string; id?: string; view?: string };
+
 /** The demo's counts for the sidebar. */
 export type DemoCounts = Partial<Record<DemoView, number>>;
 
@@ -192,8 +195,8 @@ export type DemoHostProps = {
 
 export type HomeDemoProps = {
 	appName: string;
-	/** A click on the static frame before the demo loaded, applied to the opening state. */
-	initialAction?: DemoAction | null;
+	/** The `data-*` of a button clicked on the static frame before the demo loaded, applied to the opening state. */
+	initialAction?: DemoClick | null;
 };
 
 export type DemoPanelTeaserProps = {

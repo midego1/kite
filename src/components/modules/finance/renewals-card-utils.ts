@@ -4,9 +4,13 @@ import { daysBetween } from "@/lib/finance/date-utils";
 import { shortDay } from "@/lib/finance/text-utils";
 import type { RenewalLines } from "./renewals-card-types";
 
-/** The subscriptions the Money Watch card lists, at most, and how many days ahead it looks (today included). */
+/**
+ * The subscriptions the Money Watch card lists, at most.
+ * @public Test-only: used inside this file, exported for tests.
+ */
 export const RENEWALS_MAX_LINES = 4;
-export const RENEWALS_WINDOW_DAYS = 7;
+/** How many days the card looks ahead, today included. */
+const RENEWALS_WINDOW_DAYS = 7;
 
 const isCurrent = (item: SubscriptionItem) => item.status === "active" || item.status === "trial";
 

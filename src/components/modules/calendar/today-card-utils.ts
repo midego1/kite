@@ -2,10 +2,16 @@ import type { CalendarEvent } from "@/app/(calendar)/calendar/types";
 import { calendarEventHref } from "@/lib/calendar/event-link-utils";
 import type { TodayLines } from "./today-card-types";
 
-/** The events the Today card lists, at most. */
+/**
+ * The events the Today card lists, at most.
+ * @public Test-only: used inside this file, exported for tests.
+ */
 export const TODAY_MAX_LINES = 4;
 
-/** "30 min", "1 h", "1 h 30 min", or "All day" for a day or longer. */
+/**
+ * "30 min", "1 h", "1 h 30 min", or "All day" for a day or longer.
+ * @public Test-only: used inside this file, exported for tests.
+ */
 export function durationText(startsAt: string, endsAt: string): string {
 	const minutes = Math.max(0, Math.round((Date.parse(endsAt) - Date.parse(startsAt)) / 60_000));
 	if (minutes >= 24 * 60) return "All day";

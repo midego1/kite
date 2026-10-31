@@ -36,6 +36,13 @@ const DEV_BOOT_REPEAT_QUIET_CAP_MS = 15_000;
 /** However the load moves, the watchdog acts after this much visible time. */
 const BOOT_WATCHDOG_CEILING_MS = 60_000;
 const DEV_BOOT_WATCHDOG_CEILING_MS = 120_000;
+/**
+ * Visible time after which a startup screen React runs but never ends (nor replaces with its own recovery) gets
+ * the static "Kite couldn't load" too: the outer bound for whatever keeps the app from finishing its start.
+ */
+const LOADER_CEILING_MS = 30_000;
+/** Marks the failure box shown for a screen React runs, which markLoaderMounted() leaves in place. */
+const LOADER_STUCK_ATTRIBUTE = "data-loader-stuck";
 /** Watchdog reloads per ASSET_RELOAD_WINDOW_MS (within the shared budget) before it shows "Kite couldn't load". */
 const BOOT_STALL_RELOADS = 2;
 /** Fired on `window` when a chunk fails after the app has rendered, so the update check can run at once. */
@@ -86,6 +93,12 @@ const DEV_ASSET_PREFIXES = ["/_next/static/", "/@id/", "/@fs/", "/@vite/", "/nod
  * After BOOT_STALL_RELOADS watchdog reloads, once the budget is spent, offline, or without storage, it shows a
  * static "Kite couldn't load" with a Reload button instead (no React; markLoaderMounted() removes it if React starts
  * after all), and coming back online reloads.
+ *
+ * Once React runs the screen the watchdog does not reload any more, but it keeps the outer bound: when the screen
+ * is still up after LOADER_CEILING_MS of visible time and React shows none of its own ways out (the slow-start
+ * recovery, a failure in the screen), it shows the same "Kite couldn't load" box, marked LOADER_STUCK_ATTRIBUTE so a
+ * remounting screen cannot take it away; the box goes once the screen does. Nothing (a remount loop, a state that
+ * never settles, the kite's return scene) can then keep the app hidden behind the screen for good.
  */
 export function assetRecoveryScript({ dev = false }: { dev?: boolean } = {}): string {
 	const prefixes = dev ? DEV_ASSET_PREFIXES : PRODUCTION_ASSET_PREFIXES;
@@ -146,18 +159,25 @@ export function assetRecoveryScript({ dev = false }: { dev?: boolean } = {}): st
 		if (screen) return screen.getAttribute("role") === "status";
 		return !window[readyFlag];
 	};
+	// React runs the startup screen and it is still up, without a way out of its own.
+	const loaderStuck = () => {
+		const screen = document.querySelector("[data-loading-overlay]");
+		if (!screen || screen.getAttribute("role") !== "status") return false;
+		return !screen.querySelector(".loading-recovery, [role=alert]");
+	};
 	const startOver = () => {
 		try {
 			sessionStorage.removeItem(key);
 		} catch {}
 		location.reload();
 	};
-	const showFailure = () => {
+	const showFailure = (stuck = false) => {
 		const parent = document.body || document.documentElement;
 		if (!parent || document.getElementById(failureId)) return;
 		const box = document.createElement("div");
 		box.id = failureId;
 		box.setAttribute("role", "alert");
+		if (stuck) box.setAttribute(${JSON.stringify(LOADER_STUCK_ATTRIBUTE)}, "");
 		box.style.cssText = "position:fixed;left:50%;top:calc(50% + 80px);transform:translateX(-50%);z-index:110;width:18rem;text-align:center;font:14px/1.4 system-ui,sans-serif";
 		const text = document.createElement("p");
 		text.textContent = "Kite couldn't load.";
@@ -271,6 +291,19 @@ export function assetRecoveryScript({ dev = false }: { dev?: boolean } = {}): st
 		}
 		return false;
 	};
+	// React runs the screen: no more reloads, only the outer bound, until the screen has gone.
+	const watchLoader = () => {
+		const screen = document.querySelector("[data-loading-overlay]");
+		if (!screen || screen.getAttribute("role") !== "status") {
+			const box = document.getElementById(failureId);
+			if (box && box.hasAttribute(${JSON.stringify(LOADER_STUCK_ATTRIBUTE)})) box.remove();
+			if (!screen && !window[readyFlag]) return;
+			return clearInterval(watchdog);
+		}
+		if (visibleMs < ${LOADER_CEILING_MS} || !loaderStuck()) return;
+		if (!document.getElementById(failureId)) console.error("[kite] The app did not finish starting.");
+		showFailure(true);
+	};
 	const tick = () => {
 		const now = Date.now();
 		if (document.visibilityState !== "hidden") {
@@ -279,6 +312,7 @@ export function assetRecoveryScript({ dev = false }: { dev?: boolean } = {}): st
 			quietMs += elapsed;
 		}
 		lastTickAt = now;
+		if (window[loaderFlag]) return watchLoader();
 		if (!stalled()) return clearInterval(watchdog);
 		if (visibleMs < ${BOOT_WATCHDOG_MS}) return;
 		const waiting = quietMs < (loading() ? quietCap : ${progressGraceMs});
@@ -320,7 +354,10 @@ function clearBootRecovery(): void {
 	} catch {
 		// Storage can be unavailable; the count then expires with its window.
 	}
-	if (typeof document !== "undefined") document.getElementById(BOOT_FAILURE_ID)?.remove();
+	if (typeof document === "undefined") return;
+	const box = document.getElementById(BOOT_FAILURE_ID);
+	// The box for a screen React runs but never ends stays until that screen has gone (the watchdog removes it).
+	if (box && !box.hasAttribute(LOADER_STUCK_ATTRIBUTE)) box.remove();
 }
 
 /**

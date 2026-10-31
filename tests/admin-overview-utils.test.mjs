@@ -91,6 +91,11 @@ test("errors come before warnings and information, each with where to go", () =>
 	assert.equal(byId.webhooks.title, "1 webhook with failed deliveries");
 	assert.equal(byId.webhooks.detail, "2 deliveries could not be made in the last 24 hours.");
 	assert.equal(byId["ai-errors"].title, "1 AI request failed in the last 24 hours");
+	// Only the AI failures offer Why?.
+	assert.deepEqual(
+		items.filter((item) => item.why).map((item) => item.id),
+		["ai-errors"],
+	);
 	assert.equal(byId.domains.title, "2 domains not active yet");
 	assert.equal(overviewStats(data).find((stat) => stat.id === "database").tone, "critical");
 	assert.equal(overviewStats(data).find((stat) => stat.id === "domains").hint, "1 of 3 active");

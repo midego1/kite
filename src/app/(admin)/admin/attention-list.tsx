@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { CheckCircle2 } from "lucide-react";
+import { AiFailuresWhy } from "@/components/agent/ai-failures-why";
 import { Notice } from "@/components/ui/notice";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { AttentionItem } from "./overview-types";
@@ -54,6 +55,7 @@ export function AttentionList({
 					title={item.title}
 					actions={
 						<>
+							{item.why && <AiFailuresWhy />}
 							<ItemLink item={item} />
 							{item.dismissible && onDismiss && (
 								<button

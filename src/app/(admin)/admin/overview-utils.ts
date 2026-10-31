@@ -102,6 +102,7 @@ function aiErrorsItem(counts: OverviewData["counts"]): AttentionItem | null {
 		title: `${number} AI ${errors.recent === 1 && !errors.capped ? "request" : "requests"} failed in the last 24 hours`,
 		href: "/agent",
 		hrefLabel: "Open Agent",
+		why: true,
 	};
 }
 

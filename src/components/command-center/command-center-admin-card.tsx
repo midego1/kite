@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { CheckCircle2 } from "lucide-react";
+import { AiFailuresWhy } from "@/components/agent/ai-failures-why";
 import { Notice } from "@/components/ui/notice";
 import { Skeleton } from "@/components/ui/skeleton";
 import { attentionItems } from "@/app/(admin)/admin/overview-utils";
@@ -47,12 +48,15 @@ export function CommandCenterAdminCard({ primary }: { primary: boolean }) {
 							className={ATTENTION_NOTICE_CLASS[item.tone]}
 							title={item.title}
 							actions={
-								<Link
-									href={attentionHref(item.href)}
-									className="text-sm font-medium underline underline-offset-2 hover:opacity-80"
-								>
-									{item.hrefLabel}
-								</Link>
+								<>
+									{item.why && <AiFailuresWhy />}
+									<Link
+										href={attentionHref(item.href)}
+										className="text-sm font-medium underline underline-offset-2 hover:opacity-80"
+									>
+										{item.hrefLabel}
+									</Link>
+								</>
 							}
 							data-testid={`command-center-attention-${item.id}`}
 						>

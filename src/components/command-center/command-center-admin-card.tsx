@@ -6,8 +6,19 @@ import { Notice } from "@/components/ui/notice";
 import { Skeleton } from "@/components/ui/skeleton";
 import { attentionItems } from "@/app/(admin)/admin/overview-utils";
 import { useOverview } from "@/app/(admin)/admin/use-overview";
+import type { AttentionTone } from "@/app/(admin)/admin/overview-types";
 import { attentionHref, healthLines } from "./command-center-utils";
 import { CommandCenterCard } from "./command-center-card";
+
+/**
+ * The notices restyled for the card's surface: the warning as the command center's amber callout, information
+ * as a faint wash of the accent (the page tones would put a solid blue block, or an inverted amber, on it).
+ */
+const ATTENTION_NOTICE_CLASS: Record<AttentionTone, string> = {
+	warning: "border-cc-warn-border bg-cc-warn-surface text-cc-warn-text dark:text-cc-warn-text",
+	info: "border-cc-accent-tint/25 bg-cc-accent-tint/8 text-neutral-800",
+	error: "",
+};
 
 /**
  * The Needs attention card, for admins only and loaded as its own chunk (command-center-admin-card-lazy.tsx):
@@ -33,6 +44,7 @@ export function CommandCenterAdminCard({ primary }: { primary: boolean }) {
 						<Notice
 							key={item.id}
 							tone={item.tone}
+							className={ATTENTION_NOTICE_CLASS[item.tone]}
 							title={item.title}
 							actions={
 								<Link
@@ -52,13 +64,13 @@ export function CommandCenterAdminCard({ primary }: { primary: boolean }) {
 							className="flex items-center gap-2 py-1.5 text-sm text-neutral-700"
 							data-testid="command-center-all-clear"
 						>
-							<CheckCircle2 className="h-4 w-4 text-green-600" aria-hidden="true" />
+							<CheckCircle2 className="h-4 w-4 text-cc-ok" aria-hidden="true" />
 							Nothing else needs your attention.
 						</p>
 					)}
 					{health.map((line) => (
 						<p key={line.id} className="flex items-center gap-3 py-1 text-sm text-neutral-700">
-							<span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-full bg-green-600" />
+							<span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-full bg-cc-ok" />
 							<span className="min-w-0 flex-1 truncate">{line.text}</span>
 							<span className="shrink-0 text-xs text-neutral-500">{line.detail}</span>
 						</p>

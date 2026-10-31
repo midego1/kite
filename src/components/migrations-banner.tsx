@@ -27,17 +27,17 @@ export function MigrationsNoticeCard() {
 	return (
 		<section
 			aria-label="Database updates"
-			className="w-full max-w-md rounded-2xl border border-amber-200 bg-amber-50 p-5 text-left text-sm text-amber-900"
+			className="w-full max-w-md rounded-2xl border border-cc-warn-border bg-cc-warn-surface p-5 text-left text-sm text-cc-warn-text"
 		>
 			<div className="flex items-start gap-3">
 				<Database
-					className={`mt-0.5 h-5 w-5 shrink-0 text-amber-700 ${applying ? "animate-pulse" : ""}`}
+					className={`mt-0.5 h-5 w-5 shrink-0 text-cc-warn ${applying ? "animate-pulse" : ""}`}
 					aria-hidden="true"
 				/>
 				<div className="min-w-0 flex-1">
 					<p className="font-medium">{content.title}</p>
 					<p className="mt-1">{content.body}</p>
-					{data.names?.length ? <p className="mt-2 break-all text-xs text-amber-800">{data.names.join(", ")}</p> : null}
+					{data.names?.length ? <p className="mt-2 break-all text-xs opacity-90">{data.names.join(", ")}</p> : null}
 					{showProgress && <MigrationApplyProgress progress={progress} />}
 					{summary && <p className="mt-2">{summary}</p>}
 					{error && (
@@ -50,7 +50,7 @@ export function MigrationsNoticeCard() {
 			</div>
 			{isPrimaryAdmin || user.role === "admin" ? (
 				<div className="mt-4 flex items-center justify-end gap-3">
-					<Link href="/admin" className="text-xs text-amber-800 underline underline-offset-2 hover:text-amber-900">
+					<Link href="/admin" className="text-xs underline underline-offset-2 hover:opacity-80">
 						Admin overview
 					</Link>
 					{isPrimaryAdmin && <MigrationApplyButton busy={applying} idleLabel="Apply now" onClick={apply} />}

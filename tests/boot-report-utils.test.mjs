@@ -21,9 +21,12 @@ await build({
 	absWorkingDir: root,
 	logLevel: "silent",
 });
-const { BOOT_REPORT_MAX_BYTES, parseBootFreezeReport, readBootReportBody } = await import(
+const { parseBootFreezeReport, readBootReportBody } = await import(
 	pathToFileURL(join(bundleDirectory, "report.mjs")).href
 );
+
+/** The report size limit in report-utils.ts. */
+const BOOT_REPORT_MAX_BYTES = 2_048;
 
 const report = {
 	page: "/inbox",

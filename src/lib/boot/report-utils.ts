@@ -14,7 +14,7 @@ export type BootFreezeReport = {
 };
 
 /** A report is a few hundred bytes; anything much larger is not one. */
-export const BOOT_REPORT_MAX_BYTES = 2_048;
+const BOOT_REPORT_MAX_BYTES = 2_048;
 const NAME = /^[a-z][a-z0-9-]{0,39}$/;
 const PAGE = /^\/[A-Za-z0-9._-]{0,40}$/;
 const BUILD = /^[\w.() -]{1,60}$/;

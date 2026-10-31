@@ -16,6 +16,7 @@ const {
 	listMessageSlots,
 	listComposerSlots,
 	listAttachmentSlots,
+	listReadingPaneSlots,
 	slotsToLoad,
 } = await bundleModules("kite-module-host-utils-", [
 	["cleanDisplayText", "src/lib/modules/display-text-utils.ts"],
@@ -23,7 +24,10 @@ const {
 		"utf8Excerpt, pickMessageHeaders, recentBounds, containsPattern, isFromSender, cleanNotice, ownedActionDescriptor, refusedAction, MAX_MESSAGE_TEXT_BYTES",
 		"src/lib/modules/host-utils.ts",
 	],
-	["listMessageSlots, listComposerSlots, listAttachmentSlots, slotsToLoad", "src/lib/modules/composer-slot-utils.ts"],
+	[
+		"listMessageSlots, listComposerSlots, listAttachmentSlots, listReadingPaneSlots, slotsToLoad",
+		"src/lib/modules/composer-slot-utils.ts",
+	],
 ]);
 
 const bytes = (text) => new TextEncoder().encode(text).length;
@@ -182,6 +186,33 @@ test("message menu slots list enabled modules only, in order, and load only once
 	);
 	assert.deepEqual(slotsToLoad(listed, false), []);
 	assert.equal(slotsToLoad(listed, true).length, 3);
+});
+
+test("reading pane slots list enabled modules only, in order, and never mix with menu slots", () => {
+	const modules = [
+		{
+			id: "calendar",
+			readingPaneSlots: [{ id: "calendar.today", slot: "reading-pane", order: 10 }],
+			messageSlots: [{ id: "calendar.message", slot: "message-menu", order: 1, label: "M" }],
+		},
+		{ id: "finance", readingPaneSlots: [{ id: "finance.renewals", slot: "reading-pane", order: 5 }] },
+		{ id: "import" },
+	];
+	assert.deepEqual(
+		listReadingPaneSlots(modules, ["calendar", "finance", "import"], "reading-pane").map((slot) => [
+			slot.id,
+			slot.moduleId,
+		]),
+		[
+			["finance.renewals", "finance"],
+			["calendar.today", "calendar"],
+		],
+	);
+	assert.deepEqual(
+		listReadingPaneSlots(modules, ["calendar"], "reading-pane").map((slot) => slot.id),
+		["calendar.today"],
+	);
+	assert.deepEqual(listReadingPaneSlots(modules, [], "reading-pane"), []);
 });
 
 test("attachment menu slots list enabled modules only, in order, and never mix with message slots", () => {

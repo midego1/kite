@@ -1,7 +1,7 @@
 import { CalendarClock, CalendarDays, Download, HardDrive, Puzzle, WalletCards, type LucideIcon } from "lucide-react";
 import { CLIENT_MODULES } from "@/lib/modules/client-data";
 import type { ModuleId } from "@/lib/modules/module-types";
-import type { ModuleClient } from "./client-registry-types";
+import type { ModuleClient, ModulePaneClient } from "./client-registry-types";
 
 /** Icons a manifest names in `nav[].icon`; the manifest stays data and this file stays the only place that knows the glyphs. */
 const NAV_ICONS: Record<string, LucideIcon> = { CalendarClock, CalendarDays, Download, HardDrive, WalletCards };
@@ -25,6 +25,20 @@ const MODULE_CLIENTS: Partial<Record<ModuleId, () => Promise<ModuleClient>>> = {
 /** The module's client chunk, or null when it has none. Call only for a module that is on. */
 export function loadModuleClient(id: ModuleId): Promise<ModuleClient> | null {
 	return MODULE_CLIENTS[id]?.() ?? null;
+}
+
+/**
+ * The reading pane chunks: only the cards, so the empty pane never pulls in a module's dialogs and suggestion
+ * blocks. Same inline `typeof window` check as above.
+ */
+const MODULE_PANE_CLIENTS: Partial<Record<ModuleId, () => Promise<ModulePaneClient>>> = {
+	calendar: () => (typeof window === "undefined" ? new Promise<never>(() => {}) : import("./calendar/pane")),
+	finance: () => (typeof window === "undefined" ? new Promise<never>(() => {}) : import("./finance/pane")),
+};
+
+/** The module's reading pane chunk, or null when it has none. Call only for a module that is on. */
+export function loadModulePaneClient(id: ModuleId): Promise<ModulePaneClient> | null {
+	return MODULE_PANE_CLIENTS[id]?.() ?? null;
 }
 
 /** The module that declares this suggestion kind, or null for kinds core draws itself. */

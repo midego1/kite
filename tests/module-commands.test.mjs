@@ -568,6 +568,7 @@ test("the client slice equals what the manifests declare", () => {
 			composerSlots,
 			messageSlots,
 			attachmentSlots,
+			readingPaneSlots,
 			triageSwitches,
 			...declared
 		} = slice;
@@ -580,6 +581,7 @@ test("the client slice equals what the manifests declare", () => {
 		assert.deepEqual(composerSlots ?? [], manifest.composerSlots);
 		assert.deepEqual(messageSlots ?? [], manifest.messageSlots ?? []);
 		assert.deepEqual(attachmentSlots ?? [], manifest.attachmentSlots ?? []);
+		assert.deepEqual(readingPaneSlots ?? [], manifest.readingPaneSlots ?? []);
 		const kinds = { calendar: ["calendar_invite"], finance: ["subscription"] };
 		assert.deepEqual(suggestionKinds ?? [], kinds[manifest.id] ?? []);
 		assert.deepEqual(

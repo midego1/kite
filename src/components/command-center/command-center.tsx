@@ -15,6 +15,7 @@ import type { AccountLine, QuickAction, StatusChip } from "./command-center-type
 import { accountLines, dateLabel, greetingFor, hourIn, statusChips } from "./command-center-utils";
 import { LazyCommandCenterAdminCard } from "./command-center-admin-card-lazy";
 import { CommandCenterCard } from "./command-center-card";
+import { CommandCenterModuleCards } from "./command-center-module-cards";
 import { FloatingKite } from "./floating-kite";
 import { useCommandCenterData } from "./use-command-center-data";
 
@@ -67,7 +68,8 @@ function QuickActionTile({ action }: { action: QuickAction }) {
  * counts that matter (unread, Screener, For you), the connected accounts and how they are doing, for admins what
  * needs attention (the database notice with Apply now first, then the admin overview's list and what is fine),
  * and quick actions. Everything comes from data the mailbox loads anyway or from queries the Settings and Admin
- * pages share; nothing here is made up. Core only: modules appear through their sidebar nav items.
+ * pages share; nothing here is made up. Modules appear through their sidebar nav items as quick actions and
+ * through the cards they declare as `reading-pane` slots, which core draws without naming a module.
  */
 export function CommandCenter({ config }: { config: MessageFolderConfig }) {
 	const data = useCommandCenterData(config);
@@ -180,6 +182,7 @@ export function CommandCenter({ config }: { config: MessageFolderConfig }) {
 				)}
 
 				{data.isAdmin && <LazyCommandCenterAdminCard primary={data.primary} />}
+				<CommandCenterModuleCards mailboxId={data.mailboxId} />
 			</div>
 
 			<div className="mt-5">

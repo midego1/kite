@@ -13,6 +13,7 @@ export const calendarManifest: ModuleManifest = {
 	nav: calendarClientData.nav,
 	commands: calendarClientData.commands,
 	composerSlots: [],
+	readingPaneSlots: calendarClientData.readingPaneSlots,
 	recordKinds: [{ kind: "calendar:event", label: "Calendar event", unavailableLabel: "Calendar event" }],
 	webhookEvents: [
 		{ value: "calendar.event.created", label: "Calendar event created", hint: "An event was added to a calendar" },

@@ -33,6 +33,7 @@ const CORE_PATHS = [
 	"src/components/message-attachment-card.tsx",
 	"src/components/message-attachment-menu.tsx",
 	"src/components/dashboard-section-shell.tsx",
+	"src/components/command-center/",
 	"src/app/api/settings/time-zone/route.ts",
 	"src/app/api/accounts/create.ts",
 	"src/app/api/auth/register/route.ts",

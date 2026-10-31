@@ -1,5 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
-import { ADMIN } from "./support/constants";
+import { createSignedInAccount, okJson } from "./support/auto-read";
+import { ADMIN, BASE_URL, STORAGE_STATE } from "./support/constants";
+import { apiContext, uniqueToken } from "./support/helpers";
+import { restoreModules, setModuleState } from "./support/modules";
 
 // The empty reading pane's command center (src/components/command-center/): a greeting with the date, the
 // counts, the connected accounts, what needs attention (admins) and quick actions. The database notice keeps its
@@ -168,4 +171,90 @@ test("without connected accounts the card offers to connect one, or hides when t
 	await openInbox(page);
 	await expect(pane(page).getByRole("heading", { level: 2 })).toBeVisible();
 	await expect(pane(page).getByTestId("command-center-accounts")).toHaveCount(0);
+});
+
+test("Calendar and Money Watch add their cards, which leave when the module is off for the user or the install", async ({
+	browser,
+}) => {
+	const owner = await apiContext(STORAGE_STATE);
+	// A new account, so the cards list only what this test made.
+	const member = await createSignedInAccount(owner, `cc${uniqueToken("")}`);
+	const context = await browser.newContext({ baseURL: BASE_URL, storageState: await member.api.storageState() });
+	try {
+		const title = `Standup ${uniqueToken("")}`;
+		const now = Date.now();
+		await okJson(
+			await member.api.post("/api/calendar/events", {
+				data: {
+					title,
+					location: "Room 4",
+					startsAt: new Date(now - 60_000).toISOString(),
+					endsAt: new Date(now + 30 * 60_000).toISOString(),
+				},
+			}),
+		);
+		const vendor = `Northwind ${uniqueToken("").slice(-6)}`;
+		const { subscription } = await okJson<{ subscription: { id: string } }>(
+			await member.api.post("/api/finance/subscriptions", {
+				data: {
+					vendor,
+					amountMinor: 1200,
+					currency: "EUR",
+					cycle: "monthly",
+					nextRenewalOn: new Date(now + 2 * 86_400_000).toISOString().slice(0, 10),
+					reminderDays: 3,
+					mailboxId: member.mailboxId,
+				},
+			}),
+		);
+
+		const page = await context.newPage();
+		await openInbox(page);
+		const center = pane(page);
+		const today = center.getByTestId("command-center-today");
+		const renewals = center.getByTestId("command-center-renewals");
+		const showsBoth = async () => {
+			const event = today.getByRole("link", { name: new RegExp(title) });
+			await expect(event).toContainText("Now");
+			await expect(event).toContainText("Room 4");
+			await expect(event).toHaveAttribute("href", /^\/calendar\?date=\d{4}-\d{2}-\d{2}&event=evt_/);
+			await expect(today.getByRole("link", { name: "Calendar", exact: true })).toHaveAttribute("href", "/calendar");
+			await expect(renewals.getByRole("link", { name: new RegExp(vendor) })).toHaveAttribute(
+				"href",
+				`/finance?subscription=${subscription.id}`,
+			);
+			await expect(renewals.getByRole("link", { name: "Subscriptions", exact: true })).toHaveAttribute(
+				"href",
+				"/finance",
+			);
+		};
+		// The Subscriptions quick action leaves with Money Watch: once it is gone, the pane knows the user's modules.
+		const showsNeither = async () => {
+			await expect(center.getByRole("heading", { level: 2 })).toBeVisible();
+			await expect(center.locator("[data-quick-action=compose]")).toBeVisible();
+			await expect(center.locator('[data-quick-action="/finance"]')).toHaveCount(0);
+			await expect(today).toHaveCount(0);
+			await expect(renewals).toHaveCount(0);
+		};
+		await showsBoth();
+
+		const access = (allowed: boolean) =>
+			(["calendar", "finance"] as const).map((moduleId) => ({ userId: member.id, moduleId, allowed }));
+		await setModuleState(owner, { access: access(false) });
+		await openInbox(page);
+		await showsNeither();
+
+		await setModuleState(owner, { access: access(true) });
+		await openInbox(page);
+		await showsBoth();
+
+		await setModuleState(owner, { modules: { calendar: false, finance: false } });
+		await openInbox(page);
+		await showsNeither();
+	} finally {
+		await restoreModules(owner, [member.id]);
+		await context.close();
+		await member.api.dispose();
+		await owner.dispose();
+	}
 });

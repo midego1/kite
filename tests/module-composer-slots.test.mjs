@@ -11,12 +11,16 @@ const {
 	listComposerSlots,
 	listMessageSlots,
 	listAttachmentSlots,
+	listReadingPaneSlots,
 	slotsToLoad,
 	messageStatusExclusions,
 } = await bundleModules("kite-module-composer-slots-", [
 	["MODULE_MANIFESTS, moduleOwnedMessageStatuses", "src/lib/modules/registry.ts"],
 	["CLIENT_MODULES", "src/lib/modules/client-data/index.ts"],
-	["listComposerSlots, listMessageSlots, listAttachmentSlots, slotsToLoad", "src/lib/modules/composer-slot-utils.ts"],
+	[
+		"listComposerSlots, listMessageSlots, listAttachmentSlots, listReadingPaneSlots, slotsToLoad",
+		"src/lib/modules/composer-slot-utils.ts",
+	],
 	["messageStatusExclusions", "src/lib/modules/message-status-utils.ts"],
 ]);
 
@@ -135,7 +139,9 @@ test("composer and message menu slots share one lazy chunk loader, and the reade
 		assert.match(source, /useSlotEntries\(/, file);
 		assert.doesNotMatch(source, /loadModuleClient|import\(/, file);
 	}
-	assert.match(read("src/components/modules/use-slot-entries.ts"), /loadModuleClient\(slot\.moduleId\)/);
+	const loader = read("src/components/modules/use-slot-entries.ts");
+	assert.match(loader, /load\(slot\.moduleId\)/);
+	assert.match(loader, /= loadModuleClient as unknown as/);
 	const menu = read("src/components/message-actions/message-actions.tsx");
 	assert.match(menu, /useMessageMenuSlots\(\{ messageId, mailboxId \}/);
 	assert.doesNotMatch(menu, /finance|calendar|templates|booking/i);
@@ -165,6 +171,52 @@ test("the reader's attachment menu names no module and shows Save to Drive only 
 		read("src/components/modules/drive/client.ts"),
 		/"drive\.save-attachment": \{ Overlay: SaveAttachmentDialog \}/,
 	);
+});
+
+test("the command center names no module and lists reading pane cards only for modules that are on", () => {
+	const cards = read("src/components/command-center/command-center-module-cards.tsx");
+	assert.match(cards, /listReadingPaneSlots\(CLIENT_MODULES, modules, "reading-pane"\)/);
+	assert.match(cards, /useSlotEntries\(slots, true, pickReadingPaneSlot, loadModulePaneClient\)/);
+	assert.doesNotMatch(cards, /import\(/);
+	for (const file of [
+		"src/components/command-center/command-center.tsx",
+		"src/components/command-center/command-center-module-cards.tsx",
+	])
+		assert.doesNotMatch(read(file), /calendar|finance|money watch|templates|booking|drive/i, file);
+	assert.deepEqual(listReadingPaneSlots(CLIENT_MODULES, [], "reading-pane"), [], "nothing on, no cards");
+	assert.deepEqual(
+		listReadingPaneSlots(CLIENT_MODULES, ALL, "reading-pane").map((slot) => [slot.id, slot.moduleId]),
+		[
+			["calendar.today", "calendar"],
+			["finance.renewals", "finance"],
+		],
+	);
+	assert.deepEqual(
+		listReadingPaneSlots(
+			CLIENT_MODULES,
+			ALL.filter((id) => id !== "finance"),
+			"reading-pane",
+		).map((slot) => slot.id),
+		["calendar.today"],
+	);
+	// The pane chunks hold the cards only: no suggestion blocks, dialogs or command handlers.
+	const registry = read("src/components/modules/client-registry.ts");
+	for (const id of ["calendar", "finance"]) {
+		assert.match(
+			registry,
+			new RegExp(
+				`${id}: \\(\\) => \\(typeof window === "undefined" \\? new Promise<never>\\(\\(\\) => \\{\\}\\) : import\\("\\./${id}/pane"\\)\\)`,
+			),
+		);
+		const pane = read(`src/components/modules/${id}/pane.ts`);
+		assert.match(pane, /export const readingPaneSlots/);
+		const imports = pane.split("\n").filter((line) => line.startsWith("import "));
+		assert.deepEqual(
+			imports.filter((line) => !/from "\.\.\/client-registry-types"|from "\.\/[a-z-]+-card"/.test(line)),
+			[],
+			id,
+		);
+	}
 });
 
 test("the message list route excludes owned statuses through the registry helper", () => {

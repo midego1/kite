@@ -60,6 +60,7 @@ export const calendarClientData: ClientModuleData = {
 			order: 20,
 		},
 	],
+	readingPaneSlots: [{ id: "calendar.today", slot: "reading-pane", order: 10 }],
 	commands: [
 		{
 			id: "calendar.open",

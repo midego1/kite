@@ -36,6 +36,23 @@ export type ModuleAttachmentSlot = {
 	Overlay: ComponentType<AttachmentSlotContext & { open: boolean; onOpenChange: (open: boolean) => void }>;
 };
 
+/** All a reading pane card learns about where it is shown: the mailbox selected, null for all mailboxes. */
+export type ReadingPaneSlotContext = { mailboxId: string | null };
+
+/**
+ * One reading pane card. The module draws the whole card (with `CommandCenterCard` for the shared look),
+ * fetches its own data through its own API and renders nothing while that is loading, failing or not there.
+ */
+export type ModuleReadingPaneSlot = {
+	Card: ComponentType<ReadingPaneSlotContext>;
+};
+
+/** What a module's reading pane chunk exports: kept apart from the client chunk so the pane loads only its cards. */
+export type ModulePaneClient = {
+	/** Reading pane cards by the `id` the manifest declares. */
+	readingPaneSlots?: Record<string, ModuleReadingPaneSlot>;
+};
+
 /** What a module's lazy client chunk exports. */
 export type ModuleClient = {
 	/** Client command handlers by the `handler` name in `UiCommand.target`. */

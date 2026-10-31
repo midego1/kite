@@ -107,6 +107,16 @@ export type AttachmentSlotDeclaration = {
 export type AttachmentSlotSource = { id: ModuleId; attachmentSlots?: readonly AttachmentSlotDeclaration[] };
 export type ListedAttachmentSlot = AttachmentSlotDeclaration & { moduleId: ModuleId };
 
+/** A card in the empty reading pane (the command center); the module draws the whole card and gets only the selected mailbox id. */
+export type ReadingPaneSlotDeclaration = {
+	id: string;
+	slot: "reading-pane";
+	order: number;
+};
+
+export type ReadingPaneSlotSource = { id: ModuleId; readingPaneSlots?: readonly ReadingPaneSlotDeclaration[] };
+export type ListedReadingPaneSlot = ReadingPaneSlotDeclaration & { moduleId: ModuleId };
+
 /** One key scope as the key-creation forms show it. */
 export type KeyScopeText = { scope: string; label: string; description: string };
 
@@ -132,6 +142,8 @@ export type ClientModuleData = Pick<ModuleManifest, "id" | "name" | "nav" | "com
 	messageSlots?: MessageSlotDeclaration[];
 	/** Attachment menu slots the module fills, so the reader lists them without loading the module. */
 	attachmentSlots?: AttachmentSlotDeclaration[];
+	/** Cards the module adds to the empty reading pane, so the command center lists them without loading the module. */
+	readingPaneSlots?: ReadingPaneSlotDeclaration[];
 	/** Suggestion kinds the module's `suggestion_kind` capabilities declare, so the reader card can pick the module's client chunk without the registry. */
 	suggestionKinds?: readonly string[];
 	/** Label, reasons, chip rank and icon per kind in `suggestionKinds`, so core surfaces need no per-kind code. */
@@ -163,6 +175,7 @@ export type ModuleManifest = {
 	composerSlots: ComposerSlotDeclaration[];
 	messageSlots?: MessageSlotDeclaration[];
 	attachmentSlots?: AttachmentSlotDeclaration[];
+	readingPaneSlots?: ReadingPaneSlotDeclaration[];
 	recordKinds: { kind: RecordKind; label: string; unavailableLabel: string }[];
 	webhookEvents: ModuleWebhookEvent[];
 	grants: { grant: string; label: string }[];

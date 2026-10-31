@@ -53,6 +53,8 @@ export function useCommandCenterData(config: MessageFolderConfig) {
 		countsLoading: countsLoading || mailboxesLoading,
 		unread: chips.unread,
 		accounts,
+		/** The mailbox selected, null for all mailboxes; the module cards get it. */
+		mailboxId: selectedMailbox?.id ?? null,
 		/** Whether the user may connect accounts at all; the card is hidden when not. */
 		canConnect: canConnectAccounts(connected.data),
 		isAdmin,

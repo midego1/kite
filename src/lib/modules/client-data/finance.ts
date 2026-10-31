@@ -64,6 +64,7 @@ export const financeClientData: ClientModuleData = {
 			icon: "WalletCards",
 		},
 	],
+	readingPaneSlots: [{ id: "finance.renewals", slot: "reading-pane", order: 20 }],
 	commands: [
 		{
 			id: "finance.open",

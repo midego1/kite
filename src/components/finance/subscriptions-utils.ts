@@ -22,7 +22,7 @@ const PRICE_CHIP_DAYS = 90;
 const isCurrent = (item: SubscriptionItem) => item.status === "active" || item.status === "trial";
 
 /** The day a row is about: the trial end for a trial that has one, otherwise the next renewal. */
-function dueDayOf(item: Pick<SubscriptionItem, "status" | "trialEndsOn" | "nextRenewalOn">): string | null {
+export function dueDayOf(item: Pick<SubscriptionItem, "status" | "trialEndsOn" | "nextRenewalOn">): string | null {
 	return item.status === "trial" && item.trialEndsOn ? item.trialEndsOn : item.nextRenewalOn;
 }
 

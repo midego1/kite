@@ -7,8 +7,11 @@ import type {
 	ListedComposerSlot,
 	ListedMessageSlot,
 	MessageSlotDeclaration,
+	ListedReadingPaneSlot,
 	MessageSlotSource,
 	ModuleId,
+	ReadingPaneSlotDeclaration,
+	ReadingPaneSlotSource,
 } from "./module-types";
 
 type SlotDeclaration = { slot: string; order: number };
@@ -58,6 +61,15 @@ export function listAttachmentSlots(
 	placement: AttachmentSlotDeclaration["slot"],
 ): ListedAttachmentSlot[] {
 	return listSlots(modules, (module) => module.attachmentSlots, enabled, placement);
+}
+
+/** The cards enabled modules declare for the empty reading pane, in the same order as composer slots. */
+export function listReadingPaneSlots(
+	modules: readonly ReadingPaneSlotSource[],
+	enabled: Iterable<ModuleId>,
+	placement: ReadingPaneSlotDeclaration["slot"],
+): ListedReadingPaneSlot[] {
+	return listSlots(modules, (module) => module.readingPaneSlots, enabled, placement);
 }
 
 /** The slots whose client chunk to request now: none until the menu has been opened once. */

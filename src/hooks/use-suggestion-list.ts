@@ -3,17 +3,15 @@ import { authFetch } from "@/lib/auth/client";
 import { AGENT_SUGGESTION_EVENT } from "./message-realtime-utils";
 
 const REFRESH_DEBOUNCE_MS = 250;
-/** A list this fresh is shown as it is when another part of the page asks for the same URL. */
-const FRESH_MS = 30_000;
 
 /** One response per URL, shared by every component reading it, with the request in flight when there is one. */
-type Entry = { data: unknown; at: number; inflight: Promise<void> | null; listeners: Set<() => void> };
+type Entry = { data: unknown; inflight: Promise<void> | null; listeners: Set<() => void> };
 const entries = new Map<string, Entry>();
 
 function entryFor(url: string): Entry {
 	let entry = entries.get(url);
 	if (!entry) {
-		entry = { data: undefined, at: 0, inflight: null, listeners: new Set() };
+		entry = { data: undefined, inflight: null, listeners: new Set() };
 		entries.set(url, entry);
 	}
 	return entry;
@@ -28,7 +26,6 @@ function load(url: string): Promise<void> {
 			const response = await authFetch(url);
 			if (!response.ok) return;
 			entry.data = await response.json();
-			entry.at = Date.now();
 			for (const listener of entry.listeners) listener();
 		} catch {
 			// Offline: the next event or reload tries again.
@@ -42,9 +39,10 @@ function load(url: string): Promise<void> {
 /**
  * A suggestions API response, refetched whenever a suggestion or the mail changes. `data` is null until
  * the first response for the current URL arrives, so a list for a previous URL never shows. A failed
- * refresh keeps the last response. Readers of the same URL (the For you sidebar item and the empty reading
- * pane, for instance) share one response and one request: a reader that mounts while the response is fresh
- * shows it without fetching, and an event refreshes it once for all of them.
+ * refresh keeps the last response. Readers of the same URL (the For you sidebar item, the For you page and the
+ * empty reading pane, for instance) share one response and one request: a reader that mounts shows the last
+ * response at once and refreshes it in the background, joining a request already in flight, and an event
+ * refreshes it once for all of them.
  */
 export function useSuggestionList<T>(url: string): { data: T | null; reload: () => void } {
 	const [state, setState] = useState<{ url: string; data: T } | null>(null);
@@ -63,8 +61,8 @@ export function useSuggestionList<T>(url: string): { data: T | null; reload: () 
 
 		entry.listeners.add(sync);
 		reloadRef.current = () => void load(url);
-		if (entry.data === undefined || Date.now() - entry.at > FRESH_MS) void load(url);
-		else sync();
+		sync();
+		void load(url);
 		window.addEventListener(AGENT_SUGGESTION_EVENT, schedule);
 		window.addEventListener("kite:messages-changed", schedule);
 		return () => {

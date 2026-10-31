@@ -5,6 +5,9 @@ import type { Message } from "@/hooks/types";
 import { leavesList, MESSAGES_LEFT_VIEW_EVENT, neighbourAfterLeaving, type MessagesLeftView } from "./left-view-utils";
 import type { MessageSelectionControl } from "./types";
 
+/** How many frames the hand-off waits for a leaving row that still holds the focus (Undo may keep it). */
+const MAX_SETTLE_FRAMES = 120;
+
 type OpenRowBridgeOptions = {
 	selection: MessageSelectionControl | undefined;
 	/** The rows in the order they are shown. */
@@ -55,18 +58,27 @@ export function useOpenRowBridge({
 				current.openMessageId,
 				change.ids,
 			);
-			// After the reader has unmounted, and only when the focus went down with it.
-			requestAnimationFrame(() =>
-				requestAnimationFrame(() => {
-					const active = document.activeElement;
-					if (active && active !== document.body && active.isConnected) return;
-					const list = listRef.current;
-					const link = neighbour
-						? list?.querySelector<HTMLElement>(`[data-message-row="${CSS.escape(neighbour)}"] a[href]`)
-						: null;
-					(link ?? list)?.focus();
-				}),
-			);
+			// After the reader has unmounted, and only when the focus went down with it: dropped on the page, or still
+			// on a row that is leaving (Trash in the row's own actions) until that row has left the list, since the
+			// list may update a few frames after the event (a heavier empty pane makes that more likely).
+			const leaving = new Set([...change.ids, current.openMessageId]);
+			let frames = 0;
+			const settle = () => {
+				const active = document.activeElement;
+				const activeRow = active?.closest<HTMLElement>("[data-message-row]")?.getAttribute("data-message-row");
+				const onLeavingRow = activeRow != null && leaving.has(activeRow);
+				if (active && active !== document.body && active.isConnected && !onLeavingRow) return;
+				if (onLeavingRow && active?.isConnected) {
+					if (frames++ < MAX_SETTLE_FRAMES) requestAnimationFrame(settle);
+					return;
+				}
+				const list = listRef.current;
+				const link = neighbour
+					? list?.querySelector<HTMLElement>(`[data-message-row="${CSS.escape(neighbour)}"] a[href]`)
+					: null;
+				(link ?? list)?.focus();
+			};
+			requestAnimationFrame(() => requestAnimationFrame(settle));
 		}
 		window.addEventListener(MESSAGES_LEFT_VIEW_EVENT, onLeftView);
 		return () => window.removeEventListener(MESSAGES_LEFT_VIEW_EVENT, onLeftView);

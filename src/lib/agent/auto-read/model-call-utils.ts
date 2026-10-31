@@ -32,6 +32,8 @@ export type ModelCallOptions = {
 	kind: ModelCallKind;
 	/** The model the request goes to, which decides how a Claude model's thinking is set. */
 	modelId: string | null;
+	/** The request's own answer budget when it is not the kind's (a summary, a one-line summary, Write with Kite). */
+	answerTokens?: number;
 	maxOutputTokens: number;
 	providerOptions: Record<string, Record<string, JSONValue>>;
 	/** The per-model reasoning effort hint the options were built from, if any. */
@@ -56,6 +58,8 @@ type ModelCallInput = {
 	preset?: AgentProviderPreset;
 	kind: ModelCallKind;
 	modelId?: string | null;
+	/** Replaces the kind's answer budget; the thinking room still comes on top, and a fallback keeps it. */
+	answerTokens?: number;
 	/** The per-model hint saved with the provider settings (`rates[modelId].reasoningEffort`). */
 	reasoningEffort?: unknown;
 	extension?: ModelCallExtension;
@@ -63,7 +67,15 @@ type ModelCallInput = {
 
 type ModelCallSettings = Pick<
 	ModelCallOptions,
-	"provider" | "preset" | "kind" | "modelId" | "reasoningEffort" | "extension" | "retried" | "plainThinking"
+	| "provider"
+	| "preset"
+	| "kind"
+	| "modelId"
+	| "answerTokens"
+	| "reasoningEffort"
+	| "extension"
+	| "retried"
+	| "plainThinking"
 >;
 
 export type ModelCallResult = {
@@ -114,15 +126,21 @@ function anthropicThinking(settings: ModelCallSettings): ThinkingChoice {
 	if (settings.plainThinking) return { options: {}, thinking: "default", effort: null, room: THINKING_ROOM_TOKENS };
 	if (hint && hint !== "minimal")
 		return { options: { effort: hint }, thinking: "on", effort: hint, room: THINKING_ROOM_TOKENS };
-	if (claudeThinkingDefault(settings.modelId) === "always")
+	const mode = claudeThinkingDefault(settings.modelId);
+	if (mode === "always")
 		return { options: { effort: "low" }, thinking: "on", effort: "low", room: THINKING_ROOM_TOKENS };
+	// Sonnet 5.5 rejects `disabled`; `between_tools` is its lowest setting and, without tools, means no thinking.
+	if (mode === "between_tools")
+		return { options: { thinking: { type: "between_tools" } }, thinking: "between_tools", effort: null, room: 0 };
 	return { options: { thinking: { type: "disabled" } }, thinking: "off", effort: null, room: 0 };
 }
 
 function buildOptions(settings: ModelCallSettings, jsonMode: boolean): ModelCallOptions {
 	const extension = settings.kind === "triage" ? settings.extension : undefined;
 	const answer =
-		settings.kind === "triage" ? TRIAGE_ANSWER_TOKENS + (extension?.outputTokens ?? 0) : DRAFT_ANSWER_TOKENS;
+		settings.kind === "triage"
+			? TRIAGE_ANSWER_TOKENS + (extension?.outputTokens ?? 0)
+			: (settings.answerTokens ?? DRAFT_ANSWER_TOKENS);
 	const factor = settings.retried ? CUT_OFF_RETRY_FACTOR : 1;
 	const json: Record<string, JSONValue> = jsonMode ? { response_format: { type: "json_object" } } : {};
 	const common = {
@@ -130,6 +148,7 @@ function buildOptions(settings: ModelCallSettings, jsonMode: boolean): ModelCall
 		preset: settings.preset,
 		kind: settings.kind,
 		modelId: settings.modelId,
+		...(settings.answerTokens === undefined ? {} : { answerTokens: settings.answerTokens }),
 		reasoningEffort: settings.reasoningEffort,
 		jsonMode,
 		...(extension ? { extension } : {}),
@@ -188,6 +207,7 @@ export function buildModelCallOptions(input: ModelCallInput): ModelCallOptions {
 			preset: input.preset ?? "openai",
 			kind: input.kind,
 			modelId: input.modelId ?? null,
+			answerTokens: input.answerTokens,
 			reasoningEffort,
 			extension: input.extension,
 		},

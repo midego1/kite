@@ -444,6 +444,17 @@ test("a summary cut off at the budget says so, with the model, tokens and finish
 			inputTokens: 6000,
 			outputTokens: 1600,
 			finishReason: "length",
+			// The summary's own cap, kept by Why? and Ask AI; this custom provider decides thinking itself.
+			budget: {
+				cap: 1600,
+				thinkingRoom: 0,
+				extensionRoom: 0,
+				thinking: "default",
+				effort: null,
+				retried: false,
+				used: 1600,
+				thinkingUsed: 0,
+			},
 		},
 	);
 });

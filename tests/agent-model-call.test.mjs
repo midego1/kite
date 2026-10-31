@@ -93,19 +93,18 @@ test("Anthropic: thinking off where the model allows it, effort low where it alw
 	const anthropic = (modelId, extra = {}) =>
 		buildModelCallOptions({ provider: "compatible", preset: "anthropic", kind: "triage", modelId, ...extra });
 	// Claude 5 models think by default when `thinking` is left out, and thinking counts against max_tokens.
-	for (const modelId of [
-		"claude-haiku-5-5",
-		"claude-sonnet-5-5",
-		"claude-opus-5",
-		"claude-haiku-4-5",
-		"claude-next-9",
-	]) {
+	for (const modelId of ["claude-haiku-5-5", "claude-sonnet-5", "claude-opus-5", "claude-haiku-4-5", "claude-next-9"]) {
 		const options = anthropic(modelId);
 		assert.deepEqual(options.providerOptions, { anthropic: { thinking: { type: "disabled" } } }, modelId);
 		assert.equal(options.maxOutputTokens, 400, modelId);
 		assert.equal(options.thinking, "off", modelId);
 		assert.equal(options.thinkingRoom, 0, modelId);
 	}
+	// Sonnet 5.5 refuses `disabled`; its lowest setting skips thinking before the answer, and is not called "off".
+	const sonnet = anthropic("claude-sonnet-5-5");
+	assert.deepEqual(sonnet.providerOptions, { anthropic: { thinking: { type: "between_tools" } } });
+	assert.equal(sonnet.thinking, "between_tools");
+	assert.equal(sonnet.maxOutputTokens, 400);
 	// `minimal` has no Anthropic effort: as little thinking as the model allows.
 	assert.deepEqual(anthropic("claude-haiku-5-5", { reasoningEffort: "minimal" }).providerOptions, {
 		anthropic: { thinking: { type: "disabled" } },
@@ -155,6 +154,31 @@ test("Anthropic: a refused thinking or effort parameter is dropped once, with th
 	assert.equal(next.reasoningEffort, null);
 	assert.deepEqual(next.providerOptions, { anthropic: { thinking: { type: "disabled" } } });
 	assert.equal(next.maxOutputTokens, 400);
+});
+
+test("a request's own answer budget survives a parameter fallback, with the thinking room on top", () => {
+	const line = buildModelCallOptions({
+		provider: "compatible",
+		kind: "draft",
+		answerTokens: 80,
+		reasoningEffort: "low",
+	});
+	assert.equal(line.maxOutputTokens, 1_180);
+	assert.equal(line.thinkingRoom, 1_100);
+	const dropped = fallbackOptionsAfterError(line, apiError(400, "Unrecognized reasoning_effort"));
+	assert.equal(dropped.maxOutputTokens, 80, "not the draft kind's 900");
+	assert.equal(dropped.answerTokens, 80);
+	const anthropic = buildModelCallOptions({
+		provider: "compatible",
+		preset: "anthropic",
+		kind: "draft",
+		modelId: "claude-haiku-5-5",
+		answerTokens: 1_600,
+	});
+	assert.equal(anthropic.maxOutputTokens, 1_600);
+	const plain = fallbackOptionsAfterError(anthropic, apiError(400, "thinking: not supported"));
+	assert.equal(plain.maxOutputTokens, 2_700);
+	assert.equal(buildModelCallOptions({ provider: "compatible", kind: "draft" }).maxOutputTokens, 900);
 });
 
 test("a cut-off answer is asked once more with double the budget and recorded with its budget", async () => {

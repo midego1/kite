@@ -153,10 +153,11 @@ export async function createComposeStream(
 		preset: selection.preset,
 		kind: "draft",
 		modelId: selection.modelId,
+		// This request's own budget; a thinking request's room comes on top.
+		answerTokens: composeMaxOutputTokens(request),
 		reasoningEffort: selection.reasoningEffort,
 	});
-	// Keep the thinking room of a request that thinks on top of this request's own budget.
-	const maxOutputTokens = composeMaxOutputTokens(request) + options.thinkingRoom;
+	const { maxOutputTokens } = options;
 	const install = await getAutoReadInstallSettings(env);
 	const reserve: ReserveAiSpendInput = {
 		env,

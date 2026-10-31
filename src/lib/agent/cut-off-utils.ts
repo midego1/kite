@@ -5,6 +5,7 @@ import {
 	describeThinking,
 	describeUsage,
 	DRAFT_ANSWER_TOKENS,
+	SUMMARY_ANSWER_TOKENS,
 	THINKING_ROOM_TOKENS,
 	thinksByDefault,
 	TRIAGE_ANSWER_TOKENS,
@@ -28,22 +29,30 @@ export type CutOffInput = {
 };
 
 const count = (value: number) => value.toLocaleString("en-US");
-const thinkingRoom = `, plus ${count(THINKING_ROOM_TOKENS)} for thinking when a reasoning effort is set`;
+const thinkingRoom = `, plus ${count(THINKING_ROOM_TOKENS)} for thinking when a reasoning effort is set, the model always thinks or the provider refused Kite's thinking setting`;
 
 /** Each automatic feature's output cap in words, for failures that did not record their own. */
 const FEATURE_CAPS: Partial<Record<AiFeature, string>> = {
 	auto_triage: `${count(TRIAGE_ANSWER_TOKENS)} tokens for the answer, plus up to ${TRIAGE_EXTENSION_MAX_TOKENS} for module extensions (Calendar, Money Watch) and ${TRIAGE_LINE_TOKENS} for the one-line summary${thinkingRoom}`,
 	auto_draft: `${count(DRAFT_ANSWER_TOKENS)} tokens${thinkingRoom}`,
 	line_summary: `80 tokens${thinkingRoom}`,
+	summary: `${count(SUMMARY_ANSWER_TOKENS)} tokens${thinkingRoom}`,
+	summary_translation: `${count(SUMMARY_ANSWER_TOKENS)} tokens${thinkingRoom}`,
 	compose: `${count(DRAFT_ANSWER_TOKENS)} to 3,000 tokens depending on the request${thinkingRoom}`,
 };
 
 /** Features whose cut-off failures record their budget, so one without it was recorded by an older Kite. */
-const BUDGETED: ReadonlySet<AiFeature> = new Set(["auto_triage", "auto_draft", "line_summary"]);
+const BUDGETED: ReadonlySet<AiFeature> = new Set([
+	"auto_triage",
+	"auto_draft",
+	"line_summary",
+	"summary",
+	"summary_translation",
+]);
 
 /** What each feature asks for, from docs/assistant.md, so Ask AI can reason about Kite instead of guessing. */
 export const AI_FEATURE_NOTES: Partial<Record<AiFeature, string>> = {
-	auto_triage: `Automatic reading makes one request per incoming message, with no tools, and expects a small JSON object (category, whether a reply is needed, a short summary; active modules add a few fields). Output cap: ${FEATURE_CAPS.auto_triage}. Thinking tokens count against the cap. Kite switches thinking off for Anthropic models that allow it, sends effort low to ones that always think, and retries a cut-off answer once with double the cap.`,
+	auto_triage: `Automatic reading makes one request per incoming message, with no tools, and expects a small JSON object (category, whether a reply is needed, a short summary; active modules add a few fields). Output cap: ${FEATURE_CAPS.auto_triage}. Thinking tokens count against the cap. Without a saved reasoning effort, Kite switches thinking off for Anthropic models that allow it (Claude Sonnet 5.5: its lowest setting, between_tools), sends effort low with ${count(THINKING_ROOM_TOKENS)} tokens of room to ones that always think, and retries a cut-off answer once with double the cap.`,
 	auto_draft: `Agent drafts write one plain-text reply per message, with no tools. Output cap: ${FEATURE_CAPS.auto_draft}.`,
 	line_summary: `One-line summaries ask for one line of at most 140 characters. Output cap: ${FEATURE_CAPS.line_summary}.`,
 	compose: `Write with Kite writes or rewrites one email. Output cap: ${FEATURE_CAPS.compose}.`,
@@ -68,11 +77,13 @@ function budgetFix(input: CutOffInput, budget: AiOutputBudget): string {
 	if (budget.thinking === "default")
 		return `${input.provider} decides whether ${model} thinks, and Kite cannot switch that off there. If it is a reasoning model, set its reasoning effort to minimal in Admin → Agent, or choose a model that does not reason as the triage model.`;
 	const retried = budget.retried ? ", even at double the cap" : "";
+	const lowest =
+		budget.thinking === "between_tools" ? "Thinking was already at its lowest setting" : "Thinking was already off";
 	const modules =
 		budget.extensionRoom > 0
 			? " If it only happens with mail that a module reads (Calendar, Money Watch), turn that module's automatic reading switch off for the mailbox."
 			: "";
-	return `Thinking was already off, so the answer itself ran long${retried}. Choose another model in Admin → Agent.${modules}`;
+	return `${lowest}, so the answer itself ran long${retried}. Choose another model in Admin → Agent.${modules}`;
 }
 
 function budgetCause(input: CutOffInput, budget: AiOutputBudget): string {

@@ -101,6 +101,8 @@
 		"src/lib/agent/compose-output-utils.ts",
 		"src/lib/agent/ai-error-utils.ts",
 		"src/lib/agent/ai-failure-report-utils.ts",
+		"src/lib/agent/cut-off-utils.ts",
+		"src/lib/agent/output-budget-utils.ts",
 		"src/lib/agent/summaries/summary-utils.ts",
 		"src/lib/agent/summaries/summary-prompt-utils.ts",
 		"src/lib/agent/summaries/line-utils.ts",

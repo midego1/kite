@@ -176,12 +176,16 @@ export function groupAiFailures(rows: AiFailureRow[]): AiFailureGroup[] {
 		}));
 		const statuses = [...new Set(items.flatMap((row) => (row.status ? [row.status] : [])))].sort((a, b) => a - b);
 		// The provider most of the failures came from, so "OpenAI refused the key" names the right one.
-		const provider = models.find((entry) => entry.providerLabel)?.providerLabel ?? undefined;
+		const common = models.find((entry) => entry.providerLabel)?.providerLabel ?? undefined;
+		// A quoted budget describes one request: its model, provider and feature come from that same row.
+		const budgeted = items.find((row) => row.budget);
+		const source = budgeted ?? { provider: models[0].provider, model: models[0].model, feature: features[0].feature };
+		const provider = budgeted ? (aiProviderLabel(budgeted.provider) ?? undefined) : common;
 		const cutOff = {
-			providerId: models[0].provider,
-			model: models[0].model,
-			feature: features[0].feature,
-			budget: items.find((row) => row.budget)?.budget ?? null,
+			providerId: source.provider,
+			model: source.model,
+			feature: source.feature,
+			budget: budgeted?.budget ?? null,
 		};
 		return {
 			code,

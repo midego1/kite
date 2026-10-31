@@ -332,15 +332,15 @@ async function generate(input: GenerateInput): Promise<{ summary: SummaryContent
 			provider: selection.providerKind,
 			preset: selection.preset,
 			kind: "draft",
+			modelId: selection.modelId,
+			// The summary's own budget, which a parameter fallback keeps; a thinking request's room comes on top.
+			answerTokens: SUMMARY_MAX_OUTPUT_TOKENS,
 			reasoningEffort: selection.reasoningEffort,
 		});
-		// The options' budget includes a reasoning model's headroom; keep it on top of this request's own.
-		const base = {
-			...options,
-			maxOutputTokens: SUMMARY_MAX_OUTPUT_TOKENS + Math.max(0, options.maxOutputTokens - 900),
-		};
-		const result = await callWithFallback(base, (current) =>
-			reserved(
+		let sent = options;
+		const result = await callWithFallback(options, (current) => {
+			sent = current;
+			return reserved(
 				{
 					env: input.env,
 					details: selection,
@@ -363,11 +363,11 @@ async function generate(input: GenerateInput): Promise<{ summary: SummaryContent
 						maxRetries: 0,
 						abortSignal: AbortSignal.timeout(timeoutMs),
 					}),
-			),
-		);
+			);
+		});
 		trace.usage = result.usage ?? null;
 		trace.finishReason = result.finishReason;
-		return { text: completedText(result), modelId: selection.modelId };
+		return { text: completedText(result, sent), modelId: selection.modelId };
 	};
 	const check = (text: string) =>
 		checkSummaryOutput(text, { references: input.references, ...(input.language ? { language: input.language } : {}) });

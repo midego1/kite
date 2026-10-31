@@ -7,6 +7,8 @@
 export const TRIAGE_ANSWER_TOKENS = 400;
 /** A draft, a one-line summary's base and Write with Kite's base budget. */
 export const DRAFT_ANSWER_TOKENS = 900;
+/** A summary or its translation (`SUMMARY_MAX_OUTPUT_TOKENS`). */
+export const SUMMARY_ANSWER_TOKENS = 1_600;
 /** Added when a request thinks: a reasoning effort was set, or the model cannot stop thinking. */
 export const THINKING_ROOM_TOKENS = 1_100;
 /** The most module extensions add to a triage request (`MODULE_EXTENSION_MAX_OUTPUT_TOKENS`). */
@@ -16,8 +18,11 @@ export const TRIAGE_LINE_TOKENS = 60;
 /** A cut-off answer is retried once with this many times the cap. */
 export const CUT_OFF_RETRY_FACTOR = 2;
 
-/** How a request's thinking was set: switched off, asked for with an effort, or left to the provider's default. */
-export type AiThinkingSetting = "off" | "on" | "default";
+/**
+ * How a request's thinking was set: switched off, at Claude Sonnet 5.5's lowest setting (`between_tools`, no
+ * thinking before the answer), asked for with an effort, or left to the provider's default.
+ */
+export type AiThinkingSetting = "off" | "between_tools" | "on" | "default";
 
 /**
  * What Kite sent and what the provider reported for a request that was cut off: numbers and settings, never
@@ -42,12 +47,17 @@ export type AiOutputBudget = {
 
 /**
  * How a Claude model thinks when the request sends no `thinking` setting: `off` (it does not), `adaptive` (it
- * thinks, and `thinking: disabled` turns that off) or `always` (it cannot be turned off; only a lower effort helps).
- * An unknown, newer Claude is taken to think by default.
+ * thinks, and `thinking: disabled` turns that off), `between_tools` (it thinks and rejects `disabled`; its lowest
+ * setting, `between_tools`, skips thinking before the answer) or `always` (it cannot be turned off; only a lower
+ * effort helps). An unknown, newer Claude is taken to think by default.
  */
-export function claudeThinkingDefault(modelId: string | null | undefined): "off" | "adaptive" | "always" {
+export function claudeThinkingDefault(
+	modelId: string | null | undefined,
+): "off" | "adaptive" | "between_tools" | "always" {
 	const id = (modelId ?? "").toLowerCase();
 	if (/claude-(opus-5-5|fable-5|mythos-5)/.test(id)) return "always";
+	// Claude Sonnet 5.5 answers `thinking: disabled` with a 400 (@ai-sdk/anthropic 4.0.87 swaps it for between_tools).
+	if (/claude-sonnet-5-5/.test(id)) return "between_tools";
 	if (/claude-(haiku|sonnet|opus)-5/.test(id)) return "adaptive";
 	if (/claude-(haiku|sonnet|opus)-4|claude-(3|2|instant)/.test(id)) return "off";
 	return "adaptive";
@@ -67,7 +77,8 @@ export function readAiOutputBudget(value: unknown): AiOutputBudget | null {
 	const raw = value as Record<string, unknown>;
 	const cap = number(raw.cap);
 	if (cap === null) return null;
-	const thinking = raw.thinking === "off" || raw.thinking === "on" ? raw.thinking : "default";
+	const thinking =
+		raw.thinking === "off" || raw.thinking === "between_tools" || raw.thinking === "on" ? raw.thinking : "default";
 	return {
 		cap,
 		thinkingRoom: number(raw.thinkingRoom) ?? 0,
@@ -94,6 +105,7 @@ export function describeOutputCap(budget: AiOutputBudget): string {
 /** "off", "on at effort low" or "left to the provider's default". */
 export function describeThinking(budget: Pick<AiOutputBudget, "thinking" | "effort">): string {
 	if (budget.thinking === "off") return "off";
+	if (budget.thinking === "between_tools") return "at its lowest setting (between_tools: none before the answer)";
 	if (budget.thinking === "on") return budget.effort ? `on at effort ${budget.effort}` : "on";
 	return "left to the provider's default";
 }

@@ -75,11 +75,11 @@ async function writeLine(
 		preset: selection.preset,
 		kind: "draft",
 		modelId: selection.modelId,
+		// The line's own budget, which a parameter fallback keeps; a thinking request's room comes on top.
+		answerTokens: LINE_MAX_OUTPUT_TOKENS,
 		reasoningEffort: selection.reasoningEffort,
 	});
-	// Keep the thinking room of a request that thinks on top of the line's own budget.
-	const base = { ...options, maxOutputTokens: LINE_MAX_OUTPUT_TOKENS + options.thinkingRoom };
-	let sent = base;
+	let sent = options;
 	// A failure keeps the model and provider, so the job's failure handler reports it under the shared codes.
 	const trace = {
 		feature: "line_summary" as const,
@@ -88,7 +88,7 @@ async function writeLine(
 		startedAt: Date.now(),
 		timeoutMs: LINE_CALL_TIMEOUT_MS,
 	};
-	const reply = await callWithFallback(base, async (current) => {
+	const reply = await callWithFallback(options, async (current) => {
 		sent = current;
 		const model = await selectAutoReadModel(env, requested);
 		return withReservedSpend(

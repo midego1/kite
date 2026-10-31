@@ -266,3 +266,47 @@ test("Why? and Ask AI for a cut-off with a recorded budget state the cap, thinki
 	assert.match(long.fix, /^Thinking was already off, so the answer itself ran long, even at double the cap\./);
 	assert.match(long.fix, /turn that module's automatic reading switch off/);
 });
+
+test("a quoted budget names the model, provider and feature of its own row, not the most common one", () => {
+	const old = Array.from({ length: 12 }, (_, index) =>
+		haikuCutOff(`2026-10-31T${String(index + 8).padStart(2, "0")}:00:00.000Z`),
+	);
+	const opus = row("cut_off", "2026-10-31T07:00:00.000Z", {
+		model: "claude-opus-5-5",
+		provider: "anthropic",
+		feature: "line_summary",
+		budget: {
+			cap: 2_360,
+			thinkingRoom: 2_200,
+			extensionRoom: 0,
+			thinking: "on",
+			effort: "low",
+			retried: true,
+			used: 2_360,
+			thinkingUsed: 2_300,
+		},
+	});
+	const [group] = groupAiFailures([...old, opus]);
+	assert.equal(group.count, 13);
+	assert.deepEqual(group.models[0], {
+		provider: "anthropic",
+		providerLabel: "Anthropic",
+		model: "claude-haiku-5-5",
+		count: 12,
+	});
+	assert.match(group.cause, /^One-line summary capped claude-opus-5-5's answer at 2,360 tokens/);
+	assert.doesNotMatch(group.cause, /haiku/);
+	assert.match(group.fix, /^claude-opus-5-5 always thinks, even at effort low/);
+	assert.deepEqual(group.link, { href: "/agent#ai-provider", label: "Open AI provider settings" });
+	assert.equal(group.facts[1].value, "on at effort low");
+	// Sonnet 5.5's lowest setting is reported as such, never as "off".
+	const [sonnet] = groupAiFailures([
+		row("cut_off", "2026-10-31T07:00:00.000Z", {
+			model: "claude-sonnet-5-5",
+			provider: "anthropic",
+			budget: { ...opus.budget, thinking: "between_tools", effort: null, thinkingRoom: 0, cap: 400, used: 400 },
+		}),
+	]);
+	assert.match(sonnet.cause, /Thinking was at its lowest setting \(between_tools: none before the answer\)\./);
+	assert.match(sonnet.fix, /^Thinking was already at its lowest setting, so the answer itself ran long/);
+});

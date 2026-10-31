@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { after } from "node:test";
 import { changedFragmentFiles, pullRequestLabels, resolveBase } from "../scripts/release-check-utils.mjs";
-import { prepareRelease, releasePending } from "../scripts/release-prepare-utils.mjs";
+import { jsonIndent, prepareRelease, releasePending, stringifyLike } from "../scripts/release-prepare-utils.mjs";
 
 const directories = [];
 after(() => directories.forEach((directory) => rmSync(directory, { recursive: true, force: true })));
@@ -106,13 +106,13 @@ test("changed fragments come from the diff against the base, without the README"
 const CHANGELOG = "# Changelog\n\n## [Unreleased]\n\n## [2026.10.27.2] - 2026-10-27\n\n### Fixed\n\n- Older.\n";
 
 /** A minimal checkout with the files release:prepare reads and writes. */
-function checkout({ fragments = {}, changelog = CHANGELOG } = {}) {
+function checkout({ fragments = {}, changelog = CHANGELOG, lockIndent = 2, lockNewline = true } = {}) {
 	const root = scratch();
 	writeFileSync(join(root, "VERSION"), "2026.10.27.2\n");
 	writeFileSync(join(root, "package.json"), '{\n\t"name": "kite",\n\t"version": "2026.10.27",\n\t"private": true\n}\n');
 	writeFileSync(
 		join(root, "package-lock.json"),
-		`${JSON.stringify({ name: "kite", version: "2026.10.27", packages: { "": { version: "2026.10.27" } } }, null, 2)}\n`,
+		`${JSON.stringify({ name: "kite", version: "2026.10.27", packages: { "": { version: "2026.10.27" } } }, null, lockIndent)}${lockNewline ? "\n" : ""}`,
 	);
 	writeFileSync(join(root, "CHANGELOG.md"), changelog);
 	mkdirSync(join(root, "changelog.d"));
@@ -189,3 +189,26 @@ test("release:prepare --pending answers with Node built-ins only", () => {
 	});
 	assert.match(output, /^(true|false)\n$/);
 });
+
+test("jsonIndent and stringifyLike keep a document's indentation and trailing newline", () => {
+	assert.equal(jsonIndent('{\n\t"a": 1\n}\n'), "\t");
+	assert.equal(jsonIndent('{\n  "a": 1\n}\n'), "  ");
+	assert.equal(jsonIndent('{\n    "a": 1\n}\n'), "    ");
+	assert.equal(jsonIndent("{}"), "\t");
+	assert.equal(stringifyLike('{\n\t"a": 1\n}\n', { a: 2 }), '{\n\t"a": 2\n}\n');
+	assert.equal(stringifyLike('{\n  "a": 1\n}', { a: 2 }), '{\n  "a": 2\n}');
+});
+
+for (const [name, lockIndent, lockNewline] of [
+	["tab-indented", "\t", true],
+	["space-indented", 2, true],
+	["four-space-indented without a trailing newline", 4, false],
+]) {
+	test(`release:prepare changes only the version fields of a ${name} package-lock.json`, async () => {
+		const root = checkout({ fragments: { "a.md": "### Fixed\n\n- A fix.\n" }, lockIndent, lockNewline });
+		const before = readFileSync(join(root, "package-lock.json"), "utf8");
+		await prepareRelease({ root, now: new Date("2026-10-28T08:00:00Z"), writeOpenApi: async () => {} });
+		const after = readFileSync(join(root, "package-lock.json"), "utf8");
+		assert.equal(after, before.replaceAll("2026.10.27", "2026.10.28"));
+	});
+}

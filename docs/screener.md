@@ -45,7 +45,8 @@ Mail that waits for a decision:
 
 - gets no new-mail notification and no automatic reply;
 - is not read automatically ([automatic reading](assistant.md)) until the sender is approved; approving schedules up to 25 of the released messages. Messages released because you wrote to the sender are not read automatically afterwards;
-- still fires webhooks (`message.inbound`), because integrations may need every delivery.
+- still fires webhooks (`message.inbound`), because integrations may need every delivery (mail the spam filter, a rule or a denied sender files in Spam or Trash does not, see [Webhooks](api.md#webhooks));
+- is not looked up on Gravatar when the sender first becomes a contact, so that contact gets no Gravatar picture ([Forged headers and sender names](spam-protection.md#forged-headers-and-sender-names)).
 
 Held mail does not appear in the Inbox, folders, Starred, search, counts, conversations, bulk actions, JMAP, the `/api/v1` API or MCP. It appears only in the Screener view and its count. Inbox mode does not hold anything, so marked mail behaves like other Inbox mail.
 

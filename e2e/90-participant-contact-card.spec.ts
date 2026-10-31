@@ -16,6 +16,10 @@ const SECOND = "roshni@cursor-card.test";
 const NAME = "Roshni at Cursor";
 
 let subject: string;
+
+/** The trusted verdict for a sender of `domain`, which lets a reply from outside a conversation join it. */
+const dmarcPass = (domain: string) =>
+	`mx.cloudflare.net; dkim=pass header.d=${domain}; dmarc=pass header.from=${domain}`;
 let decoySubject: string;
 let spoofSubject: string;
 
@@ -31,7 +35,8 @@ test.beforeAll(async () => {
 		messageId: `<${token}-1@e2e.test>`,
 	});
 	expect(first.id).toBeTruthy();
-	// The same person writes again from a second address, in the same conversation.
+	// The same person writes again from a second address, in the same conversation. That address is not in it yet, so
+	// the reply joins because it passed DMARC for its own domain.
 	await deliverInbound(api, {
 		from: `"${NAME}" <${SECOND}>`,
 		to: SUPPORT_ADDRESS,
@@ -39,6 +44,7 @@ test.beforeAll(async () => {
 		text: "Second message of the card thread.",
 		messageId: `<${token}-2@e2e.test>`,
 		inReplyTo: `<${token}-1@e2e.test>`,
+		headers: { "Authentication-Results": dmarcPass("cursor-card.test") },
 	});
 	// Look-alike senders: neither may turn up in the search for the exact address.
 	decoySubject = `Decoy ${token}`;
@@ -48,7 +54,7 @@ test.beforeAll(async () => {
 		subject: decoySubject,
 		text: "A sender whose address only ends like the real one.",
 	});
-	// A reply that borrows the display name from another domain.
+	// A reply that borrows the display name from another domain, signed by that domain so it joins the conversation.
 	spoofSubject = `Spoof ${token}`;
 	await deliverInbound(api, {
 		from: `"${NAME}" <${FIRST}>`,
@@ -64,6 +70,7 @@ test.beforeAll(async () => {
 		text: "Not the real one.",
 		messageId: `<${token}-s2@e2e.test>`,
 		inReplyTo: `<${token}-s1@e2e.test>`,
+		headers: { "Authentication-Results": dmarcPass("evil-card.test") },
 	});
 	await api.dispose();
 });

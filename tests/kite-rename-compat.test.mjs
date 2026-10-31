@@ -13,7 +13,7 @@ await build({
 	stdin: {
 		contents: `
 			export { applyMailboxSignatureHtml, splitQuotedHtml, wrapQuotedHtml } from "./src/components/compose/rich-text-utils.ts";
-			export { KITE_FORWARDED_HEADER, wasForwardedByKite } from "./src/lib/email/account-forwarding.ts";
+			export { forwardedMarker, KITE_FORWARDED_HEADER, wasForwardedByKite } from "./src/lib/email/account-forwarding.ts";
 			export { readRelayHeader } from "./src/lib/email/intake-signature.ts";
 		`,
 		resolveDir: root,
@@ -51,13 +51,22 @@ test("a signature saved before the rename is swapped instead of duplicated", () 
 	);
 });
 
-test("account forwarding recognises both loop-guard headers", () => {
+test("account forwarding recognises both loop-guard headers, with this install's own value", async () => {
 	assert.equal(helpers.KITE_FORWARDED_HEADER, "X-Kite-Forwarded");
 	const headers = (values) => (name) => values[name];
-	assert.equal(helpers.wasForwardedByKite(headers({ "x-kite-forwarded": "1" })), true);
-	assert.equal(helpers.wasForwardedByKite(headers({ "X-Mailflare-Forwarded": "1" })), true);
-	assert.equal(helpers.wasForwardedByKite(headers({ "x-mailflare-forwarded": "1" })), true);
-	assert.equal(helpers.wasForwardedByKite(headers({})), false);
+	const env = { APP_ENCRYPTION_KEY: "install-key" };
+	const id = { "message-id": "<a@example.com>" };
+	const marker = await helpers.forwardedMarker(env, headers(id));
+	assert.match(marker, /^v1\.[0-9a-f]{64}$/);
+	assert.equal(await helpers.wasForwardedByKite(env, headers({ ...id, "x-kite-forwarded": marker })), true);
+	assert.equal(await helpers.wasForwardedByKite(env, headers({ ...id, "X-Mailflare-Forwarded": marker })), true);
+	assert.equal(await helpers.wasForwardedByKite(env, headers({ ...id, "x-mailflare-forwarded": marker })), true);
+	// A pre-rename install wrote the bare "1", which a sender can write too.
+	assert.equal(await helpers.wasForwardedByKite(env, headers({ ...id, "X-Mailflare-Forwarded": "1" })), false);
+	assert.equal(await helpers.wasForwardedByKite(env, headers({})), false);
+	// An install without any server secret keeps the unsigned marker on both names.
+	assert.equal(await helpers.forwardedMarker({}, headers(id)), "1");
+	assert.equal(await helpers.wasForwardedByKite({}, headers({ "x-mailflare-forwarded": "1" })), true);
 });
 
 test("the inbound webhook reads the new relay headers and the pre-rename ones", () => {

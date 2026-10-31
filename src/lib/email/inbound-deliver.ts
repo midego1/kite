@@ -8,6 +8,8 @@ import { resolveInboxRuleDestination } from "@/lib/email/routing";
 import type { ParsedEmail } from "@/lib/email/parse";
 import { dispatchWebhooks } from "@/lib/email/webhooks";
 import { upsertContactFromAddress } from "@/lib/contacts/service";
+import { getSenderDisplayName } from "@/lib/contacts/utils";
+import type { ContactDisplayName, ContactRow } from "@/lib/contacts/types";
 import { sendMailboxAutoReply } from "@/lib/email/auto-reply";
 import { storeMessageAttachments } from "@/lib/email/attachments";
 import { inboundAttachmentLimitReason } from "@/lib/email/inbound-attachments";
@@ -19,6 +21,7 @@ import { extractOneTimeCode } from "@/lib/email/one-time-code-utils";
 import { getLatestEmailContent, htmlToReadableText } from "@/lib/email/reply-content-utils";
 import { resolveThreadId } from "@/lib/email/threading";
 import { normalizeMessageId } from "@/lib/email/thread-lookup";
+import { senderDmarc } from "@/lib/email/thread-join-utils";
 import { analyzeSpam } from "@/lib/spam/engine";
 import { configuredSpamIntelligenceProvider } from "@/lib/spam/providers/abuse-ch-key";
 import { dmarcPolicySource } from "@/lib/spam/dmarc-policy";
@@ -29,6 +32,7 @@ import type { NewMessageNotification } from "@/lib/realtime/types";
 import { scheduleAgentWork } from "@/lib/agent/auto-read/schedule";
 import { applyScreener } from "@/lib/screener/inbound";
 import { screenerPendingRows } from "@/lib/screener/views";
+import { SCREENING_STATUS } from "@/lib/screener/screener-utils";
 
 /** The mailbox a message is delivered into, and whose it is. */
 export type DeliveryTarget = { mailboxId: string; userId: string };
@@ -202,7 +206,8 @@ async function announceDelivery(
 			console.error(`Auto-reply failed for mailbox ${target.mailboxId}`, error);
 		}
 	}
-	if (input.status === "spam" || input.external?.read) return;
+	// Spam and trash (a block or a mailbox rule) are filed away unread, so they never notify (upstream Mailflare #223).
+	if (input.status === "spam" || input.status === "trash" || input.external?.read) return;
 	const notificationUserIds = await getMailboxNotificationUserIds(env, target.mailboxId, target.userId);
 	await notifyUsersOfNewMessage(
 		env,
@@ -293,15 +298,25 @@ async function placeMessage(
 	};
 }
 
-async function deliveryThreadId(env: CloudflareEnv, input: InboundDelivery, parsed: ParsedEmail): Promise<string> {
+async function deliveryThreadId(
+	env: CloudflareEnv,
+	input: InboundDelivery,
+	parsed: ParsedEmail,
+	fromAddr: string,
+): Promise<string> {
 	try {
 		return await resolveThreadId(getDb(env), {
 			mailboxId: input.target.mailboxId,
 			messageId: parsed.messageId,
 			inReplyTo: parsed.inReplyTo,
 			references: parsed.references,
-			// Synced mail may arrive before its parent, as imported mail does (spec §4.4).
-			...(input.external ? { fallback: "references-root" as const } : {}),
+			// Synced mail may arrive before its parent, as imported mail does (spec §4.4). It is the user's own history,
+			// so only received mail has to show it belongs in a conversation (upstream Mailflare #223).
+			...(input.external
+				? { fallback: "references-root" as const }
+				: {
+						sender: { address: fromAddr, dmarc: senderDmarc(input.authenticationResults, fromAddr) },
+					}),
 		});
 	} catch (error) {
 		console.error("Inbound thread lookup failed", {
@@ -310,7 +325,8 @@ async function deliveryThreadId(env: CloudflareEnv, input: InboundDelivery, pars
 			referenceCount: parsed.references.length,
 			error,
 		});
-		return normalizeMessageId(parsed.messageId) ?? newId("thr");
+		// Received mail cannot be checked against the thread its Message-ID may already key, so it starts its own.
+		return (input.external ? normalizeMessageId(parsed.messageId) : null) ?? newId("thr");
 	}
 }
 
@@ -406,6 +422,41 @@ async function observeReputation(
 	);
 }
 
+/** Gravatar learns who mailed us, so a sender filed away or still undecided is not looked up (upstream #220). */
+function mayLookUpAvatar(placement: Placement): boolean {
+	return !placement.awaiting && !["spam", "trash", SCREENING_STATUS].includes(placement.status);
+}
+
+function contactDisplayName(contact: ContactRow | null): ContactDisplayName | null {
+	return contact?.displayName ? { displayName: contact.displayName, source: contact.source } : null;
+}
+
+/**
+ * The `message.inbound` webhook. A consumer acting on the From of spam or trash would be fooled by it, so those are
+ * not sent (upstream Mailflare #224); held mail still is, as docs/screener.md promises.
+ */
+async function dispatchInboundWebhook(
+	env: CloudflareEnv,
+	input: InboundDelivery,
+	parsed: ParsedEmail,
+	message: { messageId: string; fromAddr: string; threadId: string },
+	placement: Placement,
+): Promise<void> {
+	if (placement.status === "spam" || placement.status === "trash") return;
+	const { external } = input;
+	await dispatchWebhooks(env, input.target.userId, "message.inbound", {
+		messageId: message.messageId,
+		from: message.fromAddr,
+		to: input.to,
+		cc: parsed.ccAddr ?? undefined,
+		subject: parsed.subject,
+		threadId: message.threadId,
+		spamScore: placement.spamAnalysis?.score,
+		spamVerdict: placement.spamAnalysis?.verdict,
+		...(external ? { source: "external", accountId: external.accountId } : {}),
+	});
+}
+
 /**
  * The delivery half of the inbound pipeline, shared by mail Kite receives and mail a connected account syncs: attachment
  * limits, mailbox rules, the spam filter, the Screener, the contact, the thread, the row and its attachments,
@@ -452,11 +503,12 @@ export async function deliverInboundMessage(env: CloudflareEnv, input: InboundDe
 		userId: target.userId,
 		address: fromAddr,
 		source: "inbound",
+		lookupAvatar: mayLookUpAvatar(placement),
 	}).catch((error) => {
 		console.error(`Contact upsert failed for ${messageId}`, error);
 		return null;
 	});
-	const threadId = await deliveryThreadId(env, input, parsed);
+	const threadId = await deliveryThreadId(env, input, parsed, fromAddr);
 	const row = { id: messageId, snippet, fromAddr, toAddr, threadId };
 	if (!(await storeDelivered(env, input, parsed, row, placement, offloadHtml)))
 		return { delivered: false, reason: "stored" };
@@ -469,22 +521,12 @@ export async function deliverInboundMessage(env: CloudflareEnv, input: InboundDe
 			status,
 			deliveredAddress: input.deliveredAddress,
 			fromAddr,
-			fromName: contact?.displayName ?? null,
+			fromName: getSenderDisplayName(fromAddr, contactDisplayName(contact)),
 			parsed,
 			headers: input.headers,
 			external,
 		});
-	await dispatchWebhooks(env, target.userId, "message.inbound", {
-		messageId,
-		from: fromAddr,
-		to: input.to,
-		cc: parsed.ccAddr ?? undefined,
-		subject: parsed.subject,
-		threadId,
-		spamScore: spamAnalysis?.score,
-		spamVerdict: spamAnalysis?.verdict,
-		...(external ? { source: "external", accountId: external.accountId } : {}),
-	});
+	await dispatchInboundWebhook(env, input, parsed, { messageId, fromAddr, threadId }, placement);
 	// Approving the sender schedules this message later (src/lib/screener/service.ts).
 	if (placement.awaiting) return { delivered: true, messageId };
 	try {

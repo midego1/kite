@@ -2,7 +2,7 @@
 
 Kite analyzes stored incoming messages locally. The filter combines trusted authentication results, sender relationships, mailbox-scoped reputation, bounded Bayesian token learning, URL checks, message structure, and attachments. No message content or spam intelligence leaves your install, unless the operator turns on the optional [URLhaus and ThreatFox lookups](#urlhaus-and-threatfox-lookups-optional).
 
-Scores range from 0 to 100. Messages scoring 70 or higher move to Spam. Scores from 40 through 69 are recorded as suspicious but remain in their normal Inbox or custom folder. Analysis failures also deliver normally. Automatic replies and new-message notifications are suppressed for messages placed in Spam.
+Scores range from 0 to 100. Messages scoring 70 or higher move to Spam. Scores from 40 through 69 are recorded as suspicious but remain in their normal Inbox or custom folder. Analysis failures also deliver normally. Automatic replies and new-message notifications are suppressed for messages placed in Spam, and notifications also for messages a rule or a block files in Trash. What else Kite does with mail it cannot vouch for is under [Forged headers and sender names](#forged-headers-and-sender-names).
 
 The Spam Filter switch is under **Settings → Inbox → Spam protection** and is enabled by default. Disabling it affects future incoming messages; it does not move or rescan existing mail.
 
@@ -37,9 +37,20 @@ Kite takes the published policy from the receiving server's trusted `Authenticat
 
 The primary admin can turn on **Treat every DMARC failure as spam** under **Admin → General → Sender authentication**. With it on, every DMARC failure goes to Spam, including `p=none` domains and unknown policies. It is off by default and needs migration 0084.
 
-Mail in Spam is not read by automatic reading and gets no automatic reply or notification.
+Mail in Spam is not read by automatic reading and gets no automatic reply, notification or `message.inbound` webhook.
 
 Kite accepts mail before this analysis. Forward-only routing occurs before stored-message filtering and is outside the filter's v1 scope.
+
+## Forged headers and sender names
+
+A sender writes its own From name, `Message-ID`, `In-Reply-To` and `References`. Kite does not let those headers change what you already have (upstream Mailflare #220, #223, #224, #226):
+
+- **Conversations.** A received reply joins the conversation of the stored message it names only when the message passed DMARC for its own From domain on the trusted `Authentication-Results` (see [Sender authentication](#sender-authentication)), or when DMARC gave no result and its sender already takes part in that conversation (it sent, received or was copied on one of its messages). A failed DMARC check always starts a conversation of its own, even from a participant's address, because that From may be forged. Otherwise too it starts a new one, so a stranger who learned a Message-ID cannot slip a message in among the real ones. A message whose own `Message-ID` is already some conversation's key starts a new one as well, except the copy of a message the mailbox sent to itself or one of its aliases (same Message-ID and From as the sent message, DMARC not failed), which stays with the sent message. The cost: someone newly copied on a conversation whose domain does not pass DMARC, or a mailing list without DMARC, starts a separate conversation until they are part of it. Mail import, connected accounts and JMAP drafts are your own history and keep joining on the headers alone.
+- **Spam in conversations.** A conversation shows Spam (like Trash and held mail) only when you open that message itself.
+- **Contact names.** Received mail may give a contact its first name, but never renames one: only you (**Edit contact**) or mail you send can. Each message in the list, the conversation, the reader and the contact card shows the name you saved for the contact, else that message's own From name, else a name learned earlier, else the address. A shared address such as a recruiting `no-reply` therefore keeps a different sender name per message.
+- **Notifications** name the sender as "Name <address>", without control or direction-changing characters, so a typed name cannot pose as another address. Spam and Trash do not notify.
+- **Gravatar.** Kite looks a new sender up on Gravatar once, when it first becomes a contact. A sender first seen in Spam or Trash, or waiting in the [Screener](screener.md), is not looked up, and neither is one that first becomes a contact by being blocked (**Block contact**, **Report phishing**, a Screener deny), so Gravatar does not learn who mailed you; that contact gets no Gravatar picture later either, but you can still upload one.
+- **Webhooks.** `message.inbound` is not sent for mail filed in Spam or Trash; see [Webhooks](api.md#webhooks).
 
 ## Phishing signs
 

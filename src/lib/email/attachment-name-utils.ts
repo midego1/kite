@@ -29,3 +29,13 @@ export function truncateFilename(name: string, maxBytes: number): string {
 export function attachmentObjectKey(messageId: string, attachmentId: string): string {
 	return `attachments/${messageId}/${attachmentId}`;
 }
+
+/**
+ * The key of a copy written for a row that already exists (the storage job's materialize and un-share, the lazy repair
+ * of a 'raw' row): `attachmentObjectKey` plus a fresh `suffix`, so no row has ever named it. The row's own key may
+ * still be named by a forward or a sent message that shares it, so removing a copy whose row was repointed or deleted
+ * meanwhile can never take a file another row uses.
+ */
+export function freshAttachmentObjectKey(messageId: string, attachmentId: string, suffix: string): string {
+	return `${attachmentObjectKey(messageId, attachmentId)}-${suffix}`;
+}

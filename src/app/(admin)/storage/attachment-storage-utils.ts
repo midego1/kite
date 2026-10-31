@@ -58,6 +58,19 @@ export function resumableDirection(job: AttachmentStorageJobView | null): Attach
 	return job?.status === "interrupted" ? job.direction : null;
 }
 
+/**
+ * What the confirmation adds when copies are restored while new mail would still be shared or served from the raw
+ * message, so the counts would not stay at 0 for a rollback. Null when both switches are off.
+ */
+export function materializeWarning(switches: AttachmentStorageReport["switches"]): string | null {
+	const on = [
+		...(switches.sharing ? ["ATTACHMENT_SHARING"] : []),
+		...(switches.rawIndex ? ["ATTACHMENT_RAW_INDEX"] : []),
+	];
+	if (!on.length) return null;
+	return `${on.join(" and ")} ${on.length === 1 ? "is" : "are"} still on, so new mail, sends and forwards keep sharing copies or being served from the raw message after this. If you are preparing a rollback, set both to off and deploy first.`;
+}
+
 export function canReclaim(report: AttachmentStorageReport): boolean {
 	return (
 		report.jobsReady &&

@@ -4,7 +4,8 @@ import { messageAttachments, messages } from "@/db/schema";
 import { sha256Hex } from "@/lib/aws/sigv4";
 import { missingColumnFromError } from "@/lib/auth/user-lookup-utils";
 import { createLogger } from "@/lib/logger.mjs";
-import { attachmentObjectKey } from "./attachment-name-utils";
+import { newId } from "@/lib/ids";
+import { freshAttachmentObjectKey } from "./attachment-name-utils";
 import {
 	ATTACHMENT_OBJECT_ROWS_SQL,
 	findAttachmentSource,
@@ -214,7 +215,7 @@ export async function materializeMismatchedRaw(
 		log.error("attachment.raw_mismatch", { attachmentId, messageId: row.messageId });
 		return null;
 	}
-	const key = attachmentObjectKey(row.messageId, row.id);
+	const key = freshAttachmentObjectKey(row.messageId, row.id, newId());
 	await putObject(env, key, row, source.content);
 	const changed = await changedRows(
 		env,
@@ -222,8 +223,10 @@ export async function materializeMismatchedRaw(
 			transfer_encoding = NULL WHERE id = ? AND storage = 'raw'`,
 		[key, row.id],
 	);
-	// Another read may have repointed the row at this same key first; the object is only ours to remove otherwise.
-	if (changed !== 1 && (await loadRepairable(env, attachmentId))?.r2Key !== key) await env.BUCKET.delete(key);
+	// The key is new, so only this row can name it; it goes when the row was repointed or deleted meanwhile, and only
+	// while no row names it.
+	if (changed !== 1 && (await loadRepairable(env, attachmentId))?.r2Key !== key && !(await isKeyNamed(env, key)))
+		await env.BUCKET.delete(key);
 	log.info("attachment.repaired", { attachmentId, messageId: row.messageId, storage: "object" });
 	return source.content;
 }

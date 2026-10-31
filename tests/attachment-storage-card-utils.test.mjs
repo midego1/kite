@@ -102,6 +102,16 @@ test("buttons follow the counts, the switches and the running job", () => {
 	assert.ok(card.isJobRunning(job()) && !card.isJobRunning(null));
 });
 
+test("restoring copies warns while a switch would keep sharing or raw-backing new mail", () => {
+	assert.match(
+		card.materializeWarning({ sharing: true, rawIndex: true }),
+		/^ATTACHMENT_SHARING and ATTACHMENT_RAW_INDEX are still on/,
+	);
+	assert.match(card.materializeWarning({ sharing: false, rawIndex: true }), /^ATTACHMENT_RAW_INDEX is still on/);
+	assert.match(card.materializeWarning({ sharing: true, rawIndex: false }), /^ATTACHMENT_SHARING is still on/);
+	assert.equal(card.materializeWarning({ sharing: false, rawIndex: false }), null);
+});
+
 test("the stats and the rollback link", () => {
 	const stats = card.attachmentStorageStats(report());
 	assert.deepEqual(

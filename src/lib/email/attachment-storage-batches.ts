@@ -2,11 +2,18 @@ import { and, asc, eq, gt } from "drizzle-orm";
 import { getDb } from "@/db";
 import { messageAttachments } from "@/db/schema";
 import { sha256Hex } from "@/lib/aws/sigv4";
+import { newId } from "@/lib/ids";
 import { createLogger } from "@/lib/logger.mjs";
-import { attachmentObjectKey } from "./attachment-name-utils";
+import { freshAttachmentObjectKey } from "./attachment-name-utils";
 import { repairMissingObject } from "./attachment-repair";
 import { deleteUnreferencedObjects, readAttachmentBytes } from "./attachment-storage";
-import { ATTACHMENT_OBJECT_ROWS_SQL, locateAttachmentParts, rawBackedMessagesSql } from "./attachment-storage-utils";
+import {
+	ATTACHMENT_OBJECT_ROWS_SQL,
+	isRawAttachmentKey,
+	locateAttachmentParts,
+	ownAttachmentKeySql,
+	rawBackedMessagesSql,
+} from "./attachment-storage-utils";
 import {
 	BATCH_BUDGET,
 	BATCH_ROWS,
@@ -24,7 +31,8 @@ const log = createLogger("attachments");
 /**
  * One batch of the admin attachment storage job (`docs/specs/attachments-once.md` §5.5). Every change is a conditional
  * update that names the state it expects, so a batch that runs twice, races a delivery, a forward or a delete, or dies
- * half way changes nothing it should not; an object it wrote for an update that then matched nothing is removed again.
+ * half way changes nothing it should not. Every copy it writes goes to a fresh key no row has named
+ * (`freshAttachmentObjectKey`), and one whose update then matched nothing is removed again only while no row names it.
  * Next to `attachment-storage.ts` it is the only code that reads an attachment row's object by its key.
  */
 
@@ -66,12 +74,17 @@ async function currentKey(env: CloudflareEnv, id: string): Promise<string | null
 	return row?.r2Key ?? null;
 }
 
-/** Removes an object this batch wrote for an update that matched nothing, unless the row names it after all. */
+/**
+ * After an update that matched nothing: whether the row names the copy after all, and otherwise the copy removed. The
+ * key is fresh, so no other row can name it; the reference check is the defence in depth for that invariant.
+ */
 async function dropUnclaimedCopy(env: CloudflareEnv, id: string, key: string): Promise<boolean> {
 	if ((await currentKey(env, id)) === key) return true;
-	await env.BUCKET.delete(key);
+	await deleteUnreferencedObjects(env, { attachmentKeys: [key] });
 	return false;
 }
+
+const copyKey = (row: ObjectRow) => freshAttachmentObjectKey(row.messageId, row.id, newId());
 
 // ---------------------------------------------------------------------------------------------------------------
 // Reclaim: 'object' rows of received and imported mail become 'raw' rows where the raw message holds their bytes.
@@ -173,6 +186,8 @@ async function reclaimMessage(env: CloudflareEnv, message: ReclaimMessage, resul
 	for (const [index, { row, content }] of present.entries()) {
 		const part = located.get(index);
 		if (part && (await convertRow(env, row, part, content, now))) {
+			// Logged before the clean-up: if the isolate dies first, this names the object that may be left behind.
+			log.info("attachment.reclaim_converted", { attachmentId: row.id, messageId: row.messageId, key: row.r2Key });
 			freed.push(row.r2Key);
 			result.converted += 1;
 		} else {
@@ -228,8 +243,8 @@ async function rawRows(env: CloudflareEnv, cursor: string | null): Promise<Objec
 }
 
 /**
- * One 'raw' row: its verified bytes (the accessor checks the recorded digest), written under the row's own key, then
- * the row repointed while it is still 'raw'. The lazy repair may have materialized it to that same key meanwhile.
+ * One 'raw' row: its verified bytes (the accessor checks the recorded digest), written under a fresh key, then the row
+ * repointed while it is still 'raw'. A row the lazy repair materialized meanwhile keeps the repair's copy.
  */
 async function materializeRow(env: CloudflareEnv, row: ObjectRow, result: AttachmentStorageBatchResult) {
 	const bytes = await readAttachmentBytes(env, row);
@@ -238,7 +253,7 @@ async function materializeRow(env: CloudflareEnv, row: ObjectRow, result: Attach
 		result.lastError = "A file's raw message is missing, so it was left as it was";
 		return;
 	}
-	const key = attachmentObjectKey(row.messageId, row.id);
+	const key = copyKey(row);
 	await putAttachmentObject(env, key, row, bytes);
 	const changed = await changes(
 		env,
@@ -246,7 +261,12 @@ async function materializeRow(env: CloudflareEnv, row: ObjectRow, result: Attach
 			transfer_encoding = NULL, storage_checked_at = NULL WHERE id = ? AND storage = 'raw'`,
 		[key, row.id],
 	);
-	if (changed === 1 || (await dropUnclaimedCopy(env, row.id, key))) result.converted += 1;
+	if (changed === 1 || (await dropUnclaimedCopy(env, row.id, key))) {
+		result.converted += 1;
+		return;
+	}
+	const now = await currentKey(env, row.id);
+	if (now && !isRawAttachmentKey(now)) result.converted += 1;
 }
 
 export async function runMaterializeBatch(
@@ -262,11 +282,16 @@ export async function runMaterializeBatch(
 // ---------------------------------------------------------------------------------------------------------------
 // Unshare: every 'object' row that names an object an older row also names gets a copy of its own.
 
-/** Rows after `cursor` naming an object that an older row names too; the oldest keeps it. */
+/**
+ * Rows after `cursor` naming an object another row keeps: the row whose own key it is (`ownAttachmentKeySql`), else
+ * the oldest. That owner never moves, so every pair converges whichever row the cursor reaches first.
+ */
 async function sharedRows(env: CloudflareEnv, cursor: string | null): Promise<ObjectRow[]> {
+	const [ownA, ownB] = [ownAttachmentKeySql("a"), ownAttachmentKeySql("b")];
+	const outranks = `(${ownB} > ${ownA} OR (${ownB} = ${ownA} AND b.rowid < a.rowid))`;
 	const { results } = await env.DB.prepare(
 		`SELECT a.id, a.message_id AS messageId, a.r2_key AS r2Key, a.filename, a.content_type AS contentType, a.size FROM message_attachments a WHERE ${ATTACHMENT_OBJECT_ROWS_SQL} AND a.id > ?
-			AND EXISTS (SELECT 1 FROM message_attachments b WHERE b.r2_key = a.r2_key AND b.rowid < a.rowid AND ${ATTACHMENT_OBJECT_ROWS_SQL})
+			AND EXISTS (SELECT 1 FROM message_attachments b WHERE b.r2_key = a.r2_key AND b.id <> a.id AND ${outranks} AND ${ATTACHMENT_OBJECT_ROWS_SQL})
 			ORDER BY a.id LIMIT ?`,
 	)
 		.bind(cursor ?? "", BATCH_ROWS)
@@ -274,10 +299,9 @@ async function sharedRows(env: CloudflareEnv, cursor: string | null): Promise<Ob
 	return results ?? [];
 }
 
-/** One shared row: a copy under its own key, then the row repointed while it still names the shared object. */
+/** One shared row: a copy under a fresh key, then the row repointed while it still names the shared object. */
 async function unshareRow(env: CloudflareEnv, row: ObjectRow, result: AttachmentStorageBatchResult) {
-	const key = attachmentObjectKey(row.messageId, row.id);
-	if (key === row.r2Key) return;
+	const key = copyKey(row);
 	const object = await env.BUCKET.get(row.r2Key);
 	if (!object) {
 		result.failed += 1;

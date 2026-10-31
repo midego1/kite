@@ -18,6 +18,7 @@ import {
 	jobHeadline,
 	jobProgress,
 	jobSummary,
+	materializeWarning,
 	resumableDirection,
 } from "./attachment-storage-utils";
 
@@ -86,8 +87,12 @@ function Actions({
 	async function materialize() {
 		const confirmed = await requestConfirmation({
 			title: "Restore separate copies?",
-			description:
+			description: [
 				"Kite writes a copy of every file it now serves from its raw message, and gives every file that shares a copy with a forward or a sent message its own. Do this before running an older release; it uses more storage until you reclaim again.",
+				materializeWarning(report.switches),
+			]
+				.filter(Boolean)
+				.join(" "),
 			confirmLabel: resume === "materialize" ? "Resume" : "Restore copies",
 		});
 		if (confirmed) onAction("materialize");

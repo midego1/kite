@@ -169,6 +169,15 @@ export function sliceByteStream(offset: number, length: number): TransformStream
  */
 export const ATTACHMENT_OBJECT_ROWS_SQL = "substr(r2_key, 1, 4) <> 'raw:'";
 
+/**
+ * SQL that is true when the row aliased `alias` names an object under its own key: `attachmentObjectKey`, an older
+ * `…/<filename>` key or a `freshAttachmentObjectKey` copy. Un-share keeps a shared object with that row.
+ */
+export function ownAttachmentKeySql(alias: string): string {
+	const own = `'attachments/' || ${alias}.message_id || '/' || ${alias}.id`;
+	return `(${alias}.r2_key = ${own} OR substr(${alias}.r2_key, 1, length(${own}) + 1) IN (${own} || '/', ${own} || '-'))`;
+}
+
 /** The object keys among attachment rows' `r2Key`s, once each; a 'raw' row's sentinel is never passed to the bucket. */
 export function attachmentObjectKeys(rows: { r2Key: string }[]): string[] {
 	return [...new Set(rows.map((row) => row.r2Key).filter((key) => !isRawAttachmentKey(key)))];

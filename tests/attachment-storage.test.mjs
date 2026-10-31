@@ -943,6 +943,35 @@ test("a 'raw' row whose range no longer decodes to its bytes is materialized, ne
 	assert.equal(storageOf(second.database, "msg-in")[0].storage, "raw");
 });
 
+test("materializing a mismatched 'raw' row writes a fresh key and never removes an object a forward names", async () => {
+	const { env, database, bucket } = await setup();
+	const { parsed, stored } = await ingest(env, "multipart/mixed");
+	const row = { ...stored[0], contentType: stored[0].type };
+	// The row's own key is still named by a forward made before the file became raw-backed.
+	const ownKey = `attachments/msg-in/${row.id}`;
+	await bucket.put(ownKey, parsed.attachments[0].content);
+	database.db.exec(
+		`INSERT INTO message_attachments (id, message_id, filename, content_type, size, r2_key, created_at)
+			VALUES ('att-forward', 'msg-draft', '${row.filename}', '${row.type}', ${row.size}, '${ownKey}', 1)`,
+	);
+	database.db.exec(`UPDATE message_attachments SET raw_offset = raw_offset + 4 WHERE id = '${row.id}'`);
+	// The message is deleted while the repair writes its copy: the UPDATE matches nothing.
+	const put = bucket.put.bind(bucket);
+	const written = [];
+	bucket.put = async (key, ...rest) => {
+		const result = await put(key, ...rest);
+		written.push(key);
+		database.db.exec("DELETE FROM messages WHERE id = 'msg-in'");
+		return result;
+	};
+	await silenced(() => m.readAttachmentBytes(env, row));
+	assert.equal(written.length, 1);
+	assert.notEqual(written[0], ownKey);
+	assert.equal(await bucket.get(written[0]), null, "the unclaimed copy is removed");
+	const forward = { id: "att-forward", r2Key: ownKey, size: row.size, contentType: row.type };
+	assert.deepEqual(bytesOf(await m.readAttachmentBytes(env, forward)), bytesOf(parsed.attachments[0].content));
+});
+
 /** An object row stored from the "multipart/mixed" fixture's raw, whose object is then lost. */
 async function lostObjectRow(env, bucket) {
 	const raw = fixtureRaw("multipart/mixed");

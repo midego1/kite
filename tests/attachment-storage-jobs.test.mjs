@@ -34,7 +34,11 @@ await build({
 			} from "./src/lib/email/attachment-storage-report.ts";
 			export { copyMessageAttachments, storeMessageAttachments } from "./src/lib/email/attachments.ts";
 			export { parseRawMime } from "./src/lib/email/parse.ts";
-			export { isRawBackedMessage, rawBackedMessagesSql } from "./src/lib/email/attachment-storage-utils.ts";
+			export {
+				isRawBackedMessage,
+				ownAttachmentKeySql,
+				rawBackedMessagesSql,
+			} from "./src/lib/email/attachment-storage-utils.ts";
 			export {
 				cancelAttachmentJob,
 				getAttachmentJobStatus,
@@ -493,7 +497,7 @@ test("un-share leaves a row alone that was repointed while its copy was written"
 	const put = bucket.put.bind(bucket);
 	bucket.put = async (key, ...rest) => {
 		const written = await put(key, ...rest);
-		if (key === `attachments/msg-draft/${draftRow.id}`)
+		if (key.startsWith(`attachments/msg-draft/${draftRow.id}-`))
 			database.db
 				.prepare("UPDATE message_attachments SET r2_key = 'attachments/elsewhere' WHERE id = ?")
 				.run(draftRow.id);
@@ -501,7 +505,7 @@ test("un-share leaves a row alone that was repointed while its copy was written"
 	};
 	await run(env, "materialize");
 	assert.equal(rows(database).find((row) => row.id === draftRow.id).r2Key, "attachments/elsewhere");
-	assert.ok(!(await objectKeys(bucket)).includes(`attachments/msg-draft/${draftRow.id}`));
+	assert.ok(!(await objectKeys(bucket)).some((key) => key.startsWith(`attachments/msg-draft/${draftRow.id}`)));
 });
 
 test("reclaim repairs a row whose object is gone instead of failing it", async () => {
@@ -537,4 +541,59 @@ test("before migrations 0088 and 0090 the jobs answer that the update is pending
 	const older = await setup({ skip: ["0088_attachment_raw_storage.sql", "0090_add_attachment_storage_job.sql"] });
 	assert.equal((await m.startAttachmentJob(older.env, ADMIN, { direction: "materialize" })).code, "MIGRATION_PENDING");
 	assert.equal(await m.getReclaimCounts(older.env), null);
+});
+
+test("materialize never removes an object a forward still names when the source message goes away mid-write", async () => {
+	const { env, database, bucket } = await setup();
+	const parsed = await deliver(env, "msg-a", "inbound/1-a.eml", "multipart/mixed");
+	await m.copyMessageAttachments(env, "msg-a", "msg-draft");
+	const [original] = rows(database).filter((row) => row.messageId === "msg-a");
+	await run(env, "reclaim");
+	// msg-a's row is raw now; its old object stays because the forward draft still names it.
+	assert.equal(rows(database).find((row) => row.id === original.id).storage, "raw");
+	assert.deepEqual(await objectKeys(bucket), [original.r2Key]);
+	const put = bucket.put.bind(bucket);
+	const written = [];
+	bucket.put = async (key, ...rest) => {
+		const result = await put(key, ...rest);
+		written.push(key);
+		if (key.startsWith("attachments/msg-a/")) database.db.exec("DELETE FROM messages WHERE id = 'msg-a'");
+		return result;
+	};
+	const job = await run(env, "materialize");
+	assert.equal(job.status, "completed");
+	assert.ok(written.length && written.every((key) => key !== original.r2Key), "the copy went to a fresh key");
+	const [draft] = rows(database);
+	assert.deepEqual([draft.messageId, draft.r2Key], ["msg-draft", original.r2Key]);
+	assert.deepEqual(bytesOf(await m.readAttachmentBytes(env, draft)), bytesOf(parsed.attachments[0].content));
+	assert.deepEqual(await objectKeys(bucket), [original.r2Key], "the unclaimed copy is gone, the shared object stays");
+	assert.deepEqual((await m.verifyAttachmentObjects(env)).missing, []);
+});
+
+test("un-share leaves a shared object with the row whose own key it is, whichever row is older", async () => {
+	const { env, database, bucket } = await setup();
+	await bucket.put("attachments/msg-b/att-own", encoder.encode("owned bytes"));
+	database.db.exec(`
+		INSERT INTO message_attachments (id, message_id, filename, content_type, size, r2_key, created_at) VALUES
+			('att-early', 'msg-draft', 'a.txt', 'text/plain', 11, 'attachments/msg-b/att-own', 1),
+			('att-own', 'msg-b', 'a.txt', 'text/plain', 11, 'attachments/msg-b/att-own', 1)`);
+	const own = (id) =>
+		database.db.prepare(`SELECT ${m.ownAttachmentKeySql("a")} AS own FROM message_attachments a WHERE id = ?`).get(id)
+			.own;
+	const setKey = (key) =>
+		database.db.prepare("UPDATE message_attachments SET r2_key = ? WHERE id = 'att-early'").run(key);
+	assert.deepEqual([own("att-own"), own("att-early")], [1, 0]);
+	setKey("attachments/msg-draft/att-early-xyz");
+	assert.equal(own("att-early"), 1, "a fresh copy counts as the row's own key");
+	setKey("attachments/msg-draft/att-early/a.txt");
+	assert.equal(own("att-early"), 1, "so does an older key with the file name");
+	setKey("attachments/msg-b/att-own");
+
+	const job = await run(env, "materialize");
+	assert.equal(job.unshared, 1);
+	const after = rows(database);
+	assert.equal(after.find((row) => row.id === "att-own").r2Key, "attachments/msg-b/att-own");
+	assert.match(after.find((row) => row.id === "att-early").r2Key, /^attachments\/msg-draft\/att-early-/);
+	for (const row of after) assert.equal(new TextDecoder().decode(await m.readAttachmentBytes(env, row)), "owned bytes");
+	assert.deepEqual(await m.getSharedObjectCounts(env), { keys: 0, rows: 0 });
 });

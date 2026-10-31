@@ -14,7 +14,6 @@ import type { UndoCounts } from "../chat-actions-types";
 import { notifySuggestionsQuietly } from "./suggestion-events";
 import { messageAttachmentKeys } from "@/lib/email/attachments";
 import { deleteUnreferencedObjects } from "@/lib/email/attachment-storage";
-import { htmlBodyObjectKey } from "@/lib/email/bodies-utils";
 import { undoCreateFolder, undoMarkRead, undoMove, undoSetFolder } from "./organize-undo";
 
 type SuggestionStatus = (typeof agentSuggestions.$inferSelect)["status"];
@@ -143,11 +142,7 @@ export async function discardAgentDraft(env: CloudflareEnv, draftId: string): Pr
 		.returning({ rawR2Key: messages.rawR2Key });
 	if (deleted.length === 0) throw new AgentActionError("The draft changed, so Kite kept it", 409);
 	// The rows went first; an object another message still names (a sent copy) stays.
-	await deleteUnreferencedObjects(env, {
-		attachmentKeys,
-		rawKeys: [deleted[0]?.rawR2Key ?? null],
-		ownedKeys: [htmlBodyObjectKey(draftId)],
-	});
+	await deleteUnreferencedObjects(env, { attachmentKeys, rawKeys: [deleted[0]?.rawR2Key ?? null] });
 }
 
 /**

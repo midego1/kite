@@ -21,9 +21,8 @@ await build({
 	absWorkingDir: root,
 	logLevel: "silent",
 });
-const { bootTraceScript, markBootPhase, markBootStep, readBootDetails } = await import(
-	pathToFileURL(join(bundleDirectory, "trace.mjs")).href
-);
+const { bootTraceScript, clearBootAfterReload, markBootAfterReload, markBootPhase, markBootStep, readBootDetails } =
+	await import(pathToFileURL(join(bundleDirectory, "trace.mjs")).href);
 const KEY = "kite-boot-trace";
 const ORIGIN = "https://mail.example.com";
 
@@ -54,6 +53,7 @@ function loadPage({ storage = new Map(), path = "/inbox/abc?q=secret", clock = {
 		sessionStorage: {
 			getItem: (key) => (storage.has(key) ? storage.get(key) : null),
 			setItem: (key, value) => storage.set(key, String(value)),
+			removeItem: (key) => storage.delete(key),
 		},
 		console: { error: (message) => errors.push(message) },
 		URL,
@@ -485,7 +485,8 @@ test("the steps of a start name the part of the app that rendered last, in the d
 });
 
 test("the next load reports a load that froze to the server once, with its step, build and whether it followed an update", () => {
-	const storage = new Map([["kite-reload-flight", "123"]]);
+	const storage = new Map();
+	markBootAfterReload({ setItem: (key, value) => storage.set(key, value) });
 	const frozen = loadPage({ storage });
 	assert.equal(frozen.record().afterUpdate, true);
 	assert.equal(frozen.record().build, "development (unknown)");
@@ -494,8 +495,8 @@ test("the next load reports a load that froze to the server once, with its step,
 	frozen.trace.phase("children-rendering");
 	frozen.trace.step("reading-pane");
 	frozen.beat(500);
-	// Frozen: the user reloads, and the return marker is long gone.
-	storage.delete("kite-reload-flight");
+	// The trace consumed its marker; the user reloads after the freeze.
+	assert.equal(storage.has("kite-boot-after-reload"), false);
 	const beacons = [];
 	const next = loadPage({ storage, beacons, clock: { now: 40 } });
 	assert.deepEqual(next.errors, [
@@ -526,4 +527,41 @@ test("the next load reports a load that froze to the server once, with its step,
 	const stuck = loadPage({ storage: again });
 	stuck.beat(500);
 	assert.doesNotThrow(() => loadPage({ storage: again }));
+});
+
+test("a load counts as following Reload only on a fresh marker: the trace's own, or the return marker of an older tab", () => {
+	const afterUpdate = (entries) => loadPage({ storage: new Map(entries) }).record().afterUpdate === true;
+	const now = Date.now();
+	assert.equal(afterUpdate([]), false);
+	assert.equal(afterUpdate([["kite-boot-after-reload", String(now - 1_000)]]), true);
+	assert.equal(afterUpdate([["kite-boot-after-reload", String(now - 61_000)]]), false);
+	assert.equal(afterUpdate([["kite-boot-after-reload", "later"]]), false);
+	assert.equal(afterUpdate([["kite-boot-after-reload", ""]]), false);
+	// A tab still on a build from before the trace's marker writes only the kite's return marker.
+	assert.equal(afterUpdate([["kite-reload-flight", String(now - 2_000)]]), true);
+	assert.equal(afterUpdate([["kite-reload-flight", String(now - 120_000)]]), false);
+	// The trace's own marker is consumed, so a refresh afterwards is no reload after an update.
+	const storage = new Map([["kite-boot-after-reload", String(now)]]);
+	assert.equal(loadPage({ storage }).record().afterUpdate, true);
+	assert.equal(storage.has("kite-boot-after-reload"), false);
+	assert.equal(loadPage({ storage }).record().afterUpdate, undefined);
+
+	// Writing and clearing it never throws, with or without storage.
+	const written = new Map();
+	markBootAfterReload({ setItem: (key, value) => written.set(key, value) }, 5);
+	assert.deepEqual([...written], [["kite-boot-after-reload", "5"]]);
+	clearBootAfterReload({ removeItem: (key) => written.delete(key) });
+	assert.equal(written.size, 0);
+	const refusing = {
+		setItem: () => {
+			throw new Error("QuotaExceededError");
+		},
+		removeItem: () => {
+			throw new Error("SecurityError");
+		},
+	};
+	assert.doesNotThrow(() => markBootAfterReload(refusing));
+	assert.doesNotThrow(() => clearBootAfterReload(refusing));
+	assert.doesNotThrow(() => markBootAfterReload(null));
+	assert.doesNotThrow(() => clearBootAfterReload());
 });

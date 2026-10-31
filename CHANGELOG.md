@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.10.31.9] - 2026-10-31
+
+### Added
+
+- **Why?** next to "N AI requests failed in the last 24 hours" on the [Admin overview](/admin) and in the mailbox's command center (primary admin): the failures grouped by cause, each with the features, provider and model, how often and when, the likely cause and a link to the setting that fixes it, worked out by Kite without asking an AI. **Ask AI** in it opens the assistant with that summary (codes and counts, no email) ready to send, and says why when the assistant can't answer either. No migration.
+
+### Changed
+
+- The command center in the empty reading pane now sits calmly in every style and theme: its cards are quiet raised surfaces with a hairline edge and a faint glow of the style's accent, the counts are plain pills with a coloured dot, the quick actions match them, and a warning under **Needs attention** (or a waiting database update) is one amber callout that reads well on dark and light surfaces alike, instead of the solid blue and brown blocks Kite classic showed in dark mode.
+
 ## [2026.10.31.8] - 2026-10-31
 
 ### Added

@@ -55,6 +55,7 @@ await build({
 				storeMessageAttachments,
 				storedAttachmentContent,
 			} from "./src/lib/email/attachments.ts";
+			export { decodeBase64Content, normalizeAttachmentContent } from "./src/lib/email/attachment-content-utils.ts";
 			export { indexMimeParts, matchAttachmentsToParts } from "./src/lib/email/mime-index-utils.ts";
 			export { parseRawMime } from "./src/lib/email/parse.ts";
 			export { TableInsertBuilder } from "./src/lib/backups/restore-utils.ts";
@@ -713,6 +714,19 @@ async function ingest(env, fixtureName, { key = "inbound/1-msg.eml", status = "r
 }
 
 const sha256 = async (bytes) => Buffer.from(await crypto.subtle.digest("SHA-256", bytes)).toString("hex");
+
+test("utils: attachment content from every form a body or the parser hands over", () => {
+	const text = (buffer) => new TextDecoder().decode(buffer);
+	assert.equal(text(m.decodeBase64Content("aGVs\r\nbG8=")), "hello");
+	const buffer = encoder.encode("as is").buffer;
+	assert.equal(m.normalizeAttachmentContent(buffer), buffer);
+	// A view into a larger buffer gives exactly its own bytes.
+	const view = encoder.encode("xxinsidexx").subarray(2, 8);
+	assert.equal(text(m.normalizeAttachmentContent(view)), "inside");
+	assert.equal(text(m.normalizeAttachmentContent("aGk=", "base64")), "hi");
+	assert.equal(text(m.normalizeAttachmentContent("café", "utf8")), "café");
+	assert.equal(text(m.normalizeAttachmentContent("plain")), "plain");
+});
 
 test("utils: the raw-index switch and which messages may hold 'raw' rows", () => {
 	assert.ok(m.isAttachmentRawIndexEnabled(undefined));

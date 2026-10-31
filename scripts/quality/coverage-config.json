@@ -17,6 +17,7 @@
 		"src/lib/ai/usage-report-utils.ts",
 		"src/lib/http/content-type-utils.ts",
 		"src/lib/http/content-disposition-utils.ts",
+		"src/lib/email/attachment-content-utils.ts",
 		"src/lib/email/attachment-name-utils.ts",
 		"src/lib/email/attachment-storage-utils.ts",
 		"src/lib/email/mime-index-utils.ts",

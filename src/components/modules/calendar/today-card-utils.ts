@@ -21,15 +21,15 @@ export function durationText(startsAt: string, endsAt: string): string {
 }
 
 /**
- * Today's events that are not over yet at `now`, from occurrences already expanded for the day ending at
- * `dayEnd`, earliest first: under way ones say "Now", the rest their start time in `timeZone`.
+ * Today's events that are not over yet at `now`, from occurrences already expanded for the day starting at
+ * `dayStart` (`expandCalendarEvents` leaves out what starts after it), earliest first: under way ones say "Now",
+ * the rest their start time in `timeZone`. An event that began before today links to today.
  */
 export function todayLines(
-	occurrences: readonly CalendarEvent[],
-	{ now, dayEnd, timeZone, max = TODAY_MAX_LINES }: { now: Date; dayEnd: Date; timeZone: string; max?: number },
+	today: readonly CalendarEvent[],
+	{ now, dayStart, timeZone, max = TODAY_MAX_LINES }: { now: Date; dayStart: Date; timeZone: string; max?: number },
 ): TodayLines {
 	const time = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit", timeZone });
-	const today = occurrences.filter((event) => Date.parse(event.startsAt) < dayEnd.getTime());
 	const left = today
 		.filter((event) => Date.parse(event.endsAt) > now.getTime())
 		.sort((a, b) => a.startsAt.localeCompare(b.startsAt));
@@ -41,7 +41,7 @@ export function todayLines(
 				when: startsAt <= now ? "Now" : time.format(startsAt),
 				what: event.title,
 				meta: event.location.trim() || durationText(event.startsAt, event.endsAt),
-				href: calendarEventHref(event.id, startsAt, timeZone),
+				href: calendarEventHref(event.id, startsAt < dayStart ? dayStart : startsAt, timeZone),
 			};
 		}),
 		more: Math.max(0, left.length - max),

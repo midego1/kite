@@ -39,6 +39,11 @@ test("searchSublabel names the plan and what is due, or the ended status", () =>
 	assert.equal(searchSublabel(row({ status: "cancelled", plan: "Basic" })), "Basic · Cancelled");
 	assert.equal(searchSublabel(row({ status: "expired" })), "Expired");
 	assert.equal(searchSublabel(row({ paymentFailedAt: at("2026-10-01") })), "Payment failed · Renews 1 Nov");
+	assert.equal(
+		searchSublabel(row({ status: "trial", trialEndsAt: at("2026-10-20"), paymentFailedAt: at("2026-10-01") })),
+		"Payment failed · Trial ends 20 Oct",
+	);
+	assert.equal(searchSublabel(row({ status: "cancelled", paymentFailedAt: at("2026-10-01") })), "Cancelled");
 });
 
 test("selectToolRows keeps current rows by default, filters by status and due window, and orders by due day", () => {

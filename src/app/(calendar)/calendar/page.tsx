@@ -21,6 +21,7 @@ import {
 	X,
 } from "lucide-react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import { useStaleCommandCenterCards } from "@/components/command-center/use-card-query";
 import { mobilePrimaryActionClass } from "@/components/page-header-utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -78,6 +79,8 @@ const eventFieldClass =
 	"h-9 border-transparent bg-transparent px-2 shadow-none hover:bg-white/60 focus:border-blue-600 focus:bg-white focus:shadow-sm";
 
 export default function CalendarPage() {
+	// Events changed here show in the command center's Today card the next time it appears.
+	useStaleCommandCenterCards();
 	const [events, setEvents] = useState<CalendarEvent[]>([]);
 	const storedRows = useRef<CalendarEvent[]>([]);
 	const [loadedEventsKey, setLoadedEventsKey] = useState<string | null>(null);

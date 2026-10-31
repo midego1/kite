@@ -66,6 +66,12 @@ interface CloudflareEnv {
 	 * migration it would apply had run.
 	 */
 	AUTO_APPLY_MIGRATIONS?: string;
+	/**
+	 * "0", "false", "off" or "no" stops new attachment sharing: a send from a draft, a forward and the assistant then
+	 * write their own copy of each file, as releases before it did (docs/specs/attachments-once.md). Rows that already
+	 * share an object keep sharing it; deletes always check references. On by default.
+	 */
+	ATTACHMENT_SHARING?: string;
 	/** "0", "false", "off" or "no" forces the opt-in usage statistics off (src/lib/telemetry/); nothing forces them on. */
 	KITE_TELEMETRY?: string;
 	/** Overrides the collector the daily usage heartbeat is posted to; https only. Empty means nothing is sent. */

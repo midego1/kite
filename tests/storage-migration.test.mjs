@@ -72,6 +72,13 @@ test("a mail migration copies raw messages and attachments, verifies them and le
 	await addStore(env, "sto_target", "kite-target");
 	await addMessage(env, "m1", { attachments: ["first attachment", "second"] });
 	await addMessage(env, "m2");
+	// A forward on m2 shares m1's first attachment: one object, walked and counted once.
+	env.DB.db
+		.prepare(
+			`INSERT INTO message_attachments (id, message_id, filename, content_type, size, r2_key, created_at)
+			 VALUES ('m2-forward', 'm2', 'file-0.txt', 'text/plain', 16, 'attachments/m1/0', 1)`,
+		)
+		.run();
 	await env.BUCKET.put("avatars/owner", "avatar bytes");
 	setRoute(env, "mail", "sto_target", "default");
 	const id = await migration.queueStorageMigration(env, {

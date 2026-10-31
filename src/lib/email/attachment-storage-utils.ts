@@ -23,6 +23,14 @@ export function rawAttachmentKey(attachmentId: string): string {
 	return `${RAW_ATTACHMENT_KEY_PREFIX}${attachmentId}`;
 }
 
+/**
+ * Whether new rows may share another row's object (`ATTACHMENT_SHARING`, on unless "0", "false", "off" or "no"). Off
+ * makes sends and forwards write their own copies again, the first step before running a release older than sharing.
+ */
+export function isAttachmentSharingEnabled(value: string | undefined): boolean {
+	return !["0", "false", "off", "no"].includes((value ?? "").trim().toLowerCase());
+}
+
 /** A requested range as `{ offset, length }` within `size` bytes, clamped like R2 clamps it; null for all of it. */
 export function resolveByteRange(
 	size: number,

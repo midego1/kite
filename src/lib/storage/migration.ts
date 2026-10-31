@@ -68,7 +68,7 @@ async function countKeys(env: MigrationEnv, objectClass: RoutableClass, fromStor
 	if (objectClass === "mail")
 		return (
 			(await first("SELECT count(*) AS n FROM messages WHERE raw_r2_key IS NOT NULL")) +
-			(await first(`SELECT count(*) AS n FROM message_attachments WHERE ${ATTACHMENT_OBJECT_ROWS_SQL}`)) +
+			(await first(`SELECT count(DISTINCT r2_key) AS n FROM message_attachments WHERE ${ATTACHMENT_OBJECT_ROWS_SQL}`)) +
 			(await beforeBodyColumn(
 				() => first(`SELECT count(*) AS n FROM messages WHERE ${BODY_KEY_COLUMN} IS NOT NULL`),
 				0,
@@ -104,7 +104,8 @@ export async function queueStorageMigration(
 async function d1Page(env: MigrationEnv, source: MigrationSource, after: string | null): Promise<Page> {
 	const queries: Record<Exclude<MigrationSource, "drive">, string> = {
 		messages: "SELECT id, raw_r2_key AS key, NULL AS size FROM messages WHERE raw_r2_key IS NOT NULL AND id > ?",
-		attachments: `SELECT id, r2_key AS key, size FROM message_attachments WHERE ${ATTACHMENT_OBJECT_ROWS_SQL} AND id > ?`,
+		// Rows can share an object (a forward, a send from a draft), so attachments are walked by key, each once.
+		attachments: `SELECT r2_key AS id, r2_key AS key, max(size) AS size FROM message_attachments WHERE ${ATTACHMENT_OBJECT_ROWS_SQL} AND r2_key > ? GROUP BY r2_key`,
 		// The key a body has is always its own (`htmlBodyObjectKey`), whatever the column holds.
 		bodies: `SELECT id, 'bodies/' || id || '.html' AS key, NULL AS size FROM messages WHERE ${BODY_KEY_COLUMN} IS NOT NULL AND id > ?`,
 		backups: "SELECT id, r2_key AS key, size FROM backups WHERE r2_key IS NOT NULL AND status = 'completed' AND id > ?",

@@ -35,6 +35,7 @@ await build({
 			export { getDb } from "./src/db/index.ts";
 			export {
 				attachmentObjectKeys,
+				isAttachmentSharingEnabled,
 				isRawAttachmentKey,
 				planObjectDeletion,
 				rawAttachmentKey,
@@ -635,3 +636,32 @@ for (const migrated of [false, true]) {
 		);
 	});
 }
+
+test("ATTACHMENT_SHARING=off makes sends and forwards write their own copies", async () => {
+	for (const value of [undefined, "", "on", "1"]) assert.ok(m.isAttachmentSharingEnabled(value), String(value));
+	for (const value of ["off", "0", "false", "no", " OFF "]) assert.ok(!m.isAttachmentSharingEnabled(value), value);
+	const { env, database } = await setup();
+	env.ATTACHMENT_SHARING = "off";
+	const [original] = await m.storeMessageAttachments(env, "msg-in", [
+		{ filename: "a.txt", type: "text/plain", content: encoder.encode("own copy").buffer },
+	]);
+	const [forwarded] = await m.copyMessageAttachments(env, "msg-in", "msg-draft");
+	assert.notEqual(keyOf(database, forwarded.id), original.r2Key);
+	const [sent] = await m.storeMessageAttachments(
+		env,
+		"msg-sent",
+		await m.loadMessageAttachmentContents(env, "msg-draft"),
+	);
+	assert.notEqual(sent.r2Key, keyOf(database, forwarded.id));
+	const raws = await rawFixture(env, database, "related inside alternative inside mixed, with an inline cid image");
+	database.db.exec("DELETE FROM message_attachments WHERE message_id IN ('msg-draft', 'msg-sent')");
+	const first = await m.copyMessageAttachments(env, "msg-in", "msg-draft");
+	const second = await m.copyMessageAttachments(env, "msg-in", "msg-sent");
+	assert.equal(first.length, raws.length + 1);
+	const firstKeys = new Set(keysOf(database, "msg-draft"));
+	assert.ok(
+		keysOf(database, "msg-sent").every((key) => !firstKeys.has(key)),
+		"no digest reuse either",
+	);
+	assert.equal(second.length, first.length);
+});

@@ -18,7 +18,12 @@ import {
 	shareAttachmentObject,
 	shareAttachmentObjectByDigest,
 } from "./attachment-storage";
-import { ATTACHMENT_OBJECT_ROWS_SQL, attachmentObjectKeys, isRawAttachmentKey } from "./attachment-storage-utils";
+import {
+	ATTACHMENT_OBJECT_ROWS_SQL,
+	attachmentObjectKeys,
+	isAttachmentSharingEnabled,
+	isRawAttachmentKey,
+} from "./attachment-storage-utils";
 import type { AttachmentRow, SharedAttachmentRow } from "./attachment-storage-types";
 import type { AttachmentContent, AttachmentMetadata, StoredAttachment } from "./attachment-types";
 
@@ -138,6 +143,7 @@ export async function storeMessageAttachments(
 	const stored: StoredAttachment[] = [];
 	const ids: string[] = [];
 	const written: string[] = [];
+	const sharing = isAttachmentSharingEnabled(env.ATTACHMENT_SHARING);
 
 	try {
 		for (const attachment of attachments) {
@@ -152,7 +158,7 @@ export async function storeMessageAttachments(
 			ids.push(row.id);
 			// A file read from a stored row (a draft being sent) names that row's object; the bytes are written only
 			// when the source has gone meanwhile or keys cannot be shared yet.
-			const source = storedSources.get(attachment);
+			const source = sharing ? storedSources.get(attachment) : undefined;
 			const shared = source ? await shareAttachmentObject(env, row, source) : null;
 			const r2Key = shared?.r2Key ?? (await writeAttachmentObject(env, row, attachment.content, written));
 			stored.push({
@@ -187,20 +193,27 @@ async function copyRawAttachment(
 	const content = await readAttachmentBytes(env, source);
 	if (!content) return null;
 	const sha256 = await sha256Hex(content);
-	const shared = await shareAttachmentObjectByDigest(env, row, { sha256, size: content.byteLength });
+	const shared = isAttachmentSharingEnabled(env.ATTACHMENT_SHARING)
+		? await shareAttachmentObjectByDigest(env, row, { sha256, size: content.byteLength })
+		: null;
 	if (shared) return shared.size;
 	await writeAttachmentObject(env, row, content, written, sha256);
 	return content.byteLength;
 }
 
-/** A forwarded 'object' row: its object is shared, or copied when keys cannot be shared yet (before 0088). */
+/**
+ * A forwarded 'object' row: its object is shared, or copied when keys cannot be shared yet (before 0088) or
+ * `ATTACHMENT_SHARING` is off.
+ */
 async function copyObjectAttachment(
 	env: CloudflareEnv,
 	source: AttachmentRow,
 	row: SharedAttachmentRow,
 	written: string[],
 ): Promise<number | null> {
-	const shared = await shareAttachmentObject(env, row, source.id);
+	const shared = isAttachmentSharingEnabled(env.ATTACHMENT_SHARING)
+		? await shareAttachmentObject(env, row, source.id)
+		: null;
 	if (shared) return shared.size;
 	const content = await readAttachmentBytes(env, source);
 	if (!content) return null;

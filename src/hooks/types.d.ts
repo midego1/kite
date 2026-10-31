@@ -1,5 +1,6 @@
 import type { SuggestionCount } from "@/lib/agent/auto-read/suggestion-types";
 import type { SendState } from "@/lib/messages/send-state-utils";
+import type { MessageVia } from "@/lib/external-accounts/via-utils";
 
 export type MessageStatus = "received" | "sent" | "draft" | "queued" | "failed" | "archived" | "trash" | "spam";
 
@@ -55,6 +56,8 @@ export type Message = {
 	hasAttachments?: boolean;
 	/** The sender waits for a Screener decision: held mail, or a new sender in an Inbox-mode mailbox. */
 	screenerPending?: boolean;
+	/** The connected account the message came in by (or went out through): the "via" chip. */
+	via?: MessageVia;
 	/** The one-line AI summary shown instead of the preview, when the mailbox has them on and this mail got one. */
 	lineSummary?: string;
 	createdAt: string;

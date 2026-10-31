@@ -1,5 +1,4 @@
-import { sql } from "drizzle-orm";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { externalAccountFolders } from "@/db/schema/external-accounts";
 import { getEmailAddress } from "@/lib/email/address";
@@ -7,6 +6,8 @@ import { parseRawHeaders } from "@/lib/email/raw-headers";
 import { imapLimits, type ImapMessageSummary } from "@/lib/imap/protocol-utils";
 import { openImapSession, type ImapSession } from "@/lib/imap/session";
 import type { ImapFetchedMessage, ImapLimits } from "@/lib/imap/types";
+import { createLogger } from "@/lib/logger.mjs";
+import { MailServerRefusedError } from "@/lib/net/errors";
 import { openSetting, SecretBoxError } from "@/lib/security/secret-box";
 import { shortServerText } from "./connection-utils";
 import { assertMailServerHost } from "./host-guard";
@@ -16,7 +17,9 @@ import {
 	baselineLastUid,
 	commandCapMs,
 	externalRawKey,
+	classifySyncError,
 	fetchRange,
+	findJunkFolder,
 	planFetchSteps,
 	planInboxSync,
 	RESET_LOOKBACK_MS,
@@ -26,10 +29,17 @@ import {
 	SYNC_FETCH_CHUNK,
 	SYNC_MAX_MESSAGE_BYTES,
 	type InboxState,
+	type SyncFolderRole,
 	type SyncProblem,
 } from "./sync-utils";
 
-const INBOX = "INBOX";
+const logger = createLogger("external-sync");
+
+/** A folder a run checks, by its name at the source. */
+type SyncFolder = { name: string; role: SyncFolderRole };
+
+const INBOX: SyncFolder = { name: "INBOX", role: "inbox" };
+const FOLDER_NAMES: Record<SyncFolderRole, string> = { inbox: "Inbox", junk: "Spam folder" };
 /** Reconnects one run may make to get past messages the server will not send; past it the run stops and retries. */
 const MAX_REOPENS = 8;
 
@@ -98,11 +108,12 @@ async function openSession(
 }
 
 /**
- * The run's connection with INBOX open. A FETCH that fails may leave the connection in the middle of a literal, so
- * after one the connection is replaced (`reopen`) before anything else is asked; a server that cannot be reached
- * again, or that rebuilt INBOX meanwhile, ends the run with the cursor where the last good step left it.
+ * The run's connection with one folder open (INBOX first, then the Spam folder). A FETCH that fails may leave the
+ * connection in the middle of a literal, so after one the connection is replaced (`reopen`) before anything else is
+ * asked; a server that cannot be reached again, or that rebuilt the folder meanwhile, ends the run with the cursor
+ * where the last good step left it.
  */
-class InboxConnection {
+class FolderConnection {
 	private reopened = 0;
 	/** A FETCH failed and the connection was not replaced yet: replace it before the next command. */
 	private broken = false;
@@ -111,17 +122,25 @@ class InboxConnection {
 		private readonly account: ExternalAccountRow,
 		private readonly limits: Partial<ImapLimits>,
 		public session: ImapSession,
-		public readonly state: InboxState,
+		public folder: SyncFolder,
+		public state: InboxState,
 	) {}
 
 	static async open(env: CloudflareEnv, account: ExternalAccountRow, limits: Partial<ImapLimits>) {
 		const session = await openSession(env, account, limits);
 		try {
-			return new InboxConnection(env, account, limits, session, await session.examine(INBOX));
+			return new FolderConnection(env, account, limits, session, INBOX, await session.examine(INBOX.name));
 		} catch (error) {
 			await session.close().catch(() => undefined);
 			throw error;
 		}
+	}
+
+	/** Opens another folder on the same connection; the folder's own UIDVALIDITY and UIDNEXT come with it. */
+	async switchTo(folder: SyncFolder): Promise<void> {
+		const session = await this.usable();
+		this.state = await session.examine(folder.name);
+		this.folder = folder;
 	}
 
 	/** Marks the connection unusable; the next `usable()` replaces it, and nothing does if no command follows. */
@@ -142,9 +161,11 @@ class InboxConnection {
 		await this.session.close().catch(() => undefined);
 		this.session = await openSession(this.env, this.account, this.limits);
 		this.broken = false;
-		const state = await this.session.examine(INBOX);
+		const state = await this.session.examine(this.folder.name);
 		if (state.uidValidity !== this.state.uidValidity)
-			throw new Error("The provider rebuilt the Inbox during the check; Kite will check it again");
+			throw new Error(
+				`The provider rebuilt the ${FOLDER_NAMES[this.folder.role]} during the check; Kite will check it again`,
+			);
 	}
 
 	close() {
@@ -155,10 +176,14 @@ class InboxConnection {
 /** Thrown to end a run early, keeping the cursor where the last saved message left it. */
 class StopRun extends Error {}
 
+/** What every folder of one run shares: the connection's limits and when the run has to stop. */
+type RunClock = { limits: ImapLimits; commandCap: number; started: number; deadline: number };
+
 /**
- * One check of INBOX (spec §6.3): the plan from the cursor, then the new messages in byte-bounded steps, each handed
- * to the inbound pipeline before the cursor moves past it. The run stops before a step when the account may no longer
- * bring in mail, so nothing is fetched that delivery would refuse.
+ * One check of the account (spec §6.3): INBOX, then, when the account syncs its Spam folder and INBOX left nothing
+ * for the next run, the provider's Spam folder on the same connection. Each folder has its own cursor, and its new
+ * messages are handed to the inbound pipeline in byte-bounded steps before the cursor moves past them. The run stops
+ * before a step when the account may no longer bring in mail, so nothing is fetched that delivery would refuse.
  */
 export async function runSync(
 	env: CloudflareEnv,
@@ -173,77 +198,177 @@ export async function runSync(
 	// No IMAP command started inside the budget may run past the deadline, so the run never outlives its lease.
 	const commandCap = commandCapMs({ deadline, started, budgetMs: options.budgetMs, commandMaxMs: base.commandMaxMs });
 	const limits = { ...base, commandMaxMs: commandCap, commandTimeoutMs: Math.min(base.commandTimeoutMs, commandCap) };
-	const connection = await InboxConnection.open(env, account, limits);
+	const clock: RunClock = { limits, commandCap, started, deadline };
+	const connection = await FolderConnection.open(env, account, limits);
 	try {
-		const { state } = connection;
-		const db = getDb(env);
-		const [cursor] = await db
-			.select()
-			.from(externalAccountFolders)
-			.where(and(eq(externalAccountFolders.accountId, account.id), eq(externalAccountFolders.name, INBOX)))
-			.limit(1);
-		const plan = planInboxSync(cursor ? { uidValidity: cursor.uidvalidity, lastUid: cursor.lastUid } : null, state);
-		const save = (lastUid: number) => saveCursor(env, account.id, state, lastUid, options);
-		if (plan.kind === "baseline") {
-			const uids =
-				state.uidNext === null && state.exists !== 0 ? (await connection.session.searchUids()).map(Number) : [];
-			await save(baselineLastUid(state.uidNext, uids));
-			return outcome;
-		}
-		if (plan.kind === "unchanged") {
-			await save(cursor!.lastUid!);
-			return outcome;
-		}
-		let lastUid = plan.kind === "fetch" ? plan.fromUid - 1 : 0;
-		if (plan.kind === "reset") {
-			const since = new Date((account.lastSuccessAt ?? options.clock()).getTime() - RESET_LOOKBACK_MS);
-			const recent = state.exists === 0 ? [] : await connection.session.searchUidsSince(since);
-			lastUid = resetLastUid(recent, state.uidNext);
-			await save(lastUid);
-			outcome.reset = true;
-			outcome.notes.push("The provider reset the Inbox; Kite checked the last two days again.");
-		}
-		const range = fetchRange(state, lastUid);
-		if (!range) {
-			await save(lastUid);
-			return outcome;
-		}
-		const { take, more } = selectNewMessages(await connection.session.fetchSummaries(range.from, range.to), lastUid);
-		outcome.more = more;
-		const steps = planFetchSteps(take, {
-			maxCount: SYNC_FETCH_CHUNK,
-			// RFC822.SIZE is the literal's size; a tenth is left for servers that count differently.
-			maxBytes: Math.floor(limits.fetchBatchBytes * 0.9),
-			maxMessageBytes: Math.min(SYNC_MAX_MESSAGE_BYTES, limits.literalBytes),
-		});
-		const progress: Progress = {
-			outOfTime: () => Date.now() - started > options.budgetMs || Date.now() + commandCap > deadline,
-			// Checked right before the cursor moves: a refusal that began while messages were being handed on keeps
-			// them before the cursor, so delivery's refusal (which moves the cursor back) can never be overwritten.
-			save: async (uid) => {
-				await assertMayDeliver(env, account);
-				await save(uid);
-			},
-		};
-		try {
-			for (const step of steps) {
-				if (progress.outOfTime()) {
-					outcome.more = true;
-					break;
-				}
-				await assertMayDeliver(env, account);
-				if (step.kind === "skip") skipTooLarge(step.entry, outcome);
-				else await fetchStep(env, connection, account, step.entries, outcome, progress);
-				await progress.save(step.kind === "skip" ? step.entry.uid : step.entries[step.entries.length - 1].uid);
-			}
-		} catch (error) {
-			if (!(error instanceof StopRun)) throw error;
-			outcome.more = error.message === "out_of_time";
-		}
+		const inbox = await syncFolder(env, connection, account, options, outcome, clock);
+		// Only after a complete INBOX pass: a refused or unfinished one leaves the Spam folder for a later run.
+		if (account.syncJunk && inbox === "done" && !outcome.more && !outOfTime(options, clock))
+			await syncJunkFolder(env, connection, account, options, outcome, clock);
 		return outcome;
 	} finally {
 		await connection.close();
 	}
+}
+
+/**
+ * The Spam-folder pass. Its own problems (a folder the server will not open, a LIST over the connection's limits, a
+ * folder rebuilt mid-run, reconnects used up) never fail the check: INBOX was checked, so the run notes it once and
+ * still counts as a success. Only what stops the account as a whole is passed on: a refusal, or a reconnect whose
+ * sign-in or certificate no longer works.
+ */
+async function syncJunkFolder(
+	env: CloudflareEnv,
+	connection: FolderConnection,
+	account: ExternalAccountRow,
+	options: RunOptions,
+	outcome: RunOutcome,
+	clock: RunClock,
+): Promise<void> {
+	try {
+		// The INBOX pass may have saved its cursor without asking (a baseline, nothing new), so ask before this one.
+		await assertMayDeliver(env, account);
+		if (await openJunkFolder(env, connection, account))
+			await syncFolder(env, connection, account, options, outcome, clock);
+	} catch (error) {
+		if (error instanceof StopRun) return;
+		if (error instanceof SyncRefusedError) throw error;
+		const problem = classifySyncError(error, {
+			refused: error instanceof MailServerRefusedError,
+			host: account.imapHost,
+		});
+		if (problem.class === "auth" || problem.class === "tls") throw error;
+		logger.warn("external.sync.junk_failed", {
+			accountId: account.id,
+			// The error's name only: its message may carry server text.
+			error: error instanceof Error ? error.name : "unknown",
+		});
+		const reason = error instanceof Error && error.message ? `: ${shortServerText(error.message)}` : "";
+		outcome.notes.push(`Kite could not check the Spam folder this time; the Inbox was checked${reason}`);
+	}
+}
+
+const outOfTime = (options: RunOptions, clock: RunClock) =>
+	Date.now() - clock.started > options.budgetMs || Date.now() + clock.commandCap > clock.deadline;
+
+/**
+ * Opens the account's Spam folder on the run's connection: the one its cursor names, or, the first time (or after the
+ * provider renamed it), the one its `LIST` marks `\Junk` or names like a Spam folder. False when there is none.
+ */
+async function openJunkFolder(
+	env: CloudflareEnv,
+	connection: FolderConnection,
+	account: ExternalAccountRow,
+): Promise<boolean> {
+	const db = getDb(env);
+	const [known] = await db
+		.select({ name: externalAccountFolders.name })
+		.from(externalAccountFolders)
+		.where(and(eq(externalAccountFolders.accountId, account.id), eq(externalAccountFolders.role, "junk")))
+		.limit(1);
+	if (known) {
+		try {
+			await connection.switchTo({ name: known.name, role: "junk" });
+			return true;
+		} catch {
+			// Renamed or gone at the source. The answer may have left the connection unusable, so it is replaced before
+			// the folders are listed (a server that cannot be reached again ends the run there).
+			connection.fail();
+		}
+	}
+	const name = findJunkFolder(await (await connection.usable()).listMailboxes());
+	if (!name || name === known?.name) {
+		logger.info("external.sync.junk_missing", { accountId: account.id });
+		return false;
+	}
+	// A renamed Spam folder is a new folder: its cursor starts again from a baseline.
+	if (known)
+		await db
+			.delete(externalAccountFolders)
+			.where(and(eq(externalAccountFolders.accountId, account.id), eq(externalAccountFolders.role, "junk")));
+	await connection.switchTo({ name, role: "junk" });
+	return true;
+}
+
+/**
+ * The folder the connection has open, from its cursor: a baseline, nothing new, new messages or a reset. "stopped"
+ * when the account was refused part way, or time ran out (`outcome.more` then says so).
+ */
+async function syncFolder(
+	env: CloudflareEnv,
+	connection: FolderConnection,
+	account: ExternalAccountRow,
+	options: RunOptions,
+	outcome: RunOutcome,
+	clock: RunClock,
+): Promise<"done" | "stopped"> {
+	const { state, folder } = connection;
+	const db = getDb(env);
+	const [cursor] = await db
+		.select()
+		.from(externalAccountFolders)
+		.where(and(eq(externalAccountFolders.accountId, account.id), eq(externalAccountFolders.name, folder.name)))
+		.limit(1);
+	const plan = planInboxSync(cursor ? { uidValidity: cursor.uidvalidity, lastUid: cursor.lastUid } : null, state);
+	const save = (lastUid: number) => saveCursor(env, account.id, folder, state, lastUid, options);
+	if (plan.kind === "baseline") {
+		const uids =
+			state.uidNext === null && state.exists !== 0 ? (await connection.session.searchUids()).map(Number) : [];
+		await save(baselineLastUid(state.uidNext, uids));
+		return "done";
+	}
+	if (plan.kind === "unchanged") {
+		await save(cursor!.lastUid!);
+		return "done";
+	}
+	let lastUid = plan.kind === "fetch" ? plan.fromUid - 1 : 0;
+	if (plan.kind === "reset") {
+		const since = new Date((account.lastSuccessAt ?? options.clock()).getTime() - RESET_LOOKBACK_MS);
+		const recent = state.exists === 0 ? [] : await connection.session.searchUidsSince(since);
+		lastUid = resetLastUid(recent, state.uidNext);
+		await save(lastUid);
+		outcome.reset = true;
+		outcome.notes.push(`The provider reset the ${FOLDER_NAMES[folder.role]}; Kite checked the last two days again.`);
+	}
+	const range = fetchRange(state, lastUid);
+	if (!range) {
+		await save(lastUid);
+		return "done";
+	}
+	const { take, more } = selectNewMessages(await connection.session.fetchSummaries(range.from, range.to), lastUid);
+	outcome.more = more;
+	const steps = planFetchSteps(take, {
+		maxCount: SYNC_FETCH_CHUNK,
+		// RFC822.SIZE is the literal's size; a tenth is left for servers that count differently.
+		maxBytes: Math.floor(clock.limits.fetchBatchBytes * 0.9),
+		maxMessageBytes: Math.min(SYNC_MAX_MESSAGE_BYTES, clock.limits.literalBytes),
+	});
+	const progress: Progress = {
+		outOfTime: () => outOfTime(options, clock),
+		// Checked right before the cursor moves: a refusal that began while messages were being handed on keeps
+		// them before the cursor, so delivery's refusal (which moves the cursor back) can never be overwritten.
+		save: async (uid) => {
+			await assertMayDeliver(env, account);
+			await save(uid);
+		},
+	};
+	try {
+		for (const step of steps) {
+			if (progress.outOfTime()) {
+				outcome.more = true;
+				return "stopped";
+			}
+			await assertMayDeliver(env, account);
+			if (step.kind === "skip") skipTooLarge(step.entry, outcome);
+			else await fetchStep(env, connection, account, step.entries, outcome, progress);
+			await progress.save(step.kind === "skip" ? step.entry.uid : step.entries[step.entries.length - 1].uid);
+		}
+	} catch (error) {
+		if (!(error instanceof StopRun)) throw error;
+		outcome.more = error.message === "out_of_time";
+		return "stopped";
+	}
+	return "done";
 }
 
 /** What a step needs from the run: whether time is up, and how to move the cursor (refusal checked first). */
@@ -280,7 +405,7 @@ function skipTooLarge(entry: ImapMessageSummary, outcome: RunOutcome) {
  */
 async function fetchStep(
 	env: CloudflareEnv,
-	connection: InboxConnection,
+	connection: FolderConnection,
 	account: ExternalAccountRow,
 	entries: ImapMessageSummary[],
 	outcome: RunOutcome,
@@ -306,7 +431,7 @@ async function fetchStep(
 	let missing = 0;
 	for (const entry of entries) {
 		const message = bodies.get(String(entry.uid));
-		if (message) await handOn(env, account, connection.state, entry, message, outcome);
+		if (message) await handOn(env, account, connection, entry, message, outcome);
 		else missing += 1;
 	}
 	if (missing) noteMissing(missing, outcome);
@@ -328,7 +453,7 @@ function noteMissing(count: number, outcome: RunOutcome) {
  */
 async function fetchAlone(
 	env: CloudflareEnv,
-	connection: InboxConnection,
+	connection: FolderConnection,
 	account: ExternalAccountRow,
 	entry: ImapMessageSummary,
 	outcome: RunOutcome,
@@ -346,7 +471,7 @@ async function fetchAlone(
 			continue;
 		}
 		const message = bodies.get(String(entry.uid));
-		if (message) await handOn(env, account, connection.state, entry, message, outcome);
+		if (message) await handOn(env, account, connection, entry, message, outcome);
 		else noteMissing(1, outcome);
 		return;
 	}
@@ -359,12 +484,12 @@ async function fetchAlone(
 async function handOn(
 	env: CloudflareEnv,
 	account: ExternalAccountRow,
-	state: InboxState,
+	{ state, folder: { role } }: Pick<FolderConnection, "state" | "folder">,
 	entry: ImapMessageSummary,
 	message: ImapFetchedMessage,
 	outcome: RunOutcome,
 ): Promise<void> {
-	const key = externalRawKey(account.id, state.uidValidity, entry.uid);
+	const key = externalRawKey(account.id, state.uidValidity, entry.uid, role);
 	await env.BUCKET.put(key, message.raw, {
 		httpMetadata: { contentType: "message/rfc822" },
 		customMetadata: { accountId: account.id },
@@ -390,19 +515,20 @@ function envelopeSender(raw: ArrayBuffer): string {
 const seconds = (date: Date) => Math.floor(date.getTime() / 1000);
 
 /**
- * Where INBOX stands, written only while the run still holds its lease (one statement), so a run that outlived its
+ * Where a folder stands, written only while the run still holds its lease (one statement), so a run that outlived its
  * lease can never move the cursor of the run that took over.
  */
 async function saveCursor(
 	env: CloudflareEnv,
 	accountId: string,
+	folder: SyncFolder,
 	state: InboxState,
 	lastUid: number,
 	options: Pick<RunOptions, "clock" | "lease">,
 ): Promise<void> {
 	await getDb(env).run(sql`
 		INSERT INTO ${externalAccountFolders} (account_id, name, role, uidvalidity, uidnext, last_uid, last_checked_at)
-		SELECT ${accountId}, ${INBOX}, 'inbox', ${state.uidValidity}, ${state.uidNext}, ${lastUid}, ${seconds(options.clock())}
+		SELECT ${accountId}, ${folder.name}, ${folder.role}, ${state.uidValidity}, ${state.uidNext}, ${lastUid}, ${seconds(options.clock())}
 		WHERE EXISTS (SELECT 1 FROM external_accounts WHERE id = ${accountId} AND lease_until = ${seconds(options.lease)})
 		ON CONFLICT (account_id, name) DO UPDATE SET uidvalidity = excluded.uidvalidity, uidnext = excluded.uidnext,
 			last_uid = excluded.last_uid, last_checked_at = excluded.last_checked_at

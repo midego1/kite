@@ -13,6 +13,8 @@ export type ParsedSearchQuery = {
 	after?: Date;
 	/** Exclusive upper bound on the message date, from `before:YYYY-MM-DD`. */
 	before?: Date;
+	/** `via:` — the connected account mail came through (provider, address, label or domain). */
+	via?: string;
 	/** True when anything in the query needs the full-text index. */
 	needsFullText: boolean;
 };

@@ -23,6 +23,7 @@ import { loadSendStates, statusFilterCondition } from "@/lib/messages/send-state
 import { parseStatusFilter } from "@/lib/messages/send-state-utils";
 import { loadRowsWithAttachments } from "@/lib/messages/attachment-flags";
 import { screenerPendingRows } from "@/lib/screener/views";
+import { loadMessageVia, viaSearchAvailable } from "@/lib/external-accounts/via";
 import { resolveMailboxScope } from "@/lib/mailboxes/scope-utils";
 import { mailboxScopeCondition } from "@/lib/messages/mailbox-scope";
 import { conversationKey, rowConversationKey } from "@/lib/messages/conversation-key";
@@ -112,11 +113,11 @@ export async function GET(request: Request) {
 	if (query || title) {
 		// Operators (from:, has:attachment, before:) and free text go through the
 		// full-text index; `title` is the legacy subject filter and is folded in.
+		const search = title ? `${query ?? ""} subject:"${title}"` : (query ?? "");
 		conditions.push(
-			...buildSearchConditions(
-				title ? `${query ?? ""} subject:"${title}"` : (query ?? ""),
-				getRequestTimeZone(request, user.timeZone),
-			),
+			...buildSearchConditions(search, getRequestTimeZone(request, user.timeZone), {
+				connectedAccounts: await viaSearchAvailable(env, search),
+			}),
 		);
 	}
 	const where = and(...conditions);
@@ -234,6 +235,8 @@ export async function GET(request: Request) {
 	);
 	const screenerPending = await screenerPendingRows(db, rows);
 	const sendStates = await loadSendStates(db, rows, user.id);
+	// The connected account a row came in by, for its "via" chip.
+	const via = await loadMessageVia(env, rows);
 	// A conversation row has an attachment when any message it stands for in this folder does.
 	const withAttachments = await loadRowsWithAttachments(db, rows, (row) =>
 		groupByThread ? (scopedThreads.ids.get(rowConversationKey(row)) ?? [row.id]) : [row.id],
@@ -266,6 +269,7 @@ export async function GET(request: Request) {
 			...rowLines(message.id),
 			...(screenerPending.has(message.id) ? { screenerPending: true } : {}),
 			...(sendStates.has(message.id) ? { sendState: sendStates.get(message.id) } : {}),
+			...(via.has(message.id) ? { via: via.get(message.id) } : {}),
 			...(groupByThread
 				? {
 						threadMessageIds: scopedThreads.ids.get(key) ?? [message.id],

@@ -26,6 +26,7 @@ import { needsRiskReview } from "@/lib/email/attachment-risk";
 
 import { cn } from "@/lib/utils";
 import type { ConversationMessageCardProps, ConversationThreadProps } from "./conversation-thread-types";
+import { ViaAccountChip } from "./via-account-chip";
 import { ThreadMessageActions } from "./thread-message-actions";
 import {
 	getConversationRecipients,
@@ -314,6 +315,7 @@ export function ConversationMessageCard({
 					<span
 						className={clsx(!locallyRead ? "font-semibold" : "", "flex shrink-0 items-center gap-2 text-xs mr-2 mt-2")}
 					>
+						<ViaAccountChip message={message} filter className="font-medium" />
 						{attachments.length > 0 && (
 							<Paperclip className="h-3.5 w-3.5" aria-label={`${attachments.length} attachments`} />
 						)}

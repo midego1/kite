@@ -21,15 +21,9 @@ await build({
 	absWorkingDir: root,
 	logLevel: "silent",
 });
-const {
-	APPLIED_NOTICE_FADE_MS,
-	APPLIED_NOTICE_FLIGHT_MS,
-	APPLIED_NOTICE_RESUME_MIN_MS,
-	APPLIED_NOTICE_STAY_MS,
-	createDismissTimer,
-	isAppliedNoticeExitEnd,
-	planAppliedNoticeExit,
-} = await import(pathToFileURL(join(bundleDirectory, "notice.mjs")).href);
+const { APPLIED_NOTICE_STAY_MS, createDismissTimer, isAppliedNoticeExitEnd, planAppliedNoticeExit } = await import(
+	pathToFileURL(join(bundleDirectory, "notice.mjs")).href
+);
 
 /** A clock whose timers fire only when the test advances it. */
 function fakeClock() {
@@ -125,8 +119,8 @@ test("after a hold ends the notice stays at least two more seconds", () => {
 	timer.hold("hover");
 	clock.advance(10_000);
 	timer.release("hover");
-	assert.equal(timer.remainingMs(), APPLIED_NOTICE_RESUME_MIN_MS);
-	clock.advance(APPLIED_NOTICE_RESUME_MIN_MS - 1);
+	assert.equal(timer.remainingMs(), 2_000);
+	clock.advance(1_999);
 	assert.deepEqual(elapsed, []);
 	clock.advance(1);
 	assert.equal(elapsed.length, 1);
@@ -159,11 +153,12 @@ test("cancel stops the countdown for good; holds and releases after it do nothin
 test("the exit is a flight with the kite, or a short fade under reduced motion", () => {
 	const flight = planAppliedNoticeExit(false);
 	assert.equal(flight.kite, true);
-	assert.equal(flight.durationMs, APPLIED_NOTICE_FLIGHT_MS);
+	// The flight's length is the one in globals.css (`applied-notice-kite`), about 1.2 s.
+	assert.equal(flight.durationMs, 1_200);
 	assert.ok(flight.fallbackMs > flight.durationMs, "the fallback waits for the flight");
 	const fade = planAppliedNoticeExit(true);
 	assert.equal(fade.kite, false);
-	assert.equal(fade.durationMs, APPLIED_NOTICE_FADE_MS);
+	assert.equal(fade.durationMs, 250);
 	assert.ok(fade.fallbackMs > fade.durationMs);
 	assert.ok(fade.fallbackMs < flight.durationMs, "reduced motion is over before the flight would be");
 });

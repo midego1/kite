@@ -3,11 +3,11 @@ import type { AppliedNoticeExit, DismissTimer, DismissTimerClock, DismissTimerOp
 /** How long the "Database updated" notice stays readable before it leaves on its own. */
 export const APPLIED_NOTICE_STAY_MS = 8_000;
 /** After a hover or focus ends, the notice stays at least this long, so it never vanishes under a leaving pointer. */
-export const APPLIED_NOTICE_RESUME_MIN_MS = 2_000;
+const APPLIED_NOTICE_RESUME_MIN_MS = 2_000;
 /** The kite's flight out of the notice, matched by the `applied-notice-*` keyframes in globals.css. */
-export const APPLIED_NOTICE_FLIGHT_MS = 1_200;
+const APPLIED_NOTICE_FLIGHT_MS = 1_200;
 /** The plain fade under reduced motion. */
-export const APPLIED_NOTICE_FADE_MS = 250;
+const APPLIED_NOTICE_FADE_MS = 250;
 /** The notice is removed by this timer even if `animationend` never comes (animations disabled, a hidden tab). */
 const FALLBACK_SLACK_MS = 400;
 const FLIGHT_KEYFRAMES = "applied-notice-kite";

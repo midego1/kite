@@ -1,9 +1,10 @@
-import { and, eq, inArray, isNull, ne, or } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import type { AppDatabase } from "@/db";
 import { getDb } from "@/db";
-import { domains, mailboxes, messageAttachments, messages } from "@/db/schema";
+import { domains, mailboxes, messages } from "@/db/schema";
 import { htmlBodyObjectKey } from "@/lib/email/bodies-utils";
-import { attachmentObjectKeys } from "@/lib/email/attachment-storage-utils";
+import { messageAttachmentKeys } from "@/lib/email/attachments";
+import { deleteUnreferencedObjects } from "@/lib/email/attachment-storage";
 import type { MailboxDeletionResult, MailboxPurgeMessage } from "./delete-types";
 import {
 	MAILBOX_PURGE_BATCH_SIZE,
@@ -11,7 +12,6 @@ import {
 	MAILBOX_PURGE_REQUEST_BUDGET_MS,
 	R2_DELETE_BATCH_SIZE,
 	chunk,
-	selectDeletableRawKeys,
 } from "./delete-utils";
 
 async function deleteObjects(env: CloudflareEnv, keys: string[]) {
@@ -27,7 +27,9 @@ async function deleteObjects(env: CloudflareEnv, keys: string[]) {
 /**
  * Removes one batch of a mailbox's messages with their attachment rows and
  * the R2 objects behind them. Rows go first: if R2 fails afterwards the cost
- * is an orphaned object, never a message whose content is missing.
+ * is an orphaned object, never a message whose content is missing. Objects
+ * that a message elsewhere still names (a raw shared with another mailbox, an
+ * attachment a forward or a sent copy shares) stay.
  */
 async function purgeMessageBatch(env: CloudflareEnv, db: AppDatabase, mailboxId: string): Promise<number> {
 	const batch = await db
@@ -38,31 +40,15 @@ async function purgeMessageBatch(env: CloudflareEnv, db: AppDatabase, mailboxId:
 	if (batch.length === 0) return 0;
 
 	const ids = batch.map((row) => row.id);
-	const attachmentKeys = attachmentObjectKeys(
-		await db
-			.select({ r2Key: messageAttachments.r2Key })
-			.from(messageAttachments)
-			.where(inArray(messageAttachments.messageId, ids)),
-	);
-	const rawKeys = [...new Set(batch.map((row) => row.rawR2Key).filter((key): key is string => !!key))];
-	const keptRawKeys = rawKeys.length
-		? (
-				await db
-					.select({ rawR2Key: messages.rawR2Key })
-					.from(messages)
-					.where(
-						and(inArray(messages.rawR2Key, rawKeys), or(isNull(messages.mailboxId), ne(messages.mailboxId, mailboxId))),
-					)
-			).map((row) => row.rawR2Key as string)
-		: [];
+	const attachmentKeys = await messageAttachmentKeys(env, ids);
 
 	// Attachment rows, shared links, spam feedback and assistant rows cascade from the message.
 	await db.delete(messages).where(inArray(messages.id, ids));
-	await deleteObjects(env, [
-		...attachmentKeys,
-		...selectDeletableRawKeys(rawKeys, keptRawKeys),
-		...ids.map(htmlBodyObjectKey),
-	]);
+	await deleteUnreferencedObjects(env, {
+		attachmentKeys,
+		rawKeys: batch.map((row) => row.rawR2Key),
+		ownedKeys: ids.map(htmlBodyObjectKey),
+	});
 	return batch.length;
 }
 

@@ -1,21 +1,29 @@
 import { and, eq } from "drizzle-orm";
 import type { AppDatabase } from "@/db";
 import { messages } from "@/db/schema";
-import { deleteMessageAttachmentObjects } from "@/lib/email/attachments";
+import { messageAttachmentKeys } from "@/lib/email/attachments";
+import { deleteUnreferencedObjects } from "@/lib/email/attachment-storage";
 import { htmlBodyObjectKey } from "@/lib/email/bodies-utils";
 
-/** Remove every external object owned by a message before deleting its row. */
+/**
+ * Deletes a message (drafts, templates, JMAP, import rollback, the assistant) and then the objects only it used. The
+ * row goes first and its attachment rows cascade with it; an attachment object shared with another message (a send
+ * from this draft, the message it forwards) stays (`docs/specs/attachments-once.md` §5.4).
+ */
 export async function deleteMessageWithObjects(
 	env: CloudflareEnv,
 	db: AppDatabase,
 	id: string,
 	rawR2Key: string | null,
 ): Promise<void> {
-	await deleteMessageAttachmentObjects(env, id);
-	if (rawR2Key) await env.BUCKET.delete(rawR2Key);
-	// The offloaded HTML body, when there is one; deleting a missing object is a no-op.
-	await env.BUCKET.delete(htmlBodyObjectKey(id));
+	const attachmentKeys = await messageAttachmentKeys(env, [id]);
 	await db.delete(messages).where(eq(messages.id, id));
+	await deleteUnreferencedObjects(env, {
+		attachmentKeys,
+		rawKeys: [rawR2Key],
+		// The offloaded HTML body, when there is one; deleting a missing object is a no-op.
+		ownedKeys: [htmlBodyObjectKey(id)],
+	});
 }
 
 /**

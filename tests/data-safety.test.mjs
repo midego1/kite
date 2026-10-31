@@ -177,8 +177,7 @@ test("restore statements applied in one sqlite batch replace the data", async ()
 	database.db.close();
 });
 
-test("mailbox purge keeps raw objects other messages still use", () => {
-	assert.deepEqual(lib.selectDeletableRawKeys(["a", null, "b", "a", "shared"], ["shared"]), ["a", "b"]);
+test("mailbox purge helpers", () => {
 	assert.deepEqual(lib.chunk([1, 2, 3, 4, 5], 2), [[1, 2], [3, 4], [5]]);
 	assert.equal(lib.isMailboxPurgeMessage({ kind: "mailbox.purge", mailboxId: "m1" }), true);
 	assert.equal(lib.isMailboxPurgeMessage({ kind: "mailbox.purge" }), false);

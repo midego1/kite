@@ -1,15 +1,33 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { getDb } from "@/db";
 import { messageAttachments, messages } from "@/db/schema";
+import { chunkArray, queryInChunks } from "@/db/chunk-utils";
 import { missingColumnFromError } from "@/lib/auth/user-lookup-utils";
-import { isRawAttachmentKey, resolveByteRange, sliceByteStream, toRawLocation } from "./attachment-storage-utils";
+import { createLogger } from "@/lib/logger.mjs";
+import {
+	ATTACHMENT_OBJECT_ROWS_SQL,
+	isRawAttachmentKey,
+	planObjectDeletion,
+	referenceCheckedKeys,
+	resolveByteRange,
+	sliceByteStream,
+	toRawLocation,
+} from "./attachment-storage-utils";
 import { createBase64DecodeStream } from "./mime-index-utils";
 import type {
 	AttachmentByteRange,
 	AttachmentRef,
+	ObjectDeletionCandidates,
 	OpenedAttachment,
 	RawAttachmentLocation,
+	ReferencedObjectKeys,
+	SharedAttachmentRow,
 } from "./attachment-storage-types";
+
+const log = createLogger("attachments");
+
+/** R2 accepts up to 1,000 keys in one delete call. */
+const R2_DELETE_BATCH = 1000;
 
 /**
  * The only module that turns an attachment row into bytes (`docs/specs/attachments-once.md`;
@@ -130,4 +148,130 @@ export async function readAttachmentBytes(
 	}
 	const opened = await openAttachment(env, row, options);
 	return opened ? new Response(opened.body).arrayBuffer() : null;
+}
+
+/**
+ * The row a share inserts: everything but the key and the size, which come from the source row in the same statement.
+ * `created_at` is in seconds, as Drizzle's `timestamp` mode stores it.
+ */
+function sharedRowParams(row: SharedAttachmentRow): unknown[] {
+	return [
+		row.id,
+		row.messageId,
+		row.filename,
+		row.contentType,
+		row.disposition,
+		row.contentId,
+		Math.floor(Date.now() / 1000),
+	];
+}
+
+const SHARED_COLUMNS = "id, message_id, filename, content_type, disposition, content_id, created_at, size, r2_key";
+
+/**
+ * Before migration 0088 `r2_key` is unique, so a share fails; the caller writes its own object then, as before.
+ * Any other error is real.
+ */
+function isUniqueKeyError(error: unknown): boolean {
+	return /UNIQUE constraint failed: message_attachments\.r2_key/i.test(String((error as Error)?.message ?? error));
+}
+
+async function insertShared(env: CloudflareEnv, statement: string, params: unknown[]) {
+	try {
+		const row = await env.DB.prepare(statement)
+			.bind(...params)
+			.first<{ r2Key: string; size: number }>();
+		return row ?? null;
+	} catch (error) {
+		if (isUniqueKeyError(error)) return null;
+		throw error;
+	}
+}
+
+/**
+ * Inserts `row` naming the object of the 'object' row `sourceId`, in one statement (`docs/specs/attachments-once.md`
+ * invariant 5): a key no row names any more can never gain a reference again, so a delete that found it unreferenced
+ * never races a share. Null when the source is gone, is a 'raw' row, or keys cannot be shared yet (before 0088); the
+ * caller then writes the bytes itself.
+ */
+export function shareAttachmentObject(
+	env: CloudflareEnv,
+	row: SharedAttachmentRow,
+	sourceId: string,
+): Promise<{ r2Key: string; size: number } | null> {
+	return insertShared(
+		env,
+		`INSERT INTO message_attachments (${SHARED_COLUMNS})
+			SELECT ?, ?, ?, ?, ?, ?, ?, size, r2_key FROM message_attachments WHERE id = ? AND ${ATTACHMENT_OBJECT_ROWS_SQL}
+			RETURNING r2_key AS r2Key, size`,
+		[...sharedRowParams(row), sourceId],
+	);
+}
+
+/**
+ * Inserts `row` naming an existing object with the same decoded bytes (`sha256`, `size`) that belongs to a message of
+ * the same user as `row.messageId`, so content is never linked between accounts (spec §6). Used for a forwarded 'raw'
+ * row, which has no object to share; null when there is none.
+ */
+export function shareAttachmentObjectByDigest(
+	env: CloudflareEnv,
+	row: SharedAttachmentRow,
+	digest: { sha256: string; size: number },
+): Promise<{ r2Key: string; size: number } | null> {
+	return insertShared(
+		env,
+		`INSERT INTO message_attachments (${SHARED_COLUMNS}, sha256)
+			SELECT ?, ?, ?, ?, ?, ?, ?, a.size, a.r2_key, a.sha256
+			FROM message_attachments a JOIN messages m ON m.id = a.message_id
+			WHERE a.sha256 = ? AND a.size = ? AND a.storage = 'object' AND substr(a.r2_key, 1, 4) <> 'raw:'
+				AND m.user_id = (SELECT user_id FROM messages WHERE id = ?)
+			LIMIT 1
+			RETURNING r2_key AS r2Key, size`,
+		[...sharedRowParams(row), digest.sha256, digest.size, row.messageId],
+	);
+}
+
+/** The candidate keys that rows still name; read after the deleted rows are gone. */
+async function findReferencedKeys(env: CloudflareEnv, candidates: ObjectDeletionCandidates): Promise<ReferencedObjectKeys> {
+	const db = getDb(env);
+	const { attachmentKeys, rawKeys } = referenceCheckedKeys(candidates);
+	const [attachments, raws] = await Promise.all([
+		queryInChunks(attachmentKeys, (chunk) =>
+			db
+				.selectDistinct({ key: messageAttachments.r2Key })
+				.from(messageAttachments)
+				.where(inArray(messageAttachments.r2Key, chunk)),
+		),
+		queryInChunks(rawKeys, (chunk) =>
+			db.selectDistinct({ key: messages.rawR2Key }).from(messages).where(inArray(messages.rawR2Key, chunk)),
+		),
+	]);
+	return {
+		attachmentKeys: attachments.map((row) => row.key),
+		rawKeys: raws.flatMap((row) => (row.key ? [row.key] : [])),
+	};
+}
+
+/**
+ * Deletes the objects of rows that are already gone, keeping every object a remaining row still names
+ * (`docs/specs/attachments-once.md` §5.4). Callers delete their rows first: if storage fails afterwards the cost is an
+ * orphaned object, never a missing file that another message still uses. It never throws, since the rows are gone
+ * and the request has done its work; keys it could not delete are logged (ids only) until an orphan sweep exists.
+ */
+export async function deleteUnreferencedObjects(env: CloudflareEnv, candidates: ObjectDeletionCandidates): Promise<void> {
+	let keys: string[];
+	try {
+		keys = planObjectDeletion(candidates, await findReferencedKeys(env, candidates));
+	} catch (error) {
+		const { attachmentKeys, rawKeys } = referenceCheckedKeys(candidates);
+		log.error("attachment.objects_orphaned", { keys: [...attachmentKeys, ...rawKeys], error });
+		keys = planObjectDeletion({ ownedKeys: candidates.ownedKeys }, { attachmentKeys: [], rawKeys: [] });
+	}
+	for (const batch of chunkArray(keys, R2_DELETE_BATCH)) {
+		try {
+			await env.BUCKET.delete(batch);
+		} catch (error) {
+			log.error("attachment.objects_orphaned", { keys: batch, error });
+		}
+	}
 }

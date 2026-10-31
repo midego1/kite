@@ -1,5 +1,0 @@
-### Added
-
-- [Settings → Connected accounts](/settings/connected-accounts) has a forwarding guide for Gmail, Outlook.com and Microsoft 365, iCloud Mail, Yahoo Mail, Fastmail and other providers: the steps with your Kite address filled in, links to the provider's own forwarding settings and what to check afterwards. Choosing Outlook.com or Microsoft 365 when connecting an account, which Kite cannot connect yet, offers **Set up forwarding**.
-- Mail that came in through a connected account (or was sent as one) shows a "via" chip in the message list and the reader, such as "via Gmail" or the account's label. Choosing it in the reader lists everything from that account, and the new `via:` search operator finds mail by provider, address, label or domain (`via:gmail`, `via:me@gmail.com`, `via:"Work mail"`).
-- **Also sync the Spam folder** on a connected account (off by default) checks the provider's Spam folder too, from the moment it is turned on. That mail always lands in Kite's Spam: Kite's own spam filter still runs on it and its verdict is kept, with the provider's added, and mailbox rules and the Screener do not move it. No migration is needed.

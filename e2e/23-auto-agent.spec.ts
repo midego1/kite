@@ -999,7 +999,7 @@ test.describe("automatic reading settings UI", () => {
 			await page.goto("/agent");
 			const killSwitch = page.getByRole("switch", { name: "Enable automatic reading" });
 			const optIn = page.getByRole("switch", {
-				name: "Allow an external AI provider for automatic reading and the composer",
+				name: "Allow an external AI provider to read mail",
 			});
 			const cap = page.getByLabel("Daily spend cap for automatic reading and chat (USD)");
 			await expect(killSwitch).toHaveAttribute("aria-checked", "true");

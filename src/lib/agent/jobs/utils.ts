@@ -22,6 +22,7 @@ import { isCleanDraftBody } from "./draft-prompt-utils";
 import { traceAiError } from "../ai-errors";
 import { UnusableAnswerError, classifyAiError } from "../ai-error-utils";
 import { InteractiveModelRefusedError } from "../interactive-model";
+import { externalProviderRefused } from "../external-provider";
 
 export type AgentDraftQueueMessage = { kind: "agent.draft"; jobId: string };
 
@@ -204,6 +205,9 @@ export async function processAgentDraftJob(env: CloudflareEnv, jobId: string) {
 		if (newer) return void (await skip("A newer message or sent reply superseded this draft"));
 		const selection = await getAgentModel(env, settings.modelId);
 		if (!selection) throw new InteractiveModelRefusedError("not_configured");
+		// Automatic work like automatic reading: an external provider needs the primary admin's opt-in.
+		if (await externalProviderRefused(env, selection.providerKind))
+			return void (await skip("external_provider_not_allowed"));
 		const body = await generateRecordedDraft(env, job, selection, {
 			model: selection.model,
 			instructions: settings.instructions,

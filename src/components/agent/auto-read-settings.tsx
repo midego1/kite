@@ -124,7 +124,7 @@ function AutoReadNotices({ state }: { state: AutoReadSettingsState }) {
 			{state.externalProviderBlocked && (
 				<p className="text-amber-700">
 					Automatic reading uses {state.providerLabel}, an external provider. The primary admin must allow the external
-					provider for automatic reading on the Agent admin page before Kite reads any mail.
+					provider to read mail on the Agent admin page before Kite reads any mail.
 				</p>
 			)}
 			{!state.canManage && (

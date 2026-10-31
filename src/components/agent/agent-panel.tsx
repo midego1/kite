@@ -30,6 +30,7 @@ import { Switch } from "@/components/ui/switch";
 import { AgentTurnView } from "./agent-turn";
 import { KiteAvatar } from "./kite-avatar";
 import { ChatContext, ChatWelcome } from "./chat-welcome";
+import { ExternalProviderNotice } from "./external-provider-notice";
 import { CurrentEmailChip, useCurrentEmail } from "./current-email";
 import { useChatContentResize } from "./use-chat-content-resize";
 import { ConversationSkeleton } from "./conversation-skeleton";
@@ -95,6 +96,9 @@ export function AgentPanel({ open, fullSize, docked, onClose, onToggleFullSize }
 	const [canManage, setCanManage] = useState(false);
 	const [instructionContext, setInstructionContext] = useState<InstructionContext | null>(null);
 	const [providerConfigured, setProviderConfigured] = useState(false);
+	// The provider's name while chat is refused for an external provider the primary admin has not allowed.
+	const [externalBlocked, setExternalBlocked] = useState<string | null>(null);
+	const chatReady = providerConfigured && !externalBlocked;
 	const [autoReplyEnabled, setAutoReplyEnabled] = useState(false);
 	const [conversationId, setConversationId] = useState<string | null>(null);
 	const [deletingConversationId, setDeletingConversationId] = useState<string | null>(null);
@@ -187,6 +191,7 @@ export function AgentPanel({ open, fullSize, docked, onClose, onToggleFullSize }
 			setCanManage(data.canManage);
 			setInstructionContext(data.instructionContext ?? null);
 			setProviderConfigured(data.providerConfigured);
+			setExternalBlocked(data.externalProviderBlocked ? data.providerLabel : null);
 			setAutoReplyEnabled(data.autoReplyEnabled);
 			setReviewers(data.reviewers ?? []);
 		}
@@ -480,7 +485,7 @@ export function AgentPanel({ open, fullSize, docked, onClose, onToggleFullSize }
 	}
 
 	function submitMessage(text: string) {
-		if (!mailboxId || !text.trim() || !settings || !providerConfigured || loadingConversation) return;
+		if (!mailboxId || !text.trim() || !settings || !chatReady || loadingConversation) return;
 		setInput("");
 		if (runningRef.current || queuedMessagesRef.current.length) {
 			queuedMessagesRef.current = enqueueAgentMessage(queuedMessagesRef.current, text);
@@ -704,12 +709,15 @@ export function AgentPanel({ open, fullSize, docked, onClose, onToggleFullSize }
 									Configure an AI provider to use chat and auto-drafts.
 								</p>
 							)}
+							{settings && providerConfigured && externalBlocked && (
+								<ExternalProviderNotice providerLabel={externalBlocked} />
+							)}
 							{loadingConversation && <ConversationSkeleton />}
 							{!loadingConversation && messages.length === 0 && settings && (
 								<ChatWelcome
 									selectedMessageId={selectedMessageId}
 									prompts={welcomePrompts}
-									disabled={!providerConfigured}
+									disabled={!chatReady}
 									busy={busy}
 									onSubmit={submitMessage}
 								/>
@@ -814,13 +822,13 @@ export function AgentPanel({ open, fullSize, docked, onClose, onToggleFullSize }
 							onKeyDown={(event) => {
 								if (!shouldSubmitAgentInput(event)) return;
 								event.preventDefault();
-								if (input.trim() && settings && providerConfigured && !loadingConversation)
+								if (input.trim() && settings && chatReady && !loadingConversation)
 									event.currentTarget.form?.requestSubmit();
 							}}
 							placeholder="Ask Kite AI…"
 							aria-label="Message Kite AI"
 							name="message"
-							disabled={!settings || !providerConfigured || loadingConversation}
+							disabled={!settings || !chatReady || loadingConversation}
 						/>
 						<div className="absolute bottom-11 right-5 flex justify-end gap-2">
 							{busy ? (
@@ -840,7 +848,7 @@ export function AgentPanel({ open, fullSize, docked, onClose, onToggleFullSize }
 									type="submit"
 									variant="ghost"
 									size="sm"
-									disabled={!input.trim() || !settings || !providerConfigured || loadingConversation}
+									disabled={!input.trim() || !settings || !chatReady || loadingConversation}
 									className="rounded-lg bg-blue-600 text-white hover:bg-blue-700"
 									aria-label="Send message"
 									title="Send message"
@@ -904,6 +912,11 @@ export function AgentPanel({ open, fullSize, docked, onClose, onToggleFullSize }
 							</div>
 							{autoReplyEnabled && (
 								<p className="text-amber-700">Disable out-of-office auto-replies to enable AI drafts.</p>
+							)}
+							{settings.autoDraftEnabled && externalBlocked && (
+								<p className="text-amber-700">
+									Automatic drafts are skipped until the primary admin allows {externalBlocked} to read mail.
+								</p>
 							)}
 							<MailboxInstructionsSetting
 								settings={settings}

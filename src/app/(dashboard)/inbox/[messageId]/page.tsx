@@ -66,6 +66,8 @@ export default function MessageDetailPage() {
 	const [loading, setLoading] = useState(true);
 	const [previewAttachment, setPreviewAttachment] = useState<MessageAttachment | null>(null);
 	const [threadExpanded, setThreadExpanded] = useState(false);
+	// Earlier and later messages whose remote images were shown; the open message keeps its own in useOpenMessageBody.
+	const [remoteImagesShownIds, setRemoteImagesShownIds] = useState<ReadonlySet<string>>(() => new Set());
 	const [latestMessagesFirst] = useLatestMessagesFirst();
 	const { enabled: showFullRecipientAddresses } = useShowFullRecipientAddresses();
 	const { visible: messageListVisible } = useMessageListVisibility();
@@ -108,7 +110,11 @@ export default function MessageDetailPage() {
 		};
 	}, [messageId]);
 
-	if (useKeyChanged(messageId)) setThreadExpanded(false);
+	if (useKeyChanged(messageId)) {
+		setThreadExpanded(false);
+		setRemoteImagesShownIds(new Set());
+	}
+	const showThreadRemoteImages = (id: string) => setRemoteImagesShownIds((current) => new Set(current).add(id));
 
 	const messageMailbox = mailboxes.find((mailbox) => mailbox.id === data?.message?.mailboxId) ?? selectedMailbox;
 	// Prepared before the early returns so the body is memoized, not sanitized again on every render.
@@ -157,7 +163,7 @@ export default function MessageDetailPage() {
 				? orderForPrint([
 						...thread.messages.map((threadMessage) => ({
 							...threadMessage,
-							blockRemoteImages: !alwaysLoadRemoteImages,
+							blockRemoteImages: !alwaysLoadRemoteImages && !remoteImagesShownIds.has(threadMessage.id),
 						})),
 						printSource,
 					])
@@ -246,6 +252,8 @@ export default function MessageDetailPage() {
 					expandedAll={threadExpanded}
 					onExpandedAllChange={setThreadExpanded}
 					hideTriageSummary={hideTriageSummary}
+					remoteImagesShownIds={remoteImagesShownIds}
+					onShowRemoteImages={showThreadRemoteImages}
 				/>
 				{/* Every message of the conversation is a section under a hairline, as in Zero's reader. */}
 				<article className="border-t border-neutral-200 px-4 py-6 sm:px-7">
@@ -437,6 +445,8 @@ export default function MessageDetailPage() {
 					expandedAll={threadExpanded}
 					onExpandedAllChange={setThreadExpanded}
 					hideTriageSummary={hideTriageSummary}
+					remoteImagesShownIds={remoteImagesShownIds}
+					onShowRemoteImages={showThreadRemoteImages}
 				/>
 				<MessageAttachmentViewer
 					attachment={previewAttachment}

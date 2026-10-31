@@ -10,12 +10,14 @@ const RESERVED_FILE_NAMES = /^(con|prn|aux|nul|com[0-9]|lpt[0-9])$/i;
 
 /**
  * A file name for a message saved as PDF: its subject with characters file systems refuse (`/ \ : * ? " < > |`
- * and control characters) replaced by spaces, runs of spaces collapsed, leading and trailing dots and spaces
+ * and control characters) replaced by spaces, bidirectional and zero-width controls removed, runs of spaces collapsed, leading and trailing dots and spaces
  * removed, and at most 100 characters before `.pdf`. An empty subject, or one that is only punctuation, is "Email".
  */
 export function pdfFileName(subject: string | null | undefined): string {
 	const cleaned = (subject ?? "")
 		.normalize("NFC")
+		// Bidirectional controls can make "gpj.pdf" display as "fdp.jpg"; zero-width characters hide in names.
+		.replace(/[\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/g, "")
 		.replace(/[\u0000-\u001f\u007f-\u009f/\\:*?"<>|]/g, " ")
 		.replace(/\s+/g, " ")
 		.trim()

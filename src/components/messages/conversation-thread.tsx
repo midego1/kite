@@ -49,6 +49,8 @@ export function ConversationThread({
 	showFullRecipientAddresses = false,
 	threadId = null,
 	hideTriageSummary = false,
+	remoteImagesShownIds,
+	onShowRemoteImages,
 }: ConversationThreadProps) {
 	const slice = partitionThread(messages, currentMessageId, position, latestMessagesFirst);
 	// The reader mounts one thread above the message and one below; only the upper one carries the card.
@@ -86,6 +88,8 @@ export function ConversationThread({
 							ownAddress={ownAddress}
 							ownAddresses={ownAddresses}
 							showFullRecipientAddresses={showFullRecipientAddresses}
+							remoteImagesShown={remoteImagesShownIds.has(firstMessage.id)}
+							onShowRemoteImages={() => onShowRemoteImages(firstMessage.id)}
 						/>
 					</li>
 					{collapsed ? (
@@ -113,6 +117,8 @@ export function ConversationThread({
 									ownAddress={ownAddress}
 									ownAddresses={ownAddresses}
 									showFullRecipientAddresses={showFullRecipientAddresses}
+									remoteImagesShown={remoteImagesShownIds.has(message.id)}
+									onShowRemoteImages={() => onShowRemoteImages(message.id)}
 								/>
 							</li>
 						))
@@ -126,6 +132,8 @@ export function ConversationThread({
 								ownAddress={ownAddress}
 								ownAddresses={ownAddresses}
 								showFullRecipientAddresses={showFullRecipientAddresses}
+								remoteImagesShown={remoteImagesShownIds.has(lastMessage.id)}
+								onShowRemoteImages={() => onShowRemoteImages(lastMessage.id)}
 							/>
 						</li>
 					)}
@@ -193,12 +201,13 @@ export function ConversationMessageCard({
 	ownAddresses,
 	defaultExpanded = false,
 	showFullRecipientAddresses = false,
+	remoteImagesShown,
+	onShowRemoteImages,
 }: ConversationMessageCardProps) {
 	const [locallyExpanded, setLocallyExpanded] = useState(defaultExpanded);
 	const [locallyRead, setLocallyRead] = useSyncedState(message.read);
 	const [alwaysLoadRemoteImages] = useLoadRemoteImages();
 	const readerFont = useReaderFont();
-	const [remoteImagesShown, setRemoteImagesShown] = useState(false);
 	const [reviewAttachment, setReviewAttachment] = useState<MessageAttachment | null>(null);
 	const expanded = locallyExpanded;
 	const sender = getConversationSender(message, currentAccountName);
@@ -306,7 +315,7 @@ export function ConversationMessageCard({
 				</div>
 				{expanded && body && (
 					<div className="pb-6 pt-1">
-						{body.blockedRemoteImages > 0 && <RemoteImagesNotice onShow={() => setRemoteImagesShown(true)} />}
+						{body.blockedRemoteImages > 0 && <RemoteImagesNotice onShow={onShowRemoteImages} />}
 						<EmailBody
 							html={body.html}
 							colours={body.colours}

@@ -29,7 +29,7 @@ function printDocumentInput(sources: PrintSource[]): PrintDocumentInput {
 }
 
 /**
- * Prints through a hidden, sandboxed frame holding only the print document, so no app chrome is printed and the
+ * Prints through an off-screen, sandboxed frame holding only the print document, so no app chrome is printed and the
  * app's theme does not apply. The previous frame is removed at the next print rather than after this one, because
  * Safari's print() returns before its dialog closes.
  */
@@ -43,14 +43,15 @@ function printInFrame(html: string): Promise<void> {
 		frame.setAttribute("aria-hidden", "true");
 		frame.tabIndex = -1;
 		frame.referrerPolicy = "no-referrer";
+		// Off screen but laid out at a page's size: Firefox and Safari can print a zero-sized or hidden frame blank.
 		Object.assign(frame.style, {
 			position: "fixed",
-			right: "0",
-			bottom: "0",
-			width: "0",
-			height: "0",
+			top: "0",
+			left: "-10000px",
+			width: "210mm",
+			height: "297mm",
 			border: "0",
-			visibility: "hidden",
+			pointerEvents: "none",
 		});
 		// The load event waits for the document's images, so they are on the page when it prints.
 		frame.addEventListener(
@@ -58,12 +59,16 @@ function printInFrame(html: string): Promise<void> {
 			() => {
 				const view = frame.contentWindow;
 				if (!view) return reject(new Error("The print preview could not open."));
+				// Focus goes back where it was, so the reader's keys keep working after the dialog.
+				const previous = document.activeElement;
 				try {
 					view.focus();
 					view.print();
 					resolve();
 				} catch (error) {
 					reject(error);
+				} finally {
+					if (previous instanceof HTMLElement) previous.focus({ preventScroll: true });
 				}
 			},
 			{ once: true },

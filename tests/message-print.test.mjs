@@ -61,6 +61,9 @@ test("the PDF file name is the subject without characters file systems refuse", 
 	assert.equal(pdfFileName("  "), "Email.pdf");
 	assert.equal(pdfFileName("???"), "Email.pdf");
 	assert.equal(pdfFileName("CON"), "CON email.pdf");
+	// Bidirectional overrides would show "Invoice \u202Efdp.exe" reversed; zero-width characters vanish too.
+	assert.equal(pdfFileName("Invoice \u202Eexe.pdf\u202C"), "Invoice exe.pdf.pdf");
+	assert.equal(pdfFileName("\u2066Re\u2069: \u200Ehi\u200F\u200B"), "Re hi.pdf");
 	assert.equal(pdfFileName("lpt1"), "lpt1 email.pdf");
 	const long = pdfFileName(`${"word ".repeat(30)}end`);
 	assert.equal(long, `${"word ".repeat(20).trim()}.pdf`);

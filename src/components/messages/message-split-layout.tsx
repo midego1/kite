@@ -13,6 +13,9 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup, usePanelRef } fro
 import { layoutPixels, pixelsPerPercent } from "@/components/ui/resizable-utils";
 import { useSyncedPanel } from "@/components/ui/use-synced-panel";
 import { useKeyChanged } from "@/hooks/use-synced-state";
+import { isUpdateReaderOpen } from "@/components/update-available-utils";
+import { UpdateNoticeReader } from "@/components/update-notice-reader";
+import { UpdateReaderHostContext, closeUpdateReader, useUpdateNotice } from "@/components/update-notice-store";
 import { BulkMessageSelectionPane } from "./bulk-message-selection-pane";
 import { OpenRowContext, useRowLookupHolder } from "./open-row-context";
 import { MessageFolderPage } from "./message-folder-page";
@@ -61,6 +64,33 @@ function useClearSelectionOnOpen(
 }
 
 /**
+ * "What's new" from the "Kite was updated" row takes the reader, as opening a message would: it leaves the open
+ * message and ends a checkbox selection. Opening a message closes it again, and so does leaving this list, so it
+ * never waits in another folder's reader.
+ */
+function useUpdateReader(
+	selectedMessageId: string | undefined,
+	visibleMessageId: string | undefined,
+	leave: { leaveOpenMessage: () => void; clearSelection: () => void },
+) {
+	const open = isUpdateReaderOpen(useUpdateNotice());
+	const latest = useRef(leave);
+	useEffect(() => {
+		latest.current = leave;
+	});
+	useEffect(() => {
+		if (!open) return;
+		latest.current.clearSelection();
+		latest.current.leaveOpenMessage();
+	}, [open]);
+	useEffect(() => {
+		if (selectedMessageId) closeUpdateReader();
+	}, [selectedMessageId]);
+	useEffect(() => closeUpdateReader, []);
+	return open && !visibleMessageId;
+}
+
+/**
  * Arranges the message list and reading pane using the user's layout and sizing preferences: resizable
  * panels side by side or stacked, or one column. Manages checkbox selection and clears it when a new
  * message is opened.
@@ -88,6 +118,12 @@ export function MessageSplitLayout({ children, config }: MessageSplitLayoutProps
 	// The list's lookup of the ids each row stands for, read by the reader when it moves the open message.
 	const rowLookup = useRowLookupHolder();
 	useClearSelectionOnOpen(selectedMessageId, selectedMessages, setSelectedMessages);
+	const updateReaderOpen = useUpdateReader(selectedMessageId, visibleMessageId, {
+		leaveOpenMessage,
+		clearSelection: () => {
+			if (selectedMessages.length > 0) setSelectedMessages([]);
+		},
+	});
 	const clearSelection = () => {
 		setSelectedMessages([]);
 		leaveOpenMessage();
@@ -153,7 +189,8 @@ export function MessageSplitLayout({ children, config }: MessageSplitLayoutProps
 		saveColumnWidth(userId, "message-list-height", savedHeight);
 	}, [userId]);
 
-	if (!split && !selectedMessageId) return children;
+	if (!split && !selectedMessageId && !updateReaderOpen)
+		return <UpdateReaderHostContext.Provider value>{children}</UpdateReaderHostContext.Provider>;
 
 	function setListVisible(visible: boolean) {
 		if (assistantOpen) {
@@ -210,6 +247,8 @@ export function MessageSplitLayout({ children, config }: MessageSplitLayoutProps
 								onAction={(action, folderId) => bulkActionRef.current?.(action, folderId) ?? Promise.resolve()}
 								onClearSelection={clearSelection}
 							/>
+						) : updateReaderOpen ? (
+							<UpdateNoticeReader />
 						) : visibleMessageId ? (
 							children
 						) : (
@@ -230,66 +269,68 @@ export function MessageSplitLayout({ children, config }: MessageSplitLayoutProps
 		);
 
 	return (
-		<ResizablePanelGroup
-			key={mode}
-			id={`kite-message-layout-${mode}`}
-			orientation={below ? "vertical" : "horizontal"}
-			data-reading-pane={mode}
-			className="min-h-0 overflow-hidden"
-			onLayoutChanged={(layout, meta) => {
-				if (meta.isUserInteraction) storeListSize(layoutPixels(layout[LIST_PANEL_ID], groupScale.current));
-			}}
-		>
-			<ResizablePanel
-				id={LIST_PANEL_ID}
-				panelRef={listPanelRef}
-				collapsible
-				collapsedSize={0}
-				collapsedThreshold={listLimits.min}
-				minSize={listLimits.min}
-				maxSize={listLimits.max}
-				defaultSize={listVisible ? listSize : 0}
-				groupResizeBehavior="preserve-pixel-size"
-				onResize={(size) => {
-					groupScale.current = pixelsPerPercent(size) ?? groupScale.current;
+		<UpdateReaderHostContext.Provider value>
+			<ResizablePanelGroup
+				key={mode}
+				id={`kite-message-layout-${mode}`}
+				orientation={below ? "vertical" : "horizontal"}
+				data-reading-pane={mode}
+				className="min-h-0 overflow-hidden"
+				onLayoutChanged={(layout, meta) => {
+					if (meta.isUserInteraction) storeListSize(layoutPixels(layout[LIST_PANEL_ID], groupScale.current));
 				}}
 			>
-				<aside
-					className={clsx("h-full min-h-0 min-w-0 overflow-hidden bg-white", PANEL_CLASS)}
-					aria-hidden={!listVisible}
-					inert={!listVisible}
+				<ResizablePanel
+					id={LIST_PANEL_ID}
+					panelRef={listPanelRef}
+					collapsible
+					collapsedSize={0}
+					collapsedThreshold={listLimits.min}
+					minSize={listLimits.min}
+					maxSize={listLimits.max}
+					defaultSize={listVisible ? listSize : 0}
+					groupResizeBehavior="preserve-pixel-size"
+					onResize={(size) => {
+						groupScale.current = pixelsPerPercent(size) ?? groupScale.current;
+					}}
 				>
-					<MessageFolderPage
-						config={config}
-						compact={!below}
-						listVisible={listVisible}
-						selectedMessageId={selectedMessageId}
-						selection={{
-							selectedMessages,
-							setSelectedMessages,
-							leaveOpenMessage,
-							registerAction: (run) => {
-								bulkActionRef.current = run;
-							},
-							registerRowLookup: rowLookup.register,
-						}}
-					/>
-				</aside>
-			</ResizablePanel>
-			<ResizableHandle
-				aria-label={below ? "Resize message list height" : "Resize message list"}
-				// A hidden list has no handle: it is not a tab stop, and arrow keys cannot drag the list back open.
-				disabled={!listVisible}
-				aria-hidden={listVisible ? undefined : true}
-				className={clsx(
-					// The handle sits in the gap between the two panels.
-					"bg-transparent aria-[orientation=horizontal]:my-1 aria-[orientation=vertical]:mx-1",
-					!listVisible && "pointer-events-none opacity-0",
-				)}
-			/>
-			<ResizablePanel id="kite-reader-panel" minSize={listLimits.reserved}>
-				{detail}
-			</ResizablePanel>
-		</ResizablePanelGroup>
+					<aside
+						className={clsx("h-full min-h-0 min-w-0 overflow-hidden bg-white", PANEL_CLASS)}
+						aria-hidden={!listVisible}
+						inert={!listVisible}
+					>
+						<MessageFolderPage
+							config={config}
+							compact={!below}
+							listVisible={listVisible}
+							selectedMessageId={selectedMessageId}
+							selection={{
+								selectedMessages,
+								setSelectedMessages,
+								leaveOpenMessage,
+								registerAction: (run) => {
+									bulkActionRef.current = run;
+								},
+								registerRowLookup: rowLookup.register,
+							}}
+						/>
+					</aside>
+				</ResizablePanel>
+				<ResizableHandle
+					aria-label={below ? "Resize message list height" : "Resize message list"}
+					// A hidden list has no handle: it is not a tab stop, and arrow keys cannot drag the list back open.
+					disabled={!listVisible}
+					aria-hidden={listVisible ? undefined : true}
+					className={clsx(
+						// The handle sits in the gap between the two panels.
+						"bg-transparent aria-[orientation=horizontal]:my-1 aria-[orientation=vertical]:mx-1",
+						!listVisible && "pointer-events-none opacity-0",
+					)}
+				/>
+				<ResizablePanel id="kite-reader-panel" minSize={listLimits.reserved}>
+					{detail}
+				</ResizablePanel>
+			</ResizablePanelGroup>
+		</UpdateReaderHostContext.Provider>
 	);
 }

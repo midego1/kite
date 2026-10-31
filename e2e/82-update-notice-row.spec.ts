@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { STORAGE_STATE, SUPPORT_ADDRESS } from "./support/constants";
+import { STORAGE_STATE, SUPPORT_ADDRESS, VERSION_ROUTE } from "./support/constants";
 import { contrastBetween } from "./support/contrast";
 import { apiContext, deliverInbound, uniqueToken } from "./support/helpers";
 
@@ -26,7 +26,7 @@ test.afterEach(async ({ page }) => {
 
 async function routeVersion(page: Page, initial: string) {
 	const version = { current: initial, requests: 0 };
-	await page.route("**/api/version", async (route) => {
+	await page.route(VERSION_ROUTE, async (route) => {
 		version.requests += 1;
 		await route.fulfill({
 			status: 200,

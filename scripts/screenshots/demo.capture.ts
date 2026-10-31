@@ -83,7 +83,7 @@ async function openTour(browser: Browser) {
 	await page.route("**/api/admin/alerts/active", (route) => route.fulfill({ json: ADMIN_ALERTS }));
 	await mockConnectedAccounts(page);
 	const version = { current: "demo-1" };
-	await page.route("**/api/version", (route) =>
+	await page.route((url) => url.pathname === "/api/version", (route) =>
 		route.fulfill({ json: { version: version.current }, headers: { "Cache-Control": "no-store" } }),
 	);
 	await page.clock.install();

@@ -5,6 +5,7 @@ import { X } from "lucide-react";
 import toast from "react-hot-toast";
 import { TOAST_ACTION_CLASS } from "@/components/ui/toast-styles";
 import { useSessionUserId } from "@/hooks/use-session-user-id";
+import { BUILD_VERSION, BUILD_VERSION_LABEL } from "@/lib/build-version";
 import { STALE_ASSETS_EVENT, markAppReady, takeStaleAssetsSignal } from "./asset-recovery-utils";
 import { ReloadFlight } from "./reload-flight";
 import {
@@ -15,6 +16,7 @@ import {
 	chooseUpdateSurface,
 	compareDeploymentVersion,
 	parseDeploymentVersion,
+	parseUpdateDetails,
 	shouldCheckForUpdate,
 } from "./update-available-utils";
 import { cancelReloadToNewVersion, reloadToNewVersion } from "./update-reload";
@@ -83,14 +85,18 @@ export function UpdateAvailableHost() {
 			lastCheckAt = now;
 			inFlight = true;
 			try {
-				const response = await fetch("/api/version", { cache: "no-store" });
+				// Naming this tab's build lets a newer server add its release and notes; the same build gets neither.
+				const response = await fetch(`/api/version?have=${encodeURIComponent(BUILD_VERSION_LABEL)}`, {
+					cache: "no-store",
+				});
 				if (!response.ok || !active) return;
-				const latest = parseDeploymentVersion(await response.json());
+				const body: unknown = await response.json();
+				const latest = parseDeploymentVersion(body);
 				const decision = compareDeploymentVersion(knownVersion.current, latest);
 				knownVersion.current = decision.known;
 				if (decision.changed && active && !shown.current) {
 					shown.current = true;
-					announceUpdate();
+					announceUpdate(parseUpdateDetails(body, BUILD_VERSION));
 				}
 			} catch {
 				// Offline or mid-deploy: the next check tries again.

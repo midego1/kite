@@ -1,6 +1,6 @@
 {
 	"name": "kite",
-	"version": "2026.10.30",
+	"version": "2026.10.31",
 	"private": true,
 	"scripts": {
 		"dev": "npm run bundles && vite dev --port 3000",
@@ -119,7 +119,7 @@
 		"lucide-react": "^1.16.0",
 		"mailauth": "^8.0.4",
 		"nanoid": "^5.1.16",
-		"next": "16.4.2",
+		"next": "16.4.3",
 		"nodemailer": "^10.2.1",
 		"postal-mime": "~2.7.4",
 		"qrcode": "^1.5.4",
@@ -157,16 +157,16 @@
 		"drizzle-kit": "^0.31.11",
 		"esbuild": "^0.28.2",
 		"eslint": "^9",
-		"eslint-config-next": "16.4.2",
-		"jscpd": "^5.4.1",
+		"eslint-config-next": "16.4.3",
+		"jscpd": "^5.4.2",
 		"jsdom": "^29.1.1",
-		"knip": "^6.41.0",
+		"knip": "^6.42.1",
 		"prettier": "^3.9.10",
 		"sharp": "^0.35.5",
 		"tailwindcss": "^4.3.3",
 		"tsx": "^4.23.15",
 		"typescript": "^5.7.4",
-		"vite": "^8.3.4",
+		"vite": "^8.3.5",
 		"wrangler": "^4.151.0"
 	},
 	"overrides": {

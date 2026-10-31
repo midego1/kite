@@ -3,6 +3,7 @@ import { queryInChunks } from "@/db/chunk-utils";
 import { getDb } from "@/db";
 import { messageAttachments, messages } from "@/db/schema";
 import { getContactAvatarMap, getContactDisplayNameMap } from "@/lib/contacts/service";
+import { getSenderDisplayName } from "@/lib/contacts/utils";
 import { getFirstEmailAddressEntry, normalizeEmailAddress } from "@/lib/email/address";
 import { loadMessageBodies } from "@/lib/email/bodies";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
@@ -13,7 +14,8 @@ import { SCREENING_STATUS } from "@/lib/screener/screener-utils";
 /**
  * The conversation a message belongs to: every stored message in the same
  * mailbox sharing its thread id, oldest first. Drafts and trashed messages are
- * left out, matching what threaded clients show. Bodies come along so the
+ * left out, matching what threaded clients show, and so are spam and held mail
+ * other than the message being opened. Bodies come along so the
  * reader can expand any message without another round trip.
  */
 /** The R2 key is an internal pointer and never leaves the server. */
@@ -50,6 +52,8 @@ export async function getMessageThreadForUser(env: CloudflareEnv, user: SessionU
 						notInArray(messages.status, ["draft", "trash"]),
 						// Held replies stay in the Screener; the opened message is shown even when it is one.
 						or(ne(messages.status, SCREENING_STATUS), eq(messages.id, messageId)),
+						// So does spam (upstream Mailflare #223): a forged reply must not sit among the real ones.
+						or(ne(messages.status, "spam"), eq(messages.id, messageId)),
 					),
 				)
 				.orderBy(asc(messages.createdAt))
@@ -94,9 +98,9 @@ export async function getMessageThreadForUser(env: CloudflareEnv, user: SessionU
 		threadId: message.threadId,
 		messages: rows.map((row) => ({
 			...withoutRawKey(row),
-			fromContactName: contactMap.get(normalizeEmailAddress(row.fromAddr)) ?? null,
+			fromContactName: getSenderDisplayName(row.fromAddr, contactMap.get(normalizeEmailAddress(row.fromAddr))),
 			fromContactHasAvatar: contactAvatarMap.get(normalizeEmailAddress(row.fromAddr)) ?? false,
-			toContactName: contactMap.get(normalizeEmailAddress(getFirstEmailAddressEntry(row.toAddr))) ?? null,
+			toContactName: contactMap.get(normalizeEmailAddress(getFirstEmailAddressEntry(row.toAddr)))?.displayName ?? null,
 			attachments: attachmentsByMessage.get(row.id) ?? [],
 		})),
 	};

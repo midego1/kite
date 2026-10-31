@@ -13,7 +13,13 @@ import { cn } from "@/lib/utils";
 import { ContactCardActions, ContactCardHeader } from "./contact-card-content";
 import { createDraftTo } from "./contact-card-api";
 import type { ContactCardProps } from "./contact-card-types";
-import { contactCardAccess, fromSearchQuery, isOwnAddress, participantTooltip } from "./contact-card-utils";
+import {
+	contactCardAccess,
+	fromSearchQuery,
+	isOwnAddress,
+	participantTooltip,
+	savedContactName,
+} from "./contact-card-utils";
 import { ContactDetailsDialog } from "./contact-details";
 import { fetchContactDetails } from "./contact-details-utils";
 import type { ContactDetailsRecord } from "./contact-details-types";
@@ -61,7 +67,8 @@ export function ContactCard({
 			.then((next) => {
 				if (cancelled) return;
 				setContact(next);
-				if (next.displayName) setShownName(next.displayName);
+				const saved = savedContactName(next);
+				if (saved) setShownName(saved);
 			})
 			.catch(() => undefined);
 		return () => {

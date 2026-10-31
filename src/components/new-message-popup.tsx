@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { Mail, X } from "lucide-react";
-import { getEmailDisplayName } from "@/lib/email/address";
+import { notificationSender } from "@/hooks/new-message-notification-utils";
 import { requestCopyCode } from "@/components/copy-code-host-utils";
 import type { NewMessagePopupProps } from "./new-message-popup-types";
 
@@ -17,8 +17,8 @@ export function NewMessagePopup({ notification, onDismiss }: NewMessagePopupProp
 				<Link href={`/inbox/${notification.messageId}`} onClick={onDismiss} className="min-w-0 flex-1">
 					<p className="text-sm font-semibold text-neutral-900">New email</p>
 					<p className="mt-0.5 truncate text-sm text-neutral-800">{notification.subject || "(no subject)"}</p>
-					<p className="mt-1 truncate text-xs text-neutral-500">
-						From {notification.fromName ?? getEmailDisplayName(notification.from)}
+					<p className="mt-1 truncate text-xs text-neutral-500" title={notificationSender(notification)}>
+						From {notificationSender(notification)}
 					</p>
 				</Link>
 				<button

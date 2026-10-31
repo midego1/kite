@@ -3,8 +3,8 @@ import { getDb } from "@/db";
 import { queryInChunks } from "@/db/chunk-utils";
 import { contacts, routingRules } from "@/db/schema";
 import { getFirstEmailAddressEntry, normalizeEmailAddress } from "@/lib/email/address";
-import type { BlockContactInput, ContactInput, MessageContactNames } from "@/lib/contacts/types";
-import { getContactId, getContactNameFromAddress } from "@/lib/contacts/utils";
+import type { BlockContactInput, ContactDisplayName, ContactInput, MessageContactNames } from "@/lib/contacts/types";
+import { getContactId, getContactNameFromAddress, getSenderDisplayName } from "@/lib/contacts/utils";
 import { importGravatarAvatar } from "@/lib/contacts/gravatar";
 
 export async function upsertContactFromAddress(env: CloudflareEnv, input: ContactInput) {
@@ -21,7 +21,7 @@ export async function upsertContactFromAddress(env: CloudflareEnv, input: Contac
 	const now = new Date();
 
 	if (existing) {
-		const nextDisplayName = getNextDisplayName(existing.displayName, existing.source, displayName);
+		const nextDisplayName = getNextDisplayName(existing.displayName, existing.source, displayName, input.source);
 		const nextSource =
 			existing.source === "manual" || (existing.source === "outbound" && input.source === "inbound")
 				? existing.source
@@ -53,7 +53,8 @@ export async function upsertContactFromAddress(env: CloudflareEnv, input: Contac
 		})
 		.onConflictDoNothing()
 		.returning({ id: contacts.id });
-	if (inserted.length) {
+	// A sender filed as spam, trash or held by the Screener is not announced to Gravatar (upstream Mailflare #220).
+	if (inserted.length && input.lookupAvatar !== false) {
 		const avatarKey = await importGravatarAvatar(env, input.userId, email);
 		if (avatarKey) {
 			await db.update(contacts).set({ avatarKey }).where(eq(contacts.id, id));
@@ -70,18 +71,23 @@ export async function upsertContactFromAddress(env: CloudflareEnv, input: Contac
 
 export async function getContactDisplayNameMap(env: CloudflareEnv, userId: string, addresses: string[]) {
 	const emails = Array.from(new Set(addresses.map(normalizeEmailAddress).filter(Boolean)));
-	if (emails.length === 0) return new Map<string, string>();
+	if (emails.length === 0) return new Map<string, ContactDisplayName>();
 
 	const db = getDb(env);
 	const rows = await queryInChunks(emails, (chunk) =>
 		db
-			.select({ email: contacts.email, displayName: contacts.displayName })
+			.select({ email: contacts.email, displayName: contacts.displayName, source: contacts.source })
 			.from(contacts)
 			.where(and(eq(contacts.userId, userId), inArray(contacts.email, chunk))),
 	);
 
 	return new Map(
-		rows.filter((contact) => !!contact.displayName).map((contact) => [contact.email, contact.displayName!]),
+		rows
+			.filter((contact) => !!contact.displayName)
+			.map((contact): [string, ContactDisplayName] => [
+				contact.email,
+				{ displayName: contact.displayName!, source: contact.source },
+			]),
 	);
 }
 
@@ -111,8 +117,8 @@ export async function getMessageContactNames(
 	const contactMap = await getContactDisplayNameMap(env, userId, [fromAddr, firstTo]);
 
 	return {
-		fromContactName: contactMap.get(normalizeEmailAddress(fromAddr)) ?? null,
-		toContactName: contactMap.get(normalizeEmailAddress(firstTo)) ?? null,
+		fromContactName: getSenderDisplayName(fromAddr, contactMap.get(normalizeEmailAddress(fromAddr))),
+		toContactName: contactMap.get(normalizeEmailAddress(firstTo))?.displayName ?? null,
 	};
 }
 
@@ -139,10 +145,8 @@ export async function blockContact(env: CloudflareEnv, input: BlockContactInput)
 			blocked: true,
 			lastSeenAt: new Date(),
 		});
-		const avatarKey = await importGravatarAvatar(env, input.userId, email);
-		if (avatarKey) {
-			await db.update(contacts).set({ avatarKey }).where(eq(contacts.id, contactId));
-		}
+		// Not looked up on Gravatar: a sender blocked by hand, by a phishing report or by a Screener deny is unwanted,
+		// and the lookup would tell a third party that this address mailed us (upstream Mailflare #220).
 	}
 
 	const [existingRule] = await db
@@ -213,8 +217,15 @@ export async function unblockContact(
 	return { email, blocked: !!remaining };
 }
 
-function getNextDisplayName(existingName: string | null, source: string, nextName: string | null): string | null {
+function getNextDisplayName(
+	existingName: string | null,
+	source: string,
+	nextName: string | null,
+	incomingSource: string,
+): string | null {
 	if (source === "manual") return existingName;
+	// A sender chooses its own From name, so inbound mail may name a contact but never rename one (upstream #223).
+	if (incomingSource === "inbound" && existingName) return existingName;
 	if (nextName) return nextName;
 	return existingName;
 }

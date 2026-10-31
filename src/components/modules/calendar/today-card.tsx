@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { CommandCenterCard } from "@/components/command-center/command-center-card";
+import { useCommandCenterCardQuery } from "@/components/command-center/use-card-query";
 import type { ReadingPaneSlotContext } from "@/components/modules/client-registry-types";
 import type { CalendarEvent } from "@/app/(calendar)/calendar/types";
 import { addDays, expandCalendarEvents, startOfDay } from "@/app/(calendar)/calendar/utils";
@@ -12,7 +13,8 @@ import { todayLines } from "./today-card-utils";
 
 /**
  * The command center's Today card: what is left of today's calendar, with a link to the Calendar. It draws
- * nothing until the events are in, and nothing at all when they cannot be read (Calendar off, an error).
+ * nothing until the events are in, and nothing at all when they cannot be read (Calendar off, an error). The
+ * day's events are reused for a minute when the pane comes back after a message was closed.
  */
 export function TodayCard(_context: ReadingPaneSlotContext) {
 	// Read once per mount, like the pane's greeting: the pane is remounted whenever a message is closed.
@@ -21,26 +23,17 @@ export function TodayCard(_context: ReadingPaneSlotContext) {
 		const start = startOfDay(now);
 		return { now, start, end: addDays(start, 1), timeZone: getUserTimeZone() };
 	}, []);
-	const [events, setEvents] = useState<CalendarEvent[] | null>(null);
-
-	useEffect(() => {
-		let live = true;
-		void authFetch(`/api/calendar/events?start=${day.start.toISOString()}&end=${day.end.toISOString()}`)
-			.then(async (response) => {
-				if (!response.ok) throw new Error();
-				return (await response.json()) as { events?: CalendarEvent[] };
-			})
-			.then((data) => {
-				if (live) setEvents(expandCalendarEvents(data.events ?? [], day.start, day.end));
-			})
-			.catch(() => {});
-		return () => {
-			live = false;
-		};
-	}, [day]);
+	const events = useCommandCenterCardQuery(["calendar.today", day.start.toISOString()], async () => {
+		const response = await authFetch(
+			`/api/calendar/events?start=${day.start.toISOString()}&end=${day.end.toISOString()}`,
+		);
+		if (!response.ok) throw new Error(`Calendar events request failed (${response.status})`);
+		const data = (await response.json()) as { events?: CalendarEvent[] };
+		return expandCalendarEvents(data.events ?? [], day.start, day.end);
+	});
 
 	if (!events) return null;
-	const { lines, more, empty } = todayLines(events, { now: day.now, dayEnd: day.end, timeZone: day.timeZone });
+	const { lines, more, empty } = todayLines(events, { now: day.now, dayStart: day.start, timeZone: day.timeZone });
 	return (
 		<CommandCenterCard title="Today" action={{ label: "Calendar", href: "/calendar" }} testId="command-center-today">
 			{lines.length === 0 ? (

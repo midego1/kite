@@ -3,6 +3,7 @@
 import { useState, type ComponentProps, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ChevronDown, Plus, WalletCards } from "lucide-react";
+import { useStaleCommandCenterCards } from "@/components/command-center/use-card-query";
 import { mobilePrimaryActionClass } from "@/components/page-header-utils";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
@@ -128,6 +129,8 @@ export function SubscriptionsView() {
 	const openId = params.get("subscription");
 	const adding = params.get("add") === "1";
 	const { list, error, version, reload } = useSubscriptionList();
+	// Rows changed here show in the command center's Money Watch card the next time it appears.
+	useStaleCommandCenterCards();
 	const drawer = useSubscriptionDetail(openId, version);
 	const [filter, setFilter] = useState<StatusFilter>("all");
 	// undefined: closed; null: adding a new row; a row: editing it.

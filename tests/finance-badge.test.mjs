@@ -44,11 +44,12 @@ test("reminders turned off, cancelled and expired rows do not count", () => {
 	assert.equal(badgeCount([row({ status: "expired", nextRenewalAt: at(TODAY) })], TODAY), 0);
 });
 
-test("active rows with a failed payment count once, whatever their due date", () => {
+test("active and trial rows with a failed payment count once, whatever their due date", () => {
 	const failed = at("2026-10-01");
 	assert.equal(badgeCount([row({ paymentFailedAt: failed })], TODAY), 1);
 	assert.equal(badgeCount([row({ paymentFailedAt: failed, nextRenewalAt: at(TODAY) })], TODAY), 1);
-	assert.equal(badgeCount([row({ status: "trial", paymentFailedAt: failed })], TODAY), 0);
+	assert.equal(badgeCount([row({ status: "trial", paymentFailedAt: failed })], TODAY), 1);
+	assert.equal(badgeCount([row({ status: "trial", paymentFailedAt: failed, trialEndsAt: at(TODAY) })], TODAY), 1);
 	assert.equal(badgeCount([row({ status: "cancelled", paymentFailedAt: failed })], TODAY), 0);
 });
 

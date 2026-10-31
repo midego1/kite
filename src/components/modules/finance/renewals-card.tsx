@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
 import { CommandCenterCard } from "@/components/command-center/command-center-card";
+import { useCommandCenterCardQuery } from "@/components/command-center/use-card-query";
 import type { SubscriptionList } from "@/components/finance/subscriptions-types";
 import { viewerLocale, viewerToday } from "@/components/finance/use-subscriptions";
 import type { ReadingPaneSlotContext } from "@/components/modules/client-registry-types";
@@ -12,26 +12,16 @@ import { renewalLines } from "./renewals-card-utils";
 /**
  * The command center's Money Watch card: the viewer's own subscriptions that renew, end a trial or failed a
  * payment this week, with a link to Subscriptions. It draws nothing until they are in, and nothing at all when
- * they cannot be read (Money Watch off, the database update not applied yet, an error).
+ * they cannot be read (Money Watch off, the database update not applied yet, an error). Only current rows are
+ * fetched, and they are reused for a minute when the pane comes back after a message was closed.
  */
 export function RenewalsCard(_context: ReadingPaneSlotContext) {
-	const [list, setList] = useState<SubscriptionList | null>(null);
-
-	useEffect(() => {
-		let live = true;
-		void authFetch("/api/finance/subscriptions")
-			.then(async (response) => {
-				if (!response.ok) throw new Error();
-				return (await response.json()) as SubscriptionList;
-			})
-			.then((data) => {
-				if (live && !data.migrationPending) setList(data);
-			})
-			.catch(() => {});
-		return () => {
-			live = false;
-		};
-	}, []);
+	const list = useCommandCenterCardQuery(["finance.renewals"], async () => {
+		const response = await authFetch("/api/finance/subscriptions?status=current");
+		if (!response.ok) throw new Error(`Subscriptions request failed (${response.status})`);
+		const data = (await response.json()) as SubscriptionList;
+		return data.migrationPending ? null : data;
+	});
 
 	if (!list) return null;
 	const { lines, more } = renewalLines(list.subscriptions, viewerToday(), viewerLocale());

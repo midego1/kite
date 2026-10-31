@@ -28,27 +28,40 @@ const SAVE_DELAY_MS = 600;
 let session: { userId: string; loading: boolean } | null = null;
 let unsaved: LayoutPreferences = {};
 let timer: ReturnType<typeof setTimeout> | undefined;
-/** The server cannot store a layout (before migration 0080): nothing is loaded or saved again until a reload. */
+/**
+ * The server cannot store a layout (before migration 0080): nothing is loaded or saved again until a reload or
+ * the next session (`stopLayoutSync`).
+ */
 let unavailable = false;
 /** Orders loads against saves, so a load answered after a save cannot put the saved choice back. */
 let tick = 0;
-const saveMarks: LayoutSaveMarks = new Map();
+/**
+ * The save marks per account. They outlive a sign-out, so the same account signing in again while a save is
+ * in flight still keeps a quick load from putting the old value back; another account has its own.
+ */
+const saveMarks = new Map<string, LayoutSaveMarks>();
 /** Counts account switches and sign-outs, so a save answered afterwards leaves the next account alone. */
 let generation = 0;
 
-function markSaves(layout: LayoutPreferences, inFlight: 1 | -1): void {
+function marksOf(userId: string): LayoutSaveMarks {
+	let marks = saveMarks.get(userId);
+	if (!marks) saveMarks.set(userId, (marks = new Map()));
+	return marks;
+}
+
+function markSaves(userId: string, layout: LayoutPreferences, inFlight: 1 | -1): void {
 	tick += 1;
+	const marks = marksOf(userId);
 	for (const key of Object.keys(layout)) {
-		const mark = saveMarks.get(key) ?? { touched: 0, inFlight: 0 };
-		saveMarks.set(key, { touched: tick, inFlight: Math.max(0, mark.inFlight + inFlight) });
+		const mark = marks.get(key) ?? { touched: 0, inFlight: 0 };
+		marks.set(key, { touched: tick, inFlight: Math.max(0, mark.inFlight + inFlight) });
 	}
 }
 
-/** Forgets everything about the previous account: its unsaved choices and its saves in flight. */
+/** Forgets the previous account's unsaved choices; its saves in flight keep their marks until answered. */
 function forgetAccount(): void {
 	clearTimeout(timer);
 	unsaved = {};
-	saveMarks.clear();
 	generation += 1;
 }
 
@@ -100,8 +113,9 @@ export async function flushLayoutSave({ closing = false }: { closing?: boolean }
 	if (!session || (session.loading && !closing) || unavailable || !Object.keys(unsaved).length) return;
 	const layout = unsaved;
 	const sentFor = generation;
+	const { userId } = session;
 	unsaved = {};
-	markSaves(layout, 1);
+	markSaves(userId, layout, 1);
 	try {
 		const response = await fetch(LAYOUT_API, {
 			method: "PATCH",
@@ -116,8 +130,8 @@ export async function flushLayoutSave({ closing = false }: { closing?: boolean }
 		// Offline: the choice is in this browser already and goes with the next one, for the same account.
 		if (sentFor === generation) unsaved = { ...layout, ...unsaved };
 	} finally {
-		// After an account switch the marks belong to the next account; this answer says nothing about them.
-		if (sentFor === generation) markSaves(layout, -1);
+		// The marks are the sending account's, whoever is signed in now.
+		markSaves(userId, layout, -1);
 	}
 }
 
@@ -190,7 +204,7 @@ export async function startLayoutSync(userId: string): Promise<void> {
 	current.loading = false;
 	// The server answers only validated choices (`parseStoredLayout`).
 	if (loaded?.data.layout)
-		applyLayout(withoutKeys(withoutSavedSince(loaded.data.layout, saveMarks, loaded.loadTick), unsaved), userId);
+		applyLayout(withoutKeys(withoutSavedSince(loaded.data.layout, marksOf(userId), loaded.loadTick), unsaved), userId);
 	await flushLayoutSave();
 }
 

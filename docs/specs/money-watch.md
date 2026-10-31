@@ -661,7 +661,7 @@ for each owner (grouped):
 
 ### 10.3 The badge
 
-`GET /api/finance/badge` → `{ count }`: the owner's `active`/`trial` rows whose due date is today or later and within `reminder_days`, plus `active` rows with `payment_failed_at`. The sidebar item's count (§16 C12) fetches it on load, every 5 minutes, on window focus and on `kite:module-notice` or `kite:agent-suggestion` events. Open `subscription` cards also count in For you through the existing For you count.
+`GET /api/finance/badge` → `{ count }`: the owner's `active`/`trial` rows whose due date is today or later and within `reminder_days`, plus `active`/`trial` rows with `payment_failed_at` (the rows the page's "Needs attention" section shows as "Payment failed"). The sidebar item's count (§16 C12) fetches it on load, every 5 minutes, on window focus and on `kite:module-notice` or `kite:agent-suggestion` events. Open `subscription` cards also count in For you through the existing For you count.
 
 ### 10.4 Cancel before the renewal
 

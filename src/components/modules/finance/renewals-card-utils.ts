@@ -26,7 +26,7 @@ function dayWord(due: string, today: string): string {
  * earliest first.
  */
 export function renewalLines(items: readonly SubscriptionItem[], today: string, locale: string): RenewalLines {
-	const failed = items.filter((item) => item.status === "active" && item.urgent);
+	const failed = items.filter((item) => isCurrent(item) && item.urgent);
 	const due = items
 		.filter((item) => isCurrent(item) && !item.urgent)
 		.flatMap((item) => {

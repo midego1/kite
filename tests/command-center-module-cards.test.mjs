@@ -35,8 +35,8 @@ const { durationText, todayLines, TODAY_MAX_LINES, renewalLines, RENEWALS_MAX_LI
 
 const ZONE = "Europe/Amsterdam";
 const NOW = new Date("2026-10-31T09:15:00Z");
-// The Amsterdam day of NOW ends at midnight local time, 23:00 UTC in winter time.
-const DAY_END = new Date("2026-10-31T23:00:00Z");
+// The Amsterdam day of NOW starts at midnight local time, 23:00 UTC the day before in winter time.
+const DAY_START = new Date("2026-10-30T23:00:00Z");
 const time = (iso) =>
 	new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit", timeZone: ZONE }).format(new Date(iso));
 
@@ -73,10 +73,9 @@ test("today lists what is not over yet, earliest first, with Now for what is und
 			event("later", "2026-10-31T15:00:00Z", "2026-10-31T16:00:00Z", { location: " Café Noord " }),
 			event("over", "2026-10-31T07:00:00Z", "2026-10-31T08:00:00Z"),
 			event("running", "2026-10-31T09:00:00Z", "2026-10-31T09:30:00Z"),
-			event("tomorrow", "2026-10-31T23:00:00Z", "2026-10-31T23:30:00Z"),
 			event("soon", "2026-10-31T12:30:00Z", "2026-10-31T13:00:00Z"),
 		],
-		{ now: NOW, dayEnd: DAY_END, timeZone: ZONE },
+		{ now: NOW, dayStart: DAY_START, timeZone: ZONE },
 	);
 	assert.deepEqual(
 		lines.map((line) => [line.id, line.when, line.what, line.meta]),
@@ -94,40 +93,50 @@ test("each line opens the event on its day in the user's time zone", () => {
 	const late = new Date("2026-10-31T22:30:00Z");
 	const { lines } = todayLines([event("evt_1@1793486400000", "2026-10-31T22:45:00Z", "2026-10-31T23:15:00Z")], {
 		now: late,
-		dayEnd: DAY_END,
+		dayStart: DAY_START,
 		timeZone: ZONE,
 	});
 	assert.equal(lines[0].href, "/calendar?date=2026-10-31&event=evt_1%401793486400000");
 	const { lines: utc } = todayLines([event("e", "2026-10-31T23:45:00Z", "2026-11-01T00:15:00Z")], {
 		now: late,
-		dayEnd: new Date("2026-11-01T00:00:00Z"),
+		dayStart: new Date("2026-10-31T00:00:00Z"),
 		timeZone: "UTC",
 	});
 	assert.equal(utc[0].href, "/calendar?date=2026-10-31&event=e");
+});
+
+test("an overnight event that began yesterday opens on today", () => {
+	const { lines } = todayLines([event("night@1", "2026-10-30T20:00:00Z", "2026-10-31T10:00:00Z")], {
+		now: NOW,
+		dayStart: DAY_START,
+		timeZone: ZONE,
+	});
+	assert.equal(lines[0].when, "Now");
+	assert.equal(lines[0].href, "/calendar?date=2026-10-31&event=night%401");
 });
 
 test("today shows a few events and counts the rest", () => {
 	const many = Array.from({ length: TODAY_MAX_LINES + 2 }, (_, index) =>
 		event(`e${index}`, `2026-10-31T1${index}:00:00Z`, `2026-10-31T1${index}:30:00Z`),
 	);
-	const { lines, more } = todayLines(many, { now: NOW, dayEnd: DAY_END, timeZone: ZONE });
+	const { lines, more } = todayLines(many, { now: NOW, dayStart: DAY_START, timeZone: ZONE });
 	assert.equal(lines.length, TODAY_MAX_LINES);
 	assert.equal(more, 2);
 	assert.deepEqual(
-		todayLines(many, { now: NOW, dayEnd: DAY_END, timeZone: ZONE, max: 2 }).lines.map((line) => line.id),
+		todayLines(many, { now: NOW, dayStart: DAY_START, timeZone: ZONE, max: 2 }).lines.map((line) => line.id),
 		["e0", "e1"],
 	);
 });
 
 test("an empty day says Nothing today, a finished one Nothing else today", () => {
-	assert.deepEqual(todayLines([], { now: NOW, dayEnd: DAY_END, timeZone: ZONE }), {
+	assert.deepEqual(todayLines([], { now: NOW, dayStart: DAY_START, timeZone: ZONE }), {
 		lines: [],
 		more: 0,
 		empty: "Nothing today",
 	});
 	const done = todayLines([event("a", "2026-10-31T07:00:00Z", "2026-10-31T08:00:00Z")], {
 		now: NOW,
-		dayEnd: DAY_END,
+		dayStart: DAY_START,
 		timeZone: ZONE,
 	});
 	assert.deepEqual(done.lines, []);
@@ -170,6 +179,8 @@ test("this week's renewals come after failed payments, earliest first, and leave
 			subscription("cancelled", { status: "cancelled", nextRenewalOn: "2026-10-16" }),
 			subscription("undated"),
 			subscription("failed", { urgent: true, nextRenewalOn: "2026-11-01" }),
+			subscription("failed-trial", { status: "trial", urgent: true, trialEndsOn: "2026-10-30" }),
+			subscription("failed-cancelled", { status: "cancelled", urgent: true }),
 			subscription("today", { nextRenewalOn: TODAY, vendor: "Acmeflix" }),
 			subscription("trial", { status: "trial", trialEndsOn: "2026-10-16", nextRenewalOn: "2026-12-01" }),
 		],
@@ -180,13 +191,13 @@ test("this week's renewals come after failed payments, earliest first, and leave
 		lines.map((line) => [line.id, line.when, line.meta, line.urgent]),
 		[
 			["failed", "Failed", "Payment failed", true],
+			["failed-trial", "Failed", "Payment failed", true],
 			["today", "Today", "$17.99/month", false],
 			["trial", "Tomorrow", "Trial ends", false],
-			["later", "18 Oct", "$17.99/month", false],
 		],
 	);
-	assert.equal(lines[1].what, "Acmeflix");
-	assert.equal(more, 1, "week-end, the seventh day, is counted but not shown");
+	assert.equal(lines[2].what, "Acmeflix");
+	assert.equal(more, 2, "later and week-end, the seventh day, are counted but not shown");
 	assert.equal(lines[0].href, "/finance?subscription=failed");
 });
 

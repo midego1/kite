@@ -116,7 +116,7 @@ function UpdateRow({ appName }: { appName: string }) {
 	);
 }
 
-export function DemoRow({ message, selected, screener }: DemoRowProps) {
+function DemoRow({ message, selected, screener }: DemoRowProps) {
 	const Badge = message.badge?.icon;
 	return (
 		<li className={`flex items-stretch ${selected ? "bg-neutral-100" : ""}`}>
@@ -127,7 +127,7 @@ export function DemoRow({ message, selected, screener }: DemoRowProps) {
 				aria-current={selected ? "true" : undefined}
 				className={`flex min-w-0 flex-1 items-start gap-3 px-4 py-3 text-left hover:bg-neutral-100 ${FOCUS_RING} focus-visible:ring-inset`}
 			>
-				<span className="relative mt-0.5 h-9 w-9 shrink-0">
+				<span className="relative mt-0.5 h-9 w-9 shrink-0" aria-hidden="true">
 					<span
 						className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-medium ${message.from.avatarClassName}`}
 					>

@@ -15,7 +15,7 @@ import type {
  * DOM, so the server renders the opening state and the client continues from it.
  */
 
-export const PANEL_VIEWS: DemoPanelView[] = ["for-you", "calendar", "drive", "subscriptions"];
+const PANEL_VIEWS: DemoPanelView[] = ["for-you", "calendar", "drive", "subscriptions"];
 
 export function isPanelView(view: DemoView): view is DemoPanelView {
 	return (PANEL_VIEWS as DemoView[]).includes(view);

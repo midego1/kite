@@ -162,8 +162,8 @@ test.describe("live demo", () => {
 		await expect(demo.getByRole("button", { name: /^Lena Fischer/ })).toBeVisible();
 		await expect(demo.getByRole("status")).toHaveCount(0);
 
-		// j and k move through the list from the keyboard.
-		await demo.getByRole("button", { name: /^Lena Fischer/ }).focus();
+		// j and k move through the list from the keyboard (the click leaves the focus on Lena's row).
+		await demo.getByRole("button", { name: /^Lena Fischer/ }).click();
 		await page.keyboard.press("j");
 		await expect(demo.getByRole("heading", { level: 3, name: "Quick question about the API" })).toBeVisible();
 		await page.keyboard.press("k");

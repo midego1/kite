@@ -105,6 +105,7 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/booking/[eventId]`                                     | DELETE, PATCH          | [source](../src/app/api/booking/[eventId]/route.ts)                                     |
 | `/api/booking`                                               | GET, POST              | [source](../src/app/api/booking/route.ts)                                               |
 | `/api/booking/settings`                                      | PATCH                  | [source](../src/app/api/booking/settings/route.ts)                                      |
+| `/api/boot-report`                                           | POST                   | [source](../src/app/api/boot-report/route.ts)                                           |
 | `/api/branding/icon`                                         | GET                    | [source](../src/app/api/branding/icon/route.ts)                                         |
 | `/api/branding`                                              | GET, PUT               | [source](../src/app/api/branding/route.ts)                                              |
 | `/api/calendar/events/[eventId]`                             | DELETE, PATCH          | [source](../src/app/api/calendar/events/[eventId]/route.ts)                             |

@@ -123,7 +123,9 @@ const DEV_ASSET_PREFIXES = ["/_next/static/", "/@id/", "/@fs/", "/@vite/", "/nod
  * the kite's return scene) can then keep the app hidden behind the screen for good.
  *
  * Every tick is a heartbeat for the boot trace (boot-trace-utils.ts), which a frozen main thread stops, and the
- * box carries the trace's Details with a Copy details button.
+ * box carries the trace's Details with a Copy details button. Every tick also restarts the animation of the startup
+ * screen's frozen-thread notice (HEARTBEAT_ATTRIBUTE): a main thread that stopped runs neither the slow-start
+ * recovery nor this watchdog, but the compositor still fades that notice in once the ticks have stopped.
  */
 export function assetRecoveryScript({ dev = false }: { dev?: boolean } = {}): string {
 	const prefixes = dev ? DEV_ASSET_PREFIXES : PRODUCTION_ASSET_PREFIXES;
@@ -144,12 +146,17 @@ export function assetRecoveryScript({ dev = false }: { dev?: boolean } = {}): st
 	const trace = () => window[${JSON.stringify(BOOT_TRACE_GLOBAL)}] || null;
 	// The frozen-thread notice (globals.css) starts over on every beat; once the beats stop it shows by itself.
 	const root = document.documentElement;
+	// Cosmetic: nothing here may stop the watchdog.
 	const heartbeat = () => {
-		root.setAttribute(${JSON.stringify(HEARTBEAT_ATTRIBUTE)}, root.getAttribute(${JSON.stringify(HEARTBEAT_ATTRIBUTE)}) === "a" ? "b" : "a");
+		try {
+			root.setAttribute(${JSON.stringify(HEARTBEAT_ATTRIBUTE)}, root.getAttribute(${JSON.stringify(HEARTBEAT_ATTRIBUTE)}) === "a" ? "b" : "a");
+		} catch {}
 	};
 	const followVisibility = () => {
-		if (document.visibilityState === "hidden") return root.setAttribute(${JSON.stringify(HIDDEN_ATTRIBUTE)}, "");
-		root.removeAttribute(${JSON.stringify(HIDDEN_ATTRIBUTE)});
+		try {
+			if (document.visibilityState === "hidden") return root.setAttribute(${JSON.stringify(HIDDEN_ATTRIBUTE)}, "");
+			root.removeAttribute(${JSON.stringify(HIDDEN_ATTRIBUTE)});
+		} catch {}
 		heartbeat();
 	};
 	followVisibility();

@@ -92,6 +92,7 @@
 	"/api/booking/[eventId]",
 	"/api/booking",
 	"/api/booking/settings",
+	"/api/boot-report",
 	"/api/branding/icon",
 	"/api/branding",
 	"/api/calendar/events/[eventId]",

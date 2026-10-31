@@ -1,6 +1,7 @@
 import type { BulkMessageAction, BulkMessageResponse } from "@/app/api/messages/bulk/types";
 import { confirmReportSpam } from "@/components/messages/spam-report";
 import { offerUndoForMove } from "@/components/messages/undo-utils";
+import { announceMessagesLeftView, bulkActionLeftView } from "@/components/messages/left-view-utils";
 import { postBulkMessageAction } from "@/components/messages/bulk-request";
 import type { MessageCounts, MessageFolder } from "@/hooks/types";
 import { isPickedFolderColor } from "@/lib/folders/colors";
@@ -18,7 +19,9 @@ async function moveMessages(payload: { messageIds: string[]; action: BulkMessage
 	if (!response) return;
 	if (!response.ok) throw new Error("Unable to move messages");
 	window.dispatchEvent(new Event("kite:messages-changed"));
-	offerUndoForMove(payload.action, (await response.json().catch(() => null)) as BulkMessageResponse | null);
+	const data = (await response.json().catch(() => null)) as BulkMessageResponse | null;
+	offerUndoForMove(payload.action, data);
+	announceMessagesLeftView(bulkActionLeftView(payload.action, payload.messageIds, data));
 }
 
 export async function moveMessagesToSystemFolder(messageIds: string[], action: "archive" | "spam" | "trash") {

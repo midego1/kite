@@ -14,6 +14,7 @@ import { layoutPixels, pixelsPerPercent } from "@/components/ui/resizable-utils"
 import { useSyncedPanel } from "@/components/ui/use-synced-panel";
 import { useKeyChanged } from "@/hooks/use-synced-state";
 import { BulkMessageSelectionPane } from "./bulk-message-selection-pane";
+import { OpenRowContext, useRowLookupHolder } from "./open-row-context";
 import { MessageFolderPage } from "./message-folder-page";
 import { MessageFolderTitle } from "./message-folder-title";
 import { useLeaveOpenMessage } from "./use-leave-open-message";
@@ -83,7 +84,9 @@ export function MessageSplitLayout({ children, config }: MessageSplitLayoutProps
 	const selectedMessageId = pathname.startsWith(detailPrefix)
 		? pathname.slice(detailPrefix.length).split("/")[0]
 		: undefined;
-	const { visibleMessageId, leaveOpenMessage } = useLeaveOpenMessage(selectedMessageId, config.hrefPrefix);
+	const { visibleMessageId, leaveOpenMessage } = useLeaveOpenMessage(selectedMessageId, config);
+	// The list's lookup of the ids each row stands for, read by the reader when it moves the open message.
+	const rowLookup = useRowLookupHolder();
 	useClearSelectionOnOpen(selectedMessageId, selectedMessages, setSelectedMessages);
 	const clearSelection = () => {
 		setSelectedMessages([]);
@@ -196,22 +199,24 @@ export function MessageSplitLayout({ children, config }: MessageSplitLayoutProps
 	const detail = (
 		<MessageListVisibilityContext.Provider value={visibility}>
 			<MessageDetailNavigationProvider config={config}>
-				<section
-					className={clsx("flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-white", split && PANEL_CLASS)}
-				>
-					{split && !below && selectedMessages.length > 0 ? (
-						<BulkMessageSelectionPane
-							folder={getSelectionToolbarFolder(config)}
-							selectedMessages={selectedMessages}
-							onAction={(action, folderId) => bulkActionRef.current?.(action, folderId) ?? Promise.resolve()}
-							onClearSelection={clearSelection}
-						/>
-					) : visibleMessageId ? (
-						children
-					) : (
-						<ReadingPaneEmptyState config={config} />
-					)}
-				</section>
+				<OpenRowContext.Provider value={rowLookup.lookup}>
+					<section
+						className={clsx("flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-white", split && PANEL_CLASS)}
+					>
+						{split && !below && selectedMessages.length > 0 ? (
+							<BulkMessageSelectionPane
+								folder={getSelectionToolbarFolder(config)}
+								selectedMessages={selectedMessages}
+								onAction={(action, folderId) => bulkActionRef.current?.(action, folderId) ?? Promise.resolve()}
+								onClearSelection={clearSelection}
+							/>
+						) : visibleMessageId ? (
+							children
+						) : (
+							<ReadingPaneEmptyState config={config} />
+						)}
+					</section>
+				</OpenRowContext.Provider>
 			</MessageDetailNavigationProvider>
 		</MessageListVisibilityContext.Provider>
 	);
@@ -266,6 +271,7 @@ export function MessageSplitLayout({ children, config }: MessageSplitLayoutProps
 							registerAction: (run) => {
 								bulkActionRef.current = run;
 							},
+							registerRowLookup: rowLookup.register,
 						}}
 					/>
 				</aside>

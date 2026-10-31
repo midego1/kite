@@ -1,5 +1,6 @@
 "use client";
 
+import clsx from "clsx";
 import { isSendPending } from "@/lib/messages/send-state-utils";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
@@ -15,6 +16,7 @@ import type { Message } from "@/hooks/types";
 import { UpdateNoticeRow } from "@/components/update-notice-row";
 import { useRegisterUpdateList } from "@/components/update-notice-store";
 import { useClearSelection } from "./use-clear-selection";
+import { useOpenRowBridge } from "./use-open-row-bridge";
 import { MessageListHeader } from "./message-list-header";
 import { MessageListRow } from "./message-list-row";
 import {
@@ -368,6 +370,16 @@ export function MessageFolderPage({
 		clearSelection: clearSelectionKeepOpen,
 	});
 
+	useOpenRowBridge({
+		selection,
+		rows: orderedMessages,
+		rowMessageIds,
+		openMessageId,
+		listRef,
+		folder: config.folder,
+		folderId: config.folderId,
+	});
+
 	const registerAction = selection?.registerAction;
 	useLayoutEffect(() => {
 		if (!registerAction) return;
@@ -442,8 +454,13 @@ export function MessageFolderPage({
 				<div
 					ref={listRef}
 					role="list"
+					// Takes the focus when the open message left and no row is next to it.
+					tabIndex={-1}
 					aria-label={config.title}
-					className={compact || isMobile ? "flex flex-col gap-0.5 py-1.5" : "divide-y divide-neutral-100"}
+					className={clsx(
+						"outline-none",
+						compact || isMobile ? "flex flex-col gap-0.5 py-1.5" : "divide-y divide-neutral-100",
+					)}
 				>
 					<UpdateNoticeRow compact={(compact || isMobile) && config.folder !== "drafts"} density={density} />
 					{sections.map((section) => [

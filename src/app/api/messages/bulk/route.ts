@@ -175,7 +175,10 @@ export async function POST(request: Request) {
 			(message) => allowedMessageIds.includes(message.id) && isPermanentlyDeletableStatus(message.status),
 		);
 		const deleted = await permanentlyDeleteMessages(env, db, user.id, deletable, "bulk");
-		return NextResponse.json({ ok: true, deleted, skipped: allowedMessageIds.length - deleted, ...refusals });
+		const skipped = allowedMessageIds.length - deleted;
+		// A partial delete is reported as an error by the client, so `moved` names the whole set only when it all went.
+		const moved = deleted === deletable.length ? deletable.map((message) => message.id) : [];
+		return NextResponse.json({ ok: true, deleted, skipped, moved, ...refusals });
 	}
 	if (payload.action === "spam")
 		return NextResponse.json({ ...(await reportSpamBulk(env, user, allowedMessageIds)), ...refusals });
@@ -187,7 +190,7 @@ export async function POST(request: Request) {
 			.map((message) => message.id);
 		for (const messageId of spamMessageIds) await applySpamFeedback(env, user, messageId, "ham");
 		await updateInApprovedMailboxes(db, approvedMailbox, values);
-		return NextResponse.json({ ok: true, ...refusals });
+		return NextResponse.json({ ok: true, moved: allowedMessageIds, ...refusals });
 	}
 
 	const undo = isUndoableBulkAction(payload.action)
@@ -206,5 +209,11 @@ export async function POST(request: Request) {
 		})),
 	);
 
-	return NextResponse.json({ ok: true, ...(undo ? { undo } : {}), ...draftCounts(drafts), ...refusals });
+	return NextResponse.json({
+		ok: true,
+		...(undo ? { undo } : {}),
+		...(status ? { moved: allowedMessageIds } : {}),
+		...draftCounts(drafts),
+		...refusals,
+	});
 }

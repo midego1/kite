@@ -57,3 +57,13 @@ test("the focus goes to the next remaining row, else the previous one", () => {
 	assert.equal(neighbourAfterLeaving(["b"], "b", ["b"]), null);
 	assert.equal(neighbourAfterLeaving(["a"], "x", ["x"]), null);
 });
+
+test("an older message of a conversation finds its place by the row that stands for it", () => {
+	const rows = { a: ["a"], b: ["b", "b-older", "b-oldest"], c: ["c"] };
+	const idsOfRow = (rowId) => rows[rowId];
+	assert.equal(neighbourAfterLeaving(["a", "b", "c"], "b-older", ["b-older"], idsOfRow), "c");
+	assert.equal(neighbourAfterLeaving(["a", "b", "c"], "b-oldest", ["b", "b-older", "b-oldest"], idsOfRow), "c");
+	assert.equal(neighbourAfterLeaving(["a", "b"], "b-older", ["b-older"], idsOfRow), "a");
+	// Without the rows' ids it is not found, which is what sent the focus to the list.
+	assert.equal(neighbourAfterLeaving(["a", "b", "c"], "b-older", ["b-older"]), null);
+});

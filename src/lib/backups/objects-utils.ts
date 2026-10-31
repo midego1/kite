@@ -121,17 +121,22 @@ export function objectsStepAction(
 	return run.leaseUntil && run.leaseUntil > now ? "leased" : "run";
 }
 
-/** Sample-based, so it never reads every message body: the latest messages stand for the rest. */
+/**
+ * Sample-based, so it never reads every message body: the latest messages stand for the rest. The raw messages carry
+ * their attachments' files encoded (`rawAttachmentBytes`, 'raw' rows included); `attachments` and `attachmentBytes`
+ * are the objects of their own that rows name, once per key.
+ */
 export function estimateBackupObjectBytes(input: {
 	messages: number;
 	sample: { size: number; bodyBytes: number; offloaded: number; offloadedBytes: number };
 	attachments: number;
 	attachmentBytes: number;
+	rawAttachmentBytes: number;
 }): { objects: number; bytes: number } {
 	const { sample } = input;
 	const scale = sample.size ? input.messages / sample.size : 0;
 	const offloaded = Math.round(sample.offloaded * scale);
-	const raw = input.messages * HEADER_BYTES + sample.bodyBytes * scale + input.attachmentBytes * BASE64_OVERHEAD;
+	const raw = input.messages * HEADER_BYTES + sample.bodyBytes * scale + input.rawAttachmentBytes * BASE64_OVERHEAD;
 	return {
 		objects: input.messages + input.attachments + offloaded,
 		bytes: Math.round(raw + input.attachmentBytes + sample.offloadedBytes * scale),

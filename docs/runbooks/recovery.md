@@ -48,6 +48,31 @@ messages that share a file deletes it for both.
    the pending migrations on the target first (Admin overview, or
    `AUTO_APPLY_MIGRATIONS=1`), then restore.
 
+## Rolling back past raw-backed attachments
+
+Since raw-backed attachments (`docs/specs/attachments-once.md` §8 step 4), a file
+in received or imported mail whose bytes Kite verified inside the raw message has
+no object of its own: its row carries the sentinel key `raw:<id>` and the byte
+range to read from the raw message. Releases from 2026.10.31.3 on read such rows.
+Earlier releases do not: they look the sentinel up as an object key and answer
+404 for those files (the raw message and "Show original" are unaffected).
+
+1. Prefer fixing forward. A rollback to 2026.10.31.3 or later keeps every file
+   readable; the attachment-sharing rules above still apply to it.
+2. Before running an older release, set `ATTACHMENT_RAW_INDEX=off` on the current
+   release (Worker variable, or the Node environment) and deploy that, so new mail
+   stores a copy of each file again.
+3. Give every raw-backed row an object of its own. The admin "materialize" job
+   (`docs/specs/attachments-once.md` §8 step 5) does this once it exists. Until it
+   exists, files of mail received while raw-backed attachments were on do not
+   download on an older release; nothing is lost, since the raw messages are kept
+   unchanged, and they download again once a current release runs.
+4. A backup taken after this release and restored into a release before
+   2026.10.31.3 has the same 404s; restore it into a current release instead.
+5. An old backup restored into a current release can name objects that are gone.
+   The next read of such a file rebuilds it from its raw message (logged as
+   `attachment.repaired`), so it needs no action.
+
 ## Backup or restore incident
 
 1. Review the latest successful backup record in **Admin → Backups**, its

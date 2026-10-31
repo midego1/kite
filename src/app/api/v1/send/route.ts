@@ -3,7 +3,7 @@ import { getEnv } from "@/lib/cloudflare";
 import { authenticateApiKey, requireScope } from "@/lib/api/auth";
 import { sendEmailSchema } from "@/lib/validators";
 import { sendEmail } from "@/lib/email/send";
-import { decodeBase64Content } from "@/lib/email/attachments";
+import { decodeBase64Content } from "@/lib/email/attachment-content-utils";
 import { readJsonBody } from "@/lib/http/request";
 import { RequestBodyTooLargeError } from "@/lib/http/errors";
 import { getSendErrorStatus } from "@/app/api/send/error-utils";

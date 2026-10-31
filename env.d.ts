@@ -72,6 +72,12 @@ interface CloudflareEnv {
 	 * share an object keep sharing it; deletes always check references. On by default.
 	 */
 	ATTACHMENT_SHARING?: string;
+	/**
+	 * "0", "false", "off" or "no" stops raw-backed attachments: received and imported mail then writes a decoded copy of
+	 * each attachment, as releases before it did (docs/specs/attachments-once.md). Rows already served from their raw
+	 * message keep reading from it. On by default.
+	 */
+	ATTACHMENT_RAW_INDEX?: string;
 	/** "0", "false", "off" or "no" forces the opt-in usage statistics off (src/lib/telemetry/); nothing forces them on. */
 	KITE_TELEMETRY?: string;
 	/** Overrides the collector the daily usage heartbeat is posted to; https only. Empty means nothing is sent. */

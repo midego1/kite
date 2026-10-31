@@ -196,6 +196,8 @@ Set `AUTO_APPLY_MIGRATIONS=1` (or `true`) to apply pending migrations without op
 
 A message sent from a draft and a forward draft share the stored attachment files of the row they came from instead of copying them, and deletes remove a file only once no message names it. Releases from before that change delete files unconditionally, so **do not roll back past it**: see [Rolling back past attachment sharing](runbooks/recovery.md#rolling-back-past-attachment-sharing). The Worker variable `ATTACHMENT_SHARING=off` stops new sharing; it is on by default.
 
+Files in received and imported mail are served from the stored raw message when Kite could verify their bytes there, so they take no storage of their own. Releases before 2026.10.31.3 cannot read those files: see [Rolling back past raw-backed attachments](runbooks/recovery.md#rolling-back-past-raw-backed-attachments). The Worker variable `ATTACHMENT_RAW_INDEX=off` makes new mail store a separate copy of each file again; it is on by default.
+
 A failed inbound or queued message is retried (Cloudflare Queues `max_retries: 3`) rather than dropped. When migrations are still pending at that moment, Kite waits 60 seconds instead of 10 before the next attempt, so applying them in that window still delivers the mail. Mail that has exhausted its three attempts is lost: the raw message stays in R2, but nothing re-enqueues it, which is the reason the banner is shown everywhere rather than only to admins.
 
 If the Cloudflare dashboard has a custom deploy command containing `wrangler d1 migrations apply DB --remote`, remove that part and use `npm run deploy`.

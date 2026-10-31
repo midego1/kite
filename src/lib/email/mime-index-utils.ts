@@ -359,7 +359,9 @@ export function matchAttachmentsToParts(
 		});
 		if (partIndex < 0) result.unmatched.push(attachmentIndex);
 		else {
+			// A used part is never compared again; its decoded copy can go at once (a 25 MB message holds less).
 			used.add(partIndex);
+			decoded.delete(partIndex);
 			result.matches.push({ attachmentIndex, part: parts[partIndex] });
 		}
 	});

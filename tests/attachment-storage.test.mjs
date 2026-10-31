@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test, { after } from "node:test";
@@ -35,7 +35,10 @@ await build({
 			export { getDb } from "./src/db/index.ts";
 			export {
 				attachmentObjectKeys,
+				findAttachmentSource,
+				isAttachmentRawIndexEnabled,
 				isAttachmentSharingEnabled,
+				isRawBackedMessage,
 				isRawAttachmentKey,
 				planObjectDeletion,
 				rawAttachmentKey,
@@ -52,6 +55,7 @@ await build({
 				storeMessageAttachments,
 				storedAttachmentContent,
 			} from "./src/lib/email/attachments.ts";
+			export { decodeBase64Content, normalizeAttachmentContent } from "./src/lib/email/attachment-content-utils.ts";
 			export { indexMimeParts, matchAttachmentsToParts } from "./src/lib/email/mime-index-utils.ts";
 			export { parseRawMime } from "./src/lib/email/parse.ts";
 			export { TableInsertBuilder } from "./src/lib/backups/restore-utils.ts";
@@ -685,4 +689,336 @@ test("a forward that fails part way removes its copies, never the original's fil
 	assert.equal(puts, 2);
 	assert.equal((await m.getAttachmentStorageCounts(env)).objects.keys, 0);
 	for (const row of raws) assert.deepEqual(bytesOf(await m.readAttachmentBytes(env, row)), row.content);
+});
+
+// docs/specs/attachments-once.md §8 step 4: received and imported mail stores verified attachments as 'raw' rows.
+
+const fixtureRaw = (name) => encoder.encode(FIXTURES.find((fixture) => fixture.name === name).raw);
+const storageOf = (database, messageId) =>
+	database.db
+		.prepare(
+			"SELECT storage, r2_key AS r2Key, raw_offset AS rawOffset, sha256 FROM message_attachments WHERE message_id = ? ORDER BY rowid",
+		)
+		.all(messageId);
+
+/** Stores a fixture's attachments the way inbound delivery does: the raw at its key, then the rows with `raw`. */
+async function ingest(env, fixtureName, { key = "inbound/1-msg.eml", status = "received", messageId = "msg-in" } = {}) {
+	const raw = fixtureRaw(fixtureName);
+	await env.BUCKET.put(key, raw);
+	const parsed = await m.parseRawMime(raw.buffer);
+	const stored = await m.storeMessageAttachments(env, messageId, parsed.attachments, {
+		validate: false,
+		raw: { key, bytes: raw.buffer, status },
+	});
+	return { parsed, stored };
+}
+
+const sha256 = async (bytes) => Buffer.from(await crypto.subtle.digest("SHA-256", bytes)).toString("hex");
+
+test("utils: attachment content from every form a body or the parser hands over", () => {
+	const text = (buffer) => new TextDecoder().decode(buffer);
+	assert.equal(text(m.decodeBase64Content("aGVs\r\nbG8=")), "hello");
+	const buffer = encoder.encode("as is").buffer;
+	assert.equal(m.normalizeAttachmentContent(buffer), buffer);
+	// A view into a larger buffer gives exactly its own bytes.
+	const view = encoder.encode("xxinsidexx").subarray(2, 8);
+	assert.equal(text(m.normalizeAttachmentContent(view)), "inside");
+	assert.equal(text(m.normalizeAttachmentContent("aGk=", "base64")), "hi");
+	assert.equal(text(m.normalizeAttachmentContent("café", "utf8")), "café");
+	assert.equal(text(m.normalizeAttachmentContent("plain")), "plain");
+});
+
+test("utils: the raw-index switch and which messages may hold 'raw' rows", () => {
+	assert.ok(m.isAttachmentRawIndexEnabled(undefined));
+	assert.ok(m.isAttachmentRawIndexEnabled("on"));
+	for (const off of ["off", "0", "false", " NO "]) assert.ok(!m.isAttachmentRawIndexEnabled(off), off);
+	assert.ok(m.isRawBackedMessage({ rawKey: "inbound/1-a.eml", status: "received" }));
+	assert.ok(m.isRawBackedMessage({ rawKey: "imports/msg.eml", status: "spam" }));
+	assert.ok(m.isRawBackedMessage({ rawKey: "inbound/1-a.eml", status: "screening" }));
+	assert.ok(!m.isRawBackedMessage({ rawKey: "imports/msg.eml", status: "draft" }));
+	assert.ok(!m.isRawBackedMessage({ rawKey: "drafts/msg.eml", status: "sent" }));
+	assert.ok(!m.isRawBackedMessage({ rawKey: "external/acc/1/2.eml", status: "received" }));
+	assert.ok(!m.isRawBackedMessage({ rawKey: null, status: "received" }));
+});
+
+test("utils: the repair source must be unambiguous", () => {
+	const file = (filename, text, contentId = null) => ({
+		filename,
+		type: "application/pdf",
+		content: encoder.encode(text).buffer,
+		contentId,
+	});
+	const row = { filename: "a.pdf", size: 3, contentId: null };
+	assert.equal(m.findAttachmentSource(row, [file("b.pdf", "abc"), file("a.pdf", "abc")]).filename, "a.pdf");
+	assert.equal(m.findAttachmentSource(row, [file("a.pdf", "abcd")]), null);
+	assert.equal(m.findAttachmentSource(row, [file("a.pdf", "abc", "<x>")]), null);
+	// Two files with the same name and size but other bytes: which one the row was is unknown.
+	assert.equal(m.findAttachmentSource(row, [file("a.pdf", "abc"), file("a.pdf", "xyz")]), null);
+	assert.ok(m.findAttachmentSource(row, [file("a.pdf", "abc"), file("a.pdf", "abc")]));
+	// The stored name is the sanitised one.
+	assert.ok(m.findAttachmentSource({ ...row, filename: "x_a.pdf" }, [file("x/a.pdf", "abc")]));
+});
+
+test("inbound ingest stores verified attachments as 'raw' rows and writes no object for them", async () => {
+	const { env, database, bucket } = await setup();
+	const { parsed, stored } = await ingest(env, "related inside alternative inside mixed, with an inline cid image");
+	assert.equal(stored.length, 2);
+	const rows = storageOf(database, "msg-in");
+	assert.deepEqual(
+		rows.map((row) => row.storage),
+		["raw", "raw"],
+	);
+	for (const [index, row] of rows.entries()) {
+		assert.equal(row.r2Key, m.rawAttachmentKey(stored[index].id));
+		assert.equal(stored[index].r2Key, row.r2Key);
+		assert.equal(row.sha256, await sha256(parsed.attachments[index].content));
+		const read = await m.readAttachmentBytes(env, { ...stored[index], contentType: stored[index].type });
+		assert.deepEqual(bytesOf(read), bytesOf(parsed.attachments[index].content));
+	}
+	assert.ok(!existsSync(join(bucket.root, "attachments")), "no attachment object was written");
+	// The list and the forward path see them like any other attachment.
+	assert.deepEqual(
+		(await m.listMessageAttachments(env, "msg-in")).map((row) => row.size),
+		parsed.attachments.map((attachment) => attachment.content.byteLength),
+	);
+});
+
+test("quoted-printable and uuencode attachments fall back to objects of their own", async () => {
+	const { env, database } = await setup();
+	const { parsed, stored } = await ingest(env, "quoted-printable and uuencode attachments");
+	assert.ok(stored.length >= 1);
+	const rows = storageOf(database, "msg-in");
+	assert.ok(rows.every((row) => row.storage === "object" && !m.isRawAttachmentKey(row.r2Key)));
+	for (const [index, row] of stored.entries()) {
+		const read = await m.readAttachmentBytes(env, { ...row, contentType: row.type });
+		assert.deepEqual(bytesOf(read), bytesOf(parsed.attachments[index].content));
+	}
+});
+
+test("a message mixing a base64 part and a quoted-printable part stores one of each", async () => {
+	const { env, database } = await setup();
+	const boundary = "mix";
+	const pdf = Buffer.from("%PDF-1.4 mixed fixture body that is long enough to wrap the lines nicely");
+	const raw = [
+		"From: a@example.com",
+		"To: b@example.com",
+		"Subject: Mixed",
+		"MIME-Version: 1.0",
+		`Content-Type: multipart/mixed; boundary="${boundary}"`,
+		"",
+		`--${boundary}`,
+		"Content-Type: text/plain",
+		"",
+		"Body",
+		`--${boundary}`,
+		'Content-Type: application/pdf; name="a.pdf"',
+		'Content-Disposition: attachment; filename="a.pdf"',
+		"Content-Transfer-Encoding: base64",
+		"",
+		...(pdf.toString("base64").match(/.{1,76}/g) ?? []),
+		`--${boundary}`,
+		'Content-Type: text/plain; name="notes.txt"',
+		'Content-Disposition: attachment; filename="notes.txt"',
+		"Content-Transfer-Encoding: quoted-printable",
+		"",
+		"caf=C3=A9 =3D notes",
+		`--${boundary}--`,
+		"",
+	].join("\r\n");
+	const bytes = encoder.encode(raw);
+	await env.BUCKET.put("inbound/1-msg.eml", bytes);
+	const parsed = await m.parseRawMime(bytes.buffer);
+	await m.storeMessageAttachments(env, "msg-in", parsed.attachments, {
+		raw: { key: "inbound/1-msg.eml", bytes: bytes.buffer, status: "received" },
+	});
+	assert.deepEqual(
+		storageOf(database, "msg-in").map((row) => row.storage),
+		["raw", "object"],
+	);
+	const [pdfRow, notesRow] = await m.loadMessageAttachmentContents(env, "msg-in");
+	assert.deepEqual(bytesOf(pdfRow.content), bytesOf(pdf));
+	assert.equal(new TextDecoder().decode(notesRow.content).trim(), "café = notes");
+});
+
+test("drafts, JMAP and synced raws, the kill switch and a schema without 0088 keep writing objects", async () => {
+	const name = "multipart/mixed";
+	const cases = [
+		{ label: "an imported draft", options: { key: "imports/msg-in.eml", status: "draft" } },
+		{ label: "a JMAP drafts/ raw", options: { key: "drafts/msg-in.eml", status: "received" } },
+		{ label: "a synced external/ raw", options: { key: "external/acc/1/2.eml", status: "received" } },
+		{ label: "ATTACHMENT_RAW_INDEX=off", options: {}, env: { ATTACHMENT_RAW_INDEX: "off" } },
+		{ label: "before migration 0088", options: {}, migrated: false },
+	];
+	for (const item of cases) {
+		const { env, database } = await setup({ migrated: item.migrated ?? true });
+		Object.assign(env, item.env ?? {});
+		const { parsed, stored } = await ingest(env, name, item.options);
+		const keys = keysOf(database, "msg-in");
+		assert.equal(keys.length, parsed.attachments.length, item.label);
+		assert.ok(
+			keys.every((key) => !m.isRawAttachmentKey(key)),
+			item.label,
+		);
+		const [read] = await m.loadMessageAttachmentContents(env, "msg-in");
+		assert.deepEqual(bytesOf(read.content), bytesOf(parsed.attachments[0].content), item.label);
+		assert.equal(stored.length, parsed.attachments.length, item.label);
+	}
+});
+
+test("imported mail stores 'raw' rows too", async () => {
+	const { env, database } = await setup();
+	database.db.exec("UPDATE messages SET raw_r2_key = 'imports/msg-in.eml' WHERE id = 'msg-in'");
+	await ingest(env, "two identical attachments", { key: "imports/msg-in.eml", status: "archived" });
+	const rows = storageOf(database, "msg-in");
+	assert.deepEqual(
+		rows.map((row) => row.storage),
+		["raw", "raw"],
+	);
+	// Two identical files take two parts, never the same range twice.
+	assert.notEqual(rows[0].rawOffset, rows[1].rawOffset);
+});
+
+test("lazy repair: an 'object' row whose object is gone is served from the raw and becomes 'raw'", async () => {
+	const { env, database, bucket } = await setup();
+	const raw = fixtureRaw("multipart/mixed");
+	await bucket.put("inbound/1-msg.eml", raw);
+	const parsed = await m.parseRawMime(raw.buffer);
+	// Stored as objects (a backup from before the reclaim), then the objects are lost.
+	const [stored] = await m.storeMessageAttachments(env, "msg-in", parsed.attachments, { validate: false });
+	await bucket.delete(stored.r2Key);
+	const row = { ...stored, contentType: stored.type };
+	const opened = await silenced(() => m.openAttachment(env, row));
+	assert.deepEqual(bytesOf(await new Response(opened.body).arrayBuffer()), bytesOf(parsed.attachments[0].content));
+	const [after] = storageOf(database, "msg-in");
+	assert.equal(after.storage, "raw");
+	assert.equal(after.r2Key, m.rawAttachmentKey(stored.id));
+	// Read again through the stored row: the new layout.
+	const [listed] = await m.loadMessageAttachmentContents(env, "msg-in");
+	assert.deepEqual(bytesOf(listed.content), bytesOf(parsed.attachments[0].content));
+});
+
+test("lazy repair puts the object back when 'raw' rows are off, and gives up without a matching file", async () => {
+	const { env, database, bucket } = await setup();
+	env.ATTACHMENT_RAW_INDEX = "off";
+	const raw = fixtureRaw("multipart/mixed");
+	await bucket.put("inbound/1-msg.eml", raw);
+	const parsed = await m.parseRawMime(raw.buffer);
+	const [stored] = await m.storeMessageAttachments(env, "msg-in", parsed.attachments, { validate: false });
+	await bucket.delete(stored.r2Key);
+	const row = { ...stored, contentType: stored.type };
+	const read = await silenced(() => m.readAttachmentBytes(env, row));
+	assert.deepEqual(bytesOf(read), bytesOf(parsed.attachments[0].content));
+	assert.equal(storageOf(database, "msg-in")[0].storage, "object");
+	assert.ok(await bucket.get(stored.r2Key), "the object is back under its own key");
+
+	// A row the raw does not hold (renamed here) stays missing rather than being served another file.
+	database.db.exec(`UPDATE message_attachments SET filename = 'other.pdf' WHERE id = '${stored.id}'`);
+	await bucket.delete(stored.r2Key);
+	assert.equal(await silenced(() => m.readAttachmentBytes(env, row)), null);
+	// A draft never repairs from a raw.
+	database.db.exec("UPDATE messages SET status = 'draft' WHERE id = 'msg-in'");
+	database.db.exec(`UPDATE message_attachments SET filename = '${stored.filename}' WHERE id = '${stored.id}'`);
+	assert.equal(await silenced(() => m.openAttachment(env, row)), null);
+});
+
+test("a 'raw' row whose range no longer decodes to its bytes is materialized, never served wrong", async () => {
+	const { env, database, bucket } = await setup();
+	const { parsed, stored } = await ingest(env, "multipart/mixed");
+	const row = { ...stored[0], contentType: stored[0].type };
+	// A wrong range (as a scanner bug would leave): the buffered read checks the digest and repairs from the raw.
+	database.db.exec(`UPDATE message_attachments SET raw_offset = raw_offset + 4 WHERE id = '${row.id}'`);
+	const read = await silenced(() => m.readAttachmentBytes(env, row));
+	assert.deepEqual(bytesOf(read), bytesOf(parsed.attachments[0].content));
+	const [after] = storageOf(database, "msg-in");
+	assert.equal(after.storage, "object");
+	assert.ok(!m.isRawAttachmentKey(after.r2Key));
+	assert.ok(await bucket.get(after.r2Key));
+
+	// A raw whose file changed cannot be verified against the recorded digest: nothing is returned.
+	const second = await setup();
+	const again = await ingest(second.env, "multipart/mixed");
+	const other = { ...again.stored[0], contentType: again.stored[0].type };
+	second.database.db.exec(`UPDATE message_attachments SET sha256 = '${"0".repeat(64)}' WHERE id = '${other.id}'`);
+	assert.equal(await silenced(() => m.readAttachmentBytes(second.env, other)), null);
+	assert.equal(storageOf(second.database, "msg-in")[0].storage, "raw");
+});
+
+/** An object row stored from the "multipart/mixed" fixture's raw, whose object is then lost. */
+async function lostObjectRow(env, bucket) {
+	const raw = fixtureRaw("multipart/mixed");
+	await bucket.put("inbound/1-msg.eml", raw);
+	const parsed = await m.parseRawMime(raw.buffer);
+	const [stored] = await m.storeMessageAttachments(env, "msg-in", parsed.attachments, { validate: false });
+	await bucket.delete(stored.r2Key);
+	return { stored, row: { ...stored, contentType: stored.type }, content: bytesOf(parsed.attachments[0].content) };
+}
+
+test("lazy repair puts a shared missing object back instead of converting the row that shares it", async () => {
+	const { env, database, bucket } = await setup();
+	const { stored, row, content } = await lostObjectRow(env, bucket);
+	// A forward draft made before the object was lost names the same key.
+	database.db.exec(
+		`INSERT INTO message_attachments (id, message_id, filename, content_type, size, r2_key, created_at)
+			VALUES ('att-forward', 'msg-draft', '${stored.filename}', '${stored.type}', ${stored.size}, '${stored.r2Key}', 1)`,
+	);
+	const opened = await silenced(() => m.openAttachment(env, row));
+	assert.deepEqual(bytesOf(await new Response(opened.body).arrayBuffer()), content);
+	assert.equal(storageOf(database, "msg-in")[0].storage, "object", "the original stays an object row");
+	assert.equal(keyOf(database, stored.id), stored.r2Key);
+	// The object is back, so the forward reads too.
+	const forward = { id: "att-forward", r2Key: stored.r2Key, size: stored.size, contentType: stored.type };
+	assert.deepEqual(bytesOf(await m.readAttachmentBytes(env, forward)), content);
+});
+
+test("lazy repair that loses the race to another conversion writes no object", async () => {
+	const { env, database, bucket } = await setup();
+	const { stored, row, content } = await lostObjectRow(env, bucket);
+	// Another read converts the row between this repair's check and its UPDATE: the UPDATE then matches nothing.
+	const db = env.DB;
+	const racing = {
+		...env,
+		DB: new Proxy(db, {
+			get(target, property) {
+				if (property !== "prepare") return Reflect.get(target, property).bind?.(target) ?? target[property];
+				return (sql) => {
+					if (!sql.startsWith("UPDATE message_attachments SET storage = 'raw'")) return target.prepare(sql);
+					return {
+						bind: (...params) => ({
+							run: async () => {
+								await target
+									.prepare(sql)
+									.bind(...params)
+									.run();
+								return target
+									.prepare(sql)
+									.bind(...params)
+									.run();
+							},
+						}),
+					};
+				};
+			},
+		}),
+	};
+	const read = await silenced(() => m.readAttachmentBytes(racing, row));
+	assert.deepEqual(bytesOf(read), content);
+	assert.equal(storageOf(database, "msg-in")[0].storage, "raw");
+	assert.equal(await bucket.get(stored.r2Key), null, "no object was written for the converted row");
+});
+
+test("lazy repair refuses bytes that do not match the row's recorded digest", async () => {
+	const { env, database, bucket } = await setup();
+	const { stored, row } = await lostObjectRow(env, bucket);
+	database.db.exec(`UPDATE message_attachments SET sha256 = '${"f".repeat(64)}' WHERE id = '${stored.id}'`);
+	assert.equal(await silenced(() => m.openAttachment(env, row)), null);
+	assert.equal(storageOf(database, "msg-in")[0].storage, "object");
+	assert.equal(await bucket.get(stored.r2Key), null, "nothing unverified was put back");
+});
+
+test("received files that need an object record their digest, so a forward of the same bytes names it", async () => {
+	const { env, database } = await setup();
+	await ingest(env, "quoted-printable and uuencode attachments");
+	const rows = database.db.prepare("SELECT storage, sha256 FROM message_attachments WHERE message_id = 'msg-in'").all();
+	assert.ok(rows.length > 0);
+	assert.ok(rows.every((item) => item.storage === "object" && /^[0-9a-f]{64}$/.test(item.sha256)));
 });

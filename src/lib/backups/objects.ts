@@ -77,8 +77,10 @@ export async function estimateBackupObjects(env: CloudflareEnv): Promise<BackupO
 	const first = async <T>(sql: string) => (await env.DB.prepare(sql).first<T>()) ?? ({} as T);
 	const latest = `FROM messages WHERE raw_r2_key IS NOT NULL ORDER BY rowid DESC LIMIT ${ESTIMATE_SAMPLE}`;
 	const messages = await first<{ n: number }>("SELECT count(*) AS n FROM messages WHERE raw_r2_key IS NOT NULL");
-	const attachments = await first<{ n: number; bytes: number }>(
-		`SELECT count(*) AS n, coalesce(sum(size), 0) AS bytes FROM (SELECT max(size) AS size FROM message_attachments WHERE ${ATTACHMENT_OBJECT_ROWS_SQL} GROUP BY r2_key)`,
+	// The files of messages with a raw ride inside it, 'raw' rows included (drafts and forwards have none); only object
+	// rows add an object of their own, counted once per key.
+	const attachments = await first<{ n: number; bytes: number; rowBytes: number }>(
+		`SELECT count(*) AS n, coalesce(sum(size), 0) AS bytes, (SELECT coalesce(sum(a.size), 0) FROM message_attachments a JOIN messages m ON m.id = a.message_id WHERE m.raw_r2_key IS NOT NULL) AS rowBytes FROM (SELECT max(size) AS size FROM message_attachments WHERE ${ATTACHMENT_OBJECT_ROWS_SQL} GROUP BY r2_key)`,
 	);
 	const sample = await beforeBodyColumn(
 		() =>
@@ -101,6 +103,7 @@ export async function estimateBackupObjects(env: CloudflareEnv): Promise<BackupO
 		},
 		attachments: Number(attachments.n ?? 0),
 		attachmentBytes: Number(attachments.bytes ?? 0),
+		rawAttachmentBytes: Number(attachments.rowBytes ?? 0),
 	});
 }
 

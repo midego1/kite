@@ -75,19 +75,67 @@ function bodyPart(mail: InboundMail): string[] {
 	];
 }
 
+/**
+ * Quoted-printable (RFC 2045 §6.7) of any bytes, with soft line breaks before 76 characters. The last line ends in a
+ * soft break too, so the line break before the next delimiter adds nothing to the decoded bytes.
+ */
+function quotedPrintable(bytes: Buffer): string[] {
+	const lines: string[] = [];
+	let line = "";
+	for (const byte of bytes) {
+		const plain = byte >= 33 && byte <= 126 && byte !== 61;
+		const token = plain ? String.fromCharCode(byte) : `=${byte.toString(16).toUpperCase().padStart(2, "0")}`;
+		if (line.length + token.length > 75) {
+			lines.push(`${line}=`);
+			line = "";
+		}
+		line += token;
+	}
+	lines.push(`${line}=`);
+	return lines;
+}
+
 function attachmentPart(attachment: InboundAttachment): string[] {
-	const base64 = Buffer.from(attachment.content).toString("base64");
+	const bytes = Buffer.from(attachment.content);
+	const encoding = attachment.transferEncoding ?? "base64";
 	return [
 		`Content-Type: ${attachment.contentType}; name="${attachment.filename}"`,
 		`Content-Disposition: ${attachment.disposition ?? "attachment"}; filename="${attachment.filename}"`,
 		...(attachment.contentId ? [`Content-ID: <${attachment.contentId}>`] : []),
-		"Content-Transfer-Encoding: base64",
+		`Content-Transfer-Encoding: ${encoding}`,
 		"",
-		...(base64.match(/.{1,76}/g) ?? []),
+		...(encoding === "base64" ? (bytes.toString("base64").match(/.{1,76}/g) ?? []) : quotedPrintable(bytes)),
 	];
 }
 
-function buildMime(mail: InboundMail): string {
+/** Parts as the lines of one multipart body, ending with its close delimiter. */
+function multipart(type: string, parts: string[][]): string[] {
+	const boundary = newBoundary();
+	return [
+		`Content-Type: multipart/${type}; boundary="${boundary}"`,
+		"",
+		...parts.flatMap((part) => [`--${boundary}`, ...part]),
+		`--${boundary}--`,
+	];
+}
+
+/**
+ * The message body: the text, the HTML and the attachments in a multipart/mixed. With `related`, inline attachments
+ * sit with the body in a multipart/related, as mail clients send images an HTML body shows by `cid:`.
+ */
+function messageBody(mail: InboundMail): string[] {
+	const attachments = mail.attachments ?? [];
+	const inline = mail.related ? attachments.filter((attachment) => attachment.disposition === "inline") : [];
+	const files = attachments.filter((attachment) => !inline.includes(attachment));
+	const body = inline.length ? multipart("related", [bodyPart(mail), ...inline.map(attachmentPart)]) : bodyPart(mail);
+	return files.length ? multipart("mixed", [body, ...files.map(attachmentPart)]) : body;
+}
+
+/**
+ * A message as the bytes the email handler receives. Exported so a test can compare what it sent with what Kite kept
+ * ("Show original", the JMAP email blob).
+ */
+export function buildMime(mail: InboundMail): string {
 	const headers = [
 		`From: ${mail.from}`,
 		`To: ${mail.to}`,
@@ -98,17 +146,7 @@ function buildMime(mail: InboundMail): string {
 		...Object.entries(mail.headers ?? {}).map(([name, value]) => `${name}: ${value}`),
 	];
 	if (mail.inReplyTo) headers.push(`In-Reply-To: ${mail.inReplyTo}`, `References: ${mail.inReplyTo}`);
-	if (!mail.attachments?.length) return [...headers, ...bodyPart(mail), ""].join("\r\n");
-	const boundary = newBoundary();
-	const parts = [bodyPart(mail), ...mail.attachments.map(attachmentPart)];
-	return [
-		...headers,
-		`Content-Type: multipart/mixed; boundary="${boundary}"`,
-		"",
-		...parts.flatMap((part) => [`--${boundary}`, ...part]),
-		`--${boundary}--`,
-		"",
-	].join("\r\n");
+	return [...headers, ...messageBody(mail), ""].join("\r\n");
 }
 
 function addressOf(header: string): string {
@@ -119,16 +157,23 @@ function addressOf(header: string): string {
  * Delivers mail through the Worker's real `email` handler (Miniflare's local
  * trigger endpoint), so it takes the same R2 + queue + parse path as production.
  */
-export async function deliverInbound(api: APIRequestContext, mail: InboundMail): Promise<StoredMessage> {
-	await postInbound(api, mail);
+export async function deliverInbound(
+	api: APIRequestContext,
+	mail: InboundMail,
+	mime = buildMime(mail),
+): Promise<StoredMessage> {
+	await postInbound(api, mail, mime);
 	return waitForMessage(api, mail.subject);
 }
 
-/** Hands the mail to the email handler without waiting for it to be stored, so arrival order is the call order. */
-export async function postInbound(api: APIRequestContext, mail: InboundMail): Promise<void> {
+/**
+ * Hands the mail to the email handler without waiting for it to be stored, so arrival order is the call order. `mime`
+ * is what `buildMime(mail)` returns unless a test built it first to compare with later.
+ */
+export async function postInbound(api: APIRequestContext, mail: InboundMail, mime = buildMime(mail)): Promise<void> {
 	const query = new URLSearchParams({ from: addressOf(mail.from), to: addressOf(mail.to) });
 	const response = await api.post(`/cdn-cgi/handler/email?${query}`, {
-		data: buildMime(mail),
+		data: mime,
 		headers: { "Content-Type": "message/rfc822" },
 	});
 	expect(response.status(), await response.text()).toBe(200);

@@ -4,10 +4,13 @@ import { messageAttachments, messages } from "@/db/schema";
 import { chunkArray, queryInChunks } from "@/db/chunk-utils";
 import { missingColumnFromError } from "@/lib/auth/user-lookup-utils";
 import { createLogger } from "@/lib/logger.mjs";
+import { sha256Hex } from "@/lib/aws/sigv4";
+import { materializeMismatchedRaw, repairMissingObject } from "./attachment-repair";
 import {
 	ATTACHMENT_OBJECT_ROWS_SQL,
 	isRawAttachmentKey,
 	planObjectDeletion,
+	rawAttachmentKey,
 	referenceCheckedKeys,
 	resolveByteRange,
 	sliceByteStream,
@@ -20,6 +23,7 @@ import type {
 	ObjectDeletionCandidates,
 	OpenedAttachment,
 	RawAttachmentLocation,
+	RawPartLocation,
 	ReferencedObjectKeys,
 	SharedAttachmentRow,
 } from "./attachment-storage-types";
@@ -74,6 +78,7 @@ async function findRawLocation(env: CloudflareEnv, attachmentId: string): Promis
 			offset: messageAttachments.rawOffset,
 			length: messageAttachments.rawLength,
 			encoding: messageAttachments.transferEncoding,
+			sha256: messageAttachments.sha256,
 		})
 		.from(messageAttachments)
 		.innerJoin(messages, eq(messageAttachments.messageId, messages.id))
@@ -119,21 +124,59 @@ function getObject(env: CloudflareEnv, row: AttachmentRef, range: AttachmentByte
 	return env.BUCKET.get(row.r2Key, range ? { range } : undefined);
 }
 
+async function openRawRow(env: CloudflareEnv, row: AttachmentRef, range: AttachmentByteRange | undefined) {
+	const location = await rawLocation(env, row.id);
+	return location ? openRawAttachment(env.BUCKET, location, row, range) : null;
+}
+
+/**
+ * The object of an 'object' row; when it is missing, the lazy repair rebuilds the row from its message's raw (a
+ * 'raw' row then, or its object put back) and it is read again. Null when it cannot be repaired.
+ */
+async function openObjectRow(
+	env: CloudflareEnv,
+	row: AttachmentRef,
+	range: AttachmentByteRange | undefined,
+): Promise<{ object: R2ObjectBody } | { repaired: OpenedAttachment } | null> {
+	const object = await getObject(env, row, range);
+	if (object) return { object };
+	const repaired = await repairMissingObject(env, row.id);
+	if (repaired === "raw") {
+		const opened = await openRawRow(env, { ...row, r2Key: rawAttachmentKey(row.id) }, range);
+		return opened ? { repaired: opened } : null;
+	}
+	const restored = repaired === "object" ? await getObject(env, row, range) : null;
+	return restored ? { object: restored } : null;
+}
+
 /** An attachment's decoded bytes as a stream, or a range of them; null when its content is not in storage. */
 export async function openAttachment(
 	env: CloudflareEnv,
 	row: AttachmentRef,
 	options: { range?: AttachmentByteRange } = {},
 ): Promise<OpenedAttachment | null> {
-	if (isRawAttachmentKey(row.r2Key)) {
-		const location = await rawLocation(env, row.id);
-		return location ? openRawAttachment(env.BUCKET, location, row, options.range) : null;
-	}
-	const object = await getObject(env, row, options.range);
-	if (!object) return null;
-	const size = object.size ?? row.size;
+	if (isRawAttachmentKey(row.r2Key)) return openRawRow(env, row, options.range);
+	const read = await openObjectRow(env, row, options.range);
+	if (!read || "repaired" in read) return read?.repaired ?? null;
+	const size = read.object.size ?? row.size;
 	const wanted = resolveByteRange(size, options.range);
-	return { body: object.body, size: wanted ? wanted.length : size, contentType: row.contentType };
+	return { body: read.object.body, size: wanted ? wanted.length : size, contentType: row.contentType };
+}
+
+/**
+ * A whole 'raw' row in memory, checked against the size and digest recorded when it was verified at ingest. A range
+ * that no longer decodes to them is never returned: the lazy repair materializes the bytes postal-mime decodes from the
+ * raw when those match, and otherwise the row reads as not stored.
+ */
+async function readRawRow(env: CloudflareEnv, row: AttachmentRef): Promise<ArrayBuffer | null> {
+	const location = await rawLocation(env, row.id);
+	const opened = location ? await openRawAttachment(env.BUCKET, location, row) : null;
+	if (!location || !opened) return null;
+	const bytes = await new Response(opened.body).arrayBuffer();
+	const expected = { size: row.size, sha256: location.sha256 ?? null };
+	if (bytes.byteLength === expected.size && (!expected.sha256 || (await sha256Hex(bytes)) === expected.sha256))
+		return bytes;
+	return materializeMismatchedRaw(env, row.id, expected);
 }
 
 /** An attachment's decoded bytes in memory (send, forward, the approval digest); null when not in storage. */
@@ -142,12 +185,14 @@ export async function readAttachmentBytes(
 	row: AttachmentRef,
 	options: { range?: AttachmentByteRange } = {},
 ): Promise<ArrayBuffer | null> {
-	if (!isRawAttachmentKey(row.r2Key)) {
-		const object = await getObject(env, row, options.range);
-		return object ? object.arrayBuffer() : null;
+	if (isRawAttachmentKey(row.r2Key)) {
+		if (!options.range) return readRawRow(env, row);
+		const opened = await openRawRow(env, row, options.range);
+		return opened ? new Response(opened.body).arrayBuffer() : null;
 	}
-	const opened = await openAttachment(env, row, options);
-	return opened ? new Response(opened.body).arrayBuffer() : null;
+	const read = await openObjectRow(env, row, options.range);
+	if (!read) return null;
+	return "repaired" in read ? new Response(read.repaired.body).arrayBuffer() : read.object.arrayBuffer();
 }
 
 /**
@@ -184,6 +229,70 @@ async function insertShared(env: CloudflareEnv, statement: string, params: unkno
 		return row ?? null;
 	} catch (error) {
 		if (isUniqueKeyError(error)) return null;
+		throw error;
+	}
+}
+
+/** `VALUES` placeholders for `count` parameters. */
+const placeholders = (count: number) => Array.from({ length: count }, () => "?").join(", ");
+
+/**
+ * Inserts the row of an object written for it. It names only columns every schema has (plus `sha256` when known, retried
+ * without it before migration 0088), so a deploy running ahead of the migration costs one statement per attachment.
+ */
+export async function insertObjectAttachmentRow(
+	env: CloudflareEnv,
+	row: SharedAttachmentRow,
+	object: { r2Key: string; size: number; sha256?: string },
+): Promise<void> {
+	const params = [...sharedRowParams(row), object.size, object.r2Key];
+	if (object.sha256) {
+		try {
+			await env.DB.prepare(
+				`INSERT INTO message_attachments (${SHARED_COLUMNS}, sha256) VALUES (${placeholders(params.length + 1)})`,
+			)
+				.bind(...params, object.sha256)
+				.run();
+			return;
+		} catch (error) {
+			if (!missingColumnFromError(error)) throw error;
+		}
+	}
+	await env.DB.prepare(`INSERT INTO message_attachments (${SHARED_COLUMNS}) VALUES (${placeholders(params.length)})`)
+		.bind(...params)
+		.run();
+}
+
+/**
+ * Inserts a 'raw' row: no object, the sentinel key, and where its verified encoded body sits in the message's raw
+ * (`docs/specs/attachments-once.md` invariants 2 and 3). False before migration 0088, when the storage columns do not
+ * exist; the caller writes an object then, as before.
+ */
+export async function insertRawAttachmentRow(
+	env: CloudflareEnv,
+	row: SharedAttachmentRow,
+	stored: { size: number; sha256: string; part: RawPartLocation },
+): Promise<boolean> {
+	const { part } = stored;
+	const params = [
+		...sharedRowParams(row),
+		stored.size,
+		rawAttachmentKey(row.id),
+		"raw",
+		part.offset,
+		part.length,
+		part.encoding,
+		stored.sha256,
+	];
+	try {
+		await env.DB.prepare(
+			`INSERT INTO message_attachments (${SHARED_COLUMNS}, storage, raw_offset, raw_length, transfer_encoding, sha256) VALUES (${placeholders(params.length)})`,
+		)
+			.bind(...params)
+			.run();
+		return true;
+	} catch (error) {
+		if (missingColumnFromError(error)) return false;
 		throw error;
 	}
 }

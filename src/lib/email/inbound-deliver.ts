@@ -419,8 +419,12 @@ async function storeDelivered(
 				.set({ externalAccountId: external.accountId })
 				.where(eq(messageExternalAccounts.id, row.id));
 
-		// `inboundAttachmentLimitReason` already checked them, without counting attached messages.
-		await storeMessageAttachments(env, row.id, parsed.attachments, { validate: false });
+		// `inboundAttachmentLimitReason` already checked them, without counting attached messages. Attachments the raw
+		// message verifiably holds are served from it instead of a second copy (synced `external/` raws never are).
+		await storeMessageAttachments(env, row.id, parsed.attachments, {
+			validate: false,
+			raw: { key: input.rawR2Key, bytes: input.raw, status: placement.status },
+		});
 		if (spamAnalysis) await observeReputation(env, target.mailboxId, row.id, parsed, spamAnalysis);
 		return true;
 	} catch (error) {

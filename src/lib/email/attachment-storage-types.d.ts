@@ -32,7 +32,12 @@ export interface RawAttachmentLocation {
 	offset: number;
 	length: number;
 	encoding: MimeTransferEncoding;
+	/** Hex SHA-256 of the decoded bytes, checked when they are read into memory; null on rows written without it. */
+	sha256?: string | null;
 }
+
+/** Where a verified attachment's encoded body sits in the raw message being stored. */
+export type RawPartLocation = Omit<RawAttachmentLocation, "rawKey">;
 
 /** What a delete may remove once its rows are gone (`deleteUnreferencedObjects`). */
 export interface ObjectDeletionCandidates {
@@ -72,4 +77,19 @@ export interface AttachmentStorageCounts {
 export interface AttachmentObjectsVerification {
 	checked: number;
 	missing: { key: string; messageIds: string[] }[];
+}
+
+/** What the lazy repair needs to know about a row and its message. */
+export interface RepairableAttachment {
+	id: string;
+	messageId: string;
+	filename: string;
+	contentType: string;
+	size: number;
+	contentId: string | null;
+	r2Key: string;
+	rawKey: string | null;
+	status: string;
+	/** The digest recorded for the row's bytes, when it has one (null before migration 0088). */
+	sha256: string | null;
 }

@@ -942,3 +942,83 @@ test("a 'raw' row whose range no longer decodes to its bytes is materialized, ne
 	assert.equal(await silenced(() => m.readAttachmentBytes(second.env, other)), null);
 	assert.equal(storageOf(second.database, "msg-in")[0].storage, "raw");
 });
+
+/** An object row stored from the "multipart/mixed" fixture's raw, whose object is then lost. */
+async function lostObjectRow(env, bucket) {
+	const raw = fixtureRaw("multipart/mixed");
+	await bucket.put("inbound/1-msg.eml", raw);
+	const parsed = await m.parseRawMime(raw.buffer);
+	const [stored] = await m.storeMessageAttachments(env, "msg-in", parsed.attachments, { validate: false });
+	await bucket.delete(stored.r2Key);
+	return { stored, row: { ...stored, contentType: stored.type }, content: bytesOf(parsed.attachments[0].content) };
+}
+
+test("lazy repair puts a shared missing object back instead of converting the row that shares it", async () => {
+	const { env, database, bucket } = await setup();
+	const { stored, row, content } = await lostObjectRow(env, bucket);
+	// A forward draft made before the object was lost names the same key.
+	database.db.exec(
+		`INSERT INTO message_attachments (id, message_id, filename, content_type, size, r2_key, created_at)
+			VALUES ('att-forward', 'msg-draft', '${stored.filename}', '${stored.type}', ${stored.size}, '${stored.r2Key}', 1)`,
+	);
+	const opened = await silenced(() => m.openAttachment(env, row));
+	assert.deepEqual(bytesOf(await new Response(opened.body).arrayBuffer()), content);
+	assert.equal(storageOf(database, "msg-in")[0].storage, "object", "the original stays an object row");
+	assert.equal(keyOf(database, stored.id), stored.r2Key);
+	// The object is back, so the forward reads too.
+	const forward = { id: "att-forward", r2Key: stored.r2Key, size: stored.size, contentType: stored.type };
+	assert.deepEqual(bytesOf(await m.readAttachmentBytes(env, forward)), content);
+});
+
+test("lazy repair that loses the race to another conversion writes no object", async () => {
+	const { env, database, bucket } = await setup();
+	const { stored, row, content } = await lostObjectRow(env, bucket);
+	// Another read converts the row between this repair's check and its UPDATE: the UPDATE then matches nothing.
+	const db = env.DB;
+	const racing = {
+		...env,
+		DB: new Proxy(db, {
+			get(target, property) {
+				if (property !== "prepare") return Reflect.get(target, property).bind?.(target) ?? target[property];
+				return (sql) => {
+					if (!sql.startsWith("UPDATE message_attachments SET storage = 'raw'")) return target.prepare(sql);
+					return {
+						bind: (...params) => ({
+							run: async () => {
+								await target
+									.prepare(sql)
+									.bind(...params)
+									.run();
+								return target
+									.prepare(sql)
+									.bind(...params)
+									.run();
+							},
+						}),
+					};
+				};
+			},
+		}),
+	};
+	const read = await silenced(() => m.readAttachmentBytes(racing, row));
+	assert.deepEqual(bytesOf(read), content);
+	assert.equal(storageOf(database, "msg-in")[0].storage, "raw");
+	assert.equal(await bucket.get(stored.r2Key), null, "no object was written for the converted row");
+});
+
+test("lazy repair refuses bytes that do not match the row's recorded digest", async () => {
+	const { env, database, bucket } = await setup();
+	const { stored, row } = await lostObjectRow(env, bucket);
+	database.db.exec(`UPDATE message_attachments SET sha256 = '${"f".repeat(64)}' WHERE id = '${stored.id}'`);
+	assert.equal(await silenced(() => m.openAttachment(env, row)), null);
+	assert.equal(storageOf(database, "msg-in")[0].storage, "object");
+	assert.equal(await bucket.get(stored.r2Key), null, "nothing unverified was put back");
+});
+
+test("received files that need an object record their digest, so a forward of the same bytes names it", async () => {
+	const { env, database } = await setup();
+	await ingest(env, "quoted-printable and uuencode attachments");
+	const rows = database.db.prepare("SELECT storage, sha256 FROM message_attachments WHERE message_id = 'msg-in'").all();
+	assert.ok(rows.length > 0);
+	assert.ok(rows.every((item) => item.storage === "object" && /^[0-9a-f]{64}$/.test(item.sha256)));
+});

@@ -129,7 +129,7 @@ type RawSource = { key: string; bytes: ArrayBuffer; status: string };
 
 /**
  * Where each attachment's verified encoded body sits in the raw message, when they may be 'raw' rows
- * (`ATTACHMENT_RAW_INDEX` on and `isRawBackedMessage`); empty otherwise. An index that fails for any reason stores
+ * (`ATTACHMENT_RAW_INDEX` on and `isRawBackedMessage`); null otherwise. An index that fails for any reason stores
  * every attachment as an object, as before.
  */
 function locateRawParts(
@@ -137,15 +137,52 @@ function locateRawParts(
 	messageId: string,
 	attachments: AttachmentContent[],
 	raw: RawSource | undefined,
-): Map<number, RawPartLocation> {
-	if (!raw || !isAttachmentRawIndexEnabled(env.ATTACHMENT_RAW_INDEX)) return new Map();
-	if (!isRawBackedMessage({ rawKey: raw.key, status: raw.status })) return new Map();
+): Map<number, RawPartLocation> | null {
+	if (!raw || !isAttachmentRawIndexEnabled(env.ATTACHMENT_RAW_INDEX)) return null;
+	if (!isRawBackedMessage({ rawKey: raw.key, status: raw.status })) return null;
 	try {
 		return locateAttachmentParts(raw.bytes, attachments);
 	} catch (error) {
 		log.error("attachment.raw_index_failed", { messageId, error });
 		return new Map();
 	}
+}
+
+/** What one `storeMessageAttachments` call carries from one attachment to the next. */
+type StoreRun = {
+	sharing: boolean;
+	rawParts: Map<number, RawPartLocation> | null;
+	/** Cleared once a 'raw' insert shows the schema is behind (before migration 0088). */
+	rawRows: boolean;
+	/**
+	 * Received files that need an object (quoted-printable, uuencode) record their digest too, so a forward of a 'raw'
+	 * row with the same bytes can name it.
+	 */
+	digests: boolean;
+	written: string[];
+};
+
+/** Stores one attachment as a 'raw' row, a share of its source row's object, or an object of its own. */
+async function storeOneAttachment(
+	env: CloudflareEnv,
+	run: StoreRun,
+	row: SharedAttachmentRow,
+	attachment: AttachmentContent,
+	index: number,
+): Promise<StoredAttachment> {
+	const part = run.rawRows ? run.rawParts?.get(index) : undefined;
+	const size = attachment.content.byteLength;
+	const sha256 = run.digests ? await sha256Hex(attachment.content) : undefined;
+	if (part && sha256 && (await insertRawAttachmentRow(env, row, { size, sha256, part })))
+		return { ...storedMetadata(row, size), r2Key: rawAttachmentKey(row.id) };
+	if (part) run.rawRows = run.digests = false;
+	// A file read from a stored row (a draft being sent) names that row's object; the bytes are written only when the
+	// source has gone meanwhile or keys cannot be shared yet.
+	const source = run.sharing ? storedSources.get(attachment) : undefined;
+	const shared = source ? await shareAttachmentObject(env, row, source) : null;
+	const digest = run.digests ? sha256 : undefined;
+	const r2Key = shared?.r2Key ?? (await writeAttachmentObject(env, row, attachment.content, run.written, digest));
+	return { ...storedMetadata(row, shared?.size ?? size), r2Key };
 }
 
 /**
@@ -162,11 +199,14 @@ export async function storeMessageAttachments(
 	if (options?.validate !== false) validateAttachments(attachments);
 	const stored: StoredAttachment[] = [];
 	const ids: string[] = [];
-	const written: string[] = [];
-	const sharing = isAttachmentSharingEnabled(env.ATTACHMENT_SHARING);
 	const rawParts = locateRawParts(env, messageId, attachments, options?.raw);
-	// Before migration 0088 the first 'raw' insert fails; the rest of this message is not tried again.
-	let rawRows = rawParts.size > 0;
+	const run: StoreRun = {
+		sharing: isAttachmentSharingEnabled(env.ATTACHMENT_SHARING),
+		rawParts,
+		rawRows: !!rawParts?.size,
+		digests: rawParts !== null,
+		written: [],
+	};
 
 	try {
 		for (const [index, attachment] of attachments.entries()) {
@@ -179,25 +219,10 @@ export async function storeMessageAttachments(
 				contentId: attachment.contentId ?? null,
 			};
 			ids.push(row.id);
-			const part = rawRows ? rawParts.get(index) : undefined;
-			const size = attachment.content.byteLength;
-			if (
-				part &&
-				(await insertRawAttachmentRow(env, row, { size, sha256: await sha256Hex(attachment.content), part }))
-			) {
-				stored.push({ ...storedMetadata(row, size), r2Key: rawAttachmentKey(row.id) });
-				continue;
-			}
-			if (part) rawRows = false;
-			// A file read from a stored row (a draft being sent) names that row's object; the bytes are written only
-			// when the source has gone meanwhile or keys cannot be shared yet.
-			const source = sharing ? storedSources.get(attachment) : undefined;
-			const shared = source ? await shareAttachmentObject(env, row, source) : null;
-			const r2Key = shared?.r2Key ?? (await writeAttachmentObject(env, row, attachment.content, written));
-			stored.push({ ...storedMetadata(row, shared?.size ?? size), r2Key });
+			stored.push(await storeOneAttachment(env, run, row, attachment, index));
 		}
 	} catch (error) {
-		await rollBackStoredAttachments(env, ids, written);
+		await rollBackStoredAttachments(env, ids, run.written);
 		throw error;
 	}
 

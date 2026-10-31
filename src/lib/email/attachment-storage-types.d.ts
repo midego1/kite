@@ -90,4 +90,6 @@ export interface RepairableAttachment {
 	r2Key: string;
 	rawKey: string | null;
 	status: string;
+	/** The digest recorded for the row's bytes, when it has one (null before migration 0088). */
+	sha256: string | null;
 }

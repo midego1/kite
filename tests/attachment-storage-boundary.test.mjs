@@ -10,14 +10,16 @@ const ACCESSOR = "src/lib/email/attachment-storage.ts";
 /** Files that may read an attachment row's `r2Key` from a bucket directly. */
 const DIRECT_READ_ALLOWLIST = new Set([ACCESSOR]);
 /**
- * Object-copying SQL over `message_attachments` that must leave 'raw' rows out (their bytes ride with the raw), and the
- * accessor's shares, which name another row's object and must never name a sentinel.
+ * Object-copying SQL over `message_attachments` that must leave 'raw' rows out (their bytes ride with the raw), the
+ * accessor's shares, which name another row's object and must never name a sentinel, and the repair's check that no
+ * other object row names a key.
  */
 const OBJECT_COPIERS = [
 	"src/lib/backups/objects.ts",
 	"src/lib/storage/migration.ts",
 	"src/lib/storage/stores.ts",
 	"src/lib/email/attachment-storage-report.ts",
+	"src/lib/email/attachment-repair.ts",
 	ACCESSOR,
 ];
 

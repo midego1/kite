@@ -68,6 +68,8 @@ export async function startFakeS3(options = {}) {
 		requests: [],
 		/** Action names answered with AccessDenied, for example "DeleteObject" or "PutBucketCors". */
 		denied: new Set(),
+		/** Action names answered only after this many milliseconds, for example to run past a deadline. */
+		delays: new Map(),
 		/** "error200": the next CompleteMultipartUpload answers 200 with an <Error> document. */
 		failNextComplete: null,
 		clockOffsetMs: 0,
@@ -355,6 +357,8 @@ export async function startFakeS3(options = {}) {
 			);
 		const name = action(request.method, key, params, request);
 		if (state.denied.has(name)) return errorFor("AccessDenied", 403);
+		const delay = state.delays.get(name);
+		if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
 
 		switch (name) {
 			case "HeadBucket":

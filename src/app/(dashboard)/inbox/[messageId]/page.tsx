@@ -21,11 +21,8 @@ import { QuickReply } from "@/components/message-actions/quick-reply";
 import { AssistantButton } from "@/components/agent/assistant-button";
 import { MessageReadingHeaderButton } from "@/components/messages/message-reading-header-button";
 import { EmailBody } from "@/components/messages/email-body";
-import { emptyEmailColours } from "@/components/messages/email-colour-utils";
 import { RemoteImagesNotice } from "@/components/messages/email-html-frame";
 import { LinkifiedText } from "@/components/messages/linkified-text";
-import { useLoadRemoteImages } from "@/components/messages/use-load-remote-images";
-import { useReaderFont } from "@/components/messages/use-reader-font";
 import { ThreadMessageActions } from "@/components/messages/thread-message-actions";
 import { useMessageThread } from "@/components/messages/use-message-thread";
 import { useLatestMessagesFirst } from "@/components/messages/use-latest-messages-first";
@@ -39,7 +36,6 @@ import {
 import { ReaderThreadHeader } from "@/components/messages/reader-thread-header";
 import { MessageReplyButtons } from "@/components/message-actions/message-reply-buttons";
 import { InlineComposerHost, InlineReplyComposer } from "@/components/compose/inline-reply-composer";
-import { extractOneTimeCode } from "@/lib/email/one-time-code-utils";
 import { OneTimeCodeChip } from "@/components/messages/one-time-code-chip";
 import { SendStateBanner } from "@/components/messages/send-state-banner";
 import { ScreenerBanner } from "@/components/screener/screener-banner";
@@ -50,20 +46,14 @@ import {
 	fetchMessageDetail,
 	fetchMessageMetadata,
 	getCachedMessageDetailForDisplay,
-	getMessageBodyDisplay,
 	getMessageHeaderParties,
-	getOwnAddressForMessage,
-	resolveInlineAttachmentUrls,
 } from "./utils";
-import { extractCloudAttachments } from "./cloud-attachment-utils";
-import { sanitizeEmailHtml } from "./email-html-sanitizer";
-import { collapseQuotedEmailHtml } from "./quote-collapse-utils";
+import { useOpenMessageBody } from "./use-open-message-body";
 import { useAssistantOpen } from "@/components/agent/assistant-open-state";
 import { useMessageContentScroll } from "./use-message-content-scroll";
 import { SummarizeButton, ThreadSummaryCard } from "@/components/messages/thread-summary-card";
 import { useThreadSummary } from "@/components/messages/use-thread-summary";
 import { showsCurrentSummary } from "@/components/messages/thread-summary-utils";
-import { mailboxSendableAddresses } from "@/components/compose/sender-options-utils";
 
 export default function MessageDetailPage() {
 	const params = useParams<{ messageId: string }>();
@@ -73,9 +63,6 @@ export default function MessageDetailPage() {
 	const [loading, setLoading] = useState(true);
 	const [previewAttachment, setPreviewAttachment] = useState<MessageAttachment | null>(null);
 	const [threadExpanded, setThreadExpanded] = useState(false);
-	const [alwaysLoadRemoteImages] = useLoadRemoteImages();
-	const readerFont = useReaderFont();
-	const [remoteImagesShownFor, setRemoteImagesShownFor] = useState<string | null>(null);
 	const [latestMessagesFirst] = useLatestMessagesFirst();
 	const { enabled: showFullRecipientAddresses } = useShowFullRecipientAddresses();
 	const { visible: messageListVisible } = useMessageListVisibility();
@@ -120,11 +107,22 @@ export default function MessageDetailPage() {
 
 	if (useKeyChanged(messageId)) setThreadExpanded(false);
 
+	const messageMailbox = mailboxes.find((mailbox) => mailbox.id === data?.message?.mailboxId) ?? selectedMailbox;
+	// Prepared before the early returns so the body is memoized, not sanitized again on every render.
+	const {
+		body: readerBody,
+		ownAddress,
+		ownAddresses,
+		cloudAttachmentResult,
+		oneTimeCode,
+		showRemoteImages,
+	} = useOpenMessageBody(data, messageMailbox);
+
 	if (loading) {
 		return <MessageDetailSkeleton />;
 	}
 
-	if (!data?.message) {
+	if (!data?.message || !readerBody) {
 		return <p className="px-6 py-4 text-sm text-neutral-500">{data?.error ?? "Message not found"}</p>;
 	}
 
@@ -135,44 +133,14 @@ export default function MessageDetailPage() {
 		htmlBody: body?.htmlBody ?? null,
 		attachments,
 	};
-	const messageMailbox = mailboxes.find((mailbox) => mailbox.id === message.mailboxId) ?? selectedMailbox;
 	const currentAccountName = messageMailbox?.displayName ?? messageMailbox?.localPart;
 	const { fromName, fromAddress } = getMessageHeaderParties(message, currentAccountName);
-	// Connected addresses count as the mailbox's own, so a reply goes out from the address the mail came to.
-	const ownAddresses = messageMailbox ? mailboxSendableAddresses(messageMailbox) : [];
-	const ownAddress = getOwnAddressForMessage(message, ownAddresses);
 	const toEntries = splitEmailAddressList(message.toAddr);
 	const ccEntries = splitEmailAddressList(message.ccAddr);
 	const bccEntries = splitEmailAddressList(message.bccAddr);
 	// The thread may or may not list the open message itself.
 	const threadSize = new Set([message.id, ...thread.messages.map((threadMessage) => threadMessage.id)]).size;
-	const bodyDisplay = getMessageBodyDisplay(body?.textBody, body?.htmlBody, message.snippet, ownAddress);
-	const imageOptions = {
-		blockRemoteImages: !alwaysLoadRemoteImages && remoteImagesShownFor !== message.id,
-		stats: { blockedRemoteImages: 0 },
-		proxyRemoteImagesFor: message.id,
-		linkify: true,
-		dropFontFamily: readerFont !== undefined,
-	};
-	const bodyColours = emptyEmailColours();
-	const quotedColours = emptyEmailColours();
-	const htmlBody = collapseQuotedEmailHtml(
-		sanitizeEmailHtml(resolveInlineAttachmentUrls(bodyDisplay.htmlBody, message.id, attachments), {
-			...imageOptions,
-			colours: bodyColours,
-		}),
-	);
-	const quotedHtml = collapseQuotedEmailHtml(
-		sanitizeEmailHtml(resolveInlineAttachmentUrls(bodyDisplay.quotedHtml, message.id, attachments), {
-			...imageOptions,
-			colours: quotedColours,
-		}),
-		true,
-	);
-	const cloudAttachmentResult = extractCloudAttachments(bodyDisplay.latestContent);
-	// The same conservative extractor the server used for the notification, run
-	// on the displayed text so a code that slipped through delivery still copies.
-	const oneTimeCode = extractOneTimeCode({ subject: message.subject, text: bodyDisplay.latestContent });
+	const bodyDisplay = readerBody.display;
 	return (
 		<InlineComposerHost messageId={message.id}>
 			<div className="sticky top-0 z-40 flex h-14 items-center gap-1 border-b border-neutral-200 bg-white px-3">
@@ -345,15 +313,13 @@ export default function MessageDetailPage() {
 							</div>
 						</div>
 						<div className="prose mt-1 max-w-none text-neutral-900">
-							{imageOptions.stats.blockedRemoteImages > 0 && (
-								<RemoteImagesNotice onShow={() => setRemoteImagesShownFor(message.id)} />
-							)}
+							{readerBody.blockedRemoteImages > 0 && <RemoteImagesNotice onShow={showRemoteImages} />}
 							<EmailBody
 								key={message.id}
-								html={htmlBody}
-								colours={bodyColours}
-								quotedHtml={quotedHtml}
-								quotedColours={quotedColours}
+								html={readerBody.html}
+								colours={readerBody.colours}
+								quotedHtml={readerBody.quotedHtml}
+								quotedColours={readerBody.quotedColours}
 								className="email-body mx-auto"
 								fallback={
 									<pre className="reading-text whitespace-pre-wrap text-sm text mx-auto">

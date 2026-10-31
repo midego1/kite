@@ -1,10 +1,17 @@
+"use client";
+
+import { useMemo } from "react";
 import { splitLinkedText } from "@/lib/email/linkify-utils";
 
-/** Plain message text with its web and email addresses as links that open in a new tab. */
+/**
+ * Plain message text with its web and email addresses as links that open in a new tab. The split scans the whole
+ * body, so it runs again only when the text changes, not on every render of the reader around it.
+ */
 export function LinkifiedText({ text }: { text: string }) {
+	const parts = useMemo(() => splitLinkedText(text), [text]);
 	return (
 		<>
-			{splitLinkedText(text).map((part, index) =>
+			{parts.map((part, index) =>
 				typeof part === "string" ? (
 					part
 				) : (

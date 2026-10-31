@@ -157,9 +157,66 @@ export function planFetchSteps<T extends { uid: number; size: number | null }>(
 	return steps;
 }
 
-/** The Mail store key of a synced message: deterministic, so a retried run writes the same object. */
-export function externalRawKey(accountId: string, uidValidity: number | null, uid: number): string {
-	return `external/${accountId}/${uidValidity ?? 0}/${uid}.eml`;
+/** The folders a run checks: INBOX always, the provider's Spam folder when the account's switch is on (§6.3). */
+export type SyncFolderRole = "inbox" | "junk";
+
+/**
+ * The Mail store key of a synced message: deterministic, so a retried run writes the same object. INBOX keeps the key
+ * it always had; the Spam folder has UIDs of its own, so its messages live under `junk/`.
+ */
+export function externalRawKey(
+	accountId: string,
+	uidValidity: number | null,
+	uid: number,
+	role: SyncFolderRole = "inbox",
+): string {
+	return `external/${accountId}/${role === "junk" ? "junk/" : ""}${uidValidity ?? 0}/${uid}.eml`;
+}
+
+const EXTERNAL_KEY = /^external\/[^/]+\/(junk\/)?(\d+)\/(\d+)\.eml$/;
+
+/** The folder, UIDVALIDITY and UID an `externalRawKey` names, or null for any other key. */
+export function parseExternalRawKey(key: string): { role: SyncFolderRole; uidValidity: number; uid: number } | null {
+	const match = EXTERNAL_KEY.exec(key);
+	if (!match) return null;
+	return { role: match[1] ? "junk" : "inbox", uidValidity: Number(match[2]), uid: Number(match[3]) };
+}
+
+/** Names a server without special-use attributes gives its Spam folder, compared in lower case. */
+const JUNK_NAMES = new Set(["junk", "spam", "junk e-mail", "junk email", "junk mail", "bulk mail"]);
+
+/**
+ * The account's Spam folder from its `LIST`: the one marked `\Junk` (RFC 6154, Gmail's `[Gmail]/Spam`), otherwise one
+ * named like a Spam folder at the top level or directly under INBOX (`INBOX.Junk`, as Dovecot and Courier name it),
+ * the top level first. A user's own folder deeper down (`Projects/Spam`) never counts. Null when there is none;
+ * INBOX is never it.
+ */
+export function findJunkFolder(
+	listed: readonly { name: string; delimiter: string | null; attributes: readonly string[] }[],
+): string | null {
+	const usable = listed.filter(
+		(entry) =>
+			entry.name.toUpperCase() !== "INBOX" && !entry.attributes.some((flag) => flag.toLowerCase() === "\\noselect"),
+	);
+	const marked = usable.find((entry) => entry.attributes.some((flag) => flag.toLowerCase() === "\\junk"));
+	if (marked) return marked.name;
+	const named = usable
+		.map((entry) => {
+			const levels = entry.delimiter ? entry.name.split(entry.delimiter) : [entry.name];
+			return {
+				name: entry.name,
+				depth: levels.length,
+				first: levels[0],
+				last: levels[levels.length - 1].trim().toLowerCase(),
+			};
+		})
+		.filter(
+			(entry) =>
+				JUNK_NAMES.has(entry.last) &&
+				(entry.depth === 1 || (entry.depth === 2 && entry.first.toUpperCase() === "INBOX")),
+		)
+		.sort((a, b) => a.depth - b.depth);
+	return named[0]?.name ?? null;
 }
 
 /** Mail already read or starred at the provider arrives read or starred (flags are taken once, at fetch). */

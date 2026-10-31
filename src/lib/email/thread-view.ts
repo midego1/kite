@@ -10,6 +10,7 @@ import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { isHiddenDraft } from "@/lib/messages/draft-privacy-utils";
 import type { SessionUser } from "@/lib/auth/types";
 import { SCREENING_STATUS } from "@/lib/screener/screener-utils";
+import { loadMessageVia } from "@/lib/external-accounts/via";
 
 /**
  * The conversation a message belongs to: every stored message in the same
@@ -94,6 +95,8 @@ export async function getMessageThreadForUser(env: CloudflareEnv, user: SessionU
 		rows.map((row) => row.fromAddr),
 	);
 
+	const via = await loadMessageVia(env, rows);
+
 	return {
 		threadId: message.threadId,
 		messages: rows.map((row) => ({
@@ -102,6 +105,7 @@ export async function getMessageThreadForUser(env: CloudflareEnv, user: SessionU
 			fromContactHasAvatar: contactAvatarMap.get(normalizeEmailAddress(row.fromAddr)) ?? false,
 			toContactName: contactMap.get(normalizeEmailAddress(getFirstEmailAddressEntry(row.toAddr)))?.displayName ?? null,
 			attachments: attachmentsByMessage.get(row.id) ?? [],
+			...(via.has(row.id) ? { via: via.get(row.id) } : {}),
 		})),
 	};
 }

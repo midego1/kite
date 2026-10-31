@@ -26,8 +26,10 @@ export function truncateUtf8(value: string, maxBytes: number): string {
 	if (value.length * 3 <= maxBytes) return value;
 	const bytes = encoder.encode(value);
 	if (bytes.byteLength <= maxBytes) return value;
-	// A cut inside a multi-byte sequence decodes to replacement characters at the end; drop them.
-	return decoder.decode(bytes.subarray(0, maxBytes)).replace(/�+$/u, "");
+	// A cut inside a multi-byte sequence decodes to replacement characters at the end; drop them. The lookbehind
+	// starts the match only at the start of a run, which a long run of them inside the text would otherwise make
+	// quadratic.
+	return decoder.decode(bytes.subarray(0, maxBytes)).replace(/(?<!�)�+$/u, "");
 }
 
 /** A text body cut to what a row may hold. */

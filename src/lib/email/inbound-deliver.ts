@@ -37,8 +37,11 @@ import { SCREENING_STATUS } from "@/lib/screener/screener-utils";
 /** The mailbox a message is delivered into, and whose it is. */
 export type DeliveryTarget = { mailboxId: string; userId: string };
 
-/** A message a connected account's sync fetched, with the flags it had at the source (spec §6.4). */
-type ExternalDelivery = { accountId: string; read: boolean; starred: boolean };
+/**
+ * A message a connected account's sync fetched, with the flags it had at the source (spec §6.4). `junk` says it came
+ * from the provider's Spam folder (the account's "Also sync the Spam folder" switch, §6.3).
+ */
+type ExternalDelivery = { accountId: string; read: boolean; starred: boolean; junk?: boolean };
 
 export type InboundDelivery = {
 	target: DeliveryTarget;
@@ -235,6 +238,19 @@ type Placement = {
 	spamAnalysisError: string | null;
 };
 
+/** Kite's analysis of a message from the provider's Spam folder, with the provider's verdict added on top. */
+function providerJunkAnalysis(analysis: SpamAnalysis): SpamAnalysis {
+	return {
+		...analysis,
+		score: 100,
+		verdict: "spam",
+		signals: [
+			...analysis.signals,
+			{ id: "provider_junk", score: 100, reason: "The provider filed this message in its Spam folder" },
+		],
+	};
+}
+
 async function placeMessage(
 	env: CloudflareEnv,
 	input: InboundDelivery,
@@ -275,6 +291,16 @@ async function placeMessage(
 			console.error(`Spam analysis failed for ${message.id}`, error);
 		}
 	}
+	// The provider's Spam folder: Kite's own analysis still runs and is kept, the message is filed in Spam whatever it
+	// says, and neither the mailbox rules nor the Screener can move it anywhere else.
+	if (input.external?.junk)
+		return {
+			status: "spam",
+			folderId: null,
+			awaiting: false,
+			spamAnalysis: spamAnalysis && providerJunkAnalysis(spamAnalysis),
+			spamAnalysisError,
+		};
 	if (destination.status === "spam" && spamAnalysis) {
 		spamAnalysis = {
 			score: 100,

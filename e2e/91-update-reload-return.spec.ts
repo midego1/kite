@@ -375,6 +375,115 @@ test("the scene is cosmetic: a startup that never finishes drops it by itself an
 	expect(await hasReturnClass(page)).toBe(false);
 });
 
+/**
+ * Keeps the session check open for good (the request timeout itself never fires, as in e2e/18), so React runs the
+ * startup screen and it never finishes: what a start that hangs after React took over looks like.
+ */
+async function hangSessionCheck(page: Page) {
+	await page.addInitScript(() => {
+		AbortSignal.timeout = () => new AbortController().signal;
+	});
+	await page.route("**/api/auth/me", () => undefined);
+}
+
+test("a start that hangs after React took over offers Reload Kite with Details from the boot trace", async ({
+	page,
+}) => {
+	test.setTimeout(90_000);
+	await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+	// The previous load of this tab froze in its first render: its heartbeat stopped while visible.
+	await page.addInitScript((key) => {
+		if (sessionStorage.getItem("e2e-trace-seeded")) return;
+		sessionStorage.setItem("e2e-trace-seeded", "1");
+		const phases = [
+			{ p: "inline", t: 40 },
+			{ p: "loader-mounted", t: 900 },
+			{ p: "auth-ready", t: 1_000 },
+		];
+		sessionStorage.setItem(
+			key,
+			JSON.stringify({ v: 1, phases, mounts: 1, beat: 1_100, visibleMs: 1_000, visible: true }),
+		);
+	}, "kite-boot-trace");
+	const errors: string[] = [];
+	page.on("console", (message) => {
+		if (message.type() === "error") errors.push(message.text());
+	});
+	await hangSessionCheck(page);
+	await page.goto("/inbox?view=private", { waitUntil: "commit" });
+	await page.waitForSelector(`${OVERLAY}[role="status"]`, { state: "attached", timeout: 20_000 });
+	await expect.poll(() => errors).toContain("[kite] previous load froze at phase auth-ready after 1100 ms");
+	// Visible time, counted from the screen's first mount.
+	const reload = page.getByRole("button", { name: "Reload Kite" });
+	await expect(reload).toBeVisible({ timeout: 25_000 });
+	const recovery = page.locator(".loading-recovery");
+	await recovery.getByText("Details", { exact: true }).click();
+	const details = recovery.locator("[data-boot-details]");
+	await expect(details).toBeVisible();
+	await expect(details).toContainText("Previous load froze at auth-ready after 1.1 s");
+	await shot(page, "hang-details");
+	await expect(details).toContainText("Phase: loader-mounted");
+	await expect(details).toContainText("Loader mounted: yes");
+	await expect(details).toContainText(/In flight: [^\n]*\/api\/auth\/me/);
+	// No query strings: neither the page's nor a request's.
+	await expect(details).not.toContainText("private");
+	await recovery.getByRole("button", { name: "Copy details" }).click();
+	await expect(recovery.getByRole("button", { name: "Copied" })).toBeVisible();
+	const copied = JSON.parse(await page.evaluate(() => navigator.clipboard.readText()));
+	expect(copied.phase).toBe("loader-mounted");
+	expect(copied.previousLoad).toEqual({ phase: "auth-ready", afterMs: 1_100, visibleMs: 1_000 });
+	expect(copied.inFlight.map((entry: { path: string }) => entry.path)).toContain("/api/auth/me");
+	// The record survives in the tab for the next load, which finds this one stuck at the screen, not complete.
+	const record = await page.evaluate(() => JSON.parse(sessionStorage.getItem("kite-boot-trace")!));
+	expect(record.page).toBe("/inbox");
+	expect(record.phases.map((entry: { p: string }) => entry.p)).not.toContain("complete");
+	expect(record.visibleMs).toBeGreaterThan(10_000);
+});
+
+test("a startup screen that keeps being mounted again gets Kite couldn't load, even while it shows Reload Kite", async ({
+	page,
+}) => {
+	test.setTimeout(120_000);
+	await hangSessionCheck(page);
+	// Once React runs the screen, an element standing in for a remounting screen is replaced every 150 ms ahead of
+	// React's own. It carries React's way out, so only the remount guard can call the screen stuck.
+	await page.addInitScript(
+		(overlay) => {
+			const swap = () => {
+				if (!(window as unknown as { __kiteLoaderMounted?: boolean }).__kiteLoaderMounted) return;
+				document.querySelector("[data-e2e-remount]")?.remove();
+				const fake = document.createElement("div");
+				fake.setAttribute("data-e2e-remount", "");
+				fake.setAttribute(overlay, "");
+				fake.setAttribute("role", "status");
+				fake.style.display = "none";
+				const recovery = document.createElement("div");
+				recovery.className = "loading-recovery";
+				fake.appendChild(recovery);
+				document.body.insertBefore(fake, document.body.firstChild);
+			};
+			setInterval(swap, 150);
+		},
+		OVERLAY.slice(1, -1),
+	);
+	await page.goto("/inbox", { waitUntil: "commit" });
+	await page.waitForSelector(`${OVERLAY}[role="status"]`, { state: "attached", timeout: 20_000 });
+	await expect(page.getByRole("button", { name: "Reload Kite" })).toBeVisible({ timeout: 25_000 });
+	const failure = page.getByRole("alert").filter({ hasText: "Kite couldn't load." });
+	await expect(failure).toBeVisible({ timeout: 30_000 });
+	await expect(failure).toHaveAttribute("data-loader-stuck", "");
+	await failure.getByText("Details", { exact: true }).click();
+	const details = failure.locator("[data-boot-details]");
+	await expect(details).toBeVisible();
+	await expect(details).toContainText(/overlay remounts: ([3-9]|\d{2,})/);
+	await shot(page, "remount-loop-details");
+	await expect(failure.getByRole("button", { name: "Copy details" })).toBeVisible();
+	// Its Reload starts over.
+	const loaded = page.waitForEvent("load", { timeout: 30_000 });
+	await failure.getByRole("button", { name: "Reload", exact: true }).click();
+	await loaded;
+});
+
 const LOOKS = [
 	{ label: "Kite dark", theme: "dark", style: "kite", viewport: { width: 1400, height: 900 } },
 	{ label: "Kite light", theme: "light", style: "kite", viewport: { width: 1400, height: 900 } },

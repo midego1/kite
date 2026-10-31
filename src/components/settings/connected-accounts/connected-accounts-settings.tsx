@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link2, Plus } from "lucide-react";
 import { useSelectedMailbox } from "@/components/mailbox-provider";
@@ -15,6 +15,9 @@ import { EmptyState, PageHeader } from "@/components/ui/page";
 import type { ExternalAccountView } from "@/lib/external-accounts/types";
 import { AccountFormDialog } from "./account-form-dialog";
 import { AccountSending } from "./account-sending";
+import { AccountSpamSync } from "./account-spam-sync";
+import { ForwardingGuide } from "./forwarding-guide";
+import type { ForwardingProviderId } from "./forwarding-guide-utils";
 import type { ConnectedAccountsState } from "./connected-accounts-types";
 import {
 	canCheckNow,
@@ -50,6 +53,14 @@ export function ConnectedAccountsSettings() {
 		return queryClient.invalidateQueries({ queryKey: CONNECTED_ACCOUNTS_QUERY_KEY });
 	};
 	const allowed = !!data && !data.refusal;
+	const [forwarding, setForwarding] = useState<ForwardingProviderId>("gmail");
+	const guide = useRef<HTMLElement>(null);
+	const showForwarding = (provider: ForwardingProviderId) => {
+		setEditing(null);
+		setForwarding(provider);
+		// After the dialog has closed and given the page its scrolling back.
+		requestAnimationFrame(() => guide.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+	};
 
 	return (
 		<div className="space-y-6">
@@ -77,12 +88,14 @@ export function ConnectedAccountsSettings() {
 			)}
 			{notice && <ConnectedNotice text={notice.text} accountId={notice.accountId} />}
 			{data && <AccountList data={data} onEdit={(account) => setEditing({ account })} onChanged={refresh} />}
+			<ForwardingGuide ref={guide} provider={forwarding} onProviderChange={setForwarding} />
 			{editing && data && (
 				<AccountFormDialog
 					open
 					onOpenChange={(open) => !open && setEditing(null)}
 					account={editing.account}
 					presets={data.presets}
+					onForwardInstead={showForwarding}
 					onSaved={(account, connected) => {
 						setEditing(null);
 						setNotice({
@@ -247,6 +260,7 @@ function AccountDetails({
 			</p>
 			{hint && <p className="text-xs text-[#8a4b0a] dark:text-[#d4a35a]">{hint}</p>}
 			<AccountSending account={account} usable={usable} onChanged={onChanged} />
+			<AccountSpamSync account={account} usable={usable} onChanged={onChanged} />
 			{syncText && (
 				<p className="text-xs text-neutral-600" data-sync-status>
 					{syncText}

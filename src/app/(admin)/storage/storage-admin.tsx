@@ -7,6 +7,7 @@ import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { requestConfirmation } from "@/components/ui/confirm-dialog-utils";
 import { SkeletonRows } from "@/components/ui/skeleton";
+import { AttachmentStorageCard } from "./attachment-storage-card";
 import { DataRoutes } from "./data-routes";
 import { MigrationsCard } from "./migrations-card";
 import { StepList } from "./step-list";
@@ -250,6 +251,7 @@ export function StorageAdmin() {
 					<MigrationsCard overview={data} onChanged={refresh} />
 				</>
 			)}
+			{data && <AttachmentStorageCard />}
 			{dialog?.binding && <DirectUploadsDialog onClose={() => setDialog(null)} onSaved={refresh} />}
 			{dialog && !dialog.binding && (
 				<StoreDialog store={dialog.store} onClose={() => setDialog(null)} onSaved={refresh} />

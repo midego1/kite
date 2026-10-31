@@ -222,8 +222,8 @@ export function shareAttachmentObjectByDigest(
 		env,
 		`INSERT INTO message_attachments (${SHARED_COLUMNS}, sha256)
 			SELECT ?, ?, ?, ?, ?, ?, ?, a.size, a.r2_key, a.sha256
-			FROM message_attachments a JOIN messages m ON m.id = a.message_id
-			WHERE a.sha256 = ? AND a.size = ? AND a.storage = 'object' AND substr(a.r2_key, 1, 4) <> 'raw:'
+			FROM message_attachments a JOIN messages m ON m.id = a.message_id AND ${ATTACHMENT_OBJECT_ROWS_SQL}
+			WHERE a.sha256 = ? AND a.size = ? AND a.storage = 'object'
 				AND m.user_id = (SELECT user_id FROM messages WHERE id = ?)
 			LIMIT 1
 			RETURNING r2_key AS r2Key, size`,
@@ -232,7 +232,10 @@ export function shareAttachmentObjectByDigest(
 }
 
 /** The candidate keys that rows still name; read after the deleted rows are gone. */
-async function findReferencedKeys(env: CloudflareEnv, candidates: ObjectDeletionCandidates): Promise<ReferencedObjectKeys> {
+async function findReferencedKeys(
+	env: CloudflareEnv,
+	candidates: ObjectDeletionCandidates,
+): Promise<ReferencedObjectKeys> {
 	const db = getDb(env);
 	const { attachmentKeys, rawKeys } = referenceCheckedKeys(candidates);
 	const [attachments, raws] = await Promise.all([
@@ -258,7 +261,10 @@ async function findReferencedKeys(env: CloudflareEnv, candidates: ObjectDeletion
  * orphaned object, never a missing file that another message still uses. It never throws, since the rows are gone
  * and the request has done its work; keys it could not delete are logged (ids only) until an orphan sweep exists.
  */
-export async function deleteUnreferencedObjects(env: CloudflareEnv, candidates: ObjectDeletionCandidates): Promise<void> {
+export async function deleteUnreferencedObjects(
+	env: CloudflareEnv,
+	candidates: ObjectDeletionCandidates,
+): Promise<void> {
 	let keys: string[];
 	try {
 		keys = planObjectDeletion(candidates, await findReferencedKeys(env, candidates));

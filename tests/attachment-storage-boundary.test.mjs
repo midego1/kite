@@ -9,8 +9,16 @@ import test from "node:test";
 const ACCESSOR = "src/lib/email/attachment-storage.ts";
 /** Files that may read an attachment row's `r2Key` from a bucket directly. */
 const DIRECT_READ_ALLOWLIST = new Set([ACCESSOR]);
-/** Object-copying SQL over `message_attachments` that must leave 'raw' rows out (their bytes ride with the raw). */
-const OBJECT_COPIERS = ["src/lib/backups/objects.ts", "src/lib/storage/migration.ts", "src/lib/storage/stores.ts"];
+/**
+ * Object-copying SQL over `message_attachments` that must leave 'raw' rows out (their bytes ride with the raw), and the
+ * accessor's shares, which name another row's object and must never name a sentinel.
+ */
+const OBJECT_COPIERS = [
+	"src/lib/backups/objects.ts",
+	"src/lib/storage/migration.ts",
+	"src/lib/storage/stores.ts",
+	ACCESSOR,
+];
 
 function sourceFiles(dir) {
 	const files = [];

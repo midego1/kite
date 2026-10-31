@@ -8,5 +8,5 @@ export function undoCountdownSeconds(until: number, now: number): number {
 
 /** Where the held or scheduled message can be opened: the queued message is listed in Sent right away. */
 export function sentMessageHref(messageId: string): string {
-	return `/sent/${encodeURIComponent(messageId)}`;
+	return /^[\w-]+$/.test(messageId) ? `/sent/${messageId}` : "/sent";
 }

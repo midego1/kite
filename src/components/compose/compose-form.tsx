@@ -23,7 +23,6 @@ import { composeFrameAria, composeFrameClass, useComposerBesideAssistant, useDra
 import { ComposeToast, type ComposeToastState } from "./compose-toast";
 import { SendingBar, UndoSendBar } from "./undo-send-bar";
 import { useSendingSettings } from "./use-sending-settings";
-import { UNDO_SAFETY_MARGIN_MS } from "./undo-send-utils";
 import type { PendingUndoSend, PendingUndoSnapshot } from "./undo-send-types";
 import { RecipientInput } from "./recipient-input";
 import { linkifyOutgoingHtml } from "@/lib/email/linkify-dom-utils";
@@ -111,7 +110,6 @@ export function ComposeForm({
 	const [previewOpen, setPreviewOpen] = useState(false);
 	const [pendingUndo, setPendingUndo] = useState<PendingUndoSend | null>(null);
 	const [sending, setSending] = useState<{ undoable: boolean } | null>(null);
-	const [sendingNow, setSendingNow] = useState(false);
 	const [undoRequestedWhileSending, setUndoRequestedWhileSending] = useState(false);
 	const undoRequested = useRef(false);
 	const attachmentInput = useRef<HTMLInputElement | null>(null);
@@ -483,31 +481,6 @@ export function ComposeForm({
 		}
 	}
 
-	async function sendHeldNow(pending: PendingUndoSend) {
-		setSendingNow(true);
-		try {
-			const res = await authFetch(`/api/messages/${encodeURIComponent(pending.messageId)}/send-now`, {
-				method: "POST",
-			});
-			const data = (await res.json().catch(() => ({}))) as { error?: string };
-			if (!res.ok) {
-				// Already on its way (the window ended meanwhile): the bar has nothing left to offer.
-				setPendingUndo(null);
-				setToast(
-					res.status === 409
-						? { type: "success", message: "Message sent" }
-						: { type: "error", message: data.error ?? "Could not send now" },
-				);
-				return;
-			}
-			setPendingUndo(null);
-			setToast({ type: "success", message: "Message sent" });
-		} finally {
-			setSendingNow(false);
-			window.dispatchEvent(new Event("kite:messages-changed"));
-		}
-	}
-
 	async function undoHeldSend(pending: PendingUndoSend) {
 		const res = await authFetch("/api/send/undo", {
 			method: "POST",
@@ -719,21 +692,13 @@ export function ComposeForm({
 			)}
 			{pendingUndo && (
 				<UndoSendBar
-					until={pendingUndo.until}
-					subject={pendingUndo.snapshot.subject}
-					messageId={pendingUndo.messageId}
-					sendingNow={sendingNow}
+					pending={pendingUndo}
 					onUndo={() => {
 						void undoSend(pendingUndo);
-					}}
-					onSendNow={() => {
-						void sendHeldNow(pendingUndo);
 					}}
 					onExpire={() => {
 						setPendingUndo(null);
 						setToast({ type: "success", message: "Message sent" });
-						// The queue releases the message just after the bar hides: refresh Sent so it no longer reads "Sending…".
-						setTimeout(() => window.dispatchEvent(new Event("kite:messages-changed")), UNDO_SAFETY_MARGIN_MS + 1500);
 					}}
 				/>
 			)}

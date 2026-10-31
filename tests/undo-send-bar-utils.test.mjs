@@ -13,7 +13,8 @@ test("the countdown rounds up, stops short of the queue release and never goes n
 
 test("the subject link points at the queued message in Sent", () => {
 	assert.equal(bar.sentMessageHref("abc123"), "/sent/abc123");
-	assert.equal(bar.sentMessageHref("a/b c"), "/sent/a%2Fb%20c");
+	assert.equal(bar.sentMessageHref("a/b c"), "/sent");
+	assert.equal(bar.sentMessageHref('x"><img src=x>'), "/sent");
 });
 
 function memoryStore() {

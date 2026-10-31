@@ -20,7 +20,7 @@ function browserStore(): AvatarLoadedStore | null {
 }
 
 /** Only a versioned URL is immutable, so only its full image is guaranteed to come from the browser cache again. */
-export function isRememberableAvatar(src: string): boolean {
+function isRememberableAvatar(src: string): boolean {
 	return new URL(src, "http://localhost").searchParams.has("v");
 }
 

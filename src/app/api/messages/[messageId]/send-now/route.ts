@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireSessionUser } from "@/lib/api/auth";
 import { getEnv } from "@/lib/cloudflare";
-import { sendQueuedNow } from "@/lib/email/send";
+import { sendQueuedNow } from "@/lib/email/queued-send";
 
 export async function POST(request: Request, { params }: { params: Promise<{ messageId: string }> }) {
 	const { messageId } = await params;

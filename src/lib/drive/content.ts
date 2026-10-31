@@ -132,12 +132,12 @@ export async function attachmentResponse(
 		source.attachment,
 		!download && getInlineContentType(source.attachment.contentType) !== null,
 	);
-	const refused = await attachmentDownloadGate(env, request, source.attachment, source.object, inline);
+	const refused = await attachmentDownloadGate(env, request, source.attachment, source.file, inline);
 	if (refused) return refused;
 	// A flagged name declared as an image still downloads as an attachment.
 	return streamAttachment(
 		{ ...source.attachment, createdAt: source.attachment.createdAt ?? undefined },
-		source.object,
+		source.file,
 		!inline,
 	);
 }

@@ -148,3 +148,21 @@ test("conditional puts follow R2: a stale etag or an existing object refuses the
 	);
 	assert.equal(results.filter(Boolean).length, 1);
 });
+
+test("a ranged get reads only its range, as a stream and as a buffer", async () => {
+	const files = bucket();
+	await files.put("inbound/raw.eml", "headers\r\n\r\nYWJj\r\n--b--");
+	const ranged = await files.get("inbound/raw.eml", { range: { offset: 11, length: 4 } });
+	assert.equal(new TextDecoder().decode(await ranged.arrayBuffer()), "YWJj");
+	assert.equal(
+		await new Response((await files.get("inbound/raw.eml", { range: { offset: 11, length: 4 } })).body).text(),
+		"YWJj",
+	);
+	const suffix = await files.get("inbound/raw.eml", { range: { suffix: 5 } });
+	assert.equal(await suffix.text(), "--b--");
+	const past = await files.get("inbound/raw.eml", { range: { offset: 19, length: 100 } });
+	assert.equal(await past.text(), "b--");
+	const empty = await files.get("inbound/raw.eml", { range: { offset: 3, length: 0 } });
+	assert.equal((await empty.arrayBuffer()).byteLength, 0);
+	assert.equal(await new Response(empty.body).text(), "");
+});

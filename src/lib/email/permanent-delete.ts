@@ -3,6 +3,7 @@ import type { AppDatabase } from "@/db";
 import { messageAttachments, messages } from "@/db/schema";
 import { chunkArray, queryInChunks, runInChunks } from "@/db/chunk-utils";
 import { htmlBodyObjectKey } from "@/lib/email/bodies-utils";
+import { attachmentObjectKeys } from "@/lib/email/attachment-storage-utils";
 import { createAuditLogs } from "@/lib/mailboxes/audit";
 
 type DeletableMessage = {
@@ -38,7 +39,7 @@ export async function permanentlyDeleteMessages(
 			.where(inArray(messageAttachments.messageId, chunk)),
 	);
 	const keys = [
-		...attachments.map((attachment) => attachment.r2Key),
+		...attachmentObjectKeys(attachments),
 		...rows.flatMap((row) => (row.rawR2Key ? [row.rawR2Key] : [])),
 		// Offloaded HTML bodies have one key per message, so no column read is needed to find them.
 		...ids.map(htmlBodyObjectKey),

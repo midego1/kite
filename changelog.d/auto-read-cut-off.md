@@ -4,4 +4,4 @@
 
 ### Changed
 
-- **Why?** for cut-off failures on the [Admin overview](/admin) now states what Kite knows: the feature's output cap and how it is made up, whether thinking was on and at which effort, the tokens used, whether Kite already retried, and the setting to change. **Ask AI** sends the same facts with Kite's diagnosis and a note on what the feature asks the model for, so the assistant can answer for Kite instead of guessing. Still no email content.
+- **Why?** for cut-off failures on the [Admin overview](/admin) now states what Kite knows: the feature's output cap and how it is made up, whether thinking was on and at which effort, the tokens used, whether Kite already retried, and the setting to change. **Ask AI** sends the same facts with Kite's diagnosis and, for cut-off failures, a note on what the feature asks the model for, so the assistant can answer for Kite instead of guessing. Its summary keeps whole groups: one that does not fit is counted at the end instead of being cut off half-way. Still no email content.

@@ -356,3 +356,68 @@ test("a saved effort on a model that always thinks is cleared, not blamed on the
 	assert.match(group.fix, /^Clear claude-opus-5-5's reasoning effort, or set it to minimal/);
 	assert.match(group.fix, /Without an effort, Kite sends effort low, the least this model allows\.$/);
 });
+
+test("feature notes ride only on cut-off groups, so a busy day still leaves room for the cut-off facts", () => {
+	const at = (minute) => `2026-10-31T16:${String(minute).padStart(2, "0")}:00.000Z`;
+	const rows = [
+		...Array.from({ length: 8 }, (_, index) =>
+			row("provider_unavailable", at(index), {
+				feature: index % 2 ? "auto_draft" : "auto_triage",
+				model: "fake-triage",
+				provider: "custom",
+				status: 500,
+			}),
+		),
+		row("provider_auth", at(20), { status: 401 }),
+		row("provider_auth", at(21), { status: 401 }),
+		row("provider_auth", at(22), { status: 401, feature: "summary" }),
+		row("timeout", at(23), { feature: "summary" }),
+		haikuCutOff(at(24), {
+			budget: {
+				cap: 1_500,
+				thinkingRoom: 1_100,
+				extensionRoom: 0,
+				thinking: "on",
+				effort: "medium",
+				retried: false,
+				used: 1_500,
+				thinkingUsed: 1_460,
+			},
+		}),
+	];
+	const prompt = aiFailurePrompt(groupAiFailures(rows), rows.length, false);
+	const blocks = prompt.split(/\n\n(?=\d+\. )/).slice(1);
+	// The notes no longer crowd out the cut-off group; the small timeout group that does not fit is counted.
+	assert.equal(blocks.length, 3);
+	assert.match(prompt, /\n\nAnd 1 more kind of failure\.$/);
+	const unavailable = blocks.find((block) => block.includes("provider_unavailable"));
+	assert.doesNotMatch(unavailable, /About /);
+	const cutOff = blocks.find((block) => block.includes("cut_off"));
+	assert.match(cutOff, /Kite facts: Output cap: 1,500 tokens \(400 for the answer \+ 1,100 for thinking\)/);
+	assert.match(cutOff, /About Automatic reading: /);
+	assert.ok(prompt.length <= 3_500);
+});
+
+test("a group skipped for its size frees its slot, so a ninth group can still be summarised", () => {
+	const at = (index) => `2026-10-31T10:${String(index % 60).padStart(2, "0")}:00.000Z`;
+	// Two groups whose model lists alone pass the limit, then six short ones, then a cut-off ranked ninth.
+	const oversized = (code) =>
+		Array.from({ length: 90 }, (_, index) => row(code, at(index), { model: `a-very-long-model-name-${index}` }));
+	const short = ["no_provider", "assistant_off", "rate_limited", "unusable_answer", "network", "timeout"].flatMap(
+		(code) => [row(code, at(1), { feature: "chat" }), row(code, at(2), { feature: "chat" })],
+	);
+	const rows = [
+		...oversized("internal"),
+		...oversized("provider_error"),
+		...short,
+		row("cut_off", "2026-10-31T09:00:00.000Z", { feature: "chat" }),
+	];
+	const groups = groupAiFailures(rows);
+	assert.equal(groups.length, 9);
+	assert.equal(groups[8].code, "cut_off");
+	const prompt = aiFailurePrompt(groups, rows.length, false);
+	assert.ok(prompt.length <= 3_500, String(prompt.length));
+	assert.match(prompt, /\d+\. cut_off: 1 time/);
+	assert.doesNotMatch(prompt, /\d+\. (internal|provider_error):/);
+	assert.match(prompt, /\n\nAnd 2 more kinds of failure\.$/);
+});

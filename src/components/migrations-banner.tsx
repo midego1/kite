@@ -1,38 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { CheckCircle2, Database } from "lucide-react";
-import { NOTICE_LINK_CLASS, SUCCESS_NOTICE_CLASS, WARNING_NOTICE_CLASS } from "./notice-styles";
+import { Database } from "lucide-react";
+import { NOTICE_LINK_CLASS, WARNING_NOTICE_CLASS } from "./notice-styles";
+import { dismissMigrationSummary } from "./migration-apply";
 import { MigrationApplyButton, MigrationApplyProgress } from "./migration-progress";
+import { AppliedNotice } from "./migrations-applied-notice";
 import { migrationApplierText, migrationsBannerContent, shouldShowMigrationsBanner } from "./migrations-banner-utils";
 import { useMigrationsCardVisible, useMigrationsNotice } from "./use-migrations-notice";
-
-function AppliedNotice({
-	summary,
-	className,
-	compact = false,
-}: {
-	summary: string;
-	className?: string;
-	compact?: boolean;
-}) {
-	return (
-		<section
-			aria-label="Database updates"
-			className={
-				compact
-					? SUCCESS_NOTICE_CLASS
-					: `flex items-start gap-3 rounded-2xl bg-green-50 px-4 py-3 text-sm text-green-700 ${className}`
-			}
-		>
-			<CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-			<div role="status" className="min-w-0 flex-1">
-				<p className="font-medium">Database updated</p>
-				<p className="mt-1">{summary}</p>
-			</div>
-		</section>
-	);
-}
 
 /**
  * The full notice, shown in the empty reading pane: a deployed version runs before
@@ -42,8 +17,10 @@ export function MigrationsNoticeCard() {
 	const { user, isPrimaryAdmin, data, progress, applying, showProgress, summary, error, apply } = useMigrationsNotice();
 	if (!user) return null;
 	if (!data || !shouldShowMigrationsBanner(data)) {
-		// Everything applied: the result of the run stays until the page is left.
-		return summary ? <AppliedNotice summary={summary} className="w-full max-w-md text-left" /> : null;
+		// Everything applied: the result of the run stays a few seconds, then leaves (migrations-applied-notice.tsx).
+		return summary ? (
+			<AppliedNotice summary={summary} onDismiss={dismissMigrationSummary} className="w-full max-w-md text-left" />
+		) : null;
 	}
 	const content = migrationsBannerContent(data.pending);
 
@@ -89,7 +66,7 @@ export function MigrationsBanner() {
 	const cardVisible = useMigrationsCardVisible();
 	if (!user || cardVisible) return null;
 	if (!data || !shouldShowMigrationsBanner(data)) {
-		return summary ? <AppliedNotice summary={summary} compact /> : null;
+		return summary ? <AppliedNotice summary={summary} onDismiss={dismissMigrationSummary} compact /> : null;
 	}
 	const content = migrationsBannerContent(data.pending);
 

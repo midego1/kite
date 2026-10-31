@@ -254,6 +254,11 @@ export async function applyMigrations(
 	return outcome;
 }
 
+/** The "Database updated" notice left (on its own or by its close button); a later run writes a new summary. */
+export function dismissMigrationSummary() {
+	if (state.summary !== null) set({ summary: null });
+}
+
 /** Takes the run lock without waiting; null when another tab holds it. Without Web Locks, the fallback flag decides. */
 async function withRunLock(task: () => Promise<MigrationApplyOutcome>): Promise<MigrationApplyOutcome | null> {
 	if (!locksSupported()) return (await isRunningInAnotherTab()) ? null : task();

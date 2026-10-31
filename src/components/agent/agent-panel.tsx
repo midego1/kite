@@ -118,7 +118,6 @@ export function AgentPanel({ open, fullSize, docked, onClose, onToggleFullSize }
 	const queueGenerationRef = useRef(0);
 	const menuRef = useRef<HTMLDetailsElement | null>(null);
 	const inputRef = useRef<HTMLTextAreaElement | null>(null);
-	const focusInputWhenReady = useRef(false);
 	const chatScrollRef = useRef<HTMLDivElement | null>(null);
 	const stickToBottomRef = useRef(true);
 	useChatContentResize(chatScrollRef, stickToBottomRef, view === "chat");
@@ -358,8 +357,6 @@ export function AgentPanel({ open, fullSize, docked, onClose, onToggleFullSize }
 		const generation = queueGenerationRef.current;
 		const userMessageId = crypto.randomUUID();
 		const assistantMessageId = crypto.randomUUID();
-		// send only runs from event handlers and stream callbacks, never during render.
-		// eslint-disable-next-line react-hooks/purity
 		const startedAt = Date.now();
 		let accepted = false;
 		let streamErrored = false;
@@ -578,19 +575,7 @@ export function AgentPanel({ open, fullSize, docked, onClose, onToggleFullSize }
 		setView("chat");
 		if (menuRef.current) menuRef.current.open = false;
 	};
-	// A question handed over by Ask AI (the overview's Why?) opens a new chat with it in the input, unsent.
-	useRequestedAssistantPrompt(open && !!mailboxId, (text) => {
-		startNewChat();
-		setInput(text);
-		focusInputWhenReady.current = true;
-	});
-	// The input is disabled until the settings load; it takes the focus once it can.
-	useEffect(() => {
-		const field = inputRef.current;
-		if (!focusInputWhenReady.current || !field || field.disabled) return;
-		focusInputWhenReady.current = false;
-		field.focus();
-	}, [settings, providerConfigured, loadingConversation, input]);
+	useRequestedAssistantPrompt(open, mailboxId, inputRef, startNewChat, setInput);
 	const draftActions = uniqueAgentDraftActions(messages);
 	const activeTool = busy ? activeAgentTool(messages) : null;
 	const panelStyle = agentPanelStyle(docked);

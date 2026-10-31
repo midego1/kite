@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent } from "react";
+import { useEffect, useEffectEvent, useRef, type RefObject } from "react";
 
 /**
  * Hands a prepared question to the assistant from anywhere: the text waits in session storage until the panel is
@@ -36,11 +36,25 @@ function takeAssistantPrompt(): string | null {
 	}
 }
 
-/** While `ready` (the panel open on a mailbox), hands each waiting question to `adopt`, now and when one arrives. */
-export function useRequestedAssistantPrompt(ready: boolean, adopt: (text: string) => void) {
+/**
+ * The panel's side: while it is open on a mailbox, a waiting question (now or when one arrives) starts a new chat
+ * with the question in the input, unsent, and the input takes the focus once it is enabled.
+ */
+export function useRequestedAssistantPrompt(
+	open: boolean,
+	mailboxId: string | null | undefined,
+	inputRef: RefObject<HTMLTextAreaElement | null>,
+	startNewChat: () => void,
+	setInput: (text: string) => void,
+) {
+	const focusWhenReady = useRef(false);
+	const ready = open && !!mailboxId;
 	const take = useEffectEvent(() => {
 		const text = takeAssistantPrompt();
-		if (text !== null) adopt(text);
+		if (text === null) return;
+		startNewChat();
+		setInput(text);
+		focusWhenReady.current = true;
 	});
 	useEffect(() => {
 		if (!ready) return;
@@ -49,4 +63,11 @@ export function useRequestedAssistantPrompt(ready: boolean, adopt: (text: string
 		window.addEventListener(ASSISTANT_PROMPT_EVENT, onRequest);
 		return () => window.removeEventListener(ASSISTANT_PROMPT_EVENT, onRequest);
 	}, [ready]);
+	// The input stays disabled until the panel's settings load, so this checks after every render.
+	useEffect(() => {
+		const field = inputRef.current;
+		if (!focusWhenReady.current || !field || field.disabled) return;
+		focusWhenReady.current = false;
+		field.focus();
+	});
 }

@@ -1,4 +1,4 @@
-import { and, asc, eq, gt } from "drizzle-orm";
+import { and, asc, eq, gt, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { messageAttachments } from "@/db/schema";
 import { sha256Hex } from "@/lib/aws/sigv4";
@@ -226,6 +226,10 @@ export async function runReclaimBatch(
 // ---------------------------------------------------------------------------------------------------------------
 // Materialize: every 'raw' row gets an object of its own again.
 
+/**
+ * Rows after `cursor` that name their sentinel `raw:<id>`, chosen by the key as the storage report counts them: a row
+ * whose location an older release's restore dropped reads as 'object' but has no object either (`repairLostRawLocation`).
+ */
 async function rawRows(env: CloudflareEnv, cursor: string | null): Promise<ObjectRow[]> {
 	return getDb(env)
 		.select({
@@ -237,14 +241,14 @@ async function rawRows(env: CloudflareEnv, cursor: string | null): Promise<Objec
 			size: messageAttachments.size,
 		})
 		.from(messageAttachments)
-		.where(and(eq(messageAttachments.storage, "raw"), gt(messageAttachments.id, cursor ?? "")))
+		.where(and(sql.raw(`NOT (${ATTACHMENT_OBJECT_ROWS_SQL})`), gt(messageAttachments.id, cursor ?? "")))
 		.orderBy(asc(messageAttachments.id))
 		.limit(BATCH_ROWS);
 }
 
 /**
  * One 'raw' row: its verified bytes (the accessor checks the recorded digest), written under a fresh key, then the row
- * repointed while it is still 'raw'. A row the lazy repair materialized meanwhile keeps the repair's copy.
+ * repointed while it still names its sentinel. A row the lazy repair materialized meanwhile keeps the repair's copy.
  */
 async function materializeRow(env: CloudflareEnv, row: ObjectRow, result: AttachmentStorageBatchResult) {
 	const bytes = await readAttachmentBytes(env, row);
@@ -258,7 +262,7 @@ async function materializeRow(env: CloudflareEnv, row: ObjectRow, result: Attach
 	const changed = await changes(
 		env,
 		`UPDATE message_attachments SET storage = 'object', r2_key = ?, raw_offset = NULL, raw_length = NULL,
-			transfer_encoding = NULL, storage_checked_at = NULL WHERE id = ? AND storage = 'raw'`,
+			transfer_encoding = NULL, storage_checked_at = NULL WHERE id = ? AND r2_key = 'raw:' || id`,
 		[key, row.id],
 	);
 	if (changed === 1 || (await dropUnclaimedCopy(env, row.id, key))) {

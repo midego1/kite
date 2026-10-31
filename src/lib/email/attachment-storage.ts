@@ -1,11 +1,11 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { getDb } from "@/db";
 import { messageAttachments, messages } from "@/db/schema";
 import { chunkArray, queryInChunks } from "@/db/chunk-utils";
 import { missingColumnFromError } from "@/lib/auth/user-lookup-utils";
 import { createLogger } from "@/lib/logger.mjs";
 import { sha256Hex } from "@/lib/aws/sigv4";
-import { materializeMismatchedRaw, repairMissingObject } from "./attachment-repair";
+import { materializeMismatchedRaw, repairLostRawLocation, repairMissingObject } from "./attachment-repair";
 import {
 	ATTACHMENT_OBJECT_ROWS_SQL,
 	isRawAttachmentKey,
@@ -57,12 +57,18 @@ export const ATTACHMENT_ROW_COLUMNS = {
 	createdAt: messageAttachments.createdAt,
 };
 
+/** A row with a `raw:` key whose storage columns say 'object': where its bytes are was lost (`repairLostRawLocation`). */
+const LOST_LOCATION = "lost";
+
 /**
  * Where a 'raw' row's encoded body is; only asked for rows with a `raw:` key. Such a row can sit in a database without
- * migration 0088 when a newer backup was restored into it; the storage columns are missing then, so it reads as not
- * stored (404) instead of failing the request.
+ * migration 0088 when an older release restored a newer backup into it; the storage columns are missing then, so it
+ * reads as not stored (404) instead of failing the request, and as `LOST_LOCATION` once 0088 is applied.
  */
-async function rawLocation(env: CloudflareEnv, attachmentId: string): Promise<RawAttachmentLocation | null> {
+async function rawLocation(
+	env: CloudflareEnv,
+	attachmentId: string,
+): Promise<RawAttachmentLocation | typeof LOST_LOCATION | null> {
 	try {
 		return await findRawLocation(env, attachmentId);
 	} catch (error) {
@@ -71,9 +77,13 @@ async function rawLocation(env: CloudflareEnv, attachmentId: string): Promise<Ra
 	}
 }
 
-async function findRawLocation(env: CloudflareEnv, attachmentId: string): Promise<RawAttachmentLocation | null> {
+async function findRawLocation(
+	env: CloudflareEnv,
+	attachmentId: string,
+): Promise<RawAttachmentLocation | typeof LOST_LOCATION | null> {
 	const [row] = await getDb(env)
 		.select({
+			storage: messageAttachments.storage,
 			rawKey: messages.rawR2Key,
 			offset: messageAttachments.rawOffset,
 			length: messageAttachments.rawLength,
@@ -82,9 +92,21 @@ async function findRawLocation(env: CloudflareEnv, attachmentId: string): Promis
 		})
 		.from(messageAttachments)
 		.innerJoin(messages, eq(messageAttachments.messageId, messages.id))
-		.where(and(eq(messageAttachments.id, attachmentId), eq(messageAttachments.storage, "raw")))
+		.where(eq(messageAttachments.id, attachmentId))
 		.limit(1);
-	return row ? toRawLocation(row) : null;
+	if (!row) return null;
+	return row.storage === "raw" ? toRawLocation(row) : LOST_LOCATION;
+}
+
+/** Bytes already in memory as an opened attachment, cut to `range`. */
+function openedBytes(
+	bytes: ArrayBuffer,
+	row: Pick<AttachmentRef, "contentType">,
+	range: AttachmentByteRange | undefined,
+): OpenedAttachment {
+	const wanted = resolveByteRange(bytes.byteLength, range);
+	const slice = wanted ? bytes.slice(wanted.offset, wanted.offset + wanted.length) : bytes;
+	return { body: new Response(slice).body!, size: slice.byteLength, contentType: row.contentType };
 }
 
 function emptyStream(): ReadableStream<Uint8Array> {
@@ -126,6 +148,10 @@ function getObject(env: CloudflareEnv, row: AttachmentRef, range: AttachmentByte
 
 async function openRawRow(env: CloudflareEnv, row: AttachmentRef, range: AttachmentByteRange | undefined) {
 	const location = await rawLocation(env, row.id);
+	if (location === LOST_LOCATION) {
+		const bytes = await repairLostRawLocation(env, row.id);
+		return bytes ? openedBytes(bytes, row, range) : null;
+	}
 	return location ? openRawAttachment(env.BUCKET, location, row, range) : null;
 }
 
@@ -170,6 +196,7 @@ export async function openAttachment(
  */
 async function readRawRow(env: CloudflareEnv, row: AttachmentRef): Promise<ArrayBuffer | null> {
 	const location = await rawLocation(env, row.id);
+	if (location === LOST_LOCATION) return repairLostRawLocation(env, row.id);
 	const opened = location ? await openRawAttachment(env.BUCKET, location, row) : null;
 	if (!location || !opened) return null;
 	const bytes = await new Response(opened.body).arrayBuffer();

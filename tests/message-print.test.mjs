@@ -15,6 +15,7 @@ await build({
 		contents: `
 			export * from "./src/components/messages/print/print-document-utils.ts";
 			export * from "./src/components/messages/print/message-pdf-utils.ts";
+			export { buildTextPdf } from "./src/lib/pdf/text-pdf-utils.ts";
 			export { createEmailHtmlSanitizer } from "./src/app/(dashboard)/inbox/[messageId]/email-html-sanitizer-utils.ts";
 		`,
 		resolveDir: root,
@@ -33,6 +34,7 @@ await build({
 });
 const {
 	buildPrintDocument,
+	buildTextPdf,
 	createEmailHtmlSanitizer,
 	formatPrintAddresses,
 	messagePdfBlocks,
@@ -223,8 +225,26 @@ test("HTML bodies become paragraphs with lists, headings and quote depth", () =>
 		{ text: "cell a cell b", depth: 0, bold: false },
 		{ text: "quoted", depth: 1, bold: false },
 		{ text: "deeper", depth: 2, bold: false },
-		{ text: "keep spaces", depth: 0, bold: false },
+		{ text: "keep   spaces", depth: 0, bold: false },
 		{ text: "tail", depth: 0, bold: false },
+	]);
+});
+
+test("hidden preview text is left out and list markers stay with their item's text", () => {
+	const paragraphs = paragraphsFromHtml(
+		parse(
+			'<div style="display: none; max-height: 0">Preview text</div><span style="mso-hide:all">Outlook only</span>' +
+				'<p style="display:block">Shown</p><ul><li><p>Item in a paragraph</p><p>second paragraph</p></li><li></li><li><div><b>Bold</b> item</div></li></ul>' +
+				"<pre>  indented\n    more</pre><p>Kind regards,<br>John</p>",
+		),
+	);
+	assert.deepEqual(paragraphs, [
+		{ text: "Shown", depth: 0, bold: false },
+		{ text: "• Item in a paragraph", depth: 0, bold: false },
+		{ text: "second paragraph", depth: 0, bold: false },
+		{ text: "• Bold item", depth: 0, bold: false },
+		{ text: "  indented\n    more", depth: 0, bold: false },
+		{ text: "Kind regards,\nJohn", depth: 0, bold: false },
 	]);
 });
 
@@ -265,4 +285,19 @@ test("PDF blocks hold the subject, headers, attachments and body of every messag
 	assert.deepEqual(messagePdfBlocks({ title: "", messages: [] }, parse), [
 		{ text: "(no subject)", size: 16, bold: true },
 	]);
+});
+
+test("line breaks in an HTML body reach the PDF as separate lines", () => {
+	const message = toPrintMessage(
+		{ ...source, htmlBody: "<p>Thanks for the update.</p><p>Kind regards,<br>John<br>ACME</p>", attachments: [] },
+		{ sanitize, formatDate },
+	);
+	const pdf = buildTextPdf({
+		title: message.subject,
+		blocks: messagePdfBlocks({ title: message.subject, messages: [message] }, parse),
+	});
+	const text = Buffer.from(pdf.bytes).toString("latin1");
+	for (const line of ["Thanks for the update.", "Kind regards,", "John", "ACME"])
+		assert.match(text, new RegExp(`\\(${line.replace(/\./g, "\\.")}\\) Tj`));
+	assert.doesNotMatch(text, /regards,John/);
 });

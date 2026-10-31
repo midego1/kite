@@ -37,15 +37,25 @@ const BLOCK_TAGS = new Set([
 const HEADING_TAGS = new Set(["h1", "h2", "h3", "h4", "h5", "h6"]);
 const CELL_TAGS = new Set(["td", "th"]);
 
-type WalkState = { paragraphs: BodyParagraph[]; line: string; depth: number; bold: boolean };
+// Preview text and other content mail hides from people (`display:none`, Outlook's `mso-hide:all`).
+const HIDDEN_STYLE = /(?:^|;)\s*(?:display\s*:\s*none|mso-hide\s*:\s*all)\s*(?:!important\s*)?(?:;|$)/i;
 
-function flush(state: WalkState) {
-	const text = state.line
-		.split("\n")
-		.map((part) => part.replace(/[ \t]+/g, " ").trim())
-		.join("\n")
-		.trim();
-	if (text) state.paragraphs.push({ text, depth: state.depth, bold: state.bold });
+type WalkState = {
+	paragraphs: BodyParagraph[];
+	line: string;
+	/** A list item's marker, written before the item's first text even when that text is in a nested block. */
+	marker: string;
+	depth: number;
+	bold: boolean;
+};
+
+function flush(state: WalkState, pre = false) {
+	const lines = state.line.split("\n").map((part) => (pre ? part.trimEnd() : part.replace(/[ \t]+/g, " ").trim()));
+	const text = pre ? lines.join("\n").replace(/^\n+|\n+$/g, "") : lines.join("\n").trim();
+	if (text) {
+		state.paragraphs.push({ text: state.marker + text, depth: state.depth, bold: state.bold });
+		state.marker = "";
+	}
 	state.line = "";
 }
 
@@ -55,6 +65,10 @@ function listMarker(element: Element): string {
 	const start = Number(list.getAttribute("start") ?? "1") || 1;
 	const items = Array.from(list.children).filter((child) => child.tagName.toLowerCase() === "li");
 	return `${start + items.indexOf(element)}. `;
+}
+
+function walkChildren(element: Element, state: WalkState, pre: boolean) {
+	for (const child of Array.from(element.childNodes)) walk(child, state, pre);
 }
 
 function walk(node: Node, state: WalkState, pre: boolean) {
@@ -70,20 +84,19 @@ function walk(node: Node, state: WalkState, pre: boolean) {
 		state.line += "\n";
 		return;
 	}
-	if (tag === "img") return;
+	if (tag === "img" || HIDDEN_STYLE.test(element.getAttribute("style") ?? "")) return;
 	if (CELL_TAGS.has(tag) && state.line.trim()) state.line += "  ";
-	if (!BLOCK_TAGS.has(tag)) {
-		for (const child of Array.from(element.childNodes)) walk(child, state, pre);
-		return;
-	}
-	flush(state);
+	if (!BLOCK_TAGS.has(tag)) return walkChildren(element, state, pre);
+	flush(state, pre);
 	if (tag === "hr") return;
 	const outer = { depth: state.depth, bold: state.bold };
 	if (tag === "blockquote") state.depth += 1;
 	if (HEADING_TAGS.has(tag) || tag === "dt") state.bold = true;
-	if (tag === "li") state.line += listMarker(element);
-	for (const child of Array.from(element.childNodes)) walk(child, state, pre || tag === "pre");
-	flush(state);
+	if (tag === "li") state.marker = listMarker(element);
+	walkChildren(element, state, pre || tag === "pre");
+	flush(state, pre || tag === "pre");
+	// An empty item leaves no marker behind for the next paragraph.
+	if (tag === "li") state.marker = "";
 	state.depth = outer.depth;
 	state.bold = outer.bold;
 }
@@ -92,7 +105,7 @@ function walk(node: Node, state: WalkState, pre: boolean) {
  * @public Exercised by the unit tests.
  */
 export function paragraphsFromHtml(body: Element): BodyParagraph[] {
-	const state: WalkState = { paragraphs: [], line: "", depth: 0, bold: false };
+	const state: WalkState = { paragraphs: [], line: "", marker: "", depth: 0, bold: false };
 	for (const child of Array.from(body.childNodes)) walk(child, state, false);
 	flush(state);
 	return state.paragraphs;

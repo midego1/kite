@@ -207,7 +207,10 @@ test("a reply goes out from the address the mail came to; an unverified alias ca
 			.getByRole("button", { name: /^Reply( \(r\))?$/ })
 			.first()
 			.click();
-		await page.getByRole("textbox", { name: "Message body" }).fill("Here are the notes.");
+		const body = page.getByRole("textbox", { name: "Message body" });
+		// The reply's draft loads first; the body is read-only until then.
+		await expect(body).toHaveAttribute("contenteditable", "true", { timeout: 30_000 });
+		await body.fill("Here are the notes.");
 		const sent = page.waitForResponse(
 			(response) => response.url().endsWith("/api/send") && response.request().method() === "POST",
 		);

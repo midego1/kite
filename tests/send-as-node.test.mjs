@@ -188,12 +188,15 @@ const accountRow = (db) => db.db.prepare("SELECT * FROM external_accounts").get(
 test("connecting verifies the SMTP sign-in; the From menu offers the address to its owner only", async (t) => {
 	const fakes = await servers(t);
 	const { env, db } = await setup(t, fakes);
-	// An "Other" provider's address is not offered or sent as, however its sign-in went.
+	// An "Other" provider's address is not sent as, however its sign-in went: it is listed only to say "Verify".
 	const connected = await connectExternalAccount(env, owner, connectBody());
 	assert.equal(connected.sending.block, "unproven");
 	assert.equal(connected.sending.verified, true);
-	assert.equal((await listSendIdentities(env, "owner")).size, 0);
-	assert.match(await rejection(send(env)), /Kite cannot prove an address at a server you entered yourself/);
+	assert.deepEqual(
+		(await listSendIdentities(env, "owner")).get("mailbox-a").map(({ available, action }) => ({ available, action })),
+		[{ available: false, action: "verify" }],
+	);
+	assert.match(await rejection(send(env)), /Verify this address with a code/);
 	await removeExternalAccount(env, owner, connected.id);
 	const account = await connectKnown(env);
 	assert.deepEqual(account.sending, {
@@ -551,7 +554,7 @@ test("a scheduled send stops when the account moved to another mailbox, access w
 		{
 			change: "UPDATE external_accounts SET preset = 'other'",
 			undo: "UPDATE external_accounts SET preset = 'fastmail'",
-			reason: "Kite cannot prove an address at a server you entered yourself",
+			reason: "Verify this address with a code",
 		},
 		{
 			change: "UPDATE users SET disabled = 1 WHERE id = 'owner'",

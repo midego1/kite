@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AUTH_SESSION_CHANGED_EVENT, authFetch } from "@/lib/auth/client";
+import type { AuthSessionChangedDetail } from "@/lib/auth/client-types";
 import { AGENT_SUGGESTION_EVENT } from "./message-realtime-utils";
 import { createSuggestionListStore } from "./suggestion-list-store";
 
@@ -8,7 +9,11 @@ const store = createSuggestionListStore((url) => authFetch(url), {
 	clearTimeout: (handle) => window.clearTimeout(handle as number),
 });
 if (typeof window !== "undefined") {
-	window.addEventListener(AUTH_SESSION_CHANGED_EVENT, store.reset);
+	// Signed in to another account: the readers on screen load its suggestions. Signed out: they only empty, since
+	// a request now would be refused and send the page to the sign-in screen.
+	window.addEventListener(AUTH_SESSION_CHANGED_EVENT, (event) =>
+		store.reset({ reload: (event as CustomEvent<AuthSessionChangedDetail>).detail?.authenticated === true }),
+	);
 	window.addEventListener(AGENT_SUGGESTION_EVENT, store.scheduleRefresh);
 	window.addEventListener("kite:messages-changed", store.scheduleRefresh);
 }

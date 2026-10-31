@@ -109,8 +109,9 @@ export async function flushLayoutSave({ closing = false }: { closing?: boolean }
 			body: JSON.stringify({ layout }),
 			keepalive: true,
 		});
-		// The table went missing (a restore from before 0080): stay with this browser's layout.
-		if (response.status === 409) unavailable = true;
+		// The table went missing (a restore from before 0080): stay with this browser's layout. An answer for the
+		// previous account says nothing about the next one, which asks the server again.
+		if (response.status === 409 && sentFor === generation) unavailable = true;
 	} catch {
 		// Offline: the choice is in this browser already and goes with the next one, for the same account.
 		if (sentFor === generation) unsaved = { ...layout, ...unsaved };

@@ -63,10 +63,10 @@ await build({
 });
 const load = (name) => import(pathToFileURL(join(outDir, `${name}.mjs`)).href);
 const { deliverInboundMessage } = await load("deliver");
-const { upsertContactFromAddress, getMessageContactNames } = await load("contacts");
+const { upsertContactFromAddress, getMessageContactNames, blockContact } = await load("contacts");
 const { getSenderDisplayName } = await load("contactUtils");
 const { resolveThreadId } = await load("threading");
-const { dmarcAlignedPass, isThreadParticipant } = await load("joinUtils");
+const { senderDmarc, isThreadParticipant } = await load("joinUtils");
 const { getMessageThreadForUser } = await load("threadView");
 const { intakeIncomingMail } = await load("intake");
 const { forwardedMarker, wasForwardedByKite } = await load("forwarding");
@@ -93,6 +93,8 @@ const encoder = new TextEncoder();
 const OWNER = { id: "owner", email: "owner@example.com", role: "admin", isPrimaryAdmin: true, disabled: false };
 const CLOUDFLARE_DMARC_PASS = (domain) =>
 	`mx.cloudflare.net; dkim=pass header.d=${domain}; spf=pass smtp.mailfrom=${domain}; dmarc=pass header.from=${domain}`;
+const CLOUDFLARE_DMARC_FAIL = (domain) =>
+	`mx.cloudflare.net; dkim=fail header.d=${domain}; spf=fail smtp.mailfrom=${domain}; dmarc=fail header.from=${domain}`;
 
 async function setup(t) {
 	const database = new SqliteDatabase(":memory:");
@@ -208,6 +210,32 @@ test("a reply joins the conversation only when its sender takes part in it or pa
 	assert.notEqual(other.thread_id, root.thread_id);
 	// A participant matched as a whole address, never as a substring of one.
 	assert.notEqual((await reply("ice@partner.test", "r8@partner.test")).thread_id, root.thread_id);
+	// A failed DMARC check means the From may be forged: even a participant's address starts a thread of its own.
+	const failed = await reply("Alice <alice@partner.test>", "r9@partner.test", CLOUDFLARE_DMARC_FAIL("partner.test"));
+	assert.notEqual(failed.thread_id, root.thread_id);
+	// With no DMARC result at all (none, or no trusted header) the participant path still applies.
+	const none = await reply("Alice <alice@partner.test>", "r10@partner.test", "mx.cloudflare.net; dmarc=none");
+	assert.equal(none.thread_id, root.thread_id);
+});
+
+test("the copy of a message the mailbox sent itself joins the sent message's thread", async (t) => {
+	const f = await setup(t);
+	// A fresh send to the mailbox's own alias: the sent row is keyed by the Message-ID the provider returned.
+	f.database.db.exec(`
+		INSERT INTO messages (id, user_id, mailbox_id, direction, provider_message_id, from_addr, to_addr, status, thread_id, created_at)
+			VALUES ('sent-1', 'owner', 'mailbox-a', 'outbound', '<self-1@example.com>', 'Owner <a@example.com>', 'alias@example.com', 'sent', 'self-1@example.com', 1);
+	`);
+	const copy = await deliver(f, { from: "Owner <a@example.com>", to: "alias@example.com", id: "self-1@example.com" });
+	assert.equal(copy.thread_id, "self-1@example.com");
+	// Someone else reusing that Message-ID does not, nor does the own address when DMARC failed.
+	const reused = await deliver(f, { from: "Mallory <m@evil.test>", id: "self-1@example.com" });
+	assert.notEqual(reused.thread_id, "self-1@example.com");
+	const forged = await deliver(
+		f,
+		{ from: "Owner <a@example.com>", id: "self-1@example.com" },
+		{ auth: CLOUDFLARE_DMARC_FAIL("example.com") },
+	);
+	assert.notEqual(forged.thread_id, "self-1@example.com");
 });
 
 test("received mail never seeds into a thread its Message-ID already keys", async (t) => {
@@ -246,15 +274,19 @@ test("imports, synced mail and JMAP drafts keep joining on the headers alone", a
 	assert.equal(synced, "root@partner.test");
 });
 
-test("the join rule's helpers: DMARC aligned with the From domain, whole-address participants", () => {
-	assert.equal(dmarcAlignedPass(CLOUDFLARE_DMARC_PASS("partner.test"), "Alice <alice@partner.test>"), true);
-	assert.equal(dmarcAlignedPass(CLOUDFLARE_DMARC_PASS("partner.test"), "alice@PARTNER.test"), true);
-	assert.equal(dmarcAlignedPass(CLOUDFLARE_DMARC_PASS("partner.test"), "alice@sub.partner.test"), false);
-	assert.equal(dmarcAlignedPass("mx.cloudflare.net; dmarc=fail header.from=partner.test", "a@partner.test"), false);
-	assert.equal(dmarcAlignedPass("mx.cloudflare.net; dkim=pass header.d=partner.test", "a@partner.test"), false);
-	assert.equal(dmarcAlignedPass(null, "a@partner.test"), false);
+test("the join rule's helpers: the DMARC verdict for the From domain, whole-address participants", () => {
+	assert.equal(senderDmarc(CLOUDFLARE_DMARC_PASS("partner.test"), "Alice <alice@partner.test>"), "pass");
+	assert.equal(senderDmarc(CLOUDFLARE_DMARC_PASS("partner.test"), "alice@PARTNER.test"), "pass");
+	assert.equal(senderDmarc(CLOUDFLARE_DMARC_PASS("partner.test"), "alice@sub.partner.test"), "unknown");
+	assert.equal(senderDmarc(CLOUDFLARE_DMARC_FAIL("partner.test"), "a@partner.test"), "fail");
+	// A failure for some other domain still means the From may be forged.
+	assert.equal(senderDmarc(CLOUDFLARE_DMARC_FAIL("other.test"), "a@partner.test"), "fail");
+	assert.equal(senderDmarc("mx.cloudflare.net; dmarc=none header.from=partner.test", "a@partner.test"), "unknown");
+	assert.equal(senderDmarc("mx.cloudflare.net; dkim=pass header.d=partner.test", "a@partner.test"), "unknown");
+	assert.equal(senderDmarc(null, "a@partner.test"), "unknown");
 	// SES names no header.from; its verdict is for the From header it saw.
-	assert.equal(dmarcAlignedPass("amazonses.com; spf=pass; dkim=pass; dmarc=pass", "a@partner.test"), true);
+	assert.equal(senderDmarc("amazonses.com; spf=pass; dkim=pass; dmarc=pass", "a@partner.test"), "pass");
+	assert.equal(senderDmarc("amazonses.com; dmarc=fail policy.dmarc=reject", "a@partner.test"), "fail");
 
 	const rows = [
 		{
@@ -381,6 +413,16 @@ test("spam, trash and held mail: no Gravatar lookup; spam and trash: no notice a
 	assert.equal(webhooks(), 1);
 	assert.ok(f.row("SELECT 1 FROM contacts WHERE email = 'blocked@partner.test'"), "the contact is still recorded");
 
+	// Blocking a sender never looks it up either: by hand, by a phishing report or by a Screener deny.
+	await blockContact(f.env, {
+		userId: "owner",
+		mailboxId: "mailbox-a",
+		domainId: "domain-1",
+		address: "Phisher <p@evil.test>",
+	});
+	assert.ok(f.row("SELECT 1 FROM contacts WHERE email = 'p@evil.test' AND blocked = 1"));
+	assert.equal(gravatarLookups(), 0);
+
 	await deliver(f, { from: "The CEO <alice@partner.test>", id: "ok@partner.test" });
 	assert.equal(gravatarLookups(), 1);
 	assert.equal(webhooks(), 2);
@@ -389,12 +431,13 @@ test("spam, trash and held mail: no Gravatar lookup; spam and trash: no notice a
 	assert.equal(f.notices[0].from, '"The CEO" <alice@partner.test>');
 });
 
-test("the forward marker is signed with a server secret, and only this install's own value stops forwarding", async (t) => {
+test("the forward marker is signed per message, and only this install's own value stops forwarding", async (t) => {
 	const f = await setup(t);
 	f.database.db.exec("UPDATE users SET forwarding_email = 'me@elsewhere.test' WHERE id = 'owner'");
 	const queued = [];
 	const env = { ...f.env, APP_ENCRYPTION_KEY: "app-key", INBOUND_QUEUE: { send: async (body) => queued.push(body) } };
-	const marker = await forwardedMarker(env);
+	const markerFor = (headers) => forwardedMarker(env, (name) => headers[name]);
+	const marker = await markerFor({ "message-id": "<m1@partner.test>" });
 	assert.match(marker, /^v1\.[0-9a-f]{64}$/);
 	const intake = async (headers) => {
 		const forwards = [];
@@ -403,8 +446,8 @@ test("the forward marker is signed with a server secret, and only this install's
 			{
 				from: "x@partner.test",
 				to: "a@example.com",
-				raw: encoder.encode(mail({ from: "x@partner.test" })).buffer,
-				headers,
+				raw: encoder.encode(mail({ from: "x@partner.test", id: "m1@partner.test" })).buffer,
+				headers: { "message-id": "<m1@partner.test>", ...headers },
 			},
 			{ forward: async (destination, extra) => forwards.push({ destination, extra }) },
 		);
@@ -419,23 +462,37 @@ test("the forward marker is signed with a server secret, and only this install's
 	assert.equal((await intake({ "x-kite-forwarded": marker })).length, 0);
 	assert.equal((await intake({ "x-kite-forwarded": `v1.${"0".repeat(64)}, ${marker}` })).length, 0);
 	assert.equal((await intake({ "x-mailflare-forwarded": marker })).length, 0);
+	// The forward target sees the value, but it is bound to the Message-ID: copied onto another message it does nothing.
+	assert.notEqual(await markerFor({ "message-id": "<m2@partner.test>" }), marker);
+	assert.notEqual(await markerFor({}), marker);
+	assert.equal((await intake({ "message-id": "<m2@partner.test>", "x-kite-forwarded": marker })).length, 1);
+	assert.equal(
+		await wasForwardedByKite(env, (name) => ({ "Message-ID": "m1@partner.test", "X-Kite-Forwarded": marker })[name]),
+		true,
+		"angle brackets and header case do not matter",
+	);
 	// Another install's marker is forwarded once more; that install then stops it on the way back.
 	const other = { APP_ENCRYPTION_KEY: "other-key" };
-	const theirs = await forwardedMarker(other);
+	const theirs = await forwardedMarker(other, (name) => ({ "message-id": "<m1@partner.test>" })[name]);
 	assert.equal((await intake({ "x-kite-forwarded": theirs })).length, 1);
-	assert.equal(await wasForwardedByKite(other, (name) => ({ "x-kite-forwarded": `${marker}, ${theirs}` })[name]), true);
+	const back = { "message-id": "<m1@partner.test>", "x-kite-forwarded": `${marker}, ${theirs}` };
+	assert.equal(await wasForwardedByKite(other, (name) => back[name]), true);
 	assert.ok(queued.length > 0, "every message was still stored");
 });
 
 test("the marker key: APP_ENCRYPTION_KEY, else INBOUND_WEBHOOK_SECRET, else CF_TOKEN, else the unsigned 1", async () => {
-	const all = await forwardedMarker({ APP_ENCRYPTION_KEY: "a", INBOUND_WEBHOOK_SECRET: "b", CF_TOKEN: "c" });
-	assert.equal(all, await forwardedMarker({ APP_ENCRYPTION_KEY: "a" }));
-	const webhook = await forwardedMarker({ APP_ENCRYPTION_KEY: " ", INBOUND_WEBHOOK_SECRET: "b", CF_TOKEN: "c" });
-	assert.equal(webhook, await forwardedMarker({ INBOUND_WEBHOOK_SECRET: "b" }));
+	const id = (name) => ({ "message-id": "<k@partner.test>" })[name];
+	const all = await forwardedMarker({ APP_ENCRYPTION_KEY: "a", INBOUND_WEBHOOK_SECRET: "b", CF_TOKEN: "c" }, id);
+	assert.equal(all, await forwardedMarker({ APP_ENCRYPTION_KEY: "a" }, id));
+	const webhook = await forwardedMarker({ APP_ENCRYPTION_KEY: " ", INBOUND_WEBHOOK_SECRET: "b", CF_TOKEN: "c" }, id);
+	assert.equal(webhook, await forwardedMarker({ INBOUND_WEBHOOK_SECRET: "b" }, id));
 	assert.notEqual(webhook, all);
-	assert.equal(await forwardedMarker({ CF_TOKEN: "c" }), await forwardedMarker({ CF_TOKEN: "c", CF_API_KEY: "x" }));
-	assert.notEqual(await forwardedMarker({ CF_TOKEN: "c" }), webhook);
-	assert.equal(await forwardedMarker({}), "1");
+	assert.equal(
+		await forwardedMarker({ CF_TOKEN: "c" }, id),
+		await forwardedMarker({ CF_TOKEN: "c", CF_API_KEY: "x" }, id),
+	);
+	assert.notEqual(await forwardedMarker({ CF_TOKEN: "c" }, id), webhook);
+	assert.equal(await forwardedMarker({}, id), "1");
 	assert.equal(await wasForwardedByKite({}, (name) => ({ "X-Kite-Forwarded": "1" })[name]), true);
 	assert.equal(await wasForwardedByKite({ CF_TOKEN: "c" }, (name) => ({ "X-Kite-Forwarded": "1" })[name]), false);
 });

@@ -1,3 +1,5 @@
+import type { SenderDmarc } from "@/lib/email/thread-join-utils";
+
 export type ResolveThreadInput = {
 	mailboxId: string | null;
 	/** The message's own Message-ID; seeds a new thread when no parent is stored. */
@@ -11,11 +13,12 @@ export type ResolveThreadInput = {
 	 */
 	fallback?: "references-root";
 	/**
-	 * Received mail only (upstream Mailflare #223): who sent it, and whether it passed DMARC for its From domain on
-	 * the intake hop's trusted `Authentication-Results`. In-Reply-To and References are the sender's to write, so the
-	 * message joins a stored parent's conversation only when this sender already takes part in it or DMARC passed,
-	 * and a Message-ID that is already a thread's key never seeds into it. Imports, synced mail and JMAP drafts leave
-	 * it out: they are the user's own history.
+	 * Received mail only (upstream Mailflare #223): who sent it, and the DMARC verdict for its From domain on the
+	 * intake hop's trusted `Authentication-Results` (`senderDmarc`). In-Reply-To and References are the sender's to
+	 * write, so the message joins a stored parent's conversation only when DMARC passed, or when it did not fail and
+	 * this sender already takes part in it; a Message-ID that is already a thread's key never seeds into it, except
+	 * for the copy of the mailbox's own sent message. Imports, synced mail and JMAP drafts leave it out: they are the
+	 * user's own history.
 	 */
-	sender?: { address: string; dmarcAligned: boolean };
+	sender?: { address: string; dmarc: SenderDmarc };
 };

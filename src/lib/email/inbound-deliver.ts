@@ -21,7 +21,7 @@ import { extractOneTimeCode } from "@/lib/email/one-time-code-utils";
 import { getLatestEmailContent, htmlToReadableText } from "@/lib/email/reply-content-utils";
 import { resolveThreadId } from "@/lib/email/threading";
 import { normalizeMessageId } from "@/lib/email/thread-lookup";
-import { dmarcAlignedPass } from "@/lib/email/thread-join-utils";
+import { senderDmarc } from "@/lib/email/thread-join-utils";
 import { analyzeSpam } from "@/lib/spam/engine";
 import { configuredSpamIntelligenceProvider } from "@/lib/spam/providers/abuse-ch-key";
 import { dmarcPolicySource } from "@/lib/spam/dmarc-policy";
@@ -315,7 +315,7 @@ async function deliveryThreadId(
 			...(input.external
 				? { fallback: "references-root" as const }
 				: {
-						sender: { address: fromAddr, dmarcAligned: dmarcAlignedPass(input.authenticationResults, fromAddr) },
+						sender: { address: fromAddr, dmarc: senderDmarc(input.authenticationResults, fromAddr) },
 					}),
 		});
 	} catch (error) {

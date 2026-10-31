@@ -1,20 +1,24 @@
 import { getEmailAddressList, normalizeEmailAddress } from "@/lib/email/address";
 import { parseAuthenticationResults } from "@/lib/spam/authentication-results-utils";
 
+/** What the trusted DMARC result says about the From address of received mail, for the thread join rule. */
+export type SenderDmarc = "pass" | "fail" | "unknown";
+
 /**
- * Whether the trusted `Authentication-Results` (the intake hop's, never the message's own) says the message passed
- * DMARC for the domain of its From address. A DMARC pass means SPF or DKIM aligned with that domain; when the result
- * names `header.from`, it has to be the From domain, so a pass for some other domain the message mentions does not
- * count. SES names no `header.from`, and its verdict is for the From header it saw.
+ * The DMARC verdict on the trusted `Authentication-Results` (the intake hop's, never the message's own) for the
+ * domain of the From address. `pass` means SPF or DKIM aligned with that domain; when the result names `header.from`,
+ * it has to be the From domain, so a pass for some other domain the message mentions is `unknown`. SES names no
+ * `header.from`, and its verdict is for the From header it saw. A failed check is `fail` whatever domain it names: the
+ * From may be forged. No result (`none`, `temperror`, no trusted header) is `unknown`.
  */
-export function dmarcAlignedPass(trusted: string | null | undefined, fromAddress: string): boolean {
-	if (!trusted) return false;
-	const fromDomain = domainOf(fromAddress);
-	if (!fromDomain) return false;
+export function senderDmarc(trusted: string | null | undefined, fromAddress: string): SenderDmarc {
+	if (!trusted) return "unknown";
 	const dmarc = parseAuthenticationResults(trusted).results.find((entry) => entry.method === "dmarc");
-	if (dmarc?.result !== "pass") return false;
+	if (dmarc?.result === "fail") return "fail";
+	const fromDomain = domainOf(fromAddress);
+	if (dmarc?.result !== "pass" || !fromDomain) return "unknown";
 	const headerFrom = dmarc.properties["header.from"]?.trim().toLowerCase().replace(/\.$/, "");
-	return !headerFrom || headerFrom === fromDomain;
+	return !headerFrom || headerFrom === fromDomain ? "pass" : "unknown";
 }
 
 function domainOf(address: string): string {

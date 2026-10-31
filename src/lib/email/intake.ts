@@ -49,12 +49,13 @@ export async function intakeIncomingMail(
 	input: IntakeInput,
 	actions: IntakeActions,
 ): Promise<IntakeResult> {
-	const marker = { [KITE_FORWARDED_HEADER]: await forwardedMarker(env) };
+	const header = (name: string) => input.headers[name] ?? input.headers[name.toLowerCase()];
+	const marker = { [KITE_FORWARDED_HEADER]: await forwardedMarker(env, header) };
 	const routed = await applyRouting(await resolveIncomingMail(env, input.from, input.to), actions, marker);
 	if ("result" in routed) return routed.result;
 	const { forwardedTo } = routed;
 
-	if (!(await wasForwardedByKite(env, (name) => input.headers[name]))) {
+	if (!(await wasForwardedByKite(env, header))) {
 		const destination = await getAccountForwardingDestination(env, input.to);
 		if (destination) await actions.forward?.(destination, marker);
 	}

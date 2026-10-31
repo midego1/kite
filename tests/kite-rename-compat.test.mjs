@@ -55,16 +55,17 @@ test("account forwarding recognises both loop-guard headers, with this install's
 	assert.equal(helpers.KITE_FORWARDED_HEADER, "X-Kite-Forwarded");
 	const headers = (values) => (name) => values[name];
 	const env = { APP_ENCRYPTION_KEY: "install-key" };
-	const marker = await helpers.forwardedMarker(env);
+	const id = { "message-id": "<a@example.com>" };
+	const marker = await helpers.forwardedMarker(env, headers(id));
 	assert.match(marker, /^v1\.[0-9a-f]{64}$/);
-	assert.equal(await helpers.wasForwardedByKite(env, headers({ "x-kite-forwarded": marker })), true);
-	assert.equal(await helpers.wasForwardedByKite(env, headers({ "X-Mailflare-Forwarded": marker })), true);
-	assert.equal(await helpers.wasForwardedByKite(env, headers({ "x-mailflare-forwarded": marker })), true);
+	assert.equal(await helpers.wasForwardedByKite(env, headers({ ...id, "x-kite-forwarded": marker })), true);
+	assert.equal(await helpers.wasForwardedByKite(env, headers({ ...id, "X-Mailflare-Forwarded": marker })), true);
+	assert.equal(await helpers.wasForwardedByKite(env, headers({ ...id, "x-mailflare-forwarded": marker })), true);
 	// A pre-rename install wrote the bare "1", which a sender can write too.
-	assert.equal(await helpers.wasForwardedByKite(env, headers({ "X-Mailflare-Forwarded": "1" })), false);
+	assert.equal(await helpers.wasForwardedByKite(env, headers({ ...id, "X-Mailflare-Forwarded": "1" })), false);
 	assert.equal(await helpers.wasForwardedByKite(env, headers({})), false);
 	// An install without any server secret keeps the unsigned marker on both names.
-	assert.equal(await helpers.forwardedMarker({}), "1");
+	assert.equal(await helpers.forwardedMarker({}, headers(id)), "1");
 	assert.equal(await helpers.wasForwardedByKite({}, headers({ "x-mailflare-forwarded": "1" })), true);
 });
 

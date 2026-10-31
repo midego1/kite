@@ -49,10 +49,13 @@ export function buildReplyReferences(parentReferences: string[], parentMessageId
  * its own Message-ID so later replies can find it.
  *
  * Those headers are the sender's to write, so received mail (`input.sender`) joins
- * only a conversation its sender already takes part in, or when it passed DMARC for
- * its From domain, and never seeds a thread with a Message-ID that is already a
- * thread's key (upstream Mailflare #223). Imports, synced mail and JMAP drafts are
- * the user's own history and keep joining on the headers alone.
+ * a conversation only when it passed DMARC for its From domain, or when DMARC did
+ * not fail and its sender already takes part in the conversation; a failed DMARC
+ * check always starts a new one, since the From may be forged. It never seeds a
+ * thread with a Message-ID that is already a thread's key, except the copy of the
+ * mailbox's own sent message (a send to itself or one of its aliases) (upstream
+ * Mailflare #223). Imports, synced mail and JMAP drafts are the user's own history
+ * and keep joining on the headers alone.
  */
 export async function resolveThreadId(db: Db, input: ResolveThreadInput): Promise<string> {
 	const candidates = selectThreadLookupIds(input.inReplyTo, input.references ?? []);
@@ -68,7 +71,8 @@ export async function resolveThreadId(db: Db, input: ResolveThreadInput): Promis
 			.limit(1);
 		if (parent) {
 			const threadId = parent.threadId ?? normalizeMessageId(parent.providerMessageId) ?? newId("thr");
-			if (!input.sender || input.sender.dmarcAligned) return threadId;
+			if (!input.sender || input.sender.dmarc === "pass") return threadId;
+			if (input.sender.dmarc === "fail") return newId("thr");
 			return (await senderTakesPart(db, input.mailboxId, parent.id, threadId, input.sender.address))
 				? threadId
 				: newId("thr");
@@ -76,8 +80,9 @@ export async function resolveThreadId(db: Db, input: ResolveThreadInput): Promis
 	}
 
 	const seed = threadSeed(input);
-	if (seed && input.sender && input.mailboxId && (await isThreadKey(db, input.mailboxId, seed))) return newId("thr");
-	return seed ?? newId("thr");
+	if (!seed || !input.sender || !input.mailboxId || !(await isThreadKey(db, input.mailboxId, seed)))
+		return seed ?? newId("thr");
+	return (await isOwnSentCopy(db, input.mailboxId, seed, input.sender)) ? seed : newId("thr");
 }
 
 /** A `LIKE … ESCAPE '\'` pattern matching `value` anywhere, with `%`, `_` and `\` taken literally. */
@@ -122,6 +127,34 @@ async function senderTakesPart(
 		)
 		.limit(200);
 	return isThreadParticipant(bare, rows);
+}
+
+/**
+ * Whether received mail whose Message-ID keys a thread is the copy of a message this mailbox sent itself: an outbound
+ * row of the mailbox carries that Message-ID and keys that thread with it, its From is the same address, and DMARC did
+ * not fail. A send to the mailbox's own address or alias comes back this way and belongs with the sent message.
+ */
+async function isOwnSentCopy(
+	db: Db,
+	mailboxId: string,
+	messageId: string,
+	sender: NonNullable<ResolveThreadInput["sender"]>,
+): Promise<boolean> {
+	const address = normalizeEmailAddress(sender.address);
+	if (sender.dmarc === "fail" || !address) return false;
+	const sent = await db
+		.select({ fromAddr: messages.fromAddr })
+		.from(messages)
+		.where(
+			and(
+				eq(messages.mailboxId, mailboxId),
+				eq(messages.direction, "outbound"),
+				eq(messages.threadId, messageId),
+				inArray(messages.providerMessageId, [messageId, `<${messageId}>`]),
+			),
+		)
+		.limit(5);
+	return sent.some((row) => normalizeEmailAddress(row.fromAddr) === address);
 }
 
 /** Whether a conversation of the mailbox already uses `threadId` as its key. */

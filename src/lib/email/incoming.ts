@@ -51,7 +51,7 @@ export async function forwardMessage(
 ): Promise<boolean> {
 	try {
 		const headers = new Headers();
-		headers.set(KITE_FORWARDED_HEADER, await forwardedMarker(env));
+		headers.set(KITE_FORWARDED_HEADER, await forwardedMarker(env, (name) => message.headers.get(name)));
 		await message.forward(destination, headers);
 		return true;
 	} catch (error) {

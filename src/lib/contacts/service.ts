@@ -145,10 +145,8 @@ export async function blockContact(env: CloudflareEnv, input: BlockContactInput)
 			blocked: true,
 			lastSeenAt: new Date(),
 		});
-		const avatarKey = await importGravatarAvatar(env, input.userId, email);
-		if (avatarKey) {
-			await db.update(contacts).set({ avatarKey }).where(eq(contacts.id, contactId));
-		}
+		// Not looked up on Gravatar: a sender blocked by hand, by a phishing report or by a Screener deny is unwanted,
+		// and the lookup would tell a third party that this address mailed us (upstream Mailflare #220).
 	}
 
 	const [existingRule] = await db

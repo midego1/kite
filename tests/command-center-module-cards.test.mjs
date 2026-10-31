@@ -170,6 +170,8 @@ test("this week's renewals come after failed payments, earliest first, and leave
 			subscription("cancelled", { status: "cancelled", nextRenewalOn: "2026-10-16" }),
 			subscription("undated"),
 			subscription("failed", { urgent: true, nextRenewalOn: "2026-11-01" }),
+			subscription("failed-trial", { status: "trial", urgent: true, trialEndsOn: "2026-10-30" }),
+			subscription("failed-cancelled", { status: "cancelled", urgent: true }),
 			subscription("today", { nextRenewalOn: TODAY, vendor: "Acmeflix" }),
 			subscription("trial", { status: "trial", trialEndsOn: "2026-10-16", nextRenewalOn: "2026-12-01" }),
 		],
@@ -180,13 +182,13 @@ test("this week's renewals come after failed payments, earliest first, and leave
 		lines.map((line) => [line.id, line.when, line.meta, line.urgent]),
 		[
 			["failed", "Failed", "Payment failed", true],
+			["failed-trial", "Failed", "Payment failed", true],
 			["today", "Today", "$17.99/month", false],
 			["trial", "Tomorrow", "Trial ends", false],
-			["later", "18 Oct", "$17.99/month", false],
 		],
 	);
-	assert.equal(lines[1].what, "Acmeflix");
-	assert.equal(more, 1, "week-end, the seventh day, is counted but not shown");
+	assert.equal(lines[2].what, "Acmeflix");
+	assert.equal(more, 2, "later and week-end, the seventh day, are counted but not shown");
 	assert.equal(lines[0].href, "/finance?subscription=failed");
 });
 

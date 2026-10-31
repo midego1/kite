@@ -19,8 +19,8 @@ export function dueDay(row: Pick<DueRow, "status" | "nextRenewalAt" | "trialEnds
 }
 
 function needsAttention(row: DueRow, today: string): boolean {
-	if (row.status === "active" && row.paymentFailedAt) return true;
 	if (row.status !== "active" && row.status !== "trial") return false;
+	if (row.paymentFailedAt) return true;
 	const due = dueDay(row);
 	if (!due || row.reminderDays <= 0) return false;
 	const daysLeft = daysBetween(today, due);
@@ -28,8 +28,8 @@ function needsAttention(row: DueRow, today: string): boolean {
 }
 
 /**
- * The sidebar count: active and trial rows due today or later within their reminder window, plus
- * active rows whose payment failed. `today` is the owner's calendar day.
+ * The sidebar count: active and trial rows due today or later within their reminder window or whose
+ * payment failed, as the page's "Needs attention" section has them. `today` is the owner's calendar day.
  */
 export function badgeCount(rows: readonly DueRow[], today: string): number {
 	return rows.filter((row) => needsAttention(row, today)).length;

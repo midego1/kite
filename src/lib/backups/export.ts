@@ -24,6 +24,8 @@ const BACKUP_TABLES: DatabaseBackupTable[] = [
 	// without their passwords (`redactBackupRow`) and restored waiting to be reconnected.
 	"external_accounts",
 	"external_account_folders",
+	// Send-as addresses verified with a code (migration 0089), without a pending code (`redactBackupRow`).
+	"external_identities",
 	"contacts",
 	"folders",
 	"api_keys",

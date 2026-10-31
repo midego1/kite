@@ -14,7 +14,12 @@ export type ExternalAccountAuditAction =
 	| "external_account.install_switch_changed"
 	| "external_account.credentials_erased"
 	| "external_account.sync_failed"
-	| "external_account.sync_recovered";
+	| "external_account.sync_recovered"
+	| "external_identity.code_attempted"
+	| "external_identity.code_requested"
+	| "external_identity.verify_failed"
+	| "external_identity.verified"
+	| "external_identity.revoked";
 
 export async function auditExternalAccount(
 	env: CloudflareEnv,

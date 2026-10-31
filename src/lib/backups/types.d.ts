@@ -8,6 +8,7 @@ export type DatabaseBackupTable =
 	| "mailbox_access"
 	| "external_accounts"
 	| "external_account_folders"
+	| "external_identities"
 	| "contacts"
 	| "folders"
 	| "api_keys"

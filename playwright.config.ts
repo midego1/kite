@@ -1,6 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 import {
 	BASE_URL,
+	E2E_APP_ENCRYPTION_KEY,
 	E2E_PERSIST_DIR,
 	E2E_PORT,
 	E2E_TELEMETRY_URL,
@@ -72,7 +73,7 @@ export default defineConfig({
 			// can post statistics to the real collector, and no spec runs the 02:00 cron anyway.
 			KITE_TELEMETRY_URL: E2E_TELEMETRY_URL,
 			// Storage credentials are only ever saved encrypted, so the storage spec needs a key; invented, e2e only.
-			APP_ENCRYPTION_KEY: "e2e-only-invented-encryption-key-not-a-secret-0123456789",
+			APP_ENCRYPTION_KEY: E2E_APP_ENCRYPTION_KEY,
 		},
 		// A reused server keeps whatever state earlier runs left behind; opt in only while iterating.
 		reuseExistingServer: process.env.E2E_REUSE_SERVER === "1",

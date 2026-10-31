@@ -1,22 +1,66 @@
 import type { externalAccounts } from "@/db/schema/external-accounts";
+import { identityState } from "./identity-code-utils";
 import { sendBlock } from "./identity-utils";
 import { findPreset } from "./presets-utils";
-import type { ExternalAccountView } from "./types";
+import type { ExternalAccountView, ExternalIdentityView } from "./types";
+
+/** The parts of an `external_identities` row the account view needs; never the code's hash. */
+type IdentityFields = {
+	id: string;
+	address: string;
+	displayName: string | null;
+	verifiedAt: Date | null;
+	codeHash: string | null;
+	codeExpiresAt: Date | null;
+};
+
+/** An address of an account as the API returns it: where it stands, never anything about the code but its expiry. */
+function serializeIdentity(row: IdentityFields, accountAddress: string, now = new Date()): ExternalIdentityView {
+	const state = identityState(row, now);
+	return {
+		id: row.id,
+		address: row.address,
+		displayName: row.displayName,
+		accountAddress: row.address === accountAddress,
+		state,
+		verifiedAt: row.verifiedAt?.toISOString() ?? null,
+		codeExpiresAt: state === "pending" ? (row.codeExpiresAt?.toISOString() ?? null) : null,
+	};
+}
 
 export type ExternalAccountRow = typeof externalAccounts.$inferSelect;
 
 /** The `status_reason` values a sync failure writes (`syncFailureUpdate`). */
 const SYNC_PROBLEMS = new Set(["throttled", "transient", "config", "sync"]);
 
+/** Whether `address` is among the verified ones. */
+function hasVerified(identities: readonly IdentityFields[], address: string): boolean {
+	for (const identity of identities) if (identity.address === address && identity.verifiedAt) return true;
+	return false;
+}
+
+function serializeIdentities(
+	identities: readonly IdentityFields[],
+	accountAddress: string,
+	now: Date,
+): ExternalIdentityView[] {
+	const views: ExternalIdentityView[] = [];
+	for (const identity of identities) views.push(serializeIdentity(identity, accountAddress, now));
+	return views;
+}
+
 /**
- * The public shape of an account, with when its SMTP sign-in last worked (`readSmtpVerified`). Fields are listed one by one, so the sealed password (and, later, OAuth tokens or
- * cursors) can never reach a response by being added to the table.
+ * The public shape of an account, with when its SMTP sign-in last worked (`readSmtpVerified`) and its addresses that
+ * need or have a code (`external_identities`). Fields are listed one by one, so the sealed password (and, later, OAuth
+ * tokens or cursors) can never reach a response by being added to the table.
  */
 export function serializeExternalAccount(
 	row: ExternalAccountRow,
 	smtpVerifiedAt: Date | null = null,
 	now = new Date(),
+	identities: readonly IdentityFields[] = [],
 ): ExternalAccountView {
+	const addressVerified = hasVerified(identities, row.address);
 	return {
 		id: row.id,
 		label: row.label,
@@ -50,8 +94,9 @@ export function serializeExternalAccount(
 			appendSent: row.appendSent,
 			providerSavesSent: findPreset(row.preset)?.appendSent === false,
 			verified: !!smtpVerifiedAt,
-			block: sendBlock({ ...row, hasPassword: row.secret.length > 0, smtpVerifiedAt }, null),
+			block: sendBlock({ ...row, hasPassword: row.secret.length > 0, smtpVerifiedAt }, null, addressVerified),
 		},
+		identities: serializeIdentities(identities, row.address, now),
 		createdAt: row.createdAt.toISOString(),
 		updatedAt: row.updatedAt.toISOString(),
 	};

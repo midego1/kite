@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { CommandCenterCard } from "@/components/command-center/command-center-card";
+import { COMMAND_CENTER_LINK_CLASS, CommandCenterCard } from "@/components/command-center/command-center-card";
 import { useCommandCenterCardQuery } from "@/components/command-center/use-card-query";
 import type { SubscriptionList } from "@/components/finance/subscriptions-types";
 import { viewerLocale, viewerToday } from "@/components/finance/use-subscriptions";
@@ -39,23 +39,23 @@ export function RenewalsCard(_context: ReadingPaneSlotContext) {
 						<li key={line.id}>
 							<Link
 								href={line.href}
-								className="flex items-center gap-3 py-2 text-sm text-neutral-900 hover:text-cc-accent"
+								className="group flex items-center gap-3 py-2 text-sm text-neutral-900 hover:text-cc-accent"
 								data-renewal={line.urgent ? "failed" : "due"}
 							>
 								<span
-									className={`w-16 shrink-0 whitespace-nowrap ${line.urgent ? "font-medium text-cc-warn-text" : "text-neutral-500"}`}
+									className={`w-16 shrink-0 whitespace-nowrap ${line.urgent ? "font-medium text-cc-warn-text" : "text-neutral-600"}`}
 								>
 									{line.when}
 								</span>
-								<span className="min-w-0 flex-1 truncate">{line.what}</span>
-								<span className="max-w-[40%] shrink-0 truncate text-xs text-neutral-500">{line.meta}</span>
+								<span className="min-w-0 flex-1 truncate underline-offset-2 group-hover:underline">{line.what}</span>
+								<span className="max-w-[40%] shrink-0 truncate text-xs text-neutral-600">{line.meta}</span>
 							</Link>
 						</li>
 					))}
 				</ul>
 			)}
 			{more > 0 && (
-				<Link href="/finance" className="mt-1 block text-xs font-medium text-cc-accent hover:underline">
+				<Link href="/finance" className={`mt-1 block w-fit ${COMMAND_CENTER_LINK_CLASS}`}>
 					{more} more this week
 				</Link>
 			)}

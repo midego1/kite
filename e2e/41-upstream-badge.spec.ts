@@ -134,6 +134,15 @@ test("visible-tab refresh timers defer badge updates while hidden", async ({ pag
 	});
 	await page.goto("/inbox");
 	await expect.poll(() => badgeValue(page)).toBe(9);
+	// The badge reads the all-mailbox counts; the sidebar and the list ask again for the selected mailbox once the
+	// mailbox list is in, which can land after the badge. Wait for that answer too, so the requests counted below
+	// are only the ones the visibility changes cause.
+	await expect(
+		page
+			.getByRole("navigation")
+			.first()
+			.getByRole("link", { name: /^Inbox\b/ }),
+	).toContainText("9");
 	await page.clock.install();
 
 	for (const invalidateWhileHidden of [false, true]) {

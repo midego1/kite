@@ -203,19 +203,25 @@ export function groupAiFailures(rows: AiFailureRow[]): AiFailureGroup[] {
 	return groups.sort((a, b) => b.count - a.count || b.lastAt.localeCompare(a.lastAt));
 }
 
-/** Failures that mean the assistant's own provider or model cannot answer either. */
-const BLOCKING_CODES = new Set<AiErrorCode>(["provider_auth", "provider_key_unreadable", "no_provider"]);
+/**
+ * Failures that mean the assistant's own provider cannot answer either. A key that can't be decrypted and a missing
+ * provider are not here: `askAiState` reads those from the live settings (`keyUnreadable`, `configured`), which also
+ * clear them the moment they are fixed.
+ */
+const BLOCKING_CODES = new Set<AiErrorCode>(["provider_auth"]);
 
 /**
  * The newest failure that says the assistant's provider (or its default model) is broken right now, or null. Ask
- * AI would only fail the same way; a request that worked since (`okSince`) clears it.
+ * AI would only fail the same way; a failure from before the provider in use was last saved or switched to
+ * (`changedAt`, a new key or model) no longer counts, and a request that worked since clears it too (`workedSince`
+ * in `ai-failure-report.ts`).
  */
 export function blockingAiFailure(
 	rows: AiFailureRow[],
-	current: { provider: string; model: string },
+	current: { provider: string; model: string; changedAt?: string | null },
 ): AiFailureRow | null {
 	const mine = rows
-		.filter((row) => row.provider === current.provider)
+		.filter((row) => row.provider === current.provider && (!current.changedAt || row.at > current.changedAt))
 		.sort((a, b) => b.at.localeCompare(a.at))
 		.find((row) => BLOCKING_CODES.has(row.code) || (row.code === "model_unavailable" && row.model === current.model));
 	return mine ?? null;

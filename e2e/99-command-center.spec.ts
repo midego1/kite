@@ -95,6 +95,22 @@ for (const style of ["kite", "lavender", "classic"] as const) {
 			expect(await contrastBetween(warning.getByRole("link"), warning)).toBeGreaterThanOrEqual(4.5);
 			expect(await contrastBetween(tile.locator("span.truncate"), tile)).toBeGreaterThanOrEqual(4.5);
 			expect(await contrastBetween(tile.locator("kbd"))).toBeGreaterThanOrEqual(4.5);
+			// The quieter grey text: the hint under the cards and the details at the right of the card lines.
+			expect(await contrastBetween(center.getByText(/^Select a message to read/))).toBeGreaterThanOrEqual(4.5);
+			for (const detail of await card.locator("p > span.shrink-0.text-xs").all())
+				expect(await contrastBetween(detail)).toBeGreaterThanOrEqual(4.5);
+			// Kite's accent is its text colour, so its card links keep a faint underline; the others underline on hover.
+			const link = card.getByRole("link", { name: "Admin overview" });
+			const underline = await link.evaluate((element) => {
+				const style = getComputedStyle(element);
+				const context = document.createElement("canvas").getContext("2d")!;
+				context.fillStyle = style.textDecorationColor;
+				context.fillRect(0, 0, 1, 1);
+				return { line: style.textDecorationLine, alpha: context.getImageData(0, 0, 1, 1).data[3] };
+			});
+			expect(underline.line).toBe("underline");
+			if (style === "kite") expect(underline.alpha).toBeGreaterThan(0);
+			else expect(underline.alpha).toBe(0);
 		});
 	}
 }

@@ -1,25 +1,36 @@
 import { useEffect, useEffectEvent, useRef, type RefObject } from "react";
+import { parseAssistantPrompt, serializeAssistantPrompt } from "./assistant-prompt-request-utils";
 
 /**
  * Hands a prepared question to the assistant from anywhere: the text waits in session storage until the panel is
  * open and takes it, so it also survives the move from an admin page to the mailbox. The panel puts it in a new
- * chat's input and never sends it on its own.
+ * chat's input and never sends it on its own. A question nobody took within `ASSISTANT_PROMPT_TTL_MS` (the move
+ * failed, the tab was left) is dropped, so it never turns up in a chat opened much later.
  */
 const STORAGE_KEY = "kite:assistant-prompt";
 export const ASSISTANT_PROMPT_EVENT = "kite:assistant-prompt";
 
 export function requestAssistantPrompt(text: string) {
 	try {
-		sessionStorage.setItem(STORAGE_KEY, text);
+		sessionStorage.setItem(STORAGE_KEY, serializeAssistantPrompt(text, Date.now()));
 	} catch {
 		return;
 	}
 	window.dispatchEvent(new Event(ASSISTANT_PROMPT_EVENT));
 }
 
+/** The waiting text if it is still fresh; an expired or unreadable entry is removed. Null when there is none. */
+function readAssistantPrompt(): string | null {
+	const stored = sessionStorage.getItem(STORAGE_KEY);
+	if (stored === null) return null;
+	const text = parseAssistantPrompt(stored, Date.now());
+	if (text === null) sessionStorage.removeItem(STORAGE_KEY);
+	return text;
+}
+
 export function hasAssistantPrompt(): boolean {
 	try {
-		return sessionStorage.getItem(STORAGE_KEY) !== null;
+		return readAssistantPrompt() !== null;
 	} catch {
 		return false;
 	}
@@ -28,7 +39,7 @@ export function hasAssistantPrompt(): boolean {
 /** The waiting text, removed so it is used once, or null. */
 function takeAssistantPrompt(): string | null {
 	try {
-		const text = sessionStorage.getItem(STORAGE_KEY);
+		const text = readAssistantPrompt();
 		if (text !== null) sessionStorage.removeItem(STORAGE_KEY);
 		return text;
 	} catch {

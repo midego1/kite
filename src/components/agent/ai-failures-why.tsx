@@ -2,11 +2,18 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Fragment, useState } from "react";
+import { Fragment, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+	Dialog,
+	DialogContent,
+	DialogDescription,
+	DialogHeader,
+	DialogTitle,
+	DialogTrigger,
+} from "@/components/ui/dialog";
 import { Notice } from "@/components/ui/notice";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { AiFailureGroup, AiFailureReport } from "@/lib/agent/ai-failure-report-types";
@@ -115,12 +122,15 @@ function AskAi({ report, onAsk }: { report: AiFailureReport; onAsk: () => void }
  */
 export function AiFailuresWhy() {
 	const [open, setOpen] = useState(false);
+	// Ask AI hands the focus to the assistant's input; closing must not pull it back to Why?.
+	const asked = useRef(false);
 	const router = useRouter();
 	const assistant = useAssistantToggle();
 	const report = useQuery({ queryKey: REPORT_QUERY, queryFn: fetchReport, enabled: open, staleTime: 0, retry: false });
 
 	const ask = () => {
 		if (!report.data) return;
+		asked.current = true;
 		requestAssistantPrompt(report.data.prompt);
 		setOpen(false);
 		// Inside the mailbox the layout opens the assistant; elsewhere the mailbox opens it on arrival.
@@ -129,17 +139,20 @@ export function AiFailuresWhy() {
 
 	return (
 		<Dialog open={open} onOpenChange={setOpen}>
-			<button
-				type="button"
-				onClick={() => setOpen(true)}
-				aria-haspopup="dialog"
-				className="text-sm font-medium underline underline-offset-2 hover:opacity-80"
-			>
-				Why?
-			</button>
+			{/* A trigger, so closing the dialog returns the focus to Why?. */}
+			<DialogTrigger asChild>
+				<button type="button" className="text-sm font-medium underline underline-offset-2 hover:opacity-80">
+					Why?
+				</button>
+			</DialogTrigger>
 			<DialogContent
 				className="flex max-h-[calc(100vh-4rem)] w-[min(640px,calc(100vw-32px))] flex-col"
 				data-testid="ai-failures-why"
+				onCloseAutoFocus={(event) => {
+					if (!asked.current) return;
+					asked.current = false;
+					event.preventDefault();
+				}}
 			>
 				<DialogHeader>
 					<DialogTitle>Why AI requests failed</DialogTitle>

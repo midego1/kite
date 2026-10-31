@@ -173,6 +173,24 @@ export async function activeAgentProviderId(env: CloudflareEnv): Promise<string 
 	return row?.id ?? null;
 }
 
+/**
+ * When the provider in use was last saved or switched to, or null when no saved provider is active (before migration
+ * 0077, the legacy columns or the environment decide). The Why? report ignores failures from before it.
+ */
+export async function activeAgentProviderChangedAt(env: CloudflareEnv): Promise<Date | null> {
+	try {
+		const [row] = await getDb(env)
+			.select({ updatedAt: agentProviders.updatedAt })
+			.from(agentProviders)
+			.where(eq(agentProviders.active, true))
+			.limit(1);
+		return row?.updatedAt ?? null;
+	} catch (error) {
+		if (isNoSuchTableError(error)) return null;
+		throw error;
+	}
+}
+
 /** Before migration 0077 the one provider lives in `app_settings`, as it always did. */
 export async function saveLegacyAgentProvider(env: CloudflareEnv, values: AgentProviderValues): Promise<void> {
 	const set = {

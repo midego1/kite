@@ -17,7 +17,7 @@ import { CommandCenterCard } from "./command-center-card";
  */
 const ATTENTION_NOTICE_CLASS: Record<AttentionTone, string> = {
 	warning: "border-cc-warn-border bg-cc-warn-surface text-cc-warn-text dark:text-cc-warn-text",
-	info: "border-cc-accent-tint/25 bg-cc-accent-tint/8 text-neutral-800",
+	info: "border-cc-info-border bg-cc-info-surface text-neutral-800",
 	error: "",
 };
 
@@ -76,7 +76,7 @@ export function CommandCenterAdminCard({ primary }: { primary: boolean }) {
 						<p key={line.id} className="flex items-center gap-3 py-1 text-sm text-neutral-700">
 							<span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-full bg-cc-ok" />
 							<span className="min-w-0 flex-1 truncate">{line.text}</span>
-							<span className="shrink-0 text-xs text-neutral-500">{line.detail}</span>
+							<span className="shrink-0 text-xs text-neutral-600">{line.detail}</span>
 						</p>
 					))}
 				</div>

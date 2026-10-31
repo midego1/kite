@@ -163,7 +163,7 @@ export function CommandCenter({ config }: { config: MessageFolderConfig }) {
 										<span aria-hidden="true" className={`h-2 w-2 shrink-0 rounded-full ${DOT_CLASS[line.tone]}`} />
 										<span className="min-w-0 flex-1 truncate">
 											<span className="font-medium text-neutral-900">{line.name}</span>
-											{line.name !== line.address && <span className="text-neutral-500"> {line.address}</span>}
+											{line.name !== line.address && <span className="text-neutral-600"> {line.address}</span>}
 										</span>
 										{line.action ? (
 											<Link
@@ -173,7 +173,7 @@ export function CommandCenter({ config }: { config: MessageFolderConfig }) {
 												{line.action.label}
 											</Link>
 										) : (
-											<span className="shrink-0 text-xs text-neutral-500">{line.detail}</span>
+											<span className="shrink-0 text-xs text-neutral-600">{line.detail}</span>
 										)}
 									</li>
 								))}
@@ -199,7 +199,7 @@ export function CommandCenter({ config }: { config: MessageFolderConfig }) {
 				<CommandCenterModuleCards mailboxId={data.mailboxId} />
 			</div>
 
-			<p className={`mt-6 text-center text-xs text-neutral-400 ${data.countsLoading ? "invisible" : ""}`}>
+			<p className={`mt-6 text-center text-xs text-neutral-600 ${data.countsLoading ? "invisible" : ""}`}>
 				Select a message to read · {data.unread > 0 ? `${data.unread} unread in ${config.title}` : "Nothing selected"}
 			</p>
 		</div>

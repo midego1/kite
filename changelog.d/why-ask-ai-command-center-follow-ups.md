@@ -1,0 +1,5 @@
+### Fixed
+
+- **Why?** for failed AI requests on the [Admin overview](/admin) no longer says Ask AI "would fail the same way" once you have saved the AI provider in use (a new key or model) or switched to another one in [Admin → Agent](/agent#ai-provider): failures from before that change no longer count. When Kite cannot read the provider settings, Why? still lists the failures and only Ask AI is marked unavailable.
+- A question **Ask AI** prepared for the assistant is dropped after five minutes if the assistant never took it, so it no longer turns up in a chat opened much later. Closing the Why? dialog returns the keyboard focus to **Why?**.
+- The command center in the empty reading pane: the hint under the cards and the grey details on the cards now reach WCAG AA contrast in every style and theme, links on its cards keep a faint underline in the Kite style (where they are the same colour as the text), and information notices under **Needs attention** use a calmer blue wash in Classic light. No migration.

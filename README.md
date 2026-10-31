@@ -15,7 +15,7 @@
 
 [![A short tour of Kite: the compact inbox with attachments, a conversation and a contact card, an AI summary and a reply drafted with Write with Kite, dark mode with Original colours, the calendar week and a Drive upload, connected Gmail and iCloud accounts, the Admin overview and an update that reloads with the kite flying off and back in](/docs/assets/kite-tour.gif)](/docs/assets/kite-tour.mp4)
 
-A 40-second tour with invented demo data; [the MP4](/docs/assets/kite-tour.mp4) (a download) is smoother and in full colour. `npm run demo:record` records it again (see [Screenshots](#screenshots)).
+A 39-second tour with invented demo data (some screens use stand-in data); [the MP4](/docs/assets/kite-tour.mp4) (a download) is smoother and in full colour. `npm run demo:record` records it again (see [Screenshots](#screenshots)).
 
 ## Why Kite
 

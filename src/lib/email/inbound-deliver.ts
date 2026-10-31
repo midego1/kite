@@ -17,7 +17,7 @@ import { boundParsedEmail, boundTextBody } from "@/lib/email/inbound-limits";
 import { canOffloadHtmlBodies, putOffloadedHtmlBody, recordOffloadedHtmlBody } from "@/lib/email/bodies";
 import { planHtmlBodyOffload } from "@/lib/email/bodies-utils";
 import { inboundMessageId } from "@/lib/email/inbound-id";
-import { extractOneTimeCode } from "@/lib/email/one-time-code-utils";
+import { exceedsOneTimeCodeRawLength, extractOneTimeCode } from "@/lib/email/one-time-code-utils";
 import { getLatestEmailContent, htmlToReadableText } from "@/lib/email/reply-content-utils";
 import { resolveThreadId } from "@/lib/email/threading";
 import { normalizeMessageId } from "@/lib/email/thread-lookup";
@@ -86,10 +86,14 @@ type InboundNotificationInput = {
 function buildInboundNewMessageNotification(input: InboundNotificationInput): NewMessageNotification {
 	let oneTimeCode: string | null = null;
 	try {
-		oneTimeCode = extractOneTimeCode({
-			subject: input.subject,
-			text: getLatestEmailContent(input.text?.trim() || htmlToReadableText(input.html)),
-		});
+		const text = input.text?.trim();
+		// Bounded before the HTML conversion and the quote split, so a very long mail costs no O(n) work here.
+		if (!exceedsOneTimeCodeRawLength(text || input.html)) {
+			oneTimeCode = extractOneTimeCode({
+				subject: input.subject,
+				text: getLatestEmailContent(text || htmlToReadableText(input.html)),
+			});
+		}
 	} catch {
 		// The message is already stored; a detection failure must not fail delivery.
 	}

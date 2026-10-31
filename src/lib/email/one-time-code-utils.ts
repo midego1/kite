@@ -57,6 +57,16 @@ const YEAR_KEYWORD_WINDOW = 24;
  * time in the reader.
  */
 const MAX_ONE_TIME_CODE_SOURCE_LENGTH = 100_000;
+/**
+ * Raw (uncompacted) input characters above which no code is looked for, checked before any whitespace pass so a
+ * multi-megabyte body costs no O(n) work first. Generous enough that whitespace-heavy text still reaches the real cap.
+ */
+const MAX_ONE_TIME_CODE_RAW_LENGTH = 4 * MAX_ONE_TIME_CODE_SOURCE_LENGTH;
+
+/** Whether a raw text or HTML body is too long to be looked at for a one-time code at all. */
+export function exceedsOneTimeCodeRawLength(value: string | null | undefined): boolean {
+	return typeof value === "string" && value.length > MAX_ONE_TIME_CODE_RAW_LENGTH;
+}
 
 const KEYWORD_SOURCE =
 	"\\b(?:codes?|otps?|passcodes?|one[- ]time|eenmalig(?:e)?|verificatiecode|inlogcode|verif\\w*|authenticat\\w*|confirm\\w*|2fa)\\b";
@@ -267,6 +277,7 @@ function compactWhitespace(value: string): string {
 
 /** The one-time code a new email contains, or null when there is none or it is ambiguous. */
 export function extractOneTimeCode({ subject, text }: OneTimeCodeInput): string | null {
+	if ((subject?.length ?? 0) + (text?.length ?? 0) > MAX_ONE_TIME_CODE_RAW_LENGTH) return null;
 	const subjectText = typeof subject === "string" ? compactWhitespace(subject) : "";
 	const bodyText = typeof text === "string" ? compactWhitespace(text) : "";
 	// Candidates live in one concatenated source so a subject keyword sits next

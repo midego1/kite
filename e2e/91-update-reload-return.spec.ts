@@ -236,10 +236,21 @@ test("Reload in the update notice brings the kite back on the loading screen, wh
 	await page.evaluate(() => document.getElementById("kite-boot-failure")!.remove());
 	await expect(page.locator(`${SCENE} svg`)).toBeVisible();
 
-	// The app arrives: the screen fades out into it, the scene stops and the marker is gone.
+	// The app arrives: the screen fades out into it, the scene stops and the marker is gone. The kite is still in
+	// the tree in the first frame of the fade: the scene stops once the screen has faded, not before.
 	await entry.release();
 	await loaded;
 	await expect(page.getByRole("main")).toBeVisible({ timeout: 30_000 });
+	const fading = await page.waitForFunction(
+		({ overlay: overlaySelector, scene: sceneSelector }) => {
+			const overlay = document.querySelector(overlaySelector);
+			if (!overlay || overlay.classList.contains("opacity-100")) return null;
+			return { kiteInTree: Boolean(overlay.querySelector(`${sceneSelector} svg`)) };
+		},
+		{ overlay: OVERLAY, scene: SCENE },
+		{ polling: "raf", timeout: 30_000 },
+	);
+	expect(await fading.jsonValue()).toEqual({ kiteInTree: true });
 	await expect(page.locator(OVERLAY)).not.toHaveClass(/opacity-100/);
 	await expect(page.locator("html")).not.toHaveClass(new RegExp(`\\b${RETURN_CLASS}\\b`));
 	await expect(page.locator(`${SCENE} svg`)).toBeHidden();

@@ -28,9 +28,10 @@ const OVERLAY_FADE_TIME = 300;
 let hasShownInitialLoadingTransition = false;
 
 /**
- * The progress bar with the running step above it and the step log below (use-startup-steps.ts), mounted only while
- * the startup screen shows: once the app is up, nothing the stats store learns re-renders the shell. The kite of the
- * return scene hangs from the bar's own box, which holds only the kite, the track and the reduced-motion caption.
+ * The progress bar with the running step above it and the step log below (use-startup-steps.ts), mounted from the
+ * server's screen until the overlay has faded out (`progressMounted`): the icon block never jumps during the fade,
+ * the return scene's kite stays until the fade ends (#234), and afterwards nothing the stats store learns re-renders
+ * the shell. The kite hangs from the bar's own box, which holds only the kite, the track and the reduced-motion caption.
  */
 function StartupProgress({
 	ready,
@@ -92,6 +93,8 @@ export function LoadingTransition({ children, ready, failure }: LoadingTransitio
 	// The step log's last line: the visible time the start took, known once the screen completes.
 	const [visibleMs, setVisibleMs] = useState<number | null>(null);
 	const readVisibleMs = useVisibleStartupTime();
+	// The bar, the step log and the return kite stay until the overlay has faded out; then they leave the tree.
+	const [progressMounted, setProgressMounted] = useState(showInitialLoader);
 
 	const reportLoading = useCallback((id: string, loading: boolean) => {
 		if (loading) loadingIds.current.add(id);
@@ -162,9 +165,14 @@ export function LoadingTransition({ children, ready, failure }: LoadingTransitio
 		const returnTimer = isReloadReturnActive()
 			? window.setTimeout(endReloadReturn, remaining + COMPLETION_TIME + OVERLAY_FADE_TIME)
 			: null;
+		const unmountTimer = window.setTimeout(
+			() => setProgressMounted(false),
+			remaining + COMPLETION_TIME + OVERLAY_FADE_TIME,
+		);
 		return () => {
 			window.clearTimeout(completeTimer);
 			window.clearTimeout(revealTimer);
+			window.clearTimeout(unmountTimer);
 			if (returnTimer !== null) window.clearTimeout(returnTimer);
 		};
 	}, [canComplete, showInitialLoader, startedAt, readVisibleMs]);
@@ -211,7 +219,7 @@ export function LoadingTransition({ children, ready, failure }: LoadingTransitio
 										<span className="sr-only reload-return-only">{RELOAD_RETURN_ANNOUNCEMENT}</span>
 									</>
 								)}
-								{loaderVisible && <StartupProgress ready={ready} progress={progress} visibleMs={visibleMs} />}
+								{progressMounted && <StartupProgress ready={ready} progress={progress} visibleMs={visibleMs} />}
 								<LoadingRecovery active={loaderVisible} />
 							</>
 						)}

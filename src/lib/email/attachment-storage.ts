@@ -1,6 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { messageAttachments, messages } from "@/db/schema";
+import { missingColumnFromError } from "@/lib/auth/user-lookup-utils";
 import { isRawAttachmentKey, resolveByteRange, sliceByteStream, toRawLocation } from "./attachment-storage-utils";
 import { createBase64DecodeStream } from "./mime-index-utils";
 import type {
@@ -34,8 +35,21 @@ export const ATTACHMENT_ROW_COLUMNS = {
 	createdAt: messageAttachments.createdAt,
 };
 
-/** Where a 'raw' row's encoded body is; only asked for rows with a `raw:` key, which exist only after 0088. */
+/**
+ * Where a 'raw' row's encoded body is; only asked for rows with a `raw:` key. Such a row can sit in a database without
+ * migration 0088 when a newer backup was restored into it; the storage columns are missing then, so it reads as not
+ * stored (404) instead of failing the request.
+ */
 async function rawLocation(env: CloudflareEnv, attachmentId: string): Promise<RawAttachmentLocation | null> {
+	try {
+		return await findRawLocation(env, attachmentId);
+	} catch (error) {
+		if (missingColumnFromError(error)) return null;
+		throw error;
+	}
+}
+
+async function findRawLocation(env: CloudflareEnv, attachmentId: string): Promise<RawAttachmentLocation | null> {
 	const [row] = await getDb(env)
 		.select({
 			rawKey: messages.rawR2Key,

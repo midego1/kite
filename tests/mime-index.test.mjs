@@ -140,6 +140,32 @@ test("index: stops at the part cap", () => {
 	assert.equal(m.indexMimeParts(raw).length, m.MIME_INDEX_MAX_PARTS);
 });
 
+test("index: follows multipart nesting only as deep as inbound parsing (MIME_LIMITS.maxNestingDepth, 20)", () => {
+	const nested = (depth) => {
+		const bytes = pseudoRandomBytes(300, depth);
+		const open = Array.from({ length: depth }, (_, level) => [
+			`Content-Type: multipart/mixed; boundary=b${level}`,
+			"",
+			`--b${level}`,
+		]).flat();
+		const close = Array.from({ length: depth }, (_, level) => `--b${depth - 1 - level}--`);
+		const raw = encoder.encode(
+			[...open, "Content-Transfer-Encoding: base64", "", base64(bytes), ...close].join("\r\n"),
+		);
+		const parts = m.indexMimeParts(raw);
+		return parts.some(
+			(part) =>
+				part.transferEncoding === "base64" &&
+				rangeOf(raw, part).length > 0 &&
+				m.decodedPartLength(rangeOf(raw, part), "base64") === bytes.length &&
+				Buffer.from(m.decodePart(rangeOf(raw, part), "base64")).equals(Buffer.from(bytes)),
+		);
+	};
+	assert.ok(nested(5), "a leaf 5 levels down is indexed");
+	assert.ok(nested(20), "a leaf 20 levels down is indexed");
+	assert.ok(!nested(21), "a leaf 21 levels down is not");
+});
+
 test("index: RFC 2231 parameters, continuations and charsets", () => {
 	assert.equal(m.mimeParameter([["filename*", "utf-8''r%C3%A9sum%C3%A9.pdf"]], "filename"), "résumé.pdf");
 	assert.equal(

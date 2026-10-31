@@ -47,7 +47,10 @@ export function toRawLocation(row: {
 	return { rawKey, offset, length, encoding };
 }
 
-/** Passes on bytes `[offset, offset + length)` of a stream and drops the rest. */
+/**
+ * Passes on bytes `[offset, offset + length)` of a stream and drops the rest. Once the range is complete it terminates,
+ * which cancels the source of a `pipeThrough`, so a range near the start never reads (or decodes) the rest.
+ */
 export function sliceByteStream(offset: number, length: number): TransformStream<Uint8Array, Uint8Array> {
 	let position = 0;
 	const end = offset + length;
@@ -55,8 +58,9 @@ export function sliceByteStream(offset: number, length: number): TransformStream
 		transform(chunk, controller) {
 			const start = position;
 			position += chunk.length;
-			if (position <= offset || start >= end) return;
-			controller.enqueue(chunk.subarray(Math.max(0, offset - start), Math.min(chunk.length, end - start)));
+			if (position > offset && start < end)
+				controller.enqueue(chunk.subarray(Math.max(0, offset - start), Math.min(chunk.length, end - start)));
+			if (position >= end) controller.terminate();
 		},
 	});
 }

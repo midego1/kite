@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test, { after } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { getTableConfig } from "drizzle-orm/sqlite-core";
 import { build } from "esbuild";
 import { makeBundleDirectory } from "./support/bundle-directory.mjs";
 import { FIXTURES } from "./fixtures/mime/fixtures.mjs";
@@ -43,6 +44,7 @@ await build({
 			export { indexMimeParts, matchAttachmentsToParts } from "./src/lib/email/mime-index-utils.ts";
 			export { parseRawMime } from "./src/lib/email/parse.ts";
 			export { TableInsertBuilder } from "./src/lib/backups/restore-utils.ts";
+			export { messageAttachments } from "./src/db/schema/index.ts";
 		`,
 		resolveDir: root,
 		sourcefile: "attachment-storage-test-entry.ts",
@@ -321,4 +323,51 @@ test("backups restore both ways across migration 0088", async () => {
 	const { database: behind } = await setup({ migrated: false });
 	restoreRow(behind, newer);
 	assert.equal(behind.db.prepare("SELECT count(*) AS n FROM message_attachments WHERE id = 'att-b'").get().n, 1);
+});
+
+test("the sha256 index is partial, in the migration and in the Drizzle schema", async () => {
+	const { database } = await setup();
+	const { sql } = database.db
+		.prepare("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'message_attachments_sha256_idx'")
+		.get();
+	assert.match(sql, /\(`sha256`, `size`\) WHERE `sha256` IS NOT NULL$/);
+	const plan = database.db
+		.prepare("EXPLAIN QUERY PLAN SELECT id FROM message_attachments WHERE sha256 = ? AND size = ?")
+		.all("ab", 3)
+		.map((row) => row.detail)
+		.join(" ");
+	assert.match(plan, /message_attachments_sha256_idx/);
+	const index = getTableConfig(m.messageAttachments).indexes.find(
+		(entry) => entry.config.name === "message_attachments_sha256_idx",
+	);
+	assert.ok(index?.config.where, "the Drizzle index carries the same WHERE");
+});
+
+test("a raw: row restored into a database without 0088 reads as not stored instead of failing", async () => {
+	const { env, database } = await setup({ migrated: false });
+	database.db.exec(
+		"INSERT INTO message_attachments (id, message_id, filename, content_type, size, r2_key, created_at) VALUES ('att-new', 'msg-in', 'a.pdf', 'application/pdf', 3, 'raw:att-new', 1)",
+	);
+	const row = { id: "att-new", r2Key: "raw:att-new", size: 3, contentType: "application/pdf" };
+	assert.equal(await m.openAttachment(env, row), null);
+	assert.equal(await m.readAttachmentBytes(env, row), null);
+	assert.deepEqual(await m.loadMessageAttachmentContents(env, "msg-in"), []);
+});
+
+test("utils: sliceByteStream cancels its source once the range is complete", async () => {
+	let pulled = 0;
+	let cancelled = false;
+	const source = new ReadableStream({
+		pull(controller) {
+			pulled++;
+			controller.enqueue(new Uint8Array(10).fill(pulled));
+		},
+		cancel() {
+			cancelled = true;
+		},
+	});
+	const sliced = new Uint8Array(await new Response(source.pipeThrough(m.sliceByteStream(5, 10))).arrayBuffer());
+	assert.deepEqual([...sliced], [1, 1, 1, 1, 1, 2, 2, 2, 2, 2]);
+	assert.ok(cancelled, "the endless source was cancelled");
+	assert.ok(pulled <= 4, `pulled ${pulled} chunks`);
 });

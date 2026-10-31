@@ -417,7 +417,9 @@ export const messageAttachments = sqliteTable(
 	(t) => [
 		index("message_attachments_message_idx").on(t.messageId),
 		index("message_attachments_r2_key_idx").on(t.r2Key),
-		index("message_attachments_sha256_idx").on(t.sha256, t.size),
+		index("message_attachments_sha256_idx")
+			.on(t.sha256, t.size)
+			.where(sql`sha256 IS NOT NULL`),
 	],
 );
 

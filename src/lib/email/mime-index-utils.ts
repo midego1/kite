@@ -1,4 +1,4 @@
-import { bytesStartWith, onlyBlankBytes, parseStructuredHeader } from "./mime-preflight";
+import { bytesStartWith, MIME_LIMITS, onlyBlankBytes, parseStructuredHeader } from "./mime-preflight";
 import type { MimeAttachmentMatches, MimePartIndex, MimeTransferEncoding } from "./mime-index-types";
 
 /**
@@ -9,15 +9,18 @@ import type { MimeAttachmentMatches, MimePartIndex, MimeTransferEncoding } from 
  * what postal-mime produced, so a part the scan reads wrongly is simply left unmatched.
  */
 
-/** Multipart levels followed; a deeper multipart is read as one leaf that matches nothing. */
-const MIME_INDEX_MAX_DEPTH = 64;
+/**
+ * Multipart levels followed, the same bound postal-mime is given for inbound mail; a deeper multipart is read as one
+ * leaf that matches nothing.
+ */
+const MIME_INDEX_MAX_DEPTH = MIME_LIMITS.maxNestingDepth;
 /**
  * Leaf parts recorded; the scan stops after this many.
  * @public Exercised by the unit tests.
  */
 export const MIME_INDEX_MAX_PARTS = 256;
-/** A part's header block; a longer one stops the scan (postal-mime refuses it too, `MIME_LIMITS.maxHeaderBytes`). */
-const MAX_HEADER_BYTES = 64 * 1024;
+/** A part's header block; a longer one stops the scan (postal-mime refuses it too). */
+const MAX_HEADER_BYTES = MIME_LIMITS.maxHeaderBytes;
 
 const NEWLINE = 10;
 const CARRIAGE_RETURN = 13;

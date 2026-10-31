@@ -7,6 +7,8 @@ import { chooseOption, expectSelectValue, readOptions } from "./support/select";
 const PENDING_API = "/api/migrations/pending";
 const APPLY_API = "/api/admin/migrations";
 const USER_PASSWORD = "updates-user-password-123";
+/** The kite that lifts off the "Database updated" notice (migrations-applied-notice.tsx). */
+const NOTICE_FLIGHT = "[data-applied-notice-flight]";
 
 async function openInbox(page: Page) {
 	const status = page.waitForResponse((response) => response.url().includes(PENDING_API));
@@ -178,6 +180,122 @@ test("with a message open the notice moves to a compact notice in the sidebar", 
 	await notice.getByRole("button", { name: "Apply now" }).click();
 	await expect(notice).toContainText("1 database update applied.");
 	await expect(notice).not.toContainText("Kite was updated");
+	// The compact result leaves at once through its close button, the same way it leaves on its own.
+	await notice.getByRole("button", { name: "Dismiss" }).click();
+	await expect(page.locator(NOTICE_FLIGHT)).toBeAttached();
+	await expect(notice).toHaveCount(0);
+	await expect(page.locator(NOTICE_FLIGHT)).toHaveCount(0);
+});
+
+test.describe("the Database updated notice", () => {
+	const NAMES = ["0001_add_column.sql", "0002_add_table.sql"];
+
+	/** Answers the status and the apply request; a failing run answers 500 and leaves everything pending. */
+	async function routeApply(page: Page, { fail = false } = {}) {
+		let pending = NAMES.length;
+		await page.route(`**${PENDING_API}`, (route) => route.fulfill({ json: { pending, names: NAMES } }));
+		await page.route(`**${APPLY_API}`, async (route) => {
+			if (route.request().method() !== "POST") return route.continue();
+			if (fail) return route.fulfill({ status: 500, json: { error: "The database is not reachable right now." } });
+			pending = 0;
+			await route.fulfill({ json: { ready: true, pending: [], unknown: [], applied: NAMES, backupId: "bak_e2e" } });
+		});
+	}
+
+	/** Records which parts of the exit were ever in the page, since the fade is over before a locator could see it. */
+	async function watchExit(page: Page) {
+		await page.addInitScript(() => {
+			const seen = new Set<string>();
+			(window as unknown as { __kiteNoticeSeen: Set<string> }).__kiteNoticeSeen = seen;
+			new MutationObserver(() => {
+				if (document.querySelector("[data-applied-notice-flight]")) seen.add("kite");
+				if (document.querySelector(".applied-notice-fade")) seen.add("fade");
+				if (document.querySelector(".applied-notice-leave")) seen.add("leave");
+				// An init script runs before the document has an element, so the document itself is observed.
+			}).observe(document, { childList: true, subtree: true, attributes: true });
+		});
+		return () =>
+			page.evaluate(() => [...(window as unknown as { __kiteNoticeSeen: Set<string> }).__kiteNoticeSeen].sort());
+	}
+
+	/** Applies the updates from the empty reading pane with the page's timers under the test's control. */
+	async function applyWithClock(page: Page) {
+		await routeApply(page);
+		await page.clock.install();
+		await openInbox(page);
+		const notice = page.getByRole("region", { name: "Database updates" });
+		await notice.getByRole("button", { name: "Apply now" }).click();
+		await expect(notice).toContainText("Database updated");
+		await expect(notice).toContainText("2 database updates applied. A safety backup was saved first.");
+		return notice;
+	}
+
+	test("stays readable for eight seconds, then the kite takes it away and it does not come back", async ({ page }) => {
+		const seen = await watchExit(page);
+		const notice = await applyWithClock(page);
+		await page.clock.fastForward(7_000);
+		await expect(notice).toBeVisible();
+		await expect(notice).toHaveAttribute("data-applied-notice", "shown");
+		await page.clock.fastForward(1_100);
+		// The box folds while the kite lifts off; both are gone once the flight has ended.
+		await expect(notice).toHaveAttribute("data-applied-notice", "leaving");
+		await expect(page.locator(NOTICE_FLIGHT)).toBeAttached();
+		await expect(notice).toHaveCount(0);
+		await expect(page.locator(NOTICE_FLIGHT)).toHaveCount(0);
+		expect(await seen()).toEqual(["kite", "leave"]);
+		await page.reload();
+		await expect(page.getByRole("button", { name: "Compose new email", exact: true })).toBeVisible({ timeout: 15_000 });
+		await expect(page.getByRole("region", { name: "Database updates" })).toHaveCount(0);
+	});
+
+	test("waits while the pointer or the focus is on it", async ({ page }) => {
+		const notice = await applyWithClock(page);
+		await page.clock.fastForward(5_000);
+		await notice.hover();
+		await page.clock.fastForward(30_000);
+		await expect(notice).toBeVisible();
+		await expect(notice).toHaveAttribute("data-applied-notice", "shown");
+		// The keyboard focus holds it too, with the pointer gone.
+		await notice.getByRole("button", { name: "Dismiss" }).focus();
+		await page.mouse.move(5, 5);
+		await page.clock.fastForward(30_000);
+		await expect(notice).toHaveAttribute("data-applied-notice", "shown");
+		await page.getByRole("button", { name: "Compose new email", exact: true }).focus();
+		// Once it is free again it stays at least two more seconds, so it never vanishes under a leaving pointer.
+		await page.clock.fastForward(1_900);
+		await expect(notice).toHaveAttribute("data-applied-notice", "shown");
+		await page.clock.fastForward(200);
+		await expect(notice).toHaveCount(0);
+	});
+
+	test("with reduced motion it fades without the kite", async ({ page }) => {
+		await page.emulateMedia({ reducedMotion: "reduce" });
+		const seen = await watchExit(page);
+		const notice = await applyWithClock(page);
+		await page.clock.fastForward(8_100);
+		await expect(notice).toHaveCount(0);
+		expect(await seen()).toEqual(["fade"]);
+	});
+
+	test("pending updates and a failed run never leave on their own", async ({ page }) => {
+		await routeApply(page, { fail: true });
+		await page.clock.install();
+		await openInbox(page);
+		const notice = page.getByRole("region", { name: "Database updates" });
+		await expect(notice).toContainText("still needs 2 updates");
+		await page.clock.fastForward(60_000);
+		await expect(notice).toContainText("still needs 2 updates");
+
+		await notice.getByRole("button", { name: "Apply now" }).click();
+		await expect(notice.getByRole("alert")).toContainText("The database is not reachable right now.");
+		await page.clock.fastForward(60_000);
+		await expect(notice).toBeVisible();
+		await expect(notice.getByRole("alert")).toContainText("The database is not reachable right now.");
+		await expect(notice).toContainText("still needs 2 updates");
+		await expect(notice.getByRole("button", { name: "Apply now" })).toBeVisible();
+		await expect(notice.getByRole("button", { name: "Dismiss" })).toHaveCount(0);
+		await expect(page.locator(NOTICE_FLIGHT)).toHaveCount(0);
+	});
 });
 
 test.describe("the release list in the What's new dialog", () => {

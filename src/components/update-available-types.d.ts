@@ -38,6 +38,8 @@ export interface UpdateDetails {
 	release: string | null;
 	/** Release notes this tab has not had yet, newest first; empty when unknown. */
 	notes: ChangelogRelease[];
+	/** The first of those notes as plain text, for the row's preview; empty when unknown. */
+	summary: string;
 }
 
 export type UpdateSurface = "none" | "row" | "toast";

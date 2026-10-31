@@ -81,6 +81,7 @@ function opener(page: Page) {
 
 const NOTES = {
 	release: "2099.01.01.0",
+	summary: "Snooze gets a setting.",
 	notes: [
 		{
 			name: "2099.01.01.0",

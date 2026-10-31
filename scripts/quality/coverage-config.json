@@ -127,6 +127,7 @@
 		"src/lib/backups/backup-writer-utils.ts",
 		"src/lib/changelog/changelog-utils.ts",
 		"src/lib/changelog/changelog-nav-utils.ts",
+		"src/lib/changelog/update-notes-utils.ts",
 		"src/lib/backups/queue-utils.ts",
 		"src/lib/backups/objects-utils.ts",
 		"src/lib/booking/hosts-utils.ts",

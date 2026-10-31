@@ -103,8 +103,8 @@ test("a dismissed notice shows nowhere, whatever the page", () => {
 });
 
 test("the row's text is fixed and names no deployment id", () => {
-	assert.equal(updateSubject({ release: null, notes: [] }), "Kite was updated");
-	assert.equal(updatePreview({ release: null, notes: [] }), "Reload to get the latest version");
+	assert.equal(updateSubject({ release: null, notes: [], summary: "" }), "Kite was updated");
+	assert.equal(updatePreview({ release: null, notes: [], summary: "" }), "Reload to get the latest version");
 	// The live region says something else than the toast, so the two never read as one message twice.
 	assert.notEqual(UPDATE_ROW_ANNOUNCEMENT, UPDATE_TOAST_MESSAGE);
 });
@@ -118,15 +118,17 @@ const NOTES = [
 ];
 
 test("parseUpdateDetails keeps a newer calendar release and well-formed notes", () => {
-	assert.deepEqual(parseUpdateDetails({ version: "x", release: "2026.11.01.0", notes: NOTES }, "2026.10.31.3"), {
-		release: "2026.11.01.0",
-		notes: NOTES,
-	});
+	assert.deepEqual(
+		parseUpdateDetails({ version: "x", release: "2026.11.01.0", notes: NOTES, summary: " New " }, "2026.10.31.3"),
+		{ release: "2026.11.01.0", notes: NOTES, summary: "New" },
+	);
 	// The same release, a development build or a missing field name no release.
 	assert.equal(parseUpdateDetails({ release: "2026.10.31.3" }, "2026.10.31.3").release, null);
 	assert.equal(parseUpdateDetails({ release: "development" }, "2026.10.31.3").release, null);
-	assert.deepEqual(parseUpdateDetails({ version: "x" }, "2026.10.31.3"), { release: null, notes: [] });
-	assert.deepEqual(parseUpdateDetails(null, "2026.10.31.3"), { release: null, notes: [] });
+	const none = { release: null, notes: [], summary: "" };
+	assert.deepEqual(parseUpdateDetails({ version: "x" }, "2026.10.31.3"), none);
+	assert.deepEqual(parseUpdateDetails(null, "2026.10.31.3"), none);
+	assert.deepEqual(parseUpdateDetails({ notes: "x", summary: 7 }, "2026.10.31.3"), none);
 });
 
 test("parseUpdateDetails drops malformed notes instead of showing them", () => {
@@ -149,12 +151,13 @@ test("parseUpdateDetails drops malformed notes instead of showing them", () => {
 	assert.equal(parseUpdateDetails({ notes: [long] }, "").notes[0].sections[0].items[0].length, 2_000);
 });
 
-test("the subject names a known release and the preview adds the first note as plain text", () => {
-	assert.equal(updateSubject({ release: null, notes: [] }), "Kite was updated");
-	assert.equal(updateSubject({ release: "2026.11.01.0", notes: [] }), "Kite 2026.11.01.0 is ready");
-	assert.equal(updatePreview({ release: null, notes: [] }), "Reload to get the latest version");
+test("the subject names a known release and the preview adds the server's summary", () => {
+	const none = { release: null, notes: [], summary: "" };
+	assert.equal(updateSubject(none), "Kite was updated");
+	assert.equal(updateSubject({ ...none, release: "2026.11.01.0" }), "Kite 2026.11.01.0 is ready");
+	assert.equal(updatePreview(none), "Reload to get the latest version");
 	assert.equal(
-		updatePreview({ release: null, notes: NOTES }),
+		updatePreview({ ...none, summary: "Snooze in Settings lists later." }),
 		"Reload to get the latest version · Snooze in Settings lists later.",
 	);
 });

@@ -1,21 +1,17 @@
 import { getEnv } from "@/lib/cloudflare";
 import { requireSessionUser } from "@/lib/api/auth";
 import { BUILD_VERSION, BUILD_VERSION_LABEL } from "@/lib/build-version";
-import { loadChangelogReleases } from "@/lib/changelog/changelog-bundle";
-import { pickUpdateNotes } from "@/lib/changelog/update-notes-utils";
-import type { ChangelogRelease } from "@/lib/changelog/types";
+import { loadRecentChangelogReleases } from "@/lib/changelog/changelog-recent";
+import { firstUpdateNoteLine, pickUpdateNotes } from "@/lib/changelog/update-notes-utils";
 import { getDeploymentVersion } from "@/lib/deployment-version";
 
 const NO_STORE = { "Cache-Control": "no-store" };
 
-let releases: ChangelogRelease[] | null = null;
-
 /** What this build adds for a tab that runs build `have` (its version and commit), or nothing for the same build. */
 function updateDetails(have: string | null) {
 	if (!have || have === BUILD_VERSION_LABEL) return {};
-	releases ??= loadChangelogReleases();
-	const haveRelease = have.split(" (")[0];
-	return { release: BUILD_VERSION, notes: pickUpdateNotes(releases, haveRelease) };
+	const notes = pickUpdateNotes(loadRecentChangelogReleases(), have.split(" (")[0]);
+	return { release: BUILD_VERSION, notes, summary: firstUpdateNoteLine(notes) };
 }
 
 /**
@@ -23,8 +19,9 @@ function updateDetails(have: string | null) {
  * signed-in users may read it, so the deployment id is not public. It is never
  * compared with anything outside the install. A tab that names its own build
  * (`?have=`) also gets this build's release and the release notes it has not
- * had yet, from the changelog this server was built with, but only once the
- * builds differ, so the regular checks stay small.
+ * had yet, from the newest releases of the changelog this server was built
+ * with, and the first of them as plain text for the row's preview, but only
+ * once the builds differ, so the regular checks stay small.
  */
 export async function GET(request: Request) {
 	const env = getEnv();

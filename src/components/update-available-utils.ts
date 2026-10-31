@@ -1,4 +1,3 @@
-import { firstUpdateNoteLine } from "@/lib/changelog/update-notes-utils";
 import type { ChangelogRelease, ChangelogSection } from "@/lib/changelog/types";
 import type {
 	UpdateCheckState,
@@ -17,49 +16,51 @@ const UPDATE_ROW_PREVIEW = "Reload to get the latest version";
 /** Read out once by the host when the notice is the list row, which has no live region of its own. */
 export const UPDATE_ROW_ANNOUNCEMENT = "A new version of Kite is available.";
 export const UPDATE_TOAST_MESSAGE = "Kite was updated. Reload to get the latest version.";
-export const NO_UPDATE_DETAILS: UpdateDetails = { release: null, notes: [] };
+export const NO_UPDATE_DETAILS: UpdateDetails = { release: null, notes: [], summary: "" };
 
 const CALENDAR_VERSION = /^\d{4}\.\d{2}\.\d{2}\.\d+$/;
 const MAX_NOTE_RELEASES = 3;
-const MAX_NOTE_SECTIONS = 8;
-const MAX_NOTE_ITEMS = 40;
 const MAX_NOTE_TEXT = 2_000;
 
-function shortText(value: unknown, max = MAX_NOTE_TEXT): string | null {
-	return typeof value === "string" && value.trim() ? value.trim().slice(0, max) : null;
+function text(value: unknown, max = MAX_NOTE_TEXT): string {
+	return typeof value === "string" ? value.trim().slice(0, max) : "";
 }
 
-function parseSection(value: unknown): ChangelogSection | null {
-	if (!value || typeof value !== "object") return null;
-	const { title, items } = value as Record<string, unknown>;
-	const name = shortText(title, 80);
-	if (!name || !Array.isArray(items)) return null;
-	const texts = items.slice(0, MAX_NOTE_ITEMS).map((item) => shortText(item));
-	return { title: name, items: texts.filter((item): item is string => item !== null) };
+function list(value: unknown, max: number): unknown[] {
+	return Array.isArray(value) ? value.slice(0, max) : [];
 }
 
-function parseRelease(value: unknown): ChangelogRelease | null {
-	if (!value || typeof value !== "object") return null;
-	const { name, date, sections } = value as Record<string, unknown>;
-	const title = shortText(name, 80);
-	if (!title || !Array.isArray(sections)) return null;
-	const parsed = sections.slice(0, MAX_NOTE_SECTIONS).map(parseSection);
-	const kept = parsed.filter((section): section is ChangelogSection => !!section && section.items.length > 0);
-	return kept.length > 0 ? { name: title, date: shortText(date, 40), sections: kept } : null;
+function parseSection(value: unknown): ChangelogSection {
+	const { title, items } = (value ?? {}) as Record<string, unknown>;
+	return {
+		title: text(title, 80),
+		items: list(items, 40)
+			.map((item) => text(item))
+			.filter(Boolean),
+	};
+}
+
+function parseRelease(value: unknown): ChangelogRelease {
+	const { name, date, sections } = (value ?? {}) as Record<string, unknown>;
+	const kept = list(sections, 8)
+		.map(parseSection)
+		.filter((section) => section.title && section.items.length > 0);
+	return { name: text(name, 80), date: text(date, 40) || null, sections: kept };
 }
 
 /**
- * Reads the release and notes a server sends with a changed version. The release counts only when it is a
- * calendar version other than the one this tab runs; anything malformed is left out rather than shown.
+ * Reads the release, notes and summary a server sends with a changed version. The release counts only when it is
+ * a calendar version other than the one this tab runs; anything malformed is left out rather than shown.
  */
 export function parseUpdateDetails(value: unknown, ownRelease: string): UpdateDetails {
-	if (!value || typeof value !== "object") return NO_UPDATE_DETAILS;
-	const { release, notes } = value as Record<string, unknown>;
-	const name = typeof release === "string" ? release.trim() : "";
-	const parsed = Array.isArray(notes) ? notes.slice(0, MAX_NOTE_RELEASES).map(parseRelease) : [];
+	const { release, notes, summary } = (value && typeof value === "object" ? value : {}) as Record<string, unknown>;
+	const name = text(release, 40);
 	return {
 		release: CALENDAR_VERSION.test(name) && name !== ownRelease ? name : null,
-		notes: parsed.filter((entry): entry is ChangelogRelease => entry !== null),
+		notes: list(notes, MAX_NOTE_RELEASES)
+			.map(parseRelease)
+			.filter((entry) => entry.name && entry.sections.length > 0),
+		summary: text(summary, 200),
 	};
 }
 
@@ -69,9 +70,8 @@ export function updateSubject({ release }: UpdateDetails): string {
 }
 
 /** The row's preview: the call to reload, then the first line of what's new when the server sent notes. */
-export function updatePreview({ notes }: UpdateDetails): string {
-	const first = firstUpdateNoteLine(notes);
-	return first ? `${UPDATE_ROW_PREVIEW} · ${first}` : UPDATE_ROW_PREVIEW;
+export function updatePreview({ summary }: UpdateDetails): string {
+	return summary ? `${UPDATE_ROW_PREVIEW} · ${summary}` : UPDATE_ROW_PREVIEW;
 }
 
 /** Reads `{ version }`; anything else is an unknown version. */

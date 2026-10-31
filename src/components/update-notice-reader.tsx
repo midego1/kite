@@ -15,9 +15,6 @@ import { UPDATE_SENDER, UpdateSenderAvatar } from "./update-notice-row";
 import { closeUpdateReader, dismissUpdateNotice, useRegisterUpdateList, useUpdateNotice } from "./update-notice-store";
 import { reloadToNewVersion } from "./update-reload";
 
-const HEADER_BUTTON_CLASS =
-	"relative z-10 shrink-0 rounded-full p-2 text-neutral-600 duration-200 hover:bg-neutral-100 hover:text-neutral-900";
-
 function ReleaseBody({ release }: { release: ChangelogRelease }) {
 	const headingId = `update-notes-${release.name.replace(/[^\w-]/g, "-")}`;
 	return (
@@ -60,32 +57,24 @@ export function UpdateNoticeReader() {
 		headingRef.current?.focus({ preventScroll: true });
 	}, []);
 
+	const headerLabel = singleColumn ? `Back to ${backLabel}` : "Close";
 	const subject = updateSubject(notice.details);
 	const { release, notes } = notice.details;
 	const detected = notice.detectedAt === null ? null : new Date(notice.detectedAt).toISOString();
 	return (
 		<article aria-labelledby="update-notice-subject" data-update-reader="" className="flex h-full min-h-0 flex-col">
 			<div className="sticky top-0 z-40 flex h-14 shrink-0 items-center gap-1 border-b border-neutral-200 bg-white px-3">
-				{singleColumn && (
-					<Tooltip label={`Back to ${backLabel}`}>
-						<button
-							type="button"
-							className={HEADER_BUTTON_CLASS}
-							onClick={closeUpdateReader}
-							aria-label={`Back to ${backLabel}`}
-						>
-							<ArrowLeft size={18} aria-hidden="true" />
-						</button>
-					</Tooltip>
-				)}
-				<span className="min-w-0 flex-1" />
-				{!singleColumn && (
-					<Tooltip label="Close">
-						<button type="button" className={HEADER_BUTTON_CLASS} onClick={closeUpdateReader} aria-label="Close">
-							<X size={18} aria-hidden="true" />
-						</button>
-					</Tooltip>
-				)}
+				{/* On a phone the reader is the whole screen and this goes back to the list; beside the list it closes. */}
+				<Tooltip label={headerLabel}>
+					<button
+						type="button"
+						className="relative z-10 shrink-0 rounded-full p-2 text-neutral-600 duration-200 hover:bg-neutral-100 hover:text-neutral-900"
+						onClick={closeUpdateReader}
+						aria-label={headerLabel}
+					>
+						{singleColumn ? <ArrowLeft size={18} aria-hidden="true" /> : <X size={18} aria-hidden="true" />}
+					</button>
+				</Tooltip>
 			</div>
 			<div className="min-h-0 flex-1 overflow-y-auto overscroll-contain scrollbar-gutter-stable">
 				<div className="px-4 pb-5 pt-5 sm:px-7">

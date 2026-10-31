@@ -32,12 +32,16 @@ export function UpdateSenderAvatar({ className }: { className: string }) {
 	);
 }
 
+const ACTIONS = [
+	{ label: "Reload", tooltip: "Reload to get the latest version", Icon: RotateCw, run: reloadToNewVersion },
+	{ label: "Dismiss", tooltip: "Dismiss", Icon: X, run: dismissUpdateNotice },
+];
+
 /**
  * Reload and Dismiss as row actions, like a message's: a small pill that shows on hover and keyboard focus.
  * Touch screens have no hover, so there it always shows, at the end of the preview line where it leaves the time be.
  */
 function Actions({ compact }: { compact: boolean }) {
-	const buttonClassName = compact ? "h-[22px] w-6 rounded p-0" : undefined;
 	return (
 		<div
 			data-update-actions=""
@@ -48,30 +52,20 @@ function Actions({ compact }: { compact: boolean }) {
 					: "right-6 top-1/2 -translate-y-1/2 bg-[#f2f6fc] pl-3",
 			)}
 		>
-			<Tooltip label="Reload to get the latest version">
-				<Button
-					type="button"
-					variant="ghost"
-					size="sm"
-					className={buttonClassName}
-					onClick={reloadToNewVersion}
-					aria-label="Reload"
-				>
-					<RotateCw className="h-4 w-4" aria-hidden="true" />
-				</Button>
-			</Tooltip>
-			<Tooltip label="Dismiss">
-				<Button
-					type="button"
-					variant="ghost"
-					size="sm"
-					className={buttonClassName}
-					onClick={dismissUpdateNotice}
-					aria-label="Dismiss"
-				>
-					<X className="h-4 w-4" aria-hidden="true" />
-				</Button>
-			</Tooltip>
+			{ACTIONS.map(({ label, tooltip, Icon, run }) => (
+				<Tooltip key={label} label={tooltip}>
+					<Button
+						type="button"
+						variant="ghost"
+						size="sm"
+						className={compact ? "h-[22px] w-6 rounded p-0" : undefined}
+						onClick={run}
+						aria-label={label}
+					>
+						<Icon className="h-4 w-4" aria-hidden="true" />
+					</Button>
+				</Tooltip>
+			))}
 		</div>
 	);
 }

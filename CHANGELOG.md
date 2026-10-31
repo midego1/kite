@@ -6,6 +6,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.10.31.1] - 2026-10-31
+
+### Changed
+
+- The self-hosted (Node/Docker) server now proxies remote images too, instead of letting the browser load them from their host: it resolves the host of the image and of every redirect and refuses private, loopback and reserved addresses, with the same per-user rate limit as on Workers (from Mailflare #220).
+
+### Fixed
+
+- Being signed out when Kite reloads to a new version no longer shows the kite's return on the sign-in page.
+
+### Security
+
+- Risky attachments are flagged and their download waits for a warning: programs, scripts, shortcuts, installers and add-ins, macro-enabled Office and Excel data-connection files, files declared as a program, names with hidden right-to-left or control characters or an NTFS stream suffix, double extensions such as `invoice.pdf.exe`, web pages, disk images and archives. A flagged name is never shown inline, even when it claims to be an image. ZIP files are looked into without unpacking them (at most 1 MiB of directory) and flagged when they hold a program or cannot be checked. The reader, earlier messages in a conversation, drafts, Save to Drive and Drive's All attachments show the reasons and enable Download only after **I understand the risk**, and the server refuses an unacknowledged download with 409 (a guard against accidental clicks; JMAP downloads are not gated). Kite still has no antivirus; see "Risky attachments" in `docs/spam-protection.md` (from Mailflare #218).
+- Attachment file names are cleaned before they are stored (control and bidi characters removed, `.` and `..` refused, at most 180 bytes with the extension kept), new attachment objects are stored under ids only so a sender's file name never becomes part of a storage path, and download headers drop those characters and cap long names too. JMAP blob downloads add `X-Content-Type-Options: nosniff` (from Mailflare #222).
+- A large-attachment download link stops working while its message is in Trash, Spam or the Screener, or while its mailbox or owner is disabled, and always downloads as plain bytes (from Mailflare #222).
+- **Insert link** in the composer builds the link with DOM calls, so a quote or `<` in the address can no longer inject markup (from Mailflare #221).
+- Pages are served with `Cross-Origin-Opener-Policy: same-origin`, so a window Kite opens or that opens Kite gets no handle on it (from Mailflare #221).
+- Webhooks, mail import, object storage and the remote image proxy refuse host names that embed a private IPv4 address (`10-0-0-1.example.com`) and wildcard DNS services such as `nip.io`, `sslip.io` and `localtest.me` (from Mailflare #220).
+- A received reply joins a conversation only when the message passed DMARC for its own From domain, or when DMARC gave no result and its sender already takes part in the conversation; a failed DMARC check always starts a new conversation. A stranger who learned a Message-ID can no longer slip a message into a conversation, and a message whose Message-ID is already a conversation's key starts a new one, except the copy of a message you sent to your own address or alias. Someone newly copied from a domain without DMARC, or a mailing list without DMARC, starts a separate conversation until they are part of it. Mail import, connected accounts and JMAP drafts keep joining as before. Conversations no longer show Spam unless you open that message (upstream Mailflare #223).
+- Received mail no longer renames a contact. Every message in the list, the conversation, the reader and the contact card shows the name you saved for the contact, else that message's own From name, else a name learned earlier, so a shared `no-reply` address keeps a different sender per message (upstream Mailflare #223, #226).
+- The forwarding loop guard `X-Kite-Forwarded` is now signed per message (an HMAC over the Message-ID, keyed with `APP_ENCRYPTION_KEY`, else `INBOUND_WEBHOOK_SECRET`, else `CF_TOKEN`), so a sender can no longer switch account forwarding off for its message with `X-Kite-Forwarded: 1`, and a value read from a forwarded copy does not work on other messages. The pre-rename `X-Mailflare-Forwarded` counts only with the signed value. Installs without any of these secrets keep the unsigned value; set `APP_ENCRYPTION_KEY` to get the signed one. Two installs forwarding to each other stop after one extra hop. See "The forwarding loop guard" in `docs/sending-and-deliverability.md` (upstream Mailflare #223).
+- New-mail notifications name the sender as "Name <address>" without control or direction-changing characters, and mail a rule or a block files in Trash no longer notifies, like Spam (upstream Mailflare #223).
+- Senders first seen in Spam, Trash or the Screener, or first recorded by blocking them, are no longer looked up on Gravatar (upstream Mailflare #220).
+- The `message.inbound` webhook is no longer sent for mail filed in Spam or Trash; mail held by the Screener still sends it (upstream Mailflare #224).
+
 ## [2026.10.31.0] - 2026-10-31
 
 ### Added

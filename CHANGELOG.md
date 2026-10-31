@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.10.31.11] - 2026-10-31
+
+### Changed
+
+- The recovery runbook now has one section for rolling back and restoring backups across attachment sharing and raw-backed attachments: what each older release can read, the materialize procedure before a rollback, and what to expect after restoring an older or newer backup (choose **Reclaim space** after restoring a backup taken before a reclaim). See [Attachment storage: rollbacks and restores](https://github.com/midego1/kite/blob/main/docs/runbooks/recovery.md#attachment-storage-rollbacks-and-restores).
+
+### Fixed
+
+- Files in received or imported mail no longer stay missing after an older Kite release restored a newer backup into a database without migration 0088. Once the migration is applied, the next time such a file is opened Kite finds it in the stored raw message again, and **Restore separate copies** under [Admin → Storage](/storage) now includes these files too. No migration or setting is needed.
+- **Why?** for failed AI requests on the [Admin overview](/admin) no longer says Ask AI "would fail the same way" once you have saved the AI provider in use (a new key or model) or switched to another one in [Admin → Agent](/agent#ai-provider): failures from before that change no longer count. When Kite cannot read the provider settings, Why? still lists the failures and only Ask AI is marked unavailable.
+- A question **Ask AI** prepared for the assistant is dropped after five minutes if the assistant never took it, so it no longer turns up in a chat opened much later. Closing the Why? dialog returns the keyboard focus to **Why?**.
+- The command center in the empty reading pane: the hint under the cards and the grey details on the cards now reach WCAG AA contrast in every style and theme, links on its cards keep a faint underline in the Kite style (where they are the same colour as the text), and information notices under **Needs attention** use a calmer blue wash in Classic light. No migration.
+
 ## [2026.10.31.10] - 2026-10-31
 
 ### Added

@@ -4,6 +4,10 @@ import type { ReactNode } from "react";
 /** The surface the cards, chips and quick actions share: one step up from the pane, a hairline and a soft lift. */
 export const COMMAND_CENTER_SURFACE_CLASS = "border border-cc-border bg-cc-surface shadow-(--cc-elevation)";
 
+/** A text link in a card: the accent, underlined on hover (and faintly at rest where the accent is the text colour). */
+export const COMMAND_CENTER_LINK_CLASS =
+	"text-xs font-medium text-cc-accent underline decoration-cc-link-underline underline-offset-2 hover:decoration-current";
+
 /** One card of the command center: a small uppercase title, an optional link at the right, and its content. */
 export function CommandCenterCard({
 	title,
@@ -25,7 +29,7 @@ export function CommandCenterCard({
 			<div className="mb-2 flex items-center justify-between gap-3">
 				<h3 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-cc-label">{title}</h3>
 				{action && (
-					<Link href={action.href} className="text-xs font-medium text-cc-accent hover:underline">
+					<Link href={action.href} className={COMMAND_CENTER_LINK_CLASS}>
 						{action.label}
 					</Link>
 				)}

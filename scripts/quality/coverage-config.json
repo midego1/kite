@@ -17,7 +17,6 @@
 		"src/lib/ai/usage-report-utils.ts",
 		"src/lib/http/content-type-utils.ts",
 		"src/lib/http/content-disposition-utils.ts",
-		"src/lib/email/attachment-name-utils.ts",
 		"src/lib/storage/object-classes-utils.ts",
 		"src/lib/storage/s3-utils.ts",
 		"src/lib/storage/s3-presets-utils.ts",

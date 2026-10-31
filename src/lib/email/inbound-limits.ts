@@ -21,7 +21,7 @@ const encoder = new TextEncoder();
 const decoder = new TextDecoder("utf-8", { fatal: false });
 
 /** `value` cut to at most `maxBytes` UTF-8 bytes, never inside a character. */
-export function truncateUtf8(value: string, maxBytes: number): string {
+function truncateUtf8(value: string, maxBytes: number): string {
 	// A UTF-16 code unit is at most three UTF-8 bytes, so a short string always fits without encoding it.
 	if (value.length * 3 <= maxBytes) return value;
 	const bytes = encoder.encode(value);

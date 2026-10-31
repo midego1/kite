@@ -1,5 +1,4 @@
 import type { DriveItemDto } from "@/lib/drive/types";
-import { needsRiskReview } from "@/lib/email/attachment-risk";
 import type { DriveListingView, DrivePreviewKind, DriveSortKey } from "./drive-types";
 
 /** Asks the open listing and the sidebar usage bar to reload, after a change made elsewhere on the page. */
@@ -68,23 +67,11 @@ export function sortDriveItems(items: readonly DriveItemDto[], key: DriveSortKey
 	});
 }
 
-/** The route serving a mail attachment in Drive, which also answers its risk check (`?risk=1`). */
-export function attachmentContentUrl(attachmentId: string): string {
-	return `/api/drive/attachments/${encodeURIComponent(attachmentId)}/content`;
-}
-
 /** The bytes of a row: a Drive file, or the mail attachment it stands for in All attachments. */
 export function driveFileUrl(item: Pick<DriveItemDto, "id" | "source">, download = false): string {
-	const base = item.source ? attachmentContentUrl(item.id) : `/api/drive/files/${encodeURIComponent(item.id)}/content`;
+	const id = encodeURIComponent(item.id);
+	const base = item.source ? `/api/drive/attachments/${id}/content` : `/api/drive/files/${id}/content`;
 	return download ? `${base}?disposition=attachment` : base;
-}
-
-/**
- * A mail attachment row whose download goes through the risk warning (`needsRiskReview`); Drive's own files are
- * the user's uploads and never do.
- */
-export function attachmentNeedsReview(item: Pick<DriveItemDto, "name" | "contentType" | "source">): boolean {
-	return !!item.source && needsRiskReview({ filename: item.name, type: item.contentType });
 }
 
 export function publicContentUrl(token: string, itemId: string, download = false): string {

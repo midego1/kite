@@ -13,9 +13,9 @@
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/midego1/kite)
 
-[![A short tour of Kite: the compact inbox with attachments, a conversation and a contact card, an AI summary and a reply drafted with Write with Kite, dark mode with Original colours, the calendar week and a Drive upload, connected Gmail and iCloud accounts, the Admin overview and an update that reloads with the kite flying off and back in](/docs/assets/kite-tour.gif)](/docs/assets/kite-tour.mp4)
+![A short tour of Kite: opening a message, replying with a send preview and undo, the calendar and the domain DNS checks](/docs/assets/demo.gif)
 
-A 39-second tour with invented demo data (some screens use stand-in data); [the MP4](/docs/assets/kite-tour.mp4) (a download) is smoother and in full colour. `npm run demo:record` records it again (see [Screenshots](#screenshots)).
+The recording shows invented demo data. `npm run demo:record` makes it again (see [Screenshots](#screenshots)).
 
 ## Why Kite
 
@@ -157,7 +157,7 @@ Kite has a light and a dark theme, and this page shows both: GitHub serves the d
 	</tr>
 </table>
 
-`npm run screenshots` takes them again, in light and dark, against the same isolated, seeded server the browser tests use (`scripts/screenshots/readme.capture.ts`, with the demo data in `demo-data.ts`). It writes `screenshots/<name>-light.webp` and `<name>-dark.webp` at 2x scale; the assistant, For you and AI usage shots answer their model-backed requests from fixed demo data (`demo-mocks.ts`). `npm run demo:record` records the tour at the top: `scripts/screenshots/demo.capture.ts` plays the scenes in a 1280x800 window over the same seeded server plus `demo-hero-data.ts` (extra mail, two connected accounts and a fake model for the summary and Write with Kite), captures sharp frames through Chromium's screencast (`screencast.ts`, leaving out the waits for the app) and `encode-demo.mjs` turns them into `docs/assets/kite-tour.mp4` and a GIF of at most 10 MB, `docs/assets/kite-tour.gif`. It needs ffmpeg 5 or newer on the path, or in `FFMPEG_PATH` (for example `npm install --no-save ffmpeg-static` and `FFMPEG_PATH=node_modules/ffmpeg-static/ffmpeg`; the ffmpeg Playwright bundles cannot make GIFs), and takes about ten minutes; the captions and the pointer are drawn by `demo-overlay.ts`. Change a scene in `demo.capture.ts`, run the command and check the printed timeline, which lists where each caption starts. `npm run social:preview` renders the 1280x640 repository social preview (`docs/assets/social-preview.png`).
+`npm run screenshots` takes them again, in light and dark, against the same isolated, seeded server the browser tests use (`scripts/screenshots/readme.capture.ts`, with the demo data in `demo-data.ts`). It writes `screenshots/<name>-light.webp` and `<name>-dark.webp` at 2x scale; the assistant, For you and AI usage shots answer their model-backed requests from fixed demo data (`demo-mocks.ts`). `npm run demo:record` records the demo (`scripts/screenshots/demo.capture.ts`, needs `ffmpeg`), and `npm run social:preview` renders the 1280x640 repository social preview (`docs/assets/social-preview.png`).
 
 ## What you can do
 

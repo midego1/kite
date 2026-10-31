@@ -24,24 +24,6 @@ const BLOCKED_IPV4_RANGES: Array<[string, number]> = [
 
 const BLOCKED_HOSTNAME_SUFFIXES = [".localhost", ".local", ".internal", ".localdomain", ".home.arpa"];
 const BLOCKED_HOSTNAMES = new Set(["localhost", "localhost.localdomain", "metadata", "metadata.google.internal"]);
-/**
- * Wildcard DNS services that answer with the address written in the name (`127.0.0.1.nip.io`, `10-0-0-1.sslip.io`)
- * or always with loopback (`localtest.me`). Refused outright, whatever the name embeds (upstream Mailflare #220).
- */
-const WILDCARD_DNS_SUFFIXES = [
-	"nip.io",
-	"sslip.io",
-	"xip.io",
-	"traefik.me",
-	"localtest.me",
-	"lvh.me",
-	"vcap.me",
-	"lacolhost.com",
-	"localho.st",
-];
-/** Four dot- or dash-separated octets inside a longer name, as `ec2-10-0-0-1.example.com` writes an address. */
-// A zero-width lookahead, so overlapping candidates (`ec2-10-0-0-1` holds `2-10-0-0` and `10-0-0-1`) are all seen.
-const EMBEDDED_IPV4 = /(?<!\d)(?=(\d{1,3})[.-](\d{1,3})[.-](\d{1,3})[.-](\d{1,3})(?!\d))/g;
 
 function parseIpv4(value: string): number | null {
 	const parts = value.split(".");
@@ -133,27 +115,13 @@ export function isIpAddressLiteral(value: string): boolean {
 	return parseIpv4(address) !== null || parseIpv6(address) !== null;
 }
 
-/** A name that writes a private or reserved IPv4 address into its labels, which rebinding services resolve to. */
-function embedsBlockedIpv4(host: string): boolean {
-	for (const match of host.matchAll(EMBEDDED_IPV4)) {
-		const address = parseIpv4(`${match[1]}.${match[2]}.${match[3]}.${match[4]}`);
-		if (address !== null && isBlockedIpv4(address)) return true;
-	}
-	return false;
-}
-
-/**
- * Literal check, without DNS: blocked names, private IP literals, wildcard DNS services and names that embed a
- * private IPv4 address.
- */
+/** Literal check, without DNS: blocked names and private IP literals. */
 export function isBlockedHost(hostname: string): boolean {
 	const host = hostname.trim().toLowerCase().replace(/\.$/, "");
 	if (!host) return true;
 	if (BLOCKED_HOSTNAMES.has(host)) return true;
 	if (BLOCKED_HOSTNAME_SUFFIXES.some((suffix) => host.endsWith(suffix))) return true;
 	if (isIpAddressLiteral(host)) return isPrivateIpAddress(host);
-	if (WILDCARD_DNS_SUFFIXES.some((suffix) => host === suffix || host.endsWith(`.${suffix}`))) return true;
-	if (embedsBlockedIpv4(host)) return true;
 	// A bare name without a dot only resolves through local search domains.
 	return !host.includes(".");
 }

@@ -6,7 +6,7 @@ import { DriveNameDialog } from "./drive-name-dialog";
 import { DrivePreviewDialog } from "./drive-preview";
 import { DriveShareDialog } from "./drive-share-dialog";
 import type { DriveDialog } from "./drive-types";
-import { attachmentContentUrl, driveFileUrl, emailHref } from "./drive-utils";
+import { driveFileUrl, emailHref } from "./drive-utils";
 import { FolderChoiceDialog } from "./folder-choice-dialog";
 import { SaveToDriveDialog } from "./save-to-drive-dialog";
 
@@ -88,7 +88,6 @@ export function DriveDialogs({
 						src: driveFileUrl(dialog.item),
 						downloadHref: driveFileUrl(dialog.item, true),
 						emailHref: dialog.item.source ? emailHref(dialog.item.source) : undefined,
-						riskUrl: dialog.item.source ? attachmentContentUrl(dialog.item.id) : undefined,
 					}}
 				/>
 			);

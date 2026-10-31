@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import type { DriveCrumb } from "@/lib/drive/types";
@@ -17,8 +17,6 @@ export function FolderChoiceDialog({
 	description,
 	verb,
 	exclude,
-	notice,
-	chooseDisabled = false,
 	onChoose,
 }: {
 	open: boolean;
@@ -27,9 +25,6 @@ export function FolderChoiceDialog({
 	description: string;
 	verb: string;
 	exclude?: ReadonlySet<string>;
-	/** Shown above the buttons, such as the risk warning of a flagged attachment. */
-	notice?: ReactNode;
-	chooseDisabled?: boolean;
 	onChoose: (folder: DriveCrumb | null) => Promise<void>;
 }) {
 	const [trail, setTrail] = useState<DriveCrumb[]>([]);
@@ -67,7 +62,6 @@ export function FolderChoiceDialog({
 					<DialogDescription>{description}</DialogDescription>
 				</DialogHeader>
 				<FolderPicker trail={trail} onTrailChange={setTrail} active={open} exclude={exclude} />
-				{notice}
 				{error && (
 					<p role="alert" className="text-sm text-red-600">
 						{error}
@@ -77,7 +71,7 @@ export function FolderChoiceDialog({
 					<Button type="button" variant="outline" onClick={() => close(false)} disabled={busy}>
 						Cancel
 					</Button>
-					<Button type="button" onClick={() => void choose()} disabled={busy || chooseDisabled}>
+					<Button type="button" onClick={() => void choose()} disabled={busy}>
 						{busy ? "Working…" : `${verb} to ${current ? current.name : "My Drive"}`}
 					</Button>
 				</div>

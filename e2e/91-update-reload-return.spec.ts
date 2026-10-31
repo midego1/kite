@@ -67,7 +67,8 @@ async function holdEntryModule(page: Page) {
 		held,
 		release: async () => {
 			holding = false;
-			await Promise.all(held.splice(0).map((route) => route.continue()));
+			// A request of a document that was reloaded meanwhile cannot be continued any more.
+			await Promise.all(held.splice(0).map((route) => route.continue().catch(() => undefined)));
 		},
 	};
 }
@@ -187,7 +188,8 @@ test("Reload in the update notice brings the kite back on the loading screen, wh
 	expect(screen.plainLoading).toBe(false);
 	expect(screen.staticTextDisplay).toBe("none");
 	expect(screen.loaderMounted).toBe(false);
-	expect(screen.marker).not.toBeNull();
+	// Consumed as it was read: this load shows the return, no later one does.
+	expect(screen.marker).toBeNull();
 
 	// Still the server's screen as far as the boot watchdog is concerned, and nothing it could take for progress:
 	// the scene moves by CSS alone and adds no nodes while the entry is held.
@@ -304,6 +306,73 @@ test("a marker older than a minute is dropped and the plain screen shows", async
 	await entry.release();
 	await loaded;
 	await expect(page.getByRole("button", { name: "Compose new email", exact: true })).toBeVisible({ timeout: 30_000 });
+});
+
+/** Counts the tab's document loads: the boot watchdog's reloads among them. */
+function countDocumentLoads(page: Page) {
+	const documents = { count: 0 };
+	page.on("request", (request) => {
+		if (request.resourceType() === "document" && request.frame() === page.mainFrame()) documents.count += 1;
+	});
+	return documents;
+}
+
+const hasReturnClass = (page: Page) =>
+	page.evaluate((name) => document.documentElement.classList.contains(name), RETURN_CLASS);
+
+test("the return shows once: refreshing /inbox while it loads gives the plain screen, then the app", async ({
+	page,
+}) => {
+	await markReturn(page);
+	const entry = await holdEntryModule(page);
+	await page.goto("/inbox", { waitUntil: "commit" });
+	await waitForReturnScreen(page);
+	expect(await page.evaluate((key) => sessionStorage.getItem(key), MARKER_KEY)).toBeNull();
+
+	// Startup is slow and the user refreshes (F5) within the minute: an ordinary load, not the kite again.
+	const loaded = page.waitForEvent("load", { timeout: 60_000 });
+	await page.reload({ waitUntil: "commit" });
+	await page.waitForSelector(`${OVERLAY}[role="status"]`, { state: "attached", timeout: 20_000 });
+	expect(await hasReturnClass(page)).toBe(false);
+	await entry.release();
+	await loaded;
+	await expect(page.getByRole("button", { name: "Compose new email", exact: true })).toBeVisible({ timeout: 30_000 });
+	await expect(page.locator(OVERLAY)).not.toHaveClass(/opacity-100/);
+});
+
+test("without the marker a refresh of /inbox loads the app with the plain screen", async ({ page }) => {
+	await page.goto("/inbox");
+	await expect(page.getByRole("button", { name: "Compose new email", exact: true })).toBeVisible({ timeout: 30_000 });
+	await page.reload();
+	await expect(page.getByRole("button", { name: "Compose new email", exact: true })).toBeVisible({ timeout: 30_000 });
+	expect(await hasReturnClass(page)).toBe(false);
+	await expect(page.locator(OVERLAY)).not.toHaveClass(/opacity-100/);
+});
+
+test("the scene is cosmetic: a startup that never finishes drops it by itself and reaches Kite couldn't load", async ({
+	page,
+}) => {
+	// Three loads of the server's screen: two boot-watchdog reloads (vite dev waits up to 30 and 15 quiet seconds),
+	// then the message.
+	test.setTimeout(180_000);
+	await markReturn(page);
+	const documents = countDocumentLoads(page);
+	// The entry never arrives, on this load or the watchdog's reloads: React never starts.
+	await holdEntryModule(page);
+	await page.goto("/inbox", { waitUntil: "commit" });
+	await waitForReturnScreen(page);
+	// The scene has a hard cap of its own: the plain screen takes over well before the watchdog acts.
+	await expect.poll(() => hasReturnClass(page), { timeout: 12_000 }).toBe(false);
+	await expect(page.locator(`${SCENE} svg`)).toBeHidden();
+	expect(documents.count).toBe(1);
+
+	// The watchdog's reload starts plainly too, and its "Kite couldn't load" is the way out.
+	await expect.poll(() => documents.count, { timeout: 60_000 }).toBeGreaterThan(1);
+	await page.waitForSelector(`${OVERLAY}[role="status"]`, { state: "attached", timeout: 20_000 });
+	expect(await hasReturnClass(page)).toBe(false);
+	const failure = page.getByRole("alert").filter({ hasText: "Kite couldn't load." });
+	await expect(failure).toBeVisible({ timeout: 90_000 });
+	expect(await hasReturnClass(page)).toBe(false);
 });
 
 const LOOKS = [

@@ -6,7 +6,6 @@ import { ArrowDownToLine, Eye, MoreVertical, Trash2 } from "lucide-react";
 import { useObjectUrl } from "@/components/use-object-url";
 import { getAttachmentVisual } from "@/components/message-attachment-card-utils";
 import { getAttachmentPreviewKind } from "@/components/message-attachment-viewer-utils";
-import { needsRiskReview } from "@/lib/email/attachment-risk";
 import type { ComposeAttachmentChipProps } from "./compose-attachment-types";
 import {
 	canPreviewEntry,
@@ -56,8 +55,6 @@ export function ComposeAttachmentChip({ entry, draftId, onPreview, onRemove }: C
 	const thumbnail = isImage ? localUrl || storedThumbnailUrl(entry, draftId) : null;
 	const [thumbnailFailed, setThumbnailFailed] = useState(false);
 	const downloadUrl = storedDownloadUrl(entry, draftId);
-	// A stored file that is flagged (a forwarded program, say) downloads from the viewer, after its warning.
-	const reviewFirst = entry.kind === "stored" && needsRiskReview(attachment);
 	// The viewer opens once the menu has closed: opening a modal dialog while the menu still holds the page's
 	// pointer-events and focus lock leaves both stuck, so Preview waits for onCloseAutoFocus.
 	const previewAfterClose = useRef(false);
@@ -72,7 +69,7 @@ export function ComposeAttachmentChip({ entry, draftId, onPreview, onRemove }: C
 	}
 
 	function open() {
-		if (previewable || reviewFirst) onPreview(entry);
+		if (previewable) onPreview(entry);
 		else download();
 	}
 
@@ -139,13 +136,7 @@ export function ComposeAttachmentChip({ entry, draftId, onPreview, onRemove }: C
 								Preview
 							</DropdownMenu.Item>
 						)}
-						<DropdownMenu.Item
-							className={ITEM_CLASS}
-							onSelect={() => {
-								if (reviewFirst) previewAfterClose.current = true;
-								else download();
-							}}
-						>
+						<DropdownMenu.Item className={ITEM_CLASS} onSelect={download}>
 							<ArrowDownToLine className="h-4 w-4 shrink-0" aria-hidden="true" />
 							Download
 						</DropdownMenu.Item>

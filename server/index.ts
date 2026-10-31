@@ -11,12 +11,7 @@ import { getSessionTokenFromRequest } from "@/lib/realtime/utils";
 import { hasAdminAccount } from "@/lib/auth/setup";
 import { getAllowedMutationHosts, isAllowedMutationRequest, requiresCsrfCheck } from "@/lib/security/csrf";
 import { isTrustProxyEnabled, resolveClientIp } from "@/lib/security/client-ip";
-import {
-	buildContentSecurityPolicy,
-	createCspNonce,
-	DOCUMENT_OPENER_POLICY,
-	isDocumentPath,
-} from "@/lib/security/headers";
+import { buildContentSecurityPolicy, createCspNonce, isDocumentPath } from "@/lib/security/headers";
 import { storageConnectOrigins } from "@/lib/storage";
 import { processInboundMessage } from "@/lib/email/inbound";
 import { processAgentQueueMessage } from "@/lib/agent/queue";
@@ -150,7 +145,6 @@ async function main() {
 			if (nonce) request.headers["x-nonce"] = nonce;
 			else delete request.headers["x-nonce"];
 			response.setHeader("Content-Security-Policy", policy);
-			response.setHeader("Cross-Origin-Opener-Policy", DOCUMENT_OPENER_POLICY);
 			return handle(request, response, url);
 		});
 	});

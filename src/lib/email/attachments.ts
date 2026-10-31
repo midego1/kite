@@ -5,7 +5,6 @@ import { newId } from "@/lib/ids";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { isHiddenDraft } from "@/lib/messages/draft-privacy-utils";
 import type { SessionUser } from "@/lib/auth/types";
-import { attachmentObjectKey, sanitizeFilename } from "./attachment-name-utils";
 import type { AttachmentContent, AttachmentMetadata, StoredAttachment } from "./attachment-types";
 
 export const MAX_ATTACHMENT_SIZE = 25_000_000;
@@ -31,6 +30,11 @@ export function normalizeAttachmentContent(
 	}
 	if (encoding === "base64") return decodeBase64Content(content);
 	return new TextEncoder().encode(content).buffer;
+}
+
+function sanitizeFilename(filename: string): string {
+	const normalized = filename.trim().replace(/[/\\\0]/g, "_");
+	return normalized || "attachment";
 }
 
 export function validateAttachments(attachments: AttachmentContent[]): void {
@@ -66,7 +70,7 @@ export async function storeMessageAttachments(
 		for (const attachment of attachments) {
 			const id = newId("att");
 			const filename = sanitizeFilename(attachment.filename);
-			const r2Key = attachmentObjectKey(messageId, id);
+			const r2Key = `attachments/${messageId}/${id}/${filename}`;
 			const disposition = attachment.disposition ?? "attachment";
 
 			await env.BUCKET.put(r2Key, attachment.content, {
@@ -119,17 +123,15 @@ export async function copyMessageAttachments(
 		const object = await env.BUCKET.get(row.r2Key);
 		if (!object) continue;
 		const id = newId("att");
-		const r2Key = attachmentObjectKey(toMessageId, id);
-		// Rows stored before names were sanitised keep theirs; the copy gets a clean one.
-		const filename = sanitizeFilename(row.filename);
+		const r2Key = `attachments/${toMessageId}/${id}/${row.filename}`;
 		await env.BUCKET.put(r2Key, await object.arrayBuffer(), {
 			httpMetadata: { contentType: row.contentType },
-			customMetadata: { filename, messageId: toMessageId },
+			customMetadata: { filename: row.filename, messageId: toMessageId },
 		});
 		await db.insert(messageAttachments).values({
 			id,
 			messageId: toMessageId,
-			filename,
+			filename: row.filename,
 			contentType: row.contentType,
 			size: row.size,
 			disposition: row.disposition,
@@ -139,7 +141,7 @@ export async function copyMessageAttachments(
 		copied.push({
 			id,
 			messageId: toMessageId,
-			filename,
+			filename: row.filename,
 			type: row.contentType,
 			size: row.size,
 			disposition: row.disposition as "attachment" | "inline",

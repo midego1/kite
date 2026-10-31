@@ -1,10 +1,6 @@
 "use client";
 
-import { useState } from "react";
 import { Download, ExternalLink, Mail } from "lucide-react";
-import { AttachmentRiskNotice } from "@/components/attachment-risk-notice";
-import { acknowledgedUrl, useAttachmentRisk } from "@/components/use-attachment-risk";
-import { assessAttachmentRisk } from "@/lib/email/attachment-risk";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { formatDriveSize } from "@/lib/drive/name-utils";
 import { previewKind } from "./drive-utils";
@@ -17,8 +13,7 @@ export function DrivePreviewBody({
 	name,
 }: {
 	src: string;
-	/** Null while the risk check runs or its warning above is not acknowledged. */
-	downloadHref: string | null;
+	downloadHref: string;
 	contentType: string;
 	name: string;
 }) {
@@ -40,17 +35,13 @@ export function DrivePreviewBody({
 	return (
 		<div className="flex h-full flex-col items-center justify-center gap-4 text-sm text-neutral-600">
 			<p>There is no preview for this kind of file.</p>
-			{downloadHref ? (
-				<a
-					href={downloadHref}
-					className="inline-flex items-center gap-2 rounded-full bg-blue-600 px-4 py-2 font-medium text-white hover:bg-blue-700"
-				>
-					<Download size={16} />
-					Download
-				</a>
-			) : (
-				<p>Download unlocks once the file is checked and any warning above is ticked.</p>
-			)}
+			<a
+				href={downloadHref}
+				className="inline-flex items-center gap-2 rounded-full bg-blue-600 px-4 py-2 font-medium text-white hover:bg-blue-700"
+			>
+				<Download size={16} />
+				Download
+			</a>
 		</div>
 	);
 }
@@ -63,16 +54,9 @@ export type PreviewTarget = {
 	downloadHref: string;
 	/** The message an attachment came from, when the file is one. */
 	emailHref?: string;
-	/** A mail attachment's route, whose `?risk=1` says whether the download waits for a warning. */
-	riskUrl?: string;
 };
 
 export function DrivePreviewDialog({ target, onClose }: { target: PreviewTarget; onClose: () => void }) {
-	const { risk, loading } = useAttachmentRisk(target.riskUrl ?? null);
-	const flagged = !!risk && risk.level !== "ok";
-	const [acknowledged, setAcknowledged] = useState(false);
-	const blocked = loading || (flagged && !acknowledged);
-	const downloadHref = blocked ? null : flagged ? acknowledgedUrl(target.downloadHref) : target.downloadHref;
 	return (
 		<Dialog
 			open
@@ -102,36 +86,19 @@ export function DrivePreviewDialog({ target, onClose }: { target: PreviewTarget;
 							<ExternalLink size={12} />
 						</a>
 					)}
-					{downloadHref ? (
-						<a
-							href={downloadHref}
-							aria-label={`Download ${target.name}`}
-							className="shrink-0 rounded-full p-2 text-neutral-700 hover:bg-neutral-100"
-						>
-							<Download size={18} />
-						</a>
-					) : (
-						<span aria-hidden="true" className="shrink-0 rounded-full p-2 text-neutral-300">
-							<Download size={18} />
-						</span>
-					)}
+					<a
+						href={target.downloadHref}
+						aria-label={`Download ${target.name}`}
+						className="shrink-0 rounded-full p-2 text-neutral-700 hover:bg-neutral-100"
+					>
+						<Download size={18} />
+					</a>
 				</DialogTitle>
-				<AttachmentRiskNotice
-					risk={risk}
-					acknowledged={acknowledged}
-					onAcknowledgedChange={setAcknowledged}
-					className="mx-3 mt-3"
-				/>
 				<div className="min-h-0 flex-1 bg-neutral-50 p-3">
 					<DrivePreviewBody
 						src={target.src}
-						downloadHref={downloadHref}
-						// A flagged mail attachment is never rendered inline, whatever type it declares.
-						contentType={
-							target.riskUrl && assessAttachmentRisk({ filename: target.name, type: target.contentType }).level !== "ok"
-								? "application/octet-stream"
-								: target.contentType
-						}
+						downloadHref={target.downloadHref}
+						contentType={target.contentType}
 						name={target.name}
 					/>
 				</div>

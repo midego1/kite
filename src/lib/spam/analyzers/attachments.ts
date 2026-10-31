@@ -1,10 +1,13 @@
-import { hasDecoyExtension, isExecutableFilename, isWebPageFilename } from "@/lib/email/attachment-risk";
 import type { AttachmentContent } from "@/lib/email/attachment-types";
 import type { ParsedEmail } from "@/lib/email/parse";
 import type { PreparedSpamContent, SpamSignal, WebPageAttachment } from "../types";
 
-// The extension lists are shared with the download warning (`attachment-risk.ts`).
+const EXECUTABLE_EXTENSION =
+	/\.(exe|scr|com|pif|js|jse|vbs|vbe|wsf|wsh|bat|cmd|ps1|hta|msi|msix|appx|jar|lnk|cpl|reg|chm|iso|img|vhdx?)$/i;
+const WEB_PAGE_EXTENSION = /\.(html?|shtml|xhtml|svgz?|mht|mhtml)$/i;
 const WEB_PAGE_TYPE = /^(text\/html|application\/xhtml\+xml|image\/svg\+xml)\b/i;
+/** `invoice.pdf.html`: a document name with a web page or program extension after it. */
+const DECOY_EXTENSION = /\.(pdf|docx?|xlsx?|pptx?|txt|csv|jpe?g|png)\.[a-z0-9]{2,6}$/i;
 const DOCUMENT_LURE =
 	/\b(invoices?|factuur|facture|rechnung|payments?|remittance|receipts?|statements?|purchase orders?|quotes?|quotation|scan(ned)?|fax|voicemail|voice message|shared (file|document)|e-?sign(ature)?|docusign|contracts?|payroll|salary)\b/i;
 const PASSWORD_FIELD = /<input\b[^>]*\btype\s*=\s*["']?password\b/i;
@@ -17,7 +20,7 @@ const MAX_PAGE_BYTES = 500_000;
 const MAX_PAGES = 5;
 
 function isExecutableAttachment(attachment: Pick<AttachmentContent, "filename">): boolean {
-	return isExecutableFilename(attachment.filename);
+	return EXECUTABLE_EXTENSION.test(attachment.filename.trim());
 }
 
 /** An attached HTML or SVG file, which opens in a browser and can show a fake login page. Inline images are not. */
@@ -27,7 +30,7 @@ function isWebPageAttachment(
 	const filename = attachment.filename.trim();
 	const type = attachment.type.trim().toLowerCase();
 	if (attachment.disposition === "inline" && attachment.contentId && type.startsWith("image/")) return false;
-	return isWebPageFilename(filename) || WEB_PAGE_TYPE.test(type);
+	return WEB_PAGE_EXTENSION.test(filename) || WEB_PAGE_TYPE.test(type);
 }
 
 /** The text of the attached web pages (compressed SVG is skipped), so their links and code can be checked. */
@@ -46,7 +49,7 @@ export function readWebPageAttachments(attachments: readonly AttachmentContent[]
 function webPageSignals(message: ParsedEmail, prepared: PreparedSpamContent): SpamSignal[] {
 	const pages = message.attachments.filter(isWebPageAttachment);
 	if (!pages.length) return [];
-	const decoy = pages.some((attachment) => hasDecoyExtension(attachment.filename));
+	const decoy = pages.some((attachment) => DECOY_EXTENSION.test(attachment.filename.trim()));
 	const lure = decoy || DOCUMENT_LURE.test(prepared.visibleText);
 	const signals: SpamSignal[] = [
 		{

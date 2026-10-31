@@ -20,7 +20,7 @@ Search finds names, and the type chips (Photos, Videos, Documents, Others) narro
 
 Use **New → Upload files** or **Upload folder**, or drop files on the list. Folders keep their structure. Files are sent in parts of 32 MiB through Kite, or of 64 MiB straight to the storage provider when an admin has set that up under Admin → Storage, and the **Uploads** panel shows each one's progress. If an upload is interrupted, uploading the same file into the same folder again within three days continues where it stopped; after that the unfinished upload is removed. One account can have 20 uploads in progress at a time.
 
-**Save to Drive** in an attachment's menu, in the reader or under All attachments, copies the attachment into the folder you choose. The copy is independent of the message: deleting the mail keeps the file. A flagged attachment (a program, a macro document, an archive, …; see [Risky attachments](spam-protection.md#risky-attachments)) shows its warning first, and the copy waits until you tick **I understand the risk**. The same goes for downloading one under All attachments: it opens the preview with the warning, and a bulk download skips it.
+**Save to Drive** in an attachment's menu, in the reader or under All attachments, copies the attachment into the folder you choose. The copy is independent of the message: deleting the mail keeps the file.
 
 ## Folders, moving and the trash
 

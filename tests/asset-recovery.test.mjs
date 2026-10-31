@@ -78,6 +78,13 @@ function fakeDocument({ screen = "status", declared = [], readyState = "complete
 		getAttribute(name) {
 			return this.attributes[name] ?? null;
 		},
+		hasAttribute(name) {
+			return name in this.attributes;
+		},
+		// The startup screen's own way out (the slow-start recovery or a failure), when the test puts one in it.
+		querySelector() {
+			return this.wayOut ?? null;
+		},
 		addEventListener(type, listener) {
 			this.listeners[type] = listener;
 		},
@@ -97,6 +104,7 @@ function fakeDocument({ screen = "status", declared = [], readyState = "complete
 	const overlay = screen === null ? null : createElement("div");
 	if (overlay && screen) overlay.setAttribute("role", screen);
 	return Object.assign(fake, {
+		overlay,
 		body,
 		documentElement,
 		activeElement: null,
@@ -516,7 +524,6 @@ test("a background tab does not count, and without a body the message goes on th
 
 test("a page React runs, or one that is done loading, is left alone", () => {
 	const cases = [
-		{ flags: { [LOADER_MOUNTED_FLAG]: true } },
 		// The startup screen is hidden: React rendered it away.
 		{ screen: "" },
 		// No startup screen (sign-in) and the app has rendered.
@@ -527,6 +534,13 @@ test("a page React runs, or one that is done loading, is left alone", () => {
 		page.advance(30_000);
 		assert.deepEqual([page.reloads, page.failure(), page.watching()], [0, null, false], JSON.stringify(options));
 	}
+	// A screen React runs is never reloaded; only its outer bound is kept (below).
+	const running = loadPage({ flags: { [LOADER_MOUNTED_FLAG]: true } });
+	running.advance(29_500);
+	assert.deepEqual([running.reloads, running.failure(), running.watching()], [0, null, true]);
+	running.document.overlay.setAttribute("role", "");
+	running.advance(500);
+	assert.deepEqual([running.reloads, running.failure(), running.watching()], [0, null, false]);
 	// The root rendering is not enough while the part with the startup screen never did.
 	const suspended = loadPage({ ready: true });
 	suspended.advance(8_000);
@@ -595,6 +609,55 @@ test("the message and the count go when React takes over the startup screen, not
 		delete globalThis.document;
 		delete globalThis.sessionStorage;
 	}
+});
+
+test("a startup screen React runs but never ends gets Kite couldn't load after 30 visible seconds, never a reload", () => {
+	const page = loadPage({ flags: { [LOADER_MOUNTED_FLAG]: true } });
+	page.advance(29_500);
+	assert.equal(page.failure(), null);
+	page.advance(500);
+	assert.ok(page.failure(), "the outer bound shows the message");
+	assert.equal(page.failure().getAttribute("role"), "alert");
+	assert.deepEqual(page.errors, ["[kite] The app did not finish starting."]);
+	page.advance(10_000);
+	assert.equal(page.reloads, 0);
+	assert.equal(page.errors.length, 1);
+	globalThis.window = page.window;
+	globalThis.document = page.document;
+	globalThis.sessionStorage = page.window.sessionStorage;
+	try {
+		// A screen that remounts (the cause it guards against) cannot take the message away.
+		markLoaderMounted();
+		markAppReady();
+		assert.ok(page.failure());
+	} finally {
+		delete globalThis.window;
+		delete globalThis.document;
+		delete globalThis.sessionStorage;
+	}
+	// Reload starts over; and once the screen goes after all, so does the message.
+	page.fire("click", { target: { closest: (selector) => (selector === "#kite-boot-failure button" ? {} : null) } });
+	assert.equal(page.reloads, 1);
+	page.document.overlay.setAttribute("role", "");
+	page.advance(500);
+	assert.equal(page.failure(), null);
+	assert.equal(page.watching(), false);
+});
+
+test("the outer bound leaves a screen alone while it shows its own way out, and counts only visible time", () => {
+	const recovering = loadPage({ flags: { [LOADER_MOUNTED_FLAG]: true } });
+	recovering.document.overlay.wayOut = { className: "loading-recovery" };
+	recovering.advance(60_000);
+	assert.equal(recovering.failure(), null);
+	assert.equal(recovering.watching(), true);
+
+	const hidden = loadPage({ flags: { [LOADER_MOUNTED_FLAG]: true } });
+	hidden.document.visibilityState = "hidden";
+	hidden.advance(60_000);
+	assert.equal(hidden.failure(), null);
+	hidden.document.visibilityState = "visible";
+	hidden.advance(30_000);
+	assert.ok(hidden.failure());
 });
 
 test("a frozen or hidden page does not wake up to a quiet period and reload at once", () => {

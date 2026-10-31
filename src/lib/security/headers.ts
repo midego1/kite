@@ -56,12 +56,6 @@ export function createCspNonce(): string {
 	return btoa(binary);
 }
 
-/**
- * `Cross-Origin-Opener-Policy` for documents (upstream Mailflare #221): a page Kite opens, or one that opens Kite, gets
- * no `window.opener` reference into it. Kite opens links with `noopener` and has no popup flow that needs one.
- */
-export const DOCUMENT_OPENER_POLICY = "same-origin";
-
 /** Paths whose responses are documents that need the nonce policy (everything but APIs). */
 export function isDocumentPath(pathname: string): boolean {
 	return !(

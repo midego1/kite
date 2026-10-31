@@ -4,7 +4,6 @@ import { inJsonArray } from "@/db/chunk-utils";
 import { messageAttachments, messages } from "@/db/schema";
 import { driveItems } from "@/db/schema/drive";
 import { getAttachmentForUser } from "@/lib/email/attachments";
-import { assessStoredAttachment } from "@/lib/email/attachment-risk-store";
 import { newId } from "@/lib/ids";
 import { listAccessibleMailboxes } from "@/lib/mailboxes/access";
 import type { SessionUser } from "@/lib/auth/types";
@@ -121,9 +120,8 @@ function sizedBody(body: ReadableStream, size: number): ReadableStream {
 }
 
 /**
- * `POST /api/drive/attachments/[id]/save` `{ parentId, name?, acknowledge? }`: copies a readable attachment into a
- * Drive folder the user can edit, as an independent file counted against the folder owner's quota. A flagged file
- * (`attachment-risk.ts`) answers 409 `ATTACHMENT_RISK` unless `acknowledge` is true.
+ * `POST /api/drive/attachments/[id]/save` `{ parentId, name? }`: copies a readable attachment into a Drive
+ * folder the user can edit, as an independent file counted against the folder owner's quota.
  */
 export async function saveAttachmentToDrive(
 	env: CloudflareEnv,
@@ -131,7 +129,7 @@ export async function saveAttachmentToDrive(
 	attachmentId: string,
 	body: unknown,
 ): Promise<DriveAnswer> {
-	const value = (body ?? {}) as { parentId?: unknown; name?: unknown; acknowledge?: unknown };
+	const value = (body ?? {}) as { parentId?: unknown; name?: unknown };
 	if (value.parentId !== undefined && value.parentId !== null && typeof value.parentId !== "string")
 		return fail(400, "Invalid folder");
 	const db = getDb(env);
@@ -140,19 +138,6 @@ export async function saveAttachmentToDrive(
 	const ownerId = parentId ? (await editableFolder(db, user.id, parentId)).folder.ownerId : user.id;
 	const source = await readableAttachment(env, user, attachmentId);
 	if (!source) return notFound();
-	// The same gate as a download: a flagged file is copied only once the user has seen the warning.
-	const risk = await assessStoredAttachment(env, source.attachment);
-	if (risk.level !== "ok" && value.acknowledge !== true) {
-		await source.object.body.cancel().catch(() => undefined);
-		return {
-			status: 409,
-			body: {
-				error: "This file is flagged as risky. Review the warning before saving it.",
-				code: "ATTACHMENT_RISK",
-				risk,
-			},
-		};
-	}
 	const store = await newDriveStore(env);
 	const id = newId("drv");
 	const now = new Date();

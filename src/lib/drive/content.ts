@@ -1,6 +1,4 @@
 import { getDb } from "@/db";
-import { attachmentDownloadGate, servesInline } from "@/lib/email/attachment-risk-store";
-import { getInlineContentType } from "@/lib/http/content-type-utils";
 import type { SessionUser } from "@/lib/auth/types";
 import { getDriveItem, getDriveRole } from "./access";
 import { readableAttachment } from "./attachments";
@@ -115,10 +113,7 @@ async function presignedDownload(env: CloudflareEnv, item: DriveRow): Promise<Re
 	});
 }
 
-/**
- * `GET /api/drive/attachments/[id]/content`: by the same access rule and download gate (`?risk=1`, `?acknowledge=1`)
- * as the mail attachment route.
- */
+/** `GET /api/drive/attachments/[id]/content`: by the same access rule as the mail attachment route. */
 export async function attachmentResponse(
 	env: CloudflareEnv,
 	user: SessionUser,
@@ -128,16 +123,9 @@ export async function attachmentResponse(
 	const source = await readableAttachment(env, user, id);
 	if (!source) return notFoundResponse();
 	const download = new URL(request.url).searchParams.get("disposition") === "attachment";
-	const inline = servesInline(
-		source.attachment,
-		!download && getInlineContentType(source.attachment.contentType) !== null,
-	);
-	const refused = await attachmentDownloadGate(env, request, source.attachment, source.object, inline);
-	if (refused) return refused;
-	// A flagged name declared as an image still downloads as an attachment.
 	return streamAttachment(
 		{ ...source.attachment, createdAt: source.attachment.createdAt ?? undefined },
 		source.object,
-		!inline,
+		download,
 	);
 }

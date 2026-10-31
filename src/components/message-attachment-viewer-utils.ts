@@ -1,27 +1,16 @@
-import { assessAttachmentRisk } from "@/lib/email/attachment-risk";
 import type { MessageAttachment } from "@/app/(dashboard)/inbox/[messageId]/types";
 import type { AttachmentPreviewKind } from "./message-attachment-viewer-types";
 
-/** The attachment route: `file` is the bare route (as the sender marked it), the others force preview or download. */
 export function getAttachmentFileUrl(
 	messageId: string,
 	attachmentId: string,
-	mode: "download" | "file" | "preview" = "download",
+	mode: "download" | "preview" = "download",
 ): string {
-	const suffix = mode === "preview" ? "?preview=1" : mode === "download" ? "?download=1" : "";
+	const suffix = mode === "preview" ? "?preview=1" : "?download=1";
 	return `/api/messages/${messageId}/attachments/${attachmentId}${suffix}`;
 }
 
-/**
- * How the viewer shows a file, from its declared type. A name the risk check flags (`setup.exe` declared `image/png`)
- * is never previewed: the server refuses to render it inline, so it only downloads, after its warning.
- */
-export function getAttachmentPreviewKind(
-	attachment: Pick<MessageAttachment, "type"> & { filename?: string },
-): AttachmentPreviewKind {
-	const { filename } = attachment;
-	if (filename !== undefined && assessAttachmentRisk({ filename, type: attachment.type }).level !== "ok")
-		return "unsupported";
+export function getAttachmentPreviewKind(attachment: Pick<MessageAttachment, "type">): AttachmentPreviewKind {
 	if (attachment.type === "application/pdf") return "pdf";
 	if (attachment.type.startsWith("audio/")) return "audio";
 	if (attachment.type.startsWith("video/")) return "video";

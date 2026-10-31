@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.10.31.4] - 2026-10-31
+
+### Added
+
+- Connected accounts can send as addresses their sign-in does not prove: an **Other IMAP provider** account's own address, an account whose user name is not its address, and provider aliases. In [Settings → Connected accounts](/settings/connected-accounts), **Verify** or **Send from another address** mails a 6-digit code to the address; once it is entered, the address is in the composer's From menu and mail from it goes out through the account's SMTP server. Codes work for 30 minutes and 5 tries, are stored only as a keyed hash, and are limited to 5 an hour per user (3 for one address) and 10 a day per address; an address with 10 wrong codes in a day gets no new code until the next day. Needs migration 0089 (`external_identities`), applied from the admin overview.
+
+### Changed
+
+- An unverified connected address is now listed in the From menu as **(Verify in Settings)** instead of being left out, and connecting or testing an account also tests its SMTP sign-in when its user name is not its address.
+
+### Fixed
+
+- A reading layout chosen while your account's layout could not be loaded (a slow first request right after a deploy, or a dropped connection) is no longer lost: the load is tried again a few times, and the choice is saved once it loads or every attempt failed. A layout loaded just after you changed something on this device no longer puts the old choice back.
+- The automatic direct-upload setup under [Admin → Storage](/storage) says it took too long, rather than that the checks failed, when the checks were cut short by its time limit, and it cleans up a token Cloudflare created late on accounts with many API tokens.
+- Very long mail (over about 100,000 characters of text) is no longer searched for a one-time code at delivery, so its new-mail notification never carries one; the check now stops before any work on the body.
+
 ## [2026.10.31.3] - 2026-10-31
 
 ### Changed

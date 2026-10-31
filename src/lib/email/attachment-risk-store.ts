@@ -1,4 +1,3 @@
-import { readAttachmentBytes } from "./attachment-storage";
 import {
 	assessAttachmentRisk,
 	inspectZipDirectory,
@@ -10,15 +9,13 @@ import {
 } from "./attachment-risk";
 import type { AttachmentRisk } from "./attachment-risk-types";
 
-type StoredAttachment = { id: string; filename: string; contentType: string; size: number; r2Key: string };
-
 async function readRange(
 	env: CloudflareEnv,
-	attachment: StoredAttachment,
+	key: string,
 	range: { suffix: number } | { offset: number; length: number },
 ): Promise<Uint8Array | null> {
-	const bytes = await readAttachmentBytes(env, attachment, { range });
-	return bytes ? new Uint8Array(bytes) : null;
+	const object = await env.BUCKET.get(key, { range });
+	return object ? new Uint8Array(await object.arrayBuffer()) : null;
 }
 
 /**
@@ -27,20 +24,20 @@ async function readRange(
  */
 export async function assessStoredAttachment(
 	env: CloudflareEnv,
-	attachment: StoredAttachment,
+	attachment: { filename: string; contentType: string; size: number; r2Key: string },
 ): Promise<AttachmentRisk> {
 	const byName = assessAttachmentRisk({ filename: attachment.filename, type: attachment.contentType });
 	if (!isZipAttachment({ filename: attachment.filename, type: attachment.contentType }) || attachment.size < 22)
 		return byName;
 	try {
-		const tail = await readRange(env, attachment, { suffix: Math.min(attachment.size, ZIP_TAIL_BYTES) });
+		const tail = await readRange(env, attachment.r2Key, { suffix: Math.min(attachment.size, ZIP_TAIL_BYTES) });
 		if (!tail) return byName;
 		const located = locateZipDirectory(tail);
 		if (!located) return mergeRisks(byName, { level: "warning", reasons: ["This archive could not be checked."] });
 		const readable =
 			!zipDirectoryRefusal(located) && located.size > 0 && located.offset + located.size <= attachment.size;
 		const directory = readable
-			? await readRange(env, attachment, { offset: located.offset, length: located.size })
+			? await readRange(env, attachment.r2Key, { offset: located.offset, length: located.size })
 			: null;
 		return mergeRisks(byName, inspectZipDirectory(located, located.size === 0 ? new Uint8Array(0) : directory));
 	} catch {
@@ -71,7 +68,7 @@ export function servesInline(attachment: { filename: string; contentType: string
 export async function attachmentDownloadGate(
 	env: CloudflareEnv,
 	request: Request,
-	attachment: StoredAttachment,
+	attachment: { filename: string; contentType: string; size: number; r2Key: string },
 	object: { body: ReadableStream },
 	inline: boolean,
 ): Promise<Response | null> {

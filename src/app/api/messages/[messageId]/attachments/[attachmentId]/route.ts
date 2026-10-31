@@ -15,7 +15,7 @@ export async function GET(request: Request, { params }: AttachmentRouteParams) {
 	const result = await getAttachmentForUser(env, user, messageId, attachmentId);
 	if (!result) return new Response("Not found", { status: 404 });
 
-	const { attachment, file } = result;
+	const { attachment, object } = result;
 	const url = new URL(request.url);
 	const previewRequested = url.searchParams.get("preview") === "1";
 	const downloadRequested = url.searchParams.get("download") === "1";
@@ -29,9 +29,10 @@ export async function GET(request: Request, { params }: AttachmentRouteParams) {
 		inlineType !== null && (attachment.disposition === "inline" || previewRequested),
 	);
 	// Programs, macro documents, disguised names and archives download only after the reader has seen why.
-	const refused = await attachmentDownloadGate(env, request, attachment, file, inline);
+	const refused = await attachmentDownloadGate(env, request, attachment, object, inline);
 	if (refused) return refused;
 	const headers = new Headers();
+	object.writeHttpMetadata(headers);
 	headers.set("Content-Type", inline && inlineType ? inlineType : getDownloadContentType(attachment.contentType));
 	headers.set("Content-Length", String(attachment.size));
 	headers.set("Content-Disposition", getContentDisposition(attachment.filename, inline));
@@ -42,5 +43,5 @@ export async function GET(request: Request, { params }: AttachmentRouteParams) {
 	);
 	headers.set("Cache-Control", "private, max-age=3600");
 
-	return new Response(file.body, { headers });
+	return new Response(object.body, { headers });
 }

@@ -3,7 +3,6 @@ import type { AppDatabase } from "@/db";
 import { getDb } from "@/db";
 import { domains, mailboxes, messageAttachments, messages } from "@/db/schema";
 import { htmlBodyObjectKey } from "@/lib/email/bodies-utils";
-import { attachmentObjectKeys } from "@/lib/email/attachment-storage-utils";
 import type { MailboxDeletionResult, MailboxPurgeMessage } from "./delete-types";
 import {
 	MAILBOX_PURGE_BATCH_SIZE,
@@ -38,12 +37,12 @@ async function purgeMessageBatch(env: CloudflareEnv, db: AppDatabase, mailboxId:
 	if (batch.length === 0) return 0;
 
 	const ids = batch.map((row) => row.id);
-	const attachmentKeys = attachmentObjectKeys(
+	const attachmentKeys = (
 		await db
 			.select({ r2Key: messageAttachments.r2Key })
 			.from(messageAttachments)
-			.where(inArray(messageAttachments.messageId, ids)),
-	);
+			.where(inArray(messageAttachments.messageId, ids))
+	).map((row) => row.r2Key);
 	const rawKeys = [...new Set(batch.map((row) => row.rawR2Key).filter((key): key is string => !!key))];
 	const keptRawKeys = rawKeys.length
 		? (

@@ -60,9 +60,9 @@ type StructuredHeader = { value: string; params: [string, string][] };
 
 /**
  * postal-mime's `parseStructuredHeader`, keeping every parameter in order (postal-mime keeps the last of each name)
- * so a caller can see duplicates. Also read by the MIME part index (`mime-index-utils.ts`).
+ * so a caller can see duplicates.
  */
-export function parseStructuredHeader(input: string): StructuredHeader {
+function parseStructuredHeader(input: string): StructuredHeader {
 	const header: StructuredHeader = { value: "", params: [] };
 	let key: string | null = null;
 	let value = "";
@@ -131,19 +131,6 @@ function describePart(lines: string[]): PartHeaders {
 	if (contentType === null || !/^multipart\//i.test(parseStructuredHeader(contentType).value))
 		return { multipart: false, base64, boundary: null, ambiguous: false };
 	return { multipart: true, base64, ...multipartBoundary(contentType) };
-}
-
-/** Whether `bytes[start, end)` begins with `prefix`. Shared with the MIME part index (`mime-index-utils.ts`). */
-export function bytesStartWith(bytes: Uint8Array, start: number, end: number, prefix: Uint8Array): boolean {
-	if (end - start < prefix.length) return false;
-	for (let index = 0; index < prefix.length; index++) if (bytes[start + index] !== prefix[index]) return false;
-	return true;
-}
-
-/** Whether `bytes[start, end)` holds only spaces and tabs: transport padding after a boundary. */
-export function onlyBlankBytes(bytes: Uint8Array, start: number, end: number): boolean {
-	for (let index = start; index < end; index++) if (bytes[index] !== SPACE && bytes[index] !== TAB) return false;
-	return true;
 }
 
 /** One pass over the bytes, following the parts postal-mime will see. */
@@ -235,11 +222,15 @@ class PreflightScan {
 	}
 
 	private startsWith(start: number, end: number, prefix: Uint8Array): boolean {
-		return bytesStartWith(this.bytes, start, end, prefix);
+		if (end - start < prefix.length) return false;
+		for (let index = 0; index < prefix.length; index++) if (this.bytes[start + index] !== prefix[index]) return false;
+		return true;
 	}
 
 	private onlyBlanks(start: number, end: number): boolean {
-		return onlyBlankBytes(this.bytes, start, end);
+		for (let index = start; index < end; index++)
+			if (this.bytes[index] !== SPACE && this.bytes[index] !== TAB) return false;
+		return true;
 	}
 }
 

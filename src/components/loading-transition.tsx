@@ -17,6 +17,8 @@ import {
 import { useSyncedState } from "@/hooks/use-synced-state";
 import type { LoadingTransitionProps } from "./loading-transition-types";
 import { LoadingRecovery } from "./loading-recovery";
+import { StartupSteps } from "./startup-steps";
+import { useStartupSteps } from "./use-startup-steps";
 
 const MINIMUM_LOADING_TIME = 600;
 const COMPLETION_TIME = 220;
@@ -45,6 +47,9 @@ export function LoadingTransition({ children, ready, failure }: LoadingTransitio
 	const [dataWaitExpired, setDataWaitExpired] = useState(false);
 	const loadingIds = useRef(new Set<string>());
 	const fetchingQueries = useIsFetching();
+	// The step log under the bar (use-startup-steps.ts): no request and no timer of its own.
+	const [completedAt, setCompletedAt] = useState<number | null>(null);
+	const { steps, statusLabel } = useStartupSteps(ready, completedAt);
 
 	const reportLoading = useCallback((id: string, loading: boolean) => {
 		if (loading) loadingIds.current.add(id);
@@ -97,7 +102,10 @@ export function LoadingTransition({ children, ready, failure }: LoadingTransitio
 	useEffect(() => {
 		if (!canComplete) return;
 		const remaining = showInitialLoader ? Math.max(0, MINIMUM_LOADING_TIME - (Date.now() - startedAt)) : 0;
-		const completeTimer = window.setTimeout(() => setProgress(100), remaining);
+		const completeTimer = window.setTimeout(() => {
+			setProgress(100);
+			setCompletedAt(Math.round(performance.now()));
+		}, remaining);
 		const revealTimer = window.setTimeout(() => {
 			if (showInitialLoader) {
 				hasShownInitialLoadingTransition = true;
@@ -141,13 +149,18 @@ export function LoadingTransition({ children, ready, failure }: LoadingTransitio
 				>
 					{/* Shown only after a reload from the "Kite was updated" notice; otherwise display: none. */}
 					<ReloadReturnSky />
-					<div className={`relative flex flex-col items-center gap-6 ${failure == null ? "w-64" : "w-80"}`}>
-						<img
-							src={iconUrl}
-							onError={() => setIconUrl("/icon-96.png")}
-							alt=""
-							className="reload-return-hidden h-20 w-20 rounded-2xl object-contain"
-						/>
+					<div className="relative flex w-80 flex-col items-center gap-6">
+						<div className="reload-return-hidden flex flex-col items-center gap-3">
+							<img
+								src={iconUrl}
+								onError={() => setIconUrl("/icon-96.png")}
+								alt=""
+								className="reload-return-hidden h-20 w-20 rounded-2xl object-contain"
+							/>
+							<span aria-hidden="true" className="text-xl font-bold tracking-tight text-neutral-900">
+								{branding.appName}
+							</span>
+						</div>
 						{failure ?? (
 							<>
 								{loaderVisible && (
@@ -157,6 +170,16 @@ export function LoadingTransition({ children, ready, failure }: LoadingTransitio
 									</>
 								)}
 								<div className="relative w-full">
+									{/* The step the screen is on, with the bar's progress: both change as facts come in. */}
+									<p
+										aria-hidden="true"
+										className="mb-2 flex items-baseline justify-between gap-3 text-sm text-neutral-700"
+									>
+										<span data-startup-status className="min-w-0 truncate">
+											{statusLabel}
+										</span>
+										<span className="text-xs tabular-nums text-neutral-900">{Math.round(progress)}%</span>
+									</p>
 									{/* The kite hangs from just above the bar, so the two never cross. */}
 									<ReloadReturnKite />
 									<div className="reload-return-track h-1.5 overflow-hidden rounded-full bg-blue-100">
@@ -169,6 +192,7 @@ export function LoadingTransition({ children, ready, failure }: LoadingTransitio
 									<p aria-hidden="true" className="reload-return-static text-sm">
 										{RELOAD_RETURN_STATIC_TEXT}
 									</p>
+									<StartupSteps steps={steps} />
 								</div>
 								<LoadingRecovery active={loaderVisible} />
 							</>

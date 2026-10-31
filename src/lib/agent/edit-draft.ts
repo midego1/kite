@@ -7,12 +7,11 @@ import { getEmailAddress, splitEmailAddressList } from "@/lib/email/address";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import {
 	deleteMessageAttachment,
-	findAttachmentForUser,
+	getAttachmentForUser,
 	MAX_ATTACHMENT_COUNT,
 	MAX_TOTAL_ATTACHMENT_SIZE,
 	storeMessageAttachments,
 } from "@/lib/email/attachments";
-import { ATTACHMENT_ROW_COLUMNS, readAttachmentBytes } from "@/lib/email/attachment-storage";
 import type { AttachmentContent } from "@/lib/email/attachment-types";
 import type { AgentDraftEditInput, AgentToolContext } from "./types";
 import { formatAgentDraftBody } from "./draft-format";
@@ -24,24 +23,6 @@ function recipientHeader(value: string, label: string, required: boolean): strin
 	if (entries.some((entry) => !/^[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]+$/.test(getEmailAddress(entry))))
 		throw new Error(`${label} contains an invalid address`);
 	return entries.join(", ");
-}
-
-/** A file from another message in the draft's mailbox that the assistant attaches; throws when it cannot be read. */
-async function readSourceAttachment(
-	context: AgentToolContext,
-	attachment: { sourceEmailId: string; attachmentId: string },
-): Promise<AttachmentContent> {
-	const [source] = await getDb(context.env)
-		.select({ id: messages.id, userId: messages.userId, status: messages.status })
-		.from(messages)
-		.where(and(eq(messages.id, attachment.sourceEmailId), eq(messages.mailboxId, context.mailboxId)))
-		.limit(1);
-	if (!source || (source.status === "draft" && source.userId !== context.user.id))
-		throw new Error("Attachment source email not found in the selected mailbox");
-	const found = await findAttachmentForUser(context.env, context.user, source.id, attachment.attachmentId);
-	const content = found?.disposition === "attachment" ? await readAttachmentBytes(context.env, found) : null;
-	if (!found || !content) throw new Error("Attachment not found on the source email");
-	return { filename: found.filename, type: found.contentType, content };
 }
 
 export async function editAgentDraft(context: AgentToolContext, input: AgentDraftEditInput) {
@@ -104,16 +85,29 @@ export async function editAgentDraft(context: AgentToolContext, input: AgentDraf
 				: recipientHeader(input.bcc, "Bcc", false) || null;
 	const formattedBody = input.body === undefined ? null : formatAgentDraftBody(input.body);
 	const scheduledAt = input.scheduledAt === undefined ? undefined : parseAgentScheduledAt(input.scheduledAt);
-	const existing = await db
-		.select(ATTACHMENT_ROW_COLUMNS)
-		.from(messageAttachments)
-		.where(eq(messageAttachments.messageId, draft.id));
+	const existing = await db.select().from(messageAttachments).where(eq(messageAttachments.messageId, draft.id));
 	const removeIds = new Set(input.removeAttachmentIds ?? []);
 	if ([...removeIds].some((id) => !existing.some((attachment) => attachment.id === id)))
 		throw new Error("Attachment to remove was not found on this draft");
 	const remaining = existing.filter((attachment) => !removeIds.has(attachment.id));
 	const additions: AttachmentContent[] = [];
-	for (const attachment of input.addAttachments ?? []) additions.push(await readSourceAttachment(context, attachment));
+	for (const attachment of input.addAttachments ?? []) {
+		const [source] = await db
+			.select({ id: messages.id, userId: messages.userId, status: messages.status })
+			.from(messages)
+			.where(and(eq(messages.id, attachment.sourceEmailId), eq(messages.mailboxId, context.mailboxId)))
+			.limit(1);
+		if (!source || (source.status === "draft" && source.userId !== context.user.id))
+			throw new Error("Attachment source email not found in the selected mailbox");
+		const found = await getAttachmentForUser(context.env, context.user, source.id, attachment.attachmentId);
+		if (!found || found.attachment.disposition !== "attachment")
+			throw new Error("Attachment not found on the source email");
+		additions.push({
+			filename: found.attachment.filename,
+			type: found.attachment.contentType,
+			content: await found.object.arrayBuffer(),
+		});
+	}
 	if (
 		remaining.length + additions.length > MAX_ATTACHMENT_COUNT ||
 		remaining.reduce((total, attachment) => total + attachment.size, 0) +

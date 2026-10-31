@@ -18,6 +18,7 @@ import type { ProfileNameChangedDetail } from "@/lib/profile/types";
 import { useStoredState } from "@/hooks/use-stored-state";
 import type { SendIdentity } from "@/lib/external-accounts/types";
 import { mailboxIdsParam, visibleMailboxIds } from "@/lib/mailboxes/scope-utils";
+import { publishStartupStats } from "./startup-stats";
 
 export type MailboxOption = {
 	id: string;
@@ -90,6 +91,7 @@ export function MailboxProvider({ children }: { children: ReactNode }) {
 			.then((items) => {
 				if (cancelled || sessionToken !== getClientSessionKey()) return;
 				setMailboxes(items);
+				publishStartupStats({ mailboxes: items.length });
 
 				const storedId = localStorage.getItem(SELECTED_MAILBOX_STORAGE_KEY);
 				if (storedId) {

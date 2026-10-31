@@ -35,7 +35,6 @@ import { readDirectUploadsState, type DirectUploadsState } from "./direct-upload
 import { completeStorageAttempt, recordStorageAttempt } from "./test-limit";
 import { createLogger } from "@/lib/logger.mjs";
 import { validateStore, validateStoreCors } from "./validate";
-import { ATTACHMENT_OBJECT_ROWS_SQL } from "@/lib/email/attachment-storage-utils";
 
 const log = createLogger("storage");
 
@@ -147,10 +146,7 @@ async function sumOf(env: StoresEnv, sql: string): Promise<{ objects: number; by
 async function usageByClass(env: StoresEnv) {
 	const [raws, attachments, backups, drive] = await Promise.all([
 		sumOf(env, "SELECT count(*) AS objects, 0 AS bytes FROM messages WHERE raw_r2_key IS NOT NULL"),
-		sumOf(
-			env,
-			`SELECT count(*) AS objects, sum(size) AS bytes FROM message_attachments WHERE ${ATTACHMENT_OBJECT_ROWS_SQL}`,
-		),
+		sumOf(env, "SELECT count(*) AS objects, sum(size) AS bytes FROM message_attachments"),
 		sumOf(env, "SELECT count(*) AS objects, sum(size) AS bytes FROM backups WHERE r2_key IS NOT NULL"),
 		callStorageHook<{ objects: number; bytes: number }>("drive", "usage", {}).catch(() => null),
 	]);

@@ -2,14 +2,13 @@ import { inArray } from "drizzle-orm";
 import { queryInChunks } from "@/db/chunk-utils";
 import { messageAttachments, messages } from "@/db/schema";
 import { parseEmailAddressParts, splitEmailAddressList } from "@/lib/email/address";
-import { ATTACHMENT_ROW_COLUMNS } from "@/lib/email/attachment-storage";
-import type { AttachmentRow } from "@/lib/email/attachment-storage-types";
 import { htmlToReadableText } from "@/lib/email/reply-content-utils";
 import { KEYWORD_DRAFT, KEYWORD_FLAGGED, KEYWORD_SEEN } from "./constants";
 import { attachmentBlobId, encodeMailboxRef, messageBlobId, statusToRole } from "./ids";
 import type { EmailAddressObject, EmailBodyPart, JmapContext } from "./types";
 
 type MessageRow = typeof messages.$inferSelect;
+type AttachmentRow = typeof messageAttachments.$inferSelect;
 
 export function toAddressObjects(value: string | null | undefined): EmailAddressObject[] | null {
 	const entries = splitEmailAddressList(value);
@@ -186,7 +185,7 @@ export async function loadAttachmentsByMessage(
 	const result = new Map<string, AttachmentRow[]>();
 	if (messageIds.length === 0) return result;
 	const rows = await queryInChunks(messageIds, (chunk) =>
-		ctx.db.select(ATTACHMENT_ROW_COLUMNS).from(messageAttachments).where(inArray(messageAttachments.messageId, chunk)),
+		ctx.db.select().from(messageAttachments).where(inArray(messageAttachments.messageId, chunk)),
 	);
 	for (const row of rows) {
 		const list = result.get(row.messageId) ?? [];

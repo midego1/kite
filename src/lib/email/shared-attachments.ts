@@ -57,9 +57,7 @@ export async function findSharedFile(env: CloudflareEnv, linkId: string, now = n
 	const mailboxOwner = alias(users, "mailbox_owner");
 	const [file] = await getDb(env)
 		.select({
-			id: messageAttachments.id,
 			r2Key: messageAttachments.r2Key,
-			contentType: messageAttachments.contentType,
 			filename: messageAttachments.filename,
 			size: messageAttachments.size,
 		})

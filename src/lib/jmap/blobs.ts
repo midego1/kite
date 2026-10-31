@@ -1,7 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { messageAttachments, messages } from "@/db/schema";
 import { newId } from "@/lib/ids";
-import { openAttachment } from "@/lib/email/attachment-storage";
 import { loadMessageBody } from "@/lib/email/bodies";
 import { SCREENING_STATUS } from "@/lib/screener/screener-utils";
 import { isHiddenDraft } from "@/lib/messages/draft-privacy-utils";
@@ -90,7 +89,6 @@ export async function readBlob(
 	if (decoded.kind === "att") {
 		const [row] = await ctx.db
 			.select({
-				id: messageAttachments.id,
 				r2Key: messageAttachments.r2Key,
 				filename: messageAttachments.filename,
 				type: messageAttachments.contentType,
@@ -104,8 +102,8 @@ export async function readBlob(
 			.where(eq(messageAttachments.id, decoded.id))
 			.limit(1);
 		if (!isReadableRow(row, accessible, ctx.auth.userId)) return null;
-		const file = await openAttachment(ctx.env, { id: row.id, r2Key: row.r2Key, size: row.size, contentType: row.type });
-		return file ? { body: file.body, type: row.type, name: row.filename, size: file.size } : null;
+		const object = await ctx.env.BUCKET.get(row.r2Key);
+		return object ? { body: object.body, type: row.type, name: row.filename, size: row.size } : null;
 	}
 	const [row] = await ctx.db
 		.select()

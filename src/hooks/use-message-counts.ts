@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { MessageCounts, MessageCountsDelta } from "./types";
 import { clearMessageCountsCache, fetchMessageCounts } from "./utils";
 import { createEmptyFolderCounts } from "@/app/api/messages/counts/utils";
+import { publishStartupStats } from "@/components/startup-stats";
 
 const REFRESH_DEBOUNCE_MS = 150;
 
@@ -28,7 +29,11 @@ export function useMessageCounts(mailboxId?: string | null, enabled = true) {
 			setIsLoading(true);
 			try {
 				const nextCounts = await fetchMessageCounts(mailboxId, force);
-				if (!cancelled && currentRequest === requestNumber) setCounts(nextCounts ?? emptyCounts);
+				if (!cancelled && currentRequest === requestNumber) {
+					setCounts(nextCounts ?? emptyCounts);
+					// The startup screen's mail line reads the Inbox unread count of the first answer.
+					if (nextCounts) publishStartupStats({ unread: nextCounts.folders.inbox.unread });
+				}
 			} finally {
 				if (!cancelled && currentRequest === requestNumber) setIsLoading(false);
 			}

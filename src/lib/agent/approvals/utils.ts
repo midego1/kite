@@ -4,7 +4,6 @@ import { agentDraftMetadata, agentSendApprovals, contacts, messageAttachments, m
 import { getEmailAddressList } from "@/lib/email/address";
 import { getAuthorizedSenderAddress } from "@/lib/email/sender";
 import { loadMessageAttachmentContents } from "@/lib/email/attachments";
-import { ATTACHMENT_ROW_COLUMNS, readAttachmentBytes } from "@/lib/email/attachment-storage";
 import { sendEmail } from "@/lib/email/send";
 import { runPostDeliveryStep } from "@/lib/email/post-delivery-utils";
 import { recordSentAgentDraft } from "@/lib/agent/auto-read/sent-draft";
@@ -40,19 +39,16 @@ async function snapshot(
 	scheduledAt: Date | null,
 ): Promise<{ payload: AgentSendSnapshot; hash: string }> {
 	const db = getDb(env);
-	const rows = await db
-		.select(ATTACHMENT_ROW_COLUMNS)
-		.from(messageAttachments)
-		.where(eq(messageAttachments.messageId, draft.id));
+	const rows = await db.select().from(messageAttachments).where(eq(messageAttachments.messageId, draft.id));
 	const attachments: AgentSendSnapshot["attachments"] = [];
 	for (const row of rows) {
-		const content = await readAttachmentBytes(env, row);
-		if (!content) throw new Error("Draft attachment missing");
+		const object = await env.BUCKET.get(row.r2Key);
+		if (!object) throw new Error("Draft attachment missing");
 		attachments.push({
 			id: row.id,
 			filename: row.filename,
 			size: row.size,
-			digest: await sha256(content),
+			digest: await sha256(await object.arrayBuffer()),
 		});
 	}
 	const payload: AgentSendSnapshot = {

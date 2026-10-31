@@ -707,6 +707,7 @@ export const auditLogs = sqliteTable(
 		index("audit_logs_actor_idx").on(t.actorUserId),
 		index("audit_logs_mailbox_idx").on(t.mailboxId),
 		index("audit_logs_created_idx").on(t.createdAt),
+		index("audit_logs_action_created_idx").on(t.action, t.createdAt),
 	],
 );
 

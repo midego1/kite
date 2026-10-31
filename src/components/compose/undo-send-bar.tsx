@@ -58,11 +58,7 @@ export function UndoSendBar({ pending, onUndo, onExpire }: UndoSendBarProps) {
 		<div role="status" className={BAR_CLASS}>
 			<span className="flex min-w-0 items-baseline gap-1">
 				<span className="shrink-0">{error ?? `Sending in ${undoCountdownSeconds(until, now)}s:`}</span>
-				<Link
-					href={sentMessageHref(messageId)}
-					className="min-w-0 max-w-56 truncate underline"
-					title={snapshot.subject}
-				>
+				<Link href={sentMessageHref(messageId)} className="min-w-0 max-w-56 truncate underline">
 					{snapshot.subject || "(no subject)"}
 				</Link>
 			</span>

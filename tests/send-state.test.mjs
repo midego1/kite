@@ -16,7 +16,7 @@ const app = await bundleModules("kite-send-state-", [
 		"src/lib/messages/send-state-utils.ts",
 	],
 	["loadSendStates, statusFilterCondition", "src/lib/messages/send-state.ts"],
-	["cancelQueuedSend", "src/lib/email/send.ts"],
+	["cancelQueuedSend", "src/lib/email/queued-send.ts"],
 	["getSendBannerActions", "src/components/messages/send-state-utils.ts"],
 	["buildMessageCounts, getMessageFolder", "src/app/api/messages/counts/utils.ts"],
 	["mailboxScopeCondition", "src/lib/messages/mailbox-scope.ts"],

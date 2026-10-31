@@ -42,7 +42,8 @@ const {
 	["setInstallEnabled", "src/lib/external-accounts/settings.ts"],
 	["setCanConnect", "src/lib/external-accounts/access.ts"],
 	["listSendIdentities", "src/lib/external-accounts/identities.ts"],
-	["sendEmail, processOutboundQueue, cancelQueuedSend", "src/lib/email/send.ts"],
+	["sendEmail, processOutboundQueue", "src/lib/email/send.ts"],
+	["cancelQueuedSend", "src/lib/email/queued-send.ts"],
 	["processAppendSent", "src/lib/external-accounts/submit.ts"],
 	["parseRawMime", "src/lib/email/parse.ts"],
 ]);

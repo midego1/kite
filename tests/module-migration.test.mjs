@@ -54,6 +54,8 @@ const LATER_MIGRATIONS = [
 	"0083_add_external_account_send_state.sql",
 	"0084_add_spam_strict_dmarc.sql",
 	"0085_add_direct_uploads_state.sql",
+	"0086_add_folder_color_is_custom.sql",
+	"0087_add_audit_logs_action_index.sql",
 ];
 /** Columns a later migration adds to a table this test pins; everything else must stay as it was. */
 const LATER_COLUMNS = {

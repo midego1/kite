@@ -40,20 +40,23 @@ export async function requeueAfterRefusal(
 	error: unknown,
 ): Promise<boolean> {
 	if (!(error instanceof SubmissionError) || error.action !== "retry") return false;
+	const delaySeconds = submitRetryDelaySeconds(delivery.attempt);
+	const retryAt = new Date(Date.now() + delaySeconds * 1000);
+	// The job names the try it waits for, so a queue message of an earlier try (the undo window's, after Send now)
+	// finds another time and drops itself instead of claiming the job at the wrong attempt.
 	const [requeued] = await getDb(env)
 		.update(outboundJobs)
-		.set({ status: "queued", error: error.message, updatedAt: new Date() })
+		.set({ status: "queued", error: error.message, scheduledAt: retryAt, updatedAt: new Date() })
 		.where(and(eq(outboundJobs.id, delivery.jobId), eq(outboundJobs.status, "sending")))
 		.returning({ id: outboundJobs.id });
 	if (!requeued) return false;
-	const delaySeconds = submitRetryDelaySeconds(delivery.attempt);
 	try {
 		await env.OUTBOUND_QUEUE.send(
 			{
 				kind: "email.scheduled",
 				jobId: delivery.jobId,
 				messageId: delivery.messageId,
-				scheduledAt: new Date(Date.now() + delaySeconds * 1000).toISOString(),
+				scheduledAt: retryAt.toISOString(),
 				attempt: delivery.attempt + 1,
 			},
 			{ delaySeconds },

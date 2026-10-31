@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { loadingRecoveryDelay } from "./loading-recovery-utils";
 
 export function LoadingRecovery({ active }: { active: boolean }) {
 	const [expired, setExpired] = useState(false);
 	useEffect(() => {
 		if (!active) return;
-		const timer = window.setTimeout(() => setExpired(true), 15_000);
+		// Counted from the start of the page, not from this mount: a startup screen that remounts must not push it back.
+		const timer = window.setTimeout(() => setExpired(true), loadingRecoveryDelay(performance.now()));
 		return () => window.clearTimeout(timer);
 	}, [active]);
 	if (!active || !expired) return null;

@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { ProgressiveAvatarImageProps } from "./progressive-avatar-image-types";
-import { getAvatarPreviewUrl } from "./progressive-avatar-image-utils";
+import { getAvatarPreviewUrl, rememberAvatarLoaded, wasAvatarLoaded } from "./progressive-avatar-image-utils";
 
 export function ProgressiveAvatarImage({ src, alt, className, onError }: ProgressiveAvatarImageProps) {
 	const [previewReadyFor, setPreviewReadyFor] = useState<string | null>(null);
@@ -14,7 +14,13 @@ export function ProgressiveAvatarImage({ src, alt, className, onError }: Progres
 	useEffect(() => {
 		onErrorRef.current = onError;
 	});
-	const showFull = previewFailedFor === src || fullReadyFor === src;
+	// A full avatar loaded before comes straight from the browser cache; the server snapshot keeps hydration stable.
+	const remembered = useSyncExternalStore(
+		() => () => {},
+		() => wasAvatarLoaded(src),
+		() => false,
+	);
+	const showFull = remembered || previewFailedFor === src || fullReadyFor === src;
 
 	useEffect(() => {
 		const image = imageRef.current;
@@ -28,7 +34,9 @@ export function ProgressiveAvatarImage({ src, alt, className, onError }: Progres
 		let cancelled = false;
 		const image = new Image();
 		image.onload = () => {
-			if (!cancelled) setFullReadyFor(src);
+			if (cancelled) return;
+			rememberAvatarLoaded(src);
+			setFullReadyFor(src);
 		};
 		image.onerror = () => {
 			if (!cancelled) {

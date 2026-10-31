@@ -2,8 +2,9 @@ import { NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { getEnv } from "@/lib/cloudflare";
 import { getDb } from "@/db";
-import { folders, routingRules } from "@/db/schema";
+import { routingRules } from "@/db/schema";
 import { requireSessionUser } from "@/lib/api/auth";
+import { getFolderForMailbox } from "@/app/api/folders/utils";
 import { newId } from "@/lib/ids";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { routingRuleSchema } from "@/lib/validators";
@@ -56,11 +57,7 @@ export async function POST(request: Request) {
 	}
 
 	if (folderId) {
-		const [folder] = await db
-			.select()
-			.from(folders)
-			.where(and(eq(folders.id, folderId), eq(folders.mailboxId, mailbox.id)))
-			.limit(1);
+		const folder = await getFolderForMailbox(db, folderId, mailbox.id);
 		if (!folder) {
 			return NextResponse.json({ error: "Folder not found" }, { status: 404 });
 		}

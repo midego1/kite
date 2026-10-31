@@ -36,6 +36,8 @@ const {
 const RELOAD_RETURN_STORAGE_KEY = "kite-reload-flight";
 const RELOAD_RETURN_CLASS = "kite-reload-return";
 const NOW = 1_800_000_000_000;
+/** The scene's cap: the boot script takes the class off after this long whatever the app does. */
+const RELOAD_RETURN_MAX_MS = 8_000;
 
 function fakeStorage(entries = {}) {
 	const map = new Map(Object.entries(entries));
@@ -47,23 +49,29 @@ function fakeStorage(entries = {}) {
 	};
 }
 
-/** Runs the inline <head> script against a fake sessionStorage and <html> class list; returns the classes it left. */
+/**
+ * Runs the inline <head> script against a fake sessionStorage and <html> class list; returns the classes it left,
+ * the timers it set (`[ms, callback]`) and `classList` to read after running them.
+ */
 function runBootstrap({ storage = fakeStorage(), now = NOW, classes = [] } = {}) {
 	const classList = new Set(classes);
+	const timers = [];
 	const context = vm.createContext({
 		sessionStorage: storage,
 		Date: { now: () => now },
+		setTimeout: (callback, ms) => void timers.push([ms, callback]),
 		document: {
 			documentElement: {
 				classList: {
 					add: (name) => void classList.add(name),
+					remove: (name) => void classList.delete(name),
 					contains: (name) => classList.has(name),
 				},
 			},
 		},
 	});
 	vm.runInContext(reloadReturnBootstrapScript, context);
-	return { classes: [...classList], storage };
+	return { classes: [...classList], storage, timers, classList };
 }
 
 /** Whether the boot script shows the return for a marker written `ageMs` ago (negative: by a clock that ran ahead). */
@@ -86,10 +94,11 @@ test("markReloadReturn writes the time under the key the boot script reads, and 
 	const storage = fakeStorage();
 	markReloadReturn(storage, NOW);
 	assert.deepEqual([...storage.map], [[RELOAD_RETURN_STORAGE_KEY, String(NOW)]]);
-	assert.deepEqual(runBootstrap({ storage, now: NOW + 5_000 }).classes, [RELOAD_RETURN_CLASS]);
 	clearReloadReturnMarker(storage);
 	assert.equal(storage.map.size, 0);
 	assert.deepEqual(runBootstrap({ storage, now: NOW + 5_000 }).classes, []);
+	markReloadReturn(storage, NOW);
+	assert.deepEqual(runBootstrap({ storage, now: NOW + 5_000 }).classes, [RELOAD_RETURN_CLASS]);
 });
 
 test("marking and clearing never throw without storage or with a storage that refuses", () => {
@@ -108,12 +117,27 @@ test("marking and clearing never throw without storage or with a storage that re
 	assert.doesNotThrow(() => clearReloadReturnMarker(refusing));
 });
 
-test("the boot script adds the class for a fresh marker and keeps the marker until the app is up", () => {
+test("the boot script shows the return once: it consumes the marker, so a refresh or an automatic reload is plain", () => {
 	const storage = fakeStorage({ [RELOAD_RETURN_STORAGE_KEY]: String(NOW - 2_000) });
 	const result = runBootstrap({ storage });
 	assert.deepEqual(result.classes, [RELOAD_RETURN_CLASS]);
-	// An automatic reload by the asset recovery within the minute shows the return again.
-	assert.equal(storage.getItem(RELOAD_RETURN_STORAGE_KEY), String(NOW - 2_000));
+	assert.equal(storage.getItem(RELOAD_RETURN_STORAGE_KEY), null);
+	// The next load of the tab within the minute (F5, the boot watchdog, "Reload Kite") shows the plain screen.
+	assert.deepEqual(runBootstrap({ storage, now: NOW + 1_000 }).classes, []);
+});
+
+test("the scene is cosmetic: the boot script takes the class off by itself, whatever the app does", () => {
+	const storage = fakeStorage({ [RELOAD_RETURN_STORAGE_KEY]: String(NOW) });
+	const result = runBootstrap({ storage, classes: ["dark"] });
+	assert.deepEqual(result.classes, ["dark", RELOAD_RETURN_CLASS]);
+	assert.deepEqual(
+		result.timers.map(([ms]) => ms),
+		[RELOAD_RETURN_MAX_MS],
+	);
+	result.timers[0][1]();
+	assert.deepEqual([...result.classList], ["dark"]);
+	// An ordinary load sets no timer.
+	assert.deepEqual(runBootstrap().timers, []);
 });
 
 test("the boot script leaves an ordinary load alone and removes a stale or broken marker", () => {

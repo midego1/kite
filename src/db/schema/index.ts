@@ -207,6 +207,8 @@ export const folders = sqliteTable(
 			.references(() => mailboxes.id, { onDelete: "cascade" }),
 		name: text("name").notNull(),
 		color: text("color").notNull().default("#2563eb"),
+		/** Whether someone picked the colour (the create dialog, the assistant) rather than taking the default blue. */
+		colorIsCustom: integer("color_is_custom", { mode: "boolean" }).notNull().default(false),
 		createdAt: integer("created_at", { mode: "timestamp" })
 			.notNull()
 			.$defaultFn(() => new Date()),
@@ -707,6 +709,7 @@ export const auditLogs = sqliteTable(
 		index("audit_logs_actor_idx").on(t.actorUserId),
 		index("audit_logs_mailbox_idx").on(t.mailboxId),
 		index("audit_logs_created_idx").on(t.createdAt),
+		index("audit_logs_action_created_idx").on(t.action, t.createdAt),
 	],
 );
 

@@ -25,7 +25,7 @@ export const chatProposalSchema = z.discriminatedUnion("action", [
 		action: z.literal("create_folder"),
 		status: z.literal("pending_approval"),
 		name: z.string().min(1).max(80),
-		color: z.string(),
+		color: z.string().optional(),
 	}),
 	z.object({
 		action: z.literal("move_emails_to_folder"),
@@ -94,7 +94,7 @@ export function chatActionPlan(proposal: z.infer<typeof chatProposalSchema>): Ch
 		case "create_folder":
 			return {
 				tool,
-				input: { name: proposal.name, color: proposal.color },
+				input: proposal.color ? { name: proposal.name, color: proposal.color } : { name: proposal.name },
 				audit: { action: "create_folder", variant: "", emailIds: [] },
 			};
 		case "move_emails_to_folder":

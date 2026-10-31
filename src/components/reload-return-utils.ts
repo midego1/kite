@@ -6,6 +6,11 @@
  * string instead of the plain logo. Pure CSS (`reload-return-*` in globals.css), so nothing waits on JavaScript
  * and the boot watchdog (asset-recovery-utils.ts) sees no activity it could mistake for progress. The marker
  * expires by itself, so a reload that never came, or a later ordinary reload, never shows the scene.
+ *
+ * The scene is strictly cosmetic: the script consumes the marker as it reads it, so only the one load right after
+ * Reload shows it (a refresh, or the boot watchdog's own reload, starts plainly), and it takes the class off
+ * again after RELOAD_RETURN_MAX_MS whatever React does, so a startup that does not finish shows the plain
+ * startup screen, with its own recovery, instead of a kite that looks as if it were still loading.
  */
 
 /** sessionStorage key holding the time (ms since the epoch) Reload was chosen in the update notice. */
@@ -14,6 +19,8 @@ const RELOAD_RETURN_STORAGE_KEY = "kite-reload-flight";
 const RELOAD_RETURN_TTL_MS = 60_000;
 /** Put on <html> while the startup screen shows the kite's return. */
 const RELOAD_RETURN_CLASS = "kite-reload-return";
+/** The longest the scene stays (the boot watchdog's first look, too): a startup still going by then gets the plain screen. */
+const RELOAD_RETURN_MAX_MS = 8_000;
 /** What the startup screen's live region says while the new version loads. */
 export const RELOAD_RETURN_ANNOUNCEMENT = "Loading the new version…";
 /** The visible line of the reduced-motion variant, which shows the kite standing still. */
@@ -62,19 +69,20 @@ export function endReloadReturn(): void {
  * Runs in <head> before paint, after the theme script, so the first frame already shows the kite's return. It only
  * adds a class (no nodes: the boot watchdog counts parser-added nodes as progress while the document streams).
  * A marker counts while it is within RELOAD_RETURN_TTL_MS of now, either way round (a clock that jumped is as
- * stale as an old marker); anything else is removed. A fresh marker stays until the app is up (`endReloadReturn`),
- * so an automatic reload by the asset recovery while the new version's files settle keeps the story going.
+ * stale as an old marker). The marker is removed whatever it held, so no later load of this tab replays the scene,
+ * and a timer takes the class off after RELOAD_RETURN_MAX_MS even if the app never comes up (`endReloadReturn`
+ * ends it sooner once it does).
  */
 export const reloadReturnBootstrapScript = `(() => {
 	try {
 		const key = ${JSON.stringify(RELOAD_RETURN_STORAGE_KEY)};
 		const raw = sessionStorage.getItem(key);
 		if (raw === null) return;
+		sessionStorage.removeItem(key);
 		const at = Number(raw);
-		if (!Number.isFinite(at) || Math.abs(Date.now() - at) > ${RELOAD_RETURN_TTL_MS}) {
-			sessionStorage.removeItem(key);
-			return;
-		}
-		document.documentElement.classList.add(${JSON.stringify(RELOAD_RETURN_CLASS)});
+		if (!Number.isFinite(at) || Math.abs(Date.now() - at) > ${RELOAD_RETURN_TTL_MS}) return;
+		const root = document.documentElement;
+		root.classList.add(${JSON.stringify(RELOAD_RETURN_CLASS)});
+		setTimeout(() => root.classList.remove(${JSON.stringify(RELOAD_RETURN_CLASS)}), ${RELOAD_RETURN_MAX_MS});
 	} catch {}
 })();`;

@@ -54,6 +54,8 @@ next-env.d.ts
 /.vinext
 /src/lib/migrations/bundle.json
 /public/changelog.json
+# Written by builds before the release notes became a static asset.
+/src/lib/changelog/changelog.json
 /src/lib/changelog/changelog-recent.json
 
 # wrangler files

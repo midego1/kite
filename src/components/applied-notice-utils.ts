@@ -103,20 +103,22 @@ export function blurEndsFocusHold({
 }
 
 /**
- * Where the keyboard focus goes when the notice leaves while holding it: the first focusable element after the
- * notice in document order, else the last one before it, else nowhere (null).
+ * Where the keyboard focus may go when the notice leaves while holding it, best first: the focusable elements after
+ * the notice in document order, then those before it, nearest first. The caller tries them in turn, since one may
+ * refuse the focus (hidden, inert).
  */
-export function pickFocusNeighbour<T>(
+export function focusNeighbourOrder<T>(
 	candidates: readonly T[],
 	place: (candidate: T) => "before" | "inside" | "after",
-): T | null {
-	let before: T | null = null;
+): T[] {
+	const before: T[] = [];
+	const after: T[] = [];
 	for (const candidate of candidates) {
 		const where = place(candidate);
-		if (where === "after") return candidate;
-		if (where === "before") before = candidate;
+		if (where === "after") after.push(candidate);
+		else if (where === "before") before.push(candidate);
 	}
-	return before;
+	return [...after, ...before.reverse()];
 }
 
 /** Only the kite's own animation (or the fade without it) ends the exit; the box's fold and the tail bubble past. */

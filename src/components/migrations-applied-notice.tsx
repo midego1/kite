@@ -13,7 +13,7 @@ import {
 	blurEndsFocusHold,
 	createDismissTimer,
 	isAppliedNoticeExitEnd,
-	pickFocusNeighbour,
+	focusNeighbourOrder,
 	planAppliedNoticeExit,
 } from "./applied-notice-utils";
 
@@ -25,11 +25,15 @@ function focusNeighbourOf(notice: HTMLElement): void {
 	const candidates = [...document.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(
 		(element) => element.getClientRects().length > 0,
 	);
-	const neighbour = pickFocusNeighbour(candidates, (element) => {
+	const order = focusNeighbourOrder(candidates, (element) => {
 		if (notice.contains(element)) return "inside";
 		return notice.compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING ? "after" : "before";
 	});
-	neighbour?.focus();
+	// An element hidden with `visibility` or inside an inert subtree still has a box but refuses the focus.
+	for (const element of order) {
+		element.focus();
+		if (document.activeElement === element) return;
+	}
 }
 
 const browserClock = {

@@ -11,6 +11,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ mes
 
 	const result = await sendQueuedNow(env, auth.user.id, messageId);
 	if (result.ok) return NextResponse.json({ ok: true });
+	if (result.reason === "retrying") {
+		return NextResponse.json(
+			{ error: "The mail server asked to try later. Kite will retry the send." },
+			{ status: 409 },
+		);
+	}
 	if (result.reason === "too_late") {
 		return NextResponse.json({ error: "The message is already being sent" }, { status: 409 });
 	}

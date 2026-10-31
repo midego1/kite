@@ -485,7 +485,10 @@ export function preparedDeliveryFromJob(
  * Claiming the job is the single gate shared with cancelQueuedSend and sendQueuedNow: whichever
  * conditional update wins decides whether the message goes out, is undone, or is sent early.
  */
-export async function claimAndDeliver(env: CloudflareEnv, delivery: PreparedDelivery): Promise<boolean> {
+export async function claimAndDeliver(
+	env: CloudflareEnv,
+	delivery: PreparedDelivery,
+): Promise<"sent" | "taken_back" | "retrying" | "not_claimed"> {
 	const db = getDb(env);
 	delivery.attachments = await loadMessageAttachmentContents(env, delivery.messageId);
 	const [claimed] = await db
@@ -493,7 +496,6 @@ export async function claimAndDeliver(env: CloudflareEnv, delivery: PreparedDeli
 		.set({ status: "sending", updatedAt: new Date() })
 		.where(and(eq(outboundJobs.id, delivery.jobId), eq(outboundJobs.status, "queued")))
 		.returning({ id: outboundJobs.id });
-	if (!claimed) return false;
-	await deliverEmail(env, delivery);
-	return true;
+	if (!claimed) return "not_claimed";
+	return deliverEmail(env, delivery);
 }

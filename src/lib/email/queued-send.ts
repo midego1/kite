@@ -14,12 +14,14 @@ async function authorCanSend(db: Db, userId: string, mailboxId: string): Promise
 	return !!access && (access.canManage || access.canSendAs || access.canSendOnBehalf);
 }
 
-export type SendQueuedNowResult = { ok: true } | { ok: false; reason: "not_found" | "too_late" };
+export type SendQueuedNowResult = { ok: true } | { ok: false; reason: "not_found" | "too_late" | "retrying" };
 
 /**
  * Sends a message still waiting in the outbound queue (the undo window or a schedule) right away, for its
  * author. It takes the same conditional claim as the queue consumer, so the later queue message finds the job
- * claimed and does nothing: the message is never sent twice, and never both sent and undone.
+ * claimed and does nothing: the message is never sent twice, and never both sent and undone. A job waiting for
+ * the account server's retry (it carries that refusal as its error) keeps its own schedule, which also keeps its
+ * attempt count: pressing Send now there would restart the count.
  */
 export async function sendQueuedNow(
 	env: CloudflareEnv,
@@ -42,14 +44,21 @@ export async function sendQueuedNow(
 	if (!message?.mailboxId) return { ok: false, reason: "not_found" };
 	if (!(await authorCanSend(db, userId, message.mailboxId))) return { ok: false, reason: "not_found" };
 	const [job] = await db
-		.select({ id: outboundJobs.id, status: outboundJobs.status, payload: outboundJobs.payload })
+		.select({
+			id: outboundJobs.id,
+			status: outboundJobs.status,
+			payload: outboundJobs.payload,
+			error: outboundJobs.error,
+		})
 		.from(outboundJobs)
 		.where(eq(outboundJobs.messageId, messageId))
 		.orderBy(desc(outboundJobs.createdAt))
 		.limit(1);
 	if (!job || job.status !== "queued") return { ok: false, reason: "too_late" };
-	const delivery = preparedDeliveryFromJob(job.payload, job.id, messageId, undefined);
-	return (await claimAndDeliver(env, delivery)) ? { ok: true } : { ok: false, reason: "too_late" };
+	if (job.error) return { ok: false, reason: "retrying" };
+	const outcome = await claimAndDeliver(env, preparedDeliveryFromJob(job.payload, job.id, messageId, undefined));
+	if (outcome === "sent") return { ok: true };
+	return { ok: false, reason: outcome === "retrying" ? "retrying" : "too_late" };
 }
 
 export type CancelQueuedSendResult = { ok: true; draftId: string } | { ok: false; reason: "not_found" | "too_late" };

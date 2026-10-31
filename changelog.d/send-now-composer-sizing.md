@@ -1,6 +1,6 @@
 ### Added
 
-- While a send is held by the undo window, the bar now shows a **Send now** button next to **Undo**, a countdown, and the subject as a link to the queued message in Sent. Send now claims the held message with the same conditional claim the outbound queue uses, so it is never delivered twice and never both sent and undone (`POST /api/messages/{id}/send-now`, for the author only, like Undo). Sent refreshes when the hold ends.
+- While a send is held by the undo window, the bar now shows a **Send now** button next to **Undo**, a countdown, and the subject as a link to the queued message in Sent. Send now claims the held message with the same conditional claim the outbound queue uses, so it is never delivered twice and never both sent and undone (`POST /api/messages/{id}/send-now`, for the author only, like Undo; a send waiting for a connected account server's retry keeps its own schedule and answers 409). Sent refreshes when the hold ends.
 - Avatars that have loaded once (versioned URLs, which the server caches for a year) no longer flash their blurred preview on the next visit.
 
 ### Fixed

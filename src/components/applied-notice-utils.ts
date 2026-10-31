@@ -80,7 +80,7 @@ export function planAppliedNoticeExit(reducedMotion: boolean): AppliedNoticeExit
 }
 
 /** The CSS custom property that times the exit animations, set on the notice and on the kite. */
-export const APPLIED_NOTICE_DURATION_PROPERTY = "--applied-notice-duration";
+const APPLIED_NOTICE_DURATION_PROPERTY = "--applied-notice-duration";
 
 /** The inline style that gives the exit animations their length. */
 export function appliedNoticeExitStyle(exit: AppliedNoticeExit): Record<string, string> {

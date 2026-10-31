@@ -21,8 +21,9 @@ await build({
 	absWorkingDir: root,
 	logLevel: "silent",
 });
+/** The custom property the exit plan sets and the CSS animations read (applied-notice-utils.ts). */
+const APPLIED_NOTICE_DURATION_PROPERTY = "--applied-notice-duration";
 const {
-	APPLIED_NOTICE_DURATION_PROPERTY,
 	APPLIED_NOTICE_STAY_MS,
 	appliedNoticeExitStyle,
 	blurEndsFocusHold,

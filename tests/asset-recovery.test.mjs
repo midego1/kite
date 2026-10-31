@@ -54,6 +54,19 @@ function fakeDocument({ screen = "status", declared = [], readyState = "complete
 	const byId = new Map();
 	const container = () => ({
 		children: [],
+		attributes: {},
+		setAttribute(name, value) {
+			this.attributes[name] = String(value);
+		},
+		getAttribute(name) {
+			return this.attributes[name] ?? null;
+		},
+		removeAttribute(name) {
+			delete this.attributes[name];
+		},
+		hasAttribute(name) {
+			return name in this.attributes;
+		},
 		append(...elements) {
 			for (const element of elements) {
 				this.children.push(element);
@@ -858,4 +871,47 @@ test("Kite couldn't load carries the trace's Details, and Copy details copies th
 	const plain = loadPage({ flags: { [LOADER_MOUNTED_FLAG]: true } });
 	plain.advance(30_000);
 	assert.equal(plain.failure().children.length, 2);
+});
+
+test("every watchdog tick restarts the frozen-thread notice, a hidden tab pauses it, and it stops with the watchdog", () => {
+	const page = loadPage();
+	const root = page.document.documentElement;
+	const beat = () => root.getAttribute("data-kite-heartbeat");
+	assert.equal(beat(), "a");
+	page.advance(500);
+	assert.equal(beat(), "b");
+	page.advance(500);
+	assert.equal(beat(), "a");
+	assert.equal(root.hasAttribute("data-kite-hidden"), false);
+	page.document.visibilityState = "hidden";
+	page.fire("visibilitychange");
+	assert.equal(root.hasAttribute("data-kite-hidden"), true);
+	// Coming back restarts the wait at once, before the next tick.
+	page.document.visibilityState = "visible";
+	page.fire("visibilitychange");
+	assert.equal(root.hasAttribute("data-kite-hidden"), false);
+	assert.equal(beat(), "b");
+
+	// A page opened in a hidden tab starts paused.
+	const hidden = loadPage({ flags: {} });
+	hidden.document.visibilityState = "hidden";
+	hidden.fire("visibilitychange");
+	assert.equal(hidden.document.documentElement.hasAttribute("data-kite-hidden"), true);
+
+	// Once the watchdog is done with the page (no startup screen, the app rendered), the beats stop.
+	const done = loadPage({ screen: null, ready: true });
+	done.advance(500);
+	assert.equal(done.watching(), false);
+	const last = done.document.documentElement.getAttribute("data-kite-heartbeat");
+	done.advance(2_000);
+	assert.equal(done.document.documentElement.getAttribute("data-kite-heartbeat"), last);
+});
+
+test("a document root that refuses attributes cannot stop the watchdog", () => {
+	const page = loadPage();
+	page.document.documentElement.setAttribute = () => {
+		throw new Error("refused");
+	};
+	page.advance(9_000);
+	assert.equal(page.reloads, 1);
 });

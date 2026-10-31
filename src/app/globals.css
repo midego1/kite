@@ -872,6 +872,47 @@ html:has(#kite-boot-failure[data-loader-stuck]) .loading-recovery {
 	display: none;
 }
 
+/* The startup screen's last way out (loading-transition.tsx), for a main thread that stopped: no timer runs then, so
+   neither "Reload Kite" nor the watchdog's box can appear, but the compositor still runs opacity animations. The
+   notice fades in 10 seconds after its animation started, and the boot watchdog (asset-recovery-utils.ts) restarts
+   that animation on every tick by flipping `data-kite-heartbeat` on <html> between two identical keyframes.
+   While JavaScript runs it never shows; once the ticks stop, it appears by itself. A hidden tab pauses it (the ticks
+   are throttled there), and the watchdog's own box replaces it. */
+.loader-frozen {
+	opacity: 0;
+	animation: loader-frozen-a 200ms linear 10s both;
+}
+
+html[data-kite-heartbeat="b"] .loader-frozen {
+	animation-name: loader-frozen-b;
+}
+
+html[data-kite-hidden] .loader-frozen {
+	animation-play-state: paused;
+}
+
+html:has(#kite-boot-failure) .loader-frozen {
+	display: none;
+}
+
+@keyframes loader-frozen-a {
+	from {
+		opacity: 0;
+	}
+	to {
+		opacity: 1;
+	}
+}
+
+@keyframes loader-frozen-b {
+	from {
+		opacity: 0;
+	}
+	to {
+		opacity: 1;
+	}
+}
+
 @keyframes reload-return-arrive {
 	from {
 		transform: translate(55vw, -55vh) rotate(18deg) scale(0.7);

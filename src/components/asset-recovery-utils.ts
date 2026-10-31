@@ -55,6 +55,13 @@ const LOADER_REMOUNT_LIMIT = 3;
  * failure with Retry puts the same screen back, and the outer bound must still hold then.
  */
 const LOADER_SETTLED_TICKS = 4;
+/**
+ * Flipped between "a" and "b" on <html> on every watchdog tick: each flip restarts the animation that reveals the
+ * startup screen's frozen-thread notice (`.loader-frozen` in globals.css), so it only shows once the ticks stop.
+ */
+const HEARTBEAT_ATTRIBUTE = "data-kite-heartbeat";
+/** On <html> while the tab is hidden: ticks are throttled there, so the notice's animation is paused. */
+const HIDDEN_ATTRIBUTE = "data-kite-hidden";
 /** Watchdog reloads per ASSET_RELOAD_WINDOW_MS (within the shared budget) before it shows "Kite couldn't load". */
 const BOOT_STALL_RELOADS = 2;
 /** Fired on `window` when a chunk fails after the app has rendered, so the update check can run at once. */
@@ -116,7 +123,9 @@ const DEV_ASSET_PREFIXES = ["/_next/static/", "/@id/", "/@fs/", "/@vite/", "/nod
  * the kite's return scene) can then keep the app hidden behind the screen for good.
  *
  * Every tick is a heartbeat for the boot trace (boot-trace-utils.ts), which a frozen main thread stops, and the
- * box carries the trace's Details with a Copy details button.
+ * box carries the trace's Details with a Copy details button. Every tick also restarts the animation of the startup
+ * screen's frozen-thread notice (HEARTBEAT_ATTRIBUTE): a main thread that stopped runs neither the slow-start
+ * recovery nor this watchdog, but the compositor still fades that notice in once the ticks have stopped.
  */
 export function assetRecoveryScript({ dev = false }: { dev?: boolean } = {}): string {
 	const prefixes = dev ? DEV_ASSET_PREFIXES : PRODUCTION_ASSET_PREFIXES;
@@ -135,6 +144,23 @@ export function assetRecoveryScript({ dev = false }: { dev?: boolean } = {}): st
 	const loaderFlag = ${JSON.stringify(LOADER_MOUNTED_FLAG)};
 	const failureId = ${JSON.stringify(BOOT_FAILURE_ID)};
 	const trace = () => window[${JSON.stringify(BOOT_TRACE_GLOBAL)}] || null;
+	// The frozen-thread notice (globals.css) starts over on every beat; once the beats stop it shows by itself.
+	const root = document.documentElement;
+	// Cosmetic: nothing here may stop the watchdog.
+	const heartbeat = () => {
+		try {
+			root.setAttribute(${JSON.stringify(HEARTBEAT_ATTRIBUTE)}, root.getAttribute(${JSON.stringify(HEARTBEAT_ATTRIBUTE)}) === "a" ? "b" : "a");
+		} catch {}
+	};
+	const followVisibility = () => {
+		try {
+			if (document.visibilityState === "hidden") return root.setAttribute(${JSON.stringify(HIDDEN_ATTRIBUTE)}, "");
+			root.removeAttribute(${JSON.stringify(HIDDEN_ATTRIBUTE)});
+		} catch {}
+		heartbeat();
+	};
+	followVisibility();
+	addEventListener("visibilitychange", followVisibility);
 	let reloadPending = false;
 	let gaveUp = false;
 	let lastStaleAt = null;
@@ -397,6 +423,7 @@ export function assetRecoveryScript({ dev = false }: { dev?: boolean } = {}): st
 		showFailure(true);
 	};
 	const tick = () => {
+		heartbeat();
 		const now = Date.now();
 		if (document.visibilityState !== "hidden") {
 			const elapsed = Math.min(Math.max(now - lastTickAt, 0), 1000);

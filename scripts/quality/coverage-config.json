@@ -2,6 +2,7 @@
 	"gated": [
 		"src/lib/alerts/active-utils.ts",
 		"src/lib/app-badge-utils.ts",
+		"src/lib/boot/report-utils.ts",
 		"src/lib/alerts/delivery-utils.ts",
 		"src/lib/alerts/rules-utils.ts",
 		"src/lib/db/size-utils.ts",

@@ -70,6 +70,31 @@ function StartupProgress({
 	);
 }
 
+/**
+ * The way out for a main thread that stopped: then no timer runs, so neither "Reload Kite" nor the boot watchdog's
+ * box can appear, and only the browser can reload. Pure CSS (`.loader-frozen` in globals.css): the compositor fades
+ * it in once the watchdog's heartbeat has stopped restarting its animation for 10 seconds, so it never shows while
+ * JavaScript runs. Hidden from assistive technology: without a main thread nothing could announce it, and while
+ * one runs it is invisible.
+ */
+function FrozenNotice() {
+	return (
+		<p
+			aria-hidden="true"
+			data-loader-frozen
+			className="loader-frozen fixed inset-x-0 bottom-8 mx-auto max-w-sm px-6 text-center text-sm text-neutral-700"
+		>
+			<span className="font-semibold text-neutral-900">Kite stopped responding.</span> Reload this page to start again.
+		</p>
+	);
+}
+
+/** Rendered before the page: React reached the app behind the screen (the boot trace's phase). */
+function ChildrenRendering() {
+	markBootPhase("children-rendering");
+	return null;
+}
+
 /** Rendered after the page: its layout effect runs once the page itself has committed (the boot trace's phase). */
 function ChildrenCommitted() {
 	useLayoutEffect(() => markBootPhase("children-committed"), []);
@@ -185,6 +210,7 @@ export function LoadingTransition({ children, ready, failure }: LoadingTransitio
 				{showTopLoadingBar && <RouteLoadingBar />}
 				{ready && (
 					<div className={`min-h-dvh transition-opacity duration-300 ${contentVisible ? "opacity-100" : "opacity-0"}`}>
+						<ChildrenRendering />
 						{children}
 						<ChildrenCommitted />
 					</div>
@@ -217,6 +243,7 @@ export function LoadingTransition({ children, ready, failure }: LoadingTransitio
 									<>
 										<span className="sr-only reload-return-hidden">Loading</span>
 										<span className="sr-only reload-return-only">{RELOAD_RETURN_ANNOUNCEMENT}</span>
+										<FrozenNotice />
 									</>
 								)}
 								{progressMounted && <StartupProgress ready={ready} progress={progress} visibleMs={visibleMs} />}

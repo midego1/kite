@@ -45,6 +45,7 @@ import { useAssistantAvailability } from "./use-assistant-availability";
 import { AssistantCommand } from "./assistant-command";
 import { FloatingAssistant } from "./floating-assistant-window";
 import { RouteTitle } from "@/components/route-title";
+import { BootStep } from "@/components/boot-step";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
 	const { assistantOpen, setAssistantOpen, assistantFullSize, setAssistantFullSize } = useDashboardState();
@@ -116,6 +117,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 										sidebar={
 											<SidebarAside className="md:w-full">
 												<div className="h-full min-h-0">
+													<BootStep name="sidebar" />
 													<DashboardNav
 														assistantToggle={<AssistantNavItem assistant={assistantToggleState} />}
 														accountMenu={<MailboxSelector placement="sidebar" />}
@@ -145,6 +147,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 														inert={assistantVisible && assistantFullSize && assistantLayout === "sidebar"}
 													>
 														<AssistantToggleContext.Provider value={assistantToggleState}>
+															<BootStep name="page" />
 															{children}
 														</AssistantToggleContext.Provider>
 													</main>
@@ -222,6 +225,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 									<AssistantDockedContext.Provider
 										value={assistantLayout === "floating" && assistantVisible && !assistantFullSize}
 									>
+										<BootStep name="composer" />
 										<FloatingComposer />
 									</AssistantDockedContext.Provider>
 								</div>

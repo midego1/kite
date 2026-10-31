@@ -21,7 +21,7 @@ await build({
 	absWorkingDir: root,
 	logLevel: "silent",
 });
-const { bootTraceScript, markBootPhase, readBootDetails } = await import(
+const { bootTraceScript, markBootPhase, markBootStep, readBootDetails } = await import(
 	pathToFileURL(join(bundleDirectory, "trace.mjs")).href
 );
 const KEY = "kite-boot-trace";
@@ -32,7 +32,7 @@ const ORIGIN = "https://mail.example.com";
  * `loadPage` with the same map, `observe(type, entries)` delivers PerformanceObserver entries and `fetches` holds
  * the original fetch's calls, each with `resolve`/`reject`.
  */
-function loadPage({ storage = new Map(), path = "/inbox/abc?q=secret", clock = { now: 100 } } = {}) {
+function loadPage({ storage = new Map(), path = "/inbox/abc?q=secret", clock = { now: 100 }, beacons = null } = {}) {
 	const listeners = new Map();
 	const observers = new Map();
 	const disconnected = [];
@@ -73,7 +73,14 @@ function loadPage({ storage = new Map(), path = "/inbox/abc?q=secret", clock = {
 				disconnected.push(this.type);
 			}
 		},
-		navigator: {},
+		navigator: beacons
+			? {
+					sendBeacon: (url, body) => {
+						beacons.push({ url, body: JSON.parse(body) });
+						return true;
+					},
+				}
+			: {},
 		// Copy details without the clipboard API: the text shown is selected and the browser asked to copy it.
 		getSelection: () => ({
 			removeAllRanges: () => selections.push("cleared"),
@@ -162,7 +169,12 @@ test("a load whose heartbeat stopped while visible is reported by the next load,
 	// The main thread froze here: no more beats, no pagehide. The user reloads.
 	const next = loadPage({ storage, clock: { now: 50 } });
 	assert.deepEqual(next.errors, ["[kite] previous load froze at phase auth-ready after 1100 ms"]);
-	assert.deepEqual(next.details().previousLoad, { phase: "auth-ready", afterMs: 1100, visibleMs: 1000 });
+	assert.deepEqual(next.details().previousLoad, {
+		phase: "auth-ready",
+		afterMs: 1100,
+		visibleMs: 1000,
+		build: "development (unknown)",
+	});
 	assert.match(next.trace.text(), /^Previous load froze at auth-ready after 1\.1 s\n/);
 	// The new load starts a record of its own, so a third load reports nothing.
 	assert.deepEqual(next.record().phases, [{ p: "inline", t: 50 }]);
@@ -425,4 +437,93 @@ test("a long frame's invoker that is a URL is kept like any other path: no token
 		["/d/:token", "https://cdn.example.net", "TimerHandler:setTimeout"],
 	);
 	assert.doesNotMatch(JSON.stringify(page.details()) + page.trace.text(), /s3cret|pw=/);
+});
+
+test("the steps of a start name the part of the app that rendered last, in the details and the text", () => {
+	const page = loadPage();
+	page.clock.now = 300;
+	page.trace.phase("loader-mounted");
+	page.clock.now = 420;
+	page.trace.phase("auth-answered");
+	page.trace.phase("children-rendering");
+	page.trace.step("sidebar");
+	page.clock.now = 450;
+	page.trace.step("page?secret=1");
+	assert.deepEqual(
+		page.record().phases.map((entry) => entry.p),
+		["inline", "loader-mounted", "auth-answered", "children-rendering"],
+	);
+	assert.deepEqual(page.record().step, { s: "page", t: 450 });
+	assert.deepEqual(page.details().step, { name: "page", atMs: 450 });
+	assert.match(page.trace.text(), /\nLast step: page at 0\.5 s/);
+	// Rendering came before the commit and its effects, whatever order they reach the trace in.
+	page.trace.phase("auth-ready");
+	page.trace.phase("children-committed");
+	assert.equal(page.details().phase, "auth-ready");
+	page.trace.step("x".repeat(80));
+	assert.equal(page.record().step.s.length, 40);
+	page.trace.phase("complete");
+	page.trace.step("composer");
+	assert.equal(page.record().step.s, "x".repeat(40));
+
+	// The app's helper, through the trace on window.
+	const other = loadPage();
+	globalThis.window = other.window;
+	try {
+		markBootStep("reading-pane");
+		assert.equal(other.record().step.s, "reading-pane");
+		other.window.__kiteBoot = {
+			step: () => {
+				throw new Error("broken");
+			},
+		};
+		assert.doesNotThrow(() => markBootStep("page"));
+	} finally {
+		delete globalThis.window;
+	}
+	assert.doesNotThrow(() => markBootStep("page"));
+});
+
+test("the next load reports a load that froze to the server once, with its step, build and whether it followed an update", () => {
+	const storage = new Map([["kite-reload-flight", "123"]]);
+	const frozen = loadPage({ storage });
+	assert.equal(frozen.record().afterUpdate, true);
+	assert.equal(frozen.record().build, "development (unknown)");
+	frozen.trace.phase("loader-mounted");
+	frozen.trace.phase("auth-answered");
+	frozen.trace.phase("children-rendering");
+	frozen.trace.step("reading-pane");
+	frozen.beat(500);
+	// Frozen: the user reloads, and the return marker is long gone.
+	storage.delete("kite-reload-flight");
+	const beacons = [];
+	const next = loadPage({ storage, beacons, clock: { now: 40 } });
+	assert.deepEqual(next.errors, [
+		"[kite] previous load froze at phase children-rendering (step reading-pane) after 600 ms",
+	]);
+	assert.deepEqual(beacons, [
+		{
+			url: "/api/boot-report",
+			body: {
+				page: "/inbox",
+				phase: "children-rendering",
+				afterMs: 600,
+				visibleMs: 500,
+				step: "reading-pane",
+				build: "development (unknown)",
+				afterUpdate: true,
+			},
+		},
+	]);
+	assert.match(next.trace.text(), /^Previous load froze at children-rendering \(step reading-pane\) after 0\.6 s\n/);
+	assert.equal(next.record().afterUpdate, undefined);
+	// A load that completed is not reported, and neither is one without sendBeacon.
+	next.trace.phase("complete");
+	const quiet = [];
+	loadPage({ storage, beacons: quiet });
+	assert.deepEqual(quiet, []);
+	const again = new Map();
+	const stuck = loadPage({ storage: again });
+	stuck.beat(500);
+	assert.doesNotThrow(() => loadPage({ storage: again }));
 });

@@ -15,7 +15,7 @@ type IdentityFields = {
 };
 
 /** An address of an account as the API returns it: where it stands, never anything about the code but its expiry. */
-export function serializeIdentity(row: IdentityFields, accountAddress: string, now = new Date()): ExternalIdentityView {
+function serializeIdentity(row: IdentityFields, accountAddress: string, now = new Date()): ExternalIdentityView {
 	const state = identityState(row, now);
 	return {
 		id: row.id,

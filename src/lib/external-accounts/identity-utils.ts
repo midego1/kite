@@ -45,11 +45,6 @@ export function sendBlock(
 	return null;
 }
 
-/** Whether the address needs a verification code before it can be sent as (`alias` or `unproven`). */
-export function needsCode(block: SendBlock | null): boolean {
-	return block === "alias" || block === "unproven";
-}
-
 /** Blocks the From menu still lists (disabled, with what to do); the others leave the address out. */
 const LISTED_BLOCKS = new Set<SendBlock>(["reconnect", "not_verified", "alias", "unproven"]);
 

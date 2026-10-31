@@ -557,7 +557,7 @@ test("the five-minute MCP audit pruning deletes the rows that just expired; the 
 	assert.deepEqual(ids().sort(), ["login", "recent"]);
 });
 
-test("the five-minute MCP audit query reads a range of the created_at index, not the older history", async (t) => {
+test("the five-minute MCP audit query reads a range of the action and created_at index, not the older history", async (t) => {
 	const { env, database } = await fixture(t);
 	const db = m.getDb(env);
 	const query = db
@@ -571,5 +571,8 @@ test("the five-minute MCP audit query reads a range of the created_at index, not
 		.all(...query.params)
 		.map((row) => row.detail)
 		.join("\n");
-	assert.match(plan, /SEARCH audit_logs USING INDEX audit_logs_created_idx \(created_at>\? AND created_at<\?\)/);
+	assert.match(
+		plan,
+		/SEARCH audit_logs USING INDEX audit_logs_action_created_idx \(action=\? AND created_at>\? AND created_at<\?\)/,
+	);
 });

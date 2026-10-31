@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Switch } from "@/components/ui/switch";
 import type { ExternalAccountView } from "@/lib/external-accounts/types";
-import { saveSending, sendingText } from "./connected-accounts-utils";
+import { saveAccountSwitches, sendingText } from "./connected-accounts-utils";
 
 /**
  * The send-as part of an account row (spec §7): whether the address is in the From menu and why not, and the switches
@@ -26,7 +26,7 @@ export function AccountSending({
 		setSaving(true);
 		setError(null);
 		try {
-			await saveSending(account.id, patch);
+			await saveAccountSwitches(account.id, patch);
 			onChanged();
 		} catch (cause) {
 			setError(cause instanceof Error ? cause.message : "Could not save the account");

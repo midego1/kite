@@ -6,19 +6,11 @@ import { formatUserDate } from "@/lib/time/utils";
 import { ChevronsUpDown, Paperclip } from "lucide-react";
 import { ContactAvatar } from "@/components/contacts/contact-avatar";
 import { EmailBody } from "@/components/messages/email-body";
-import { emptyEmailColours } from "@/components/messages/email-colour-utils";
-import type { EmailColourFacts } from "@/components/messages/email-html-frame-types";
 import { RemoteImagesNotice } from "@/components/messages/email-html-frame";
 import { useLoadRemoteImages } from "@/components/messages/use-load-remote-images";
 import { useReaderFont } from "@/components/messages/use-reader-font";
 import { runSingleMessageAction } from "@/components/message-actions/utils";
-import { sanitizeEmailHtml } from "@/app/(dashboard)/inbox/[messageId]/email-html-sanitizer";
-import { collapseQuotedEmailHtml } from "@/app/(dashboard)/inbox/[messageId]/quote-collapse-utils";
-import {
-	formatAttachmentSize,
-	getMessageBodyDisplay,
-	resolveInlineAttachmentUrls,
-} from "@/app/(dashboard)/inbox/[messageId]/utils";
+import { formatAttachmentSize } from "@/app/(dashboard)/inbox/[messageId]/utils";
 import { getAttachmentVisual } from "@/components/message-attachment-card-utils";
 import { MessageAttachmentViewer } from "@/components/message-attachment-viewer";
 import type { MessageAttachment } from "@/app/(dashboard)/inbox/[messageId]/types";
@@ -26,6 +18,7 @@ import { needsRiskReview } from "@/lib/email/attachment-risk";
 
 import { cn } from "@/lib/utils";
 import type { ConversationMessageCardProps, ConversationThreadProps } from "./conversation-thread-types";
+import { ViaAccountChip } from "./via-account-chip";
 import { ThreadMessageActions } from "./thread-message-actions";
 import {
 	getConversationRecipients,
@@ -35,6 +28,7 @@ import {
 } from "./conversation-thread-utils";
 import clsx from "clsx";
 import { LinkifiedText } from "./linkified-text";
+import { useReaderBody } from "./use-reader-body";
 import { SuggestionCard } from "../agent/suggestion-card";
 
 /**
@@ -214,45 +208,20 @@ export function ConversationMessageCard({
 	const outbound = message.direction === "outbound";
 	const attachments = message.attachments.filter((attachment) => attachment.disposition === "attachment");
 
-	let body: {
-		html: string | null;
-		colours: EmailColourFacts;
-		text: string;
-		quotedHtml: string | null;
-		quotedColours: EmailColourFacts;
-		blockedRemoteImages: number;
-	} | null = null;
-	if (expanded) {
-		const display = getMessageBodyDisplay(message.textBody, message.htmlBody, message.snippet);
-		const imageOptions = {
-			blockRemoteImages: !alwaysLoadRemoteImages && !remoteImagesShown,
-			stats: { blockedRemoteImages: 0 },
-			proxyRemoteImagesFor: message.id,
-			linkify: true,
-			dropFontFamily: readerFont !== undefined,
-		};
-		const colours = emptyEmailColours();
-		const quotedColours = emptyEmailColours();
-		body = {
-			html: collapseQuotedEmailHtml(
-				sanitizeEmailHtml(resolveInlineAttachmentUrls(display.htmlBody, message.id, message.attachments), {
-					...imageOptions,
-					colours,
-				}),
-			),
-			colours,
-			text: display.latestContent,
-			quotedHtml: collapseQuotedEmailHtml(
-				sanitizeEmailHtml(resolveInlineAttachmentUrls(display.quotedHtml, message.id, message.attachments), {
-					...imageOptions,
-					colours: quotedColours,
-				}),
-				true,
-			),
-			quotedColours,
-			blockedRemoteImages: imageOptions.stats.blockedRemoteImages,
-		};
-	}
+	// Collapsed cards render no body, so they never sanitize; an open one sanitizes once per message and setting.
+	const body = useReaderBody(
+		expanded
+			? {
+					messageId: message.id,
+					textBody: message.textBody,
+					htmlBody: message.htmlBody,
+					snippet: message.snippet,
+					attachments: message.attachments,
+					blockRemoteImages: !alwaysLoadRemoteImages && !remoteImagesShown,
+					dropFontFamily: readerFont !== undefined,
+				}
+			: null,
+	);
 
 	return (
 		<article
@@ -314,6 +283,7 @@ export function ConversationMessageCard({
 					<span
 						className={clsx(!locallyRead ? "font-semibold" : "", "flex shrink-0 items-center gap-2 text-xs mr-2 mt-2")}
 					>
+						<ViaAccountChip message={message} filter className="font-medium" />
 						{attachments.length > 0 && (
 							<Paperclip className="h-3.5 w-3.5" aria-label={`${attachments.length} attachments`} />
 						)}
@@ -344,7 +314,7 @@ export function ConversationMessageCard({
 							className="email-body max-w-none"
 							fallback={
 								<pre className="reading-text whitespace-pre-wrap font-sans text-sm text-neutral-900">
-									<LinkifiedText text={body.text} />
+									<LinkifiedText text={body.display.latestContent} />
 								</pre>
 							}
 						/>

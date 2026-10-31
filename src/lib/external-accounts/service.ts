@@ -20,6 +20,7 @@ import { appendRecentErrors } from "./recent-errors";
 import { serializeExternalAccount, type ExternalAccountRow } from "./serialize-utils";
 import { readSmtpVerified, writeSmtpVerified } from "./send-state";
 import { queueSyncNow } from "./sync";
+import { accountSwitches, isSwitchesOnly, restartJunkCursor } from "./switches";
 import { DEFAULT_SYNC_INTERVAL_MINUTES, parseSyncInterval } from "./sync-utils";
 import type { ExternalAccountInput, ExternalAccountView } from "./types";
 
@@ -183,14 +184,6 @@ async function verifySending(
 	return test.ok ? null : { ...test.problem, message: `Sending: ${test.problem.message}` };
 }
 
-/** The send-as switches of an edit (spec §7.4, §16.3); they need no sign-in. */
-function sendingSwitches(body: Record<string, unknown>): Partial<typeof externalAccounts.$inferInsert> {
-	return {
-		...(typeof body.sendEnabled === "boolean" ? { sendEnabled: body.sendEnabled } : {}),
-		...(typeof body.appendSent === "boolean" ? { appendSent: body.appendSent } : {}),
-	};
-}
-
 /** Counts one attempt against the user's limit (429 past it); runs before any other check of the attempt. */
 function countAttempt(
 	env: CloudflareEnv,
@@ -305,7 +298,7 @@ export async function connectExternalAccount(
 				...accountColumns(input),
 				...fromPreset,
 				syncIntervalMinutes: parseSyncInterval(body.syncIntervalMinutes) ?? DEFAULT_SYNC_INTERVAL_MINUTES,
-				...sendingSwitches(body),
+				...accountSwitches(body),
 				secret: await sealSetting(env, password),
 				status: "active",
 				createdAt: now,
@@ -354,10 +347,11 @@ export async function updateExternalAccount(
 ): Promise<ExternalAccountView> {
 	const current = await ownView(env, actor.id, id);
 	await assertAllowed(env, actor.id);
-	// Only the send-as switches: nothing about the sign-in or the servers is read or checked again.
+	// Only the switches: nothing about the sign-in or the servers is read or checked again.
 	const keys = Object.keys(body);
-	if (keys.length && keys.every((key) => key === "sendEnabled" || key === "appendSent")) {
-		const switches = sendingSwitches(body);
+	if (isSwitchesOnly(keys)) {
+		const switches = accountSwitches(body);
+		await restartJunkCursor(env, id, current, body);
 		await getDb(env)
 			.update(externalAccounts)
 			.set({ ...switches, updatedAt: new Date() })
@@ -377,10 +371,11 @@ export async function updateExternalAccount(
 	const changes: Partial<typeof externalAccounts.$inferInsert> = {
 		...accountColumns(input),
 		...syncSettings(body, current.sync.enabled),
-		...sendingSwitches(body),
+		...accountSwitches(body),
 		updatedAt: new Date(),
 	};
 	if (signIn) Object.assign(changes, await reconnect(env, actor, { id, current, input, password, body }));
+	await restartJunkCursor(env, id, current, body);
 	try {
 		await getDb(env)
 			.update(externalAccounts)
@@ -399,7 +394,7 @@ export async function updateExternalAccount(
 			address: input.address,
 			signInChanged: signIn,
 			passwordChanged: !!password,
-			...sendingSwitches(body),
+			...accountSwitches(body),
 		},
 	});
 	return ownView(env, actor.id, id);

@@ -129,6 +129,32 @@ const BLOCK_TAGS = new Set([
 ]);
 
 /**
+ * One pass of `text.replace(/<[^>]+>/g, "")`, by index: every `<` with at least one character before the next `>`
+ * goes up to that `>`. The regex rescans a long run of `<` with no `>` after it from each of them (quadratic); this
+ * looks at every character once.
+ */
+function stripTags(text: string): string {
+	const last = text.lastIndexOf(">");
+	let kept = "";
+	let index = 0;
+	while (index < text.length) {
+		const open = text.indexOf("<", index);
+		// No `>` after this `<`: nothing from here on is a tag.
+		if (open < 0 || open > last) return kept + text.slice(index);
+		const close = text.indexOf(">", open + 1);
+		if (close === open + 1) {
+			// "<>" is no tag; the next search starts at its ">".
+			kept += text.slice(index, open + 1);
+			index = open + 1;
+			continue;
+		}
+		kept += text.slice(index, open);
+		index = close + 1;
+	}
+	return kept;
+}
+
+/**
  * The text/plain alternative of a composed message. Blocks become lines, lists
  * get bullets or numbers, blockquotes get the classic "> " prefix so reply
  * chains stay readable in text-only clients and in Kite's own reader.
@@ -140,16 +166,19 @@ export function htmlToPlainText(html: string | null | undefined): string {
 		// Repeat until stable so removing one tag cannot leave a new one behind ("<<b>b>").
 		for (let previous = ""; previous !== text;) {
 			previous = text;
-			text = text.replace(/<[^>]+>/g, "");
+			text = stripTags(text);
 		}
 		return text;
 	}
 	const doc = new DOMParser().parseFromString(`<body>${html}</body>`, "text/html");
 	const text = renderNode(doc.body, { listDepth: 0, ordered: [] });
-	return text
-		.replace(/[ \t]+\n/g, "\n")
-		.replace(/\n{3,}/g, "\n\n")
-		.trim();
+	return (
+		text
+			// Only from the start of a run of blanks: a long run not followed by a line break would be rescanned otherwise.
+			.replace(/(?<![ \t])[ \t]+\n/g, "\n")
+			.replace(/\n{3,}/g, "\n\n")
+			.trim()
+	);
 }
 
 type RenderState = { listDepth: number; ordered: Array<number | null> };

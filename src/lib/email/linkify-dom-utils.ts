@@ -39,9 +39,9 @@ export function linkifyTextNodes(root: Element, attributes: Record<string, strin
 
 	let made = 0;
 	for (const node of nodes) {
-		if (node.parentElement?.closest(SKIPPED_ANCESTORS)) continue;
+		// The links first: most text nodes have none, and `closest` walks every ancestor of a deeply nested one.
 		const links = findLinks(node.data);
-		if (!links.length) continue;
+		if (!links.length || node.parentElement?.closest(SKIPPED_ANCESTORS)) continue;
 		const fragment = doc.createDocumentFragment();
 		let position = 0;
 		for (const link of links) {

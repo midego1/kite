@@ -31,6 +31,9 @@ type OneTimeCodeInput = {
 	text: string | null | undefined;
 };
 
+/** Whitespace-delimited tokens that contain a URL marker, as sorted, non-overlapping [start, end) ranges. */
+type UrlTokenRanges = Array<[number, number]>;
+
 type CodeCandidate = {
 	value: string;
 	index: number;
@@ -48,6 +51,12 @@ const LABEL_WINDOW = 20;
 const DATE_CONTEXT_WINDOW = 24;
 /** A plausible year additionally needs a keyword this close before it. */
 const YEAR_KEYWORD_WINDOW = 24;
+/**
+ * Subject plus body characters above which no code is looked for. One-time code mails are short; a body this long is
+ * a newsletter or a digest, where a "code" is more likely a coupon than a login, and scanning it costs main-thread
+ * time in the reader.
+ */
+const MAX_ONE_TIME_CODE_SOURCE_LENGTH = 100_000;
 
 const KEYWORD_SOURCE =
 	"\\b(?:codes?|otps?|passcodes?|one[- ]time|eenmalig(?:e)?|verificatiecode|inlogcode|verif\\w*|authenticat\\w*|confirm\\w*|2fa)\\b";
@@ -136,13 +145,41 @@ function hasCurrencyContext(source: string, candidate: CodeCandidate): boolean {
 	return CURRENCY_AFTER_RE.test(source.slice(candidate.end, candidate.end + 8));
 }
 
-/** True when the candidate sits inside one whitespace-delimited URL token. */
-function insideUrlToken(source: string, candidate: CodeCandidate): boolean {
-	let start = candidate.index;
-	while (start > 0 && !/\s/.test(source[start - 1])) start--;
-	let end = candidate.end;
-	while (end < source.length && !/\s/.test(source[end])) end++;
-	return /:\/\/|www\./i.test(source.slice(start, end));
+const URL_MARKER_GLOBAL_RE = /:\/\/|www\./gi;
+
+/**
+ * The whitespace-delimited tokens of the source that contain a URL marker, found in one pass. Scanning out from
+ * each candidate instead costs the token's length per candidate, which is quadratic on one long token full of
+ * candidates.
+ */
+function findUrlTokenRanges(source: string): UrlTokenRanges {
+	const ranges: UrlTokenRanges = [];
+	for (const match of source.matchAll(URL_MARKER_GLOBAL_RE)) {
+		const index = match.index ?? 0;
+		const last = ranges.at(-1);
+		if (last && index < last[1]) continue;
+		let start = index;
+		while (start > 0 && !/\s/.test(source[start - 1])) start--;
+		let end = index + match[0].length;
+		while (end < source.length && !/\s/.test(source[end])) end++;
+		ranges.push([start, end]);
+	}
+	return ranges;
+}
+
+/**
+ * True when the candidate sits inside a whitespace-delimited URL token. A split digit candidate ("12 34") spans two
+ * tokens, and either one being a URL counts.
+ */
+function insideUrlToken(urlTokens: UrlTokenRanges, candidate: CodeCandidate): boolean {
+	let low = 0;
+	let high = urlTokens.length;
+	while (low < high) {
+		const middle = (low + high) >> 1;
+		if (urlTokens[middle][1] <= candidate.index) low = middle + 1;
+		else high = middle;
+	}
+	return low < urlTokens.length && urlTokens[low][0] < candidate.end;
 }
 
 /**
@@ -161,16 +198,27 @@ function labelBeatsKeyword(source: string, candidate: CodeCandidate): boolean {
 	return lastLabelEnd > lastKeywordEnd;
 }
 
+/**
+ * True when only whitespace sits between the candidate and the ends of its line. It walks whitespace only, so it
+ * stops at the first other character instead of slicing a line that may be the whole body.
+ */
+function fillsOwnLine(source: string, candidate: CodeCandidate): boolean {
+	for (let index = candidate.index - 1; index >= 0 && source[index] !== "\n"; index--) {
+		if (!/\s/.test(source[index])) return false;
+	}
+	for (let index = candidate.end; index < source.length && source[index] !== "\n"; index++) {
+		if (!/\s/.test(source[index])) return false;
+	}
+	return true;
+}
+
 /** True when the candidate fills its own line or an OTP keyword sits directly in front of it. */
 function hasStrongPosition(source: string, candidate: CodeCandidate): boolean {
-	const lineStart = source.lastIndexOf("\n", candidate.index - 1) + 1;
-	const lineEndIndex = source.indexOf("\n", candidate.end);
-	const lineEnd = lineEndIndex === -1 ? source.length : lineEndIndex;
-	if (source.slice(lineStart, lineEnd).trim() === source.slice(candidate.index, candidate.end)) return true;
+	if (fillsOwnLine(source, candidate)) return true;
 	return KEYWORD_DIRECTLY_BEFORE_RE.test(sliceBefore(source, candidate, KEYWORD_BEFORE_WINDOW));
 }
 
-function isValidCandidate(source: string, candidate: CodeCandidate): boolean {
+function isValidCandidate(source: string, urlTokens: UrlTokenRanges, candidate: CodeCandidate): boolean {
 	if (candidate.kind === "digits" && SERVICE_NUMBER_RE.test(candidate.value)) return false;
 	// Lowercase letter-digit runs also appear in commit hashes, usernames and
 	// product names, so they need a strong position.
@@ -178,7 +226,7 @@ function isValidCandidate(source: string, candidate: CodeCandidate): boolean {
 		return false;
 	}
 	if (hasPhoneContext(source, candidate) || hasCurrencyContext(source, candidate)) return false;
-	if (insideUrlToken(source, candidate)) return false;
+	if (insideUrlToken(urlTokens, candidate)) return false;
 	if (labelBeatsKeyword(source, candidate)) return false;
 	if (isPlausibleYear(candidate.value)) {
 		return !hasDateContext(source, candidate) && hasTightKeywordBefore(source, candidate);
@@ -192,8 +240,8 @@ function isValidCandidate(source: string, candidate: CodeCandidate): boolean {
  * those count, so a code on its own line is not made ambiguous by a street
  * number in the footer that happens to sit near "The code will expire".
  */
-function uniqueValidValues(source: string, candidates: CodeCandidate[]): Set<string> | null {
-	const valid = candidates.filter((candidate) => isValidCandidate(source, candidate));
+function uniqueValidValues(source: string, urlTokens: UrlTokenRanges, candidates: CodeCandidate[]): Set<string> | null {
+	const valid = candidates.filter((candidate) => isValidCandidate(source, urlTokens, candidate));
 	if (!valid.length) return null;
 	const strong = valid.filter((candidate) => hasStrongPosition(source, candidate));
 	return new Set((strong.length ? strong : valid).map((candidate) => candidate.value));
@@ -224,17 +272,20 @@ export function extractOneTimeCode({ subject, text }: OneTimeCodeInput): string 
 	// Candidates live in one concatenated source so a subject keyword sits next
 	// to a body that is only the code ("Verification code\n554108").
 	const source = subjectText ? `${subjectText}\n${bodyText}` : bodyText;
-	if (!source.trim()) return null;
+	if (source.length > MAX_ONE_TIME_CODE_SOURCE_LENGTH || !source.trim()) return null;
 	const candidates = collectCandidates(source);
 	if (!candidates.length) return null;
+	const urlTokens = findUrlTokenRanges(source);
 	const subjectEnd = subjectText ? subjectText.length + 1 : 0;
 	const subjectValues = uniqueValidValues(
 		source,
+		urlTokens,
 		candidates.filter((candidate) => candidate.index < subjectEnd),
 	);
 	if (subjectValues) return singleValueOrNull(subjectValues);
 	const bodyValues = uniqueValidValues(
 		source,
+		urlTokens,
 		candidates.filter((candidate) => candidate.index >= subjectEnd),
 	);
 	return bodyValues ? singleValueOrNull(bodyValues) : null;

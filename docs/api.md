@@ -225,6 +225,7 @@ When two-factor authentication is on, `POST /api/auth/login` returns `{ ok: true
 | `has:attachment` | at least one non-inline attachment |
 | `is:unread`, `is:read`, `is:starred` | flags |
 | `after:2026-09-01`, `before:2026-09-30` | date bounds (UTC, `before` exclusive) |
+| `via:gmail`, `via:me@gmail.com`, `via:"Work mail"`, `via:example.org` | mail that came in through (or was sent as) a [connected account](external-accounts.md#which-account-mail-came-through): its provider, address, label or address domain |
 
 Terms combine with AND.
 

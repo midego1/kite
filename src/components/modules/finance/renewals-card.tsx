@@ -34,16 +34,16 @@ export function RenewalsCard(_context: ReadingPaneSlotContext) {
 			{lines.length === 0 ? (
 				<p className="py-1.5 text-sm text-neutral-700">Nothing renews this week.</p>
 			) : (
-				<ul className="divide-y divide-neutral-200/70">
+				<ul className="divide-y divide-cc-border">
 					{lines.map((line) => (
 						<li key={line.id}>
 							<Link
 								href={line.href}
-								className="flex items-center gap-3 py-2 text-sm text-neutral-900 hover:text-blue-700"
+								className="flex items-center gap-3 py-2 text-sm text-neutral-900 hover:text-cc-accent"
 								data-renewal={line.urgent ? "failed" : "due"}
 							>
 								<span
-									className={`w-16 shrink-0 whitespace-nowrap ${line.urgent ? "font-medium text-amber-700" : "text-neutral-500"}`}
+									className={`w-16 shrink-0 whitespace-nowrap ${line.urgent ? "font-medium text-cc-warn-text" : "text-neutral-500"}`}
 								>
 									{line.when}
 								</span>
@@ -55,7 +55,7 @@ export function RenewalsCard(_context: ReadingPaneSlotContext) {
 				</ul>
 			)}
 			{more > 0 && (
-				<Link href="/finance" className="mt-1 block text-xs font-medium text-blue-700 hover:underline">
+				<Link href="/finance" className="mt-1 block text-xs font-medium text-cc-accent hover:underline">
 					{more} more this week
 				</Link>
 			)}

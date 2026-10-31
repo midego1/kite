@@ -285,7 +285,7 @@ export function aiFailurePrompt(groups: AiFailureGroup[], total: number, capped:
 	let kept = 0;
 	for (const group of groups) {
 		// At most eight groups are kept; one skipped for its size frees its slot for a later group.
-		if (kept === MAX_PROMPT_GROUPS) break;
+		if (kept >= MAX_PROMPT_GROUPS) break;
 		// The notes are about output caps and thinking, so only a cut-off group carries them, once per feature.
 		const fresh =
 			group.code === "cut_off"

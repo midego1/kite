@@ -2,7 +2,7 @@
 
 Status: approved for a Factory Mission; it now comes **after** [Drive and storage](drive-storage.md) (reordered on 2026-10-16). Written against `main` at `22b1ac3`; every path below is relative to the repository root.
 
-The migration number below (`0060`) is stale: `main` has reached `0063` (Money Watch) and Drive claims `0064` and `0065`, so this work takes the next free number after Drive's (planned `0066`). Take the next free number when you start and keep `tests/migration-order.test.mjs` passing.
+Progress: steps 1 and 2 of §8 (the MIME index and decoder, the schema, the read accessor, the boundary test and the `FileBucket` range fix) have shipped with migration `0089_attachment_raw_storage`, which is the migration §5.1 calls `0060`. The storage migration planner and full backups already copy only rows with an object of their own (`ATTACHMENT_OBJECT_ROWS_SQL`), and Save to Drive reads through the accessor. Steps 3 to 7 remain.
 
 What Drive changes for this work: Drive's Save to Drive route (`POST /api/drive/attachments/[id]/save`) and, once S3 stores exist, the storage migration planner (`src/lib/storage/migration.ts`) read `message_attachments.r2_key` directly. When this work lands, switch Save to Drive to `openAttachment`, make the planner copy only rows with `storage = 'object'` (never a `raw:` sentinel), and add both files to the allowlist of `tests/attachment-storage-boundary.test.mjs`. See sections 6 and 9 of the Drive spec.
 

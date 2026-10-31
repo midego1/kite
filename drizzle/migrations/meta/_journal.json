@@ -631,6 +631,13 @@
       "when": 1793350618122,
       "tag": "0086_add_folder_color_is_custom",
       "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "6",
+      "when": 1793414400000,
+      "tag": "0089_attachment_raw_storage",
+      "breakpoints": true
     }
   ]
 }

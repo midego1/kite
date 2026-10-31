@@ -1,6 +1,7 @@
 import { getEnv } from "@/lib/cloudflare";
 import { getContentDisposition } from "@/lib/http/content-disposition-utils";
 import { findSharedFile } from "@/lib/email/shared-attachments";
+import { openAttachment } from "@/lib/email/attachment-storage";
 import type { SharedFileParams } from "./types";
 
 export async function GET(_request: Request, { params }: SharedFileParams) {
@@ -8,8 +9,8 @@ export async function GET(_request: Request, { params }: SharedFileParams) {
 	const env = getEnv();
 	const file = await findSharedFile(env, id);
 	if (!file) return new Response("Link expired or not found", { status: 404 });
-	const object = await env.BUCKET.get(file.r2Key);
-	if (!object) return new Response("File not found", { status: 404 });
+	const content = await openAttachment(env, file);
+	if (!content) return new Response("File not found", { status: 404 });
 	const headers = new Headers();
 	// Anyone with the link gets opaque bytes to save, never a type a browser would render or run.
 	headers.set("Content-Type", "application/octet-stream");
@@ -19,5 +20,5 @@ export async function GET(_request: Request, { params }: SharedFileParams) {
 	headers.set("Content-Security-Policy", "default-src 'none'; sandbox");
 	headers.set("Referrer-Policy", "no-referrer");
 	headers.set("Cache-Control", "private, no-store");
-	return new Response(object.body, { headers });
+	return new Response(content.body, { headers });
 }

@@ -395,12 +395,30 @@ export const messageAttachments = sqliteTable(
 			.notNull()
 			.default("attachment"),
 		contentId: text("content_id"),
-		r2Key: text("r2_key").notNull().unique(),
+		/** The object for `storage` 'object' (keys may be shared by several rows); the sentinel `raw:<id>` for 'raw'. */
+		r2Key: text("r2_key").notNull(),
 		createdAt: integer("created_at", { mode: "timestamp" })
 			.notNull()
 			.$defaultFn(() => new Date()),
+		/**
+		 * Migration 0089. 'raw' rows are served from a byte range of the message's raw MIME
+		 * (`src/lib/email/attachment-storage.ts`); read these columns only through that module, since a deploy can run
+		 * before the migration (`ATTACHMENT_ROW_COLUMNS` leaves them out).
+		 */
+		storage: text("storage", { enum: ["object", "raw"] })
+			.notNull()
+			.default("object"),
+		rawOffset: integer("raw_offset"),
+		rawLength: integer("raw_length"),
+		transferEncoding: text("transfer_encoding", { enum: ["base64", "identity"] }),
+		sha256: text("sha256"),
+		storageCheckedAt: integer("storage_checked_at", { mode: "timestamp" }),
 	},
-	(t) => [index("message_attachments_message_idx").on(t.messageId)],
+	(t) => [
+		index("message_attachments_message_idx").on(t.messageId),
+		index("message_attachments_r2_key_idx").on(t.r2Key),
+		index("message_attachments_sha256_idx").on(t.sha256, t.size),
+	],
 );
 
 export const sharedAttachmentLinks = sqliteTable("shared_attachment_links", {

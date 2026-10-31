@@ -36,6 +36,7 @@ type CoreQueueMessageKind =
 	| "mailbox_purge"
 	| "backup"
 	| "storage_migration"
+	| "attachment_storage"
 	| "external_sync"
 	| "append_sent"
 	| "unknown";
@@ -56,6 +57,7 @@ const QUEUE_MESSAGE_KINDS: Record<string, QueueMessageKind> = {
 	"backup.objects.delete": "backup",
 	"backup.restore": "backup",
 	"storage.migrate": "storage_migration",
+	"attachments.storage": "attachment_storage",
 	"accounts.sync": "external_sync",
 	"accounts.append_sent": "append_sent",
 	...Object.fromEntries(

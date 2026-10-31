@@ -766,6 +766,9 @@ export const appSettings = sqliteTable("app_settings", {
 	alertWebhookKind: text("alert_webhook_kind", { enum: ["slack", "discord", "ntfy", "json"] }),
 	/** abuse.ch Auth-Key saved by the owner, sealed with APP_ENCRYPTION_KEY; a URLHAUS_AUTH_KEY or ABUSE_CH_AUTH_KEY secret wins. */
 	abuseChAuthKey: text("abuse_ch_auth_key"),
+	// Migration 0090 adds `attachment_storage_job` (JSON: the admin attachment storage job). It is deliberately not
+	// mapped here: Drizzle names every mapped column in an INSERT, so every settings save would fail until the
+	// migration ran. Only `src/lib/email/attachment-storage-jobs.ts` reads and writes it, with plain SQL.
 	updatedAt: integer("updated_at", { mode: "timestamp" })
 		.notNull()
 		.$defaultFn(() => new Date()),

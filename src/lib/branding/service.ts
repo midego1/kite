@@ -11,7 +11,11 @@ const LEGACY_DEFAULT_APP_NAME = "Mailflare";
 
 export async function getBranding(env: CloudflareEnv): Promise<Branding> {
 	try {
-		const [settings] = await getDb(env).select().from(appSettings).where(eq(appSettings.id, APP_SETTINGS_ID)).limit(1);
+		const [settings] = await getDb(env)
+			.select({ appName: appSettings.appName, iconKey: appSettings.iconKey })
+			.from(appSettings)
+			.where(eq(appSettings.id, APP_SETTINGS_ID))
+			.limit(1);
 		return {
 			appName: settings?.appName && settings.appName !== LEGACY_DEFAULT_APP_NAME ? settings.appName : DEFAULT_APP_NAME,
 			hasCustomIcon: !!settings?.iconKey,

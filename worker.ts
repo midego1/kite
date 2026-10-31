@@ -37,6 +37,8 @@ import { processRestoreMessage, runRestoreMaintenance } from "./src/lib/backups/
 import { isRestoreJobMessage } from "./src/lib/backups/restore-job-utils";
 import { processStorageMigration, runStorageMigrationMaintenance } from "./src/lib/storage/migration";
 import { isStorageMigrateMessage } from "./src/lib/storage/migration-utils";
+import { processAttachmentJob, runAttachmentJobMaintenance } from "./src/lib/email/attachment-storage-jobs";
+import { isAttachmentStorageJobMessage } from "./src/lib/email/attachment-storage-jobs-utils";
 import { processAppendSent } from "./src/lib/external-accounts/submit";
 import { isAppendSentMessage } from "./src/lib/external-accounts/submit-utils";
 import { failStaleBackups } from "./src/lib/backups/service";
@@ -230,6 +232,8 @@ export default {
 					await processRestoreMessage(env, msg.body);
 				} else if (isStorageMigrateMessage(msg.body)) {
 					await processStorageMigration(env, msg.body);
+				} else if (isAttachmentStorageJobMessage(msg.body)) {
+					await processAttachmentJob(env, msg.body);
 				} else if (isAppendSentMessage(msg.body)) {
 					await processAppendSent(env, msg.body);
 				} else if (
@@ -309,6 +313,12 @@ export default {
 			ctx.waitUntil(
 				runStorageMigrationMaintenance(env, now).catch((error) =>
 					logger.error("storage.migration_maintenance_failed", { error }),
+				),
+			);
+			// An attachment storage job whose batches stopped arriving (a lost message, a deploy) is sent again.
+			ctx.waitUntil(
+				runAttachmentJobMaintenance(env, now).catch((error) =>
+					logger.error("attachment.storage_job_maintenance_failed", { error }),
 				),
 			);
 			// Connected accounts whose check for new mail is due get one queued run each.

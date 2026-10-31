@@ -7,12 +7,14 @@ import test from "node:test";
 // sentinel and its bytes are a range of the whole raw message, so a reader that passed a row's key to a bucket itself
 // would either 404 or, worse, serve every part and header of the message.
 const ACCESSOR = "src/lib/email/attachment-storage.ts";
+/** The admin storage job's batches, which read an 'object' row's object to verify it against the raw or copy it. */
+const JOB_BATCHES = "src/lib/email/attachment-storage-batches.ts";
 /** Files that may read an attachment row's `r2Key` from a bucket directly. */
-const DIRECT_READ_ALLOWLIST = new Set([ACCESSOR]);
+const DIRECT_READ_ALLOWLIST = new Set([ACCESSOR, JOB_BATCHES]);
 /**
  * Object-copying SQL over `message_attachments` that must leave 'raw' rows out (their bytes ride with the raw), the
- * accessor's shares, which name another row's object and must never name a sentinel, and the repair's check that no
- * other object row names a key.
+ * accessor's shares, which name another row's object and must never name a sentinel, the repair's check that no
+ * other object row names a key, and the storage job's walks over object rows.
  */
 const OBJECT_COPIERS = [
 	"src/lib/backups/objects.ts",
@@ -20,6 +22,7 @@ const OBJECT_COPIERS = [
 	"src/lib/storage/stores.ts",
 	"src/lib/email/attachment-storage-report.ts",
 	"src/lib/email/attachment-repair.ts",
+	JOB_BATCHES,
 	ACCESSOR,
 ];
 

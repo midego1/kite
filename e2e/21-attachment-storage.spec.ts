@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { expect, test, type APIRequestContext } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import { createSignedInAccount } from "./support/auto-read";
 import { STORAGE_STATE, SUPPORT_ADDRESS } from "./support/constants";
 import { apiContext, buildMime, deliverInbound, openMessage, setSendingSettings, uniqueToken } from "./support/helpers";
@@ -9,9 +9,13 @@ import { apiContext, buildMime, deliverInbound, openMessage, setSendingSettings,
 
 type Attachment = { id: string; filename: string; size: number };
 type Verification = { checked: number; missing: { key: string; messageIds: string[] }[] };
+type Job = { id: string; direction: string; status: string; done: number; converted: number; unshared: number };
 type Report = {
 	objects: { rows: number; keys: number; bytes: number; storedBytes: number };
 	raw: { rows: number; bytes: number };
+	shared: { keys: number; rows: number };
+	reclaim: { pending: { rows: number; bytes: number }; unmatched: { rows: number } } | null;
+	job: Job | null;
 };
 
 /** A PDF-looking file with random content, so a byte-exact comparison means something. */
@@ -325,5 +329,136 @@ test("the storage report is for admins only", async () => {
 	const objects = await objectCounts(api);
 	expect(objects.keys).toBeLessThanOrEqual(objects.rows);
 	expect(objects.storedBytes).toBeLessThanOrEqual(objects.bytes);
+	await api.dispose();
+});
+
+/** Starts a storage job through the API and waits until it has finished. */
+async function runJob(api: APIRequestContext, action: "reclaim" | "materialize"): Promise<Job> {
+	const started = await json<{ job: Job }>(await api.post("/api/admin/attachment-storage", { data: { action } }));
+	return waitForJob(api, started.job.id);
+}
+
+async function waitForJob(api: APIRequestContext, jobId: string): Promise<Job> {
+	let job: Job | null = null;
+	await expect
+		.poll(
+			async () => {
+				job = (await storageCounts(api)).job;
+				return job?.id === jobId ? job.status : "missing";
+			},
+			{ timeout: 60_000, intervals: [250, 500, 1000] },
+		)
+		.toBe("completed");
+	return job!;
+}
+
+/** Presses one of the card's job buttons, confirms, and waits for the job to finish. */
+async function runFromCard(page: Page, button: string, confirm: string, finished: string) {
+	const card = page.getByTestId("attachment-storage-card");
+	await card.getByRole("button", { name: button }).click();
+	await page.getByRole("alertdialog").getByRole("button", { name: confirm }).click();
+	const job = card.getByTestId("attachment-storage-job");
+	await expect(job).toHaveAttribute("data-status", "completed", { timeout: 60_000 });
+	await expect(job.getByRole("status")).toHaveText(finished);
+}
+
+// docs/specs/attachments-once.md §8 step 5: materialize gives every file its own object again (the safe state before
+// running an older release), reclaim converts them back and deletes the copies, and a second reclaim changes nothing.
+test("materialize and reclaim convert every file both ways, byte-exact, from the Storage card", async ({ page }) => {
+	const api = await apiContext(STORAGE_STATE);
+	await setSendingSettings(api, { previewEnabled: false, undoSeconds: 0 });
+	const mailboxId = await supportMailboxId(api);
+	const token = uniqueToken();
+	const pdf = pdfFixture();
+	const received = await deliverInbound(api, {
+		from: `"Job Sender" <job-files@outside.test>`,
+		to: SUPPORT_ADDRESS,
+		subject: `Storage job ${token}`,
+		text: "The report.",
+		attachments: [{ filename: "report.pdf", contentType: "application/pdf", content: pdf }],
+	});
+	// A file sent from a draft: the draft and the Sent copy share one object until materialize copies it.
+	const uploaded = pdfFixture();
+	const draft = await createDraft(api, { mailboxId, subject: `Storage job upload ${token}`, text: "Attached." });
+	await json(
+		await api.post(`/api/drafts/${draft.id}/attachments`, {
+			multipart: { attachments: { name: "plan.pdf", mimeType: "application/pdf", buffer: uploaded } },
+		}),
+	);
+	const sent = await json<{ messageId: string }>(
+		await api.post("/api/send", {
+			data: {
+				from: SUPPORT_ADDRESS,
+				to: "reader@outside.test",
+				subject: `Storage job upload ${token}`,
+				text: "Attached.",
+				mailboxId,
+				draftId: draft.id,
+			},
+		}),
+	);
+	const files = [
+		{ messageId: received.id, bytes: pdf },
+		{ messageId: sent.messageId, bytes: uploaded },
+		{ messageId: draft.id, bytes: uploaded },
+	];
+	async function expectByteExact() {
+		for (const file of files) {
+			const [attachment] = await attachmentsOf(api, file.messageId);
+			expect(sha256(await download(api, file.messageId, attachment.id))).toBe(sha256(file.bytes));
+		}
+	}
+	// Whatever earlier specs left for reclaim is converted first, so the counts below are exact.
+	await runJob(api, "reclaim");
+	const before = await storageCounts(api);
+	expect(before.raw.rows).toBeGreaterThanOrEqual(1);
+	expect(before.shared.rows).toBeGreaterThanOrEqual(1);
+	expect(before.reclaim?.pending.rows).toBe(0);
+
+	await page.goto("/storage");
+	const card = page.getByTestId("attachment-storage-card");
+	await expect(card.getByRole("heading", { name: "Attachment storage" })).toBeVisible();
+	await expect(card.getByRole("button", { name: "Reclaim space" })).toBeDisabled();
+	await runFromCard(page, "Restore separate copies", "Restore copies", "Separate copies restored");
+	const materialized = await storageCounts(api);
+	expect(materialized.job).toMatchObject({ direction: "materialize", converted: before.raw.rows });
+	expect(materialized.job?.unshared).toBe(before.shared.rows);
+	expect([materialized.raw.rows, materialized.shared.rows]).toEqual([0, 0]);
+	expect(materialized.objects.rows).toBe(before.objects.rows + before.raw.rows);
+	expect(materialized.objects.keys).toBe(before.objects.keys + before.raw.rows + before.shared.rows);
+	expect(materialized.reclaim?.pending.rows).toBe(before.raw.rows);
+	await expectByteExact();
+	expect((await verifyObjects(api)).missing).toEqual([]);
+
+	await runFromCard(page, "Reclaim space", "Reclaim space", "Space reclaimed");
+	const reclaimed = await storageCounts(api);
+	expect(reclaimed.raw.rows).toBe(before.raw.rows);
+	expect(reclaimed.reclaim?.pending.rows).toBe(0);
+	// The materialized objects are gone again; the copies un-sharing gave the draft and the Sent message stay.
+	expect(reclaimed.objects.rows).toBe(before.objects.rows);
+	expect(reclaimed.objects.keys).toBe(before.objects.keys + before.shared.rows);
+	expect(reclaimed.shared.rows).toBe(0);
+	await expectByteExact();
+	expect((await verifyObjects(api)).missing).toEqual([]);
+
+	// Reclaiming again finds nothing to do and changes nothing.
+	const again = await runJob(api, "reclaim");
+	expect([again.done, again.converted]).toEqual([0, 0]);
+	const after = await storageCounts(api);
+	expect([after.objects, after.raw, after.shared]).toEqual([reclaimed.objects, reclaimed.raw, reclaimed.shared]);
+	await api.dispose();
+});
+
+test("only the primary admin starts storage jobs, from the same origin", async () => {
+	const api = await apiContext(STORAGE_STATE);
+	const member = await createSignedInAccount(api, `sj${uniqueToken().slice(-8)}`);
+	expect((await member.api.post("/api/admin/attachment-storage", { data: { action: "reclaim" } })).status()).toBe(403);
+	await member.api.dispose();
+	const crossSite = await api.post("/api/admin/attachment-storage", {
+		data: { action: "reclaim" },
+		headers: { Origin: "https://attacker.example" },
+	});
+	expect(crossSite.status()).toBe(403);
+	expect((await api.post("/api/admin/attachment-storage", { data: { action: "sideways" } })).status()).toBe(400);
 	await api.dispose();
 });

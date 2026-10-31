@@ -18,6 +18,8 @@ const DEV_ONLY_VARS = [
 	// Lets e2e/60-imap-import.spec.ts import from the fake IMAP server on 127.0.0.1 without TLS.
 	"EXTERNAL_ACCOUNTS_ALLOW_INSECURE_LOOPBACK",
 	"DATABASE_SIZE_TEST_HEADER",
+	// Lets scripts/attachment-storage-check.mjs kill an attachment storage job part way.
+	"ATTACHMENT_STORAGE_TEST_HOOKS",
 	// The e2e server points it at a loopback port where nothing listens; deployments set it as a variable.
 	"KITE_TELEMETRY_URL",
 	// Only so the e2e server can save storage credentials; a real install sets it as a secret or in .dev.vars.

@@ -1,6 +1,12 @@
 import { chunkArray } from "@/db/chunk-utils";
-import { ATTACHMENT_OBJECT_ROWS_SQL } from "./attachment-storage-utils";
-import type { AttachmentStorageCounts, AttachmentObjectsVerification } from "./attachment-storage-types";
+import { missingColumnFromError } from "@/lib/auth/user-lookup-utils";
+import { ATTACHMENT_OBJECT_ROWS_SQL, rawBackedMessagesSql } from "./attachment-storage-utils";
+import type {
+	AttachmentStorageCounts,
+	AttachmentObjectsVerification,
+	AttachmentReclaimCounts,
+	SharedObjectCounts,
+} from "./attachment-storage-types";
 
 /** Referenced object keys `verifyAttachmentObjects` looks up, newest first (`docs/specs/attachments-once.md` §5.5). */
 const VERIFY_SAMPLE_KEYS = 200;
@@ -36,6 +42,37 @@ export async function getAttachmentStorageCounts(env: CloudflareEnv): Promise<At
 			bytes: number(rows.bytes) - number(rows.objectBytes),
 		},
 	};
+}
+
+/**
+ * Objects more than one row names (a forward, a send from a draft): `keys` such objects and `rows` the rows beyond the
+ * first that name them, which is how many copies materialize writes before a release older than sharing can run.
+ */
+export async function getSharedObjectCounts(env: CloudflareEnv): Promise<SharedObjectCounts> {
+	const row = await env.DB.prepare(
+		`SELECT count(*) AS keys, coalesce(sum(n - 1), 0) AS rows FROM (SELECT count(*) AS n FROM message_attachments WHERE ${ATTACHMENT_OBJECT_ROWS_SQL} GROUP BY r2_key HAVING count(*) > 1)`,
+	).first<{ keys: number; rows: number }>();
+	return { keys: number(row?.keys), rows: number(row?.rows) };
+}
+
+/**
+ * The 'object' rows of received and imported mail (`isRawBackedMessage`), the only ones reclaim may turn into 'raw'
+ * rows: `pending` it has not looked at yet, `unmatched` it looked at and left as they were. Null before migration
+ * 0088 adds the storage columns.
+ */
+export async function getReclaimCounts(env: CloudflareEnv): Promise<AttachmentReclaimCounts | null> {
+	try {
+		const row = await env.DB.prepare(
+			`SELECT count(CASE WHEN a.storage_checked_at IS NULL THEN 1 END) AS pendingRows, coalesce(sum(CASE WHEN a.storage_checked_at IS NULL THEN a.size END), 0) AS pendingBytes, count(a.storage_checked_at) AS unmatchedRows FROM message_attachments a JOIN messages m ON m.id = a.message_id WHERE ${ATTACHMENT_OBJECT_ROWS_SQL} AND a.storage = 'object' AND ${rawBackedMessagesSql("m")}`,
+		).first<{ pendingRows: number; pendingBytes: number; unmatchedRows: number }>();
+		return {
+			pending: { rows: number(row?.pendingRows), bytes: number(row?.pendingBytes) },
+			unmatched: { rows: number(row?.unmatchedRows) },
+		};
+	} catch (error) {
+		if (missingColumnFromError(error)) return null;
+		throw error;
+	}
 }
 
 /**

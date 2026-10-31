@@ -16,7 +16,7 @@ interface CloudflareEnv {
 	AI_MODEL?: string;
 	AI_BASE_URL?: string;
 	AI_API_KEY?: string;
-	// The outbound queue also carries webhook retries, manual backup exports, full-backup object copies and storage migration batches, so that neither needs an extra binding.
+	// The outbound queue also carries webhook retries, manual backup exports, full-backup object copies and storage migration batches and attachment storage job batches, so that neither needs an extra binding.
 	OUTBOUND_QUEUE: Queue<
 		| import("./src/lib/email/send").OutboundQueueMessage
 		| import("./src/lib/email/webhooks").WebhookRetryMessage
@@ -25,6 +25,7 @@ interface CloudflareEnv {
 		| import("./src/lib/backups/objects-types").BackupObjectsMessage
 		| import("./src/lib/backups/restore-job-types").RestoreJobMessage
 		| import("./src/lib/storage/migration-utils").StorageMigrateMessage
+		| import("./src/lib/email/attachment-storage-jobs-types").AttachmentStorageJobMessage
 		| import("./src/lib/external-accounts/submit-utils").AppendSentMessage
 	>;
 	ASSETS: Fetcher;
@@ -78,6 +79,11 @@ interface CloudflareEnv {
 	 * message keep reading from it. On by default.
 	 */
 	ATTACHMENT_RAW_INDEX?: string;
+	/**
+	 * Dev/test only: "1" lets a start of the admin attachment storage job carry `testCrashAfter`, which kills its next
+	 * batch part way (scripts/attachment-storage-check.mjs, e2e); ignored in production.
+	 */
+	ATTACHMENT_STORAGE_TEST_HOOKS?: string;
 	/** "0", "false", "off" or "no" forces the opt-in usage statistics off (src/lib/telemetry/); nothing forces them on. */
 	KITE_TELEMETRY?: string;
 	/** Overrides the collector the daily usage heartbeat is posted to; https only. Empty means nothing is sent. */

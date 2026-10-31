@@ -58,6 +58,7 @@ const LATER_MIGRATIONS = [
 	"0087_add_audit_logs_action_index.sql",
 	"0088_attachment_raw_storage.sql",
 	"0089_add_external_identities.sql",
+	"0090_add_attachment_storage_job.sql",
 ];
 /** Columns a later migration adds to a table this test pins; everything else must stay as it was. */
 const LATER_COLUMNS = {

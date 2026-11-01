@@ -20,22 +20,6 @@
 @theme inline {
 	--color-background: var(--background);
 	--color-foreground: var(--foreground);
-	/* The command center's surfaces and accents (the "Command center" section below). */
-	--color-cc-surface: var(--cc-surface);
-	--color-cc-surface-hover: var(--cc-surface-hover);
-	--color-cc-border: var(--cc-border);
-	--color-cc-border-strong: var(--cc-border-strong);
-	--color-cc-accent: var(--cc-accent);
-	--color-cc-accent-tint: var(--cc-accent-tint);
-	--color-cc-label: var(--cc-label);
-	--color-cc-ok: var(--cc-ok);
-	--color-cc-warn: var(--cc-warn);
-	--color-cc-warn-surface: var(--cc-warn-surface);
-	--color-cc-warn-border: var(--cc-warn-border);
-	--color-cc-warn-text: var(--cc-warn-text);
-	--color-cc-info-surface: var(--cc-info-surface);
-	--color-cc-info-border: var(--cc-info-border);
-	--color-cc-link-underline: var(--cc-link-underline);
 	--font-sans: var(--font-ui);
 	--font-script: var(--font-kite-script), cursive;
 	--no-font-mono: var(--font-geist-mono);
@@ -359,6 +343,15 @@ pre {
 /* Script accents belong to Kite classic; the other styles keep plain type. */
 :root:not([data-style="lavender"]) .font-script {
 	display: none;
+}
+
+/* The empty reading pane's "Good morning," (command-center/command-center.tsx) shows in every style: small and
+   muted above the name in Kite and Classic, in the script face in Kite classic. */
+:root[data-style="lavender"] .command-center-greeting {
+	font-family: var(--font-script);
+	font-size: 1.875rem;
+	line-height: 1;
+	color: var(--color-blue-600);
 }
 
 /* The landing page's "that actually flows." stays part of the headline in every style, so the sentence is
@@ -980,77 +973,9 @@ html:has(#kite-boot-failure) .loader-frozen {
 	}
 }
 
-/* ── Command center ──────────────────────────────────────────────────────────
-   The empty reading pane's cards, chips and quick actions (src/components/command-center/ and the module cards
-   that build on CommandCenterCard). They sit on the pane's own surface (bg-white, which the dark themes remap
-   to the card colour), so each gets a surface one step away from it: the style's muted neutral with a hairline
-   border, a soft inner highlight and, in the dark themes, a faint tint of the style's accent. The accent itself
-   (the style's primary) is kept for links and section labels, its lighter tint for icons, the unread dot and a
-   thin glow along the top of each card. The warning tokens are one amber callout that works on these surfaces
-   in every style; the Tailwind amber scale is inverted in the dark themes and would turn muddy here. Components
-   use the --color-cc-* names registered in @theme above (bg-cc-surface, text-cc-accent, …) and the
-   --cc-elevation and --cc-glow values through shadow-(--cc-elevation) and bg-(image:--cc-glow). */
-:root {
-	--cc-surface: color-mix(in srgb, var(--muted) 55%, #fff);
-	--cc-surface-hover: var(--muted);
-	--cc-border: var(--border);
-	--cc-border-strong: var(--color-neutral-300);
-	--cc-accent: var(--primary);
-	--cc-accent-tint: var(--color-blue-500);
-	--cc-label: var(--cc-accent);
-	--cc-elevation: inset 0 1px 0 0 rgba(255, 255, 255, 0.9), 0 1px 2px 0 rgba(15, 23, 42, 0.04);
-	--cc-glow: radial-gradient(
-		90% 70% at 50% 0%,
-		color-mix(in srgb, var(--cc-accent-tint) 6%, transparent),
-		transparent 70%
-	);
-	--cc-ok: #1f9d55;
-	--cc-warn: #d97706;
-	--cc-warn-surface: color-mix(in srgb, #f59e0b 10%, #fff);
-	--cc-warn-border: rgba(245, 158, 11, 0.35);
-	--cc-warn-text: #7a4308;
-	--cc-info-surface: color-mix(in srgb, var(--cc-accent-tint) 8%, transparent);
-	--cc-info-border: color-mix(in srgb, var(--cc-accent-tint) 25%, transparent);
-	/* Links show their underline on hover only; where the accent is no colour (Kite) it is always faintly there. */
-	--cc-link-underline: transparent;
-}
-.dark {
-	--cc-surface: color-mix(in srgb, var(--muted) 94%, var(--cc-accent-tint));
-	--cc-surface-hover: color-mix(in srgb, var(--cc-surface) 94%, #fff);
-	--cc-border: color-mix(in srgb, var(--border), var(--color-neutral-300));
-	--cc-elevation: inset 0 1px 0 0 rgba(255, 255, 255, 0.06), 0 1px 2px 0 rgba(0, 0, 0, 0.25);
-	--cc-glow: radial-gradient(
-		90% 70% at 50% 0%,
-		color-mix(in srgb, var(--cc-accent-tint) 10%, transparent),
-		transparent 70%
-	);
-	--cc-ok: #5fcf8a;
-	--cc-warn: #e6b05a;
-	--cc-warn-surface: color-mix(in srgb, #f59e0b 11%, var(--cc-surface));
-	--cc-warn-border: rgba(245, 158, 11, 0.3);
-	--cc-warn-text: #ecc47f;
-}
-/* Classic's saturated blue makes a loud wash on a light card; a lighter one says "information" just as well. */
-:root:not(.dark)[data-style="classic"] {
-	--cc-info-surface: color-mix(in srgb, var(--cc-accent-tint) 5%, transparent);
-	--cc-info-border: color-mix(in srgb, var(--cc-accent-tint) 18%, transparent);
-}
-/* Kite stays strictly neutral: no accent tint in its surfaces, and labels in the quiet grey it uses elsewhere.
-   Its accent is the text colour, so links keep a faint underline to read as links. */
-:root[data-style="kite"] {
-	--cc-label: var(--color-neutral-500);
-	--cc-link-underline: color-mix(in srgb, currentColor 40%, transparent);
-}
-:root.dark[data-style="kite"] {
-	--cc-surface: var(--muted);
-	/* Its mid grey is 4.5:1 on the surface, just enough for the 11px labels; one step lighter reads better. */
-	--cc-label: var(--color-neutral-600);
-}
-
 /* The small kite in the corner of the empty reading pane (command-center/floating-kite.tsx): a slow drift and
-   a rippling tail, CSS only; still under reduced motion. */
+   a rippling tail, CSS only, without a glow; still under reduced motion. */
 .command-center-kite {
-	filter: drop-shadow(0 6px 14px rgba(120, 107, 242, 0.28));
 	transform-origin: 50% 60%;
 	animation: command-center-float 7s ease-in-out infinite;
 }

@@ -60,8 +60,9 @@ test("the pane greets the account, counts the mail and still says what to do", a
 	await expect(attention.getByRole("link", { name: "Admin overview" })).toHaveAttribute("href", "/admin");
 });
 
-// The cards, chips, quick actions and the warning sit on their own surfaces (the --cc-* tokens in globals.css),
-// which every style and theme sets; their text must stay readable (WCAG AA, 4.5:1) on each of them.
+// The pane is drawn with the app's own parts (the sidebar's group labels and rows, the page notices) in every
+// style and theme; its text must stay readable (WCAG AA, 4.5:1) on each of them, and the greeting shows in every
+// style: in the regular type in Kite and Classic, in the script face only in Kite classic (lavender).
 for (const style of ["kite", "lavender", "classic"] as const) {
 	for (const theme of ["light", "dark"] as const) {
 		test(`the pane is readable in the ${style} style, ${theme} theme`, async ({ page }) => {
@@ -81,6 +82,23 @@ for (const style of ["kite", "lavender", "classic"] as const) {
 			await expect(page.locator("html")).toHaveAttribute("data-style", style);
 			await expect(page.locator("html")).toHaveClass(theme === "dark" ? /dark/ : /^(?!.*dark)/);
 			const center = pane(page);
+			const greeting = center.locator(".command-center-greeting");
+			await expect(greeting).toBeVisible();
+			await expect(greeting).toHaveText(/^Good (night|morning|afternoon|evening),$/);
+			const fonts = await greeting.evaluate((element) => {
+				const name = element.parentElement!.querySelector("h2")!;
+				return {
+					greeting: getComputedStyle(element).fontFamily,
+					name: getComputedStyle(name).fontFamily,
+					size: getComputedStyle(element).fontSize,
+				};
+			});
+			if (style === "lavender") expect(fonts.greeting).not.toBe(fonts.name);
+			else {
+				expect(fonts.greeting).toBe(fonts.name);
+				expect(fonts.size).toBe("14px");
+			}
+			expect(await contrastBetween(greeting)).toBeGreaterThanOrEqual(4.5);
 			const chip = center.locator("[data-chip=unread]");
 			const card = center.getByTestId("command-center-attention");
 			const warning = center.getByTestId("command-center-attention-ai-errors");
@@ -95,22 +113,19 @@ for (const style of ["kite", "lavender", "classic"] as const) {
 			expect(await contrastBetween(warning.getByRole("link"), warning)).toBeGreaterThanOrEqual(4.5);
 			expect(await contrastBetween(tile.locator("span.truncate"), tile)).toBeGreaterThanOrEqual(4.5);
 			expect(await contrastBetween(tile.locator("kbd"))).toBeGreaterThanOrEqual(4.5);
-			// The quieter grey text: the hint under the cards and the details at the right of the card lines.
+			// The quieter grey text: the hint under the sections and the details at the right of the rows.
 			expect(await contrastBetween(center.getByText(/^Select a message to read/))).toBeGreaterThanOrEqual(4.5);
 			for (const detail of await card.locator("p > span.shrink-0.text-xs").all())
 				expect(await contrastBetween(detail)).toBeGreaterThanOrEqual(4.5);
-			// Kite's accent is its text colour, so its card links keep a faint underline; the others underline on hover.
-			const link = card.getByRole("link", { name: "Admin overview" });
-			const underline = await link.evaluate((element) => {
-				const style = getComputedStyle(element);
-				const context = document.createElement("canvas").getContext("2d")!;
-				context.fillStyle = style.textDecorationColor;
-				context.fillRect(0, 0, 1, 1);
-				return { line: style.textDecorationLine, alpha: context.getImageData(0, 0, 1, 1).data[3] };
-			});
-			expect(underline.line).toBe("underline");
-			if (style === "kite") expect(underline.alpha).toBeGreaterThan(0);
-			else expect(underline.alpha).toBe(0);
+			// No surfaces of its own: the sections sit on the pane like the menu sits in the sidebar.
+			const surfaces = await center.evaluate(
+				(root) =>
+					[...root.querySelectorAll("section")].filter((section) => {
+						const style = getComputedStyle(section);
+						return style.borderTopWidth !== "0px" || style.backgroundImage !== "none";
+					}).length,
+			);
+			expect(surfaces).toBe(0);
 		});
 	}
 }

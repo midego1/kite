@@ -18,6 +18,7 @@ import {
 	COMMAND_CENTER_DETAIL_CLASS,
 	COMMAND_CENTER_LINK_ROW_CLASS,
 	COMMAND_CENTER_ROW_CLASS,
+	COMMAND_CENTER_TILE_CLASS,
 	CommandCenterCard,
 } from "./command-center-card";
 import { CommandCenterModuleCards } from "./command-center-module-cards";
@@ -47,7 +48,7 @@ const DOT_CLASS: Record<AccountLine["tone"], string> = {
 	muted: "bg-neutral-300",
 };
 
-/** A quick action is a sidebar-style row: the icon, the label and, at the right, the key that does the same. */
+/** A quick action is a tile like the sidebar's "New email" button: the icon, the label and, at the right, the key that does the same. */
 function QuickActionRow({ action }: { action: QuickAction }) {
 	const Icon = action.icon;
 	const content = (
@@ -62,14 +63,14 @@ function QuickActionRow({ action }: { action: QuickAction }) {
 		</>
 	);
 	return action.href ? (
-		<Link href={action.href} className={COMMAND_CENTER_LINK_ROW_CLASS} data-quick-action={action.id}>
+		<Link href={action.href} className={COMMAND_CENTER_TILE_CLASS} data-quick-action={action.id}>
 			{content}
 		</Link>
 	) : (
 		<button
 			type="button"
 			onClick={action.onSelect}
-			className={`w-full text-left ${COMMAND_CENTER_LINK_ROW_CLASS}`}
+			className={`w-full text-left ${COMMAND_CENTER_TILE_CLASS}`}
 			data-quick-action={action.id}
 		>
 			{content}
@@ -85,7 +86,7 @@ function QuickActionRow({ action }: { action: QuickAction }) {
  * pages share; nothing here is made up. Modules appear through their sidebar nav items as quick actions and
  * through the cards they declare as `reading-pane` slots, which core draws without naming a module, below the
  * quick actions because they arrive last. It is drawn with the sidebar's and the Settings pages' own parts: small
- * muted group labels, plain rows, the app's notices; no surfaces or colours of its own.
+ * muted group labels, plain rows, the app's notices and, for the quick actions, tiles like the sidebar's "New email" button; no surfaces or colours of its own.
  */
 export function CommandCenter({ config }: { config: MessageFolderConfig }) {
 	const data = useCommandCenterData(config);
@@ -215,7 +216,7 @@ export function CommandCenter({ config }: { config: MessageFolderConfig }) {
 
 			<div className="mt-4">
 				<CommandCenterCard title="Quick actions">
-					<div className="grid gap-x-2 @md:grid-cols-2">
+					<div className="grid gap-2 px-3 @md:grid-cols-2 @2xl:grid-cols-3">
 						{actions.map((action) => (
 							<QuickActionRow key={action.id} action={action} />
 						))}

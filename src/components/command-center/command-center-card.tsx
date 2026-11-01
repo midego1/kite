@@ -10,6 +10,13 @@ export const COMMAND_CENTER_ROW_CLASS = "flex h-9 min-w-0 items-center gap-3 rou
 /** A row that opens something: the sidebar's hover. */
 export const COMMAND_CENTER_LINK_ROW_CLASS = `${COMMAND_CENTER_ROW_CLASS} transition-colors hover:bg-neutral-200/60 hover:text-neutral-900`;
 
+/**
+ * A quick-action tile: the sidebar's bordered "New email" button (components-nav.tsx) — same height, radius, border,
+ * fill, hover and type — with room at the right for the key that does the same.
+ */
+export const COMMAND_CENTER_TILE_CLASS =
+	"flex h-9 min-w-0 items-center gap-3 rounded-lg border border-neutral-200 bg-neutral-100 px-3 text-sm font-medium text-neutral-900 transition-colors hover:bg-neutral-200";
+
 /** The detail at the right of a row: muted and small, like the counts in the sidebar. */
 export const COMMAND_CENTER_DETAIL_CLASS = "ml-auto shrink-0 text-xs text-neutral-500";
 

@@ -24,6 +24,16 @@ export const BOOT_TRACE_GLOBAL = "__kiteBoot";
  */
 export const WORKER_BEAT_GLOBAL = "__kiteWorkerBeat";
 /**
+ * Fired on `window` by the boot watchdog when a start React runs stopped moving (asset-recovery-utils.ts): the
+ * step that waits tries again (the session check aborts its request and retries).
+ */
+export const BOOT_STALLED_EVENT = "kite:boot-stalled";
+/**
+ * sessionStorage key the boot watchdog sets before it reloads a start that stalled; removed when a start completes,
+ * so a start that stalls again before that gets "Kite couldn't load" instead of another reload.
+ */
+export const BOOT_HANG_RELOAD_KEY = "kite-boot-hang-reload";
+/**
  * The phases of a start, in the order they happen; the furthest one reached is the phase a stuck or frozen load
  * stopped at. `auth-answered` is the session check's answer arriving, `children-rendering` React starting to render
  * the app behind the screen with it, `children-committed` that render's layout effects and `auth-ready` its
@@ -105,6 +115,14 @@ type PreviousBootLoad = {
 	step?: string;
 	build?: string;
 	afterUpdate?: true;
+	/** Set when the boot watchdog found the load alive but stalled, rather than frozen. */
+	event?: "startup_stalled";
+	/** `no-progress` (same phase and step too long) or `no-frames` (nothing painted). */
+	reason?: string;
+	/** The requests still open then, as paths with ids left out. */
+	pending?: string[];
+	/** Whether the watchdog reloaded it (or showed "Kite couldn't load"). */
+	reloaded?: boolean;
 };
 
 type BootTrace = {
@@ -244,7 +262,9 @@ export const bootTraceScript = `(() => {
 		if (previous && Array.isArray(previous.phases) && typeof previous.beat === "number") {
 			const completed = previous.phases.some((entry) => entry && entry.p === "complete");
 			const leftLate = !previous.left || !(previous.left.gap <= freezeGapMs);
-			if (!completed && !previous.ended && previous.visible === true && leftLate) {
+			// The watchdog found it alive but stuck (and reloaded it, or showed "Kite couldn't load").
+			const hang = !completed && previous.hang && typeof previous.hang === "object" ? previous.hang : null;
+			if (hang || (!completed && !previous.ended && previous.visible === true && leftLate)) {
 				const last = furthest(previous.phases.filter((entry) => entry && typeof entry.p === "string"));
 				previousLoad = {
 					phase: last ? last.p : "unknown",
@@ -254,10 +274,20 @@ export const bootTraceScript = `(() => {
 				if (previous.step && typeof previous.step.s === "string") previousLoad.step = clip(previous.step.s).slice(0, 40);
 				if (typeof previous.build === "string") previousLoad.build = previous.build.slice(0, 60);
 				if (previous.afterUpdate === true) previousLoad.afterUpdate = true;
+				if (hang) {
+					previousLoad.event = "startup_stalled";
+					previousLoad.reason = hang.reason === "no-frames" ? "no-frames" : "no-progress";
+					previousLoad.pending = (Array.isArray(hang.pending) ? hang.pending : [])
+						.filter((path) => typeof path === "string")
+						.slice(0, limit)
+						.map((path) => path.slice(0, 100));
+					previousLoad.reloaded = hang.reloaded === true;
+				}
 				console.error(
-					"[kite] previous load froze at phase " + previousLoad.phase +
+					"[kite] previous load " + (hang ? "stalled" : "froze") + " at phase " + previousLoad.phase +
 						(previousLoad.step ? " (step " + previousLoad.step + ")" : "") +
-						" after " + previousLoad.afterMs + " ms",
+						" after " + previousLoad.afterMs + " ms" +
+						(hang ? " (" + previousLoad.reason + (previousLoad.pending.length ? ", open: " + previousLoad.pending.join(", ") : "") + ")" : ""),
 				);
 				// The server logs it: the one record of a freeze that leaves nobody a way to copy its details.
 				try {
@@ -422,9 +452,10 @@ export const bootTraceScript = `(() => {
 			const lines = [];
 			if (d.previousLoad) {
 				lines.push(
-					"Previous load froze at " + d.previousLoad.phase +
+					"Previous load " + (d.previousLoad.event ? "stalled" : "froze") + " at " + d.previousLoad.phase +
 						(d.previousLoad.step ? " (step " + d.previousLoad.step + ")" : "") +
-						" after " + seconds(d.previousLoad.afterMs),
+						" after " + seconds(d.previousLoad.afterMs) +
+						(d.previousLoad.event ? " (" + d.previousLoad.reason + (d.previousLoad.pending.length ? ", open: " + d.previousLoad.pending.join(", ") : "") + ")" : ""),
 				);
 			}
 			if (d.autoReloaded) lines.push("Reloaded automatically after the previous load froze");
@@ -479,7 +510,13 @@ export const bootTraceScript = `(() => {
 					return;
 				}
 				record.phases.push({ p: name, t: now() });
-				if (name === "complete") return end();
+				if (name === "complete") {
+					// A start went through: a later stall may reload again.
+					try {
+						sessionStorage.removeItem(${JSON.stringify(BOOT_HANG_RELOAD_KEY)});
+					} catch {}
+					return end();
+				}
 				save();
 				try {
 					const beat = window[${JSON.stringify(WORKER_BEAT_GLOBAL)}];
@@ -514,6 +551,23 @@ export const bootTraceScript = `(() => {
 				afterMs: record.beat,
 				visibleMs: record.visibleMs,
 			}),
+			// The boot watchdog found this load alive but stalled (\`reason\`), about to reload it or not: the step, the
+			// reason and the requests still open (paths, any segment with a digit longer than 8 characters left out as
+			// ":id"), for the next load's report.
+			hang: (reason, reloading) => {
+				if (ended) return;
+				record.hang = {
+					reason: reason === "no-frames" ? "no-frames" : "no-progress",
+					phase: phaseReached(),
+					t: now(),
+					reloaded: reloading === true,
+					pending: Array.from(inFlight.values())
+						.sort((a, b) => a.start - b.start)
+						.slice(0, limit)
+						.map((entry) => entry.path.replace(/\\/[^/]*\\d[^/]*/g, (segment) => (segment.length > 9 ? "/:id" : segment))),
+				};
+				save();
+			},
 			// The service worker says it reloaded this tab after its previous load froze.
 			autoReloaded: () => {
 				if (record.autoReloaded) return;

@@ -1,6 +1,6 @@
 "use client";
 
-import { markBootPhase } from "@/components/boot-trace-utils";
+import { BOOT_STALLED_EVENT, markBootPhase } from "@/components/boot-trace-utils";
 import { authFetch } from "@/lib/auth/client";
 import type { AuthMeResponse } from "./me-client-types";
 import { AUTH_ME_TIMEOUT_MS } from "./me-client-utils";
@@ -16,13 +16,36 @@ export class AuthMeRequestError extends Error {
 	}
 }
 
+/**
+ * The request's signal: its timeout, or the boot watchdog's word that the start stalled (BOOT_STALLED_EVENT), which
+ * aborts it as a timeout so the query's own retry sends a fresh one. That covers a request that outlives its timeout
+ * (a timer that never fires, a connection the browser keeps waiting on). `release` stops listening.
+ */
+function sessionCheckSignal(timeoutMs: number): { signal: AbortSignal; release: () => void } {
+	const controller = new AbortController();
+	const timeout = AbortSignal.timeout(timeoutMs);
+	const onTimeout = () => controller.abort(timeout.reason);
+	const onStalled = () => controller.abort(new DOMException("The start stalled", "TimeoutError"));
+	timeout.addEventListener("abort", onTimeout, { once: true });
+	if (typeof window !== "undefined") window.addEventListener(BOOT_STALLED_EVENT, onStalled);
+	return {
+		signal: controller.signal,
+		release: () => {
+			timeout.removeEventListener("abort", onTimeout);
+			if (typeof window !== "undefined") window.removeEventListener(BOOT_STALLED_EVENT, onStalled);
+		},
+	};
+}
+
 /** Resolves to null when there is no valid session; throws for any other failure. */
 export async function fetchAuthMe(timeoutMs = AUTH_ME_TIMEOUT_MS): Promise<AuthMeResponse | null> {
-	const response = await authFetch("/api/auth/me", {
-		redirectOnUnauthorized: false,
-		cache: "no-store",
-		signal: AbortSignal.timeout(timeoutMs),
-	});
+	const { signal, release } = sessionCheckSignal(timeoutMs);
+	let response: Response;
+	try {
+		response = await authFetch("/api/auth/me", { redirectOnUnauthorized: false, cache: "no-store", signal });
+	} finally {
+		release();
+	}
 	if (response.status === 401) {
 		markBootPhase("auth-answered");
 		return null;

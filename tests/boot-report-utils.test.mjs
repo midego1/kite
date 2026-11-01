@@ -115,3 +115,28 @@ test("the body is read up to the limit whatever Content-Length says, and a longe
 	assert.equal(await readBootReportBody(streamed), null);
 	assert.equal(cancelled, true);
 });
+
+test("a stalled start carries its reason, the open requests' paths and whether it reloaded", () => {
+	const stalled = {
+		...report,
+		event: "startup_stalled",
+		reason: "no-progress",
+		pending: ["/api/auth/me", "/api/messages/:id", "https://cdn.example.net"],
+		reloaded: true,
+	};
+	assert.deepEqual(parseBootFreezeReport(JSON.stringify(stalled)), { ...stalled, afterMs: 612 });
+	assert.deepEqual(
+		parseBootFreezeReport(JSON.stringify({ ...stalled, reason: undefined, pending: undefined, reloaded: undefined })),
+		{ ...stalled, afterMs: 612, reason: "no-progress", pending: [], reloaded: false },
+	);
+	const refused = [
+		{ ...stalled, reason: "Not A Name" },
+		{ ...stalled, pending: "/api/auth/me" },
+		{ ...stalled, pending: ["/api/auth/me?q=someone@example.com"] },
+		{ ...stalled, pending: ["someone@example.com"] },
+		{ ...stalled, pending: Array.from({ length: 6 }, () => "/api/auth/me") },
+	];
+	for (const body of refused) assert.equal(parseBootFreezeReport(JSON.stringify(body)), null, JSON.stringify(body));
+	// Other events never carry them.
+	assert.equal(parseBootFreezeReport(JSON.stringify({ ...report, reason: "no-progress" }))?.reason, undefined);
+});

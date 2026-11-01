@@ -1,4 +1,11 @@
-import { BOOT_TRACE_GLOBAL, WORKER_BEAT_GLOBAL, bootCopyLabel, markBootPhase } from "./boot-trace-utils";
+import {
+	BOOT_HANG_RELOAD_KEY,
+	BOOT_STALLED_EVENT,
+	BOOT_TRACE_GLOBAL,
+	WORKER_BEAT_GLOBAL,
+	bootCopyLabel,
+	markBootPhase,
+} from "./boot-trace-utils";
 
 /**
  * sessionStorage key counting the automatic reloads of this tab: `{ count, since, stalls }`, where `stalls` counts
@@ -62,6 +69,24 @@ const LOADER_SETTLED_TICKS = 4;
 const HEARTBEAT_ATTRIBUTE = "data-kite-heartbeat";
 /** On <html> while the tab is hidden: ticks are throttled there, so the notice's animation is paused. */
 const HIDDEN_ATTRIBUTE = "data-kite-hidden";
+/**
+ * Visible time a start React runs may stay in one boot phase and step (boot-trace-utils.ts) before it counts as
+ * stalled. The session check gets longer than its own timeouts and retry (6 + 1 + 4 seconds, then AuthGuard's error
+ * state), the data wait longer than LoadingTransition's 10 seconds; the render phases take milliseconds.
+ */
+const HANG_BUDGETS_MS: Record<string, number> = {
+	"loader-mounted": 15_000,
+	"auth-answered": 8_000,
+	"children-rendering": 8_000,
+	"children-committed": 8_000,
+	"auth-ready": 15_000,
+	"can-complete": 5_000,
+};
+const HANG_DEFAULT_BUDGET_MS = 15_000;
+/** After asking the stuck step to try again, this much more visible time without progress before the one reload. */
+const HANG_RETRY_GRACE_MS = 8_000;
+/** Visible time without a single animation frame (nothing painted) after which the start counts as stalled. */
+const FRAME_STALL_MS = 10_000;
 /** Watchdog reloads per ASSET_RELOAD_WINDOW_MS (within the shared budget) before it shows "Kite couldn't load". */
 const BOOT_STALL_RELOADS = 2;
 /**
@@ -69,7 +94,10 @@ const BOOT_STALL_RELOADS = 2;
  * (public/kite-sw.js): a reload gives the tab a new client id, so the worker limits its reloads per tab by this one.
  */
 const TAB_ID_STORAGE_KEY = "kite:tab-id";
-/** sessionStorage key of the time the service worker last reloaded this tab after a freeze (its own `Date.now()`). */
+/**
+ * sessionStorage key of the time the service worker reloaded this tab after a freeze (its own `Date.now()`), kept
+ * until a start goes through.
+ */
 const AUTO_RELOADED_STORAGE_KEY = "kite:auto-reloaded-at";
 /** Kite's service worker: notifications and the freeze watchdog. Registered once React runs the startup screen. */
 const KITE_SERVICE_WORKER_URL = "/kite-sw.js";
@@ -135,6 +163,17 @@ const DEV_ASSET_PREFIXES = ["/_next/static/", "/@id/", "/@fs/", "/@vite/", "/nod
  * box carries the trace's Details with a Copy details button. Every tick also restarts the animation of the startup
  * screen's frozen-thread notice (HEARTBEAT_ATTRIBUTE): a main thread that stopped runs neither the slow-start
  * recovery nor this watchdog, but the compositor still fades that notice in once the ticks have stopped.
+ *
+ * A start React runs can also stop moving while the page stays alive: a request that never answers and outlives its
+ * own timeout, a render that never commits, a page the browser no longer paints. Its timers still run, so this
+ * watchdog keeps its heartbeat, but the startup screen shows nothing new (no progress, no "Reload Kite"). So while
+ * React runs the screen, each tick also compares the boot trace's phase and step with the last tick's, and asks for
+ * an animation frame. When the phase and step stay the same for their budget (HANG_BUDGETS_MS) of visible time, it
+ * first asks the stuck step to try again (BOOT_STALLED_EVENT: the session check aborts and retries); without
+ * progress HANG_RETRY_GRACE_MS later, or after FRAME_STALL_MS of visible time without a frame, it records the stall
+ * in the boot trace (the step, the reason and the requests still open, which the next load reports) and reloads
+ * once, within the same budget as the others. BOOT_HANG_RELOAD_KEY marks that reload until a start completes, so a
+ * start that stalls again gets "Kite couldn't load" instead, also when the screen shows its own "Reload Kite".
  *
  * Every tick, and every change of visibility, is also a heartbeat for the service worker's freeze watchdog
  * (public/kite-sw.js) when one controls the page: the tab's id (TAB_ID_STORAGE_KEY), whether it is visible, and
@@ -204,19 +243,28 @@ export function assetRecoveryScript({ dev = false }: { dev?: boolean } = {}): st
 	};
 	const workerBeat = () => {
 		if (!workerWatching) return;
-		const current = trace();
-		const status = current && typeof current.status === "function" ? current.status() : null;
-		tellWorker(Object.assign({}, status, {
-			type: "kite:boot-beat",
-			tabId,
-			visible: document.visibilityState !== "hidden",
-			autoReloadedAt: autoReloadedAt(),
-		}));
+		try {
+			const current = trace();
+			const status = current && typeof current.status === "function" ? current.status() : null;
+			tellWorker(Object.assign({}, status, {
+				type: "kite:boot-beat",
+				tabId,
+				visible: document.visibilityState !== "hidden",
+				autoReloadedAt: autoReloadedAt(),
+			}));
+		} catch {}
 	};
-	const workerDone = () => {
+	// A start that went through re-arms the worker for this tab (and drops the page's marker of its reload); one that
+	// ended otherwise (this watchdog reloads or gives up) only stops being watched.
+	const workerDone = (started) => {
 		if (!workerWatching) return;
 		workerWatching = false;
-		tellWorker({ type: "kite:boot-done" });
+		if (started) {
+			try {
+				sessionStorage.removeItem(${JSON.stringify(AUTO_RELOADED_STORAGE_KEY)});
+			} catch {}
+		}
+		tellWorker({ type: started ? "kite:boot-done" : "kite:boot-leaving", tabId });
 	};
 	if (workers) {
 		// The trace beats at once on every phase it reaches, so a report names the phase a load froze in.
@@ -224,7 +272,7 @@ export function assetRecoveryScript({ dev = false }: { dev?: boolean } = {}): st
 		// No beforeunload listener: Chrome then asks the page before every navigation, a frozen one too, which would
 		// hold up the worker's reload. A page on its way out (or into the back-forward cache) says so on pagehide;
 		// one shown again from that cache beats again with its next tick.
-		addEventListener("pagehide", () => tellWorker({ type: "kite:boot-leaving" }));
+		addEventListener("pagehide", () => tellWorker({ type: "kite:boot-leaving", tabId }));
 		try {
 			workers.addEventListener("message", (event) => {
 				const data = event.data;
@@ -301,7 +349,9 @@ export function assetRecoveryScript({ dev = false }: { dev?: boolean } = {}): st
 	const loaderStuck = () => {
 		const screen = document.querySelector("[data-loading-overlay]");
 		if (!screen || screen.getAttribute("role") !== "status") return false;
-		return remounts >= ${LOADER_REMOUNT_LIMIT} || !screen.querySelector(".loading-recovery, [role=alert]");
+		// A start that stalled has no way out on its screen any more, whatever it shows.
+		if (hangStalled || remounts >= ${LOADER_REMOUNT_LIMIT}) return true;
+		return !screen.querySelector(".loading-recovery, [role=alert]");
 	};
 	const startOver = () => {
 		try {
@@ -471,16 +521,100 @@ export function assetRecoveryScript({ dev = false }: { dev?: boolean } = {}): st
 		}
 		return false;
 	};
-	// The watchdog is done with this page: the trace's heartbeat stops with it, which is no freeze.
-	const stopWatching = () => {
+	// The watchdog is done with this page (\`started\`: because the start went through): the trace's heartbeat stops
+	// with it, which is no freeze.
+	const stopWatching = (started) => {
 		clearInterval(watchdog);
-		workerDone();
+		workerDone(started);
 		const current = trace();
 		if (current && typeof current.end === "function") current.end();
 	};
+	// A start React runs that stopped moving: same phase and step, or no frames, for too long.
+	const hangBudgets = ${JSON.stringify(HANG_BUDGETS_MS)};
+	let hangKey = null;
+	let hangMs = 0;
+	let hangRetried = false;
+	let hangStalled = false;
+	let noFrameMs = 0;
+	let frameSeen = true;
+	let framePending = false;
+	const askFrame = () => {
+		if (framePending) return;
+		framePending = true;
+		try {
+			requestAnimationFrame(() => {
+				framePending = false;
+				frameSeen = true;
+			});
+		} catch {
+			framePending = false;
+			frameSeen = true;
+		}
+	};
+	const hangReloaded = () => {
+		try {
+			return sessionStorage.getItem(${JSON.stringify(BOOT_HANG_RELOAD_KEY)}) !== null;
+		} catch {
+			return true;
+		}
+	};
+	const watchHang = (elapsed) => {
+		const current = trace();
+		let status = null;
+		try {
+			status = current && typeof current.status === "function" ? current.status() : null;
+		} catch {}
+		const phase = status && typeof status.phase === "string" ? status.phase : "loader-mounted";
+		const key = phase + "|" + (status && status.step ? status.step : "");
+		if (key !== hangKey) {
+			hangKey = key;
+			hangMs = 0;
+			hangRetried = false;
+		} else hangMs += elapsed;
+		// Hidden tabs get no frames; a hidden tick counts nothing.
+		if (frameSeen || elapsed === 0) noFrameMs = 0;
+		else noFrameMs += elapsed;
+		frameSeen = false;
+		askFrame();
+		const budget = hangBudgets[phase] || ${HANG_DEFAULT_BUDGET_MS};
+		const noFrames = noFrameMs >= ${FRAME_STALL_MS};
+		// Without the trace's phase and step there is no progress to compare, only frames.
+		if (!noFrames && (!status || hangMs < budget)) return;
+		if (!noFrames && !hangRetried) {
+			hangRetried = true;
+			console.error("[kite] the start stalled at " + phase + (status && status.step ? " (step " + status.step + ")" : "") + "; trying again");
+			try {
+				window.dispatchEvent(new Event(${JSON.stringify(BOOT_STALLED_EVENT)}));
+			} catch {}
+			return;
+		}
+		if (!noFrames && hangMs < budget + ${HANG_RETRY_GRACE_MS}) return;
+		if (hangStalled) return;
+		hangStalled = true;
+		const reason = noFrames ? "no-frames" : "no-progress";
+		const again = hangReloaded();
+		if (current && typeof current.hang === "function") {
+			try {
+				current.hang(reason, !again);
+			} catch {}
+		}
+		if (!again && navigator.onLine !== false && takeReload(true)) {
+			try {
+				sessionStorage.setItem(${JSON.stringify(BOOT_HANG_RELOAD_KEY)}, String(Date.now()));
+			} catch {}
+			if (hangReloaded()) {
+				console.error("[kite] the start stalled (" + reason + "); reloading once");
+				stopWatching(false);
+				location.reload();
+				return;
+			}
+		}
+		console.error("[kite] The app did not finish starting: it stalled (" + reason + ").");
+		showFailure(true);
+	};
 	// React runs the screen: no more reloads, only the outer bound, until the screen has gone for good.
 	let settledTicks = 0;
-	const watchLoader = () => {
+	const watchLoader = (elapsed) => {
 		const screen = document.querySelector("[data-loading-overlay]");
 		if (!screen || screen.getAttribute("role") !== "status") {
 			const box = document.getElementById(failureId);
@@ -490,10 +624,11 @@ export function assetRecoveryScript({ dev = false }: { dev?: boolean } = {}): st
 			if (screen && screen.querySelector("[role=alert]")) {
 				loaderMs = 0;
 				settledTicks = 0;
+				hangKey = null;
 				return;
 			}
 			settledTicks += 1;
-			if (settledTicks >= ${LOADER_SETTLED_TICKS}) stopWatching();
+			if (settledTicks >= ${LOADER_SETTLED_TICKS}) stopWatching(!hangStalled);
 			return;
 		}
 		settledTicks = 0;
@@ -503,7 +638,9 @@ export function assetRecoveryScript({ dev = false }: { dev?: boolean } = {}): st
 			if (current && typeof current.remount === "function") current.remount(remounts);
 		}
 		overlay = screen;
-		if (loaderMs < ${LOADER_CEILING_MS} || !loaderStuck()) return;
+		watchHang(elapsed);
+		if (hangStalled && !document.getElementById(failureId)) return;
+		if (!hangStalled && (loaderMs < ${LOADER_CEILING_MS} || !loaderStuck())) return;
 		if (!document.getElementById(failureId)) {
 			console.error(
 				remounts >= ${LOADER_REMOUNT_LIMIT}
@@ -516,8 +653,9 @@ export function assetRecoveryScript({ dev = false }: { dev?: boolean } = {}): st
 	const tick = () => {
 		heartbeat();
 		const now = Date.now();
+		let elapsed = 0;
 		if (document.visibilityState !== "hidden") {
-			const elapsed = Math.min(Math.max(now - lastTickAt, 0), 1000);
+			elapsed = Math.min(Math.max(now - lastTickAt, 0), 1000);
 			visibleMs += elapsed;
 			quietMs += elapsed;
 			loaderMs += elapsed;
@@ -526,14 +664,14 @@ export function assetRecoveryScript({ dev = false }: { dev?: boolean } = {}): st
 		const current = trace();
 		if (current && typeof current.beat === "function") current.beat(visibleMs);
 		workerBeat();
-		if (window[loaderFlag]) return watchLoader();
-		if (!stalled()) return stopWatching();
+		if (window[loaderFlag]) return watchLoader(elapsed);
+		if (!stalled()) return stopWatching(true);
 		if (visibleMs < ${BOOT_WATCHDOG_MS}) return;
 		const waiting = quietMs < (loading() ? quietCap : ${progressGraceMs});
 		if (waiting && visibleMs < ${ceilingMs}) return;
 		// A failed chunk's reload is already on its way.
 		if (reloadPending) return;
-		stopWatching();
+		stopWatching(false);
 		if (navigator.onLine === false || !takeReload(true)) return showFailure();
 		location.reload();
 	};

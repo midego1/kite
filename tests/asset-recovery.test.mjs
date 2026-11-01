@@ -966,12 +966,14 @@ test("while it watches, the watchdog sends the service worker a heartbeat with t
 	page.advance(500);
 	assert.equal(workers.posted.at(-1).autoReloadedAt, 1_234);
 	page.fire("pagehide");
-	assert.deepEqual(workers.posted.at(-1), { type: "kite:boot-leaving" });
+	assert.deepEqual(workers.posted.at(-1), { type: "kite:boot-leaving", tabId: "tab-1" });
 	// The startup screen goes: one done, then silence.
 	page.document.overlay.setAttribute("role", "");
 	page.advance(2_000);
 	assert.equal(page.watching(), false);
-	assert.deepEqual(workers.posted.at(-1), { type: "kite:boot-done" });
+	assert.deepEqual(workers.posted.at(-1), { type: "kite:boot-done", tabId: "tab-1" });
+	// A start that went through drops the marker of the worker's reload.
+	assert.equal(storage.has("kite:auto-reloaded-at"), false);
 	const count = workers.posted.length;
 	page.window.__kiteWorkerBeat();
 	assert.equal(workers.posted.length, count);
@@ -994,4 +996,108 @@ test("without a controlling worker or working storage the watchdog runs as befor
 		flags: { navigator: { onLine: true, serviceWorker: workers }, crypto: { randomUUID: () => "tab-2" } },
 	});
 	assert.equal(workers.posted[0].tabId, null);
+});
+
+/** A trace whose phase and step the test sets, recording what the watchdog says about a stall. */
+function steppingTrace(phase = "loader-mounted", step = null) {
+	const trace = { ...fakeTrace(), hangs: [], phase, step };
+	trace.status = () => ({ page: "/inbox", phase: trace.phase, step: trace.step });
+	trace.hang = (reason, reloading) => trace.hangs.push([reason, reloading]);
+	return trace;
+}
+
+test("a start React runs that stays on one step asks it to try again, then reloads once, then shows Kite couldn't load", () => {
+	const storage = new Map();
+	const trace = steppingTrace();
+	const page = loadPage({ storage, flags: { [LOADER_MOUNTED_FLAG]: true, __kiteBoot: trace } });
+	// The first tick only notes the step; 15 visible seconds count from there.
+	page.advance(15_000);
+	assert.deepEqual(page.dispatched, []);
+	page.advance(500);
+	// Past the session check's own timeouts: the stuck step tries again first.
+	assert.deepEqual(page.dispatched, ["kite:boot-stalled"]);
+	assert.equal(page.reloads, 0);
+	page.advance(7_500);
+	assert.equal(page.reloads, 0);
+	page.advance(500);
+	assert.deepEqual(trace.hangs, [["no-progress", true]]);
+	assert.equal(page.reloads, 1);
+	assert.equal(page.watching(), false);
+	assert.ok(storage.has("kite-boot-hang-reload"));
+	// The reloaded start stalls again (no start went through since): no second reload, the stuck box instead.
+	const again = steppingTrace();
+	const next = loadPage({ storage, flags: { [LOADER_MOUNTED_FLAG]: true, __kiteBoot: again } });
+	next.document.overlay.wayOut = { className: "loading-recovery" };
+	next.advance(23_500);
+	assert.equal(next.reloads, 0);
+	assert.deepEqual(again.hangs, [["no-progress", false]]);
+	assert.equal(next.failure()?.getAttribute("data-loader-stuck"), "");
+	assert.match(next.errors.at(-1), /stalled \(no-progress\)/);
+});
+
+test("a start that keeps moving, waits on its own failure, or has no trace is never treated as stalled", () => {
+	const trace = steppingTrace();
+	const page = loadPage({ flags: { [LOADER_MOUNTED_FLAG]: true, __kiteBoot: trace } });
+	for (const step of ["sidebar", "page", "message-list", "reading-pane", "composer", "sidebar"]) {
+		trace.step = step;
+		page.advance(7_000);
+	}
+	assert.deepEqual(page.dispatched, []);
+	assert.equal(page.reloads, 0);
+	// React's own failure (with Try again) is a way out: its time does not count.
+	const failing = steppingTrace();
+	const failed = loadPage({ flags: { [LOADER_MOUNTED_FLAG]: true, __kiteBoot: failing } });
+	failed.advance(10_000);
+	failed.document.overlay.setAttribute("role", "");
+	failed.document.overlay.wayOut = { role: "alert" };
+	failed.advance(20_000);
+	failed.document.overlay.setAttribute("role", "status");
+	failed.document.overlay.wayOut = null;
+	failed.advance(10_000);
+	assert.deepEqual(failed.dispatched, []);
+	// A render phase gets far less time than the session check.
+	const rendering = steppingTrace("children-rendering", "reading-pane");
+	const render = loadPage({ flags: { [LOADER_MOUNTED_FLAG]: true, __kiteBoot: rendering } });
+	render.advance(8_500);
+	assert.deepEqual(render.dispatched, ["kite:boot-stalled"]);
+	// Hidden time does not count.
+	const hiddenTrace = steppingTrace();
+	const hidden = loadPage({ flags: { [LOADER_MOUNTED_FLAG]: true, __kiteBoot: hiddenTrace } });
+	hidden.document.visibilityState = "hidden";
+	hidden.advance(60_000);
+	assert.deepEqual(hidden.dispatched, []);
+	assert.equal(hidden.reloads, 0);
+});
+
+test("a visible start the browser paints no frame for is reloaded once without a retry", () => {
+	const frames = [];
+	const trace = steppingTrace();
+	const page = loadPage({
+		flags: {
+			[LOADER_MOUNTED_FLAG]: true,
+			__kiteBoot: trace,
+			requestAnimationFrame: (callback) => frames.push(callback),
+		},
+	});
+	// Frames arrive: nothing happens however long the step takes below its budget.
+	for (let i = 0; i < 20; i += 1) {
+		page.advance(500);
+		for (const callback of frames.splice(0)) callback();
+		trace.step = `step-${i}`;
+	}
+	assert.equal(page.reloads, 0);
+	// Then no frame comes any more.
+	page.advance(9_500);
+	assert.equal(page.reloads, 0);
+	page.advance(1_000);
+	assert.deepEqual(page.dispatched, []);
+	assert.deepEqual(trace.hangs, [["no-frames", true]]);
+	assert.equal(page.reloads, 1);
+	// A hidden tab gets no frames and is left alone.
+	const hidden = loadPage({
+		flags: { [LOADER_MOUNTED_FLAG]: true, __kiteBoot: steppingTrace(), requestAnimationFrame: () => undefined },
+	});
+	hidden.document.visibilityState = "hidden";
+	hidden.advance(30_000);
+	assert.equal(hidden.reloads, 0);
 });

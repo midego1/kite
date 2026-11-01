@@ -601,3 +601,43 @@ test("a load the service worker reloaded after a freeze says so in its record an
 	assert.equal(page.details().autoReloaded, true);
 	assert.match(page.trace.text(), /^Reloaded automatically after the previous load froze\nPhase: inline/);
 });
+
+test("a load the watchdog found stalled is reported by the next load with the step, the reason and the open requests", () => {
+	const storage = new Map();
+	const beacons = [];
+	const page = loadPage({ storage, beacons });
+	page.trace.phase("loader-mounted");
+	page.trace.step("session");
+	page.window.fetch("/api/auth/me");
+	page.window.fetch("/api/messages/msg_7ADgtNBpXO9X?q=secret");
+	page.beat(500);
+	page.trace.hang("no-progress", true);
+	page.trace.end();
+	storage.set("kite-boot-hang-reload", "1");
+	const next = loadPage({ storage, beacons });
+	assert.equal(beacons.length, 1);
+	assert.deepEqual(beacons[0].body, {
+		page: "/inbox",
+		phase: "loader-mounted",
+		afterMs: 600,
+		visibleMs: 500,
+		step: "session",
+		build: next.record().build,
+		event: "startup_stalled",
+		reason: "no-progress",
+		pending: ["/api/auth/me", "/api/messages/:id"],
+		reloaded: true,
+	});
+	assert.match(
+		next.errors[0],
+		/^\[kite\] previous load stalled at phase loader-mounted \(step session\) after 600 ms \(no-progress, open: \/api\/auth\/me, \/api\/messages\/:id\)$/,
+	);
+	assert.match(
+		next.trace.text(),
+		/^Previous load stalled at loader-mounted \(step session\) after 0\.6 s \(no-progress/,
+	);
+	// A start that completes clears the marker of the watchdog's reload.
+	assert.ok(storage.has("kite-boot-hang-reload"));
+	next.trace.phase("complete");
+	assert.equal(storage.has("kite-boot-hang-reload"), false);
+});

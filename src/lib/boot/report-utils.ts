@@ -1,9 +1,16 @@
 /**
- * What happened: the next load found that a load of the same tab froze (`previous_load_froze`, the default), or the
+ * What happened: the next load found that a load of the same tab froze (`previous_load_froze`, the default) or that
+ * the boot watchdog found it alive but stalled (`startup_stalled`, with the reason, the requests still open and
+ * whether it reloaded), or the
  * service worker's freeze watchdog (public/kite-sw.js) saw a startup screen stop and reloaded the tab
  * (`auto_reloaded_after_freeze`) or, within its window after such a reload, left it alone (`freeze_not_reloaded`).
  */
-const BOOT_REPORT_EVENTS = ["previous_load_froze", "auto_reloaded_after_freeze", "freeze_not_reloaded"] as const;
+const BOOT_REPORT_EVENTS = [
+	"previous_load_froze",
+	"startup_stalled",
+	"auto_reloaded_after_freeze",
+	"freeze_not_reloaded",
+] as const;
 type BootReportEvent = (typeof BOOT_REPORT_EVENTS)[number];
 
 /**
@@ -20,6 +27,10 @@ export type BootFreezeReport = {
 	visibleMs: number;
 	build: string | null;
 	afterUpdate: boolean;
+	/** `startup_stalled` only: `no-progress` or `no-frames`, the open requests' paths and whether it reloaded. */
+	reason?: string;
+	pending?: string[];
+	reloaded?: boolean;
 };
 
 /** A report is a few hundred bytes; anything much larger is not one. */
@@ -27,6 +38,9 @@ const BOOT_REPORT_MAX_BYTES = 2_048;
 const NAME = /^[a-z][a-z0-9-]{0,39}$/;
 const PAGE = /^\/[A-Za-z0-9._-]{0,40}$/;
 const BUILD = /^[\w.() -]{1,60}$/;
+/** A path of ours (ids already left out) or another origin, as the boot trace keeps them. */
+const PENDING = /^(\/[\w.:/-]{0,100}|https?:\/\/[\w.-]+(:\d+)?)$/;
+const PENDING_LIMIT = 5;
 /** A heartbeat or visible time past a day is no start. */
 const MAX_MS = 86_400_000;
 
@@ -62,7 +76,7 @@ export function parseBootFreezeReport(text: string): BootFreezeReport | null {
 	if (afterMs === null || visibleMs === null || step === undefined || build === undefined) return null;
 	const event = input.event ?? "previous_load_froze";
 	if (!BOOT_REPORT_EVENTS.includes(event as BootReportEvent)) return null;
-	return {
+	const report: BootFreezeReport = {
 		event: event as BootReportEvent,
 		page,
 		phase: input.phase,
@@ -71,6 +85,17 @@ export function parseBootFreezeReport(text: string): BootFreezeReport | null {
 		visibleMs,
 		build,
 		afterUpdate: input.afterUpdate === true,
+	};
+	if (event !== "startup_stalled") return report;
+	const reason = optional(input.reason, NAME);
+	const pending = input.pending ?? [];
+	if (reason === undefined || !Array.isArray(pending) || pending.length > PENDING_LIMIT) return null;
+	if (!pending.every((path) => typeof path === "string" && PENDING.test(path))) return null;
+	return {
+		...report,
+		reason: reason ?? "no-progress",
+		pending: pending as string[],
+		reloaded: input.reloaded === true,
 	};
 }
 

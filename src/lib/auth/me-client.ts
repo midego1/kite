@@ -40,19 +40,20 @@ function sessionCheckSignal(timeoutMs: number): { signal: AbortSignal; release: 
 /** Resolves to null when there is no valid session; throws for any other failure. */
 export async function fetchAuthMe(timeoutMs = AUTH_ME_TIMEOUT_MS): Promise<AuthMeResponse | null> {
 	const { signal, release } = sessionCheckSignal(timeoutMs);
-	let response: Response;
+	// Keep the timeout and the stall signal listening until the body is read: authFetch resolves with the headers,
+	// and a body that stalls after them must still abort and retry.
 	try {
-		response = await authFetch("/api/auth/me", { redirectOnUnauthorized: false, cache: "no-store", signal });
+		const response = await authFetch("/api/auth/me", { redirectOnUnauthorized: false, cache: "no-store", signal });
+		if (response.status === 401) {
+			markBootPhase("auth-answered");
+			return null;
+		}
+		if (!response.ok) throw new AuthMeRequestError(response.status);
+		const session = (await response.json()) as AuthMeResponse;
+		// The boot trace's phase: from here React renders the app with the answer.
+		markBootPhase("auth-answered");
+		return session;
 	} finally {
 		release();
 	}
-	if (response.status === 401) {
-		markBootPhase("auth-answered");
-		return null;
-	}
-	if (!response.ok) throw new AuthMeRequestError(response.status);
-	const session = (await response.json()) as AuthMeResponse;
-	// The boot trace's phase: from here React renders the app with the answer.
-	markBootPhase("auth-answered");
-	return session;
 }

@@ -168,7 +168,7 @@ function loadPage({
 	let observer = null;
 	let parser = null;
 	const document = fakeDocument({ screen, declared, readyState, withBody });
-	const page = { reloads: 0, waits: [], dispatched: [], errors: [], storage, clock, document };
+	const page = { reloads: 0, waits: [], dispatched: [], errors: [], warnings: [], storage, clock, document };
 	const sandbox = {
 		location: { href: `${ORIGIN}/inbox`, origin: ORIGIN, reload: () => (page.reloads += 1) },
 		navigator: { onLine: online },
@@ -177,7 +177,7 @@ function loadPage({
 			setItem: (key, value) => storage.set(key, String(value)),
 			removeItem: (key) => storage.delete(key),
 		},
-		console: { error: (message) => page.errors.push(message) },
+		console: { error: (message) => page.errors.push(message), warn: (message) => page.warnings.push(message) },
 		Date: { now: () => clock.now },
 		URL,
 		Event: class {
@@ -914,4 +914,281 @@ test("a document root that refuses attributes cannot stop the watchdog", () => {
 	};
 	page.advance(9_000);
 	assert.equal(page.reloads, 1);
+});
+
+/** A service worker controlling the page, which records what the page posts to it. */
+function fakeWorkers() {
+	const listeners = [];
+	const workers = {
+		posted: [],
+		controller: { postMessage: (message) => workers.posted.push(JSON.parse(JSON.stringify(message))) },
+		addEventListener: (type, listener) => listeners.push(listener),
+		send: (data) => listeners.forEach((listener) => listener({ data })),
+	};
+	return workers;
+}
+
+test("while it watches, the watchdog sends the service worker a heartbeat with the tab's id, and done when it stops", () => {
+	const workers = fakeWorkers();
+	const storage = new Map();
+	const trace = { ...fakeTrace(), status: () => ({ page: "/inbox", phase: "loader-mounted", step: null }) };
+	const page = loadPage({
+		storage,
+		flags: {
+			[LOADER_MOUNTED_FLAG]: true,
+			__kiteBoot: trace,
+			navigator: { onLine: true, serviceWorker: workers },
+			crypto: { randomUUID: () => "tab-1" },
+		},
+	});
+	page.advance(1_000);
+	assert.equal(storage.get("kite:tab-id"), "tab-1");
+	assert.equal(workers.posted.length, 3);
+	assert.deepEqual(workers.posted[0], {
+		type: "kite:boot-beat",
+		page: "/inbox",
+		phase: "loader-mounted",
+		step: null,
+		tabId: "tab-1",
+		visible: true,
+		autoReloadedAt: null,
+	});
+	assert.equal(typeof page.window.__kiteWorkerBeat, "function");
+	// A hidden tab says so at once.
+	page.document.visibilityState = "hidden";
+	page.fire("visibilitychange");
+	assert.equal(workers.posted.at(-1).visible, false);
+	page.document.visibilityState = "visible";
+	// The worker reloaded this tab: the page keeps the time and sends it along from then on.
+	workers.send({ type: "kite:auto-reloaded", at: 1_234 });
+	assert.equal(storage.get("kite:auto-reloaded-at"), "1234");
+	assert.deepEqual(page.warnings, ["[kite] the previous load froze and was reloaded automatically"]);
+	page.advance(500);
+	assert.equal(workers.posted.at(-1).autoReloadedAt, 1_234);
+	page.fire("pagehide");
+	assert.deepEqual(workers.posted.at(-1), { type: "kite:boot-leaving", tabId: "tab-1" });
+	// The startup screen goes: one done, then silence.
+	page.document.overlay.setAttribute("role", "");
+	page.advance(2_000);
+	assert.equal(page.watching(), false);
+	assert.deepEqual(workers.posted.at(-1), { type: "kite:boot-done", tabId: "tab-1" });
+	// A start that went through drops the marker of the worker's reload.
+	assert.equal(storage.has("kite:auto-reloaded-at"), false);
+	const count = workers.posted.length;
+	page.window.__kiteWorkerBeat();
+	assert.equal(workers.posted.length, count);
+	// The next load of the tab keeps its id.
+	const next = fakeWorkers();
+	loadPage({ storage, flags: { navigator: { onLine: true, serviceWorker: next } } });
+	assert.equal(next.posted[0].tabId, "tab-1");
+});
+
+test("without a controlling worker or working storage the watchdog runs as before, and never sends a tab id it lost", () => {
+	const uncontrolled = { ...fakeWorkers(), controller: null };
+	const page = loadPage({ flags: { navigator: { onLine: true, serviceWorker: uncontrolled } } });
+	page.advance(8_000);
+	assert.equal(page.reloads, 1);
+	const workers = fakeWorkers();
+	const broken = new Map();
+	broken.set = () => broken;
+	loadPage({
+		storage: broken,
+		flags: { navigator: { onLine: true, serviceWorker: workers }, crypto: { randomUUID: () => "tab-2" } },
+	});
+	assert.equal(workers.posted[0].tabId, null);
+});
+
+/** A trace whose phase and step the test sets, recording what the watchdog says about a stall. */
+function steppingTrace(phase = "loader-mounted", step = null) {
+	const trace = { ...fakeTrace(), hangs: [], phase, step };
+	trace.status = () => ({ page: "/inbox", phase: trace.phase, step: trace.step });
+	trace.hang = (reason, reloading) => trace.hangs.push([reason, reloading]);
+	return trace;
+}
+
+test("a start React runs that stays on one step asks it to try again, then reloads once, then shows Kite couldn't load", () => {
+	const storage = new Map();
+	const trace = steppingTrace();
+	const page = loadPage({ storage, flags: { [LOADER_MOUNTED_FLAG]: true, __kiteBoot: trace } });
+	// The first tick only notes the step; 15 visible seconds count from there.
+	page.advance(15_000);
+	assert.deepEqual(page.dispatched, []);
+	page.advance(500);
+	// Past the session check's own timeouts: the stuck step tries again first.
+	assert.deepEqual(page.dispatched, ["kite:boot-stalled"]);
+	assert.equal(page.reloads, 0);
+	page.advance(7_500);
+	assert.equal(page.reloads, 0);
+	page.advance(500);
+	assert.deepEqual(trace.hangs, [["no-progress", true]]);
+	assert.equal(page.reloads, 1);
+	assert.equal(page.watching(), false);
+	assert.ok(storage.has("kite-boot-hang-reload"));
+	// The reloaded start stalls again (no start went through since): no second reload, the stuck box instead.
+	const again = steppingTrace();
+	const next = loadPage({ storage, flags: { [LOADER_MOUNTED_FLAG]: true, __kiteBoot: again } });
+	next.document.overlay.wayOut = { className: "loading-recovery" };
+	next.advance(23_500);
+	assert.equal(next.reloads, 0);
+	assert.deepEqual(again.hangs, [["no-progress", false]]);
+	assert.equal(next.failure()?.getAttribute("data-loader-stuck"), "");
+	assert.match(next.errors.at(-1), /stalled \(no-progress\)/);
+});
+
+test("a start that keeps moving, waits on its own failure, or has no trace is never treated as stalled", () => {
+	const trace = steppingTrace();
+	const page = loadPage({ flags: { [LOADER_MOUNTED_FLAG]: true, __kiteBoot: trace } });
+	for (const step of ["sidebar", "page", "message-list", "reading-pane", "composer", "sidebar"]) {
+		trace.step = step;
+		page.advance(7_000);
+	}
+	assert.deepEqual(page.dispatched, []);
+	assert.equal(page.reloads, 0);
+	// React's own failure (with Try again) is a way out: its time does not count.
+	const failing = steppingTrace();
+	const failed = loadPage({ flags: { [LOADER_MOUNTED_FLAG]: true, __kiteBoot: failing } });
+	failed.advance(10_000);
+	failed.document.overlay.setAttribute("role", "");
+	failed.document.overlay.wayOut = { role: "alert" };
+	failed.advance(20_000);
+	failed.document.overlay.setAttribute("role", "status");
+	failed.document.overlay.wayOut = null;
+	failed.advance(10_000);
+	assert.deepEqual(failed.dispatched, []);
+	// A render phase gets far less time than the session check.
+	const rendering = steppingTrace("children-rendering", "reading-pane");
+	const render = loadPage({ flags: { [LOADER_MOUNTED_FLAG]: true, __kiteBoot: rendering } });
+	render.advance(8_500);
+	assert.deepEqual(render.dispatched, ["kite:boot-stalled"]);
+	// Hidden time does not count.
+	const hiddenTrace = steppingTrace();
+	const hidden = loadPage({ flags: { [LOADER_MOUNTED_FLAG]: true, __kiteBoot: hiddenTrace } });
+	hidden.document.visibilityState = "hidden";
+	hidden.advance(60_000);
+	assert.deepEqual(hidden.dispatched, []);
+	assert.equal(hidden.reloads, 0);
+});
+
+test("a visible start the browser paints no frame for is reloaded once without a retry", () => {
+	const frames = [];
+	const trace = steppingTrace();
+	const page = loadPage({
+		flags: {
+			[LOADER_MOUNTED_FLAG]: true,
+			__kiteBoot: trace,
+			requestAnimationFrame: (callback) => frames.push(callback),
+		},
+	});
+	// Frames arrive: nothing happens however long the step takes below its budget.
+	for (let i = 0; i < 20; i += 1) {
+		page.advance(500);
+		for (const callback of frames.splice(0)) callback();
+		trace.step = `step-${i}`;
+	}
+	assert.equal(page.reloads, 0);
+	// Then no frame comes any more.
+	page.advance(9_500);
+	assert.equal(page.reloads, 0);
+	page.advance(1_000);
+	assert.deepEqual(page.dispatched, []);
+	assert.deepEqual(trace.hangs, [["no-frames", true]]);
+	assert.equal(page.reloads, 1);
+	// A hidden tab gets no frames and is left alone.
+	const hidden = loadPage({
+		flags: { [LOADER_MOUNTED_FLAG]: true, __kiteBoot: steppingTrace(), requestAnimationFrame: () => undefined },
+	});
+	hidden.document.visibilityState = "hidden";
+	hidden.advance(30_000);
+	assert.equal(hidden.reloads, 0);
+});
+
+const SLOW_CHUNK = `${ORIGIN}/_next/static/chunks/slow.js`;
+
+test("a file of ours still on its way is no stall, and its step keeps its whole budget once it has arrived", () => {
+	const trace = steppingTrace("children-rendering", "page");
+	const page = loadPage({
+		declared: [new HTMLLinkElement("modulepreload", SLOW_CHUNK)],
+		flags: { [LOADER_MOUNTED_FLAG]: true, __kiteBoot: trace },
+	});
+	// Far past the render phase's 8 + 8 seconds, within the 20-second quiet cap.
+	page.advance(19_500);
+	assert.deepEqual(page.dispatched, []);
+	assert.equal(page.reloads, 0);
+	page.finishAsset(SLOW_CHUNK);
+	page.advance(7_500);
+	assert.deepEqual(page.dispatched, []);
+	page.advance(500);
+	assert.deepEqual(page.dispatched, ["kite:boot-stalled"]);
+	assert.equal(page.reloads, 0);
+	// Files that keep arriving can take as long as they take.
+	const moving = steppingTrace("children-rendering", "page");
+	const slow = loadPage({
+		declared: [new HTMLLinkElement("modulepreload", SLOW_CHUNK)],
+		flags: { [LOADER_MOUNTED_FLAG]: true, __kiteBoot: moving },
+	});
+	for (let i = 0; i < 10; i += 1) {
+		slow.advance(15_000);
+		slow.finishAsset(`${ORIGIN}/_next/static/chunks/other-${i}.js`);
+	}
+	assert.deepEqual(slow.dispatched, []);
+	assert.equal(slow.reloads, 0);
+});
+
+test("a file that goes quiet for the cap is a stall at once: the step tries again, then the tab reloads", () => {
+	const trace = steppingTrace("children-rendering", "page");
+	const page = loadPage({
+		declared: [new HTMLLinkElement("modulepreload", SLOW_CHUNK)],
+		flags: { [LOADER_MOUNTED_FLAG]: true, __kiteBoot: trace },
+	});
+	page.advance(19_500);
+	assert.deepEqual(page.dispatched, []);
+	page.advance(500);
+	assert.deepEqual(page.dispatched, ["kite:boot-stalled"]);
+	page.advance(7_500);
+	assert.equal(page.reloads, 0);
+	page.advance(1_000);
+	assert.equal(page.reloads, 1);
+	assert.deepEqual(trace.hangs, [["no-progress", true]]);
+});
+
+test("the stall says it reloaded only when it really does", () => {
+	const stuck = { [LOADER_MOUNTED_FLAG]: true };
+	// Offline.
+	const offlineTrace = steppingTrace();
+	const offline = loadPage({ online: false, flags: { ...stuck, __kiteBoot: offlineTrace } });
+	offline.advance(23_500);
+	assert.equal(offline.reloads, 0);
+	assert.deepEqual(offlineTrace.hangs, [["no-progress", false]]);
+	assert.equal(offline.failure()?.getAttribute("data-loader-stuck"), "");
+	// The shared reload budget is spent.
+	const storage = new Map([["kite:asset-reload", JSON.stringify({ count: 4, since: 1_000_000 })]]);
+	const spentTrace = steppingTrace();
+	const spent = loadPage({ storage, flags: { ...stuck, __kiteBoot: spentTrace } });
+	spent.advance(23_500);
+	assert.equal(spent.reloads, 0);
+	assert.deepEqual(spentTrace.hangs, [["no-progress", false]]);
+	assert.equal(storage.has("kite-boot-hang-reload"), false);
+	assert.equal(spent.failure()?.getAttribute("data-loader-stuck"), "");
+});
+
+test("the stall's reload and box wait while the Details are open and just after Copy details", () => {
+	const trace = steppingTrace();
+	const page = loadPage({ flags: { [LOADER_MOUNTED_FLAG]: true, __kiteBoot: trace } });
+	const { querySelector } = page.document;
+	let open = true;
+	page.document.querySelector = (selector) =>
+		selector === "details[open] [data-boot-details]" ? (open ? {} : null) : querySelector(selector);
+	page.advance(40_000);
+	// The stuck step was still asked to try again; only the reload waits.
+	assert.deepEqual(page.dispatched, ["kite:boot-stalled"]);
+	assert.equal(page.reloads, 0);
+	assert.deepEqual(trace.hangs, []);
+	open = false;
+	// Copy details was just used: thirty more visible seconds.
+	page.fire("click", { target: { closest: (selector) => (selector === "[data-boot-copy]" ? {} : null) } });
+	page.advance(29_500);
+	assert.equal(page.reloads, 0);
+	page.advance(1_000);
+	assert.equal(page.reloads, 1);
+	assert.deepEqual(trace.hangs, [["no-progress", true]]);
 });

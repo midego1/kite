@@ -39,12 +39,34 @@ const report = {
 };
 
 test("a report from the boot trace is read with whole milliseconds", () => {
-	assert.deepEqual(parseBootFreezeReport(JSON.stringify(report)), { ...report, afterMs: 612 });
+	assert.deepEqual(parseBootFreezeReport(JSON.stringify(report)), {
+		...report,
+		event: "previous_load_froze",
+		afterMs: 612,
+	});
 	// Step, build and the update are optional; the root page has an empty first segment.
 	assert.deepEqual(
 		parseBootFreezeReport(JSON.stringify({ page: "", phase: "loader-mounted", afterMs: 0, visibleMs: 0 })),
-		{ page: "/", phase: "loader-mounted", step: null, afterMs: 0, visibleMs: 0, build: null, afterUpdate: false },
+		{
+			event: "previous_load_froze",
+			page: "/",
+			phase: "loader-mounted",
+			step: null,
+			afterMs: 0,
+			visibleMs: 0,
+			build: null,
+			afterUpdate: false,
+		},
 	);
+});
+
+test("the service worker's freeze watchdog reports what it did with the same facts", () => {
+	for (const event of ["auto_reloaded_after_freeze", "freeze_not_reloaded", "previous_load_froze"]) {
+		assert.equal(parseBootFreezeReport(JSON.stringify({ ...report, event }))?.event, event);
+	}
+	for (const event of ["Auto reloaded", "reloaded", 1, ""]) {
+		assert.equal(parseBootFreezeReport(JSON.stringify({ ...report, event })), null, String(event));
+	}
 });
 
 test("anything that is not a report is refused, free text included", () => {
@@ -92,4 +114,29 @@ test("the body is read up to the limit whatever Content-Length says, and a longe
 	});
 	assert.equal(await readBootReportBody(streamed), null);
 	assert.equal(cancelled, true);
+});
+
+test("a stalled start carries its reason, the open requests' paths and whether it reloaded", () => {
+	const stalled = {
+		...report,
+		event: "startup_stalled",
+		reason: "no-progress",
+		pending: ["/api/auth/me", "/api/messages/:id", "https://cdn.example.net"],
+		reloaded: true,
+	};
+	assert.deepEqual(parseBootFreezeReport(JSON.stringify(stalled)), { ...stalled, afterMs: 612 });
+	assert.deepEqual(
+		parseBootFreezeReport(JSON.stringify({ ...stalled, reason: undefined, pending: undefined, reloaded: undefined })),
+		{ ...stalled, afterMs: 612, reason: "no-progress", pending: [], reloaded: false },
+	);
+	const refused = [
+		{ ...stalled, reason: "Not A Name" },
+		{ ...stalled, pending: "/api/auth/me" },
+		{ ...stalled, pending: ["/api/auth/me?q=someone@example.com"] },
+		{ ...stalled, pending: ["someone@example.com"] },
+		{ ...stalled, pending: Array.from({ length: 6 }, () => "/api/auth/me") },
+	];
+	for (const body of refused) assert.equal(parseBootFreezeReport(JSON.stringify(body)), null, JSON.stringify(body));
+	// Other events never carry them.
+	assert.equal(parseBootFreezeReport(JSON.stringify({ ...report, reason: "no-progress" }))?.reason, undefined);
 });

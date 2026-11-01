@@ -7,7 +7,7 @@ import { createLogger } from "@/lib/logger.mjs";
 
 const logger = createLogger("boot");
 
-/** A frozen load is reported once by the next load; each user gets the login limiter's budget, so a loop cannot flood the log. */
+/** A frozen load is reported once by the next load (and once by the service worker); each user gets the login limiter's budget, so a loop cannot flood the log. */
 async function allowReport(env: CloudflareEnv, userId: string): Promise<boolean> {
 	if (!env.LOGIN_RATE_LIMIT) return true;
 	try {
@@ -20,8 +20,9 @@ async function allowReport(env: CloudflareEnv, userId: string): Promise<boolean>
 
 /**
  * A load of this tab froze on its startup screen; the next load says so with `navigator.sendBeacon`
- * (boot-trace-utils.ts). Logged as `boot.previous_load_froze` for the operator: a frozen page can show nothing,
- * and this is the one record a freeze leaves. Nothing is stored.
+ * (boot-trace-utils.ts), and the service worker's freeze watchdog (public/kite-sw.js) says whether it reloaded the
+ * tab. Logged as `boot.previous_load_froze`, `boot.auto_reloaded_after_freeze` or `boot.freeze_not_reloaded` for
+ * the operator: a frozen page can show nothing, and this is the one record a freeze leaves. Nothing is stored.
  */
 export async function POST(request: Request) {
 	const env = getEnv();
@@ -34,9 +35,10 @@ export async function POST(request: Request) {
 	if (text === null) return NextResponse.json({ error: "Report too large" }, { status: 413 });
 	const report = parseBootFreezeReport(text);
 	if (!report) return NextResponse.json({ error: "Not a boot report" }, { status: 400 });
-	logger.warn("boot.previous_load_froze", {
+	const { event, ...facts } = report;
+	logger.warn(`boot.${event}`, {
 		userId: auth.user.id,
-		...report,
+		...facts,
 		userAgent: request.headers.get("User-Agent")?.slice(0, 200) ?? null,
 	});
 	return new NextResponse(null, { status: 204 });

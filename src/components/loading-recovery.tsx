@@ -69,6 +69,7 @@ function BootDetails() {
 			</pre>
 			<button
 				type="button"
+				data-boot-copy
 				className="mt-2 rounded-md border border-neutral-300 px-2.5 py-1 hover:bg-neutral-100"
 				onClick={() => void copyBootDetails(lines.current).then(setCopied)}
 			>

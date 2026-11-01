@@ -1,4 +1,5 @@
 import { BOOT_TRACE_GLOBAL, bootCopyLabel, markBootPhase } from "./boot-trace-utils";
+import { bootStallScript, bootWorkerScript, ensureFreezeWatchdogWorker } from "./boot-stall-utils";
 
 /**
  * sessionStorage key counting the automatic reloads of this tab: `{ count, since, stalls }`, where `stalls` counts
@@ -126,6 +127,8 @@ const DEV_ASSET_PREFIXES = ["/_next/static/", "/@id/", "/@fs/", "/@vite/", "/nod
  * box carries the trace's Details with a Copy details button. Every tick also restarts the animation of the startup
  * screen's frozen-thread notice (HEARTBEAT_ATTRIBUTE): a main thread that stopped runs neither the slow-start
  * recovery nor this watchdog, but the compositor still fades that notice in once the ticks have stopped.
+ *
+ * The stall detection and the service worker's heartbeat are in boot-stall-utils.ts.
  */
 export function assetRecoveryScript({ dev = false }: { dev?: boolean } = {}): string {
 	const prefixes = dev ? DEV_ASSET_PREFIXES : PRODUCTION_ASSET_PREFIXES;
@@ -152,6 +155,7 @@ export function assetRecoveryScript({ dev = false }: { dev?: boolean } = {}): st
 			root.setAttribute(${JSON.stringify(HEARTBEAT_ATTRIBUTE)}, root.getAttribute(${JSON.stringify(HEARTBEAT_ATTRIBUTE)}) === "a" ? "b" : "a");
 		} catch {}
 	};
+	${bootWorkerScript()}
 	const followVisibility = () => {
 		try {
 			if (document.visibilityState === "hidden") return root.setAttribute(${JSON.stringify(HIDDEN_ATTRIBUTE)}, "");
@@ -160,7 +164,11 @@ export function assetRecoveryScript({ dev = false }: { dev?: boolean } = {}): st
 		heartbeat();
 	};
 	followVisibility();
-	addEventListener("visibilitychange", followVisibility);
+	workerBeat();
+	addEventListener("visibilitychange", () => {
+		followVisibility();
+		workerBeat();
+	});
 	let reloadPending = false;
 	let gaveUp = false;
 	let lastStaleAt = null;
@@ -211,7 +219,9 @@ export function assetRecoveryScript({ dev = false }: { dev?: boolean } = {}): st
 	const loaderStuck = () => {
 		const screen = document.querySelector("[data-loading-overlay]");
 		if (!screen || screen.getAttribute("role") !== "status") return false;
-		return remounts >= ${LOADER_REMOUNT_LIMIT} || !screen.querySelector(".loading-recovery, [role=alert]");
+		// A start that stalled has no way out on its screen any more, whatever it shows.
+		if (hangStalled || remounts >= ${LOADER_REMOUNT_LIMIT}) return true;
+		return !screen.querySelector(".loading-recovery, [role=alert]");
 	};
 	const startOver = () => {
 		try {
@@ -381,15 +391,18 @@ export function assetRecoveryScript({ dev = false }: { dev?: boolean } = {}): st
 		}
 		return false;
 	};
-	// The watchdog is done with this page: the trace's heartbeat stops with it, which is no freeze.
-	const stopWatching = () => {
+	// The watchdog is done with this page (\`started\`: because the start went through): the trace's heartbeat stops
+	// with it, which is no freeze.
+	const stopWatching = (started) => {
 		clearInterval(watchdog);
+		workerDone(started);
 		const current = trace();
 		if (current && typeof current.end === "function") current.end();
 	};
+	${bootStallScript()}
 	// React runs the screen: no more reloads, only the outer bound, until the screen has gone for good.
 	let settledTicks = 0;
-	const watchLoader = () => {
+	const watchLoader = (elapsed) => {
 		const screen = document.querySelector("[data-loading-overlay]");
 		if (!screen || screen.getAttribute("role") !== "status") {
 			const box = document.getElementById(failureId);
@@ -399,10 +412,11 @@ export function assetRecoveryScript({ dev = false }: { dev?: boolean } = {}): st
 			if (screen && screen.querySelector("[role=alert]")) {
 				loaderMs = 0;
 				settledTicks = 0;
+				hangKey = null;
 				return;
 			}
 			settledTicks += 1;
-			if (settledTicks >= ${LOADER_SETTLED_TICKS}) stopWatching();
+			if (settledTicks >= ${LOADER_SETTLED_TICKS}) stopWatching(!hangStalled);
 			return;
 		}
 		settledTicks = 0;
@@ -412,7 +426,9 @@ export function assetRecoveryScript({ dev = false }: { dev?: boolean } = {}): st
 			if (current && typeof current.remount === "function") current.remount(remounts);
 		}
 		overlay = screen;
-		if (loaderMs < ${LOADER_CEILING_MS} || !loaderStuck()) return;
+		watchHang(elapsed);
+		if (hangStalled && !document.getElementById(failureId)) return;
+		if (!hangStalled && (loaderMs < ${LOADER_CEILING_MS} || !loaderStuck())) return;
 		if (!document.getElementById(failureId)) {
 			console.error(
 				remounts >= ${LOADER_REMOUNT_LIMIT}
@@ -425,8 +441,9 @@ export function assetRecoveryScript({ dev = false }: { dev?: boolean } = {}): st
 	const tick = () => {
 		heartbeat();
 		const now = Date.now();
+		let elapsed = 0;
 		if (document.visibilityState !== "hidden") {
-			const elapsed = Math.min(Math.max(now - lastTickAt, 0), 1000);
+			elapsed = Math.min(Math.max(now - lastTickAt, 0), 1000);
 			visibleMs += elapsed;
 			quietMs += elapsed;
 			loaderMs += elapsed;
@@ -434,14 +451,15 @@ export function assetRecoveryScript({ dev = false }: { dev?: boolean } = {}): st
 		lastTickAt = now;
 		const current = trace();
 		if (current && typeof current.beat === "function") current.beat(visibleMs);
-		if (window[loaderFlag]) return watchLoader();
-		if (!stalled()) return stopWatching();
+		workerBeat();
+		if (window[loaderFlag]) return watchLoader(elapsed);
+		if (!stalled()) return stopWatching(true);
 		if (visibleMs < ${BOOT_WATCHDOG_MS}) return;
 		const waiting = quietMs < (loading() ? quietCap : ${progressGraceMs});
 		if (waiting && visibleMs < ${ceilingMs}) return;
 		// A failed chunk's reload is already on its way.
 		if (reloadPending) return;
-		stopWatching();
+		stopWatching(false);
 		if (navigator.onLine === false || !takeReload(true)) return showFailure();
 		location.reload();
 	};
@@ -456,6 +474,7 @@ export function assetRecoveryScript({ dev = false }: { dev?: boolean } = {}): st
 			if (target.closest("#" + failureId + " [data-boot-reload]")) startOver();
 			const copy = target.closest("#" + failureId + " [data-boot-copy]");
 			if (copy) copyDetails(copy);
+			if (target.closest("[data-boot-copy]")) noteDetailsCopied();
 		},
 		true,
 	);
@@ -500,6 +519,7 @@ export function markLoaderMounted(): void {
 	(window as unknown as Record<string, unknown>)[LOADER_MOUNTED_FLAG] = true;
 	markBootPhase("loader-mounted");
 	clearBootRecovery();
+	ensureFreezeWatchdogWorker();
 }
 
 /** Whether a stale-asset signal arrived that no listener has handled yet; clears it. */

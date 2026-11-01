@@ -524,7 +524,9 @@ test("a start that hangs after React took over offers Reload Kite with Details f
 	await shot(page, "hang-details");
 	await expect(details).toContainText("Phase: loader-mounted");
 	await expect(details).toContainText("Loader mounted: yes");
-	await expect(details).toContainText(/In flight: [^\n]*\/api\/auth\/me/);
+	// The session check: still open, or (once the boot watchdog asked the stalled step to try again at 15 visible
+	// seconds) among the slowest files while its retry starts.
+	await expect(details).toContainText(/(In flight|Slowest files): [^\n]*\/api\/auth\/me/);
 	// No query strings: neither the page's nor a request's.
 	await expect(details).not.toContainText("private");
 	await recovery.getByRole("button", { name: "Copy details" }).click();
@@ -532,7 +534,9 @@ test("a start that hangs after React took over offers Reload Kite with Details f
 	const copied = JSON.parse(await page.evaluate(() => navigator.clipboard.readText()));
 	expect(copied.phase).toBe("loader-mounted");
 	expect(copied.previousLoad).toEqual({ phase: "auth-ready", afterMs: 1_100, visibleMs: 1_000 });
-	expect(copied.inFlight.map((entry: { path: string }) => entry.path)).toContain("/api/auth/me");
+	expect([...copied.inFlight, ...copied.slowestResources].map((entry: { path: string }) => entry.path)).toContain(
+		"/api/auth/me",
+	);
 	// The record survives in the tab for the next load, which finds this one stuck at the screen, not complete.
 	const record = await page.evaluate(() => JSON.parse(sessionStorage.getItem("kite-boot-trace")!));
 	expect(record.page).toBe("/inbox");
@@ -569,8 +573,10 @@ test("a startup screen that keeps being mounted again gets Kite couldn't load, e
 	await page.goto("/inbox", { waitUntil: "commit" });
 	await page.waitForSelector(`${OVERLAY}[role="status"]`, { state: "attached", timeout: 20_000 });
 	await expect(page.getByRole("button", { name: "Reload Kite" })).toBeVisible({ timeout: 25_000 });
+	// The session check never answers, so the boot watchdog reloads the stalled start once (99-startup-stall-recovery);
+	// the reloaded start, stuck the same way, gets the box.
 	const failure = page.getByRole("alert").filter({ hasText: "Kite couldn't load." });
-	await expect(failure).toBeVisible({ timeout: 30_000 });
+	await expect(failure).toBeVisible({ timeout: 60_000 });
 	await expect(failure).toHaveAttribute("data-loader-stuck", "");
 	await failure.getByText("Details", { exact: true }).click();
 	const details = failure.locator("[data-boot-details]");

@@ -1,4 +1,4 @@
-import { registerKiteServiceWorker } from "@/components/asset-recovery-utils";
+import { registerKiteServiceWorker } from "@/components/boot-stall-utils";
 import { requestCopyCode } from "@/components/copy-code-host-utils";
 import {
 	buildNewMessageNotificationParts,

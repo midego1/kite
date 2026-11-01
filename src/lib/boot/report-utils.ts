@@ -87,16 +87,17 @@ export function parseBootFreezeReport(text: string): BootFreezeReport | null {
 		afterUpdate: input.afterUpdate === true,
 	};
 	if (event !== "startup_stalled") return report;
+	const stall = parseStall(input);
+	return stall && { ...report, ...stall };
+}
+
+/** What a `startup_stalled` report adds: the reason, the open requests' paths and whether it reloaded; null if bad. */
+function parseStall(input: Record<string, unknown>): Pick<BootFreezeReport, "reason" | "pending" | "reloaded"> | null {
 	const reason = optional(input.reason, NAME);
 	const pending = input.pending ?? [];
 	if (reason === undefined || !Array.isArray(pending) || pending.length > PENDING_LIMIT) return null;
 	if (!pending.every((path) => typeof path === "string" && PENDING.test(path))) return null;
-	return {
-		...report,
-		reason: reason ?? "no-progress",
-		pending: pending as string[],
-		reloaded: input.reloaded === true,
-	};
+	return { reason: reason ?? "no-progress", pending: pending as string[], reloaded: input.reloaded === true };
 }
 
 /**

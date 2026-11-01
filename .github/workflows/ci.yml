@@ -167,6 +167,27 @@ jobs:
             playwright-report/
           retention-days: 14
 
+  e2e-gate:
+    # The ten shards are not required checks one by one (a matrix has no stable single name);
+    # this one job is. `if: always()` makes it run when a shard fails or is cancelled instead of
+    # being skipped, and a skipped required check counts as passing, so every result other than
+    # success fails it.
+    name: E2E
+    needs: e2e
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every E2E shard to have succeeded
+        env:
+          E2E_RESULT: ${{ needs.e2e.result }}
+        run: |
+          if [ "$E2E_RESULT" != "success" ]; then
+            echo "::error::The E2E shards finished as '$E2E_RESULT', not 'success'."
+            exit 1
+          fi
+          echo "All E2E shards succeeded."
+
   node-build:
     name: Node build
     runs-on: ubuntu-latest

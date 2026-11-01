@@ -9,7 +9,6 @@ import { AssistantOpenContext } from "@/components/agent/assistant-open-state";
 import { AuthGuard } from "@/components/auth/auth-guard";
 import { ComposeProvider } from "@/components/compose/compose-context";
 import { FloatingComposer } from "@/components/compose/floating-composer";
-import { UndoSendHost } from "@/components/compose/undo-send-host";
 import { MailSearchProvider } from "@/components/mail-search/mail-search-context";
 import { useModules } from "@/components/modules/modules-context";
 import { MailboxProvider } from "@/components/mailbox-provider";
@@ -170,7 +169,6 @@ function CalendarFrame({ children }: { children: React.ReactNode }) {
 									</div>
 								</div>
 								<FloatingComposer />
-								<UndoSendHost />
 							</div>
 						</ShortcutsProvider>
 					</MailSearchProvider>

@@ -154,6 +154,15 @@ test.describe("the undo-send bar", () => {
 		await expect(popup(page).getByRole("textbox", { name: "Message body" })).toContainText("From the full page");
 	});
 
+	test("the bar also shows in the settings and admin shells", async ({ page }) => {
+		await page.setViewportSize({ width: 1700, height: 900 });
+		await page.goto("/settings/composing");
+		await openComposer(page);
+		const subject = await fillAndSend(page);
+		await undoBar(page).getByRole("button", { name: "Undo" }).click();
+		await expect(popup(page).getByLabel("Subject")).toHaveValue(subject);
+	});
+
 	test("Send now still works after the composer closed", async ({ page }) => {
 		await page.setViewportSize({ width: 1700, height: 900 });
 		await page.goto("/inbox");

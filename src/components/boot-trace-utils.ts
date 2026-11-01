@@ -563,8 +563,10 @@ export const bootTraceScript = `(() => {
 					reloaded: reloading === true,
 					pending: Array.from(inFlight.values())
 						.sort((a, b) => a.start - b.start)
-						.slice(0, limit)
-						.map((entry) => entry.path.replace(/\\/[^/]*\\d[^/]*/g, (segment) => (segment.length > 9 ? "/:id" : segment))),
+						.map((entry) => entry.path.replace(/\\/[^/]*\\d[^/]*/g, (segment) => (segment.length > 9 ? "/:id" : segment)).slice(0, 100))
+						// The pattern the server accepts (PENDING in report-utils.ts): one odd path must not lose the report.
+						.filter((path) => /^(\\/[\\w.:/-]{0,100}|https?:\\/\\/[\\w.-]+(:\\d+)?)$/.test(path))
+						.slice(0, limit),
 				};
 				save();
 			},

@@ -238,7 +238,11 @@ export function MessageSplitLayout({ children, config }: MessageSplitLayoutProps
 			<MessageDetailNavigationProvider config={config}>
 				<OpenRowContext.Provider value={rowLookup.lookup}>
 					<section
-						className={clsx("flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-white", split && PANEL_CLASS)}
+						// A flex item of its panel: it fills the panel's height by stretching, without a percentage height to resolve.
+						className={clsx(
+							"flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-white",
+							split && PANEL_CLASS,
+						)}
 					>
 						{split && !below && selectedMessages.length > 0 ? (
 							<BulkMessageSelectionPane
@@ -275,7 +279,9 @@ export function MessageSplitLayout({ children, config }: MessageSplitLayoutProps
 				id={`kite-message-layout-${mode}`}
 				orientation={below ? "vertical" : "horizontal"}
 				data-reading-pane={mode}
-				className="min-h-0 overflow-hidden"
+				// The page panel is a flex column while the split view shows (dashboard layout), so the group fills it by
+				// stretching as well as by its height, and the list can never grow the page.
+				className="min-h-0 flex-1 overflow-hidden"
 				onLayoutChanged={(layout, meta) => {
 					if (meta.isUserInteraction) storeListSize(layoutPixels(layout[LIST_PANEL_ID], groupScale.current));
 				}}
@@ -295,7 +301,7 @@ export function MessageSplitLayout({ children, config }: MessageSplitLayoutProps
 					}}
 				>
 					<aside
-						className={clsx("h-full min-h-0 min-w-0 overflow-hidden bg-white", PANEL_CLASS)}
+						className={clsx("flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-white", PANEL_CLASS)}
 						aria-hidden={!listVisible}
 						inert={!listVisible}
 					>

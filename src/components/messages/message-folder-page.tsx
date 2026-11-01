@@ -388,7 +388,7 @@ export function MessageFolderPage({
 	});
 
 	return (
-		<div className="flex h-full min-h-0 flex-col" data-selection-scope="">
+		<div className="flex h-full min-h-0 flex-1 flex-col" data-selection-scope="">
 			<p role="status" aria-live="polite" className="sr-only">
 				{selectedIds.length > 0
 					? `${selectedIds.length} ${selectedIds.length === 1 ? "email" : "emails"} selected`

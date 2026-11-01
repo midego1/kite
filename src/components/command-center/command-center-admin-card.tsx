@@ -7,25 +7,15 @@ import { Notice } from "@/components/ui/notice";
 import { Skeleton } from "@/components/ui/skeleton";
 import { attentionItems } from "@/app/(admin)/admin/overview-utils";
 import { useOverview } from "@/app/(admin)/admin/use-overview";
-import type { AttentionTone } from "@/app/(admin)/admin/overview-types";
 import { attentionHref, healthLines } from "./command-center-utils";
-import { CommandCenterCard } from "./command-center-card";
+import { COMMAND_CENTER_DETAIL_CLASS, COMMAND_CENTER_ROW_CLASS, CommandCenterCard } from "./command-center-card";
 
 /**
- * The notices restyled for the card's surface: the warning as the command center's amber callout, information
- * as a faint wash of the accent (the page tones would put a solid blue block, or an inverted amber, on it).
- */
-const ATTENTION_NOTICE_CLASS: Record<AttentionTone, string> = {
-	warning: "border-cc-warn-border bg-cc-warn-surface text-cc-warn-text dark:text-cc-warn-text",
-	info: "border-cc-info-border bg-cc-info-surface text-neutral-800",
-	error: "",
-};
-
-/**
- * The Needs attention card, for admins only and loaded as its own chunk (command-center-admin-card-lazy.tsx):
- * the admin overview's list without the migrations item (the pane's notice shows that one with Apply now),
- * "Nothing else" otherwise, and a line each for a healthy last backup and a database within its limit. The
- * overview parts are read under the keys the admin cards use, from the cache while fresh.
+ * The Needs attention section, for admins only and loaded as its own chunk (command-center-admin-card-lazy.tsx):
+ * the admin overview's list without the migrations item (the pane's notice shows that one with Apply now), as
+ * the same notices the overview draws, "Nothing else" otherwise, and a row each for a healthy last backup and a
+ * database within its limit. The overview parts are read under the keys the admin cards use, from the cache
+ * while fresh.
  */
 export function CommandCenterAdminCard({ primary }: { primary: boolean }) {
 	const overview = useOverview(primary, true, { refetchOnMount: true });
@@ -38,14 +28,14 @@ export function CommandCenterAdminCard({ primary }: { primary: boolean }) {
 			testId="command-center-attention"
 		>
 			{overview.loading ? (
-				<Skeleton className="h-10 w-full rounded-xl" />
+				<Skeleton className="mx-3 h-10 w-auto rounded-xl" />
 			) : (
 				<div className="space-y-2">
 					{items.map((item) => (
 						<Notice
 							key={item.id}
 							tone={item.tone}
-							className={ATTENTION_NOTICE_CLASS[item.tone]}
+							className="mx-3"
 							title={item.title}
 							actions={
 								<>
@@ -64,19 +54,16 @@ export function CommandCenterAdminCard({ primary }: { primary: boolean }) {
 						</Notice>
 					))}
 					{items.length === 0 && (
-						<p
-							className="flex items-center gap-2 py-1.5 text-sm text-neutral-700"
-							data-testid="command-center-all-clear"
-						>
-							<CheckCircle2 className="h-4 w-4 text-cc-ok" aria-hidden="true" />
+						<p className={COMMAND_CENTER_ROW_CLASS} data-testid="command-center-all-clear">
+							<CheckCircle2 className="h-4 w-4 shrink-0 text-green-600" aria-hidden="true" />
 							Nothing else needs your attention.
 						</p>
 					)}
 					{health.map((line) => (
-						<p key={line.id} className="flex items-center gap-3 py-1 text-sm text-neutral-700">
-							<span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-full bg-cc-ok" />
+						<p key={line.id} className={COMMAND_CENTER_ROW_CLASS}>
+							<CheckCircle2 className="h-4 w-4 shrink-0 text-green-600" aria-hidden="true" />
 							<span className="min-w-0 flex-1 truncate">{line.text}</span>
-							<span className="shrink-0 text-xs text-neutral-600">{line.detail}</span>
+							<span className={COMMAND_CENTER_DETAIL_CLASS}>{line.detail}</span>
 						</p>
 					))}
 				</div>

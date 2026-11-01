@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { Database } from "lucide-react";
-import { NOTICE_LINK_CLASS, WARNING_NOTICE_CLASS } from "./notice-styles";
+import { NOTICE_LINK_CLASS, WARNING_NOTICE_CLASS, WARNING_TONE_CLASS } from "./notice-styles";
 import { dismissMigrationSummary } from "./migration-apply";
 import { MigrationApplyButton, MigrationApplyProgress } from "./migration-progress";
 import { AppliedNotice } from "./migrations-applied-notice";
@@ -27,13 +27,10 @@ export function MigrationsNoticeCard() {
 	return (
 		<section
 			aria-label="Database updates"
-			className="w-full max-w-md rounded-2xl border border-cc-warn-border bg-cc-warn-surface p-5 text-left text-sm text-cc-warn-text"
+			className={`w-full max-w-md rounded-xl border p-5 text-left text-sm ${WARNING_TONE_CLASS}`}
 		>
 			<div className="flex items-start gap-3">
-				<Database
-					className={`mt-0.5 h-5 w-5 shrink-0 text-cc-warn ${applying ? "animate-pulse" : ""}`}
-					aria-hidden="true"
-				/>
+				<Database className={`mt-0.5 h-5 w-5 shrink-0 ${applying ? "animate-pulse" : ""}`} aria-hidden="true" />
 				<div className="min-w-0 flex-1">
 					<p className="font-medium">{content.title}</p>
 					<p className="mt-1">{content.body}</p>

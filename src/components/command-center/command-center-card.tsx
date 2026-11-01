@@ -1,14 +1,27 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
-/** The surface the cards, chips and quick actions share: one step up from the pane, a hairline and a soft lift. */
-export const COMMAND_CENTER_SURFACE_CLASS = "border border-cc-border bg-cc-surface shadow-(--cc-elevation)";
+/**
+ * A row of the command center, drawn like a sidebar link (components-nav.tsx) or a Settings menu item: 36 px high,
+ * an icon or dot, the text, and whatever sits at the right, with the sidebar's hover fill when it can be clicked.
+ */
+export const COMMAND_CENTER_ROW_CLASS = "flex h-9 min-w-0 items-center gap-3 rounded-lg px-3 text-sm text-neutral-700";
 
-/** A text link in a card: the accent, underlined on hover (and faintly at rest where the accent is the text colour). */
+/** A row that opens something: the sidebar's hover. */
+export const COMMAND_CENTER_LINK_ROW_CLASS = `${COMMAND_CENTER_ROW_CLASS} transition-colors hover:bg-neutral-200/60 hover:text-neutral-900`;
+
+/** The detail at the right of a row: muted and small, like the counts in the sidebar. */
+export const COMMAND_CENTER_DETAIL_CLASS = "ml-auto shrink-0 text-xs text-neutral-500";
+
+/** A text link in a section's header: the muted small type of the section labels, darker on hover. */
 export const COMMAND_CENTER_LINK_CLASS =
-	"text-xs font-medium text-cc-accent underline decoration-cc-link-underline underline-offset-2 hover:decoration-current";
+	"text-xs font-medium text-neutral-500 underline-offset-2 hover:text-neutral-900 hover:underline";
 
-/** One card of the command center: a small uppercase title, an optional link at the right, and its content. */
+/**
+ * One section of the command center (and of the cards modules add through `reading-pane` slots): the sidebar's
+ * small muted group label ("Core", "Folders"), an optional link at the right, then its rows. No border or fill of
+ * its own: it sits on the reading pane like the menu sits in the sidebar.
+ */
 export function CommandCenterCard({
 	title,
 	action,
@@ -21,13 +34,9 @@ export function CommandCenterCard({
 	testId?: string;
 }) {
 	return (
-		<section
-			aria-label={title}
-			data-testid={testId}
-			className={`rounded-2xl bg-(image:--cc-glow) px-5 py-4 ${COMMAND_CENTER_SURFACE_CLASS}`}
-		>
-			<div className="mb-2 flex items-center justify-between gap-3">
-				<h3 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-cc-label">{title}</h3>
+		<section aria-label={title} data-testid={testId}>
+			<div className="flex h-7 items-center justify-between gap-3 px-3">
+				<h3 className="text-xs font-medium text-neutral-500">{title}</h3>
 				{action && (
 					<Link href={action.href} className={COMMAND_CENTER_LINK_CLASS}>
 						{action.label}

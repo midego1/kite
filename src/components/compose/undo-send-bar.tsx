@@ -8,7 +8,8 @@ import { requestSendNow } from "./send-now-client";
 import { UNDO_SAFETY_MARGIN_MS, sentMessageHref, undoCountdownSeconds } from "./undo-send-utils";
 import type { SendingBarProps, UndoSendBarProps } from "./undo-send-types";
 
-const BAR_CLASS = `${TOAST_CORNER_CLASS} ${TOAST_SURFACE_CLASS} z-[60] flex items-center gap-4`;
+// The subject link truncates first, so the bar fits a phone instead of running off its left edge.
+const BAR_CLASS = `${TOAST_CORNER_CLASS} ${TOAST_SURFACE_CLASS} z-[60] flex max-w-[calc(100vw-2*var(--kite-toast-inset))] items-center gap-4`;
 
 export function SendingBar({ onUndo, undoRequested }: SendingBarProps) {
 	return (
@@ -77,7 +78,7 @@ export function UndoSendBar({ pending, onUndo, onExpire }: UndoSendBarProps) {
 	return (
 		<div role="status" className={BAR_CLASS}>
 			<span className="flex min-w-0 items-baseline gap-1">
-				<span className="shrink-0">
+				<span className="shrink-0 whitespace-nowrap">
 					{failed ? "Sending failed:" : (error ?? `Sending in ${undoCountdownSeconds(until, now)}s:`)}
 				</span>
 				<Link href={sentMessageHref(messageId)} className="min-w-0 max-w-56 truncate underline">

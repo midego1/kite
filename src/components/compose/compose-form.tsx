@@ -19,7 +19,14 @@ import type { OpenedSendReview, ReviewSnapshot } from "@/components/agent/send-r
 import { buildSendFormData, fetchDraft } from "./utils";
 import { ComposeAttachmentList } from "./compose-attachment-list";
 import { SendPreview } from "./send-preview";
-import { composeFrameAria, composeFrameClass, useComposerBesideAssistant, useDraftBodyFocus } from "./compose-frame";
+import {
+	composeFrameAria,
+	composeFrameClass,
+	composerZone,
+	useComposerBesideAssistant,
+	useDraftBodyFocus,
+} from "./compose-frame";
+import { useComposerZone } from "@/components/ui/toast-zone";
 import { ComposeToast, type ComposeToastState } from "./compose-toast";
 import { SendingBar, UndoSendBar } from "./undo-send-bar";
 import { useSendingSettings } from "./use-sending-settings";
@@ -95,6 +102,7 @@ export function ComposeForm({
 	const [modalMode, setModalMode] = useState(false);
 	const [minimized, setMinimized] = useState(false);
 	const besideAssistant = useComposerBesideAssistant({ mode, minimized, modalMode }, setMinimized);
+	useComposerZone(composerZone({ mode, minimized, modalMode }));
 	const [toast, setToast] = useState<ComposeToastState>(null);
 	const [loading, setLoading] = useState(false);
 	const [loadedDraftId, setLoadedDraftId] = useState<string | null>(null);

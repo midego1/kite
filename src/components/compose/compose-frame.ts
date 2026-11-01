@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { useAssistantDocked } from "@/components/agent/assistant-open-state";
+import type { ComposerZone } from "@/components/ui/toast-zone";
 import { useKeyChanged } from "@/hooks/use-synced-state";
 import { cn } from "@/lib/utils";
 
@@ -35,7 +36,7 @@ function baseFrameClass({ mode, minimized, modalMode }: ComposeFrameState) {
 	if (minimized)
 		return "fixed bottom-0 right-8 z-40 flex h-9 w-[min(260px,calc(100vw-32px))] flex-col overflow-hidden rounded-t-lg border border-neutral-200 bg-white shadow-2xl";
 	if (modalMode)
-		return "fixed left-1/2 top-1/2 z-50 flex h-[86vh] w-[min(860px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-lg bg-white shadow-2xl";
+		return "fixed left-1/2 top-[calc(50%-2.5rem)] z-50 flex h-[min(86vh,calc(100vh-7rem))] w-[min(860px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-lg bg-white shadow-2xl";
 	return "fixed bottom-0 right-8 z-40 flex h-[min(520px,calc(100vh-88px))] w-[min(560px,calc(100vw-32px))] flex-col overflow-hidden rounded-t-lg border border-neutral-200 bg-white shadow-2xl";
 }
 
@@ -47,6 +48,13 @@ export function composeFrameClass(state: ComposeFrameState, besideAssistant: boo
 			(state.minimized || !state.modalMode) &&
 			"md:right-[calc(3rem+min(var(--assistant-window-width,440px),100vw-32px))]",
 	);
+}
+
+/** Where notices must keep clear of the composer, for `useComposerZone`; none while it is minimized or docked in the reader. */
+export function composerZone({ mode, minimized, modalMode }: ComposeFrameState): ComposerZone | null {
+	if (mode === "page") return "page";
+	if (mode !== "popup" || minimized) return null;
+	return modalMode ? "modal" : "docked";
 }
 
 /** The popup is a labelled region, and a modal dialog while it is expanded. */

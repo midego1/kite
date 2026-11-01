@@ -56,6 +56,7 @@ async function heldSenders(db: AppDatabase, userId: string, emails: readonly str
 	if (emails.length === 0) return new Set();
 	const wanted = new Set(emails);
 	// The From header keeps its display name, so the rows are narrowed by address in SQL and settled exactly here.
+	// One row per distinct sender: a held sender's message count must never push another sender out of the list.
 	const rows = await db
 		.select({ fromAddr: messages.fromAddr })
 		.from(messages)
@@ -70,7 +71,7 @@ async function heldSenders(db: AppDatabase, userId: string, emails: readonly str
 				),
 			),
 		)
-		.limit(200);
+		.groupBy(messages.fromAddr);
 	const held = new Set<string>();
 	for (const row of rows) {
 		const address = screenerAddress(row.fromAddr);

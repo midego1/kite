@@ -32,7 +32,7 @@ function baseFrameClass({ mode, minimized, modalMode }: ComposeFrameState) {
 	if (mode === "inline")
 		return "relative mx-3 mb-3 flex h-[min(440px,55vh)] shrink-0 flex-col rounded-xl border border-neutral-200 bg-white shadow-sm sm:mx-6";
 	if (mode !== "popup")
-		return "relative flex h-full min-h-[720px] w-full max-w-4xl flex-col overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-sm";
+		return "relative flex h-full min-h-0 w-full max-w-4xl flex-col overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-sm";
 	if (minimized)
 		return "fixed bottom-0 right-8 z-40 flex h-9 w-[min(260px,calc(100vw-32px))] flex-col overflow-hidden rounded-t-lg border border-neutral-200 bg-white shadow-2xl";
 	if (modalMode)
@@ -51,10 +51,14 @@ export function composeFrameClass(state: ComposeFrameState, besideAssistant: boo
 }
 
 /** Where notices must keep clear of the composer, for `useComposerZone`; none while it is minimized or docked in the reader. */
-export function composerZone({ mode, minimized, modalMode }: ComposeFrameState): ComposerZone | null {
+export function composerZone(
+	{ mode, minimized, modalMode }: ComposeFrameState,
+	besideAssistant: boolean,
+): ComposerZone | null {
 	if (mode === "page") return "page";
 	if (mode !== "popup" || minimized) return null;
-	return modalMode ? "modal" : "docked";
+	if (modalMode) return "modal";
+	return besideAssistant ? "docked-aside" : "docked";
 }
 
 /** The popup is a labelled region, and a modal dialog while it is expanded. */

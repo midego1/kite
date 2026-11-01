@@ -6,7 +6,9 @@
 	/* Where toasts and the send bars sit: above the reply box (about 4.5rem tall) and the assistant button. */
 	--kite-toast-bottom: 6rem;
 	--kite-toast-top: auto;
-	--kite-toast-inset: 2rem;
+	/* The gap to the screen edge, and how far from the right edge the notices stand (more beside a composer). */
+	--kite-toast-edge: 2rem;
+	--kite-toast-inset: var(--kite-toast-edge);
 	/* Tailwind's #737373 is 4.45:1 on the #f6f8fc page, just under WCAG AA for body text. */
 	--color-neutral-500: #6b6b6b;
 	--background: #f6f8fc;
@@ -1457,13 +1459,13 @@ button {
 @media (max-width: 767px) {
 	:root {
 		--kite-toast-bottom: calc(6rem + env(safe-area-inset-bottom));
-		--kite-toast-inset: 1rem;
+		--kite-toast-edge: 1rem;
 	}
 }
 
 /* While a composer is open (useComposerZone) the notices move out of its way. The expanded composer and the Compose
    page leave 6rem free below them for the notice; the docked one has the left side of the screen beside it, or the top
-   when that is too narrow. */
+   when that is too narrow or the assistant window stands next to it. */
 html[data-composer="modal"],
 html[data-composer="page"] {
 	--kite-toast-bottom: calc(1rem + env(safe-area-inset-bottom));
@@ -1479,4 +1481,8 @@ html[data-composer="page"] {
 		--kite-toast-bottom: auto;
 		--kite-toast-top: calc(1rem + env(safe-area-inset-top));
 	}
+}
+html[data-composer="docked-aside"] {
+	--kite-toast-bottom: auto;
+	--kite-toast-top: calc(1rem + env(safe-area-inset-top));
 }

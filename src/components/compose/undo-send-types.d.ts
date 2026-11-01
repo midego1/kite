@@ -32,3 +32,6 @@ export type UndoSendBarProps = {
 	/** The bar is done, once: the message went out (Send now answered, or the window ended), or the user dismissed a failure. */
 	onExpire: (toast: ComposeToastState) => void;
 };
+
+/** What `/api/send` answers for a message that went out, was scheduled or is held by the undo window. */
+export type SentAnswer = { messageId?: string; scheduled?: boolean; retrying?: boolean; undoUntil?: string };

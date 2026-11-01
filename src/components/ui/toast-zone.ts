@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 
 /**
  * Where the open composer sits, so the toasts and send bars can keep clear of it: `docked` is the floating window
- * in the bottom-right corner, `modal` the expanded one in the middle of the screen, `page` the Compose page.
+ * in the bottom-right corner, `docked-aside` the same one moved left of the open assistant window, `modal` the expanded one in the middle of the screen, `page` the Compose page.
  * globals.css moves `--kite-toast-*` per zone; the attribute lives on <html>.
  */
-export type ComposerZone = "docked" | "modal" | "page";
+export type ComposerZone = "docked" | "docked-aside" | "modal" | "page";
 
 const ZONE_ATTRIBUTE = "data-composer";
 /** Below this width a docked composer leaves no room beside it, so toasts move to the top of the screen. */
@@ -17,15 +17,27 @@ function readZone(): ComposerZone | null {
 	return (document.documentElement.getAttribute(ZONE_ATTRIBUTE) as ComposerZone | null) ?? null;
 }
 
+/** Every open composer by owner: the page composer and a floating one can be open together, and the newest counts. */
+const openZones = new Map<symbol, ComposerZone>();
+
+function publishZone() {
+	const newest = [...openZones.values()].pop();
+	if (newest) document.documentElement.setAttribute(ZONE_ATTRIBUTE, newest);
+	else document.documentElement.removeAttribute(ZONE_ATTRIBUTE);
+}
+
 /** Marks a composer as open for as long as the calling component stays mounted in `zone`. */
 export function useComposerZone(zone: ComposerZone | null) {
+	const [owner] = useState(() => Symbol("composer"));
 	useEffect(() => {
 		if (!zone) return;
-		document.documentElement.setAttribute(ZONE_ATTRIBUTE, zone);
+		openZones.set(owner, zone);
+		publishZone();
 		return () => {
-			document.documentElement.removeAttribute(ZONE_ATTRIBUTE);
+			openZones.delete(owner);
+			publishZone();
 		};
-	}, [zone]);
+	}, [owner, zone]);
 }
 
 function subscribe(onChange: () => void) {
@@ -40,10 +52,11 @@ function subscribe(onChange: () => void) {
 }
 
 function toastsAtTop() {
-	return readZone() === "docked" && window.matchMedia(NARROW_QUERY).matches;
+	const zone = readZone();
+	return zone === "docked-aside" || (zone === "docked" && window.matchMedia(NARROW_QUERY).matches);
 }
 
-/** True while the docked composer spans the screen, so toasts go to the top instead. */
+/** True while the docked composer leaves no room beside it (a narrow screen, or the assistant window next to it), so toasts go to the top instead. */
 export function useToastsAtTop() {
 	return useSyncExternalStore(subscribe, toastsAtTop, () => false);
 }

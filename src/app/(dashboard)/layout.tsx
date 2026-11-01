@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AuthGuard } from "@/components/auth/auth-guard";
 import { ComposeProvider } from "@/components/compose/compose-context";
 import { FloatingComposer } from "@/components/compose/floating-composer";
+import { UndoSendHost } from "@/components/compose/undo-send-host";
 import { MailSearchProvider } from "@/components/mail-search/mail-search-context";
 import { MailboxProvider } from "@/components/mailbox-provider";
 import { MailboxSelector } from "@/components/mailbox-selector";
@@ -228,6 +229,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 									>
 										<BootStep name="composer" />
 										<FloatingComposer />
+										<UndoSendHost />
 									</AssistantDockedContext.Provider>
 								</div>
 							</ShortcutsProvider>

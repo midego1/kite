@@ -8,8 +8,8 @@ import { requestSendNow } from "./send-now-client";
 import { UNDO_SAFETY_MARGIN_MS, sentMessageHref, undoCountdownSeconds } from "./undo-send-utils";
 import type { SendingBarProps, UndoSendBarProps } from "./undo-send-types";
 
-// The subject link truncates first, so the bar fits a phone instead of running off its left edge.
-const BAR_CLASS = `${TOAST_CORNER_CLASS} ${TOAST_SURFACE_CLASS} z-[60] flex max-w-[calc(100vw-2*var(--kite-toast-inset))] items-center gap-4`;
+// The corner class caps the width, so the subject link truncates before the bar runs off a phone.
+const BAR_CLASS = `${TOAST_CORNER_CLASS} ${TOAST_SURFACE_CLASS} z-[60] flex items-center gap-4`;
 
 export function SendingBar({ onUndo, undoRequested }: SendingBarProps) {
 	return (

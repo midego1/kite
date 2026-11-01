@@ -8,7 +8,7 @@ import type { ToasterProps } from "react-hot-toast";
  * top of a narrow screen, so a notice never covers the composer's footer or controls.
  */
 export const TOAST_CORNER_CLASS =
-	"fixed bottom-[var(--kite-toast-bottom)] top-[var(--kite-toast-top)] right-[var(--kite-toast-inset)]";
+	"fixed bottom-[var(--kite-toast-bottom)] top-[var(--kite-toast-top)] right-[var(--kite-toast-inset)] max-w-[calc(100vw-var(--kite-toast-inset)-var(--kite-toast-edge))]";
 
 /** The card every toast wears. The palette classes are remapped by each look and in dark mode, so it follows the theme. */
 export const TOAST_SURFACE_CLASS =
@@ -28,7 +28,7 @@ const TOASTER_PROPS: ToasterProps = {
 	containerStyle: {
 		top: "var(--kite-toast-top)",
 		bottom: "var(--kite-toast-bottom)",
-		left: "var(--kite-toast-inset)",
+		left: "var(--kite-toast-edge)",
 		right: "var(--kite-toast-inset)",
 	},
 	toastOptions: {

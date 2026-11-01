@@ -3,14 +3,17 @@
 import { ComposeForm } from "@/components/compose/compose-form";
 
 export default function ComposePage() {
-	// The extra room below the card is where notices (the undo-send bar) sit, so they never cover its footer.
+	// The card fills the screen between the title and the bottom edge, so its footer is never scrolled under the
+	// notices, which stand in the extra room below it (the undo-send bar of a message sent from another composer).
 	return (
-		<div className="h-full overflow-auto p-8 pb-28">
-			<div className="mb-6">
+		<div className="flex h-full flex-col overflow-auto p-8 pb-28">
+			<div className="mb-6 shrink-0">
 				<h1 className="text-2xl font-normal text-neutral-900">Compose</h1>
 				<p className="mt-1 text-sm text-neutral-500">Write a new email. Drafts save automatically.</p>
 			</div>
-			<ComposeForm mode="page" />
+			<div className="min-h-[18rem] flex-1">
+				<ComposeForm mode="page" />
+			</div>
 		</div>
 	);
 }

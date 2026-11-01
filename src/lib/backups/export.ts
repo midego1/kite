@@ -181,42 +181,84 @@ export async function assertBackupTablesCoverDatabase(db: D1Database): Promise<S
 	return databaseTables;
 }
 
-/** Rows per query while exporting; message rows carry full bodies, so keep pages small. */
+/** Rows per query while exporting; message rows carry full bodies, so a page is also bounded in bytes. */
 const EXPORT_PAGE_SIZE = 100;
+/**
+ * Bytes of row data one page may start before it stops taking rows (a page ends with the row that crosses it,
+ * and a D1 row is at most 2 MB). D1 fails a query whose result passes 50 MB, so this keeps a page far below it
+ * even when the JSON encoding of the result is several times the stored text.
+ */
+const EXPORT_PAGE_BYTES = 4 * 1024 * 1024;
 const EXPORT_ROWID_COLUMN = "__kite_rowid";
+const EXPORT_SIZE_COLUMN = "__kite_size";
+const EXPORT_BEFORE_COLUMN = "__kite_before";
+const EXPORT_COUNT_COLUMN = "__kite_count";
 
-/** One page of a table in rowid order, starting after `afterRowid` (null for the first page). */
+function quoteIdentifier(name: string): string {
+	return `\`${name.replaceAll("`", "``")}\``;
+}
+
+/** SQL for the stored bytes of one row of `table`, from the columns the database has. */
+async function rowSizeSql(db: D1Database, table: string): Promise<string> {
+	const { results } = await db.prepare("SELECT name FROM pragma_table_info(?)").bind(table).all<{ name: string }>();
+	const parts = results.map((column) => `coalesce(length(CAST(${quoteIdentifier(column.name)} AS BLOB)), 0)`);
+	return parts.length ? parts.join(" + ") : "0";
+}
+
+/**
+ * One page of a table in rowid order, starting after `afterRowid` (null for the first page): up to `limit` rows,
+ * cut after the row that takes the page past `EXPORT_PAGE_BYTES`. `exhausted` is true when the table has no
+ * rows after this page.
+ */
 async function readTablePage(
 	db: D1Database,
 	table: string,
+	sizeSql: string,
 	afterRowid: number | null,
 	limit = EXPORT_PAGE_SIZE,
-): Promise<{ rows: DatabaseRecord[]; lastRowid: number | null }> {
-	const name = `\`${table.replaceAll("`", "``")}\``;
-	const statement: D1PreparedStatement =
-		afterRowid === null
-			? db.prepare(`SELECT rowid AS ${EXPORT_ROWID_COLUMN}, * FROM ${name} ORDER BY rowid LIMIT ?`).bind(limit)
-			: db
-					.prepare(`SELECT rowid AS ${EXPORT_ROWID_COLUMN}, * FROM ${name} WHERE rowid > ? ORDER BY rowid LIMIT ?`)
-					.bind(afterRowid, limit);
+	maxBytes = EXPORT_PAGE_BYTES,
+): Promise<{ rows: DatabaseRecord[]; lastRowid: number | null; exhausted: boolean }> {
+	const name = quoteIdentifier(table);
+	const statement = db
+		.prepare(
+			`SELECT * FROM (
+				SELECT *,
+					sum(${EXPORT_SIZE_COLUMN}) OVER (ORDER BY ${EXPORT_ROWID_COLUMN} ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS ${EXPORT_BEFORE_COLUMN},
+					count(*) OVER () AS ${EXPORT_COUNT_COLUMN}
+				FROM (
+					SELECT rowid AS ${EXPORT_ROWID_COLUMN}, *, (${sizeSql}) AS ${EXPORT_SIZE_COLUMN}
+					FROM ${name} WHERE rowid > ? ORDER BY rowid LIMIT ?
+				)
+			) WHERE ${EXPORT_BEFORE_COLUMN} IS NULL OR ${EXPORT_BEFORE_COLUMN} < ? ORDER BY ${EXPORT_ROWID_COLUMN}`,
+		)
+		.bind(afterRowid ?? Number.MIN_SAFE_INTEGER, limit, maxBytes);
 	const { results } = await statement.all<DatabaseRecord>();
 	let lastRowid = afterRowid;
+	let fetched = 0;
 	const rows = results.map((row) => {
-		const { [EXPORT_ROWID_COLUMN]: rowid, ...record } = row;
+		const {
+			[EXPORT_ROWID_COLUMN]: rowid,
+			[EXPORT_SIZE_COLUMN]: _size,
+			[EXPORT_BEFORE_COLUMN]: _before,
+			[EXPORT_COUNT_COLUMN]: count,
+			...record
+		} = row;
 		lastRowid = rowid as number;
+		fetched = count as number;
 		return record;
 	});
-	return { rows, lastRowid };
+	return { rows, lastRowid, exhausted: fetched < limit && rows.length === fetched };
 }
 
 /** Reads a table in rowid order one page at a time, so no query result holds the whole table. */
 async function* readTableRows(db: D1Database, table: string): AsyncGenerator<DatabaseRecord> {
+	const sizeSql = await rowSizeSql(db, table);
 	let lastRowid: number | null = null;
 	while (true) {
-		const page = await readTablePage(db, table, lastRowid);
+		const page = await readTablePage(db, table, sizeSql, lastRowid);
 		yield* page.rows;
 		lastRowid = page.lastRowid;
-		if (page.rows.length < EXPORT_PAGE_SIZE) return;
+		if (page.exhausted || page.rows.length === 0) return;
 	}
 }
 

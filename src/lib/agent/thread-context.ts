@@ -1,6 +1,7 @@
 import { and, desc, eq, ne, notInArray, or, type SQL } from "drizzle-orm";
 import { getDb } from "@/db";
 import { messages } from "@/db/schema";
+import { messageColumnsWithoutBodies, withStoredBodies } from "@/lib/messages/body-batches";
 import { SCREENING_STATUS } from "@/lib/screener/screener-utils";
 
 type ThreadMessage = typeof messages.$inferSelect;
@@ -34,16 +35,21 @@ export async function agentThreadRows(
 ): Promise<ThreadMessage[]> {
 	const { anchor } = input;
 	if (!anchor.threadId) return [anchor];
-	return getDb(env)
-		.select()
-		.from(messages)
-		.where(
-			and(
-				eq(messages.mailboxId, input.mailboxId),
-				eq(messages.threadId, anchor.threadId),
-				agentThreadCondition(anchor.id, input.viewerId),
-			),
-		)
-		.orderBy(desc(messages.createdAt))
-		.limit(input.limit);
+	const db = getDb(env);
+	// Bodies in bounded batches: a window of large messages would pass D1's 10 MB-per-query rule in one query.
+	return withStoredBodies(
+		db,
+		await db
+			.select(messageColumnsWithoutBodies)
+			.from(messages)
+			.where(
+				and(
+					eq(messages.mailboxId, input.mailboxId),
+					eq(messages.threadId, anchor.threadId),
+					agentThreadCondition(anchor.id, input.viewerId),
+				),
+			)
+			.orderBy(desc(messages.createdAt))
+			.limit(input.limit),
+	);
 }

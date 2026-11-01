@@ -1,9 +1,9 @@
-import { and, asc, eq } from "drizzle-orm";
-import { getDb } from "@/db";
+import { and, asc, eq, gt, or, type SQL } from "drizzle-orm";
+import { getDb, type AppDatabase } from "@/db";
 import { messages } from "@/db/schema";
-import { chunkArray } from "@/db/chunk-utils";
 import { loadMessageBodies } from "@/lib/email/bodies";
 import { visibleDraftsCondition } from "@/lib/messages/mailbox-scope";
+import { bodyBytesColumn, withStoredBodies } from "@/lib/messages/body-batches";
 
 function escapeHeader(value: string | null): string {
 	return (value ?? "").replace(/\r?\n/g, " ").trim();
@@ -13,20 +13,33 @@ function escapeMboxBody(value: string): string {
 	return value.replace(/\nFrom /g, "\n>From ");
 }
 
-/** Messages whose offloaded bodies are read together. */
-const BODY_PAGE = 100;
+/** Messages whose metadata is listed per query; the rows carry no bodies, so a page stays small. */
+const LIST_PAGE = 100;
+
+type StoredMessage = Pick<
+	typeof messages.$inferSelect,
+	| "id"
+	| "fromAddr"
+	| "toAddr"
+	| "ccAddr"
+	| "inReplyTo"
+	| "references"
+	| "subject"
+	| "providerMessageId"
+	| "direction"
+	| "status"
+	| "createdAt"
+	| "textBody"
+	| "htmlBody"
+>;
 
 function getMboxFromLine(date: Date): string {
 	return `From MAILER-DAEMON ${date.toUTCString()}`;
 }
 
-/**
- * The mailbox as an mbox file. An offloaded body that cannot be read fails the whole export
- * (`MessageBodyUnavailableError`) rather than leaving that message as text in a file the user keeps.
- */
-export async function exportMailboxToMbox(env: CloudflareEnv, mailboxId: string, viewerId: string): Promise<string> {
-	const db = getDb(env);
-	const stored = await db
+/** The next page of message metadata after `after`, oldest first. */
+function listPage(db: AppDatabase, scope: SQL | undefined, after: { createdAt: Date; id: string } | null) {
+	return db
 		.select({
 			id: messages.id,
 			fromAddr: messages.fromAddr,
@@ -39,16 +52,43 @@ export async function exportMailboxToMbox(env: CloudflareEnv, mailboxId: string,
 			direction: messages.direction,
 			status: messages.status,
 			createdAt: messages.createdAt,
-			textBody: messages.textBody,
-			htmlBody: messages.htmlBody,
+			bodyBytes: bodyBytesColumn,
 		})
 		.from(messages)
-		// Drafts go along only for their author.
-		.where(and(eq(messages.mailboxId, mailboxId), visibleDraftsCondition(viewerId)))
-		.orderBy(asc(messages.createdAt));
-	const rows = [];
-	for (const page of chunkArray(stored, BODY_PAGE))
-		rows.push(...(await loadMessageBodies(env, page, { strict: true })));
+		.where(
+			after
+				? and(
+						scope,
+						or(
+							gt(messages.createdAt, after.createdAt),
+							and(eq(messages.createdAt, after.createdAt), gt(messages.id, after.id)),
+						),
+					)
+				: scope,
+		)
+		.orderBy(asc(messages.createdAt), asc(messages.id))
+		.limit(LIST_PAGE);
+}
+
+/**
+ * The mailbox as an mbox file. An offloaded body that cannot be read fails the whole export
+ * (`MessageBodyUnavailableError`) rather than leaving that message as text in a file the user keeps.
+ */
+export async function exportMailboxToMbox(env: CloudflareEnv, mailboxId: string, viewerId: string): Promise<string> {
+	const db = getDb(env);
+	// Drafts go along only for their author.
+	const scope = and(eq(messages.mailboxId, mailboxId), visibleDraftsCondition(viewerId));
+	const rows: StoredMessage[] = [];
+	// D1 fails a query whose result passes 50 MB, so the mailbox is read in pages of metadata, then the
+	// bodies of each page in byte-bounded batches, instead of one query holding every body.
+	let after: { createdAt: Date; id: string } | null = null;
+	while (true) {
+		const page: Awaited<ReturnType<typeof listPage>> = await listPage(db, scope, after);
+		const loaded = await withStoredBodies(db, page);
+		rows.push(...(await loadMessageBodies(env, loaded, { strict: true })));
+		if (page.length < LIST_PAGE) break;
+		after = page[page.length - 1];
+	}
 
 	return rows
 		.map((message) => {

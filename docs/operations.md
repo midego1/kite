@@ -276,6 +276,28 @@ D1 holds the whole mailbox, and a database has a hard size limit: 10 GB on Worke
 - **Large bodies.** Imported and delivered HTML bodies over 16 KB (`BODY_OFFLOAD_BYTES`) are written to the Mail store at `bodies/<message id>.html` and the row records the key in `messages.html_body_key` (migration 0074), with `html_body` null and the text body kept for search; every reader goes through `loadMessageBodies` (`src/lib/email/bodies.ts`). Deleting a message deletes its body object, and switching the Mail store under Admin → Storage moves the bodies with raw mail and attachments (and **Delete old copies** removes them). If a body cannot be read when a mailbox is exported, the export fails with "Some messages could not be read from mail storage" (503 `BODY_UNAVAILABLE`) instead of writing that message as text; try again. A database backup carries `html_body_key` and `body_size` but not the object, like raw MIME and attachments: back up the Mail store too, or turn on [full backups](#full-backups), which copy the bodies with the raw mail and attachments. A restore without the objects shows those messages as their text body.
 - **Tests only.** With `DATABASE_SIZE_TEST_HEADER=1` (set by the dev and e2e server only, never in a deployment) and outside production, the header `X-Kite-Test-Database-Size: used=<bytes>;limit=<bytes>` makes the admin size, the import estimate and the import start and resume checks use that size (`e2e/60-database-size.spec.ts`). Without the flag, or when `NODE_ENV` is `production`, the header does nothing.
 
+### D1 result size limit
+
+Since 4 November 2026 D1 fails any query whose result is larger than 50 MB ("D1 query result exceeded the maximum response size limit of 50 MB"); the REST import and export are not affected. A stored message row is at most about 0.5 MB (text body 450 KB, inline HTML 16 KB, see [Inbound mail limits](#inbound-mail-limits); 1.35 MB for HTML stored inline before migration 0074) and D1 caps any row at 2 MB, so only queries that return many message bodies at once can come near the limit. Kite keeps every such query under about 10 MB (a batch is at most 8 MB, plus the one row that crosses it):
+
+| Query | Rows per result | Worst case | Bound |
+| --- | --- | --- | --- |
+| Backup export (`readTablePage`, `src/lib/backups/export.ts`) | up to 100, cut after 4 MB of stored row bytes | about 6 MB (4 MB plus one 2 MB row) | rows and bytes (`EXPORT_PAGE_BYTES`) |
+| Mailbox export (`src/lib/export/mbox.ts`) | metadata 100 rows without bodies; bodies in batches of at most 8 MB or 50 ids | about 10 MB | keyset pages, then `withStoredBodies` (`src/lib/messages/body-batches.ts`) |
+| Conversation view (`src/lib/email/thread-view.ts`) | up to 200 messages | about 10 MB | metadata, then bodies in batches (`withStoredBodies`) |
+| JMAP `Email/get` (`loadMessages`, `src/lib/jmap/emails.ts`) | up to 200 ids | about 10 MB | metadata, then bodies in batches |
+| `GET /api/v1/messages` | up to 100 | about 10 MB | metadata, then bodies in batches |
+| `GET /api/drafts` | up to 100 | about 10 MB | metadata, then bodies in batches |
+| Assistant `list_emails` and `search_emails` (`src/lib/agent/tools.ts`) | up to 51 | about 10 MB | metadata, then bodies in batches |
+| Assistant thread reads (`agentThreadRows`: `get_thread`, draft generation) and `recentModuleMessagesFromSender` | up to 21 and 25 | about 10 MB | metadata, then bodies in batches |
+| Templates (`GET /api/templates`) | up to 200 | about 10 MB | metadata, then bodies in batches |
+| Thread summaries and the writing-style backfill | 20 bodies each | about 10 MB | row limit (`SUMMARY_FULL_MESSAGES`, `BACKFILL_PAGE`), bodies in batches |
+| Object copy and storage migration walks (`objects.ts`, `migration.ts`) | 20 and 50 | key and id only | row limit |
+| Restore | reads backup files from the Mail store in 2 MiB pages, not D1 | none | not a D1 read |
+| Lists, search, counts, Activity, audit log, Drive, contacts, admin overview | `limit` on every query, narrow columns (no bodies) | well under 1 MB | row limit |
+
+`withStoredBodies` leaves out a row that was deleted between its two queries. When adding a query that returns message bodies for more than a handful of messages (a handful is about 10), select `messageColumnsWithoutBodies` and read the bodies with `withStoredBodies`; a query over a row cap above 20 that selects whole message rows is a bug.
+
 ### Inbound mail limits
 
 Every message is checked before it is parsed and before anything is stored, so a crafted message cannot exhaust the Worker's CPU or memory, or block the Node process (Mailflare #214, #217, #219).

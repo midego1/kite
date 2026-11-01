@@ -1,3 +1,4 @@
+import { bodyBytesColumn, withStoredBodies } from "@/lib/messages/body-batches";
 import { and, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { getDb, type AppDatabase } from "@/db";
 import { messages, users } from "@/db/schema";
@@ -21,7 +22,8 @@ import {
 const logger = createLogger("agent");
 const MAX_ATTEMPTS = 3;
 const BACKFILL_MESSAGES = 200;
-const BACKFILL_PAGE = 50;
+// Bodies per query: 20 messages of at most about 0.5 MB each stay well under D1's 50 MB result limit.
+const BACKFILL_PAGE = 20;
 /** A backfill that has not finished in this long is treated as lost, so it can be requested again. */
 const BACKFILL_STALE_MS = 60 * 60_000;
 
@@ -339,10 +341,13 @@ export async function processStyleBackfill(env: CloudflareEnv, message: StyleBac
 		if (!(await backfillAllowed(db, userId, mailboxId))) return void (await releaseBackfill(db, userId, mailboxId));
 		const page = await loadMessageBodies(
 			env,
-			await db
-				.select({ id: messages.id, htmlBody: messages.htmlBody, textBody: messages.textBody })
-				.from(messages)
-				.where(inArray(messages.id, ids.slice(start, start + BACKFILL_PAGE))),
+			await withStoredBodies(
+				db,
+				await db
+					.select({ id: messages.id, bodyBytes: bodyBytesColumn })
+					.from(messages)
+					.where(inArray(messages.id, ids.slice(start, start + BACKFILL_PAGE))),
+			),
 		);
 		const measured = page
 			.map((row) => measureMessage(ownText(row.htmlBody, row.textBody)))

@@ -12,6 +12,7 @@ import { newId } from "@/lib/ids";
 import { deleteMessageWithObjects } from "@/lib/email/message-cleanup";
 import { listMessageAttachments } from "@/lib/email/attachments";
 import { loadMessageBodies, loadMessageBody } from "@/lib/email/bodies";
+import { messageColumnsWithoutBodies, withStoredBodies } from "@/lib/messages/body-batches";
 import { htmlToReadableText } from "@/lib/email/reply-content-utils";
 import type { AgentToolContext, EmailToolName } from "./types";
 import { getReplyRecipients } from "./reply";
@@ -256,12 +257,16 @@ export async function runEmailTool(
 			conditions.push(lt(messages.createdAt, cursor.createdAt));
 		}
 		const pageSize = input.limit as number;
-		const rows = await db
-			.select()
-			.from(messages)
-			.where(and(...conditions))
-			.orderBy(desc(messages.createdAt))
-			.limit(pageSize + 1);
+		// Bodies in bounded batches: a page of large messages would pass D1's 50 MB result limit in one query.
+		const rows = await withStoredBodies(
+			db,
+			await db
+				.select(messageColumnsWithoutBodies)
+				.from(messages)
+				.where(and(...conditions))
+				.orderBy(desc(messages.createdAt))
+				.limit(pageSize + 1),
+		);
 		return {
 			emails: rows.slice(0, pageSize).map(publicMessage),
 			nextCursor: rows.length > pageSize ? rows[pageSize - 1]?.id : null,

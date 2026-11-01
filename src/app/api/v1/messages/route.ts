@@ -5,6 +5,7 @@ import { getEnv } from "@/lib/cloudflare";
 import { authenticateApiKey, requireScope } from "@/lib/api/auth";
 import { getDb } from "@/db";
 import { messages, users } from "@/db/schema";
+import { messageColumnsWithoutBodies, withStoredBodies } from "@/lib/messages/body-batches";
 import { loadMessageBodies } from "@/lib/email/bodies";
 import { getMailboxAccessLevel, listAccessibleMailboxIds } from "@/lib/mailboxes/access";
 import { buildSearchConditions } from "@/lib/search/conditions";
@@ -74,12 +75,16 @@ export async function GET(request: Request) {
 
 	const rows = await loadMessageBodies(
 		env,
-		await db
-			.select()
-			.from(messages)
-			.where(and(...conditions))
-			.orderBy(desc(messages.createdAt), desc(messages.id))
-			.limit(limit),
+		// Bodies in bounded batches: 100 messages of up to 0.5 MB each would pass D1's 50 MB result limit.
+		await withStoredBodies(
+			db,
+			await db
+				.select(messageColumnsWithoutBodies)
+				.from(messages)
+				.where(and(...conditions))
+				.orderBy(desc(messages.createdAt), desc(messages.id))
+				.limit(limit),
+		),
 	);
 
 	return NextResponse.json({ messages: rows, nextCursor: getNextMessageCursor(rows, limit) });

@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { LazyComposeForm, preloadComposeForm } from "@/components/compose/compose-form-lazy";
 import { useCompose } from "@/components/compose/compose-context";
 import { InlineComposerPortal } from "@/components/compose/inline-reply-composer";
+import { UndoSendHost } from "@/components/compose/undo-send-host";
 
 export function FloatingComposer() {
 	const { open, draftId, placement, closeComposer } = useCompose();
@@ -23,16 +24,23 @@ export function FloatingComposer() {
 	}, []);
 
 	// A reply docked in the reader renders through its own host, which outlives the reader while it sends.
-	if (!open || placement !== "popup") return <InlineComposerPortal />;
+	// The undo-send bar is mounted wherever a composer is, because sending closes the composer.
 	return (
-		<LazyComposeForm
-			key={draftId ?? "new"}
-			mode="popup"
-			draftIdToLoad={draftId}
-			onClose={() => {
-				closeComposer();
-				if (/^\/drafts\/[^/]+\/?$/.test(pathname)) router.replace("/drafts");
-			}}
-		/>
+		<>
+			{!open || placement !== "popup" ? (
+				<InlineComposerPortal />
+			) : (
+				<LazyComposeForm
+					key={draftId ?? "new"}
+					mode="popup"
+					draftIdToLoad={draftId}
+					onClose={() => {
+						closeComposer();
+						if (/^\/drafts\/[^/]+\/?$/.test(pathname)) router.replace("/drafts");
+					}}
+				/>
+			)}
+			<UndoSendHost />
+		</>
 	);
 }

@@ -5,6 +5,7 @@ import type { DragEvent } from "react";
 import { Paperclip, Trash2 } from "lucide-react";
 import { ComposeHeader, composeTitle } from "./compose-header";
 import { useRouter } from "next/navigation";
+import hotToast from "react-hot-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -19,11 +20,20 @@ import type { OpenedSendReview, ReviewSnapshot } from "@/components/agent/send-r
 import { buildSendFormData, fetchDraft } from "./utils";
 import { ComposeAttachmentList } from "./compose-attachment-list";
 import { SendPreview } from "./send-preview";
-import { composeFrameAria, composeFrameClass, useComposerBesideAssistant, useDraftBodyFocus } from "./compose-frame";
+import {
+	composeFrameAria,
+	composeFrameClass,
+	composerZone,
+	useComposerBesideAssistant,
+	useDraftBodyFocus,
+} from "./compose-frame";
+import { useComposerZone } from "@/components/ui/toast-zone";
+import { beginUndoSend } from "./undo-send-host";
 import { ComposeToast, type ComposeToastState } from "./compose-toast";
 import { SendingBar, UndoSendBar } from "./undo-send-bar";
 import { useSendingSettings } from "./use-sending-settings";
-import type { PendingUndoSend, PendingUndoSnapshot } from "./undo-send-types";
+import { heldSend } from "./undo-send-utils";
+import type { PendingUndoSend, PendingUndoSnapshot, SentAnswer } from "./undo-send-types";
 import { RecipientInput } from "./recipient-input";
 import { linkifyOutgoingHtml } from "@/lib/email/linkify-dom-utils";
 import { RichTextEditor } from "./rich-text-editor";
@@ -203,6 +213,7 @@ export function ComposeForm({
 		pendingUndo: !!pendingUndo,
 		toast: !!toast,
 	});
+	useComposerZone(sentInline ? null : composerZone({ mode, minimized, modalMode }, besideAssistant));
 
 	useEffect(() => {
 		if (!toast) return;
@@ -394,11 +405,11 @@ export function ComposeForm({
 		setUndoRequestedWhileSending(false);
 		setPreviewOpen(false);
 		setSending({ undoable: !scheduledAt && sendingSettings.undoSeconds > 0 });
-		setSentInline(mode === "inline");
+		setSentInline(mode !== "page");
 		sentDraftId.current = currentDraftId;
 		resetComposer();
 
-		let data: { messageId?: string; scheduled?: boolean; retrying?: boolean; undoUntil?: string; error?: string };
+		let data: SentAnswer & { error?: string };
 		let ok = false;
 		try {
 			const res = await authFetch("/api/send", { method: "POST", body });
@@ -427,13 +438,25 @@ export function ComposeForm({
 		}
 		window.dispatchEvent(new Event("kite:messages-changed"));
 
-		if (data.undoUntil && data.messageId) {
-			const pending = { messageId: data.messageId, until: new Date(data.undoUntil).getTime(), snapshot };
-			if (undoRequested.current) void undoSend(pending);
-			else setPendingUndo(pending);
+		finishSend(data, snapshot);
+	}
+
+	/** A docked reply keeps its own undo bar and toast; any other composer closes, and the bar or toast outlives it. */
+	function finishSend(data: SentAnswer, snapshot: PendingUndoSnapshot) {
+		const pending = heldSend(data, snapshot);
+		if (pending && undoRequested.current) {
+			void undoSend(pending);
 			return;
 		}
-		setToast({ type: "success", message: sentToastMessage(data) });
+		if (mode === "inline") {
+			if (pending) setPendingUndo(pending);
+			else setToast({ type: "success", message: sentToastMessage(data) });
+			return;
+		}
+		if (pending) beginUndoSend(pending);
+		else hotToast.success(sentToastMessage(data));
+		if (onClose) onClose();
+		else router.push("/sent");
 	}
 
 	function resetComposer() {
@@ -702,7 +725,7 @@ export function ComposeForm({
 					}}
 				/>
 			)}
-			{mode === "popup" && modalMode && !minimized && (
+			{mode === "popup" && modalMode && !minimized && !sentInline && (
 				<div className="fixed inset-0 z-40 bg-neutral-950/65" aria-hidden="true" />
 			)}
 			<ComposeToast toast={toast} />

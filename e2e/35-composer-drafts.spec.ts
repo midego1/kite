@@ -414,10 +414,8 @@ test.describe("composer drafts", () => {
 				if (recovery === "clear") expect(sends[0]).not.toContain('name="scheduledAt"');
 				else expect(sends[0]).toContain("2099-01-01T09:00:00.000Z");
 				await expect(page.getByText(recovery === "clear" ? "Message sent" : "Message scheduled")).toBeVisible();
-				await page.getByRole("button", { name: "Schedule send options" }).click();
-				await expect(when).toHaveValue("");
-				await closeScheduleMenu(page);
-				await page.getByRole("button", { name: "Close composer" }).click();
+				// Sending closes the composer.
+				await expect(page.getByRole("button", { name: "Close composer" })).toHaveCount(0);
 			} finally {
 				await deleteDrafts(api, subject);
 			}

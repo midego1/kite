@@ -13,7 +13,8 @@ import { ThemeSync } from "@/components/theme-sync";
 import { UpdateAvailableHost } from "@/components/update-available-host";
 import { LayoutPreferencesSync } from "@/components/layout-preferences-sync";
 import { ConfirmDialogHost } from "@/components/ui/confirm-dialog";
-import { TOASTER_PROPS } from "@/components/ui/toast-styles";
+import { toasterProps } from "@/components/ui/toast-styles";
+import { useToastsAtTop } from "@/components/ui/toast-zone";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useMessagePolling } from "@/hooks/use-message-polling";
 import { clearMessageClientState } from "@/hooks/utils";
@@ -25,6 +26,7 @@ import { clearAppBadge } from "@/lib/app-badge-utils";
 
 export function Providers({ children, initialBranding }: { children: React.ReactNode; initialBranding?: Branding }) {
 	const realtime = useMessagePolling();
+	const toastsAtTop = useToastsAtTop();
 
 	const [client] = useState(
 		() =>
@@ -75,7 +77,7 @@ export function Providers({ children, initialBranding }: { children: React.React
 				<ThemeSync />
 				<ConfirmDialogHost />
 				<CopyCodeHost />
-				<Toaster {...TOASTER_PROPS} />
+				<Toaster {...toasterProps(toastsAtTop)} />
 				<ModuleNoticeHost />
 				<UpdateAvailableHost />
 				<LayoutPreferencesSync />

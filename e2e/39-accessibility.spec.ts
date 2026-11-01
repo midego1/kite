@@ -66,13 +66,18 @@ test("the command palette and the shortcuts help keep focus inside and give it b
 	}).toPass();
 	const combobox = page.getByRole("combobox", { name: "Search commands" });
 	await expect(combobox).toBeFocused();
-	await expect(page.getByRole("listbox", { name: "Commands" }).getByRole("option").first()).toHaveAttribute(
-		"aria-selected",
-		"true",
-	);
+	const results = page.getByRole("listbox", { name: "Results" });
+	await expect(results.getByRole("option").first()).toHaveAttribute("aria-selected", "true");
 	const first = await combobox.getAttribute("aria-activedescendant");
 	await page.keyboard.press("ArrowDown");
 	await expect(combobox).not.toHaveAttribute("aria-activedescendant", first ?? "");
+	// Tab walks the close button, the category tabs (one stop) and the list, then comes back to the search box.
+	await page.keyboard.press("Tab");
+	await expect(page.getByRole("button", { name: "Close" })).toBeFocused();
+	await page.keyboard.press("Tab");
+	await expect(page.getByRole("tab", { name: /^All/ })).toBeFocused();
+	await page.keyboard.press("Tab");
+	await expect(results).toBeFocused();
 	await page.keyboard.press("Tab");
 	await expect(combobox).toBeFocused();
 	await page.keyboard.press("Escape");

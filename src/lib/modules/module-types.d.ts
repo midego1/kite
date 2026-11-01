@@ -136,6 +136,8 @@ export type SuggestionKindMeta = {
 
 /** The part of a manifest that browser code needs: identity, navigation and commands. */
 export type ClientModuleData = Pick<ModuleManifest, "id" | "name" | "nav" | "commands"> & {
+	/** The search sections the module answers (`searchSections` of its manifest), so the palette can list its category without loading the module. */
+	searchSections?: ModuleManifest["searchSections"];
 	/** Composer slots the module fills, so the composer lists them without loading the module. */
 	composerSlots?: ComposerSlotDeclaration[];
 	/** Message menu slots the module fills, so the reader lists them without loading the module. */

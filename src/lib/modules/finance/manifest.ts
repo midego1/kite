@@ -38,7 +38,7 @@ export const financeManifest: ModuleManifest = {
 	],
 	apiKeyScopes: [],
 	jmapCapabilities: [],
-	searchSections: [{ id: "subscriptions", label: "Subscriptions" }],
+	searchSections: financeClientData.searchSections ?? [],
 	messageStatuses: [],
 	queueMessageTypes: [],
 	cronTasks: [{ name: "remindRenewals", schedule: "*/5 * * * *", capability: "remindRenewals" }],

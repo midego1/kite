@@ -32,6 +32,7 @@ export function filterCommands(commands: CommandItem[], query: string): CommandI
 
 /**
  * Group commands by their category string.
+ * @public Kept for the tests and callers that list commands by group; the palette groups by category itself.
  */
 export function groupCommandsByCategory(commands: CommandItem[]): Record<string, CommandItem[]> {
 	return commands.reduce(

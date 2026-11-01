@@ -101,6 +101,7 @@
 	"/api/contacts/avatar",
 	"/api/contacts/block",
 	"/api/contacts",
+	"/api/contacts/search",
 	"/api/domains/[id]/dns",
 	"/api/domains/[id]/dns/setup",
 	"/api/domains/[id]/receiving/[provider]",

@@ -166,8 +166,11 @@ export function ShortcutsProvider({
 			return {
 				id: command.id,
 				title: command.label,
-				subtitle: command.group === "Navigation" ? undefined : command.description,
+				subtitle: command.description,
 				category: command.group,
+				moduleId: command.moduleId,
+				effect: command.effect,
+				href: command.target.type === "route" ? command.target.href : undefined,
 				icon: COMMAND_ICONS[command.id],
 				shortcut: command.shortcut,
 				keywords: command.keywords,

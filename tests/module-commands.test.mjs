@@ -570,8 +570,10 @@ test("the client slice equals what the manifests declare", () => {
 			attachmentSlots,
 			readingPaneSlots,
 			triageSwitches,
+			searchSections,
 			...declared
 		} = slice;
+		assert.deepEqual(searchSections ?? [], manifest.searchSections);
 		assert.deepEqual(declared, {
 			id: manifest.id,
 			name: manifest.name,

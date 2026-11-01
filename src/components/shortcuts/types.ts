@@ -22,6 +22,12 @@ export interface CommandItem {
 	subtitle?: string;
 	/** The palette group heading. */
 	category: string;
+	/** The module that owns the command; `core` or absent for core's own and registered commands. */
+	moduleId?: string;
+	/** What running it does (`navigate`, `read`, `fill`, ...), which picks the row's type badge. */
+	effect?: string;
+	/** The page a route command opens, so a settings page listed by the palette is not listed twice. */
+	href?: string;
 	icon?: React.ComponentType<{ className?: string }>;
 	shortcut?: string;
 	keywords?: string[];

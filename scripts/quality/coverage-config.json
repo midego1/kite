@@ -66,6 +66,8 @@
 		"src/lib/agent/approvals/snapshot-utils.ts",
 		"src/components/mail-search/search-dropdown-utils.ts",
 		"src/components/shortcuts/command-palette-utils.ts",
+		"src/components/shortcuts/palette-utils.ts",
+		"src/app/api/contacts/search/search-utils.ts",
 		"src/components/shortcuts/use-hotkeys-utils.ts",
 		"src/components/route-title-utils.ts",
 		"src/lib/agent/auto-read/activity-ref-utils.ts",

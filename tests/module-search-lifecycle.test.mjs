@@ -309,7 +309,7 @@ test("assembleSearchSections labels sections from manifests and drops items that
 		{ moduleId: "booking", section: "events", items: [good] },
 	];
 	assert.deepEqual(assembleSearchSections(MODULE_MANIFESTS, results, 5), [
-		{ id: "events", label: "Events", items: [good] },
+		{ id: "events", moduleId: "calendar", label: "Events", items: [good] },
 	]);
 	assert.deepEqual(
 		assembleSearchSections(MODULE_MANIFESTS, [{ moduleId: "calendar", section: "events", items: [] }], 5),

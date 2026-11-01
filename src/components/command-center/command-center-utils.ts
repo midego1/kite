@@ -77,18 +77,17 @@ export function canConnectAccounts(
  * count is known and some mailbox reads mail automatically.
  */
 export function statusChips(input: StatusChipsInput): StatusChip[] {
-	const chips: StatusChip[] = [
-		{
-			id: "unread",
-			label: `${input.unread} unread in ${input.folderTitle}`,
-			href: input.folderHref,
-			tone: "blue",
-		},
-	];
-	if (input.screenerOn || input.held > 0)
-		chips.push({ id: "screener", label: `${input.held} in Screener`, href: "/screener", tone: "amber" });
+	const chip = (
+		id: StatusChip["id"],
+		value: number,
+		caption: string,
+		href: string,
+		tone: StatusChip["tone"],
+	): StatusChip => ({ id, value, caption, label: `${value} ${caption}`, href, tone });
+	const chips = [chip("unread", input.unread, `unread in ${input.folderTitle}`, input.folderHref, "blue")];
+	if (input.screenerOn || input.held > 0) chips.push(chip("screener", input.held, "in Screener", "/screener", "amber"));
 	if (input.forYouVisible && input.forYou !== null)
-		chips.push({ id: "for-you", label: `${input.forYou} For you`, href: "/for-you", tone: "violet" });
+		chips.push(chip("for-you", input.forYou, "For you", "/for-you", "violet"));
 	return chips;
 }
 

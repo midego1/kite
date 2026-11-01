@@ -1,9 +1,17 @@
 import type { LucideIcon } from "lucide-react";
 import type { ExternalAccountView } from "@/lib/external-accounts/types";
 
-/** One of the counts above the cards: unread mail, held senders, open suggestions. */
+/** How a row's mark or pill reads: fine, needs someone, or off. */
+export type CommandCenterTone = "ok" | "warn" | "muted";
+
+/** One of the counts at the top: unread mail, held senders, open suggestions. */
 export type StatusChip = {
 	id: "unread" | "screener" | "for-you";
+	/** The number, drawn large. */
+	value: number;
+	/** What the number counts, under it: "unread in Inbox", "in Screener", "For you". */
+	caption: string;
+	/** The whole line, "12 unread in Inbox", for anything that reads the chip as text. */
 	label: string;
 	href: string;
 	tone: "blue" | "amber" | "violet";
@@ -22,7 +30,7 @@ export type StatusChipsInput = {
 	forYouVisible: boolean;
 };
 
-export type AccountTone = "ok" | "warn" | "muted";
+export type AccountTone = CommandCenterTone;
 
 /** One connected account as the Accounts card lists it. */
 export type AccountLine = {

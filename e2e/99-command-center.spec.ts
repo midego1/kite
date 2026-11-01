@@ -6,8 +6,8 @@ import { apiContext, deliverInbound, uniqueToken } from "./support/helpers";
 import { restoreModules, setModuleState } from "./support/modules";
 
 // The empty reading pane's command center (src/components/command-center/): a greeting with the date, the
-// counts, the connected accounts, what needs attention (admins) and quick actions. The database notice keeps its
-// place inside the pane (19-updates covers Apply now and its progress).
+// counts as tiles, the connected accounts, quick actions and what needs attention (admins), as cards. The
+// database notice keeps its place inside the pane (19-updates covers Apply now and its progress).
 
 const PENDING_API = "/api/migrations/pending";
 
@@ -60,9 +60,10 @@ test("the pane greets the account, counts the mail and still says what to do", a
 	await expect(attention.getByRole("link", { name: "Admin overview" })).toHaveAttribute("href", "/admin");
 });
 
-// The pane is drawn with the app's own parts (the sidebar's group labels and rows, the page notices) in every
-// style and theme; its text must stay readable (WCAG AA, 4.5:1) on each of them, and the greeting shows in every
-// style: in the regular type in Kite and Classic, in the script face only in Kite classic (lavender).
+// The pane is drawn with the app's own tokens (the panel fill for its cards, the style's accent for icons and
+// links, the page notices) in every style and theme; its text must stay readable (WCAG AA, 4.5:1) on each of
+// them, and the greeting shows in every style: in the regular type in Kite and Classic, in the script face only in
+// Kite classic (lavender).
 for (const style of ["kite", "lavender", "classic"] as const) {
 	for (const theme of ["light", "dark"] as const) {
 		test(`the pane is readable in the ${style} style, ${theme} theme`, async ({ page }) => {
@@ -104,7 +105,9 @@ for (const style of ["kite", "lavender", "classic"] as const) {
 			const warning = center.getByTestId("command-center-attention-ai-errors");
 			const tile = center.locator("[data-quick-action=compose]");
 			await expect(warning).toBeVisible();
+			// The stat tile: the number in the heading colour, what it counts in the quieter grey under it.
 			expect(await contrastBetween(chip)).toBeGreaterThanOrEqual(4.5);
+			expect(await contrastBetween(chip.locator("span.text-sm"), chip)).toBeGreaterThanOrEqual(4.5);
 			expect(await contrastBetween(card.getByRole("heading", { level: 3 }), card)).toBeGreaterThanOrEqual(4.5);
 			expect(await contrastBetween(card.getByRole("link", { name: "Admin overview" }), card)).toBeGreaterThanOrEqual(
 				4.5,
@@ -117,16 +120,29 @@ for (const style of ["kite", "lavender", "classic"] as const) {
 			expect(await contrastBetween(center.getByText(/^Select a message to read/))).toBeGreaterThanOrEqual(4.5);
 			for (const detail of await card.locator("p > span.shrink-0.text-xs").all())
 				expect(await contrastBetween(detail)).toBeGreaterThanOrEqual(4.5);
-			// No surfaces of its own: the sections sit on the pane like the menu sits in the sidebar. Only the quick-action
-			// tiles have the sidebar button's border.
-			const surfaces = await center.evaluate(
-				(root) =>
-					[...root.querySelectorAll("section")].filter((section) => {
-						const style = getComputedStyle(section);
-						return style.borderTopWidth !== "0px" || style.backgroundImage !== "none";
-					}).length,
-			);
-			expect(surfaces).toBe(0);
+			// The accounts card has nothing to list here: its empty state and the link out of it stay readable too.
+			const empty = center.getByTestId("command-center-accounts").locator("[data-command-center-empty]");
+			expect(await contrastBetween(empty.locator("p"))).toBeGreaterThanOrEqual(4.5);
+			expect(await contrastBetween(empty.getByRole("link"))).toBeGreaterThanOrEqual(4.5);
+			// Every card and tile is a bordered surface on the pane, filled with the panel fill (no gradients or glows),
+			// and every card is filled the same way.
+			const surfaces = await center.evaluate((root) => {
+				const read = (element: Element) => {
+					const style = getComputedStyle(element);
+					return { border: style.borderTopWidth, fill: style.backgroundColor, image: style.backgroundImage };
+				};
+				return {
+					sections: [...root.querySelectorAll("section")].map(read),
+					chips: [...root.querySelectorAll("[data-chip]")].map(read),
+					tiles: [...root.querySelectorAll("[data-quick-action]")].map(read),
+				};
+			});
+			expect(surfaces.sections.length).toBeGreaterThan(0);
+			for (const surface of [...surfaces.sections, ...surfaces.chips, ...surfaces.tiles]) {
+				expect(surface.border).toBe("1px");
+				expect(surface.image).toBe("none");
+			}
+			expect(new Set(surfaces.sections.map((surface) => surface.fill)).size).toBe(1);
 			expect(await tile.evaluate((el) => getComputedStyle(el).borderTopWidth)).toBe("1px");
 		});
 	}
@@ -214,6 +230,7 @@ test("connected accounts are listed with their state, failures first with a way 
 	await expect(lines.nth(1)).toHaveAttribute("data-account-status", "ok");
 	await expect(lines.nth(1)).toContainText("iCloud");
 	await expect(lines.nth(1)).toContainText("Synced 3 min ago");
+	await expect(lines.nth(1).locator("[data-tone]")).toHaveAttribute("data-tone", "ok");
 	await expect(accounts.getByRole("link", { name: "Connected accounts" })).toHaveAttribute(
 		"href",
 		"/settings/connected-accounts",
@@ -230,8 +247,11 @@ test("without connected accounts the card offers to connect one, or hides when t
 		});
 	});
 	await openInbox(page);
-	await expect(pane(page).getByTestId("command-center-accounts")).toContainText(
-		"Connect Gmail, iCloud or another account",
+	const accounts = pane(page).getByTestId("command-center-accounts");
+	await expect(accounts).toContainText("Connect Gmail, iCloud or another account");
+	await expect(accounts.getByRole("link", { name: "Connect an account" })).toHaveAttribute(
+		"href",
+		"/settings/connected-accounts",
 	);
 
 	await page.unrouteAll({ behavior: "ignoreErrors" });

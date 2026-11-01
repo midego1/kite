@@ -5,6 +5,7 @@ import { AuthGuard } from "@/components/auth/auth-guard";
 import type { AuthGuardProps } from "@/components/auth/auth-guard-types";
 import { ComposeProvider } from "@/components/compose/compose-context";
 import { FloatingComposer } from "@/components/compose/floating-composer";
+import { UndoSendHost } from "@/components/compose/undo-send-host";
 import { DashboardNav } from "@/components/dashboard-nav";
 import { DashboardNotices } from "@/components/dashboard-notices";
 import { MailboxProvider } from "@/components/mailbox-provider";
@@ -70,6 +71,7 @@ export function DashboardSectionShell({ children, nav, ...guard }: DashboardSect
 									</div>
 								</SidebarFrame>
 								<FloatingComposer />
+								<UndoSendHost />
 							</div>
 						</ShortcutsProvider>
 					</ComposeProvider>

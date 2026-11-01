@@ -565,3 +565,39 @@ test("a load counts as following Reload only on a fresh marker: the trace's own,
 	assert.doesNotThrow(() => markBootAfterReload(null));
 	assert.doesNotThrow(() => clearBootAfterReload());
 });
+
+test("the service worker's heartbeat gets the phase, step and times, sent at once on each new phase", () => {
+	const page = loadPage();
+	const beats = [];
+	page.window.__kiteWorkerBeat = () => beats.push(page.trace.status().phase);
+	page.beat(500);
+	page.clock.now = 900;
+	page.trace.phase("loader-mounted");
+	page.trace.step("sidebar");
+	page.trace.phase("loader-mounted");
+	assert.deepEqual(beats, ["loader-mounted"]);
+	assert.deepEqual(JSON.parse(JSON.stringify(page.trace.status())), {
+		page: "/inbox",
+		phase: "loader-mounted",
+		step: "sidebar",
+		build: page.record().build,
+		afterMs: 600,
+		visibleMs: 500,
+	});
+	// A heartbeat that throws never reaches the trace.
+	page.window.__kiteWorkerBeat = () => {
+		throw new Error("broken");
+	};
+	assert.doesNotThrow(() => page.trace.phase("auth-answered"));
+	assert.equal(page.details().phase, "auth-answered");
+});
+
+test("a load the service worker reloaded after a freeze says so in its record and details", () => {
+	const page = loadPage();
+	assert.equal(page.details().autoReloaded, false);
+	page.trace.autoReloaded();
+	page.trace.autoReloaded();
+	assert.equal(page.record().autoReloaded, true);
+	assert.equal(page.details().autoReloaded, true);
+	assert.match(page.trace.text(), /^Reloaded automatically after the previous load froze\nPhase: inline/);
+});

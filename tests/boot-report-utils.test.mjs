@@ -39,12 +39,34 @@ const report = {
 };
 
 test("a report from the boot trace is read with whole milliseconds", () => {
-	assert.deepEqual(parseBootFreezeReport(JSON.stringify(report)), { ...report, afterMs: 612 });
+	assert.deepEqual(parseBootFreezeReport(JSON.stringify(report)), {
+		...report,
+		event: "previous_load_froze",
+		afterMs: 612,
+	});
 	// Step, build and the update are optional; the root page has an empty first segment.
 	assert.deepEqual(
 		parseBootFreezeReport(JSON.stringify({ page: "", phase: "loader-mounted", afterMs: 0, visibleMs: 0 })),
-		{ page: "/", phase: "loader-mounted", step: null, afterMs: 0, visibleMs: 0, build: null, afterUpdate: false },
+		{
+			event: "previous_load_froze",
+			page: "/",
+			phase: "loader-mounted",
+			step: null,
+			afterMs: 0,
+			visibleMs: 0,
+			build: null,
+			afterUpdate: false,
+		},
 	);
+});
+
+test("the service worker's freeze watchdog reports what it did with the same facts", () => {
+	for (const event of ["auto_reloaded_after_freeze", "freeze_not_reloaded", "previous_load_froze"]) {
+		assert.equal(parseBootFreezeReport(JSON.stringify({ ...report, event }))?.event, event);
+	}
+	for (const event of ["Auto reloaded", "reloaded", 1, ""]) {
+		assert.equal(parseBootFreezeReport(JSON.stringify({ ...report, event })), null, String(event));
+	}
 });
 
 test("anything that is not a report is refused, free text included", () => {

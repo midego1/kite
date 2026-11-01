@@ -1,9 +1,18 @@
 /**
- * What the next load reports about a load of the same tab that froze (boot-trace-utils.ts, BOOT_REPORT_PATH): the
- * phase and last step it reached, its last heartbeat and visible time, the first segment of its page, its build and
- * whether it was the load right after Reload in the update notice. Times and fixed names only, no personal data.
+ * What happened: the next load found that a load of the same tab froze (`previous_load_froze`, the default), or the
+ * service worker's freeze watchdog (public/kite-sw.js) saw a startup screen stop and reloaded the tab
+ * (`auto_reloaded_after_freeze`) or, within its window after such a reload, left it alone (`freeze_not_reloaded`).
+ */
+const BOOT_REPORT_EVENTS = ["previous_load_froze", "auto_reloaded_after_freeze", "freeze_not_reloaded"] as const;
+type BootReportEvent = (typeof BOOT_REPORT_EVENTS)[number];
+
+/**
+ * What is reported about a load that froze (boot-trace-utils.ts, BOOT_REPORT_PATH): the phase and last step it
+ * reached, its last heartbeat and visible time, the first segment of its page, its build and whether it was the
+ * load right after Reload in the update notice. Times and fixed names only, no personal data.
  */
 export type BootFreezeReport = {
+	event: BootReportEvent;
 	page: string;
 	phase: string;
 	step: string | null;
@@ -51,7 +60,18 @@ export function parseBootFreezeReport(text: string): BootFreezeReport | null {
 	if (typeof input.phase !== "string" || !NAME.test(input.phase)) return null;
 	if (typeof page !== "string" || !PAGE.test(page)) return null;
 	if (afterMs === null || visibleMs === null || step === undefined || build === undefined) return null;
-	return { page, phase: input.phase, step, afterMs, visibleMs, build, afterUpdate: input.afterUpdate === true };
+	const event = input.event ?? "previous_load_froze";
+	if (!BOOT_REPORT_EVENTS.includes(event as BootReportEvent)) return null;
+	return {
+		event: event as BootReportEvent,
+		page,
+		phase: input.phase,
+		step,
+		afterMs,
+		visibleMs,
+		build,
+		afterUpdate: input.afterUpdate === true,
+	};
 }
 
 /**

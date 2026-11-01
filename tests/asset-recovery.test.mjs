@@ -168,7 +168,7 @@ function loadPage({
 	let observer = null;
 	let parser = null;
 	const document = fakeDocument({ screen, declared, readyState, withBody });
-	const page = { reloads: 0, waits: [], dispatched: [], errors: [], storage, clock, document };
+	const page = { reloads: 0, waits: [], dispatched: [], errors: [], warnings: [], storage, clock, document };
 	const sandbox = {
 		location: { href: `${ORIGIN}/inbox`, origin: ORIGIN, reload: () => (page.reloads += 1) },
 		navigator: { onLine: online },
@@ -177,7 +177,7 @@ function loadPage({
 			setItem: (key, value) => storage.set(key, String(value)),
 			removeItem: (key) => storage.delete(key),
 		},
-		console: { error: (message) => page.errors.push(message) },
+		console: { error: (message) => page.errors.push(message), warn: (message) => page.warnings.push(message) },
 		Date: { now: () => clock.now },
 		URL,
 		Event: class {
@@ -914,4 +914,84 @@ test("a document root that refuses attributes cannot stop the watchdog", () => {
 	};
 	page.advance(9_000);
 	assert.equal(page.reloads, 1);
+});
+
+/** A service worker controlling the page, which records what the page posts to it. */
+function fakeWorkers() {
+	const listeners = [];
+	const workers = {
+		posted: [],
+		controller: { postMessage: (message) => workers.posted.push(JSON.parse(JSON.stringify(message))) },
+		addEventListener: (type, listener) => listeners.push(listener),
+		send: (data) => listeners.forEach((listener) => listener({ data })),
+	};
+	return workers;
+}
+
+test("while it watches, the watchdog sends the service worker a heartbeat with the tab's id, and done when it stops", () => {
+	const workers = fakeWorkers();
+	const storage = new Map();
+	const trace = { ...fakeTrace(), status: () => ({ page: "/inbox", phase: "loader-mounted", step: null }) };
+	const page = loadPage({
+		storage,
+		flags: {
+			[LOADER_MOUNTED_FLAG]: true,
+			__kiteBoot: trace,
+			navigator: { onLine: true, serviceWorker: workers },
+			crypto: { randomUUID: () => "tab-1" },
+		},
+	});
+	page.advance(1_000);
+	assert.equal(storage.get("kite:tab-id"), "tab-1");
+	assert.equal(workers.posted.length, 3);
+	assert.deepEqual(workers.posted[0], {
+		type: "kite:boot-beat",
+		page: "/inbox",
+		phase: "loader-mounted",
+		step: null,
+		tabId: "tab-1",
+		visible: true,
+		autoReloadedAt: null,
+	});
+	assert.equal(typeof page.window.__kiteWorkerBeat, "function");
+	// A hidden tab says so at once.
+	page.document.visibilityState = "hidden";
+	page.fire("visibilitychange");
+	assert.equal(workers.posted.at(-1).visible, false);
+	page.document.visibilityState = "visible";
+	// The worker reloaded this tab: the page keeps the time and sends it along from then on.
+	workers.send({ type: "kite:auto-reloaded", at: 1_234 });
+	assert.equal(storage.get("kite:auto-reloaded-at"), "1234");
+	assert.deepEqual(page.warnings, ["[kite] the previous load froze and was reloaded automatically"]);
+	page.advance(500);
+	assert.equal(workers.posted.at(-1).autoReloadedAt, 1_234);
+	page.fire("pagehide");
+	assert.deepEqual(workers.posted.at(-1), { type: "kite:boot-leaving" });
+	// The startup screen goes: one done, then silence.
+	page.document.overlay.setAttribute("role", "");
+	page.advance(2_000);
+	assert.equal(page.watching(), false);
+	assert.deepEqual(workers.posted.at(-1), { type: "kite:boot-done" });
+	const count = workers.posted.length;
+	page.window.__kiteWorkerBeat();
+	assert.equal(workers.posted.length, count);
+	// The next load of the tab keeps its id.
+	const next = fakeWorkers();
+	loadPage({ storage, flags: { navigator: { onLine: true, serviceWorker: next } } });
+	assert.equal(next.posted[0].tabId, "tab-1");
+});
+
+test("without a controlling worker or working storage the watchdog runs as before, and never sends a tab id it lost", () => {
+	const uncontrolled = { ...fakeWorkers(), controller: null };
+	const page = loadPage({ flags: { navigator: { onLine: true, serviceWorker: uncontrolled } } });
+	page.advance(8_000);
+	assert.equal(page.reloads, 1);
+	const workers = fakeWorkers();
+	const broken = new Map();
+	broken.set = () => broken;
+	loadPage({
+		storage: broken,
+		flags: { navigator: { onLine: true, serviceWorker: workers }, crypto: { randomUUID: () => "tab-2" } },
+	});
+	assert.equal(workers.posted[0].tabId, null);
 });

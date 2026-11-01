@@ -19,6 +19,11 @@ const BOOT_TRACE_STORAGE_KEY = "kite-boot-trace";
 /** Set on `window` by the inline script: `{ phase, beat, remount, end, details, text }`. */
 export const BOOT_TRACE_GLOBAL = "__kiteBoot";
 /**
+ * Set on `window` by the boot watchdog (asset-recovery-utils.ts) where a service worker may control the page: sends
+ * it a heartbeat now. Called on every new phase, so the worker's report names the phase a load froze in.
+ */
+export const WORKER_BEAT_GLOBAL = "__kiteWorkerBeat";
+/**
  * The phases of a start, in the order they happen; the furthest one reached is the phase a stuck or frozen load
  * stopped at. `auth-answered` is the session check's answer arriving, `children-rendering` React starting to render
  * the app behind the screen with it, `children-committed` that render's layout effects and `auth-ready` its
@@ -84,6 +89,8 @@ export type BootDetails = {
 	}[];
 	step: { name: string; atMs: number } | null;
 	previousLoad: PreviousBootLoad | null;
+	/** The service worker reloaded this tab because its previous load froze (public/kite-sw.js). */
+	autoReloaded: boolean;
 };
 
 /**
@@ -406,6 +413,7 @@ export const bootTraceScript = `(() => {
 				slowestResources: slowest.slice(),
 				longFrames: longFrames.slice(),
 				previousLoad,
+				autoReloaded: record.autoReloaded === true,
 			};
 		};
 		const seconds = (ms) => (ms / 1000).toFixed(1) + " s";
@@ -419,6 +427,7 @@ export const bootTraceScript = `(() => {
 						" after " + seconds(d.previousLoad.afterMs),
 				);
 			}
+			if (d.autoReloaded) lines.push("Reloaded automatically after the previous load froze");
 			lines.push("Phase: " + d.phase + " (" + d.phases.map((entry) => entry.phase + " " + seconds(entry.atMs)).join(", ") + ")");
 			if (d.step) lines.push("Last step: " + d.step.name + " at " + seconds(d.step.atMs));
 			lines.push("Visible: " + seconds(d.visibleMs));
@@ -472,6 +481,10 @@ export const bootTraceScript = `(() => {
 				record.phases.push({ p: name, t: now() });
 				if (name === "complete") return end();
 				save();
+				try {
+					const beat = window[${JSON.stringify(WORKER_BEAT_GLOBAL)}];
+					if (typeof beat === "function") beat();
+				} catch {}
 			},
 			step: (name) => {
 				if (ended) return;
@@ -492,6 +505,21 @@ export const bootTraceScript = `(() => {
 				save();
 			},
 			copy,
+			// What the service worker's freeze watchdog needs with each heartbeat (asset-recovery-utils.ts).
+			status: () => ({
+				page: record.page,
+				phase: phaseReached(),
+				step: record.step ? record.step.s : null,
+				build: record.build,
+				afterMs: record.beat,
+				visibleMs: record.visibleMs,
+			}),
+			// The service worker says it reloaded this tab after its previous load froze.
+			autoReloaded: () => {
+				if (record.autoReloaded) return;
+				record.autoReloaded = true;
+				save();
+			},
 			remount: (count) => {
 				if (ended) return;
 				record.remounts = count;

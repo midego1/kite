@@ -1,4 +1,4 @@
-import { BOOT_TRACE_GLOBAL, bootCopyLabel, markBootPhase } from "./boot-trace-utils";
+import { BOOT_TRACE_GLOBAL, WORKER_BEAT_GLOBAL, bootCopyLabel, markBootPhase } from "./boot-trace-utils";
 
 /**
  * sessionStorage key counting the automatic reloads of this tab: `{ count, since, stalls }`, where `stalls` counts
@@ -64,6 +64,15 @@ const HEARTBEAT_ATTRIBUTE = "data-kite-heartbeat";
 const HIDDEN_ATTRIBUTE = "data-kite-hidden";
 /** Watchdog reloads per ASSET_RELOAD_WINDOW_MS (within the shared budget) before it shows "Kite couldn't load". */
 const BOOT_STALL_RELOADS = 2;
+/**
+ * sessionStorage key of this tab's id, sent with every heartbeat to the service worker's freeze watchdog
+ * (public/kite-sw.js): a reload gives the tab a new client id, so the worker limits its reloads per tab by this one.
+ */
+const TAB_ID_STORAGE_KEY = "kite:tab-id";
+/** sessionStorage key of the time the service worker last reloaded this tab after a freeze (its own `Date.now()`). */
+const AUTO_RELOADED_STORAGE_KEY = "kite:auto-reloaded-at";
+/** Kite's service worker: notifications and the freeze watchdog. Registered once React runs the startup screen. */
+const KITE_SERVICE_WORKER_URL = "/kite-sw.js";
 /** Fired on `window` when a chunk fails after the app has rendered, so the update check can run at once. */
 export const STALE_ASSETS_EVENT = "kite:stale-assets";
 /** Set on `window` with the event, so a listener that registers later (before the session is known) still sees it. */
@@ -126,6 +135,15 @@ const DEV_ASSET_PREFIXES = ["/_next/static/", "/@id/", "/@fs/", "/@vite/", "/nod
  * box carries the trace's Details with a Copy details button. Every tick also restarts the animation of the startup
  * screen's frozen-thread notice (HEARTBEAT_ATTRIBUTE): a main thread that stopped runs neither the slow-start
  * recovery nor this watchdog, but the compositor still fades that notice in once the ticks have stopped.
+ *
+ * Every tick, and every change of visibility, is also a heartbeat for the service worker's freeze watchdog
+ * (public/kite-sw.js) when one controls the page: the tab's id (TAB_ID_STORAGE_KEY), whether it is visible, and
+ * the trace's phase, step and times. The worker runs outside this thread, so when a visible tab's heartbeats stop
+ * it reloads the tab, which the page itself cannot do once frozen. The heartbeats stop, with a "done" message,
+ * when the watchdog stops (the startup screen has gone), and a page leaving by itself says so on pagehide. A load the
+ * worker reloaded hears it back and keeps the time (AUTO_RELOADED_STORAGE_KEY), which the next heartbeats carry so
+ * a worker that lost its memory still reloads a tab at most once in its window. On a first visit nothing controls
+ * the page yet, so nothing is sent.
  */
 export function assetRecoveryScript({ dev = false }: { dev?: boolean } = {}): string {
 	const prefixes = dev ? DEV_ASSET_PREFIXES : PRODUCTION_ASSET_PREFIXES;
@@ -152,6 +170,74 @@ export function assetRecoveryScript({ dev = false }: { dev?: boolean } = {}): st
 			root.setAttribute(${JSON.stringify(HEARTBEAT_ATTRIBUTE)}, root.getAttribute(${JSON.stringify(HEARTBEAT_ATTRIBUTE)}) === "a" ? "b" : "a");
 		} catch {}
 	};
+	// The service worker's freeze watchdog (public/kite-sw.js); nothing here may stop this watchdog either.
+	let workers = null;
+	try {
+		workers = navigator.serviceWorker || null;
+	} catch {}
+	let tabId = null;
+	try {
+		tabId = sessionStorage.getItem(${JSON.stringify(TAB_ID_STORAGE_KEY)});
+		if (!tabId) {
+			const id = crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2) + Date.now();
+			sessionStorage.setItem(${JSON.stringify(TAB_ID_STORAGE_KEY)}, id);
+			// Without a stored id nothing would limit the worker's reloads: it then never reloads.
+			tabId = sessionStorage.getItem(${JSON.stringify(TAB_ID_STORAGE_KEY)}) === id ? id : null;
+		}
+	} catch {
+		tabId = null;
+	}
+	const autoReloadedAt = () => {
+		try {
+			const at = Number(sessionStorage.getItem(${JSON.stringify(AUTO_RELOADED_STORAGE_KEY)}));
+			return Number.isFinite(at) && at > 0 ? at : null;
+		} catch {
+			return null;
+		}
+	};
+	let workerWatching = !!workers;
+	const tellWorker = (message) => {
+		try {
+			const controller = workers && workers.controller;
+			if (controller) controller.postMessage(message);
+		} catch {}
+	};
+	const workerBeat = () => {
+		if (!workerWatching) return;
+		const current = trace();
+		const status = current && typeof current.status === "function" ? current.status() : null;
+		tellWorker(Object.assign({}, status, {
+			type: "kite:boot-beat",
+			tabId,
+			visible: document.visibilityState !== "hidden",
+			autoReloadedAt: autoReloadedAt(),
+		}));
+	};
+	const workerDone = () => {
+		if (!workerWatching) return;
+		workerWatching = false;
+		tellWorker({ type: "kite:boot-done" });
+	};
+	if (workers) {
+		// The trace beats at once on every phase it reaches, so a report names the phase a load froze in.
+		window[${JSON.stringify(WORKER_BEAT_GLOBAL)}] = workerBeat;
+		// No beforeunload listener: Chrome then asks the page before every navigation, a frozen one too, which would
+		// hold up the worker's reload. A page on its way out (or into the back-forward cache) says so on pagehide;
+		// one shown again from that cache beats again with its next tick.
+		addEventListener("pagehide", () => tellWorker({ type: "kite:boot-leaving" }));
+		try {
+			workers.addEventListener("message", (event) => {
+				const data = event.data;
+				if (!data || data.type !== "kite:auto-reloaded" || typeof data.at !== "number") return;
+				try {
+					sessionStorage.setItem(${JSON.stringify(AUTO_RELOADED_STORAGE_KEY)}, String(data.at));
+				} catch {}
+				const current = trace();
+				if (current && typeof current.autoReloaded === "function") current.autoReloaded();
+				console.warn("[kite] the previous load froze and was reloaded automatically");
+			});
+		} catch {}
+	}
 	const followVisibility = () => {
 		try {
 			if (document.visibilityState === "hidden") return root.setAttribute(${JSON.stringify(HIDDEN_ATTRIBUTE)}, "");
@@ -160,7 +246,11 @@ export function assetRecoveryScript({ dev = false }: { dev?: boolean } = {}): st
 		heartbeat();
 	};
 	followVisibility();
-	addEventListener("visibilitychange", followVisibility);
+	workerBeat();
+	addEventListener("visibilitychange", () => {
+		followVisibility();
+		workerBeat();
+	});
 	let reloadPending = false;
 	let gaveUp = false;
 	let lastStaleAt = null;
@@ -384,6 +474,7 @@ export function assetRecoveryScript({ dev = false }: { dev?: boolean } = {}): st
 	// The watchdog is done with this page: the trace's heartbeat stops with it, which is no freeze.
 	const stopWatching = () => {
 		clearInterval(watchdog);
+		workerDone();
 		const current = trace();
 		if (current && typeof current.end === "function") current.end();
 	};
@@ -434,6 +525,7 @@ export function assetRecoveryScript({ dev = false }: { dev?: boolean } = {}): st
 		lastTickAt = now;
 		const current = trace();
 		if (current && typeof current.beat === "function") current.beat(visibleMs);
+		workerBeat();
 		if (window[loaderFlag]) return watchLoader();
 		if (!stalled()) return stopWatching();
 		if (visibleMs < ${BOOT_WATCHDOG_MS}) return;
@@ -500,6 +592,27 @@ export function markLoaderMounted(): void {
 	(window as unknown as Record<string, unknown>)[LOADER_MOUNTED_FLAG] = true;
 	markBootPhase("loader-mounted");
 	clearBootRecovery();
+	ensureFreezeWatchdogWorker();
+}
+
+/** Registers Kite's service worker with the options every caller uses; idempotent in the browser. */
+export function registerKiteServiceWorker(container: ServiceWorkerContainer): Promise<ServiceWorkerRegistration> {
+	return container.register(KITE_SERVICE_WORKER_URL, { scope: "/", updateViaCache: "none" });
+}
+
+/**
+ * Registers the service worker for every signed-in tab, not only those with notifications on, so later loads have
+ * its freeze watchdog. It has no fetch handler, so it never touches the page's requests. Once installed it takes
+ * control of open tabs, so even this load's later heartbeats reach it.
+ */
+function ensureFreezeWatchdogWorker(): void {
+	try {
+		const container = navigator.serviceWorker;
+		if (!container || container.controller) return;
+		void registerKiteServiceWorker(container).catch(() => undefined);
+	} catch {
+		// No service workers here (plain http, or turned off): the startup screen's notice stays the way out.
+	}
 }
 
 /** Whether a stale-asset signal arrived that no listener has handled yet; clears it. */

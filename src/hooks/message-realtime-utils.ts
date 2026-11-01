@@ -1,3 +1,4 @@
+import { registerKiteServiceWorker } from "@/components/asset-recovery-utils";
 import { requestCopyCode } from "@/components/copy-code-host-utils";
 import {
 	buildNewMessageNotificationParts,
@@ -21,7 +22,6 @@ export const AGENT_SUGGESTION_EVENT = "kite:agent-suggestion";
 export const MODULE_NOTICE_EVENT = "kite:module-notice";
 const BROWSER_NOTIFICATIONS_ENABLED_KEY = "kite:browser-notifications-enabled";
 const NOTIFICATION_CODES_ENABLED_KEY = "kite:notification-codes-enabled";
-const NOTIFICATION_SERVICE_WORKER_URL = "/kite-sw.js";
 
 export function areBrowserNotificationsEnabled(): boolean {
 	try {
@@ -64,13 +64,11 @@ let notificationServiceWorkerPromise: Promise<ServiceWorkerRegistration | null> 
 export function ensureNotificationServiceWorker(): Promise<ServiceWorkerRegistration | null> {
 	if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return Promise.resolve(null);
 	if (!notificationServiceWorkerPromise) {
-		notificationServiceWorkerPromise = navigator.serviceWorker
-			.register(NOTIFICATION_SERVICE_WORKER_URL, { scope: "/", updateViaCache: "none" })
-			.catch(() => {
-				// The plain Notification constructor fallback still works without one.
-				notificationServiceWorkerPromise = null;
-				return null;
-			});
+		notificationServiceWorkerPromise = registerKiteServiceWorker(navigator.serviceWorker).catch(() => {
+			// The plain Notification constructor fallback still works without one.
+			notificationServiceWorkerPromise = null;
+			return null;
+		});
 	}
 	return notificationServiceWorkerPromise;
 }

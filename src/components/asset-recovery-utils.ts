@@ -474,6 +474,7 @@ export function assetRecoveryScript({ dev = false }: { dev?: boolean } = {}): st
 			if (target.closest("#" + failureId + " [data-boot-reload]")) startOver();
 			const copy = target.closest("#" + failureId + " [data-boot-copy]");
 			if (copy) copyDetails(copy);
+			if (target.closest("[data-boot-copy]")) noteDetailsCopied();
 		},
 		true,
 	);

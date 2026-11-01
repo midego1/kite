@@ -160,22 +160,17 @@ async function check(clientId, now) {
 	if (verdict === "gone") return void watches.delete(clientId);
 	if (verdict === "hidden" || verdict === "wait") return;
 	watches.delete(clientId);
-	if (verdict !== "reload") {
-		await report(watch, "freeze_not_reloaded");
-		return;
-	}
+	// Neither the report nor the navigation is waited for, so they cannot hold up the checks of other tabs: this
+	// backstop fires during a deploy that is still settling, when /api/boot-report can hang, and Chromium's navigate()
+	// settles only once a frozen tab comes free. The last heartbeat's hold (HOLD_MS) gives the report time to leave.
+	if (verdict !== "reload") return void report(watch, "freeze_not_reloaded");
 	disarmed.set(watch.tabId, now);
-	await saveState();
-	// The report must not hold the reload back: this backstop fires during a deploy that is still settling, when
-	// /api/boot-report can hang, and the heartbeats keeping this worker alive stopped with the frozen tab.
-	const reported = report(watch, "auto_reloaded_after_freeze");
-	try {
-		await client.navigate(client.url);
-	} catch {
-		// Refused (the tab left, or is no longer ours): the startup screen's notice is the way out.
-	}
-	// Give the report a moment to leave, without letting it stall the next check.
-	await Promise.race([reported, sleep(CLIENT_LOOKUP_MS)]);
+	await Promise.race([saveState(), sleep(CLIENT_LOOKUP_MS)]);
+	void report(watch, "auto_reloaded_after_freeze");
+	// A refusal (the tab left, or is no longer ours) leaves the startup screen's notice as the way out.
+	Promise.resolve()
+		.then(() => client.navigate(client.url))
+		.catch(() => undefined);
 }
 
 async function checkAll() {

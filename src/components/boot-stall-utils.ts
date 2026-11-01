@@ -23,6 +23,8 @@ const HANG_DEFAULT_BUDGET_MS = 15_000;
 const HANG_RETRY_GRACE_MS = 8_000;
 /** Visible time without a single animation frame (nothing painted) after which the start counts as stalled. */
 const FRAME_STALL_MS = 10_000;
+/** After Copy details, this much visible time in which the stall's reload or box waits for whoever is reporting it. */
+const COPY_HOLD_MS = 30_000;
 /**
  * sessionStorage key of this tab's id, sent with every heartbeat to the service worker's freeze watchdog
  * (public/kite-sw.js): a reload gives the tab a new client id, so the worker limits its reloads per tab by this one.
@@ -48,6 +50,12 @@ const KITE_SERVICE_WORKER_URL = "/kite-sw.js";
  * once, within the same budget as the others. BOOT_HANG_RELOAD_KEY marks that reload until a start completes, so a
  * start that stalls again gets "Kite couldn't load" instead, also when the screen shows its own "Reload Kite".
  *
+ * A file of ours still on its way is no stall: while something is loading and has progressed within the boot
+ * watchdog's quiet cap, none of that time counts, so a slow link right after a deploy keeps its start (and the file's
+ * step then has its whole budget). A file that goes quiet for the cap is a hung request and counts as past the budget
+ * at once. Neither the reload nor the box comes while the Details are open or just after Copy details (COPY_HOLD_MS):
+ * someone is reading them, with "Reload Kite" in reach.
+ *
  * Runs from the watchdog's tick while React runs the startup screen (`watchHang(elapsed)`, visible time only).
  */
 export function bootStallScript(): string {
@@ -60,6 +68,11 @@ export function bootStallScript(): string {
 	let noFrameMs = 0;
 	let frameSeen = true;
 	let framePending = false;
+	let copyHoldMs = 0;
+	const noteDetailsCopied = () => {
+		copyHoldMs = ${COPY_HOLD_MS};
+	};
+	const readingDetails = () => copyHoldMs > 0 || !!document.querySelector("details[open] [data-boot-details]");
 	const askFrame = () => {
 		if (framePending) return;
 		framePending = true;
@@ -88,17 +101,21 @@ export function bootStallScript(): string {
 		} catch {}
 		const phase = status && typeof status.phase === "string" ? status.phase : "loader-mounted";
 		const key = phase + "|" + (status && status.step ? status.step : "");
+		const filesLoading = loading();
+		const fileHung = filesLoading && quietMs >= quietCap;
+		copyHoldMs = Math.max(0, copyHoldMs - elapsed);
 		if (key !== hangKey) {
 			hangKey = key;
 			hangMs = 0;
 			hangRetried = false;
-		} else hangMs += elapsed;
+		} else if (!filesLoading || fileHung) hangMs += elapsed;
 		// Hidden tabs get no frames; a hidden tick counts nothing.
 		if (frameSeen || elapsed === 0) noFrameMs = 0;
 		else noFrameMs += elapsed;
 		frameSeen = false;
 		askFrame();
 		const budget = hangBudgets[phase] || ${HANG_DEFAULT_BUDGET_MS};
+		if (fileHung) hangMs = Math.max(hangMs, budget);
 		const noFrames = noFrameMs >= ${FRAME_STALL_MS};
 		// Without the trace's phase and step there is no progress to compare, only frames.
 		if (!noFrames && (!status || hangMs < budget)) return;
@@ -111,25 +128,26 @@ export function bootStallScript(): string {
 			return;
 		}
 		if (!noFrames && hangMs < budget + ${HANG_RETRY_GRACE_MS}) return;
-		if (hangStalled) return;
+		if (hangStalled || readingDetails()) return;
 		hangStalled = true;
 		const reason = noFrames ? "no-frames" : "no-progress";
-		const again = hangReloaded();
-		if (current && typeof current.hang === "function") {
-			try {
-				current.hang(reason, !again);
-			} catch {}
-		}
-		if (!again && navigator.onLine !== false && takeReload(true)) {
+		let reloading = false;
+		if (!hangReloaded() && navigator.onLine !== false && takeReload(true)) {
 			try {
 				sessionStorage.setItem(${JSON.stringify(BOOT_HANG_RELOAD_KEY)}, String(Date.now()));
 			} catch {}
-			if (hangReloaded()) {
-				console.error("[kite] the start stalled (" + reason + "); reloading once");
-				stopWatching(false);
-				location.reload();
-				return;
-			}
+			reloading = hangReloaded();
+		}
+		if (current && typeof current.hang === "function") {
+			try {
+				current.hang(reason, reloading);
+			} catch {}
+		}
+		if (reloading) {
+			console.error("[kite] the start stalled (" + reason + "); reloading once");
+			stopWatching(false);
+			location.reload();
+			return;
 		}
 		console.error("[kite] The app did not finish starting: it stalled (" + reason + ").");
 		showFailure(true);
@@ -142,8 +160,8 @@ export function bootStallScript(): string {
  * the trace's phase, step and times. The worker runs outside this thread, so when a visible tab's heartbeats stop
  * it reloads the tab, which the page itself cannot do once frozen. The heartbeats stop, with a "done" message,
  * when the watchdog stops (the startup screen has gone), and a page leaving by itself says so on pagehide. A load the
- * worker reloaded hears it back and keeps the time (AUTO_RELOADED_STORAGE_KEY), which the next heartbeats carry so
- * a worker that lost its memory still reloads a tab at most once in its window. On a first visit nothing controls
+ * worker reloaded hears it back and keeps the time (AUTO_RELOADED_STORAGE_KEY) until a start goes through; the next
+ * heartbeats carry it, so a worker that lost its memory still reloads a tab once per failed start. On a first visit nothing controls
  * the page yet, so nothing is sent.
  */
 export function bootWorkerScript(): string {

@@ -1101,3 +1101,94 @@ test("a visible start the browser paints no frame for is reloaded once without a
 	hidden.advance(30_000);
 	assert.equal(hidden.reloads, 0);
 });
+
+const SLOW_CHUNK = `${ORIGIN}/_next/static/chunks/slow.js`;
+
+test("a file of ours still on its way is no stall, and its step keeps its whole budget once it has arrived", () => {
+	const trace = steppingTrace("children-rendering", "page");
+	const page = loadPage({
+		declared: [new HTMLLinkElement("modulepreload", SLOW_CHUNK)],
+		flags: { [LOADER_MOUNTED_FLAG]: true, __kiteBoot: trace },
+	});
+	// Far past the render phase's 8 + 8 seconds, within the 20-second quiet cap.
+	page.advance(19_500);
+	assert.deepEqual(page.dispatched, []);
+	assert.equal(page.reloads, 0);
+	page.finishAsset(SLOW_CHUNK);
+	page.advance(7_500);
+	assert.deepEqual(page.dispatched, []);
+	page.advance(500);
+	assert.deepEqual(page.dispatched, ["kite:boot-stalled"]);
+	assert.equal(page.reloads, 0);
+	// Files that keep arriving can take as long as they take.
+	const moving = steppingTrace("children-rendering", "page");
+	const slow = loadPage({
+		declared: [new HTMLLinkElement("modulepreload", SLOW_CHUNK)],
+		flags: { [LOADER_MOUNTED_FLAG]: true, __kiteBoot: moving },
+	});
+	for (let i = 0; i < 10; i += 1) {
+		slow.advance(15_000);
+		slow.finishAsset(`${ORIGIN}/_next/static/chunks/other-${i}.js`);
+	}
+	assert.deepEqual(slow.dispatched, []);
+	assert.equal(slow.reloads, 0);
+});
+
+test("a file that goes quiet for the cap is a stall at once: the step tries again, then the tab reloads", () => {
+	const trace = steppingTrace("children-rendering", "page");
+	const page = loadPage({
+		declared: [new HTMLLinkElement("modulepreload", SLOW_CHUNK)],
+		flags: { [LOADER_MOUNTED_FLAG]: true, __kiteBoot: trace },
+	});
+	page.advance(19_500);
+	assert.deepEqual(page.dispatched, []);
+	page.advance(500);
+	assert.deepEqual(page.dispatched, ["kite:boot-stalled"]);
+	page.advance(7_500);
+	assert.equal(page.reloads, 0);
+	page.advance(1_000);
+	assert.equal(page.reloads, 1);
+	assert.deepEqual(trace.hangs, [["no-progress", true]]);
+});
+
+test("the stall says it reloaded only when it really does", () => {
+	const stuck = { [LOADER_MOUNTED_FLAG]: true };
+	// Offline.
+	const offlineTrace = steppingTrace();
+	const offline = loadPage({ online: false, flags: { ...stuck, __kiteBoot: offlineTrace } });
+	offline.advance(23_500);
+	assert.equal(offline.reloads, 0);
+	assert.deepEqual(offlineTrace.hangs, [["no-progress", false]]);
+	assert.equal(offline.failure()?.getAttribute("data-loader-stuck"), "");
+	// The shared reload budget is spent.
+	const storage = new Map([["kite:asset-reload", JSON.stringify({ count: 4, since: 1_000_000 })]]);
+	const spentTrace = steppingTrace();
+	const spent = loadPage({ storage, flags: { ...stuck, __kiteBoot: spentTrace } });
+	spent.advance(23_500);
+	assert.equal(spent.reloads, 0);
+	assert.deepEqual(spentTrace.hangs, [["no-progress", false]]);
+	assert.equal(storage.has("kite-boot-hang-reload"), false);
+	assert.equal(spent.failure()?.getAttribute("data-loader-stuck"), "");
+});
+
+test("the stall's reload and box wait while the Details are open and just after Copy details", () => {
+	const trace = steppingTrace();
+	const page = loadPage({ flags: { [LOADER_MOUNTED_FLAG]: true, __kiteBoot: trace } });
+	const { querySelector } = page.document;
+	let open = true;
+	page.document.querySelector = (selector) =>
+		selector === "details[open] [data-boot-details]" ? (open ? {} : null) : querySelector(selector);
+	page.advance(40_000);
+	// The stuck step was still asked to try again; only the reload waits.
+	assert.deepEqual(page.dispatched, ["kite:boot-stalled"]);
+	assert.equal(page.reloads, 0);
+	assert.deepEqual(trace.hangs, []);
+	open = false;
+	// Copy details was just used: thirty more visible seconds.
+	page.fire("click", { target: { closest: (selector) => (selector === "[data-boot-copy]" ? {} : null) } });
+	page.advance(29_500);
+	assert.equal(page.reloads, 0);
+	page.advance(1_000);
+	assert.equal(page.reloads, 1);
+	assert.deepEqual(trace.hangs, [["no-progress", true]]);
+});

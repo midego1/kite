@@ -13,7 +13,13 @@ const source = readFileSync(join(root, "public/kite-sw.js"), "utf8");
  * window clients the browser knows (`{ url, visibilityState, navigate? }`), `navigations` and `reports` record what
  * it did, and `beat(clientId, data)` posts a heartbeat from that tab.
  */
-function loadWorker({ navigate = true, cacheStore = new Map(), lookupDelayMs = 0 } = {}) {
+function loadWorker({
+	navigate = true,
+	cacheStore = new Map(),
+	lookupDelayMs = 0,
+	stuckTabs = [],
+	fetchHangs = false,
+} = {}) {
 	const clock = { now: 1_000_000 };
 	let timers = [];
 	let nextTimer = 0;
@@ -45,6 +51,7 @@ function loadWorker({ navigate = true, cacheStore = new Map(), lookupDelayMs = 0
 		},
 		fetch: async (url, init) => {
 			reports.push({ url, body: JSON.parse(init.body), credentials: init.credentials });
+			if (fetchHangs) await new Promise(() => undefined);
 			return { status: 204 };
 		},
 		self: {
@@ -61,6 +68,8 @@ function loadWorker({ navigate = true, cacheStore = new Map(), lookupDelayMs = 0
 					if (navigate)
 						client.navigate = async (url) => {
 							navigations.push({ id, url });
+							// Chromium's navigate() settles only once a frozen tab comes free.
+							if (stuckTabs.includes(id)) await new Promise(() => undefined);
 							tabs.delete(id);
 							return null;
 						};
@@ -291,6 +300,33 @@ test("after the computer slept, a tab's silence starts over instead of counting 
 	assert.deepEqual(silent.navigations, []);
 	await silent.advance(3_000);
 	assert.equal(silent.navigations.length, 1);
+});
+
+test("a navigation that never settles or a report that hangs does not hold up the checks of other tabs", async () => {
+	const worker = loadWorker({ stuckTabs: ["client-1"], fetchHangs: true });
+	worker.tabs.set("client-1", { url: "https://mail.example.com/inbox", visibilityState: "visible" });
+	await worker.beatFor("client-1", 2_000, BEAT);
+	await worker.advance(12_000);
+	assert.equal(worker.navigations.length, 1);
+	assert.equal(worker.reports.length, 1);
+	// The first tab's navigation is still open when another tab freezes.
+	worker.tabs.delete("client-1");
+	worker.tabs.set("client-2", { url: "https://mail.example.com/drive", visibilityState: "visible" });
+	await worker.beatFor("client-2", 2_000, { ...BEAT, tabId: "tab-2" });
+	await worker.advance(12_000);
+	assert.deepEqual(
+		worker.navigations.map((entry) => entry.id),
+		["client-1", "client-2"],
+	);
+	assert.equal(worker.reports.length, 2);
+	// Nor does a report that hangs when a tab is only reported.
+	worker.tabs.set("client-3", { url: "https://mail.example.com/inbox", visibilityState: "visible" });
+	await worker.beatFor("client-3", 2_000, BEAT);
+	await worker.advance(12_000);
+	worker.tabs.set("client-4", { url: "https://mail.example.com/mail", visibilityState: "visible" });
+	await worker.beatFor("client-4", 2_000, { ...BEAT, tabId: "tab-4" });
+	await worker.advance(12_000);
+	assert.equal(worker.navigations.at(-1).id, "client-4");
 });
 
 test("a hidden tab, a finished start, a page leaving and a tab without an id are never reloaded", async () => {

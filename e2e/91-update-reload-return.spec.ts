@@ -550,7 +550,7 @@ test("a startup screen that keeps being mounted again gets Kite couldn't load, e
 	test.setTimeout(120_000);
 	await hangSessionCheck(page);
 	// Once React runs the screen, an element standing in for a remounting screen is replaced every 150 ms ahead of
-	// React's own. It carries React's way out, so only the remount guard can call the screen stuck.
+	// React's own. It carries React's way out, which neither the remount guard nor the stall detection accepts.
 	await page.addInitScript(
 		(overlay) => {
 			const swap = () => {

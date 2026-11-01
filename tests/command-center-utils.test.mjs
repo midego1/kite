@@ -101,6 +101,15 @@ test("status chips: unread always, Screener while it screens or holds mail, For 
 		["12 unread in Inbox", "3 in Screener", "2 For you"],
 	);
 	assert.equal(all[2].href, "/for-you");
+	// A tile draws the number large and what it counts under it; together they read as the label.
+	assert.deepEqual(
+		all.map((chip) => [chip.value, chip.caption]),
+		[
+			[12, "unread in Inbox"],
+			[3, "in Screener"],
+			[2, "For you"],
+		],
+	);
 	const starred = statusChips({ ...base, unread: 0, folderTitle: "Starred", folderHref: "/starred" })[0];
 	assert.equal(starred.label, "0 unread in Starred");
 	assert.equal(starred.href, "/starred");

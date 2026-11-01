@@ -1,22 +1,25 @@
 "use client";
 
 import Link from "next/link";
+import { Wallet } from "lucide-react";
 import {
 	COMMAND_CENTER_DETAIL_CLASS,
 	COMMAND_CENTER_LINK_CLASS,
 	COMMAND_CENTER_LINK_ROW_CLASS,
-	COMMAND_CENTER_ROW_CLASS,
+	COMMAND_CENTER_LIST_CLASS,
 	CommandCenterCard,
+	CommandCenterEmpty,
 } from "@/components/command-center/command-center-card";
 import { useCommandCenterCardQuery } from "@/components/command-center/use-card-query";
 import type { SubscriptionList } from "@/components/finance/subscriptions-types";
 import { viewerLocale, viewerToday } from "@/components/finance/use-subscriptions";
 import type { ReadingPaneSlotContext } from "@/components/modules/client-registry-types";
+import { WARNING_TEXT_CLASS } from "@/components/notice-styles";
 import { authFetch } from "@/lib/auth/client";
 import { renewalLines } from "./renewals-card-utils";
 
-/** A failed payment's date in the warning text colour the admin tiles use (stat-tile.tsx). */
-const URGENT_CLASS = "font-medium text-[#8a4b0a] dark:text-[#d4a35a]";
+/** A failed payment's date in the warning text colour the notices use. */
+const URGENT_CLASS = `font-medium ${WARNING_TEXT_CLASS}`;
 
 /**
  * The command center's Money Watch card: the viewer's own subscriptions that renew, end a trial or failed a
@@ -37,13 +40,16 @@ export function RenewalsCard(_context: ReadingPaneSlotContext) {
 	return (
 		<CommandCenterCard
 			title="Money Watch"
+			icon={Wallet}
 			action={{ label: "Subscriptions", href: "/finance" }}
 			testId="command-center-renewals"
 		>
 			{lines.length === 0 ? (
-				<p className={COMMAND_CENTER_ROW_CLASS}>Nothing renews this week.</p>
+				<CommandCenterEmpty icon={Wallet} action={{ label: "Open Money Watch", href: "/finance" }}>
+					Nothing renews this week.
+				</CommandCenterEmpty>
 			) : (
-				<ul>
+				<ul className={COMMAND_CENTER_LIST_CLASS}>
 					{lines.map((line) => (
 						<li key={line.id}>
 							<Link
@@ -62,7 +68,7 @@ export function RenewalsCard(_context: ReadingPaneSlotContext) {
 				</ul>
 			)}
 			{more > 0 && (
-				<Link href="/finance" className={`mt-1 block w-fit px-3 ${COMMAND_CENTER_LINK_CLASS}`}>
+				<Link href="/finance" className={`mt-2 block w-fit px-2 ${COMMAND_CENTER_LINK_CLASS}`}>
 					{more} more this week
 				</Link>
 			)}

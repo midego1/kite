@@ -19,7 +19,7 @@ export function MigrationsNoticeCard() {
 	if (!data || !shouldShowMigrationsBanner(data)) {
 		// Everything applied: the result of the run stays a few seconds, then leaves (migrations-applied-notice.tsx).
 		return summary ? (
-			<AppliedNotice summary={summary} onDismiss={dismissMigrationSummary} className="w-full max-w-md text-left" />
+			<AppliedNotice summary={summary} onDismiss={dismissMigrationSummary} className="w-full text-left" />
 		) : null;
 	}
 	const content = migrationsBannerContent(data.pending);
@@ -27,7 +27,7 @@ export function MigrationsNoticeCard() {
 	return (
 		<section
 			aria-label="Database updates"
-			className={`w-full max-w-md rounded-xl border p-5 text-left text-sm ${WARNING_TONE_CLASS}`}
+			className={`w-full rounded-xl border p-5 text-left text-sm ${WARNING_TONE_CLASS}`}
 		>
 			<div className="flex items-start gap-3">
 				<Database className={`mt-0.5 h-5 w-5 shrink-0 ${applying ? "animate-pulse" : ""}`} aria-hidden="true" />

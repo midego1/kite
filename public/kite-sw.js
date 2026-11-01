@@ -166,12 +166,16 @@ async function check(clientId, now) {
 	}
 	disarmed.set(watch.tabId, now);
 	await saveState();
-	await report(watch, "auto_reloaded_after_freeze");
+	// The report must not hold the reload back: this backstop fires during a deploy that is still settling, when
+	// /api/boot-report can hang, and the heartbeats keeping this worker alive stopped with the frozen tab.
+	const reported = report(watch, "auto_reloaded_after_freeze");
 	try {
 		await client.navigate(client.url);
 	} catch {
 		// Refused (the tab left, or is no longer ours): the startup screen's notice is the way out.
 	}
+	// Give the report a moment to leave, without letting it stall the next check.
+	await Promise.race([reported, sleep(CLIENT_LOOKUP_MS)]);
 }
 
 async function checkAll() {

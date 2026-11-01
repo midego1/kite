@@ -45,7 +45,7 @@ interface CommandPaletteProps {
 	commands: CommandItem[];
 }
 
-export const PALETTE_PLACEHOLDER = "Search mail, contacts, pages…";
+const PALETTE_PLACEHOLDER = "Search mail, contacts, pages…";
 
 type Navigate = (href: string) => void;
 

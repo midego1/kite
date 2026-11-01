@@ -5,6 +5,7 @@ import toast from "react-hot-toast";
 import { authFetch } from "@/lib/auth/client";
 import { useCompose } from "./compose-context";
 import { UndoSendBar } from "./undo-send-bar";
+import { UNDO_SAFETY_MARGIN_MS } from "./undo-send-utils";
 import type { PendingUndoSend } from "./undo-send-types";
 
 /*
@@ -42,6 +43,11 @@ export function UndoSendHost() {
 
 	async function undo(target: PendingUndoSend) {
 		setPending(null);
+		// A failed undo leaves the message held until its window ends, so the bar comes back for another try —
+		// unless a newer send took the bar over, or the window is too close to its end to be worth showing.
+		const restoreBar = () => {
+			if (pending === null && target.until - UNDO_SAFETY_MARGIN_MS > Date.now()) setPending(target);
+		};
 		try {
 			const res = await authFetch("/api/send/undo", {
 				method: "POST",
@@ -50,12 +56,14 @@ export function UndoSendHost() {
 			});
 			const data = (await res.json()) as { draftId?: string; error?: string };
 			if (!res.ok || !data.draftId) {
+				restoreBar();
 				toast.error(data.error ?? "Could not undo send");
 				return;
 			}
 			openDraftComposer(data.draftId);
 			toast.success("Sending undone");
 		} catch {
+			restoreBar();
 			toast.error("Could not undo send");
 		}
 		window.dispatchEvent(new Event("kite:messages-changed"));

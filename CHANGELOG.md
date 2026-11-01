@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.11.01.2] - 2026-11-01
+
+### Changed
+
+- The command center in the empty reading pane is laid out as cards again, in the app's own tokens: the counts that matter (unread, Screener, For you) are tiles with a large number that open their page; **Accounts**, **Quick actions**, **Needs attention**, Calendar's **Today** and Money Watch's renewals are cards on the panel fill with an icon, a title and a link, side by side when the pane is wide and one under the other when it is narrow. Accounts and the health rows show their state as a small pill, and a day or a week with nothing in it says so with a way into the Calendar or Money Watch. No migration.
+
 ## [2026.11.01.1] - 2026-11-01
 
 ### Changed

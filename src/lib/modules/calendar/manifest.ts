@@ -38,7 +38,7 @@ export const calendarManifest: ModuleManifest = {
 		{ scope: "calendar:write", label: "Change calendar events", grants: ["calendar.read", "calendar.write"] },
 	],
 	jmapCapabilities: [],
-	searchSections: [{ id: "events", label: "Events" }],
+	searchSections: calendarClientData.searchSections ?? [],
 	messageStatuses: [],
 	queueMessageTypes: [],
 	cronTasks: [],

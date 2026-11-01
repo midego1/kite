@@ -8,9 +8,11 @@ import {
 	Copy,
 	Download,
 	FileText,
+	HardDrive,
 	HelpCircle,
 	Inbox,
 	Layers,
+	Link2,
 	MailPlus,
 	Send,
 	Settings,
@@ -18,6 +20,7 @@ import {
 	Sparkles,
 	Star,
 	Trash2,
+	WalletCards,
 	type LucideIcon,
 } from "lucide-react";
 
@@ -48,4 +51,8 @@ export const COMMAND_ICONS: Record<string, LucideIcon> = {
 	"booking.open_event_type": CalendarClock,
 	"booking.copy_link": Copy,
 	"import.open": Download,
+	"mail.connected-accounts": Link2,
+	"finance.open": WalletCards,
+	"finance.add": WalletCards,
+	"drive.open": HardDrive,
 };

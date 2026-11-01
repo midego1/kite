@@ -36,7 +36,7 @@ export function assembleSearchSections(
 		if (!manifest || !label) continue;
 		const items = safeItems(manifest, result.items);
 		if (items.length === 0) continue;
-		const section = sections.get(result.section) ?? { id: result.section, label, items: [] };
+		const section = sections.get(result.section) ?? { id: result.section, moduleId: manifest.id, label, items: [] };
 		section.items.push(...items);
 		sections.set(result.section, section);
 	}

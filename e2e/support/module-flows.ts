@@ -17,7 +17,7 @@ export async function openAccountMenu(page: Page) {
 	return menu;
 }
 
-export const PALETTE_PLACEHOLDER = "Type a command or search actions...";
+export const PALETTE_PLACEHOLDER = "Search mail, contacts, pages…";
 
 /** Opens the palette with the keyboard and returns the search box. */
 export async function openPalette(page: Page) {
@@ -29,13 +29,17 @@ export async function openPalette(page: Page) {
 	return search;
 }
 
-/** Checks that the palette lists these command titles for the query (`listed`) or reports no match, then closes it. */
+/**
+ * Checks that the palette lists these command titles for the query (`listed`) or none of them, then closes it. Other
+ * rows (mail, settings pages) may still match the query, so an absent command is checked by its title alone.
+ */
 export async function expectPaletteCommands(page: Page, query: string, titles: string[], listed: boolean) {
 	const search = await openPalette(page);
 	await search.fill(query);
 	if (listed) for (const title of titles) await expect(page.getByText(title, { exact: true }), title).toBeVisible();
 	else {
-		await expect(page.getByText(`No matching commands found for “${query}”`)).toBeVisible();
+		// The commands are listed at once; waiting for the search to settle makes sure none appears late.
+		await expect(page.getByRole("listbox", { name: "Results" })).not.toHaveAttribute("aria-busy", "true");
 		for (const title of titles) await expect(page.getByText(title, { exact: true }), title).toHaveCount(0);
 	}
 	await page.keyboard.press("Escape");

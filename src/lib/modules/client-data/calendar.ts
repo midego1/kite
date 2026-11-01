@@ -4,6 +4,7 @@ import type { ClientModuleData } from "../module-types";
 export const calendarClientData: ClientModuleData = {
 	id: "calendar",
 	name: "Calendar",
+	searchSections: [{ id: "events", label: "Events" }],
 	suggestionKinds: ["calendar_invite"],
 	suggestionKindMeta: {
 		calendar_invite: {

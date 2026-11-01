@@ -992,7 +992,7 @@ test("the palette lists core and module commands and each navigation command nav
 		"Import mail",
 	];
 	for (const title of titles) await expect(page.getByText(title, { exact: true }), title).toBeVisible();
-	await expect(page.getByText("c", { exact: true })).toBeVisible();
+	await expect(page.getByTestId("command-palette").getByText("C", { exact: true })).toBeVisible();
 	await page.keyboard.press("Escape");
 
 	const routes: [string, RegExp][] = [
@@ -1037,7 +1037,7 @@ test("the client commands run: New event opens the dialog on the calendar", asyn
 async function arrowToPaletteRow(page: Page, search: Locator, title: string) {
 	const row = page.getByRole("option", { name: new RegExp(`^${title}`) });
 	await expect(row).toBeVisible();
-	for (let step = 0; step < 60; step++) {
+	for (let step = 0; step < 150; step++) {
 		if ((await row.getAttribute("aria-selected")) === "true") return;
 		await search.press("ArrowDown");
 	}
@@ -1073,12 +1073,12 @@ test("ArrowUp from the first row wraps to the last row and Enter runs that comma
 	await page.goto("/inbox");
 	await expect(page.getByRole("button", { name: "Compose" })).toBeVisible();
 	const search = await openPalette(page);
-	const rows = page.getByRole("listbox", { name: "Commands" }).getByRole("option");
+	const rows = page.getByRole("listbox", { name: "Results" }).getByRole("option");
 	await expect(rows.first()).toHaveAttribute("aria-selected", "true");
 	await search.press("ArrowUp");
 	const last = rows.last();
 	await expect(last).toHaveAttribute("aria-selected", "true");
-	const title = (await last.locator("span").first().innerText()).trim();
+	const title = (await last.locator("[data-palette-title]").innerText()).trim();
 	expect(title.length).toBeGreaterThan(0);
 	await search.press("Enter");
 	await expect(page.getByPlaceholder(PALETTE_PLACEHOLDER)).toHaveCount(0);
@@ -1102,9 +1102,14 @@ test("Calendar off removes the calendar and booking commands from every palette 
 		for (const path of ["/inbox", "/settings/account"]) {
 			await page.goto(path);
 			const search = await openPalette(page);
-			for (const query of ["calendar", "booking"]) {
+			for (const [query, title] of [
+				["calendar", "Open Calendar"],
+				["booking", "Open Booking"],
+			]) {
 				await search.fill(query);
-				await expect(page.getByText(`No matching commands found for “${query}”`), `${path} ${query}`).toBeVisible();
+				// Settings pages and mail may still match the word; the module's commands must not.
+				await expect(page.getByRole("listbox", { name: "Results" })).not.toHaveAttribute("aria-busy", "true");
+				await expect(page.getByText(title, { exact: true }), `${path} ${query}`).toHaveCount(0);
 			}
 			await search.fill("go to");
 			await expect(page.getByText("Go to Inbox", { exact: true })).toBeVisible();
@@ -1135,7 +1140,8 @@ test("Booking off removes only the booking commands", async ({ page }) => {
 		await page.goto("/inbox");
 		const search = await openPalette(page);
 		await search.fill("booking");
-		await expect(page.getByText("No matching commands found")).toBeVisible();
+		await expect(page.getByRole("listbox", { name: "Results" })).not.toHaveAttribute("aria-busy", "true");
+		await expect(page.getByText("Open Booking", { exact: true })).toHaveCount(0);
 		await search.fill("calendar");
 		await expect(page.getByText("Open Calendar", { exact: true })).toBeVisible();
 	} finally {
@@ -1151,7 +1157,8 @@ test("Import off removes the import command, Export stays and opens its page", a
 		await page.goto("/inbox");
 		const search = await openPalette(page);
 		await search.fill("import");
-		await expect(page.getByText("No matching commands found")).toBeVisible();
+		await expect(page.getByRole("listbox", { name: "Results" })).not.toHaveAttribute("aria-busy", "true");
+		await expect(page.getByText("Import mail", { exact: true })).toHaveCount(0);
 		await search.fill("export");
 		await expect(page.getByText("Export mail", { exact: true })).toBeVisible();
 		await search.press("Enter");

@@ -14,6 +14,7 @@ export const SUBSCRIPTION_REASONS = {
 export const financeClientData: ClientModuleData = {
 	id: "finance",
 	name: "Money Watch",
+	searchSections: [{ id: "subscriptions", label: "Subscriptions" }],
 	suggestionKinds: ["subscription"],
 	suggestionKindMeta: {
 		subscription: {

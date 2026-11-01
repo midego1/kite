@@ -117,7 +117,8 @@ for (const style of ["kite", "lavender", "classic"] as const) {
 			expect(await contrastBetween(center.getByText(/^Select a message to read/))).toBeGreaterThanOrEqual(4.5);
 			for (const detail of await card.locator("p > span.shrink-0.text-xs").all())
 				expect(await contrastBetween(detail)).toBeGreaterThanOrEqual(4.5);
-			// No surfaces of its own: the sections sit on the pane like the menu sits in the sidebar.
+			// No surfaces of its own: the sections sit on the pane like the menu sits in the sidebar. Only the quick-action
+			// tiles have the sidebar button's border.
 			const surfaces = await center.evaluate(
 				(root) =>
 					[...root.querySelectorAll("section")].filter((section) => {
@@ -126,6 +127,7 @@ for (const style of ["kite", "lavender", "classic"] as const) {
 					}).length,
 			);
 			expect(surfaces).toBe(0);
+			expect(await tile.evaluate((el) => getComputedStyle(el).borderTopWidth)).toBe("1px");
 		});
 	}
 }

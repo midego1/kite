@@ -19,6 +19,7 @@ import { filterCommands } from "./command-palette-utils";
 import { PaletteFooter, PaletteResults, optionId } from "./palette-results";
 import { PaletteSidebar, categoryTabId } from "./palette-sidebar";
 import type { PaletteCategoryId, PaletteItem, PaletteRemoteResults } from "./palette-types";
+import type { PaletteKeyTarget } from "./palette-utils";
 import {
 	categoryForDigit,
 	clampActive,
@@ -26,12 +27,12 @@ import {
 	commandItems,
 	contactItem,
 	countItems,
-	digitOf,
 	groupItems,
-	isTypingKey,
+	isComposingKey,
 	listCategories,
 	messageItem,
 	moveActive,
+	planPaletteKey,
 	sectionItems,
 	settingsItems,
 } from "./palette-utils";
@@ -153,48 +154,53 @@ function CommandPaletteDialog({ onClose, commands }: { onClose: () => void; comm
 		setActive(0);
 	};
 
-	// One handler for the whole dialog: the arrow keys and Enter work from the search box, the sidebar and
-	// the list alike; a digit (with Alt anywhere, bare outside the box) picks a category; a character typed
-	// elsewhere lands in the box. Handled keys stop here so the page's own shortcuts never see them.
+	// One handler for the whole dialog; `planPaletteKey` says what a key does where (the sidebar handles its
+	// own arrows first). Handled keys stop here so the page's own shortcuts never see them.
 	const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
 		if (event.defaultPrevented) return;
 		const input = inputRef.current;
-		const inInput = event.target === input;
-		if (pending) {
-			if (event.key === "Enter") {
+		const target = event.target instanceof HTMLElement ? event.target : null;
+		const role = target?.getAttribute("role");
+		const where: PaletteKeyTarget =
+			target === input ? "input" : role === "listbox" ? "list" : role === "tab" ? "tab" : "other";
+		const plan = planPaletteKey(
+			{ ...event, isComposing: isComposingKey(event.nativeEvent) },
+			{ target: where, pending: pending !== null, queryEmpty: query === "" },
+		);
+		switch (plan.action) {
+			case "submit":
 				event.preventDefault();
 				void submitParams();
-			}
-			return;
-		}
-		const digit = digitOf(event);
-		if (digit !== null && (event.altKey || !inInput)) {
-			const next = categoryForDigit(categories, digit);
-			if (next) {
+				return;
+			case "category": {
+				const next = categoryForDigit(categories, plan.digit);
+				if (!next) return;
 				event.preventDefault();
 				event.stopPropagation();
 				chooseCategory(next);
 				// From the sidebar the focus follows the chosen tab, as the arrow keys would have moved it.
-				if (event.target instanceof HTMLElement && event.target.getAttribute("role") === "tab")
-					document.getElementById(categoryTabId(listboxId, next))?.focus();
+				if (where === "tab") document.getElementById(categoryTabId(listboxId, next))?.focus();
 				return;
 			}
-		}
-		if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
-			event.preventDefault();
-			event.stopPropagation();
-			setActive(moveActive(activeIndex, flat.length, event.key));
-			return;
-		}
-		if (event.key === "Enter") {
-			event.preventDefault();
-			event.stopPropagation();
-			if (activeItem) select(activeItem);
-			return;
-		}
-		if (!inInput && isTypingKey(event) && input) {
-			event.stopPropagation();
-			input.focus();
+			case "move":
+				event.preventDefault();
+				event.stopPropagation();
+				setActive(moveActive(activeIndex, flat.length, plan.key));
+				return;
+			case "open":
+				event.preventDefault();
+				event.stopPropagation();
+				if (activeItem) select(activeItem);
+				return;
+			case "type":
+				event.stopPropagation();
+				input?.focus();
+				return;
+			case "shield":
+				event.stopPropagation();
+				return;
+			default:
+				return;
 		}
 	};
 

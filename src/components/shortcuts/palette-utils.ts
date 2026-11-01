@@ -136,6 +136,14 @@ export function messageHref(status: string, id: string): string {
 	return `/${MESSAGE_FOLDERS[status] ?? "inbox"}/${encodeURIComponent(id)}`;
 }
 
+/** Folders a row names in its subtitle, so a result from the trash is not mistaken for inbox mail. */
+const FOLDER_LABELS: Record<string, string> = { trash: "Trash", spam: "Spam", archived: "Archived", draft: "Drafts" };
+
+/** @public Tested on its own. */
+export function messageFolderLabel(status: string): string | null {
+	return FOLDER_LABELS[status] ?? null;
+}
+
 /**
  * The other party of a message: its sender, or "To <recipients>" for mail the user sent.
  * @public Tested on its own.
@@ -155,7 +163,9 @@ export function messageItem(
 		category: "messages",
 		type: "MESSAGE",
 		title: message.subject?.trim() || "(No subject)",
-		subtitle: `${messageParty(message)} · ${formatDate(message.createdAt)}`,
+		subtitle: [messageFolderLabel(message.status), messageParty(message), formatDate(message.createdAt)]
+			.filter(Boolean)
+			.join(" · "),
 		icon: Mail,
 		perform: () => navigate(messageHref(message.status, message.id)),
 	};
@@ -168,7 +178,11 @@ export function contactItem(contact: ContactSearchHit, open: (email: string) => 
 		category: "contacts",
 		type: "CONTACT",
 		title: name || contact.email,
-		subtitle: [name ? contact.email : "Search mail from this address", contact.blocked ? "Blocked" : null]
+		subtitle: [
+			name ? contact.email : "Search mail from this address",
+			contact.heldByScreener ? "In Screener" : null,
+			contact.blocked ? "Blocked" : null,
+		]
 			.filter(Boolean)
 			.join(" · "),
 		icon: Users,
@@ -250,7 +264,10 @@ export function moveActive(current: number, count: number, key: string): number 
 	}
 }
 
-/** 1 to 9 for a digit key (by code, so Alt on a Mac keyboard still reads as the digit), else null. */
+/**
+ * 1 to 9 for a digit key (by code, so Alt on a Mac keyboard still reads as the digit), else null.
+ * @public Tested on its own.
+ */
 export function digitOf(event: Pick<PaletteKeyEvent, "code" | "ctrlKey" | "metaKey">): number | null {
 	const match = /^(?:Digit|Numpad)([1-9])$/.exec(event.code);
 	if (!match || event.ctrlKey || event.metaKey) return null;
@@ -292,7 +309,67 @@ export function shortcutKeys(shortcut: string): string[] {
 		.map((key) => KEY_LABELS[key.toLowerCase()] ?? (key.length === 1 ? key.toUpperCase() : key));
 }
 
-/** A key that would type a character, so it belongs in the search box wherever focus is. */
+/** A key pressed while an input method composes (CJK input): Enter then commits the text, not the row. */
+export function isComposingKey(event: { isComposing?: boolean; keyCode?: number }): boolean {
+	return event.isComposing === true || event.keyCode === 229;
+}
+
+/** Where a key was pressed inside the palette. */
+export type PaletteKeyTarget = "input" | "list" | "tab" | "other";
+
+export type PaletteKeyPlan =
+	| { action: "none" }
+	| { action: "submit" }
+	| { action: "category"; digit: number }
+	| { action: "move"; key: string }
+	| { action: "open" }
+	| { action: "type" }
+	| { action: "shield" };
+
+/**
+ * What a key does in the palette. The arrows move the highlight from the box, the sidebar and the list;
+ * Home and End only when they would not move a caret (the list, an empty box, or with Alt). Enter opens
+ * the highlighted row from the box or the list only, so the close button and the tabs keep their own
+ * Enter and Space, and never while an input method is composing. A digit picks a category (with Alt
+ * anywhere, bare outside the box). A character typed in the list belongs in the box; on a tab or a
+ * button it does nothing but must not reach the mail keys underneath (Space still presses the control).
+ */
+export function planPaletteKey(
+	event: PaletteKeyEvent & { isComposing: boolean },
+	state: { target: PaletteKeyTarget; pending: boolean; queryEmpty: boolean },
+): PaletteKeyPlan {
+	if (state.pending) return event.key === "Enter" && !event.isComposing ? { action: "submit" } : { action: "none" };
+	const digit = digitOf(event);
+	if (digit !== null && (event.altKey || state.target !== "input")) return { action: "category", digit };
+	return highlightKeyPlan(event, state) ?? typedKeyPlan(event, state.target);
+}
+
+/** The arrows always move the highlight; Home and End only when they would not move a caret. */
+function highlightKeyPlan(
+	event: PaletteKeyEvent,
+	state: { target: PaletteKeyTarget; queryEmpty: boolean },
+): PaletteKeyPlan | null {
+	if (event.key === "ArrowDown" || event.key === "ArrowUp") return { action: "move", key: event.key };
+	if (event.key !== "Home" && event.key !== "End") return null;
+	const free = state.target === "list" || (state.target === "input" && (state.queryEmpty || event.altKey));
+	return free ? { action: "move", key: event.key } : { action: "none" };
+}
+
+/** Enter opens from the box or the list only; a character typed in the list belongs in the box. */
+function typedKeyPlan(event: PaletteKeyEvent & { isComposing: boolean }, target: PaletteKeyTarget): PaletteKeyPlan {
+	if (event.key === "Enter") {
+		const fromRows = target === "input" || target === "list";
+		return fromRows && !event.isComposing ? { action: "open" } : { action: "none" };
+	}
+	if (target === "input" || !isTypingKey(event)) return { action: "none" };
+	if (target === "list") return { action: "type" };
+	return event.key === " " ? { action: "none" } : { action: "shield" };
+}
+
+/**
+ * A key that would type a character, so it belongs in the search box wherever focus is.
+ * @public Tested on its own.
+ */
 export function isTypingKey(event: Pick<PaletteKeyEvent, "key" | "ctrlKey" | "metaKey" | "altKey">): boolean {
 	return event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey;
 }

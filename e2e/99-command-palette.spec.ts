@@ -1,7 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
 import { STORAGE_STATE, SUPPORT_ADDRESS } from "./support/constants";
-import { apiContext, deliverInbound, uniqueToken } from "./support/helpers";
+import { apiContext, deliverInbound, postInbound, uniqueToken, waitForMessage } from "./support/helpers";
 import { PALETTE_PLACEHOLDER, openPalette } from "./support/module-flows";
+import { setScreener } from "./support/screener";
 
 // The Cmd+K palette: a floating search box over a panel with a category column and grouped results.
 
@@ -11,10 +12,7 @@ const tab = (page: Page, name: string) => page.getByRole("tab", { name: new RegE
 
 /** The count chip of a category tab, as a number. */
 async function countOf(page: Page, name: string): Promise<number> {
-	const label = await tab(page, name)
-		.locator("[aria-label$='results'], [aria-label$='result']")
-		.getAttribute("aria-label");
-	return Number(label?.split(" ")[0]);
+	return Number(await tab(page, name).locator("[data-palette-count]").getAttribute("data-palette-count"));
 }
 
 async function openInbox(page: Page) {
@@ -36,6 +34,8 @@ test("Cmd+K opens the search box over a panel with categories, counts, grouped r
 	for (const name of ["Pages", "Messages", "Contacts", "Actions", "Settings", "Calendar", "Drive"])
 		await expect(tab(page, name), name).toBeVisible();
 	await expect(tab(page, "All")).toHaveAttribute("aria-selected", "true");
+	// The count is read out as text, so a screen reader hears "Pages, 13 results".
+	await expect(tab(page, "Pages")).toContainText(/\d+ results?/);
 
 	// Every category's chip adds up to the All chip, and the group headings show in the sidebar's order.
 	const names = (await tabs.allInnerTexts()).map((text) => text.split("\n")[0].trim());
@@ -228,6 +228,108 @@ test("the clear button empties the search and the close button closes; nothing m
 	await expect(results(page).getByRole("status")).toHaveText("Type to search your mail");
 	await page.getByRole("button", { name: "Close" }).click();
 	await expect(palette(page)).toHaveCount(0);
+});
+
+test("Enter and Space on the close button, the clear button and a tab press that control, not the highlighted row", async ({
+	page,
+}) => {
+	await openInbox(page);
+	let search = await openPalette(page);
+	await search.press("Tab");
+	await expect(page.getByRole("button", { name: "Close" })).toBeFocused();
+	await page.keyboard.press("Enter");
+	await expect(palette(page)).toHaveCount(0);
+	await expect(page).toHaveURL(/\/inbox$/);
+
+	search = await openPalette(page);
+	await search.fill("starred");
+	await search.press("Tab");
+	await expect(page.getByRole("button", { name: "Clear search" })).toBeFocused();
+	await page.keyboard.press("Enter");
+	await expect(search).toHaveValue("");
+	await expect(palette(page)).toBeVisible();
+	await expect(page).toHaveURL(/\/inbox$/);
+
+	// Enter and Space on a tab choose that category; a letter there is harmless and the mail keys stay quiet.
+	await tab(page, "Actions").click();
+	await tab(page, "Pages").focus();
+	await page.keyboard.press("Enter");
+	await expect(tab(page, "Pages")).toHaveAttribute("aria-selected", "true");
+	await expect(palette(page)).toBeVisible();
+	await tab(page, "Settings").focus();
+	await page.keyboard.press("Space");
+	await expect(tab(page, "Settings")).toHaveAttribute("aria-selected", "true");
+	await page.keyboard.press("e");
+	await expect(palette(page)).toBeVisible();
+	await expect(search).toHaveValue("");
+	await page.keyboard.press("Escape");
+});
+
+test("Enter while an input method is composing does not run the row, and Home/End move the caret over text", async ({
+	page,
+}) => {
+	await openInbox(page);
+	const search = await openPalette(page);
+	await search.fill("starred");
+	await expect(results(page).getByRole("option").first()).toContainText("Go to Starred");
+	await search.dispatchEvent("keydown", { key: "Enter", code: "Enter", isComposing: true, bubbles: true });
+	await expect(palette(page)).toBeVisible();
+	await expect(page).toHaveURL(/\/inbox$/);
+
+	// With text in the box Home and End are the caret's; Alt+End still jumps the highlight.
+	await search.fill("go to");
+	const options = results(page).getByRole("option");
+	await search.press("Home");
+	expect(await search.evaluate((input: HTMLInputElement) => input.selectionStart)).toBe(0);
+	await expect(options.first()).toHaveAttribute("aria-selected", "true");
+	await search.press("End");
+	expect(await search.evaluate((input: HTMLInputElement) => input.selectionStart)).toBe(5);
+	await expect(options.first()).toHaveAttribute("aria-selected", "true");
+	await search.press("Alt+End");
+	await expect(options.last()).toHaveAttribute("aria-selected", "true");
+	await page.keyboard.press("Escape");
+});
+
+test("a trashed message names its folder, and a sender the Screener holds is marked in Contacts", async ({ page }) => {
+	const token = uniqueToken("folder");
+	const api = await apiContext(STORAGE_STATE);
+	let mailboxId = "";
+	try {
+		const trashed = await deliverInbound(api, {
+			from: `"Olu Bello" <olu.${token}@acme.test>`,
+			to: SUPPORT_ADDRESS,
+			subject: `Old thread ${token}`,
+			text: "To be trashed.",
+		});
+		const moved = await api.post("/api/messages/bulk", { data: { messageIds: [trashed.id], action: "trash" } });
+		expect(moved.ok(), await moved.text()).toBe(true);
+		const { mailboxes } = (await (await api.get("/api/mailboxes")).json()) as {
+			mailboxes: { id: string; localPart: string; hostname: string }[];
+		};
+		mailboxId = mailboxes.find((item) => `${item.localPart}@${item.hostname}` === SUPPORT_ADDRESS)!.id;
+		await setScreener(api, mailboxId, { enabled: true, mode: "screener" });
+		await postInbound(api, {
+			from: `"Stranger ${token}" <stranger.${token}@outside.test>`,
+			to: SUPPORT_ADDRESS,
+			subject: `Hello stranger ${token}`,
+			text: "Let me in.",
+		});
+		// Held mail is not in the default list; it is found only by asking for the screening status.
+		await waitForMessage(api, `Hello stranger ${token}`, { status: "screening" });
+
+		await openInbox(page);
+		const search = await openPalette(page);
+		await search.fill(token);
+		const row = results(page).getByRole("option", { name: new RegExp(`^Old thread ${token}`) });
+		await expect(row).toContainText(/Trash · Olu Bello · \d{2}:\d{2}/);
+		const held = results(page).getByRole("option", { name: new RegExp(`^Stranger ${token}`) });
+		await expect(held).toContainText("In Screener");
+		await expect(results(page).getByRole("option", { name: /^Olu Bello/ })).not.toContainText("In Screener");
+		await page.keyboard.press("Escape");
+	} finally {
+		if (mailboxId) await setScreener(api, mailboxId, { enabled: false });
+		await api.dispose();
+	}
 });
 
 test("on a phone the palette fills the screen with the categories as a chip row", async ({ browser }) => {

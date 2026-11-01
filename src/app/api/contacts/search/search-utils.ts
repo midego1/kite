@@ -35,9 +35,17 @@ export type ContactSearchHit = {
 	displayName: string | null;
 	hasAvatar: boolean;
 	blocked: boolean;
+	/** The Screener still holds mail from this address, so it is not a correspondent yet. */
+	heldByScreener: boolean;
 };
 
-/** The wire form of a contact row: the avatar as a flag, never its storage key. */
-export function toContactSearchHit(row: ContactSearchRow): ContactSearchHit {
-	return { email: row.email, displayName: row.displayName, hasAvatar: !!row.avatarKey, blocked: row.blocked };
+/** The wire form of a contact row: the avatar as a flag, never its storage key; `held` lists the addresses the Screener holds. */
+export function toContactSearchHit(row: ContactSearchRow, held: ReadonlySet<string> = new Set()): ContactSearchHit {
+	return {
+		email: row.email,
+		displayName: row.displayName,
+		hasAvatar: !!row.avatarKey,
+		blocked: row.blocked,
+		heldByScreener: held.has(row.email),
+	};
 }

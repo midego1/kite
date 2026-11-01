@@ -16,12 +16,15 @@ const {
 	digitOf,
 	emptyMessage,
 	groupItems,
+	isComposingKey,
 	isTypingKey,
 	listCategories,
+	messageFolderLabel,
 	messageHref,
 	messageItem,
 	messageParty,
 	moveActive,
+	planPaletteKey,
 	refKindType,
 	sectionItems,
 	settingsItems,
@@ -33,7 +36,7 @@ const {
 } = await bundleModules("kite-command-palette-", [
 	["CLIENT_MODULES", "src/lib/modules/client-data/index.ts"],
 	[
-		"NUMBERED_CATEGORIES, adjacentCategory, categoryForDigit, clampActive, commandHrefs, commandItems, commandPlacement, contactItem, countItems, digitOf, emptyMessage, groupItems, isTypingKey, listCategories, messageHref, messageItem, messageParty, moveActive, refKindType, sectionItems, settingsItems, shortcutKeys",
+		"NUMBERED_CATEGORIES, adjacentCategory, categoryForDigit, clampActive, commandHrefs, commandItems, commandPlacement, contactItem, countItems, digitOf, emptyMessage, groupItems, isComposingKey, isTypingKey, listCategories, messageFolderLabel, messageHref, messageItem, messageParty, moveActive, planPaletteKey, refKindType, sectionItems, settingsItems, shortcutKeys",
 		"src/components/shortcuts/palette-utils.ts",
 	],
 	[
@@ -182,12 +185,20 @@ test("a message row names its other party and the date and opens in the folder i
 	item.perform();
 	assert.deepEqual(opened, ["/inbox/m1"]);
 	assert.equal(messageItem({ ...inbound, subject: null }, noop, () => "").title, "(No subject)");
+	// Mail outside the inbox names its folder first, so a result from the trash is not mistaken for inbox mail.
+	assert.equal(messageItem({ ...inbound, status: "trash" }, noop, () => "06:58").subtitle, "Trash · Maya Chen · 06:58");
+	assert.equal(messageItem({ ...inbound, status: "spam" }, noop, () => "x").subtitle, "Spam · Maya Chen · x");
+	assert.equal(messageItem({ ...inbound, status: "archived" }, noop, () => "x").subtitle, "Archived · Maya Chen · x");
+	assert.equal(messageItem({ ...inbound, status: "draft" }, noop, () => "x").subtitle, "Drafts · Maya Chen · x");
+	assert.equal(messageFolderLabel("received"), null);
+	assert.equal(messageFolderLabel("sent"), null);
+	assert.equal(messageFolderLabel("trash"), "Trash");
 });
 
 test("a contact row shows the name over the address, says when it is blocked, and opens the sender's mail", () => {
 	const opened = [];
 	const named = contactItem(
-		{ email: "maya@acme.test", displayName: "Maya Chen", hasAvatar: false, blocked: false },
+		{ email: "maya@acme.test", displayName: "Maya Chen", hasAvatar: false, blocked: false, heldByScreener: false },
 		(email) => opened.push(email),
 	);
 	assert.deepEqual(
@@ -196,9 +207,17 @@ test("a contact row shows the name over the address, says when it is blocked, an
 	);
 	named.perform();
 	assert.deepEqual(opened, ["maya@acme.test"]);
-	const bare = contactItem({ email: "x@y.test", displayName: "  ", hasAvatar: false, blocked: true }, noop);
+	const bare = contactItem(
+		{ email: "x@y.test", displayName: "  ", hasAvatar: false, blocked: true, heldByScreener: false },
+		noop,
+	);
 	assert.equal(bare.title, "x@y.test");
 	assert.equal(bare.subtitle, "Search mail from this address · Blocked");
+	const held = contactItem(
+		{ email: "new@y.test", displayName: "New Sender", hasAvatar: false, blocked: false, heldByScreener: true },
+		noop,
+	);
+	assert.equal(held.subtitle, "new@y.test · In Screener");
 });
 
 test("module records take the type from their ref kind and the module's icon", () => {
@@ -360,11 +379,60 @@ test("the contacts search reads its limit and query defensively and escapes LIKE
 	assert.equal(contactLikePattern("50%_off\\"), "%50\\%\\_off\\\\%");
 	assert.deepEqual(
 		toContactSearchHit({ email: "a@b.test", displayName: "A", avatarKey: "k", blocked: false, lastSeenAt: null }),
-		{ email: "a@b.test", displayName: "A", hasAvatar: true, blocked: false },
+		{ email: "a@b.test", displayName: "A", hasAvatar: true, blocked: false, heldByScreener: false },
 	);
-	assert.equal(
-		toContactSearchHit({ email: "a@b.test", displayName: null, avatarKey: null, blocked: true, lastSeenAt: null })
-			.hasAvatar,
-		false,
-	);
+	const plain = { email: "a@b.test", displayName: null, avatarKey: null, blocked: true, lastSeenAt: null };
+	assert.equal(toContactSearchHit(plain).hasAvatar, false);
+	assert.equal(toContactSearchHit(plain, new Set(["a@b.test"])).heldByScreener, true);
+	assert.equal(toContactSearchHit(plain, new Set(["other@b.test"])).heldByScreener, false);
+});
+
+test("Enter runs a row only from the box or the list, never while composing; Home and End respect the caret", () => {
+	const key = (k, extra = {}) => ({
+		key: k,
+		code: "",
+		altKey: false,
+		ctrlKey: false,
+		metaKey: false,
+		isComposing: false,
+		...extra,
+	});
+	const at = (target, extra = {}) => ({ target, pending: false, queryEmpty: true, ...extra });
+	assert.deepEqual(planPaletteKey(key("Enter"), at("input")), { action: "open" });
+	assert.deepEqual(planPaletteKey(key("Enter"), at("list")), { action: "open" });
+	assert.deepEqual(planPaletteKey(key("Enter"), at("tab")), { action: "none" });
+	assert.deepEqual(planPaletteKey(key("Enter"), at("other")), { action: "none" });
+	assert.deepEqual(planPaletteKey(key("Enter", { isComposing: true }), at("input")), { action: "none" });
+	assert.deepEqual(planPaletteKey(key("Enter"), at("input", { pending: true })), { action: "submit" });
+	assert.deepEqual(planPaletteKey(key("Enter", { isComposing: true }), at("input", { pending: true })), {
+		action: "none",
+	});
+	assert.deepEqual(planPaletteKey(key("ArrowDown"), at("input", { pending: true })), { action: "none" });
+	assert.deepEqual(planPaletteKey(key("ArrowDown"), at("other")), { action: "move", key: "ArrowDown" });
+	assert.deepEqual(planPaletteKey(key("ArrowUp"), at("list")), { action: "move", key: "ArrowUp" });
+	assert.deepEqual(planPaletteKey(key("Home"), at("input")), { action: "move", key: "Home" });
+	assert.deepEqual(planPaletteKey(key("End"), at("input", { queryEmpty: false })), { action: "none" });
+	assert.deepEqual(planPaletteKey(key("End", { altKey: true }), at("input", { queryEmpty: false })), {
+		action: "move",
+		key: "End",
+	});
+	assert.deepEqual(planPaletteKey(key("End"), at("list", { queryEmpty: false })), { action: "move", key: "End" });
+	assert.deepEqual(planPaletteKey(key("Home"), at("tab")), { action: "none" });
+	assert.deepEqual(planPaletteKey(key("1", { code: "Digit1" }), at("input")), { action: "none" });
+	assert.deepEqual(planPaletteKey(key("1", { code: "Digit1", altKey: true }), at("input")), {
+		action: "category",
+		digit: 1,
+	});
+	assert.deepEqual(planPaletteKey(key("3", { code: "Digit3" }), at("tab")), { action: "category", digit: 3 });
+	assert.deepEqual(planPaletteKey(key("a"), at("list")), { action: "type" });
+	assert.deepEqual(planPaletteKey(key("a"), at("tab")), { action: "shield" });
+	assert.deepEqual(planPaletteKey(key(" "), at("tab")), { action: "none" });
+	assert.deepEqual(planPaletteKey(key(" "), at("other")), { action: "none" });
+	assert.deepEqual(planPaletteKey(key("a"), at("input")), { action: "none" });
+	assert.deepEqual(planPaletteKey(key("a", { ctrlKey: true }), at("list")), { action: "none" });
+	assert.deepEqual(planPaletteKey(key("Tab"), at("list")), { action: "none" });
+	assert.equal(isComposingKey({ isComposing: true }), true);
+	assert.equal(isComposingKey({ keyCode: 229 }), true);
+	assert.equal(isComposingKey({ isComposing: false, keyCode: 13 }), false);
+	assert.equal(isComposingKey({}), false);
 });

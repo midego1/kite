@@ -76,7 +76,8 @@ export function PaletteSidebar({ categories, counts, active, panelId, onSelect }
 								</kbd>
 							)}
 							<span
-								aria-label={`${count} ${count === 1 ? "result" : "results"}`}
+								aria-hidden="true"
+								data-palette-count={count}
 								className={clsx(
 									"min-w-5 rounded-full px-1.5 text-center text-[11px] font-medium leading-5 tabular-nums",
 									count > 0 ? "bg-neutral-200 text-neutral-700" : "text-neutral-400",
@@ -84,6 +85,7 @@ export function PaletteSidebar({ categories, counts, active, panelId, onSelect }
 							>
 								{count}
 							</span>
+							<span className="sr-only">{`${count} ${count === 1 ? "result" : "results"}`}</span>
 						</span>
 					</button>
 				);

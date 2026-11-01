@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { STORAGE_STATE, SUPPORT_ADDRESS } from "./support/constants";
 import { mockAssistant } from "./support/assistant-mock";
 import { apiContext, deliverInbound, uniqueToken } from "./support/helpers";
+import { openPalette } from "./support/module-flows";
 
 // Where people find Kite AI: the Assistant item in the sidebar, the button in the reader toolbar, the "." key,
 // the command palette and the floating bubble, which only a floating composer hides. The list header has none.
@@ -98,8 +99,8 @@ test.describe("Kite AI entry points", () => {
 		await page.locator("body").press(".");
 		await expect(panel).toBeHidden();
 
-		await page.keyboard.press("ControlOrMeta+k");
-		await page.getByPlaceholder("Type a command or search actions...").fill("Open Kite AI");
+		const search = await openPalette(page);
+		await search.fill("Open Kite AI");
 		await page.getByRole("option", { name: /Open Kite AI/ }).click();
 		await expect(panel).toBeVisible();
 	});

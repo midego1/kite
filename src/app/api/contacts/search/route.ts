@@ -4,6 +4,8 @@ import { getDb, type AppDatabase } from "@/db";
 import { contacts, messages } from "@/db/schema";
 import { requireSessionUser } from "@/lib/api/auth";
 import { getEnv } from "@/lib/cloudflare";
+import { listAccessibleMailboxIds } from "@/lib/mailboxes/access";
+import { mailboxRowsCondition } from "@/lib/messages/mailbox-scope";
 import { SCREENING_STATUS, screenerAddress } from "@/lib/screener/screener-utils";
 import { contactLikePattern, normalizeContactQuery, parseContactSearchLimit, toContactSearchHit } from "./search-utils";
 
@@ -42,6 +44,7 @@ export async function GET(request: Request) {
 	]);
 	const held = await heldSenders(
 		db,
+		await listAccessibleMailboxIds(db, user),
 		user.id,
 		rows.map((row) => row.email),
 	);
@@ -51,8 +54,13 @@ export async function GET(request: Request) {
 	});
 }
 
-/** Of these addresses, the ones the Screener still holds mail from in the user's own mailboxes. */
-async function heldSenders(db: AppDatabase, userId: string, emails: readonly string[]): Promise<Set<string>> {
+/** Of these addresses, the ones the Screener still holds mail from in a mailbox the user can read. */
+async function heldSenders(
+	db: AppDatabase,
+	mailboxIds: readonly string[],
+	userId: string,
+	emails: readonly string[],
+): Promise<Set<string>> {
 	if (emails.length === 0) return new Set();
 	const wanted = new Set(emails);
 	// The From header keeps its display name, so the rows are narrowed by address in SQL and settled exactly here.
@@ -62,7 +70,7 @@ async function heldSenders(db: AppDatabase, userId: string, emails: readonly str
 		.from(messages)
 		.where(
 			and(
-				eq(messages.userId, userId),
+				mailboxRowsCondition(mailboxIds, userId),
 				eq(messages.status, SCREENING_STATUS),
 				or(
 					...emails.map(

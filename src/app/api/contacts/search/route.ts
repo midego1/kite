@@ -7,7 +7,13 @@ import { getEnv } from "@/lib/cloudflare";
 import { listAccessibleMailboxIds } from "@/lib/mailboxes/access";
 import { mailboxRowsCondition } from "@/lib/messages/mailbox-scope";
 import { SCREENING_STATUS, screenerAddress } from "@/lib/screener/screener-utils";
-import { contactLikePattern, normalizeContactQuery, parseContactSearchLimit, toContactSearchHit } from "./search-utils";
+import {
+	contactLikePattern,
+	normalizeContactQuery,
+	parseContactSearchLimit,
+	settleHeldSenders,
+	toContactSearchHit,
+} from "./search-utils";
 
 /**
  * The signed-in user's own contacts whose name or address contains `q`, most recently seen first, for the
@@ -80,10 +86,9 @@ async function heldSenders(
 			),
 		)
 		.groupBy(messages.fromAddr);
-	const held = new Set<string>();
-	for (const row of rows) {
-		const address = screenerAddress(row.fromAddr);
-		if (address && wanted.has(address)) held.add(address);
-	}
-	return held;
+	return settleHeldSenders(
+		rows.map((row) => row.fromAddr),
+		wanted,
+		screenerAddress,
+	);
 }

@@ -32,6 +32,7 @@ const {
 	contactLikePattern,
 	normalizeContactQuery,
 	parseContactSearchLimit,
+	settleHeldSenders,
 	toContactSearchHit,
 } = await bundleModules("kite-command-palette-", [
 	["CLIENT_MODULES", "src/lib/modules/client-data/index.ts"],
@@ -40,7 +41,7 @@ const {
 		"src/components/shortcuts/palette-utils.ts",
 	],
 	[
-		"contactLikePattern, normalizeContactQuery, parseContactSearchLimit, toContactSearchHit",
+		"contactLikePattern, normalizeContactQuery, parseContactSearchLimit, settleHeldSenders, toContactSearchHit",
 		"src/app/api/contacts/search/search-utils.ts",
 	],
 ]);
@@ -440,4 +441,20 @@ test("Enter runs a row only from the box or the list, never while composing; Hom
 	assert.equal(isComposingKey({ keyCode: 229 }), true);
 	assert.equal(isComposingKey({ isComposing: false, keyCode: 13 }), false);
 	assert.equal(isComposingKey({}), false);
+});
+
+test("held senders are settled by bare address whatever form the From header took, and only the searched ones", () => {
+	const toAddress = (value) => {
+		const match = /<([^>]+)>/.exec(value);
+		return (match ? match[1] : value).trim().toLowerCase() || null;
+	};
+	const wanted = new Set(["stranger@outside.test", "pat@outside.test"]);
+	const held = settleHeldSenders(
+		['"stranger" <stranger@outside.test>', "STRANGER@outside.test", "pat@outside.test.example", "other@x.test", ""],
+		wanted,
+		toAddress,
+	);
+	assert.deepEqual([...held].sort(), ["stranger@outside.test"]);
+	assert.deepEqual([...settleHeldSenders([], wanted, toAddress)], []);
+	assert.deepEqual([...settleHeldSenders(["pat@outside.test"], wanted, () => null)], []);
 });

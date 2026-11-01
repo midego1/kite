@@ -49,3 +49,20 @@ export function toContactSearchHit(row: ContactSearchRow, held: ReadonlySet<stri
 		heldByScreener: held.has(row.email),
 	};
 }
+
+/**
+ * Of the searched addresses, the ones among `senders` (From headers of held mail, in any display-name form)
+ * once each is reduced to its bare address; `toAddress` is that reduction.
+ */
+export function settleHeldSenders(
+	senders: readonly string[],
+	wanted: ReadonlySet<string>,
+	toAddress: (value: string) => string | null,
+): Set<string> {
+	const held = new Set<string>();
+	for (const sender of senders) {
+		const address = toAddress(sender);
+		if (address && wanted.has(address)) held.add(address);
+	}
+	return held;
+}

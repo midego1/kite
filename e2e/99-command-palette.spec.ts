@@ -1,7 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
-import { STORAGE_STATE, SUPPORT_ADDRESS } from "./support/constants";
+import { DOMAIN, STORAGE_STATE, SUPPORT_ADDRESS } from "./support/constants";
 import { apiContext, deliverInbound, postInbound, uniqueToken, waitForMessage } from "./support/helpers";
 import { PALETTE_PLACEHOLDER, openPalette } from "./support/module-flows";
+import { createSharedMailbox, createSignedInAccount, shareMailbox } from "./support/auto-read";
 import { setScreener } from "./support/screener";
 
 // The Cmd+K palette: a floating search box over a panel with a category column and grouped results.
@@ -329,6 +330,51 @@ test("a trashed message names its folder, and a sender the Screener holds is mar
 	} finally {
 		if (mailboxId) await setScreener(api, mailboxId, { enabled: false });
 		await api.dispose();
+	}
+});
+
+test("a sender held in a shared mailbox the user can read is marked In Screener too", async ({ browser }) => {
+	const token = uniqueToken("shared");
+	const admin = await apiContext(STORAGE_STATE);
+	let member: Awaited<ReturnType<typeof createSignedInAccount>> | null = null;
+	let sharedId = "";
+	try {
+		// The stranger is a correspondent of the member (mail to their own mailbox, Screener off), and the Screener
+		// of a team mailbox the admin owns and shares with the member still holds the stranger's newer mail.
+		member = await createSignedInAccount(admin, `mate${token}`);
+		await deliverInbound(member.api, {
+			from: `"Nia ${token}" <nia.${token}@outside.test>`,
+			to: `mate${token}@${DOMAIN}`,
+			subject: `Earlier note ${token}`,
+			text: "We spoke before.",
+		});
+		sharedId = await createSharedMailbox(admin, `team${token}`);
+		await shareMailbox(admin, sharedId, member.id, "full_access");
+		await setScreener(admin, sharedId, { enabled: true, mode: "screener" });
+		await postInbound(admin, {
+			from: `"Nia ${token}" <nia.${token}@outside.test>`,
+			to: `team${token}@${DOMAIN}`,
+			subject: `Held note ${token}`,
+			text: "Let me in.",
+		});
+		await waitForMessage(admin, `Held note ${token}`, { status: "screening", mailboxId: sharedId });
+
+		const context = await browser.newContext({ storageState: await member.api.storageState() });
+		const page = await context.newPage();
+		await page.addInitScript((id) => localStorage.setItem("kite-session-user", id), member.id);
+		try {
+			await openInbox(page);
+			const search = await openPalette(page);
+			await search.fill(`nia ${token}`);
+			const held = results(page).getByRole("option", { name: new RegExp(`^Nia ${token}`) });
+			await expect(held).toContainText("In Screener");
+		} finally {
+			await context.close();
+		}
+	} finally {
+		if (sharedId) await setScreener(admin, sharedId, { enabled: false });
+		if (member) await member.api.dispose();
+		await admin.dispose();
 	}
 });
 

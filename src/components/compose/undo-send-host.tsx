@@ -5,7 +5,6 @@ import toast from "react-hot-toast";
 import { authFetch } from "@/lib/auth/client";
 import { useCompose } from "./compose-context";
 import { UndoSendBar } from "./undo-send-bar";
-import { UNDO_SAFETY_MARGIN_MS } from "./undo-send-utils";
 import type { PendingUndoSend } from "./undo-send-types";
 
 /*
@@ -33,10 +32,13 @@ export function beginUndoSend(held: PendingUndoSend) {
 	setPending(held);
 }
 
-/** Puts the bar back after a failed Undo while its window is open, unless a newer send has taken its place. */
-function restore(target: PendingUndoSend) {
-	if (!pending && target.until - UNDO_SAFETY_MARGIN_MS > Date.now()) setPending(target);
+/** Drops the bar of `target`, unless a newer send has taken its place meanwhile. */
+function clear(target: PendingUndoSend) {
+	if (pending?.messageId === target.messageId) setPending(null);
 }
+
+/** One Undo request at a time, so a double click cannot ask twice. */
+let undoing = false;
 
 export function UndoSendHost() {
 	const { openDraftComposer } = useCompose();
@@ -46,8 +48,11 @@ export function UndoSendHost() {
 		() => null,
 	);
 
+	// The bar stays up while the request runs, so a failure that leaves the message held keeps its Undo, Send now and
+	// whatever state the bar was in; only an answer that says the message is gone or already out removes it.
 	async function undo(target: PendingUndoSend) {
-		setPending(null);
+		if (undoing) return;
+		undoing = true;
 		try {
 			const res = await authFetch("/api/send/undo", {
 				method: "POST",
@@ -56,27 +61,29 @@ export function UndoSendHost() {
 			});
 			const data = (await res.json()) as { draftId?: string; error?: string };
 			if (!res.ok || !data.draftId) {
-				// 404 and 409 say the message is gone or already out; anything else may be tried again.
-				if (res.status !== 404 && res.status !== 409) restore(target);
+				if (res.status === 404 || res.status === 409) clear(target);
 				toast.error(data.error ?? "Could not undo send");
 				return;
 			}
+			clear(target);
 			openDraftComposer(data.draftId);
 			toast.success("Sending undone");
+			window.dispatchEvent(new Event("kite:messages-changed"));
 		} catch {
-			restore(target);
 			toast.error("Could not undo send");
+		} finally {
+			undoing = false;
 		}
-		window.dispatchEvent(new Event("kite:messages-changed"));
 	}
 
 	if (!held) return null;
 	return (
 		<UndoSendBar
+			key={held.messageId}
 			pending={held}
 			onUndo={() => void undo(held)}
 			onExpire={(result) => {
-				setPending(null);
+				clear(held);
 				if (result) (result.type === "error" ? toast.error : toast.success)(result.message);
 			}}
 		/>

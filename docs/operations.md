@@ -278,21 +278,25 @@ D1 holds the whole mailbox, and a database has a hard size limit: 10 GB on Worke
 
 ### D1 result size limit
 
-Since 4 November 2026 D1 fails any query whose result is larger than 50 MB ("D1 query result exceeded the maximum response size limit of 50 MB"); the REST import and export are not affected. A stored message row is at most about 0.5 MB (text body 450 KB, inline HTML 16 KB, see [Inbound mail limits](#inbound-mail-limits); 1.35 MB for HTML stored inline before migration 0074) and D1 caps any row at 2 MB, so only queries that return many message bodies at once can come near the limit. Kite keeps every such query under 10 MB:
+Since 4 November 2026 D1 fails any query whose result is larger than 50 MB ("D1 query result exceeded the maximum response size limit of 50 MB"); the REST import and export are not affected. A stored message row is at most about 0.5 MB (text body 450 KB, inline HTML 16 KB, see [Inbound mail limits](#inbound-mail-limits); 1.35 MB for HTML stored inline before migration 0074) and D1 caps any row at 2 MB, so only queries that return many message bodies at once can come near the limit. Kite keeps every such query under about 10 MB (a batch is at most 8 MB, plus the one row that crosses it):
 
 | Query | Rows per result | Worst case | Bound |
 | --- | --- | --- | --- |
 | Backup export (`readTablePage`, `src/lib/backups/export.ts`) | up to 100, cut after 4 MB of stored row bytes | about 6 MB (4 MB plus one 2 MB row) | rows and bytes (`EXPORT_PAGE_BYTES`) |
 | Mailbox export (`src/lib/export/mbox.ts`) | metadata 100 rows without bodies; bodies in batches of at most 8 MB or 50 ids | about 10 MB | keyset pages, then `withStoredBodies` (`src/lib/messages/body-batches.ts`) |
 | Conversation view (`src/lib/email/thread-view.ts`) | up to 200 messages | about 10 MB | metadata, then bodies in batches (`withStoredBodies`) |
-| JMAP `Email/get` (`loadMessages`, `src/lib/jmap/emails.ts`) | up to 200 ids | about 10 MB | metadata, then bodies in batches (`withStoredBodies`) |
-| Templates (`GET /api/templates`) | up to 200 | bodies in batches | metadata, then `withStoredBodies` |
-| Thread summaries, writing-style backfill | 20 bodies each | about 10 MB | row limit (`SUMMARY_FULL_MESSAGES`, `BACKFILL_PAGE`) |
+| JMAP `Email/get` (`loadMessages`, `src/lib/jmap/emails.ts`) | up to 200 ids | about 10 MB | metadata, then bodies in batches |
+| `GET /api/v1/messages` | up to 100 | about 10 MB | metadata, then bodies in batches |
+| `GET /api/drafts` | up to 100 | about 10 MB | metadata, then bodies in batches |
+| Assistant `list_emails` and `search_emails` (`src/lib/agent/tools.ts`) | up to 51 | about 10 MB | metadata, then bodies in batches |
+| Assistant thread reads (`agentThreadRows`: `get_thread`, draft generation) and `recentModuleMessagesFromSender` | up to 21 and 25 | about 10 MB | metadata, then bodies in batches |
+| Templates (`GET /api/templates`) | up to 200 | about 10 MB | metadata, then bodies in batches |
+| Thread summaries and the writing-style backfill | 20 bodies each | about 10 MB | row limit (`SUMMARY_FULL_MESSAGES`, `BACKFILL_PAGE`), bodies in batches |
 | Object copy and storage migration walks (`objects.ts`, `migration.ts`) | 20 and 50 | key and id only | row limit |
 | Restore | reads backup files from the Mail store in 2 MiB pages, not D1 | none | not a D1 read |
 | Lists, search, counts, Activity, audit log, Drive, contacts, admin overview | `limit` on every query, narrow columns (no bodies) | well under 1 MB | row limit |
 
-A single message row can never exceed 2 MB, so no one query result is limited by one row. When adding a query that returns message bodies for more than a handful of messages, select `messageColumnsWithoutBodies` and read the bodies with `withStoredBodies`.
+`withStoredBodies` leaves out a row that was deleted between its two queries. When adding a query that returns message bodies for more than a handful of messages (a handful is about 10), select `messageColumnsWithoutBodies` and read the bodies with `withStoredBodies`; a query over a row cap above 20 that selects whole message rows is a bug.
 
 ### Inbound mail limits
 

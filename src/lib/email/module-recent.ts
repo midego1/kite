@@ -1,6 +1,7 @@
 import { and, desc, eq, gte, lt, ne, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { messages } from "@/db/schema";
+import { messageColumnsWithoutBodies, withStoredBodies } from "@/lib/messages/body-batches";
 import { SCREENING_STATUS } from "@/lib/screener/screener-utils";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import type { HostMessageView, HostRecentFromSenderQuery } from "@/lib/modules/host-types";
@@ -33,8 +34,8 @@ export async function recentModuleMessagesFromSender(
 	if (!bounds || !ctx.mailboxIds?.includes(query.mailboxId)) return [];
 	const db = getDb(env);
 	if (!(await getMailboxAccessLevel(db, user, query.mailboxId))?.canRead) return [];
-	const rows = await db
-		.select()
+	const listed = await db
+		.select(messageColumnsWithoutBodies)
 		.from(messages)
 		.where(
 			and(
@@ -48,6 +49,8 @@ export async function recentModuleMessagesFromSender(
 		)
 		.orderBy(desc(messages.createdAt), desc(sql`"messages"."rowid"`))
 		.limit(CANDIDATE_ROWS);
+	// Bodies in bounded batches: the candidates can be large messages.
+	const rows = await withStoredBodies(db, listed);
 	const matches = rows.filter((row) => isFromSender(row.fromAddr, bounds.sender)).slice(0, bounds.limit);
 	const attachments = await attachmentsByMessage(
 		env,

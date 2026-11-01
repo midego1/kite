@@ -197,6 +197,29 @@ function bucket() {
 	return new lib.FileBucket(mkdtempSync(join(bucketRoot, "b-")));
 }
 
+test("export reads every row of tables with no rows, one row and exact multiples of the page size", async (t) => {
+	for (const count of [0, 1, 99, 100, 101, 200]) {
+		const db = new lib.SqliteDatabase(":memory:");
+		t.after(() => db.db.close());
+		await lib.applyMigrations(db, join(root, "drizzle/migrations"));
+		db.db.exec(`
+			INSERT INTO users (id, email, password_hash, name, role, is_primary_admin, created_at) VALUES ('owner', 'owner@example.com', 'hash', 'Owner', 'admin', 1, 1);
+			INSERT INTO domains (id, user_id, hostname, zone_id, status, created_at) VALUES ('domain-1', 'owner', 'example.com', 'zone-1', 'active', 1);
+			INSERT INTO mailboxes (id, user_id, domain_id, local_part, type, created_at) VALUES ('mailbox-a', 'owner', 'domain-1', 'alex', 'personal', 1);
+		`);
+		const insert = db.db.prepare(
+			"INSERT INTO messages (id, user_id, mailbox_id, direction, from_addr, to_addr, subject, text_body, status, created_at) VALUES (?, 'owner', 'mailbox-a', 'inbound', 'a@outside.test', 'alex@example.com', 'Small', 'Hi', 'received', ?)",
+		);
+		for (let index = 0; index < count; index++) insert.run(`small-${String(index).padStart(3, "0")}`, index);
+		const document = JSON.parse(decoder.decode(await lib.exportDatabaseRecords(db)));
+		assert.deepEqual(
+			document.tables.messages.map((row) => row.id),
+			Array.from({ length: count }, (_, index) => `small-${String(index).padStart(3, "0")}`),
+			`${count} rows`,
+		);
+	}
+});
+
 test("export pages stay under the D1 result size limit even for rows with large bodies", async (t) => {
 	const db = new lib.SqliteDatabase(":memory:");
 	t.after(() => db.db.close());

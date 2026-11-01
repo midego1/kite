@@ -15,6 +15,7 @@ type StoredBodies = { textBody: string | null; htmlBody: string | null };
 
 /**
  * `rows` (selected without their bodies, with `bodyBytes`) with `textBody` and `htmlBody` filled in, in order.
+ * A row that no longer exists when its bodies are read is left out.
  * The bodies are read in batches of a bounded size, because D1 fails a query whose result passes 50 MB and a
  * list of messages can carry several megabytes of body each.
  */
@@ -30,9 +31,8 @@ export async function withStoredBodies<T extends { id: string; bodyBytes: number
 			.where(inArray(messages.id, ids)))
 			bodies.set(row.id, row);
 	}
-	return rows.map(({ bodyBytes: _bodyBytes, ...row }) => ({
-		...row,
-		textBody: bodies.get(row.id)?.textBody ?? null,
-		htmlBody: bodies.get(row.id)?.htmlBody ?? null,
-	}));
+	// A row deleted between the two queries has no bodies to return: drop it, as one query would not have had it.
+	return rows
+		.filter((row) => bodies.has(row.id))
+		.map(({ bodyBytes: _bodyBytes, ...row }) => ({ ...row, ...(bodies.get(row.id) as StoredBodies) }));
 }

@@ -1,3 +1,4 @@
+import { bodyBytesColumn, withStoredBodies } from "@/lib/messages/body-batches";
 import { generateText, type LanguageModelUsage } from "ai";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { getDb, type AppDatabase } from "@/db";
@@ -155,10 +156,13 @@ async function loadCoveredMessages(env: CloudflareEnv, anchor: Anchor, scope: Su
 	const bodies = newest.length
 		? await loadMessageBodies(
 				env,
-				await db
-					.select({ id: messages.id, textBody: messages.textBody, htmlBody: messages.htmlBody })
-					.from(messages)
-					.where(inArray(messages.id, newest)),
+				await withStoredBodies(
+					db,
+					await db
+						.select({ id: messages.id, bodyBytes: bodyBytesColumn })
+						.from(messages)
+						.where(inArray(messages.id, newest)),
+				),
 			)
 		: [];
 	const text = new Map(bodies.map((row) => [row.id, summaryText(row)]));

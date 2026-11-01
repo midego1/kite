@@ -4,6 +4,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { getEnv } from "@/lib/cloudflare";
 import { getDb, type AppDatabase } from "@/db";
 import { messages } from "@/db/schema";
+import { messageColumnsWithoutBodies, withStoredBodies } from "@/lib/messages/body-batches";
 import { requireSessionUser } from "@/lib/api/auth";
 import type { SessionUser } from "@/lib/auth/types";
 import { newId } from "@/lib/ids";
@@ -27,12 +28,16 @@ export async function GET(request: Request) {
 	];
 	if (mailboxId) conditions.push(eq(messages.mailboxId, mailboxId));
 
-	const rows = await db
-		.select()
-		.from(messages)
-		.where(and(...conditions))
-		.orderBy(desc(messages.createdAt))
-		.limit(100);
+	// Bodies in bounded batches: 100 drafts of any size could pass D1's 50 MB result limit in one query.
+	const rows = await withStoredBodies(
+		db,
+		await db
+			.select(messageColumnsWithoutBodies)
+			.from(messages)
+			.where(and(...conditions))
+			.orderBy(desc(messages.createdAt))
+			.limit(100),
+	);
 
 	return NextResponse.json({ drafts: rows });
 }

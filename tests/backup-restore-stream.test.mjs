@@ -197,6 +197,53 @@ function bucket() {
 	return new lib.FileBucket(mkdtempSync(join(bucketRoot, "b-")));
 }
 
+test("export pages stay under the D1 result size limit even for rows with large bodies", async (t) => {
+	const db = new lib.SqliteDatabase(":memory:");
+	t.after(() => db.db.close());
+	await lib.applyMigrations(db, join(root, "drizzle/migrations"));
+	db.db.exec(`
+		INSERT INTO users (id, email, password_hash, name, role, is_primary_admin, created_at) VALUES ('owner', 'owner@example.com', 'hash', 'Owner', 'admin', 1, 1);
+		INSERT INTO domains (id, user_id, hostname, zone_id, status, created_at) VALUES ('domain-1', 'owner', 'example.com', 'zone-1', 'active', 1);
+		INSERT INTO mailboxes (id, user_id, domain_id, local_part, type, created_at) VALUES ('mailbox-a', 'owner', 'domain-1', 'alex', 'personal', 1);
+	`);
+	// 60 rows of about 1.5 MB: a 100-row page of these would be 90 MB.
+	const insert = db.db.prepare(
+		"INSERT INTO messages (id, user_id, mailbox_id, direction, from_addr, to_addr, subject, html_body, status, created_at) VALUES (?, 'owner', 'mailbox-a', 'inbound', 'a@outside.test', 'alex@example.com', 'Wide', ?, 'received', ?)",
+	);
+	const html = "<p>x</p>".repeat(190_000);
+	for (let index = 0; index < 60; index++) insert.run(`wide-${index}`, html, index);
+	let largest = 0;
+	const measureAll = (statement) =>
+		new Proxy(statement, {
+			get(target, key) {
+				if (key === "all")
+					return async () => {
+						const result = await target.all();
+						largest = Math.max(largest, JSON.stringify(result.results).length);
+						return result;
+					};
+				if (key === "bind") return (...values) => measureAll(target.bind(...values));
+				const value = Reflect.get(target, key);
+				return typeof value === "function" ? value.bind(target) : value;
+			},
+		});
+	const measured = new Proxy(db, {
+		get(target, key) {
+			if (key === "prepare") return (sql) => measureAll(target.prepare(sql));
+			const value = Reflect.get(target, key);
+			return typeof value === "function" ? value.bind(target) : value;
+		},
+	});
+	const document = JSON.parse(decoder.decode(await lib.exportDatabaseRecords(measured)));
+	assert.equal(document.tables.messages.length, 60);
+	assert.deepEqual(
+		document.tables.messages.map((row) => row.id),
+		Array.from({ length: 60 }, (_, index) => `wide-${index}`),
+	);
+	assert.ok(!("__kite_size" in document.tables.messages[0]) && !("__kite_rowid" in document.tables.messages[0]));
+	assert.ok(largest < 12 * 1024 * 1024, `largest export query result was ${largest} bytes`);
+});
+
 test("a backup of several thousand messages restores from storage in pages and batches", async (t) => {
 	const db = await seededDatabase(t);
 	const expected = messageDigest(db);

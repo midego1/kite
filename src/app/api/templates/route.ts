@@ -1,5 +1,6 @@
 import { and, desc, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
+import { bodyBytesColumn, withStoredBodies } from "@/lib/messages/body-batches";
 import { getDb } from "@/db";
 import { messages } from "@/db/schema";
 import { requireSessionUser } from "@/lib/api/auth";
@@ -18,13 +19,23 @@ export const GET = withModule("templates", async (request, { checkUser }) => {
 	if (auth.error) return auth.error;
 	const denied = await checkUser(auth.user);
 	if (denied) return denied;
-	const rows = await getDb(env)
-		.select({ id: messages.id, subject: messages.subject, htmlBody: messages.htmlBody, textBody: messages.textBody })
+	const db = getDb(env);
+	const listed = await db
+		.select({ id: messages.id, subject: messages.subject, bodyBytes: bodyBytesColumn })
 		.from(messages)
 		.where(and(eq(messages.userId, auth.user.id), eq(messages.status, "template")))
 		.orderBy(desc(messages.createdAt))
 		.limit(200);
-	return NextResponse.json({ templates: rows });
+	// Bodies in bounded batches: 200 templates of any size could pass D1's 50 MB result limit in one query.
+	const templates = await withStoredBodies(db, listed);
+	return NextResponse.json({
+		templates: templates.map((row) => ({
+			id: row.id,
+			subject: row.subject,
+			htmlBody: row.htmlBody,
+			textBody: row.textBody,
+		})),
+	});
 });
 
 export const POST = withModule("templates", async function POST(request, { checkAuth }) {

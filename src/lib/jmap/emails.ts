@@ -11,6 +11,7 @@ import { deleteMessageWithObjects } from "@/lib/email/message-cleanup";
 import { canOffloadHtmlBodies, loadMessageBodies } from "@/lib/email/bodies";
 import { SCREENING_STATUS } from "@/lib/screener/screener-utils";
 import { visibleDraftsCondition } from "@/lib/messages/mailbox-scope";
+import { messageColumnsWithoutBodies, withStoredBodies } from "@/lib/messages/body-batches";
 import { LIMITS, KEYWORD_FLAGGED, KEYWORD_SEEN } from "./constants";
 import { JmapError, invalidArguments } from "./errors";
 import { decodeBlobId, decodeMailboxRef, roleToStatus } from "./ids";
@@ -95,12 +96,14 @@ function notFoundIds(requested: string[], found: { has(id: string): boolean }): 
 export async function loadMessages(ctx: JmapContext, ids: string[]): Promise<MessageRow[]> {
 	if (ids.length === 0) return [];
 	const { condition } = await scope(ctx);
-	return queryInChunks(ids, (chunk) =>
+	const listed = await queryInChunks(ids, (chunk) =>
 		ctx.db
-			.select()
+			.select(messageColumnsWithoutBodies)
 			.from(messages)
 			.where(and(condition, inArray(messages.id, chunk))),
 	);
+	// Read the bodies in bounded batches: 200 ids of large mail would pass D1's 50 MB result limit in one go.
+	return withStoredBodies(ctx.db, listed);
 }
 
 export const emailGet: JmapMethodHandler = async (ctx, args) => {

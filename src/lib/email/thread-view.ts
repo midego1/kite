@@ -1,6 +1,7 @@
 import { and, asc, eq, inArray, ne, notInArray, or } from "drizzle-orm";
 import { queryInChunks } from "@/db/chunk-utils";
 import { getDb } from "@/db";
+import { messageColumnsWithoutBodies, withStoredBodies } from "@/lib/messages/body-batches";
 import { messageAttachments, messages } from "@/db/schema";
 import { getContactAvatarMap, getContactDisplayNameMap } from "@/lib/contacts/service";
 import { getSenderDisplayName } from "@/lib/contacts/utils";
@@ -43,22 +44,25 @@ export async function getMessageThreadForUser(env: CloudflareEnv, user: SessionU
 	if (!access?.canRead) return null;
 
 	const stored = message.threadId
-		? await db
-				.select()
-				.from(messages)
-				.where(
-					and(
-						eq(messages.mailboxId, message.mailboxId),
-						eq(messages.threadId, message.threadId),
-						notInArray(messages.status, ["draft", "trash"]),
-						// Held replies stay in the Screener; the opened message is shown even when it is one.
-						or(ne(messages.status, SCREENING_STATUS), eq(messages.id, messageId)),
-						// So does spam (upstream Mailflare #223): a forged reply must not sit among the real ones.
-						or(ne(messages.status, "spam"), eq(messages.id, messageId)),
-					),
-				)
-				.orderBy(asc(messages.createdAt))
-				.limit(200)
+		? await withStoredBodies(
+				db,
+				await db
+					.select(messageColumnsWithoutBodies)
+					.from(messages)
+					.where(
+						and(
+							eq(messages.mailboxId, message.mailboxId),
+							eq(messages.threadId, message.threadId),
+							notInArray(messages.status, ["draft", "trash"]),
+							// Held replies stay in the Screener; the opened message is shown even when it is one.
+							or(ne(messages.status, SCREENING_STATUS), eq(messages.id, messageId)),
+							// So does spam (upstream Mailflare #223): a forged reply must not sit among the real ones.
+							or(ne(messages.status, "spam"), eq(messages.id, messageId)),
+						),
+					)
+					.orderBy(asc(messages.createdAt))
+					.limit(200),
+			)
 		: await db.select().from(messages).where(eq(messages.id, messageId)).limit(1);
 	const rows = await loadMessageBodies(env, stored);
 

@@ -21,7 +21,8 @@ import {
 const logger = createLogger("agent");
 const MAX_ATTEMPTS = 3;
 const BACKFILL_MESSAGES = 200;
-const BACKFILL_PAGE = 50;
+// Bodies per query: 20 messages of at most about 0.5 MB each stay well under D1's 50 MB result limit.
+const BACKFILL_PAGE = 20;
 /** A backfill that has not finished in this long is treated as lost, so it can be requested again. */
 const BACKFILL_STALE_MS = 60 * 60_000;
 

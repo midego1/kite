@@ -330,15 +330,17 @@ export type PaletteKeyPlan =
  * What a key does in the palette. The arrows move the highlight from the box, the sidebar and the list;
  * Home and End only when they would not move a caret (the list, an empty box, or with Alt). Enter opens
  * the highlighted row from the box or the list only, so the close button and the tabs keep their own
- * Enter and Space, and never while an input method is composing. A digit picks a category (with Alt
- * anywhere, bare outside the box). A character typed in the list belongs in the box; on a tab or a
- * button it does nothing but must not reach the mail keys underneath (Space still presses the control).
+ * Enter and Space. A digit picks a category (with Alt anywhere, bare outside the box). A character typed
+ * in the list belongs in the box; on a tab or a button it does nothing but must not reach the mail keys
+ * underneath (Space still presses the control). Nothing here runs while an input method composes:
+ * Enter commits the text and the arrows pick a candidate.
  */
 export function planPaletteKey(
 	event: PaletteKeyEvent & { isComposing: boolean },
 	state: { target: PaletteKeyTarget; pending: boolean; queryEmpty: boolean },
 ): PaletteKeyPlan {
-	if (state.pending) return event.key === "Enter" && !event.isComposing ? { action: "submit" } : { action: "none" };
+	if (event.isComposing) return { action: "none" };
+	if (state.pending) return event.key === "Enter" ? { action: "submit" } : { action: "none" };
 	const digit = digitOf(event);
 	if (digit !== null && (event.altKey || state.target !== "input")) return { action: "category", digit };
 	return highlightKeyPlan(event, state) ?? typedKeyPlan(event, state.target);

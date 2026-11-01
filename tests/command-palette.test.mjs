@@ -403,6 +403,11 @@ test("Enter runs a row only from the box or the list, never while composing; Hom
 	assert.deepEqual(planPaletteKey(key("Enter"), at("tab")), { action: "none" });
 	assert.deepEqual(planPaletteKey(key("Enter"), at("other")), { action: "none" });
 	assert.deepEqual(planPaletteKey(key("Enter", { isComposing: true }), at("input")), { action: "none" });
+	assert.deepEqual(planPaletteKey(key("ArrowDown", { isComposing: true }), at("input")), { action: "none" });
+	assert.deepEqual(planPaletteKey(key("ArrowUp", { isComposing: true }), at("list")), { action: "none" });
+	assert.deepEqual(planPaletteKey(key("1", { code: "Digit1", altKey: true, isComposing: true }), at("input")), {
+		action: "none",
+	});
 	assert.deepEqual(planPaletteKey(key("Enter"), at("input", { pending: true })), { action: "submit" });
 	assert.deepEqual(planPaletteKey(key("Enter", { isComposing: true }), at("input", { pending: true })), {
 		action: "none",

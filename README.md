@@ -278,8 +278,11 @@ Paste the prompt below into an agent with terminal access. Give it your Cloudfla
 ```text
 Install Kite from https://github.com/midego1/kite in my Cloudflare account.
 Ask me for my Cloudflare account ID, a scoped deployment API token, and a separate
-runtime CF_TOKEN through a secret input. Generate a long random SETUP_TOKEN and
-APP_ENCRYPTION_KEY. Never print, commit, or place these secrets in a command
+runtime CF_TOKEN through a secret input. Generate a long random SETUP_TOKEN.
+Generate a long random APP_ENCRYPTION_KEY for a new database; when reusing a
+database that already holds a Kite install, ask me for the existing
+APP_ENCRYPTION_KEY through a secret input, because a new key makes the provider
+keys it stores unreadable. Never print, commit, or place these secrets in a command
 argument or a tracked file. Use the deployment token only for Wrangler
 authentication (CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID).
 

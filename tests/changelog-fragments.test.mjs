@@ -11,6 +11,8 @@ import {
 	isFragmentFile,
 	parseFragment,
 	readFragments,
+	STYLE_ESCAPE,
+	styleProblems,
 } from "../scripts/changelog-fragments.mjs";
 import {
 	changelogSection,
@@ -234,4 +236,58 @@ test("the release workflow only pushes release/next and never main", () => {
 	assert.match(yaml, /^permissions: \{\}$/m);
 	assert.doesNotMatch(prepare, /write/);
 	assert.doesNotMatch(publish, /\bnpm (ci|install)\b|\bnode (scripts|--)|setup-node|node_modules/);
+});
+
+test("the writing guard flags long entries, code in backticks and migration notes, unless the fragment opts out", () => {
+	const fragment = (text, name = "style.md") => ({ name, text });
+	assert.deepEqual(styleProblems([fixed, added]), []);
+	assert.match(
+		styleProblems([fragment(`### Fixed\n\n- ${"Word ".repeat(100)}\n`)])[0],
+		/style\.md: "Word Word .*is 499 characters/,
+	);
+	// A wrapped entry counts as one, screenshots and code blocks do not count.
+	assert.deepEqual(
+		styleProblems([
+			fragment(
+				"### Added\n\n- A short note\n  on two lines.\n  ![x](/changelog/a.webp)\n\n```sh\n`x` ".concat(
+					"a".repeat(500),
+					"\n```\n",
+				),
+			),
+		]),
+		[],
+	);
+	assert.match(styleProblems([fragment("### Fixed\n\n- Use `ATTACHMENT_SHARING=off` now.\n")])[0], /code in backticks/);
+	assert.match(styleProblems([fragment("### Fixed\n\n- The reader works. No migration.\n")])[0], /No migration/);
+	assert.match(styleProblems([fragment("### Fixed\n\nA paragraph with `code`.\n")])[0], /code in backticks/);
+	const technical = fragment(`### Changed\n\n${STYLE_ESCAPE}\n- Use \`X=off\`.\n`);
+	assert.deepEqual(styleProblems([technical]), []);
+	// The opt-out line never reaches CHANGELOG.md.
+	assert.deepEqual(parseFragment(technical.text, technical.name).problems, []);
+	assert.equal(foldFragments([technical]), "### Changed\n\n- Use `X=off`.");
+});
+
+test("checkPullRequest applies the writing guard to the fragments the pull request changed only", () => {
+	const wordy = { name: "wordy.md", text: "### Fixed\n\n- Fixed `thing`.\n" };
+	const common = {
+		branch: "feature/x",
+		baseVersion: "2026.10.27.2",
+		headVersion: "2026.10.27.2",
+		changelog: CHANGELOG,
+		fragments: [wordy, fixed],
+	};
+	assert.match(checkPullRequest({ ...common, changedFragments: ["changelog.d/wordy.md"] })[0], /code in backticks/);
+	assert.deepEqual(checkPullRequest({ ...common, changedFragments: ["changelog.d/reader-scroll.md"] }), []);
+	// A release pull request has no fragments left and is never held to the guard.
+	assert.deepEqual(
+		checkPullRequest({
+			...common,
+			branch: "release/next",
+			fragments: [],
+			changedFragments: [],
+			headVersion: "2026.10.28.0",
+			changelog: "x",
+		}).filter((p) => /backticks/.test(p)),
+		[],
+	);
 });

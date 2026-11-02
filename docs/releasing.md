@@ -16,13 +16,24 @@ Every merge to `main` deploys production through the Cloudflare Git integration,
 
 A pull request with a user-visible change adds a file to `changelog.d/`, named after the change: `changelog.d/<short-slug>.md` in lowercase letters, digits, `.`, `_` or `-`. It holds one or more `### Added`, `### Changed`, `### Deprecated`, `### Removed`, `### Fixed` or `### Security` headings, each followed by entries written as in `CHANGELOG.md`; no other heading level and no text before the first heading. Code blocks (```` ``` ```` or `~~~`) may hold lines that look like headings, except `## ` lines, and an entry may start with an issue number such as `#123`. [`changelog.d/README.md`](../changelog.d/README.md) has an example.
 
-- Name every migration and every setting an operator has to add or change. When a note introduces or changes something a user can set, link to the page it lives on with an app path, for example `[Settings → Notifications](/settings/notifications)`: the **What's new in Kite** dialog opens such links in the app, while `https://` links open in a new tab and any other link stays plain text.
+- Name every database update and every setting an operator has to add or change, in plain words ("needs a database update applied from the Admin overview"). When a note introduces or changes something a user can set, link to the page it lives on with an app path, for example `[Settings → Notifications](/settings/notifications)`: the **What's new in Kite** dialog opens such links in the app, while `https://` links open in a new tab and any other link stays plain text.
 - A user-visible UI change adds a screenshot to the fragment ([below](#screenshots-in-the-changelog)).
 - A change nobody can notice (CI, tests, refactoring) needs no fragment: label the pull request `no-changelog`.
 - Do not edit `VERSION`, the package versions, `docs/openapi.json`'s version or the "Unreleased" section of `CHANGELOG.md`; only release pull requests do.
 - Fragments ship with every deploy: the **What's new in Kite** dialog lists them under "Unreleased changes" (`scripts/generate-changelog-bundle.mjs`) until a release names them.
 
 The "Release version" job in `.github/workflows/ci.yml` runs `npm run release:check -- <base commit>` (`scripts/release-check.mjs`, Node built-ins only). For an ordinary pull request it fails when no fragment was added or edited and the `no-changelog` label is missing, when any fragment in `changelog.d/` is malformed, when `VERSION` differs from the base's or when `CHANGELOG.md` has entries under "Unreleased". A pull request from a `release/*` branch must instead be a complete release: `VERSION` a calendar version newer than the base's, a `CHANGELOG.md` heading for it, nothing under "Unreleased" and no fragments left. On a pull request it compares with the first parent of GitHub's merge commit, the base the branch was merged onto. It reads the labels when it runs, and adding a label starts no CI run, so after adding `no-changelog` rerun the failed job (or push again). Run `npm run release:check -- origin/main` locally for the same answer (it uses the current branch name; set `PR_LABELS='["no-changelog"]'` to mimic the label).
+
+### Writing entries
+
+Release notes are for the people using Kite, not for the people who built the change.
+
+- **Short and plain.** An entry is at most about two short sentences and says what is different for the person using Kite: "If Kite gets stuck while starting, it now recovers by itself." Write "you" and the names of buttons and pages as they appear on screen.
+- **No internals.** Leave out code identifiers and anything in backticks, file names, environment variables, log events, HTTP codes and API paths, pull request mechanics, and "No migration." notes. Technical detail belongs in the docs and in the pull request body.
+- **What someone has to do stays.** A warning such as "do not roll back", a setting that must be changed or a database update to apply stays in plain words, with a link to the docs page that has the exact steps (names of variables and commands live there).
+- **Merge, don't pile up.** Two fragments or entries about the same change read better as one.
+
+`npm run release:check` enforces this for the fragments a pull request adds or edits (`styleProblems` in `scripts/changelog-fragments.mjs`): it fails on an entry over 400 characters, on text in backticks and on a "No migration" note. It reads only fragments, never `CHANGELOG.md`, so text that was already released cannot block a release pull request. For the rare entry that really needs the detail (for example an exact variable an operator must set), put the line `<!-- changelog-style: technical-ok -->` in the fragment; the line is dropped when the fragment is folded into `CHANGELOG.md`.
 
 ### Screenshots in the changelog
 

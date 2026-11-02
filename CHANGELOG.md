@@ -10,28 +10,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
-- A loading screen that stops moving recovers by itself. When the start stays on the same step for too long (15 seconds while signing you in, longer than the session check's own timeouts) Kite first asks that step to try again, then reloads the tab once; when the browser paints nothing of a visible loading screen for 10 seconds it reloads at once. A start that stalls again before one has gone through shows "Kite couldn't load" with **Reload**, even while **Reload Kite** is shown. The server logs `boot.startup_stalled` with the step, the reason and the requests still open.
-- As a backstop for a page whose script stopped altogether, Kite's service worker, now registered for every signed-in tab and still without a fetch handler, reloads a visible loading screen that gives no sign of life for 10 seconds, once per failed start; a hidden tab is never reloaded, and the first load in a browser is not watched yet. Chrome and Edge carry out that reload only once the page's script comes free. The server logs `boot.auto_reloaded_after_freeze` or `boot.freeze_not_reloaded`, and the reloaded load's **Details** say it was reloaded automatically. No migration.
+- If Kite gets stuck on the loading screen, it now recovers by itself: it first retries the stuck step, then reloads the tab once. If it stalls again, you see "Kite couldn't load" with a **Reload** button.
+- Even when the page's script has stopped completely, Kite now reloads a frozen loading screen after 10 seconds. Hidden tabs are never reloaded, and the details of the reloaded start say it happened automatically.
 
 ## [2026.11.01.4] - 2026-11-01
 
 ### Changed
 
-- The command palette (Cmd/Ctrl+K) is now a search over the whole app: a floating search box with a results panel below it that lists pages, messages, contacts, actions, settings and the modules that are on (Calendar, Money Watch, Drive, …) in a category column with a number key and a count each. Rows show a type badge, a subtitle (sender and date for mail, the address for a contact, the menu for a settings page) and their keyboard shortcut. Alt+1 to 9 switch categories, the arrow keys move, Enter opens, Esc closes, and Tab walks the search box, the categories and the list. On phones it fills the screen with the categories as a chip row. Mail is searched in the mailbox you are viewing with the same rules as the search field; a contact opens the mail from that address.
+- The command palette (Cmd/Ctrl+K) now searches the whole app: pages, messages, contacts, actions, settings and the modules you have on. Results are grouped by category, show a badge, a short subtitle and the keyboard shortcut, and you can use Alt+1 to 9, the arrow keys, Enter and Esc to move around. On phones it fills the screen.
   ![The command palette searching for "re", with categories on the left and results on the right](/changelog/2026-11-01-command-palette.webp)
 
 ## [2026.11.01.3] - 2026-11-01
 
 ### Fixed
 
-- Sending closes the composer, as in Gmail, instead of leaving an empty "New Message" open. The "Sending in …s" bar with **Send now** and **Undo** now lives outside the composer, so it stays after the composer closes. **Undo** opens the message again in the composer with its recipients, subject, text and attachments.
-- The send bar and other notices no longer cover a composer that is open. They sit to the left of the floating composer, below the expanded one, and at the top of the screen on a narrow window or when the assistant window is open beside the composer. The Compose page fits the screen and leaves room below its card for them. On a phone the bar now fits the screen instead of running off its left edge.
+- Sending now closes the composer, like in Gmail. The "Sending in …s" bar with **Send now** and **Undo** stays visible, and **Undo** reopens your message with everything in it.
+- The send bar and other notices no longer cover an open composer, and on a phone the bar now fits the screen.
 
 ## [2026.11.01.2] - 2026-11-01
 
 ### Changed
 
-- The command center in the empty reading pane is laid out as cards again, in the app's own tokens: the counts that matter (unread, Screener, For you) are tiles with a large number that open their page; **Accounts**, **Quick actions**, **Needs attention**, Calendar's **Today** and Money Watch's renewals are cards on the panel fill with an icon, a title and a link, side by side when the pane is wide and one under the other when it is narrow. Accounts and the health rows show their state as a small pill, and a day or a week with nothing in it says so with a way into the Calendar or Money Watch. No migration.
+- The command center in the empty reading pane is laid out as cards again. Unread, Screener and For you are tiles that open their page, and **Accounts**, **Quick actions**, **Needs attention**, Calendar's **Today** and Money Watch's renewals are cards that sit side by side or stacked, depending on the width of the pane.
   ![The command center in light mode: unread and Screener tiles, Accounts, Quick actions, Needs attention, Today and Money Watch cards](/changelog/2026-11-01-command-center-light.webp)
   ![The same command center in dark mode](/changelog/2026-11-01-command-center-dark.webp)
 
@@ -39,324 +39,324 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
-- The command center's **Quick actions** are tiles again, drawn like the sidebar's **New email** button (same border, fill, radius and hover), with the icon in the usual grey and the shortcut key at the right ("New email C", "Search /"). They sit in two or three columns when the pane is wide and in one when it is narrow. No migration.
+- The command center's **Quick actions** are tiles again, styled like the sidebar's **New email** button, with the shortcut key shown at the right.
 
 ## [2026.11.01.0] - 2026-11-01
 
 ### Changed
 
-- The command center in the empty reading pane now looks like the rest of Kite: the sidebar's small grey group labels ("Right now", "Accounts", "Needs attention", "Quick actions", "Today", "Money Watch") over plain rows with the sidebar's icons and hover, the same notices the [Admin overview](/admin) shows under **Needs attention**, and no cards, pills, tiles or glow of its own. The greeting ("Good morning," and so on) now shows in every style, small and muted above your name in Kite and Classic; Kite classic keeps its handwritten script. The small kite in the corner stays, without its glow. No migration.
+- The command center in the empty reading pane now looks like the rest of Kite: small group labels over plain rows, the same notices as the [Admin overview](/admin) under **Needs attention**, and no extra cards or glow. The greeting ("Good morning," and so on) now shows in every style.
 
 ### Fixed
 
-- The message list always scrolls inside its own panel: a folder with more mail than fits the window no longer grows the page past the bottom of the list and reader panels.
+- The message list now always scrolls inside its own panel, so a folder with lots of mail no longer stretches the page.
 
 ## [2026.10.31.11] - 2026-10-31
 
 ### Changed
 
-- The recovery runbook now has one section for rolling back and restoring backups across attachment sharing and raw-backed attachments: what each older release can read, the materialize procedure before a rollback, and what to expect after restoring an older or newer backup (choose **Reclaim space** after restoring a backup taken before a reclaim). See [Attachment storage: rollbacks and restores](https://github.com/midego1/kite/blob/main/docs/runbooks/recovery.md#attachment-storage-rollbacks-and-restores).
+- The recovery runbook now has one section on rolling back and restoring backups when attachments are shared or served from the raw message. After restoring a backup taken before a reclaim, choose **Reclaim space** again. See [Attachment storage: rollbacks and restores](https://github.com/midego1/kite/blob/main/docs/runbooks/recovery.md#attachment-storage-rollbacks-and-restores).
 
 ### Fixed
 
-- Files in received or imported mail no longer stay missing after an older Kite release restored a newer backup into a database without migration 0088. Once the migration is applied, the next time such a file is opened Kite finds it in the stored raw message again, and **Restore separate copies** under [Admin → Storage](/storage) now includes these files too. No migration or setting is needed.
-- **Why?** for failed AI requests on the [Admin overview](/admin) no longer says Ask AI "would fail the same way" once you have saved the AI provider in use (a new key or model) or switched to another one in [Admin → Agent](/agent#ai-provider): failures from before that change no longer count. When Kite cannot read the provider settings, Why? still lists the failures and only Ask AI is marked unavailable.
-- A question **Ask AI** prepared for the assistant is dropped after five minutes if the assistant never took it, so it no longer turns up in a chat opened much later. Closing the Why? dialog returns the keyboard focus to **Why?**.
-- The command center in the empty reading pane: the hint under the cards and the grey details on the cards now reach WCAG AA contrast in every style and theme, links on its cards keep a faint underline in the Kite style (where they are the same colour as the text), and information notices under **Needs attention** use a calmer blue wash in Classic light. No migration.
+- Files in received or imported mail no longer stay missing after an older Kite release restored a newer backup. Once the database update is applied, Kite finds such a file in the stored message the next time it is opened, and **Restore separate copies** under [Admin → Storage](/storage) now includes these files too.
+- **Why?** for failed AI requests on the [Admin overview](/admin) no longer says Ask AI "would fail the same way" after you saved or switched the AI provider in [Admin → Agent](/agent#ai-provider). Failures from before the change no longer count.
+- A question **Ask AI** prepared for the assistant is dropped after five minutes if the assistant never took it. Closing the Why? dialog returns the keyboard focus to **Why?**.
+- The text on the command center's cards is now easier to read in every style and theme, and information notices under **Needs attention** use a calmer blue in Classic light.
 
 ## [2026.10.31.10] - 2026-10-31
 
 ### Added
 
-- [Admin → Storage](/storage) has an **Attachment storage** card for the primary admin: how many files have a copy of their own, how many are served from their raw message, how many share a copy with a forward or a sent message, and how much space older mail could free. **Reclaim space** serves older received and imported files from their raw message when their bytes match and deletes the separate copies nobody else uses; **Restore separate copies** gives every file its own copy again. Both run in the background, show their progress, can be stopped and resume where they left off. Every file downloads byte for byte the same before and after. Needs migration 0090 (`0090_add_attachment_storage_job`), applied from the Admin overview; Reclaim space is unavailable while `ATTACHMENT_RAW_INDEX=off`.
+- [Admin → Storage](/storage) has a new **Attachment storage** card for the primary admin. It shows how much space older mail could free, and **Reclaim space** frees it while **Restore separate copies** undoes that; both run in the background and can be stopped. Files download exactly as before. This needs a database update applied from the Admin overview.
 
 ### Changed
 
-- Rolling back to a release before 2026.10.31.3, or before attachment sharing, now has one procedure: set `ATTACHMENT_SHARING=off` and `ATTACHMENT_RAW_INDEX=off`, deploy, choose **Restore separate copies** and wait until it reports no files served from the raw message and no shared copies, then roll back. See [Materialize, then roll back](https://github.com/midego1/kite/blob/main/docs/runbooks/recovery.md#materialize-then-roll-back).
+- Rolling back to a release before 2026.10.31.3 now has one procedure: turn off attachment sharing and serving from the raw message, deploy, choose **Restore separate copies**, wait until nothing is served from the raw message or shared, then roll back. See [Materialize, then roll back](https://github.com/midego1/kite/blob/main/docs/runbooks/recovery.md#materialize-then-roll-back).
 
 ### Fixed
 
-- **Ask AI** for failed AI requests on the [Admin overview](/admin) no longer leaves out cut-off failures on a busy day. The notes on what a feature asks the model for now come only with cut-off failures, where they explain the output cap, instead of with the first group that names the feature. The summary keeps whole groups: one that does not fit is counted in a closing line instead of being cut off half-way, and a later group may take its place. No migration.
+- **Ask AI** for failed AI requests on the [Admin overview](/admin) no longer leaves out cut-off failures on a busy day, and its summary no longer cuts a group off half-way.
 
 ## [2026.10.31.9] - 2026-10-31
 
 ### Added
 
-- **Why?** next to "N AI requests failed in the last 24 hours" on the [Admin overview](/admin) and in the mailbox's command center (primary admin): the failures grouped by cause, each with the features, provider and model, how often and when, the likely cause and a link to the setting that fixes it, worked out by Kite without asking an AI. **Ask AI** in it opens the assistant with that summary (codes and counts, no email) ready to send, and says why when the assistant can't answer either. No migration.
+- **Why?** next to "N AI requests failed in the last 24 hours" on the [Admin overview](/admin) and in the mailbox's command center (primary admin) groups the failures by cause, with the likely reason and a link to the setting that fixes it. **Ask AI** opens the assistant with that summary ready to send, without any email content.
 
 ### Changed
 
-- Files in received and imported mail are no longer stored a second time: when Kite can verify a file's bytes inside the stored raw message, it is served from exactly that part of the message, so a message with attachments takes about a third less storage. Downloads, previews, inline images, large-attachment links, JMAP, Save to Drive, forwarding and sending return the same bytes as before, and "Show original" is unchanged. Files Kite cannot verify there (quoted-printable, uuencode) keep a copy of their own, and a file whose stored copy has gone missing, for example after restoring an older backup, is rebuilt from the raw message the next time it is opened. No migration is needed; while migration 0088 is still pending, new mail keeps storing copies. The new environment variable `ATTACHMENT_RAW_INDEX=off` makes new mail store a copy of each file again; it is on by default.
-- **Do not roll back to a release before 2026.10.31.3 once this one has run**: those releases cannot open files served from the raw message and show them as missing. Fix forward instead, or follow the [recovery runbook](https://github.com/midego1/kite/blob/main/docs/runbooks/recovery.md#rolling-back-past-raw-backed-attachments) first. The earlier warning about rolling back past attachment sharing still applies.
-- **Why?** for cut-off failures on the [Admin overview](/admin) now states what Kite knows: the feature's output cap and how it is made up, whether thinking was on and at which effort, the tokens used, whether Kite already retried, and the setting to change. **Ask AI** sends the same facts with Kite's diagnosis and a note on what the feature asks the model for, so the assistant can answer for Kite instead of guessing. Still no email content.
-- The command center in the empty reading pane now sits calmly in every style and theme: its cards are quiet raised surfaces with a hairline edge and a faint glow of the style's accent, the counts are plain pills with a coloured dot, the quick actions match them, and a warning under **Needs attention** (or a waiting database update) is one amber callout that reads well on dark and light surfaces alike, instead of the solid blue and brown blocks Kite classic showed in dark mode.
+- Files in received and imported mail are no longer stored twice, so a message with attachments takes about a third less storage. Everything works as before, and self-hosters can turn this off with an install setting.
+- **Do not roll back to a release before 2026.10.31.3 once this one has run**, because those releases show files served from the raw message as missing. Fix forward instead, or follow the [recovery runbook](https://github.com/midego1/kite/blob/main/docs/runbooks/recovery.md#rolling-back-past-raw-backed-attachments) first. The earlier warning about rolling back past attachment sharing still applies.
+- **Why?** for cut-off failures on the [Admin overview](/admin) now explains what happened and which setting to change. **Ask AI** sends the same facts, so the assistant can answer instead of guessing. Still no email content.
+- The command center in the empty reading pane now looks calm in every style and theme. Its cards are quiet and a warning under **Needs attention** is one amber callout, instead of the solid blocks Kite classic showed in dark mode.
 - The switch is now called **Allow an external AI provider to read mail** in [Admin → Agent](/agent), and its description lists every feature it covers.
-- With an external AI provider that the primary admin has not allowed to read mail (**Allow an external AI provider to read mail** in [Admin → Agent](/agent#automatic-reading)), the older **Automatically draft replies** setting no longer queues a draft for every new message only to skip it, so Activity is not filled with skipped drafts. The Privacy section of the assistant guide now also says that a custom endpoint you run yourself counts as external and needs the opt-in.
-- Reloading after an update no longer shows the kite's return: the page reloads like an ordinary refresh. The startup screen could stop responding on that load only, and this keeps it out of the way while the cause is found. The kite still flies off before the reload.
+- If the primary admin has not turned on **Allow an external AI provider to read mail** in [Admin → Agent](/agent#automatic-reading), the older **Automatically draft replies** setting no longer fills Activity with skipped drafts. The assistant guide also now says that a custom endpoint you run yourself counts as external.
+- Reloading after an update no longer shows the kite's return. The page just reloads like an ordinary refresh.
 
 ### Fixed
 
-- Automatic reading with Anthropic's Claude Haiku 5.5 (and other Claude 5 models) no longer fails with "The AI's answer was cut off" (`cut_off`). These models think by default, and thinking counts against automatic reading's 400-token answer budget, so the budget was spent thinking. Kite now switches thinking off for automatic requests, agent drafts, summaries, one-line summaries and Write with Kite unless a reasoning effort is saved for the model in [Admin → Agent](/agent); Claude Sonnet 5.5 gets its lowest setting, and a model that always thinks (Claude Opus 5.5, Fable) gets effort low with room to think. A cut-off answer is asked once more with double the budget before it fails. Agent reply suggestions with Anthropic also get these settings now. No migration.
-- A start whose page stops responding behind the loading screen (bar frozen, kite still swinging, no **Reload Kite**) now says so: after 10 seconds without a sign of life the screen shows "Kite stopped responding. Reload this page to start again." It is drawn by CSS alone, so it appears even when no script can run.
-- When a page froze while starting, the next load reports to the server how far it got and which part of the app was rendering last (`boot.previous_load_froze` in the Worker logs), with no message content or addresses, so the cause can be found without copying details by hand.
+- Automatic reading with Anthropic's Claude Haiku 5.5 and other Claude 5 models no longer fails with "The AI's answer was cut off". Kite now turns off thinking for automatic requests, drafts, summaries and Write with Kite unless you saved a reasoning effort in [Admin → Agent](/agent), and a cut-off answer is retried once with more room.
+- If the page freezes while starting, the loading screen now says "Kite stopped responding. Reload this page to start again." after 10 seconds.
+- After a freeze while starting, the next load reports how far it got, with no message content or addresses, so the cause can be found.
 
 ### Security
 
-- The primary admin's external-provider opt-in now also covers the assistant chat and the older **Automatically draft replies** setting, as it already did for automatic reading, Write with Kite and summaries. With an external provider (anything but Workers AI) and the opt-in off, the assistant panel says the provider is external and that the primary admin has not allowed sending mail to it, with a link to [Admin → Agent](/agent) for the primary admin, and chat stays off; automatic drafts are skipped with the reason in Activity. The opt-in is checked again before every step of a chat answer. **If your install uses an external provider for chat, the primary admin has to turn on the opt-in once for chat to keep working.**
+- The primary admin's external-provider opt-in now also covers the assistant chat and the older **Automatically draft replies** setting. With an external provider and the opt-in off, the assistant panel explains why chat is off and automatic drafts are skipped. **If your install uses an external provider for chat, the primary admin has to turn on the opt-in once for chat to keep working.**
 
 ## [2026.10.31.8] - 2026-10-31
 
 ### Added
 
-- `GET /api/admin/attachment-storage` (admins) reports how many attachment rows and stored files there are, and with `?verify=1` checks that the newest 200 stored files still exist.
+- Admins can now ask for a report of how many attachments and stored files there are, and check that the newest 200 stored files still exist.
 
 ### Changed
 
-- **Do not roll back to an older release once this one has run.** Older releases delete an attachment's file together with the message that has it, without checking whether another message shares it, so after a rollback deleting a forward draft, a sent draft or one of two messages that share a file would delete the other message's file too. Fix forward instead. If a rollback cannot be avoided, follow the [recovery runbook](https://github.com/midego1/kite/blob/main/docs/runbooks/recovery.md#rolling-back-past-attachment-sharing) first. Set the new environment variable `ATTACHMENT_SHARING=off` to stop new sharing (sends and forwards then store their own copies again); it is on by default. A backup taken after this release can only be restored into a database that has migration 0088 applied.
-- Sending a draft and forwarding a message no longer store their attachments a second time: the sent message and the forward draft use the stored file of the draft or the original, so each file is kept once. Deleting a draft, a forward or a message removes a file only when no other message still uses it, and the database rows now go before the files, so a storage failure can leave an unused file behind but never a message whose attachment is missing. No migration is needed. Full backups, storage migrations and Admin → Storage count and copy a shared file once.
-- The command center's **Today** and **Money Watch** cards now sit below the quick actions, so nothing you are about to click moves when they appear, and they no longer reload every time you close a message: their data is kept for a minute, and refreshed sooner after a change in Calendar or [Subscriptions](/finance).
+- **Do not roll back to an older release once this one has run.** Older releases delete an attachment's file together with its message, even if another message still uses it. Fix forward instead. If a rollback cannot be avoided, follow the [recovery runbook](https://github.com/midego1/kite/blob/main/docs/runbooks/recovery.md#rolling-back-past-attachment-sharing) first. Self-hosters can turn off new sharing with an install setting, and it is on by default. A backup taken after this release can only be restored into a database that has the matching database update applied.
+- Sending a draft and forwarding a message no longer store their attachments a second time, so each file is kept once. Deleting a message removes a file only when nothing else uses it, and a storage failure can leave an unused file behind but never a message with a missing attachment.
+- The command center's **Today** and **Money Watch** cards now sit below the quick actions, so nothing you are about to click moves. They also stop reloading every time you close a message.
 
 ### Fixed
 
-- A trial whose payment failed now shows as **Payment failed** in the Money Watch card and in the search dropdown, and counts in the Subscriptions sidebar count, as it already did under Needs attention on the Subscriptions page.
+- A trial whose payment failed now shows as **Payment failed** in the Money Watch card and in the search dropdown, and counts in the Subscriptions sidebar count.
 - An event that started yesterday and runs into today now opens on today in the Calendar when you choose it in the **Today** card.
 
 ## [2026.10.31.7] - 2026-10-31
 
 ### Added
 
-- The command center in the empty reading pane now shows a **Today** card with what is left of today's calendar (start times, or "Now" for what is under way, with a link to each event and to the Calendar) and a **Money Watch** card with your subscriptions that renew, end a trial or failed a payment this week (with a link to Subscriptions). Each card appears only while its module is on for you, loads after the pane is shown, and stays hidden when its data cannot be read. Modules add such cards through a new `reading-pane` slot ([Modules](/modules)).
+- The command center in the empty reading pane now shows a **Today** card with what is left on today's calendar, and a **Money Watch** card with subscriptions that renew, end a trial or failed a payment this week. Each card appears only while its module is on for you. Modules can add cards like these ([Modules](/modules)).
 
 ### Fixed
 
-- After you switch accounts, the For you suggestions already on screen load for the new account at once instead of staying empty until the next change.
-- When the green **Database updated** notice leaves while it has the keyboard focus, the focus skips an element next to it that cannot take it (hidden or inert) and goes to the nearest one that can.
+- After you switch accounts, the For you suggestions on screen now load for the new account right away.
+- When the green **Database updated** notice goes away while it has the keyboard focus, the focus now moves to a nearby element that can take it.
 
 ## [2026.10.31.6] - 2026-10-31
 
 ### Added
 
-- With no message open, the reading pane now shows a small command center instead of "Select a message to read" alone: a greeting with today's date, the counts that matter (unread mail in the folder, messages in the Screener, open For you suggestions), your connected accounts with how each is doing (a failed sign-in gets a Reconnect link), quick actions (New email, Search, and the modules that are on), and for administrators what needs attention (the admin overview's list, with waiting database updates kept in the notice with its **Apply now** button and progress, plus a line for healthy backups and the database size). Everything comes from data the mailbox already loads or from the same requests the Settings and Admin pages make.
+- When no message is open, the reading pane now shows a small command center: a greeting, your unread, Screener and For you counts, your connected accounts with their status (a failed sign-in gets a Reconnect link), and quick actions. Administrators also see what needs attention, like waiting database updates and backup health.
 
 ### Changed
 
-- **What's new in Kite** loads its release notes when you open it instead of shipping them with every page, so the app downloads less.
+- **What's new in Kite** now loads its notes only when you open it, so the app downloads less.
 
 ### Fixed
 
-- A reading layout chosen while your account's layout was still loading is saved when you close or leave the tab, instead of being lost. Turning off **Use the same layout on every device** in [Settings → Inbox](/settings/inbox) while the layout loads keeps this browser's layout, and signing in to another account no longer holds back that account's saved layout.
-- Dismissing the green **Database updated** notice with the keyboard moves the focus to the element next to it instead of dropping it on the page, and switching to another window while the notice has the focus no longer lets it leave while you are away.
-- After you open an older message of a conversation from a link and move it from the reader, the focus goes to the next conversation in the list instead of the list itself.
-- For you suggestions in the sidebar and the reading pane refresh with one request per change instead of one each, and they no longer stay empty when a list opens right after you switch accounts.
+- A reading layout you pick while your account's layout is still loading is no longer lost. Turning off **Use the same layout on every device** in [Settings → Inbox](/settings/inbox) in that moment keeps this browser's layout, and signing in to another account no longer holds back its saved layout.
+- Dismissing the green **Database updated** notice with the keyboard now moves focus somewhere sensible, and the notice no longer disappears while you are in another window.
+- After you open an older message of a conversation from a link and move it away, focus goes to the next conversation in the list.
+- For you suggestions in the sidebar and the reading pane refresh faster, and they no longer stay empty when a list opens right after you switch accounts.
 
 ## [2026.10.31.5] - 2026-10-31
 
 ### Changed
 
-- "Kite was updated" at the top of a message list now looks like a message from Kite: the Kite logo as the avatar, the time the update was noticed, the subject ("Kite 2026.11.01.0 is ready" when the release changed) and a preview line with the first new note, unread until you open it. **Reload** and **Dismiss** are row actions that show on hover (always on touch screens). Opening the row shows what's new in the reader like an opened email, with the new release's notes as the body and **Reload** and **Dismiss** under them; on a phone it opens full screen with Back. It is still not a message: it is not counted, selected or moved, and `j`/`k` skip it.
+- "Kite was updated" at the top of a message list now looks like a message from Kite, with the new release's notes as its body and **Reload** and **Dismiss** buttons. It is not a real message, so it is never counted, selected or moved.
 
 ## [2026.10.31.4] - 2026-10-31
 
 ### Added
 
-- Connected accounts can send as addresses their sign-in does not prove: an **Other IMAP provider** account's own address, an account whose user name is not its address, and provider aliases. In [Settings → Connected accounts](/settings/connected-accounts), **Verify** or **Send from another address** mails a 6-digit code to the address; once it is entered, the address is in the composer's From menu and mail from it goes out through the account's SMTP server. Codes work for 30 minutes and 5 tries, are stored only as a keyed hash, and are limited to 5 an hour per user (3 for one address) and 10 a day per address; an address with 10 wrong codes in a day gets no new code until the next day. Needs migration 0089 (`external_identities`), applied from the admin overview.
-- Print an email from the reader's ⋯ menu, or with Ctrl/Cmd+P while it is open: a clean page with the subject, From, To, Cc, date, attachment names and sizes, and the body with its quoted history unfolded, in light colours whatever the theme. In conversation view the toolbar's menu prints the whole conversation, oldest first; each message's own menu prints just that message. Remote images stay hidden unless you showed them, as in the reader.
-- **Download PDF** in the same menus saves the email or conversation as a PDF named after the subject, with its text, headers and attachment names. It holds text only and Western European characters; for images, the original layout or other scripts, use Print and choose Save as PDF.
+- Connected accounts can now send from addresses their sign-in does not prove, such as an **Other IMAP provider** account's own address or a provider alias. In [Settings → Connected accounts](/settings/connected-accounts), use **Verify** or **Send from another address** to get a 6-digit code by email. Once you enter it, the address shows up in the composer's From menu. This needs a database update applied from the Admin overview.
+- You can print an email from the reader's ⋯ menu, or with Ctrl/Cmd+P. You get a clean page with the headers, attachment names and the full body. In conversation view you can print the whole conversation or a single message.
+- **Download PDF** in the same menus saves the email or conversation as a PDF named after the subject. It holds text only and Western European characters. For images or other scripts, use Print and choose Save as PDF.
 
 ### Changed
 
-- An unverified connected address is now listed in the From menu as **(Verify in Settings)** instead of being left out, and connecting or testing an account also tests its SMTP sign-in when its user name is not its address.
-- The green **Database updated** notice that follows **Apply now** no longer stays until the page is left. It stays readable for about eight seconds, waits while the pointer or the keyboard focus is on it or the tab is in the background, then folds away as a tiny kite lifts off its corner and drifts out of view; a new **Dismiss** button on the notice takes the same way out at once. Under reduced motion it fades instead. The amber notice about updates that still need to be applied, and a failed run, stay until they are dealt with, as before.
-- The inbox preview on the landing page (`/`) is now a live demo you can click through, on invented data and without any network request: open messages (the unread dot clears), switch folders (Inbox, Screener with Approve and Deny, For you with its suggestion cards, Starred, Snoozed, Sent, Drafts and the Receipts folder) and glimpse Calendar, Drive and Subscriptions; archive, snooze, star and trash with the same Undo as the app; Summarize shows a summary; Review draft opens a composer with the drafted reply, where Send only says "Demo: nothing sent"; search filters the list; the "Kite was updated" row can be reloaded away; and Kite AI opens a small chat with written answers. It works from the keyboard (j, k, Escape) and on a phone with one pane at a time. The frame still renders on the server; the interactive part loads in the background after the page is ready.
-- The loading screen now says what it is doing: under the progress bar it lists the five steps of the start (loading Kite and its version, signing you in, checking the database, loading your mail, ready) and fills each in with the facts of this start as they come in, such as the account name, "Up to date" or how many database updates wait, how many mailboxes and unread messages there are, and how long the start took. Nothing extra is requested for it, and the reload safety nets are unchanged.
+- An unverified connected address now shows in the From menu as **(Verify in Settings)** instead of being left out. Connecting or testing an account also checks its SMTP sign-in when its user name is not its address.
+- The green **Database updated** notice now fades away by itself after about eight seconds, as a tiny kite lifts off its corner. It waits while you are pointing at it, and there is a new **Dismiss** button to close it at once. The notices about updates still waiting or a failed run stay until you deal with them.
+- The inbox preview on the landing page is now a live demo you can click through, with invented data. You can open messages, switch folders, archive, snooze, star, search, try a drafted reply and chat with Kite AI. It works with the keyboard and on a phone.
+- The loading screen now shows what Kite is doing: its five start-up steps, filled in with facts like your account name, whether the database is up to date, and how long the start took.
 
 ### Fixed
 
-- Report spam in the reader now takes the whole conversation out of the list in conversation view (the default). It used to report only the open message, so the conversation's other messages stayed in the Inbox and its row kept showing. The reader acts on what the conversation's row stands for in the list you opened it from, as the row's own actions and a selection already did: a snoozed message of the conversation stays snoozed, and in Starred only the starred ones move. Report phishing, Archive, Move to trash, Not spam, Move to a folder and Block contact in the reader's toolbar work the same way; the actions on one message inside the conversation, and Report phishing on the phishing warning, act on that message alone, and with conversation view off the reader acts on the open message only.
-- The reader closes and goes back to the empty pane as soon as the open message leaves the list, and the keyboard focus moves to the row next to it: Move to trash, Report spam or phishing, Archive, Not spam, a move to a folder, Block contact or Delete forever in the reader, the same actions on its row or in a selection, dropping it on a sidebar folder, **Mark as spam** on the phishing warning, and Snooze in the Inbox. It used to keep showing the message, selected, until the move back to the list had finished, which on a busy deployment could take long enough to look stuck. In Starred the message stays open, since Starred still lists it. **Undo** in the toast puts the message back in the list.
-- A reading layout chosen while your account's layout could not be loaded (a slow first request right after a deploy, or a dropped connection) is no longer lost: the load is tried again a few times, and the choice is saved once it loads or every attempt failed. A layout loaded just after you changed something on this device no longer puts the old choice back.
-- The automatic direct-upload setup under [Admin → Storage](/storage) says it took too long, rather than that the checks failed, when the checks were cut short by its time limit, and it cleans up a token Cloudflare created late on accounts with many API tokens.
-- Very long mail is no longer searched for a one-time code at delivery, so its new-mail notification never carries one: a body of more than about 400,000 characters as received (the plain-text part, or the HTML when there is none, markup included) is skipped before any work on it, and otherwise more than about 100,000 characters of subject and readable text.
+- **Report spam** in the reader now moves the whole conversation out of the list in conversation view. Before, it only reported the open message and the rest stayed in the Inbox. Report phishing, Archive, Move to trash, Not spam, Move to a folder and Block contact in the reader's toolbar now work the same way.
+- The reader now closes right away and focus moves to the next row when the open message leaves the list, whether you trash, archive, move, report or snooze it. Before, it kept showing the message until the move finished, which could look stuck on a busy install. **Undo** puts the message back.
+- A reading layout you pick while your layout could not be loaded (a slow first request after an update, or a dropped connection) is no longer lost. Kite tries again a few times and saves your choice once it can.
+- The automatic direct-upload setup under [Admin → Storage](/storage) now says it took too long when it ran out of time, instead of saying the checks failed. It also cleans up a token Cloudflare created late.
+- Very long emails are no longer searched for a one-time code when they arrive, so their new-mail notification never shows one.
 
 ## [2026.10.31.3] - 2026-10-31
 
 ### Changed
 
-- Database migration `0088_attachment_raw_storage` (apply it from the admin overview) prepares storing each mail attachment once: `message_attachments` gains the columns that let an attachment be served from its byte range of the stored raw message, and attachment objects no longer need a key of their own. Nothing is converted yet, and every attachment keeps downloading as before, also while the migration is still pending. Downloads, previews, inline images, large-attachment links, JMAP blobs, Save to Drive, forwarding, sending, the assistant and the risky-attachment check now all read attachments through one place, and full backups and storage migrations copy only attachments that have an object of their own. Design: `docs/specs/attachments-once.md`.
+- Kite is preparing to store each mail attachment only once. This needs a database update applied from the Admin overview. Nothing is converted yet and attachments download as before, even while the update is waiting.
 
 ### Fixed
 
-- On the self-hosted (Node/Docker) runtime, reading part of a stored file (the ZIP check of a risky attachment, a module reading the start of an attachment) no longer loads the whole file into memory first.
+- On the self-hosted (Node/Docker) version, reading just part of a stored file, such as the check of a risky ZIP attachment, no longer loads the whole file into memory first.
 
 ## [2026.10.31.2] - 2026-10-31
 
 ### Added
 
-- "Reload Kite" and "Kite couldn't load" on the loading screen have a folded **Details** section with **Copy details**, for bug reports about a start that hangs. It says how far the start got, for how long the page was visible, how often the screen was mounted, which requests are still open, the slowest files and any frame that blocked the page for more than a second. It holds paths without query strings and without the token of a Drive or shared-file link, times and counts, never message content or addresses. When a page froze, the next load of the tab names the phase it froze at in the browser console and in Details.
-- [Settings → Connected accounts](/settings/connected-accounts) has a forwarding guide for Gmail, Outlook.com and Microsoft 365, iCloud Mail, Yahoo Mail, Fastmail and other providers: the steps with your Kite address filled in, links to the provider's own forwarding settings and what to check afterwards. Choosing Outlook.com or Microsoft 365 when connecting an account, which Kite cannot connect yet, offers **Set up forwarding**.
-- Mail that came in through a connected account (or was sent as one) shows a "via" chip in the message list and the reader, such as "via Gmail" or the account's label. Choosing it in the reader lists everything from that account, and the new `via:` search operator finds mail by provider, address, label or domain (`via:gmail`, `via:me@gmail.com`, `via:"Work mail"`).
-- **Also sync the Spam folder** on a connected account (off by default) checks the provider's Spam folder too, from the moment it is turned on. That mail always lands in Kite's Spam: Kite's own spam filter still runs on it and its verdict is kept, with the provider's added, and mailbox rules and the Screener do not move it. No migration is needed.
+- The "Reload Kite" and "Kite couldn't load" screens now have a folded **Details** section with **Copy details**, to help with bug reports about a start that hangs. It never includes message content or addresses.
+- [Settings → Connected accounts](/settings/connected-accounts) has a forwarding guide for Gmail, Outlook.com and Microsoft 365, iCloud Mail, Yahoo Mail, Fastmail and other providers, with your Kite address filled in. Choosing Outlook.com or Microsoft 365, which Kite cannot connect yet, now offers **Set up forwarding**.
+- Mail that came in through a connected account, or was sent as one, now shows a "via" chip such as "via Gmail" in the list and reader. Click it to see everything from that account, or search with `via:` to find mail by provider, address, label or domain.
+- **Also sync the Spam folder** on a connected account (off by default) also checks the provider's Spam folder. That mail always lands in Kite's Spam, where Kite's own spam filter still runs on it.
 
 ### Fixed
 
-- A loading screen that keeps being mounted again now gets "Kite couldn't load" after 30 visible seconds, even while it shows Reload Kite, and the 30-second limit holds again after **Try again** on a failed sign-in check. "Startup is taking longer than expected" counts only the time the tab was visible, so a tab opened in the background no longer shows it the moment you switch to it.
-- Some messages could freeze the browser for seconds when opened, listed or replied to: very long runs of dashes before an email address, of `<` in a sender name, of dots or spaces in an attachment name, or of blanks in a colour or before a line break. These are now handled in linear time, as are conversations with thousands of participants. Long runs of broken characters in inbound mail no longer hold up the mail queue.
-- Opening a large email, or reloading Kite while one is open, no longer freezes the page behind the loading screen. The reader prepares a message's body once instead of on every update while Kite starts, and looking for a one-time code in a long email no longer slows down on long links or long lines.
+- A loading screen that keeps restarting now gives up with "Kite couldn't load" after 30 seconds of being visible. "Startup is taking longer than expected" no longer appears the moment you switch to a tab that loaded in the background.
+- Some messages could freeze the browser for a few seconds when opened, listed or replied to, such as ones with very long runs of dashes or dots, or conversations with thousands of people. They now open quickly, and long runs of broken characters in incoming mail no longer hold up the mail queue.
+- Opening a large email, or reloading Kite while one is open, no longer freezes the page behind the loading screen.
 
 ## [2026.10.31.1] - 2026-10-31
 
 ### Added
 
-- While a send is held by the undo window, the bar now shows a **Send now** button next to **Undo**, a countdown, and the subject as a link to the queued message in Sent. Send now claims the held message with the same conditional claim the outbound queue uses, so it is never delivered twice and never both sent and undone (`POST /api/messages/{id}/send-now`, for the author only, like Undo; a send waiting for a connected account server's retry keeps its own schedule and answers 409). Sent refreshes when the hold ends. If the provider refuses the message, the bar says "Sending failed" and offers Edit; a send waiting for a connected account's retry cannot be hurried, and a late queue message of the undo window can no longer start a second retry chain (retries queued before this change are unaffected). From upstream Mailflare #210.
-- Avatars that have loaded once (versioned URLs, which the server caches for a year) no longer flash their blurred preview on the next visit (from upstream Mailflare).
+- While a send is held by the undo window, the bar now shows a **Send now** button next to **Undo**, a countdown, and a link to the queued message in Sent. A message is never both sent and undone. If the provider refuses it, the bar says "Sending failed" and offers Edit. Sends waiting for a connected account's retry cannot be hurried.
+- Avatars that have loaded once no longer flash a blurred preview on your next visit.
 
 ### Changed
 
-- The self-hosted (Node/Docker) server now proxies remote images too, instead of letting the browser load them from their host: it resolves the host of the image and of every redirect and refuses private, loopback and reserved addresses, with the same per-user rate limit as on Workers (from Mailflare #220).
-- The Activity listing of MCP tool calls and the pruning of old MCP tool call audit rows are faster on a large audit log: migration 0087 adds the index `audit_logs_action_created_idx` on `audit_logs (action, created_at)`. Apply it from the database update banner or the [Admin overview](/admin); until then everything works as before.
-- The collapsed sidebar's icon rail now tints a folder with any colour you picked, the default blue included: a folder remembers whether its colour was picked, and one nobody coloured stays as neutral as the system folders. This replaces "a colour other than the default blue" in the earlier rail note. Migration 0086 adds `folders.color_is_custom`; apply it from the database update banner or the [Admin overview](/admin). Until then folders still list and save, and the rail shows a picked blue as neutral. Folders with any other colour stay tinted, as before.
-- The landing page at `/` describes today's Kite instead of the 2025 routing tool: a hero with a preview of the inbox and reader built from the app's own styles (invented demo data), a feature grid by theme (mail with the Screener and spam protection, connected accounts, AI that asks before it acts, the modules, backups and storage, JMAP, API, webhooks and MCP, privacy), a "How it runs" section (your Cloudflare account or one Docker container, AGPL-3.0, the source) and the ways in: **Deploy to Cloudflare**, **Self-host with Docker**, **Sign in** and the source on GitHub. A signed-in user keeps the page with **Open dashboard**. It follows the light and dark theme and the style, fits a phone, and the "that actually flows" line now stays part of the headline in every style (Kite classic sets it in the script face).
+- The self-hosted (Node/Docker) server now also loads remote images for you instead of letting the browser fetch them, and refuses private and reserved addresses, like the Cloudflare version.
+- Activity's list of assistant tool calls, and the cleanup of old ones, is faster on a large log. This needs a database update applied from the [Admin overview](/admin), and everything works as before until then.
+- The collapsed sidebar now tints a folder with any colour you picked, the default blue included. Folders nobody coloured stay neutral, like the system folders. This needs a database update applied from the [Admin overview](/admin). Until then, a folder you picked blue for shows as neutral.
+- The landing page now describes today's Kite. It has a hero with an inbox preview, a feature overview, a "How it runs" section, and ways in: **Deploy to Cloudflare**, **Self-host with Docker**, **Sign in** and the source on GitHub. Signed-in people get **Open dashboard**. It follows the light and dark theme and fits a phone.
 
 ### Fixed
 
-- Reloading to a new version can no longer leave Kite on the loading screen with the kite floating on its string. The kite's return shows only on the one load right after Reload and for at most 8 seconds, so a refresh or an automatic reload shows the plain loading screen. A loading screen that is still up after 30 seconds without its own Reload Kite button now shows "Kite couldn't load" with a Reload button, even after the app has started, and Reload Kite counts from when the page started loading.
-- The composer's message body fills the whole composer, so a click anywhere below the text puts the cursor in it, in the floating and the full-page composer (from upstream Mailflare #211).
-- The notification service worker (`/kite-sw.js`) is no longer cached by the browser or the CDN (`Cache-Control: no-cache`, `updateViaCache: "none"`), so a new version is picked up on the next load (from upstream Mailflare).
+- Reloading to a new version can no longer leave Kite stuck on the loading screen. A loading screen still up after 30 seconds now shows "Kite couldn't load" with a Reload button. A refresh or an automatic reload shows the plain loading screen.
+- The composer's message body now fills the whole composer, so clicking anywhere below the text puts the cursor in it.
+- A new version is picked up on the next load, because the browser no longer holds on to an old copy of the notification service.
 - Being signed out when Kite reloads to a new version no longer shows the kite's return on the sign-in page.
 
 ### Security
 
-- Risky attachments are flagged and their download waits for a warning: programs, scripts, shortcuts, installers and add-ins, macro-enabled Office and Excel data-connection files, files declared as a program, names with hidden right-to-left or control characters or an NTFS stream suffix, double extensions such as `invoice.pdf.exe`, web pages, disk images and archives. A flagged name is never shown inline, even when it claims to be an image. ZIP files are looked into without unpacking them (at most 1 MiB of directory) and flagged when they hold a program or cannot be checked. The reader, earlier messages in a conversation, drafts, Save to Drive and Drive's All attachments show the reasons and enable Download only after **I understand the risk**, and the server refuses an unacknowledged download with 409 (a guard against accidental clicks; JMAP downloads are not gated). Kite still has no antivirus; see "Risky attachments" in `docs/spam-protection.md` (from Mailflare #218).
-- Attachment file names are cleaned before they are stored (control and bidi characters removed, `.` and `..` refused, at most 180 bytes with the extension kept), new attachment objects are stored under ids only so a sender's file name never becomes part of a storage path, and download headers drop those characters and cap long names too. JMAP blob downloads add `X-Content-Type-Options: nosniff` (from Mailflare #222).
-- A large-attachment download link stops working while its message is in Trash, Spam or the Screener, or while its mailbox or owner is disabled, and always downloads as plain bytes (from Mailflare #222).
-- **Insert link** in the composer builds the link with DOM calls, so a quote or `<` in the address can no longer inject markup (from Mailflare #221).
-- Pages are served with `Cross-Origin-Opener-Policy: same-origin`, so a window Kite opens or that opens Kite gets no handle on it (from Mailflare #221).
-- Webhooks, mail import, object storage and the remote image proxy refuse host names that embed a private IPv4 address (`10-0-0-1.example.com`) and wildcard DNS services such as `nip.io`, `sslip.io` and `localtest.me` (from Mailflare #220).
-- A received reply joins a conversation only when the message passed DMARC for its own From domain, or when DMARC gave no result and its sender already takes part in the conversation; a failed DMARC check always starts a new conversation. A stranger who learned a Message-ID can no longer slip a message into a conversation, and a message whose Message-ID is already a conversation's key starts a new one, except the copy of a message you sent to your own address or alias. Someone newly copied from a domain without DMARC, or a mailing list without DMARC, starts a separate conversation until they are part of it. Mail import, connected accounts and JMAP drafts keep joining as before. Conversations no longer show Spam unless you open that message (upstream Mailflare #223).
-- Received mail no longer renames a contact. Every message in the list, the conversation, the reader and the contact card shows the name you saved for the contact, else that message's own From name, else a name learned earlier, so a shared `no-reply` address keeps a different sender per message (upstream Mailflare #223, #226).
-- The forwarding loop guard `X-Kite-Forwarded` is now signed per message (an HMAC over the Message-ID, keyed with `APP_ENCRYPTION_KEY`, else `INBOUND_WEBHOOK_SECRET`, else `CF_TOKEN`), so a sender can no longer switch account forwarding off for its message with `X-Kite-Forwarded: 1`, and a value read from a forwarded copy does not work on other messages. The pre-rename `X-Mailflare-Forwarded` counts only with the signed value. Installs without any of these secrets keep the unsigned value; set `APP_ENCRYPTION_KEY` to get the signed one. Two installs forwarding to each other stop after one extra hop. See "The forwarding loop guard" in `docs/sending-and-deliverability.md` (upstream Mailflare #223).
-- New-mail notifications name the sender as "Name <address>" without control or direction-changing characters, and mail a rule or a block files in Trash no longer notifies, like Spam (upstream Mailflare #223).
-- Senders first seen in Spam, Trash or the Screener, or first recorded by blocking them, are no longer looked up on Gravatar (upstream Mailflare #220).
-- The `message.inbound` webhook is no longer sent for mail filed in Spam or Trash; mail held by the Screener still sends it (upstream Mailflare #224).
+- Risky attachments, such as programs, scripts, installers, macro files, disguised names like `invoice.pdf.exe`, web pages, disk images and archives, are now flagged. Their download waits until you confirm with **I understand the risk**. Kite still has no antivirus.
+- Attachment file names are cleaned before they are stored, and a sender's file name never becomes part of a storage path. Download headers also drop unsafe characters and cap long names.
+- A large-attachment download link stops working while its message is in Trash, Spam or the Screener, or while its mailbox or owner is disabled.
+- **Insert link** in the composer can no longer be used to inject markup through the address.
+- Kite's pages now keep windows it opens, or that open it, from getting a handle on each other.
+- Webhooks, mail import, object storage and the remote image proxy now refuse host names that hide a private address (like `10-0-0-1.example.com`) and wildcard DNS services such as `nip.io`.
+- A received reply now joins a conversation only if it passed the sender domain's DMARC check, or DMARC gave no result and the sender is already part of that conversation. A stranger who learned a Message-ID can no longer slip a message into a conversation. Conversations no longer show Spam unless you open that message.
+- Received mail no longer renames a contact. Messages show the name you saved for the contact, else that message's own From name, so a shared no-reply address keeps a different sender per message.
+- The loop guard for forwarded mail is now signed per message, so a sender can no longer switch off your account forwarding for its message. Installs without an encryption key set keep the old unsigned guard, so set one to get the signed version. Two installs forwarding to each other now stop after one extra hop.
+- New-mail notifications now show the sender as "Name <address>" without hidden control characters, and mail filed in Trash by a rule or a block no longer notifies, like Spam.
+- Senders first seen in Spam, Trash or the Screener, or first recorded by blocking them, are no longer looked up on Gravatar.
+- The new-message webhook is no longer sent for mail filed in Spam or Trash. Mail held by the Screener still sends it.
 
 ## [2026.10.31.0] - 2026-10-31
 
 ### Added
 
-- Direct Drive uploads to R2 are now part of setup on Cloudflare: creating the first admin account uses `CF_TOKEN` to create an API token that may only read and write the `kite-raw` bucket, sets the bucket's CORS rule for the app, checks and saves the keys. Add the account permissions **Workers R2 Storage: Edit** and **Account API Tokens: Edit** to `CF_TOKEN` for this (see [Direct uploads at setup](https://github.com/midego1/kite/blob/main/docs/deployment.md#direct-uploads-at-setup)); you may remove the second after setup. If it cannot, setup still finishes.
-- [Admin → Storage](/storage) and the [Admin overview](/admin) (under Needs attention) show "Direct uploads are off: set up (2 min)", with why the automatic setup failed, until direct uploads are on or the reminder is dismissed. **Enable direct uploads** starts with **Set up automatically**, which does the same in one click and names a missing permission; the guided manual steps stay below it.
-- Migration 0085 adds the `storage_state` table, which keeps the automatic setup's outcome and the dismissed reminder. Apply it from the database update banner or the [Admin overview](/admin); until then the reminder shows without a reason and **Dismiss** waits for the update.
-- **Add store** with Cloudflare R2 can create a new R2 bucket (with a suggested name, location and jurisdiction) or connect one picked from the account's buckets in one click, listing each step as it goes. A taken name offers to connect the existing bucket. Kite adds its CORS rule next to the bucket's other rules, and puts the policy back if the setup fails.
+- Setup on Cloudflare can now turn on fast direct Drive uploads for you. To allow it, add the permissions **Workers R2 Storage: Edit** and **Account API Tokens: Edit** to your Cloudflare token (see [Direct uploads at setup](https://github.com/midego1/kite/blob/main/docs/deployment.md#direct-uploads-at-setup)). You can remove the second one after setup, and if the automatic step fails, setup still finishes.
+- [Admin → Storage](/storage) and the [Admin overview](/admin) show a reminder, "Direct uploads are off: set up (2 min)", with the reason the automatic setup failed. **Enable direct uploads** now starts with **Set up automatically**, which does it in one click and names any missing permission.
+- Kite remembers the result of the automatic setup and whether you dismissed the reminder. This needs a database update applied from the [Admin overview](/admin); until then the reminder shows without a reason and **Dismiss** has to wait.
+- **Add store** with Cloudflare R2 can now create a new bucket or connect one of your existing buckets in one click, and shows each step as it goes. If the name is taken, it offers to connect the existing bucket, and if setup fails it puts things back as they were.
 
 ### Changed
 
-- The [Admin overview](/admin) now starts with what needs attention: waiting database updates, a failed or missing backup, a restore that needs recovery, a database near its size limit, webhooks with failed deliveries, AI requests that failed in the last 24 hours and domains that are not active yet, each with a link to where to fix it, or "Nothing needs your attention". Under it, tiles count accounts, mailboxes and domains (and the database size for the primary admin) and open the matching page; the database, size and backup cards follow. Admins who are not the primary admin get the same list and tiles for what they may read, instead of an empty page.
-- Requests to a saved store no longer follow HTTP redirects (this came with the Test connection hardening): a store behind a proxy that redirects must be saved with its final endpoint.
-- A Test connection attempt refused by the limit keeps its single audit row, now marked `outcome: "rate_limited"`, and every attempt's row records its outcome.
-- A forwarded message attached inline as `message/rfc822`, and each post of a digest, now shows as an `.eml` attachment instead of being merged into the body, so it is parsed only once. Attached messages do not count toward the limit of 10 attachments (from Mailflare #214).
-- After upgrading, the daily raw mail sweep (02:00 UTC) works through the existing `inbound/` folder of the Mail store, up to 20,000 objects a day, and deletes raw mail older than a week that no message refers to. Raw mail of stored messages is never touched (see "Inbound mail limits" in `docs/operations.md`).
+- The [Admin overview](/admin) now starts with what needs your attention, such as waiting database updates, backup problems, failed webhooks, failed AI requests or domains that are not active yet, each with a link to fix it. Tiles below count accounts, mailboxes and domains, and admins who are not the primary admin see the same overview for what they may read.
+- Kite no longer follows redirects when talking to a saved store. If your store sits behind a proxy that redirects, save it with its final address.
+- Every **Test connection** attempt is now recorded in the audit log with its outcome, including attempts refused for trying too often.
+- A forwarded message attached inside another email, and each post of a digest, now shows as an attached .eml file instead of being merged into the body. Attached messages no longer count toward the limit of 10 attachments.
+- After you upgrade, the daily clean-up now also goes through existing raw mail in the Mail store (up to 20,000 files a day) and deletes raw copies older than a week that no message uses. Raw mail of stored messages is never touched (see [Inbound mail limits](https://github.com/midego1/kite/blob/main/docs/operations.md#inbound-mail-limits)).
 
 ### Fixed
 
-- A message with an oversized body, subject, address list or Message-ID is stored instead of failing and being dropped after its retries: large HTML bodies of delivered mail go to mail storage like imported ones, and the other fields are cut to fit (from Mailflare #217).
-- Two first messages from the same new sender arriving at once no longer make one of them fail.
-- Mail for an address that has no mailbox, alias or catch-all is refused with "No such recipient here" instead of being stored and then silently dropped. A failed routing lookup still stores the message, so nothing is lost (from Mailflare #219).
-- Raw mail that nothing stores (no route, a reject rule) is deleted right away, and a daily sweep removes raw mail no message references a week after it arrived (from Mailflare #219). A message whose forward failed under a forward rule without a copy goes to the rule's mailbox, or is kept in mail storage and logged, instead of being dropped.
-- When the routing lookup fails (the database is unavailable), mail is now stored for the queue even with account forwarding set up, instead of being refused with "Processing failed".
+- Messages with a very large body, subject, address list or Message-ID are now saved instead of being lost after failing. Large HTML bodies go to mail storage and other oversized fields are shortened.
+- Two first messages from the same new sender arriving at the same moment no longer make one of them fail.
+- Mail for an address that has no mailbox, alias or catch-all is now refused with "No such recipient here" instead of being stored and silently dropped. If the lookup itself fails, the message is still stored so nothing is lost.
+- Raw mail that nothing stores is now cleaned up, and a daily sweep removes leftovers after a week. A message whose forward failed now goes to the rule's mailbox or stays in mail storage instead of being dropped.
+- When the database is briefly unavailable, incoming mail is now kept for processing even with account forwarding set up, instead of being refused.
 
 ### Security
 
-- `CF_TOKEN` needs **Account API Tokens: Edit** for the automatic setup, which lets it create tokens with any permission on the account (a leaked `CF_TOKEN` could then take the account over); Kite only uses it when setup runs or an admin selects Set up automatically or Create bucket and connect, and the docs and the dialog say to remove it afterwards. The setup ends within its time budget with its cleanup, never creates a second token for a bucket Kite already has a store for, and tokens it created stay in the account until deleted there. The token value and the derived S3 secret are never stored in clear, returned or logged.
-- Incoming mail is checked before it is parsed: a crafted message with a huge header block, thousands of MIME parts, deep nesting or hundreds of thousands of short lines (in a body, a text attachment or an attached message) is refused with "Message rejected: …" instead of exhausting the Worker's CPU or memory or blocking the self-hosted server. Every path that reads raw mail goes through the same bounded parser (Cloudflare, the relay, SMTP, Resend, SES, imports, JMAP `Email/import`, automatic reading), and a message over the limits that still reaches the queue is dropped instead of retried; any other parse error is retried as before (from Mailflare #214).
-- Turning HTML into text for snippets, search and automatic reading no longer slows down on unclosed `<style>`, `<script>` or `<head>` tags (from Mailflare #214).
-- A plain-text message in `format=flowed` is unfolded in linear time: a 2.4 MB message of 39,000 flowed lines took about 25 seconds to parse and now takes well under one.
-- Mail from Resend now carries its plain headers (at most 200, without any authentication or `Received` headers), so auto-replies, mailbox rules and automatic reading recognise automatic and list mail there too (from Mailflare #224).
+- The Cloudflare permission **Account API Tokens: Edit** is powerful: with it, a leaked token could take over the Cloudflare account. Only add it for the automatic setup and remove it afterwards, as the docs and the dialog say. Kite never stores or shows the token value, and tokens it created for a bucket stay in your Cloudflare account until you delete them there.
+- Incoming mail is now checked before it is read, so a crafted message (a huge header block, thousands of parts, deep nesting or endless short lines) is refused instead of overloading the server. Every way mail comes in uses the same check.
+- Turning HTML into text for previews, search and automatic reading no longer slows down on badly formed emails.
+- Plain-text messages that use flowed formatting are now read much faster. A very large one that took about 25 seconds now takes well under one.
+- Mail from Resend now keeps its normal headers, so auto-replies, mailbox rules and automatic reading recognise automatic and list mail there too.
 
 ## [2026.10.30.4] - 2026-10-30
 
 ### Added
 
-- [Admin → Storage](/storage): **Test connection** in the Add store, Edit store and Enable direct uploads dialogs runs every check (endpoint, credentials, bucket, write, read, list, delete, multipart, signed link, CORS) without saving, and lists each with ✓ or ✗ and a fix in the provider's own words; a missing CORS rule comes with the rule for this site and a **Copy** button.
-- The store form is grouped into Where, Credentials and Direct uploads, with provider presets: Cloudflare R2 asks only for the account ID, Amazon S3, Backblaze B2, Wasabi and Hetzner pick a region and build the endpoint, and each provider links to the page that creates its keys. The secret has a show and hide toggle, and mistakes are explained under the field.
-- **Enable direct uploads** for the default R2 bucket is a four-step guide (create the token, paste the keys and account ID, test, save), and the Storage page and [Drive settings](/drive/settings) recommend it while Drive uploads still pass through the Worker.
-- After **Reload** in the "Kite was updated" notice, the loading screen continues the story: the kite flies back in from the top right and floats on its string above the progress bar, its tail rippling and a cloud drifting by, until the new version is ready and the screen fades into the app. The screen follows your theme. Browsers set to reduced motion see the kite standing still with "Updating Kite…", and an ordinary reload keeps the plain loading screen.
+- In [Admin → Storage](/storage), **Test connection** in the Add store, Edit store and Enable direct uploads dialogs now runs every check without saving. It lists what passed or failed with a fix in the provider's own words, and a missing CORS rule comes with the rule to copy.
+- The store form is now grouped into Where, Credentials and Direct uploads, with presets for Cloudflare R2, Amazon S3, Backblaze B2, Wasabi and Hetzner. Each preset links to the page where you create keys, the secret has a show and hide toggle, and mistakes are explained under the field.
+- **Enable direct uploads** for the default R2 bucket is now a four-step guide, and the Storage page and [Drive settings](/drive/settings) recommend it while uploads still go through the Worker.
+- After you click **Reload** in the "Kite was updated" notice, the loading screen now shows the kite flying back in and floating above the progress bar until the new version is ready. It follows your theme, and browsers set to reduced motion see a still kite with "Updating Kite…".
 
 ### Changed
 
-- The Admin menu groups its pages by task: Overview, People (Accounts, Activity), Mail (Domains, Mailboxes, Routing), AI, Modules (with each module's settings page), Data (Backups, Storage) and System (General, Branding, Alerts, API keys, Webhooks). Every address stays the same. Page titles now match the menu: the overview is "Overview", "Database Backups" is "Backups", "Admin API keys" is "API keys", and a mailbox's admin page is titled after the mailbox.
-- The dyslexia-friendly font (OpenDyslexic) now has a **Use it for** choice under [Settings → Appearance](/settings/appearance), shown with the font and following your account like the font itself. **Text only** (the new default) sets emails, what you write, the message list's sender, subject and preview lines, thread summaries and assistant replies in it, while menus, buttons, labels, headers and the sidebar keep the normal interface font; **Everywhere** is how the font behaved before. If you had already chosen OpenDyslexic, you now get Text only; pick Everywhere to keep the whole app in it. Nothing changes when another font is chosen, and no font file is requested unless OpenDyslexic is.
-- A saved store's check list folds into "All N checks passed · Checked <time>" with **Show details** when nothing failed, and the **Switch** button under Where data lives explains why it is unavailable.
-- A refused access key or secret now says which one and why (a space or line break, or its length), instead of "That does not look like an access key pair".
+- The Admin menu is now grouped by task: Overview, People, Mail, AI, Modules, Data and System. Every address stays the same, and page titles now match the menu.
+- The dyslexia-friendly font now has a **Use it for** choice under [Settings → Appearance](/settings/appearance). **Text only** (the new default) uses it for emails and what you write while menus and buttons keep the normal font, and **Everywhere** is how it worked before. If you already chose it, pick Everywhere to keep the whole app in it.
+- A saved store's checks now fold into "All N checks passed" with **Show details** when nothing failed, and the **Switch** button under Where data lives explains why it is unavailable.
+- A refused access key or secret now says which one is wrong and why, such as a stray space or the wrong length.
 
 ### Fixed
 
-- Applying database updates holds up better on slow or unreliable connections: a timed-out update is followed for up to 20 minutes before it is reported as unknown, a request that never answers is cut off once every update has landed, and other tabs show the busy state reliably, even while hidden.
-- Dark mode no longer leaves dark text unreadable on mail that sets its own text colours, and no longer turns ordinary replies into inverted cards. Near-black text (Outlook's `color:black`, Gmail's `#222`) simply takes the theme's text colour. Mail with a background, or with a colour that would still be unreadable on dark (a dark-blue signature), is rendered light and inverted with links still blue. Light text is left alone. "Original colours" is offered above every message dark mode changed, in every layout and at every width, and also restores its quoted history: one small button at the top right of the message body, reachable with the keyboard, with one fixed label and a pressed state.
+- Applying database updates holds up better on slow or unreliable connections, and other open tabs show the busy state reliably.
+- Dark mode no longer leaves dark text unreadable in mail with its own colours, and no longer turns ordinary replies into inverted cards. Where dark mode changed a message, **Original colours** is now offered above it, at every width, and also restores its quoted history.
 
 ### Security
 
-- The assistant's `get_thread`, automatic reading, automatic reply drafts and conversation summaries no longer read Spam, Trash, mail the Screener holds or other users' drafts from a conversation, so text an unapproved sender wrote cannot steer them (upstream Mailflare #225).
-- JMAP `EmailSubmission/set` refuses to send a draft the AI assistant wrote until it was reviewed and confirmed in Kite, as the composer already did (upstream Mailflare #225).
-- In assistant chat, changing or deleting calendar events is now a proposal you approve under the answer, listing each event and what would change; nothing changes before you click, and an approval is refused if the event was edited since (upstream Mailflare #225).
-- The send review of an AI draft says the assistant wrote it and warns about recipients you have never written to and have not saved as contacts (upstream Mailflare #225). Recipients count as written to only once a message you sent them was delivered: auto-replies, invitation answers, booking notices and cancelled or undone sends no longer add them to your contacts, and invitation answers and booking notices no longer approve their recipients in the Screener.
-- The MCP server tells clients that mail and calendar content is untrusted third-party text, marks every result with `contentTrust`, labels read-only and destructive tools, and records each tool call (tool, key and outcome, never content) in the audit log, kept for 90 days (pruned every five minutes and daily) and listed by `GET /api/audit-logs?action=mcp.tool_call` (upstream Mailflare #225).
-- Mail that fails DMARC from a domain publishing `p=reject` or `p=quarantine` now goes to Spam, even from a saved contact or someone you have written to, and so does mail failing both SPF and DKIM without a DMARC result. A failure from a `p=none` domain, or one whose policy Kite cannot learn, still only adds to the spam score. A failed DMARC check, or a failed SPF or DKIM check without a DMARC pass, now cancels the trust a known sender otherwise gets, so a forged From no longer reaches the Inbox on that trust; forwarded mail that still passes DMARC keeps it (adapted from upstream Mailflare #216). Kite reads the policy from the receiving server's trusted results or SES, else from the domain's `_dmarc` record (cached, 3-second limit).
-- New switch **Treat every DMARC failure as spam** under [Admin → General](/general) → Sender authentication, off by default, sends every DMARC failure to Spam. It needs migration `0084_add_spam_strict_dmarc`; apply it from the database card in Admin.
-- Self-hosted: the built-in SMTP listener now checks SPF, DKIM and DMARC itself (with the MIT-licensed mailauth library) and records the result under `MAIL_HOSTNAME`, so the spam filter and the policy above apply to mail received on port 25. It adds a `Received` header with the connecting address, allows 100 sessions in total and 10 per address, 50 recipients per message and 60 seconds of silence, refuses a message over `SMTP_MAX_SIZE` without holding it in memory, and removes `Authentication-Results` headers a sender wrote under the listener's own name. For clients on private addresses only DKIM is checked, and the message's spam details say SPF could not be checked: the listener must see senders' real addresses, see [Self-hosting](https://github.com/midego1/kite/blob/main/docs/self-hosting.md#receiving-mail) (adapted from upstream Mailflare #215).
-- Editing a store's endpoint, bucket, region, addressing or provider now asks for its access key ID and secret again: the saved keys only ever sign requests to where they were saved for. Storage checks no longer follow redirects and give up after 15 seconds.
+- The assistant, automatic reading, automatic reply drafts and conversation summaries no longer read Spam, Trash, mail held by the Screener or other users' drafts, so text from an unapproved sender cannot steer them.
+- Sending a draft the AI assistant wrote through JMAP now requires you to review and confirm it in Kite first, as the composer already did.
+- In assistant chat, changing or deleting calendar events is now a proposal you approve under the answer. Nothing changes before you click, and the approval is refused if the event was edited in the meantime.
+- Sending an AI draft now tells you the assistant wrote it and warns about recipients you have never written to. Auto-replies, invitation answers, booking notices and cancelled sends no longer add recipients to your contacts or approve them in the Screener.
+- The MCP server now tells clients that mail and calendar content is untrusted, labels read-only and destructive tools, and records each tool call (never its content) in the audit log for 90 days.
+- Mail that fails DMARC from a domain that asks for rejection or quarantine now goes to Spam, even from a saved contact. A failed check also stops a known sender from being trusted automatically, so a forged sender no longer reaches the Inbox. Forwarded mail that still passes DMARC keeps its trust.
+- A new switch, **Treat every DMARC failure as spam**, under [Admin → General](/general) in Sender authentication is off by default. It needs a database update applied from the Admin overview.
+- Self-hosted: the built-in SMTP listener now checks SPF, DKIM and DMARC itself, so the spam filter and the rules above apply to mail received on port 25. It also adds limits on sessions, recipients and idle time. It needs to see senders' real addresses, see [Self-hosting](https://github.com/midego1/kite/blob/main/docs/self-hosting.md#receiving-mail).
+- Editing a store's address, bucket, region or provider now asks for its access keys again, because saved keys only ever work for where they were saved. Storage checks also no longer follow redirects and give up after 15 seconds.
 
 ## [2026.10.30.3] - 2026-10-30
 
 ### Added
 
-- A dyslexia-friendly font. Under [Settings → Appearance](/settings/appearance), **Font** offers **Dyslexia-friendly (OpenDyslexic)** next to the bundled fonts: the whole app, the composer and plain-text emails switch to OpenDyslexic, with a little more room between letters, words and lines in what you read and write, and **Font in HTML emails** can replace the fonts of HTML emails with it as well. The font is self-hosted (SIL Open Font License 1.1) and its files are fetched only while it is chosen.
-- The people in a conversation's header are now buttons. Hovering or focusing one shows the full address (with the other addresses the same person wrote from; a look-alike name from another domain stays its own chip); clicking or pressing Enter opens a small contact card with the address and a Copy button, **New email** (the composer opens addressed to them; not offered on read-only shares), **Search Inbox for mail from** (the Inbox list, filtered to exactly their address), **Add to contacts** or **Edit contact**, and **Block contact**. Your own address says "You" and offers only Copy. The sender's name in the message opens the same card, and it fits on a phone.
-- Reload in the "Kite was updated" notice now sends the kite off: the logo lifts off the page, sways up and to the right out of view while the page fades, and the new version loads right after. Browsers set to reduced motion reload at once, and the reload never waits on the animation.
+- A dyslexia-friendly font. Under [Settings → Appearance](/settings/appearance), **Font** now offers **Dyslexia-friendly (OpenDyslexic)**, with a little more room between letters, words and lines, and **Font in HTML emails** can use it for HTML emails too. The font files are only loaded while it is chosen.
+- The people in a conversation's header are now buttons. Hovering shows their full address, and clicking opens a small contact card to copy the address, write a new email, search the Inbox for their mail, add or edit the contact, or block them. Your own address says "You". The sender's name in the message opens the same card.
+- **Reload** in the "Kite was updated" notice now sends the kite off: the logo lifts off the page and sways out of view while the new version loads. Browsers set to reduced motion reload at once.
 
 ### Changed
 
-- The **Font** choice under [Settings → Appearance](/settings/appearance) (Manrope, Geist, Inter, System font and the new dyslexia-friendly font) and **Font in HTML emails** now follow your account to your other devices with the reading layout, while **Use the same layout on every device** is on.
-- Searching `from:` with a whole email address (`from:"hi@cursor.com"`) now matches that sender exactly instead of any address that contains the same words.
-- Settings is regrouped into Account, Mail, Integrations and Data. Sending, the signature and automatic replies moved from Inbox and My account to a new [Settings → Composing](/settings/composing) page, and browser notifications to [Settings → Notifications](/settings/notifications); the Inbox page keeps reading, the Screener, spam protection and clean-up. Every address stays valid and `/settings/auto-reply` now opens Composing. Setting rows, form footers and field hints share one compact style across the settings pages.
-- [Settings → My account](/settings/account) is one card: profile, recovery email, time zone and forwarding, without the extra "Account details" heading. [Settings → Appearance](/settings/appearance) groups the look (theme, style, font, text size) apart from the assistant's display choices and says once that they are saved in the browser. [Settings → Security](/settings/security) uses the same card layout, and the Screener's "Mail from new senders" choice on [Settings → Inbox](/settings/inbox) is two side-by-side options with its approved and denied senders beside each other.
-- [Settings → Import](/settings/import) shows the sections to import as a visible list of checkboxes instead of a dropdown, [Settings → Export](/settings/export) names the mailbox it exports, [Settings → App passwords](/settings/app-passwords) and [Settings → API keys](/settings/api-keys) use the shared page header, and [Settings → Rules & routing](/settings/rules) lists mailbox rules more compactly with an empty state that explains what a rule does.
-- **"Kite was updated"** now appears as the first row of your message list, with Kite's logo, a **Reload** button and a close button, instead of a toast in the corner. The row is not a message: it cannot be selected, is skipped by the keyboard shortcuts and never counts toward totals. Pages without a message list, such as Settings, still show the toast.
+- Your **Font** choice and **Font in HTML emails** now follow your account to your other devices while **Use the same layout on every device** is on.
+- Searching "from:" with a whole email address now matches that sender exactly instead of any address with the same words.
+- Settings is now grouped into Account, Mail, Integrations and Data. Sending, the signature and automatic replies moved to a new [Settings → Composing](/settings/composing) page, and browser notifications to [Settings → Notifications](/settings/notifications). Old addresses still work, and settings rows look the same across pages.
+- [Settings → My account](/settings/account) is now one card, [Settings → Appearance](/settings/appearance) separates the look from the assistant's display choices, and [Settings → Security](/settings/security) uses the same card layout. The Screener's "Mail from new senders" choice on [Settings → Inbox](/settings/inbox) is now two side-by-side options.
+- [Settings → Import](/settings/import) shows what to import as a list of checkboxes, [Settings → Export](/settings/export) names the mailbox it exports, and [Settings → App passwords](/settings/app-passwords), [Settings → API keys](/settings/api-keys) and [Settings → Rules & routing](/settings/rules) have a tidier look, with a clearer empty state for rules.
+- **"Kite was updated"** now appears as the first row of your message list, with a **Reload** button and a close button, instead of a toast in the corner. Pages without a message list, such as Settings, still show the toast.
 
 ### Fixed
 
-- Applying database updates no longer looks like the page has hung. **Update database** (Admin overview) and **Apply now** (the mailbox notice) turn into a busy "Updating database…" button and show the steps (the safety backup, then the updates one by one with how many are done), a progress bar and a running timer, and the browser warns before you close or leave the page meanwhile. When it finishes you see how many updates were applied, whether a safety backup was saved and how long it took; a failure or a backup restore in progress is explained, with the button available again.
-- The collapsed sidebar's icon rail is aligned: every item (the menu button, New email, the folders, the assistant and the account) is the same 40px rounded square on one centred axis with one icon size, the active item is the same shape as a hovered one, and the unread count is a small pill on the corner that never covers the icon, with "99+" readable. Folders in the rail are as neutral as the system folders unless you gave them a colour other than the default blue.
-- The Drive sidebar's icon rail matches the mail rail: the same 40px rounded squares and icon size, also for its New button. The rail keeps those sizes in a narrow window, and the sidebar's top and bottom fade shows only while the list is long enough to scroll.
+- Applying database updates no longer looks like the page has hung. The button shows "Updating database…" with the steps, a progress bar and a timer, and the browser warns you before you leave the page. When it finishes you see how many updates were applied and whether a safety backup was saved.
+- The collapsed sidebar is now neatly aligned: every item is the same size, the active item looks like a hovered one, and the unread count sits on the corner without covering the icon.
+- The Drive sidebar's collapsed rail now matches the mail rail, also in a narrow window, and the sidebar's fade shows only while the list is long enough to scroll.
 
 ## [2026.10.30.2] - 2026-10-30
 
 ### Added
 
-- **New mail from connected accounts.** Kite now checks each [connected account](/settings/connected-accounts)'s Inbox for new mail every 5 minutes (or every 15 or 60, per account) and delivers it into the account's mailbox like mail Kite receives itself: spam filter, mailbox rules, the Screener, notifications, webhooks (`message.inbound` with `source: "external"` and the `accountId`) and automatic reading. Mail already read or starred at the provider arrives read or starred and without a notification; a message Kite already has from the same account, an import or its own sending (same Message-ID) is not stored twice, while a copy sent to the Kite address from elsewhere never hides the real one; a message the provider will not send is skipped and named instead of holding up the rest; mail refused for a while (permission or switch off) is fetched again once allowed; in a shared mailbox new mail belongs to the mailbox's owner; nothing at the provider is changed. **Check now**, **Pause**/**Resume** and the interval are on each account, which also says when it was last checked. A failed sign-in, an invalid certificate or a server that cannot be reached shows on the account and in a sidebar notice with **Reconnect**; throttled and unreachable servers are retried with backoff (at most every 6 hours). For Gmail and Google Workspace accounts Kite trusts Google's own `Authentication-Results` header (below Google's own `Received` line) for the spam filter. Checking runs on the existing cron and agent queue, on Workers and on the Node server.
+- **New mail from connected accounts.** Kite now checks each [connected account](/settings/connected-accounts)'s Inbox every 5 minutes (or every 15 or 60, per account) and delivers new mail like any other, with the spam filter, rules, Screener and notifications. Nothing at the provider is changed. **Check now**, **Pause**/**Resume** and the interval are on each account, and a failed sign-in shows there with **Reconnect**.
 
 ### Changed
 
-- An **Other IMAP provider** account names its own server, so its sign-in does not prove the address. Such an address no longer claims the address for the whole install, and connecting one never says whether the address is already connected elsewhere; addresses at the known providers stay unique. Apply database migration **0082** (`0082_external_account_address_scope.sql`) from the admin overview.
+- An **Other IMAP provider** account no longer claims its address for the whole install, because its own server cannot prove the address, and connecting one never says whether the address is already connected elsewhere. This needs a database update applied from the Admin overview.
 
 ### Fixed
 
-- A restore no longer fails on a foreign key when a message names a connected account the backup does not contain (an account connected while the backup was being written): the message is restored without it.
+- A restore no longer fails when a message belongs to a connected account that the backup does not contain. The message is restored without it.
 
 ## [2026.10.30.1] - 2026-10-30
 
 ### Changed
 
-- The reader toolbar is tidier: the × close button and the "1 of 12 unread" counter are gone, and the button that hides or shows the email list now sits at the far left, before the newer and older email arrows. In a single column (a phone, or No split) the same spot holds the Back button, so nothing strands you. Newer and older email still work with the arrows and with k and j.
+- The reader toolbar is tidier: the close button and the unread counter are gone, and the button that hides or shows the email list now sits at the far left. On a phone or in a single column, the same spot holds the Back button. Newer and older email still work with the arrows and with k and j.
 
 ## [2026.10.30.0] - 2026-10-30
 
 ### Added
 
-- **Include mail files** under [Admin → Backups](/backups): every backup can also copy the raw mail, attachments and large message bodies to its own dated folder in backup storage, with a manifest. The page shows about how many files and how much space that takes before you turn it on, each full backup shows what it copied, and **Restore mail files** puts back the files that are missing without touching the ones that exist. Off by default, and the page says how much space the copies kept at once take, since every full backup holds its own copy. Files that cannot be copied or restored are counted and shown on the backup, with a retry button for the copy. Deleting a backup, by hand or by retention, deletes its copies too. Needs migration **0081**, applied from the [admin overview](/admin).
+- **Include mail files** under [Admin → Backups](/backups): backups can now also copy raw mail, attachments and large message bodies, and **Restore mail files** puts back any that are missing. It is off by default, the page shows how much space it takes, and deleting a backup deletes its copies too. This needs a database update applied from the [Admin overview](/admin).
 
 ### Changed
 
-- New installs back up daily and keep the last 14 days of backups. Existing installs keep their settings. **Delete old backups automatically** now stays visible on the Backups page while automatic backups are off, because it also removes manual and safety backups.
+- New installs now back up daily and keep the last 14 days of backups, and existing installs keep their settings. **Delete old backups automatically** now stays visible on the Backups page while automatic backups are off, because it also removes manual and safety backups.
 
 ## [2026.10.29.11] - 2026-10-29
 

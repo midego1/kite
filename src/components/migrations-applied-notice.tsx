@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState, type FocusEvent } from "react
 import { createPortal } from "react-dom";
 import { CheckCircle2, X } from "lucide-react";
 import { KiteGlyph } from "./kite-glyph";
-import { SUCCESS_NOTICE_CLASS } from "./notice-styles";
+import { noticeClass } from "./ui/notice-utils";
 import { once, prefersReducedMotion } from "./reload-flight-utils";
 import type { AppliedNoticeExit, AppliedNoticeOrigin, DismissTimer } from "./applied-notice-types";
 import {
@@ -114,7 +114,7 @@ export function AppliedNotice({ summary, onDismiss, className, compact = false }
 				aria-label="Database updates"
 				data-applied-notice={exit ? "leaving" : "shown"}
 				style={exit ? appliedNoticeExitStyle(exit.plan) : undefined}
-				className={`${compact ? SUCCESS_NOTICE_CLASS : `flex items-start gap-3 rounded-2xl bg-green-50 px-4 py-3 text-sm text-green-700 ${className ?? ""}`} ${leaving}`}
+				className={`flex items-start ${noticeClass("success", compact)} ${className ?? ""} ${leaving}`}
 				onPointerEnter={() => timer.current?.hold("hover")}
 				onPointerLeave={() => timer.current?.release("hover")}
 				onFocus={() => timer.current?.hold("focus")}

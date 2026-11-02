@@ -3,7 +3,8 @@
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { AlertTriangle, DatabaseBackup } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ERROR_TEXT_CLASS } from "@/components/notice-styles";
+import { Card, CardContent, CardTitleRow } from "@/components/ui/card";
 import { AdminBackupRestoreStatus } from "@/components/admin-backup-restore-status";
 import type { BackupHealth } from "@/lib/backups/health-types";
 import { BACKUP_HEALTH_QUERY, fetchBackupHealth } from "./admin-backup-health-query";
@@ -38,30 +39,21 @@ export function AdminBackupHealthCard() {
 	const warn = health.level !== "ok" || !!health.restore?.needsRecovery;
 	return (
 		<Card data-testid="backup-health-card" data-level={health.level}>
-			<CardHeader className="flex-row items-center gap-4 space-y-0">
-				<div
-					className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border ${
-						warn
-							? "border-[#ef4444]/25 bg-[#ef4444]/10 text-[#b91c1c] dark:text-[#f19999]"
-							: "border-neutral-200 bg-[#f6f8fc] text-neutral-600"
-					}`}
-				>
-					{warn ? <AlertTriangle className="h-5 w-5" /> : <DatabaseBackup className="h-5 w-5" />}
-				</div>
-				<div className="min-w-0">
-					<CardTitle className="text-base">Backups</CardTitle>
-					<p className="mt-1 text-sm text-neutral-500">
-						{lastSuccess
-							? `Last successful backup ${formatWhen(lastSuccess.completedAt)}${
-									lastSuccess.size === null ? "" : `, ${formatDatabaseBytes(lastSuccess.size)}`
-								}${lastSuccess.durationMs === null ? "" : `, took ${formatBackupDuration(lastSuccess.durationMs)}`}`
-							: "No successful backup yet."}
-					</p>
-				</div>
-			</CardHeader>
+			<CardTitleRow
+				icon={warn ? AlertTriangle : DatabaseBackup}
+				tone={warn ? "critical" : "neutral"}
+				title="Backups"
+				description={
+					lastSuccess
+						? `Last successful backup ${formatWhen(lastSuccess.completedAt)}${
+								lastSuccess.size === null ? "" : `, ${formatDatabaseBytes(lastSuccess.size)}`
+							}${lastSuccess.durationMs === null ? "" : `, took ${formatBackupDuration(lastSuccess.durationMs)}`}`
+						: "No successful backup yet."
+				}
+			/>
 			<CardContent className="space-y-2 pt-4 text-sm">
 				{lastFailure && (
-					<p role="alert" className="text-[#b91c1c] dark:text-[#f19999]">
+					<p role="alert" className={ERROR_TEXT_CLASS}>
 						The last backup failed {formatWhen(lastFailure.failedAt)}
 						{lastFailure.error ? `: ${lastFailure.error}` : "."}
 					</p>

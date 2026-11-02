@@ -1,13 +1,14 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import type { LucideIcon } from "lucide-react";
+import { ERROR_TEXT_CLASS, WARNING_TEXT_CLASS } from "@/components/notice-styles";
 import { cn } from "@/lib/utils";
 import { CARD_CLASS } from "./page-utils";
 
 const tones = {
 	neutral: "text-neutral-900",
-	warning: "text-[#8a4b0a] dark:text-[#d4a35a]",
-	critical: "text-[#b91c1c] dark:text-[#f19999]",
+	warning: WARNING_TEXT_CLASS,
+	critical: ERROR_TEXT_CLASS,
 } as const;
 
 /** A headline number with its label and a line under it; linked when it opens the page behind the number. */

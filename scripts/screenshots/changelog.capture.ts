@@ -27,6 +27,32 @@ type Shot = {
 };
 
 const SHOTS: Shot[] = [
+	...(["light", "dark"] as const).map(
+		(theme): Shot => ({
+			name: `2026-11-02-admin-cards-${theme}`,
+			theme,
+			viewport: { width: 1280, height: 800 },
+			open: async (page) => {
+				await page.goto("/admin");
+				await expect(page.getByTestId("backup-health-card")).toBeVisible();
+				const cards = page.locator("#database").locator("xpath=..");
+				await cards.scrollIntoViewIfNeeded();
+				return cards;
+			},
+		}),
+	),
+	...(["light", "dark"] as const).map(
+		(theme): Shot => ({
+			name: `2026-11-02-account-rows-${theme}`,
+			theme,
+			viewport: { width: 1280, height: 800 },
+			open: async (page) => {
+				await page.goto("/accounts");
+				await expect(page.getByRole("link", { name: /Demo User/ })).toBeVisible();
+				return page.getByRole("main");
+			},
+		}),
+	),
 	{
 		name: "2026-11-02-whats-new-images",
 		viewport: { width: 1100, height: 760 },

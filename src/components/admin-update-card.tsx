@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, CircleX, Database, ShieldCheck } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardTitleRow } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getMigrationStatus, pendingMigrationsTitle } from "./admin-update-card-utils";
 import type { MigrationStatusResponse } from "./admin-update-card-types";
@@ -154,17 +154,11 @@ export function AdminUpdateCard() {
 
 	return (
 		<Card>
-			<CardHeader className="flex-row items-center gap-4 space-y-0">
-				<div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-neutral-200 bg-[#f6f8fc] text-neutral-600">
-					<Database className="h-5 w-5" />
-				</div>
-				<div>
-					<CardTitle className="text-base">Database</CardTitle>
-					<p className="mt-1 text-sm text-neutral-500">
-						Kite v{BUILD_VERSION_LABEL}. Keep the database schema in step with the deployed version.
-					</p>
-				</div>
-			</CardHeader>
+			<CardTitleRow
+				icon={Database}
+				title="Database"
+				description={`Kite v${BUILD_VERSION_LABEL}. Keep the database schema in step with the deployed version.`}
+			/>
 			<CardContent className="space-y-5 pt-4">
 				{isCheckingMigrations && (
 					<div className="flex items-center gap-3 rounded-lg border border-neutral-200 px-4 py-4">

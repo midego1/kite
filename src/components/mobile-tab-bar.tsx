@@ -17,6 +17,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useMessageCounts } from "@/hooks/use-message-counts";
 import { useOpenSuggestions } from "@/hooks/use-open-suggestions";
+import { useCompose } from "./compose/compose-context";
 import { useSelectedMailbox } from "./mailbox-provider";
 import { useModules } from "./modules/modules-context";
 import { useSidebar } from "./sidebar-state";
@@ -48,8 +49,11 @@ export function MobileTabBar() {
 	const { mailboxScope } = useSelectedMailbox();
 	const { counts } = useMessageCounts(mailboxScope, mobile);
 	const { loaded: suggestionsLoaded, total: suggestions } = useOpenSuggestions();
+	const { open: composerOpen, placement: composerPlacement } = useCompose();
 
 	if (hidesMobileTabBar(pathname)) return null;
+	// The floating composer opens without a route change and would cover the bar, so the bar steps aside.
+	if (composerOpen && composerPlacement === "popup") return null;
 
 	const tabs = mobilePrimaryTabIds(modules, suggestionsLoaded && suggestions > 0);
 	const active = mobileActiveTabId(tabs, pathname);

@@ -22,7 +22,6 @@ import {
 } from "lucide-react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { useStaleCommandCenterCards } from "@/components/command-center/use-card-query";
-import { mobilePrimaryActionAboveNavClass } from "@/components/page-header-utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -674,13 +673,14 @@ export default function CalendarPage() {
 					</DropdownMenu.Portal>
 				</DropdownMenu.Root>
 				<CalendarViewSelect value={view} onChange={setView} />
+				{/* On phones an icon button in the header, so nothing floats over the grid. */}
 				<Button
 					disabled={pendingAction !== null}
 					onClick={() => openNewEvent()}
-					className={clsx("ml-1 max-md:ml-0", mobilePrimaryActionAboveNavClass)}
+					className="ml-1 max-md:ml-0 max-md:h-8 max-md:w-8 max-md:px-0"
 				>
 					<Plus className="h-4 w-4" />
-					New event
+					<span className="max-md:sr-only">New event</span>
 				</Button>
 			</div>
 		</>
@@ -691,7 +691,7 @@ export default function CalendarPage() {
 			<h1 className="sr-only">Calendar</h1>
 			{loading && <RouteLoadingBarPortal />}
 			<section aria-busy={loading} className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-				<div className="min-h-0 min-w-0 flex-1 overflow-auto overscroll-contain max-md:pb-36">
+				<div className="min-h-0 min-w-0 flex-1 overflow-auto overscroll-contain">
 					{view === "month" ? (
 						<MonthView
 							date={visibleDate}

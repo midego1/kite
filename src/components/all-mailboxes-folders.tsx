@@ -6,8 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { useFoldersByMailbox } from "@/components/messages/use-mailbox-folders";
 import type { MessageCounts } from "@/hooks/types";
-import { NavItem } from "./components-nav";
-import { customFolderNavLink } from "./dashboard-nav-utils";
+import { FolderNavItem } from "./folders/folder-nav-item";
 import { ReorderableList } from "./reorderable-list";
 import type { FolderTarget } from "./use-all-mailboxes-nav";
 
@@ -50,7 +49,13 @@ export function AllMailboxesFolders({
 								id: "folders",
 								items: folders.map((folder) => ({
 									id: folder.id,
-									node: <NavItem wrap link={customFolderNavLink(folder, customFolderCounts[folder.id]?.unread)} />,
+									node: (
+										<FolderNavItem
+											folder={folder}
+											unread={customFolderCounts[folder.id]?.unread}
+											canManage={(mailbox.permission ?? "full_access") === "full_access"}
+										/>
+									),
 								})),
 							},
 						]}

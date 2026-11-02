@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 
 /**
@@ -31,6 +31,28 @@ open /setup, create the first admin account, and connect my domain there.`;
 /** The prompt, with a button that copies it. Tokens are never in the prompt: the agent has to ask for them. */
 export function HomeDeployPrompt() {
 	const [copied, setCopied] = useState(false);
+	const preRef = useRef<HTMLPreElement>(null);
+
+	// Without the clipboard API (plain http, as a Docker install is served) or its permission, select the prompt
+	// shown in the pre instead; where execCommand still works that selection is copied, else it stays selected.
+	const selectPrompt = () => {
+		const pre = preRef.current;
+		if (!pre) return;
+		const range = document.createRange();
+		range.selectNodeContents(pre);
+		const selection = window.getSelection();
+		selection?.removeAllRanges();
+		selection?.addRange(range);
+		setCopied(document.execCommand("copy"));
+	};
+
+	const copyPrompt = () => {
+		if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+			void navigator.clipboard.writeText(DEPLOY_PROMPT).then(() => setCopied(true), selectPrompt);
+			return;
+		}
+		selectPrompt();
+	};
 
 	return (
 		<div className="mt-4">
@@ -39,21 +61,14 @@ export function HomeDeployPrompt() {
 					Give the agent your Cloudflare account ID and two separate scoped API tokens through its secret input. Never
 					put them in a public chat, a repository or a committed file.
 				</p>
-				<Button
-					type="button"
-					variant="outline"
-					className="bg-white"
-					onClick={() => {
-						void navigator.clipboard.writeText(DEPLOY_PROMPT).then(
-							() => setCopied(true),
-							() => setCopied(false),
-						);
-					}}
-				>
+				<Button type="button" variant="outline" className="bg-white" onClick={copyPrompt}>
 					{copied ? "Copied" : "Copy prompt"}
 				</Button>
 			</div>
-			<pre className="mt-4 max-w-full overflow-x-auto whitespace-pre-wrap rounded-xl bg-[#f6f8fc] p-4 text-left font-mono text-xs leading-5 text-neutral-800">
+			<pre
+				ref={preRef}
+				className="mt-4 max-w-full overflow-x-auto whitespace-pre-wrap rounded-xl bg-[#f6f8fc] p-4 text-left font-mono text-xs leading-5 text-neutral-800"
+			>
 				{DEPLOY_PROMPT}
 			</pre>
 		</div>

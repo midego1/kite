@@ -6,8 +6,17 @@ import { HomeAuthProvider } from "./home-auth";
 import { HomeHeaderActions } from "./home-header-actions";
 import { HomeHeroActions } from "./home-hero-actions";
 import { HomeProductMock } from "./home-product-mock";
-import { HomeFeatures, HomeFooter, HomeRuntime } from "./home-sections";
-import { heroFacts } from "./utils";
+import { HomeFeatures, HomeFooter } from "./home-sections";
+import {
+	HomeClosing,
+	HomeCompare,
+	HomeCost,
+	HomeDeploy,
+	HomeFaq,
+	HomeLimits,
+	HomeOpen,
+	HomeProof,
+} from "./home-conversion-sections";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +24,7 @@ export async function generateMetadata(): Promise<Metadata> {
 	const branding = await getHomeBranding();
 	return {
 		title: branding.appName,
-		description: `${branding.appName} is a self-hosted mail suite for your own domains: a real inbox with a Screener and spam protection, your other accounts in the same place, AI that asks before it acts, and Calendar, Drive, Booking and Money Watch as modules. Open source, in your own Cloudflare account or a Docker container.`,
+		description: `${branding.appName} is a self-hosted webmail app on Cloudflare Workers. It receives through Email Routing and sends through Cloudflare, Resend or Amazon SES. Your mail stays in your D1 database and R2 bucket. Every feature is free. Early beta.`,
 		icons: { icon: branding.hasCustomIcon ? "/api/branding/icon" : "/icon-96.png" },
 	};
 }
@@ -51,8 +60,17 @@ export default async function HomePage() {
 						<a href="#features" className="transition-colors hover:text-neutral-950">
 							Features
 						</a>
-						<a href="#how-it-runs" className="transition-colors hover:text-neutral-950">
-							How it runs
+						<a href="#deploy" className="transition-colors hover:text-neutral-950">
+							Deploy
+						</a>
+						<a href="#cost" className="transition-colors hover:text-neutral-950">
+							Cost
+						</a>
+						<a href="#compare" className="transition-colors hover:text-neutral-950">
+							Compare
+						</a>
+						<a href="#faq" className="transition-colors hover:text-neutral-950">
+							FAQ
 						</a>
 					</nav>
 					<div className="flex items-center gap-2">
@@ -62,37 +80,26 @@ export default async function HomePage() {
 
 				<main id="main">
 					<section aria-labelledby="home-hero-heading" className="relative overflow-hidden">
-						{/* The kite's own gradient, faded far back, so the hero reads as the brand without an image. */}
-						<div
-							aria-hidden="true"
-							className="pointer-events-none absolute left-1/2 top-0 -z-0 h-[480px] w-[900px] -translate-x-1/2 rounded-full opacity-40 blur-3xl"
-							style={{ background: "radial-gradient(closest-side, #9b7bf7 0%, #7fa2ff 45%, transparent 100%)" }}
-						/>
-						<div className="relative mx-auto max-w-7xl px-4 pb-12 pt-10 text-center sm:px-6 md:pt-16 lg:px-8">
+						<div className="relative mx-auto max-w-7xl px-4 pb-8 pt-10 text-center sm:px-6 md:pt-16 lg:px-8">
 							<p className="mx-auto mb-5 w-fit rounded-full border border-neutral-200 bg-white px-3 py-1 text-xs font-medium text-neutral-700 shadow-sm">
-								Self-hosted mail suite · open source · early beta
+								Open source · AGPL-3.0 · Early beta
 							</p>
 							<h1
 								id="home-hero-heading"
-								className="mx-auto max-w-5xl text-5xl font-bold leading-[1.02] tracking-tight text-neutral-950 sm:text-6xl lg:text-7xl"
+								className="mx-auto max-w-5xl text-4xl font-bold leading-[1.08] tracking-tight text-neutral-950 sm:text-5xl lg:text-6xl"
 							>
-								Mail for your own domains, <span className="home-accent block text-blue-600">that actually flows.</span>
+								Your own inbox for your own domains,{" "}
+								<span className="home-accent text-blue-600">running in your Cloudflare account.</span>
 							</h1>
 							<p className="mx-auto mt-6 max-w-2xl text-lg leading-8 text-neutral-600">
-								{branding.appName} is a complete inbox for you@yourdomain: mail with a Screener and spam protection,
-								your Gmail, iCloud and other IMAP accounts in the same place, AI that drafts but asks before it acts,
-								and Calendar, Drive, Booking and Money Watch beside it. It runs in your own Cloudflare account or in one
-								Docker container.
+								{branding.appName} is a self-hosted webmail app on Cloudflare Workers. It receives through Email Routing
+								and sends through Cloudflare, Resend or Amazon SES. Your mail stays in your D1 database and R2 bucket.
+								Every feature is free.
 							</p>
 							<HomeHeroActions />
-							<ul className="mx-auto mt-8 flex max-w-3xl flex-wrap justify-center gap-x-6 gap-y-2 text-sm text-neutral-600">
-								{heroFacts.map((fact) => (
-									<li key={fact} className="flex items-center gap-2">
-										<span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-blue-500" />
-										{fact}
-									</li>
-								))}
-							</ul>
+							<p className="mx-auto mt-4 max-w-xl text-sm text-neutral-500">
+								Needs a Cloudflare account with a domain on Cloudflare DNS. Plan on about 10 minutes the first time.
+							</p>
 						</div>
 						<div className="relative mx-auto max-w-7xl px-4 pb-8 sm:px-6 lg:px-8">
 							<p className="mb-3 flex items-center justify-center gap-2 text-sm font-medium text-neutral-700">
@@ -106,8 +113,15 @@ export default async function HomePage() {
 						</div>
 					</section>
 
+					<HomeProof />
 					<HomeFeatures appName={branding.appName} />
-					<HomeRuntime appName={branding.appName} />
+					<HomeDeploy appName={branding.appName} />
+					<HomeCost appName={branding.appName} />
+					<HomeCompare appName={branding.appName} />
+					<HomeOpen />
+					<HomeLimits />
+					<HomeFaq />
+					<HomeClosing appName={branding.appName} />
 				</main>
 				<HomeFooter appName={branding.appName} />
 			</div>

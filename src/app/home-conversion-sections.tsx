@@ -150,8 +150,8 @@ export function HomeCost({ appName }: HomeSectionProps) {
 					Free to receive, free tiers to send
 				</h2>
 				<p className="mt-4 text-base leading-7 text-neutral-600">
-					Receiving through Cloudflare Email Routing is free. You pay only your own provider usage, and {appName} itself
-					costs nothing.
+					Receiving through Cloudflare Email Routing is free. You pay your own Cloudflare and sending-provider usage,
+					and {appName} itself costs nothing.
 				</p>
 			</div>
 			<div

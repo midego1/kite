@@ -197,7 +197,7 @@ export default function BookingsPage() {
 				<div className="flex h-full min-h-0 min-w-0">
 					<div className="min-w-0 flex-1 overflow-y-auto overscroll-contain scrollbar-gutter-stable">
 						<div className="mx-auto max-w-6xl px-5 md:px-8">
-							<section aria-label="Booking events" className="pt-6 pb-8 max-md:pt-4 max-md:pb-24">
+							<section aria-label="Booking events" className="pt-6 pb-8 max-md:pt-4 max-md:pb-36">
 								<div className="flex flex-wrap items-start justify-between gap-4 pb-6 max-md:flex-nowrap max-md:gap-2">
 									<div className="min-w-0">
 										<h1 className="text-xl font-semibold tracking-tight text-neutral-900">Bookings</h1>

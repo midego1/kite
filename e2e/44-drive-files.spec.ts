@@ -183,14 +183,14 @@ test("Drive sits in the app frame: the mail menu leads back to the inbox, also a
 		const views = page.getByRole("complementary", { name: "Drive menu" });
 		await expect(views.getByRole("link", { name: "My Drive" })).toHaveAttribute("aria-current", "page");
 		await expect(views.getByRole("link", { name: "Trash" })).toHaveAttribute("href", "/drive/trash");
-		const menu = page.getByRole("navigation").first();
-		await menu.getByRole("link", { name: /^Inbox\b/ }).click();
+		const sidebar = page.getByTestId("kite-sidebar-panel");
+		await sidebar.getByRole("link", { name: /^Inbox\b/ }).click();
 		await expect(page).toHaveURL(/\/inbox$/);
 
 		await page.goto("/drive");
 		await page.getByRole("button", { name: "Collapse menu" }).click();
 		await expect(page.getByRole("button", { name: "Expand menu" })).toBeVisible();
-		const railInbox = page.getByRole("navigation").first().getByRole("link", { name: "Inbox", exact: true });
+		const railInbox = sidebar.getByRole("link", { name: "Inbox", exact: true });
 		await railInbox.click();
 		await expect(page).toHaveURL(/\/inbox$/);
 		await page.getByRole("button", { name: "Expand menu" }).click();

@@ -106,12 +106,9 @@ export function UpcomingSidebar({ events, onSelect, refreshKey }: UpcomingSideba
 			{awaiting ? (
 				SKELETON
 			) : groups.length === 0 ? (
-				<div>
-					<h2 className="text-sm font-medium text-neutral-900">Upcoming</h2>
-					<p className="mt-2 text-sm text-neutral-500">
-						{loadError ? "Could not load upcoming events." : "No upcoming events."}
-					</p>
-				</div>
+				<p className="text-sm text-neutral-500">
+					{loadError ? "Could not load upcoming events." : "No upcoming events."}
+				</p>
 			) : (
 				visibleGroups.map((group) => (
 					<section key={group.key} className="mb-6 last:mb-0">

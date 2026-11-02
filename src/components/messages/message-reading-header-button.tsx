@@ -17,7 +17,7 @@ export function MessageReadingHeaderButton() {
 	}
 
 	return (
-		<Tooltip label={label} className={singleColumn ? "inline-flex" : "hidden lg:inline-flex"}>
+		<Tooltip label={label} className="inline-flex">
 			<button
 				type="button"
 				className="relative z-10 shrink-0 rounded-full p-2 text-neutral-600 duration-200 hover:bg-neutral-100 hover:text-neutral-900"

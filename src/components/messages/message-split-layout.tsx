@@ -140,6 +140,27 @@ export function MessageSplitLayout({ children, config }: MessageSplitLayoutProps
 	const changedByPanel = useSyncedPanel(listPanelRef, !listVisible, listSize);
 	// Pixels per percent of the group, as the list last reported, to read pixel sizes from a layout.
 	const groupScale = useRef(1);
+	const groupRef = useRef<HTMLDivElement | null>(null);
+	const [groupLeft, setGroupLeft] = useState<number | null>(null);
+	// hinge.first is in viewport coordinates, but a panel's size is measured inside the group, whose left edge
+	// the sidebar pushes right; the list gets only what is left of the first screen, so it cannot cross the hinge.
+	const hingeListWidth = hinge && groupLeft !== null ? Math.max(0, hinge.first.width - groupLeft) : null;
+	const listMaxSize = hingeListWidth === null ? listLimits.max : Math.min(listLimits.max, hingeListWidth);
+	const listMinSize = Math.min(listLimits.min, listMaxSize);
+
+	useLayoutEffect(() => {
+		if (!hinge) return;
+		const measure = () => setGroupLeft(groupRef.current?.getBoundingClientRect().left ?? 0);
+		measure();
+		// The group's width changes whenever its left edge can move: a sidebar drag, a window resize, the assistant.
+		const observer = new ResizeObserver(measure);
+		if (groupRef.current) observer.observe(groupRef.current);
+		window.addEventListener("resize", measure);
+		return () => {
+			observer.disconnect();
+			window.removeEventListener("resize", measure);
+		};
+	}, [hinge]);
 
 	useLayoutEffect(() => {
 		// Persisted preferences are only readable in the browser and must apply before paint.
@@ -280,6 +301,7 @@ export function MessageSplitLayout({ children, config }: MessageSplitLayoutProps
 			<ResizablePanelGroup
 				key={mode}
 				id={`kite-message-layout-${mode}`}
+				elementRef={groupRef}
 				orientation={below ? "vertical" : "horizontal"}
 				data-reading-pane={mode}
 				data-fold-hinge={hinge ? hinge.orientation : undefined}
@@ -305,9 +327,11 @@ export function MessageSplitLayout({ children, config }: MessageSplitLayoutProps
 					collapsible
 					collapsedSize={0}
 					collapsedThreshold={listLimits.min}
-					minSize={listLimits.min}
-					maxSize={hinge ? Math.max(listLimits.min, Math.min(listLimits.max, hinge.first.width)) : listLimits.max}
-					defaultSize={listVisible ? (hinge ? hinge.first.width : listSize) : 0}
+					minSize={listMinSize}
+					maxSize={listMaxSize}
+					defaultSize={
+						listVisible ? (hinge ? Math.min(hingeListWidth ?? hinge.first.width, listMaxSize) : listSize) : 0
+					}
 					groupResizeBehavior="preserve-pixel-size"
 					onResize={(size) => {
 						groupScale.current = pixelsPerPercent(size) ?? groupScale.current;

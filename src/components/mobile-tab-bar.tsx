@@ -15,9 +15,9 @@ import {
 	type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useCompose } from "./compose/compose-context";
 import { useMessageCounts } from "@/hooks/use-message-counts";
 import { useOpenSuggestions } from "@/hooks/use-open-suggestions";
+import { useCompose } from "./compose/compose-context";
 import { useSelectedMailbox } from "./mailbox-provider";
 import { useModules } from "./modules/modules-context";
 import { useSidebar } from "./sidebar-state";
@@ -39,19 +39,21 @@ const TAB_META: Record<MobileTabId, TabMeta> = {
 
 /**
  * The phone's primary navigation, as a tab bar under the page: Mail, the modules that are on (Calendar,
- * Drive, Money), and More, which opens the full mail menu. A folder's open message, the Compose page and the
- * floating composer hide it, because they keep their own Back button and need the room. From `md` up the sidebar takes over.
+ * Drive, Money), and More, which opens the full mail menu. A folder's open message and the Compose page
+ * hide it, because they keep their own Back button and need the room. From `md` up the sidebar takes over.
  */
 export function MobileTabBar() {
 	const pathname = usePathname();
 	const { mobile, mobileOpen, toggle } = useSidebar();
-	const { open: composerOpen, placement } = useCompose();
 	const { modules } = useModules();
 	const { mailboxScope } = useSelectedMailbox();
 	const { counts } = useMessageCounts(mailboxScope, mobile);
 	const { loaded: suggestionsLoaded, total: suggestions } = useOpenSuggestions();
+	const { open: composerOpen, placement: composerPlacement } = useCompose();
 
-	if (hidesMobileTabBar(pathname) || (composerOpen && placement === "popup")) return null;
+	if (hidesMobileTabBar(pathname)) return null;
+	// The floating composer opens without a route change and would cover the bar, so the bar steps aside.
+	if (composerOpen && composerPlacement === "popup") return null;
 
 	const tabs = mobilePrimaryTabIds(modules, suggestionsLoaded && suggestions > 0);
 	const active = mobileActiveTabId(tabs, pathname);
@@ -94,7 +96,7 @@ export function MobileTabBar() {
 							<span className="max-w-full truncate">{meta.label}</span>
 							{badge > 0 && (
 								<span className="sr-only">
-									, {badge} {id === "for-you" ? "open" : "unread"}
+									, {badge} {id === "for-you" ? "open suggestions" : "unread"}
 								</span>
 							)}
 						</>

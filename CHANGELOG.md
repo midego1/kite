@@ -6,6 +6,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.11.02.1] - 2026-11-02
+
+### Changed
+
+- Calendar and Bookings now sit in the same frame as the rest of Kite, with the mail menu in the sidebar. The upcoming events are a panel beside the calendar that you can fold away to give the week more room.
+  ![Calendar in the app frame in light mode](/changelog/2026-11-02-calendar-frame-light.webp)
+  ![Calendar in the app frame in dark mode](/changelog/2026-11-02-calendar-frame-dark.webp)
+- Drive's views (My Drive, Recent, Shared with me, All attachments, Trash) are a menu beside the file list, with the storage you have used at its foot; the sidebar stays the mail menu.
+  ![Drive in the app frame in light mode](/changelog/2026-11-02-drive-frame-light.webp)
+  ![Drive in the app frame in dark mode](/changelog/2026-11-02-drive-frame-dark.webp)
+- The notices in the sidebar (operational alerts, database updates, DNS setup, connected accounts) are the same notices as on the pages, at a smaller size, and the cards on the Admin overview carry the same small icon and title as the cards in the empty reading pane.
+  ![The admin overview's cards in light mode](/changelog/2026-11-02-admin-cards-light.webp)
+  ![The admin overview's cards in dark mode](/changelog/2026-11-02-admin-cards-dark.webp)
+- Admin → Accounts and Settings → Connected accounts list their accounts the same way: the name with a badge for the role or the status, and the address under it.
+  ![Admin → Accounts in light mode](/changelog/2026-11-02-account-rows-light.webp)
+  ![Admin → Accounts in dark mode](/changelog/2026-11-02-account-rows-dark.webp)
+- The filter chips over the mail list (Primary, Unread, Attachments, Starred) and over Drive's files (Photos, Videos, Documents, Others) look the same now: a chip that is on gets the light tint the sidebar uses for the current page, instead of a solid colour.
+  ![The mail list's chips in light mode](/changelog/2026-11-02-list-chips-light.webp)
+  ![The mail list's chips in dark mode](/changelog/2026-11-02-list-chips-dark.webp)
+- Drive's column labels are the plain muted labels the rest of Kite uses, and a Drive view with nothing in it shows the same empty state as For you and Money Watch, with a line on what appears there.
+  ![An empty Drive view in light mode](/changelog/2026-11-02-drive-empty-light.webp)
+  ![An empty Drive view in dark mode](/changelog/2026-11-02-drive-empty-dark.webp)
+
 ## [2026.11.02.0] - 2026-11-02
 
 ### Added

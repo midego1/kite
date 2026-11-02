@@ -55,6 +55,19 @@ test.describe("on a phone", () => {
 		await expect(primaryNav(page)).toHaveCount(0);
 	});
 
+	test("the floating composer hides the bar until it closes", async ({ page }) => {
+		await page.goto("/inbox");
+		await primaryNav(page).getByRole("button", { name: "More navigation" }).click();
+		await page
+			.getByRole("dialog", { name: "Menu" })
+			.getByRole("button", { name: /^Compose/ })
+			.click();
+		await expect(primaryNav(page)).toHaveCount(0);
+
+		await page.getByRole("button", { name: "Close composer" }).first().click();
+		await expect(primaryNav(page)).toBeVisible();
+	});
+
 	test("the Settings pill sits above the bar instead of over it", async ({ page }) => {
 		await page.goto("/settings/account");
 		const bar = primaryNav(page);

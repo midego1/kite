@@ -1467,7 +1467,7 @@ button {
 
 @media (max-width: 767px) {
 	:root {
-		--kite-toast-bottom: calc(6rem + env(safe-area-inset-bottom));
+		--kite-toast-bottom: calc(8.5rem + env(safe-area-inset-bottom));
 		--kite-toast-edge: 1rem;
 	}
 }

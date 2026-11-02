@@ -15,6 +15,7 @@ import {
 	type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useCompose } from "./compose/compose-context";
 import { useMessageCounts } from "@/hooks/use-message-counts";
 import { useOpenSuggestions } from "@/hooks/use-open-suggestions";
 import { useSelectedMailbox } from "./mailbox-provider";
@@ -38,18 +39,19 @@ const TAB_META: Record<MobileTabId, TabMeta> = {
 
 /**
  * The phone's primary navigation, as a tab bar under the page: Mail, the modules that are on (Calendar,
- * Drive, Money), and More, which opens the full mail menu. A folder's open message and the Compose page
- * hide it, because they keep their own Back button and need the room. From `md` up the sidebar takes over.
+ * Drive, Money), and More, which opens the full mail menu. A folder's open message, the Compose page and the
+ * floating composer hide it, because they keep their own Back button and need the room. From `md` up the sidebar takes over.
  */
 export function MobileTabBar() {
 	const pathname = usePathname();
 	const { mobile, mobileOpen, toggle } = useSidebar();
+	const { open: composerOpen, placement } = useCompose();
 	const { modules } = useModules();
 	const { mailboxScope } = useSelectedMailbox();
 	const { counts } = useMessageCounts(mailboxScope, mobile);
 	const { loaded: suggestionsLoaded, total: suggestions } = useOpenSuggestions();
 
-	if (hidesMobileTabBar(pathname)) return null;
+	if (hidesMobileTabBar(pathname) || (composerOpen && placement === "popup")) return null;
 
 	const tabs = mobilePrimaryTabIds(modules, suggestionsLoaded && suggestions > 0);
 	const active = mobileActiveTabId(tabs, pathname);
@@ -90,7 +92,11 @@ export function MobileTabBar() {
 								)}
 							</span>
 							<span className="max-w-full truncate">{meta.label}</span>
-							{badge > 0 && <span className="sr-only">, {badge} unread</span>}
+							{badge > 0 && (
+								<span className="sr-only">
+									, {badge} {id === "for-you" ? "open" : "unread"}
+								</span>
+							)}
 						</>
 					);
 

@@ -9,8 +9,9 @@ import { Button } from "@/components/ui/button";
  */
 export const DEPLOY_PROMPT = `Install Kite from https://github.com/midego1/kite in my Cloudflare account.
 Ask me for my Cloudflare account ID, a scoped deployment API token, and a separate
-runtime CF_TOKEN through a secret input. Never print, commit, or place either token
-in a command argument or a tracked file. Use the deployment token only for Wrangler
+runtime CF_TOKEN through a secret input. Generate a long random SETUP_TOKEN and
+APP_ENCRYPTION_KEY. Never print, commit, or place these secrets in a command
+argument or a tracked file. Use the deployment token only for Wrangler
 authentication (CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID).
 
 Read README.md, docs/deployment.md, and wrangler.jsonc first. Keep the Worker name
@@ -18,8 +19,11 @@ exactly kite. In the selected account, create or reuse the D1 database kite,
 R2 bucket kite-raw, and Queues kite-inbound, kite-outbound, and kite-agent.
 Set the D1 database_id in the local Wrangler config without committing that
 account-specific ID. Install dependencies,
-run npm run deploy, and set the runtime CF_TOKEN as a Worker secret. Do not run
-remote D1 migrations manually; the /setup flow initializes the database.
+run npm run deploy, and set CF_TOKEN, SETUP_TOKEN, and APP_ENCRYPTION_KEY as Worker
+secrets. Then give me SETUP_TOKEN and a copy of APP_ENCRYPTION_KEY to keep safe:
+I need the token to open /setup, and losing the key makes the provider keys Kite
+stores unreadable. Do not run remote D1 migrations manually; the /setup flow
+initializes the database.
 
 Give me the deployed URL and any remaining Cloudflare account actions. I will
 open /setup, create the first admin account, and connect my domain there.`;

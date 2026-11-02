@@ -89,7 +89,7 @@ test.describe("visitor", () => {
 		);
 		await expect(deploy.getByText("docker compose up -d --build")).toBeVisible();
 		await deploy.getByText("Show the deploy prompt").click();
-		await expect(deploy.getByText("Never print, commit, or place either token")).toBeVisible();
+		await expect(deploy.getByText("Never print, commit, or place these secrets")).toBeVisible();
 
 		const cost = page.getByRole("region", { name: "Free to receive, free tiers to send" });
 		await expect(cost.getByRole("rowheader", { name: "Resend" })).toBeVisible();

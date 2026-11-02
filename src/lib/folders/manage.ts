@@ -106,7 +106,7 @@ export async function updateFolder(
  * (`received`); anything already in Spam, Trash, Sent or the Screener keeps its status and only leaves the folder.
  * Resolves false when the batch limit was reached before the folder emptied.
  */
-export async function moveFolderMessages(
+async function moveFolderMessages(
 	db: AppDatabase,
 	folderId: string,
 	mailboxId: string,
@@ -134,7 +134,7 @@ export async function moveFolderMessages(
  * Turns off every inbox rule that files mail into the folder, so none is left pointing at nothing (the foreign key
  * clears its folder when the row goes, and a rule without a folder is skipped). Resolves how many were still on.
  */
-export async function disableFolderRules(db: AppDatabase, folderId: string): Promise<number> {
+async function disableFolderRules(db: AppDatabase, folderId: string): Promise<number> {
 	const [on] = await db
 		.select({ n: count() })
 		.from(routingRules)

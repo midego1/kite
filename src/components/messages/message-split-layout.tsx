@@ -8,7 +8,6 @@ import { useAssistantOpen } from "@/components/agent/assistant-open-state";
 import { readColumnWidth, readInitialColumnWidth, saveColumnWidth } from "@/components/column-width-preferences";
 import { queueLayoutSave } from "@/components/layout-preferences-client";
 import { LAYOUT_PREFERENCES_APPLIED_EVENT } from "@/components/layout-preferences-utils";
-import { LIST_HEIGHT_LIMITS, LIST_WIDTH_LIMITS } from "@/lib/preferences/layout-utils";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup, usePanelRef } from "@/components/ui/resizable";
 import { layoutPixels, pixelsPerPercent } from "@/components/ui/resizable-utils";
 import { useSyncedPanel } from "@/components/ui/use-synced-panel";
@@ -30,15 +29,13 @@ import {
 	saveMessageListWithAssistant,
 } from "./message-list-visibility-utils";
 import { ReadingPaneEmptyState } from "./reading-pane-empty-state";
-import { foldHingeStyle, foldListBounds, useFoldSplit } from "./use-fold-split";
+import { LIST_HEIGHT, LIST_WIDTH, foldHingeStyle, foldListBounds, useFoldSplit } from "./use-fold-split";
 import { getSelectionToolbarFolder } from "./utils";
 import type { BulkSelectionAction, MessageListVisibility, MessageSplitLayoutProps, SelectedMessage } from "./types";
 import { BootStep } from "@/components/boot-step";
 
 // The list and the reader are separate rounded panels on the page background, a few pixels apart.
 const PANEL_CLASS = "rounded-xl border border-neutral-200 shadow-xs";
-const LIST_WIDTH = { fallback: 360, ...LIST_WIDTH_LIMITS, reserved: 280 };
-const LIST_HEIGHT = { fallback: 320, ...LIST_HEIGHT_LIMITS, reserved: 200 };
 // Panel ids are DOM ids too, so they carry a prefix.
 const LIST_PANEL_ID = "kite-message-list-panel";
 

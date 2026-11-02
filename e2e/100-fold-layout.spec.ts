@@ -158,6 +158,23 @@ test.describe("a fold with a hinge", () => {
 		}).toPass();
 	}
 
+	test("stacked panes ignore the hinge", async ({ page }) => {
+		await page.addInitScript(() => {
+			if (!localStorage.getItem("kite-reading-pane")) localStorage.setItem("kite-reading-pane", "below");
+		});
+		await page.goto("/inbox");
+		await expectPosture(page, "unfolded");
+		const layout = page.locator("[data-reading-pane]");
+		await expect(layout).toHaveAttribute("data-reading-pane", "below");
+		await expect(layout).not.toHaveAttribute("data-fold-hinge", /.+/);
+		const list = await page.locator("#kite-message-list-panel").boundingBox();
+		const reader = await page.locator("#kite-reader-panel").boundingBox();
+		// One above the other, each as wide as the page, across the hinge.
+		expect(list!.y + list!.height).toBeLessThanOrEqual(reader!.y + 1);
+		expect(reader!.x + reader!.width).toBeGreaterThan(SECOND.left + 100);
+		expect(list!.width).toBeGreaterThan(FIRST.width - 260);
+	});
+
 	test("the list stays on the first screen and the reader on the second", async ({ page }) => {
 		// A saved list width from the desktop would reach into the hinge.
 		await page.addInitScript(() => localStorage.setItem("kite-reading-pane", "right"));
@@ -190,6 +207,26 @@ test.describe("a mouse window", () => {
 		await page.goto("/inbox");
 		await expectPosture(page, "desktop");
 		await expect(page.locator("[data-reading-pane]")).toHaveCount(0);
+	});
+
+	test("opening the docked assistant on a desktop keeps the split without rebuilding it", async ({ page }) => {
+		// Narrow enough that the assistant leaves the panes under the minimum two-pane width (539 px).
+		await page.setViewportSize({ width: 1030, height: 900 });
+		await page.goto("/inbox");
+		await expectPosture(page, "desktop");
+		await openMessage(page, subject);
+		const assistant = page.getByRole("button", { name: "Open email assistant" });
+		test.skip((await assistant.count()) === 0, "The assistant is not enabled in this environment.");
+		const group = page.locator("[data-reading-pane]");
+		await group.evaluate((element) => ((window as unknown as { __group: Element }).__group = element));
+		await assistant.click();
+		await expect(page.getByRole("button", { name: "Close email assistant" })).toBeVisible();
+		await expect(group).toHaveAttribute("data-reading-pane", "right");
+		expect(
+			await page.evaluate(
+				() => (window as unknown as { __group: Element }).__group === document.querySelector("[data-reading-pane]"),
+			),
+		).toBe(true);
 	});
 });
 

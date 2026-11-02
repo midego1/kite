@@ -1,15 +1,16 @@
 import { useLayoutEffect, useState, type CSSProperties } from "react";
 import { resolveFoldReadingPane, type FoldHinge } from "@/components/fold-posture-utils";
 import { useFoldViewport } from "@/components/use-fold-posture";
-import { LIST_WIDTH_LIMITS } from "@/lib/preferences/layout-utils";
+import { LIST_HEIGHT_LIMITS, LIST_WIDTH_LIMITS } from "@/lib/preferences/layout-utils";
 import { useReadingPaneMode } from "./use-reading-layout";
 
-/** The reader's minimum width, as `MessageSplitLayout` reserves it. */
-const READER_RESERVED_WIDTH = 280;
+// What the list may be and what the reader keeps, in pixels: width beside the reader, height above it.
+export const LIST_WIDTH = { fallback: 360, ...LIST_WIDTH_LIMITS, reserved: 280 };
+export const LIST_HEIGHT = { fallback: 320, ...LIST_HEIGHT_LIMITS, reserved: 200 };
 /** The hairline handle between the panels and its 4px margin on each side. */
 const HANDLE_WIDTH = 9;
 /** Two panes need this much room; below it the list and reader would overlap or clip. */
-const SPLIT_MIN_WIDTH = LIST_WIDTH_LIMITS.min + READER_RESERVED_WIDTH + HANDLE_WIDTH;
+const SPLIT_MIN_WIDTH = LIST_WIDTH.min + LIST_WIDTH.reserved + HANDLE_WIDTH;
 
 /**
  * How the list and the reader share the screen on a foldable device: the reading-pane mode after the fold
@@ -25,18 +26,22 @@ export function useFoldSplit() {
 	const [fits, setFits] = useState(true);
 	const [groupLeft, setGroupLeft] = useState<number | null>(null);
 	const wanted = resolveFoldReadingPane(preferredMode, fold.posture, fold.wide, fold.override);
+	// Only an unfolded screen falls back: a desktop keeps its split however much a docked assistant narrows it.
 	// Stacked panes need height, not width, so only a side-by-side split has to fit.
-	const mode = wanted === "right" && !fits ? "none" : wanted;
+	const mode = wanted === "right" && fold.posture === "unfolded" && !fits ? "none" : wanted;
 	const split = mode !== "none";
 	// A vertical hinge gets its own space, and the list starts in the first screen instead of under the fold.
-	const hinge = split && fold.posture === "unfolded" && fold.hinge?.orientation === "vertical" ? fold.hinge : null;
+	// Stacked panes span both screens and are left alone.
+	const hinge =
+		mode === "right" && fold.posture === "unfolded" && fold.hinge?.orientation === "vertical" ? fold.hinge : null;
 	const followsLeft = hinge !== null;
 
 	useLayoutEffect(() => {
 		if (!measured) return;
 		const measure = () => {
 			const box = measured.getBoundingClientRect();
-			setFits(box.width >= SPLIT_MIN_WIDTH);
+			// A width of 0 is a panel that is not laid out (a full-size assistant), not a screen that is too small.
+			if (box.width > 0) setFits(box.width >= SPLIT_MIN_WIDTH);
 			if (followsLeft) setGroupLeft(box.left);
 		};
 		measure();

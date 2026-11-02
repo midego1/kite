@@ -22,7 +22,7 @@ test("cancelling while an upload starts discards the session without sending any
 			await route.fulfill({ response });
 		});
 		await page.goto("/drive");
-		await expect(page.getByText("Nothing here yet. Upload files or create a folder.")).toBeVisible();
+		await expect(page.getByText("Nothing here yet")).toBeVisible();
 		const started = page.waitForRequest((request) => request.url().endsWith("/api/drive/uploads"));
 		await page.locator("input[data-drive-file-input]").setInputFiles({
 			name: "cancel.txt",

@@ -68,11 +68,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
-- [Admin → Storage](/storage) has a new **Attachment storage** card for the primary admin. It shows how much space older mail could free, and **Reclaim space** frees it while **Restore separate copies** undoes that; both run in the background and can be stopped. Files download exactly as before. This needs a database update applied from the Admin overview.
+- [Admin → Storage](/storage) has a new **Attachment storage** card for the primary admin. It shows how much space older mail could free, and **Reclaim space** frees it while **Restore separate copies** undoes that; both run in the background and can be stopped. Files download exactly as before. This needs a database update applied from the Admin overview. **Reclaim space** is unavailable while `ATTACHMENT_RAW_INDEX=off`.
 
 ### Changed
 
-- Rolling back to a release before 2026.10.31.3 now has one procedure: turn off attachment sharing and serving from the raw message, deploy, choose **Restore separate copies**, wait until nothing is served from the raw message or shared, then roll back. See [Materialize, then roll back](https://github.com/midego1/kite/blob/main/docs/runbooks/recovery.md#materialize-then-roll-back).
+- Rolling back to a release before 2026.10.31.3 now has one procedure: set `ATTACHMENT_SHARING=off` and `ATTACHMENT_RAW_INDEX=off`, deploy, choose **Restore separate copies**, wait until nothing is served from the raw message or shared, then roll back. See [Materialize, then roll back](https://github.com/midego1/kite/blob/main/docs/runbooks/recovery.md#materialize-then-roll-back).
 
 ### Fixed
 
@@ -86,7 +86,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
-- Files in received and imported mail are no longer stored twice, so a message with attachments takes about a third less storage. Everything works as before, and self-hosters can turn this off with an install setting.
+- Files in received and imported mail are no longer stored twice, so a message with attachments takes about a third less storage. Everything works as before, and self-hosters can turn this off with `ATTACHMENT_RAW_INDEX=off`.
 - **Do not roll back to a release before 2026.10.31.3 once this one has run**, because those releases show files served from the raw message as missing. Fix forward instead, or follow the [recovery runbook](https://github.com/midego1/kite/blob/main/docs/runbooks/recovery.md#rolling-back-past-raw-backed-attachments) first. The earlier warning about rolling back past attachment sharing still applies.
 - **Why?** for cut-off failures on the [Admin overview](/admin) now explains what happened and which setting to change. **Ask AI** sends the same facts, so the assistant can answer instead of guessing. Still no email content.
 - The command center in the empty reading pane now looks calm in every style and theme. Its cards are quiet and a warning under **Needs attention** is one amber callout, instead of the solid blocks Kite classic showed in dark mode.
@@ -112,7 +112,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
-- **Do not roll back to an older release once this one has run.** Older releases delete an attachment's file together with its message, even if another message still uses it. Fix forward instead. If a rollback cannot be avoided, follow the [recovery runbook](https://github.com/midego1/kite/blob/main/docs/runbooks/recovery.md#rolling-back-past-attachment-sharing) first. Self-hosters can turn off new sharing with an install setting, and it is on by default. A backup taken after this release can only be restored into a database that has the matching database update applied.
+- **Do not roll back to an older release once this one has run.** Older releases delete an attachment's file together with its message, even if another message still uses it. Fix forward instead. If a rollback cannot be avoided, follow the [recovery runbook](https://github.com/midego1/kite/blob/main/docs/runbooks/recovery.md#rolling-back-past-attachment-sharing) first. Self-hosters can turn off new sharing with `ATTACHMENT_SHARING=off`; it is on by default. A backup taken after this release can only be restored into a database that has the matching database update applied.
 - Sending a draft and forwarding a message no longer store their attachments a second time, so each file is kept once. Deleting a message removes a file only when nothing else uses it, and a storage failure can leave an unused file behind but never a message with a missing attachment.
 - The command center's **Today** and **Money Watch** cards now sit below the quick actions, so nothing you are about to click moves. They also stop reloading every time you close a message.
 
@@ -234,7 +234,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Webhooks, mail import, object storage and the remote image proxy now refuse host names that hide a private address (like `10-0-0-1.example.com`) and wildcard DNS services such as `nip.io`.
 - A received reply now joins a conversation only if it passed the sender domain's DMARC check, or DMARC gave no result and the sender is already part of that conversation. A stranger who learned a Message-ID can no longer slip a message into a conversation. Conversations no longer show Spam unless you open that message.
 - Received mail no longer renames a contact. Messages show the name you saved for the contact, else that message's own From name, so a shared no-reply address keeps a different sender per message.
-- The loop guard for forwarded mail is now signed per message, so a sender can no longer switch off your account forwarding for its message. Installs without an encryption key set keep the old unsigned guard, so set one to get the signed version. Two installs forwarding to each other now stop after one extra hop.
+- The loop guard for forwarded mail is now signed per message, so a sender can no longer switch off your account forwarding for its message. Installs without `APP_ENCRYPTION_KEY` set keep the old unsigned guard, so set it to get the signed version (see [The forwarding loop guard](https://github.com/midego1/kite/blob/main/docs/sending-and-deliverability.md#the-forwarding-loop-guard)). Two installs forwarding to each other now stop after one extra hop.
 - New-mail notifications now show the sender as "Name <address>" without hidden control characters, and mail filed in Trash by a rule or a block no longer notifies, like Spam.
 - Senders first seen in Spam, Trash or the Screener, or first recorded by blocking them, are no longer looked up on Gravatar.
 - The new-message webhook is no longer sent for mail filed in Spam or Trash. Mail held by the Screener still sends it.
@@ -300,7 +300,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - In assistant chat, changing or deleting calendar events is now a proposal you approve under the answer. Nothing changes before you click, and the approval is refused if the event was edited in the meantime.
 - Sending an AI draft now tells you the assistant wrote it and warns about recipients you have never written to. Auto-replies, invitation answers, booking notices and cancelled sends no longer add recipients to your contacts or approve them in the Screener.
 - The MCP server now tells clients that mail and calendar content is untrusted, labels read-only and destructive tools, and records each tool call (never its content) in the audit log for 90 days.
-- Mail that fails DMARC from a domain that asks for rejection or quarantine now goes to Spam, even from a saved contact. A failed check also stops a known sender from being trusted automatically, so a forged sender no longer reaches the Inbox. Forwarded mail that still passes DMARC keeps its trust.
+- Mail that fails DMARC from a domain that asks for rejection or quarantine now goes to Spam, even from a saved contact. Mail that fails both SPF and DKIM with no DMARC result goes to Spam too, while a failure from a domain with `p=none` only adds to the spam score. A failed check also stops a known sender from being trusted automatically, so a forged sender no longer reaches the Inbox. Forwarded mail that still passes DMARC keeps its trust.
 - A new switch, **Treat every DMARC failure as spam**, under [Admin → General](/general) in Sender authentication is off by default. It needs a database update applied from the Admin overview.
 - Self-hosted: the built-in SMTP listener now checks SPF, DKIM and DMARC itself, so the spam filter and the rules above apply to mail received on port 25. It also adds limits on sessions, recipients and idle time. It needs to see senders' real addresses, see [Self-hosting](https://github.com/midego1/kite/blob/main/docs/self-hosting.md#receiving-mail).
 - Editing a store's address, bucket, region or provider now asks for its access keys again, because saved keys only ever work for where they were saved. Storage checks also no longer follow redirects and give up after 15 seconds.

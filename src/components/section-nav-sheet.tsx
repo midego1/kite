@@ -55,12 +55,13 @@ export function SectionNavSheet({
 	return (
 		<>
 			{!controlled && (
+				// Above the phone tab bar (3.75rem plus the safe-area inset), with the same 0.75rem gap the bar leaves.
 				<button
 					type="button"
 					onClick={() => setOpen(true)}
 					aria-haspopup="dialog"
 					aria-expanded={open}
-					className="fixed bottom-4 left-1/2 z-40 flex -translate-x-1/2 items-center gap-2 rounded-full bg-neutral-900 px-4 py-2.5 text-sm font-medium text-white shadow-lg md:hidden"
+					className="fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom))] left-1/2 z-40 flex -translate-x-1/2 items-center gap-2 rounded-full bg-neutral-900 px-4 py-2.5 text-sm font-medium text-white shadow-lg md:hidden"
 				>
 					<span className="max-w-[60vw] truncate">{label}</span>
 					<ChevronUp size={16} aria-hidden="true" />

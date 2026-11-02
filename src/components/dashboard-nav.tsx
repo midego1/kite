@@ -24,14 +24,10 @@ import { authFetch } from "@/lib/auth/client";
 import { DEFAULT_FOLDER_COLOR, FOLDER_COLOR_OPTIONS } from "@/lib/folders/colors";
 import type { FolderColor } from "@/lib/folders/types";
 import { NavItem } from "./components-nav";
+import { FolderNavItem } from "./folders/folder-nav-item";
 import type { NavLink } from "./components-nav-types";
 import type { CustomFolder } from "./dashboard-nav-types";
-import {
-	customFolderNavLink,
-	folderSectionState,
-	getFolderNavCount,
-	moveMessagesToSystemFolder,
-} from "./dashboard-nav-utils";
+import { folderSectionState, getFolderNavCount, moveMessagesToSystemFolder } from "./dashboard-nav-utils";
 import { AllMailboxesFolders, FolderMailboxField } from "./all-mailboxes-folders";
 import { useAllMailboxesNav } from "./use-all-mailboxes-nav";
 import { FOLDERS_CHANGED_EVENT } from "./messages/use-mailbox-folders";
@@ -376,7 +372,13 @@ export function DashboardNav({
 							},
 							items: folders.map((folder) => ({
 								id: folder.id,
-								node: <NavItem wrap link={customFolderNavLink(folder, counts.customFolders[folder.id]?.unread)} />,
+								node: (
+									<FolderNavItem
+										folder={folder}
+										unread={counts.customFolders[folder.id]?.unread}
+										canManage={(selectedMailbox?.permission ?? "full_access") === "full_access"}
+									/>
+								),
 							})),
 						},
 					]}

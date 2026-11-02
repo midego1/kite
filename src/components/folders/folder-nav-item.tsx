@@ -49,18 +49,18 @@ export function FolderNavItem({
 			>
 				{row}
 				<DropdownMenu.Trigger asChild>
-					<button
-						type="button"
-						aria-label={`Folder options for ${folder.name}`}
-						tabIndex={minimal ? -1 : 0}
-						className={
-							minimal
-								? "pointer-events-none absolute inset-0 opacity-0"
-								: "absolute right-1 top-1.5 flex h-6 w-6 items-center justify-center rounded-md bg-neutral-100 text-neutral-600 opacity-0 transition-opacity hover:bg-neutral-200 hover:text-neutral-900 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 group-hover/folder:opacity-100 data-[state=open]:opacity-100 max-md:top-2.5 max-md:h-7 max-md:w-7"
-						}
-					>
-						<MoreHorizontal aria-hidden className="h-4 w-4" />
-					</button>
+					{minimal ? (
+						// The rail has no room for a button: the menu opens from the row (right-click, context-menu key).
+						<span aria-hidden className="pointer-events-none absolute inset-0" />
+					) : (
+						<button
+							type="button"
+							aria-label={`Folder options for ${folder.name}`}
+							className="absolute right-1 top-1.5 flex h-6 w-6 items-center justify-center rounded-md bg-neutral-100 text-neutral-600 opacity-0 transition-opacity hover:bg-neutral-200 hover:text-neutral-900 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 group-hover/folder:opacity-100 data-[state=open]:opacity-100 max-md:top-2.5 max-md:h-7 max-md:w-7"
+						>
+							<MoreHorizontal aria-hidden className="h-4 w-4" />
+						</button>
+					)}
 				</DropdownMenu.Trigger>
 			</div>
 			<DropdownMenu.Portal>

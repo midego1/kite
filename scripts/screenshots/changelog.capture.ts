@@ -27,6 +27,17 @@ type Shot = {
 };
 
 const SHOTS: Shot[] = [
+	{
+		name: "2026-11-02-mobile-tab-bar-light",
+		theme: "light",
+		viewport: { width: 390, height: 844 },
+		open: async (page) => {
+			await page.goto("/inbox");
+			await expect(page.getByRole("navigation", { name: "Primary" })).toBeVisible();
+			await expect(page.getByRole("main").getByText(THREAD[0]!.subject).first()).toBeVisible();
+			return page;
+		},
+	},
 	...(["light", "dark"] as const).map(
 		(theme): Shot => ({
 			name: `2026-11-02-admin-cards-${theme}`,

@@ -13,6 +13,7 @@ import { ShortcutsProvider } from "@/components/shortcuts";
 import { MobileMenuButton, SidebarAside } from "@/components/sidebar-aside";
 import { SidebarFrame } from "@/components/sidebar-frame";
 import { SidebarProvider } from "@/components/sidebar-state";
+import { MobileTabBar } from "@/components/mobile-tab-bar";
 import { MAIN_CONTENT_ID, SkipToContent } from "@/components/skip-to-content";
 import { RouteTitle } from "@/components/route-title";
 
@@ -67,6 +68,7 @@ export function DashboardSectionShell({ children, nav, ...guard }: DashboardSect
 										>
 											{children}
 										</main>
+										<MobileTabBar />
 									</div>
 								</SidebarFrame>
 								<FloatingComposer />

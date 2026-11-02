@@ -31,7 +31,7 @@ export function NavItem({ link, iconClassName, labelClassName, wrap }: Props) {
 	const router = useRouter();
 	const { openComposer } = useCompose();
 	const { mailboxScope } = useSelectedMailbox();
-	const { minimal } = useSidebar();
+	const { minimal, setMobileOpen } = useSidebar();
 	const [dragOver, setDragOver] = useState(false);
 	const [navigationProgress, setNavigationProgress] = useState<number | null>(null);
 
@@ -93,7 +93,11 @@ export function NavItem({ link, iconClassName, labelClassName, wrap }: Props) {
 		const composeButton = (
 			<button
 				type="button"
-				onClick={openComposer}
+				onClick={() => {
+					// Opening the composer changes no route, so the phone menu has to close itself or it stays on top.
+					setMobileOpen(false);
+					openComposer();
+				}}
 				className={cn(!minimal && "ml-3", classes)}
 				// "Compose" stays in the name, which is what the shortcut help, tests and screen reader users know.
 				aria-label={`Compose ${(link.label ?? "").toLowerCase()}`}

@@ -21,6 +21,8 @@ export type AuditAction =
 	| "email.read"
 	| "email.delete"
 	| "folder.create"
+	| "folder.rename"
+	| "folder.delete"
 	| "permission.change"
 	| "mailbox.access";
 

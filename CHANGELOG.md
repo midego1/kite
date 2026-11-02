@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.11.02.0] - 2026-11-02
+
+### Added
+
+- Folders can be renamed and deleted from the sidebar: a folder row has a **⋯** menu (also on right-click or the context-menu key, and in the collapsed sidebar) with **Rename** and **Delete**. Deleting asks where the folder's messages go, **Archive** (the default) or **Inbox**, and says how many inbox rules file mail into it; those rules are turned off, and the messages are moved before the folder is removed, so nothing is lost. If you are looking at the folder you delete, you land in the Inbox. A folder an import is still filing mail into cannot be deleted until the import ends. Needs full access to the mailbox. API: `PATCH` and `DELETE /api/folders/{id}`.
+
 ## [2026.11.01.5] - 2026-11-01
 
 ### Fixed

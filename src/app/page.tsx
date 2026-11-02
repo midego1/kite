@@ -24,7 +24,7 @@ export async function generateMetadata(): Promise<Metadata> {
 	const branding = await getHomeBranding();
 	return {
 		title: branding.appName,
-		description: `${branding.appName} is a self-hosted webmail app on Cloudflare Workers. It receives through Email Routing and sends through Cloudflare, Resend or Amazon SES. Your mail stays in your D1 database and R2 bucket. Every feature is free. Early beta.`,
+		description: `${branding.appName} is a self-hosted webmail app on Cloudflare Workers. It receives through Email Routing and sends through Cloudflare, Resend or Amazon SES. Your mail stays in your D1 database and R2 bucket (SQLite and local files with Docker). Every feature is free. Early beta.`,
 		keywords: [
 			"cloudflare",
 			"cloudflare-workers",
@@ -105,8 +105,8 @@ export default async function HomePage() {
 							</h1>
 							<p className="mx-auto mt-6 max-w-2xl text-lg leading-8 text-neutral-600">
 								{branding.appName} is a self-hosted webmail app on Cloudflare Workers. It receives through Email Routing
-								and sends through Cloudflare, Resend or Amazon SES. Your mail stays in your D1 database and R2 bucket.
-								Every feature is free.
+								and sends through Cloudflare, Resend or Amazon SES. Your mail stays in your D1 database and R2 bucket
+								(SQLite and local files with Docker). Every feature is free.
 							</p>
 							<HomeHeroActions />
 							<p className="mx-auto mt-4 max-w-xl text-sm text-neutral-500">

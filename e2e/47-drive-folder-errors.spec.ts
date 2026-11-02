@@ -20,7 +20,7 @@ test("a failed folder upload shows the error, refreshes partial folders and send
 				: route.continue(),
 		);
 		await page.goto("/drive");
-		await expect(page.getByText("Nothing here yet. Upload files or create a folder.")).toBeVisible();
+		await expect(page.getByText("Nothing here yet")).toBeVisible();
 		await page.locator("input[data-drive-folder-input]").evaluate((input) => {
 			const file = new File(["Hello"], "hello.txt", { type: "text/plain" });
 			Object.defineProperty(file, "webkitRelativePath", { value: "Parent/Child/hello.txt" });

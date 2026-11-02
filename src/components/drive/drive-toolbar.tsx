@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import clsx from "clsx";
 import { ChevronRight, Download, FolderInput, FolderPlus, FolderUp, RotateCcw, Trash2, Upload, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { FilterChip } from "@/components/ui/filter-chip";
 import { DRIVE_CATEGORIES, DRIVE_CATEGORY_LABELS, type DriveCategory } from "@/lib/drive/category-names-utils";
 import type { DriveCrumb, DriveItemDto } from "@/lib/drive/types";
 import type { DriveCommand } from "./drive-utils";
@@ -64,26 +64,15 @@ export function DriveTypeChips({
 	const toggle = (category: DriveCategory) =>
 		onChange(value.includes(category) ? value.filter((entry) => entry !== category) : [...value, category]);
 	return (
-		<div role="group" aria-label="File types" className="flex flex-wrap gap-1.5">
-			{DRIVE_CATEGORIES.map((category) => {
-				const active = value.includes(category);
-				return (
-					<button
-						key={category}
-						type="button"
-						aria-pressed={active}
-						onClick={() => toggle(category)}
-						className={clsx(
-							"h-8 rounded-lg px-3 text-xs font-medium transition-colors",
-							active
-								? "bg-blue-600 text-white"
-								: "bg-neutral-100 text-neutral-600 hover:bg-neutral-200 hover:text-neutral-900",
-						)}
-					>
-						{DRIVE_CATEGORY_LABELS[category]}
-					</button>
-				);
-			})}
+		<div role="group" aria-label="File types" className="flex flex-wrap gap-2">
+			{DRIVE_CATEGORIES.map((category) => (
+				<FilterChip
+					key={category}
+					active={value.includes(category)}
+					label={DRIVE_CATEGORY_LABELS[category]}
+					onClick={() => toggle(category)}
+				/>
+			))}
 		</div>
 	);
 }

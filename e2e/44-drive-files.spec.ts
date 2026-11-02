@@ -24,7 +24,7 @@ test("My Drive: a folder, an upload, preview, rename, move, trash, restore and d
 	try {
 		await page.goto("/drive");
 		await expect(page.getByRole("heading", { level: 1, name: "My Drive" })).toBeVisible();
-		await expect(page.getByText("Nothing here yet. Upload files or create a folder.")).toBeVisible();
+		await expect(page.getByText("Nothing here yet")).toBeVisible();
 
 		await page.getByRole("button", { name: "New folder" }).click();
 		const create = page.getByRole("dialog", { name: "New folder" });
@@ -87,7 +87,7 @@ test("My Drive: a folder, an upload, preview, rename, move, trash, restore and d
 		await rowAction(page, "renamed.txt", "Delete forever");
 		await page.getByRole("alertdialog").getByRole("button", { name: "Delete forever" }).click();
 		await expect(row(page, "renamed.txt")).toHaveCount(0);
-		await expect(page.getByText("The trash is empty.")).toBeVisible();
+		await expect(page.getByText("The trash is empty")).toBeVisible();
 		expect((await account.api.get(`/api/drive/files/${file.id}/content`)).status()).toBe(404);
 	} finally {
 		await context.close();

@@ -3,7 +3,7 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import toast from "react-hot-toast";
-import { UploadCloud } from "lucide-react";
+import { Clock, HardDrive, Paperclip, Search, Trash2, UploadCloud, UsersRound, type LucideIcon } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -28,15 +28,26 @@ import { useDriveActions } from "./use-drive-actions";
 import { useDriveSelection, useFileDropZone, useFileParam, useRowDrag, type DriveSelection } from "./use-drive-browser";
 import { useDriveListing } from "./use-drive-listing";
 import { useDriveUploads } from "./use-drive-uploads";
-import { TABLE_HEAD_CLASS } from "@/components/ui/page-utils";
+import { EmptyState } from "@/components/ui/page";
+import { LIST_HEAD_CLASS } from "@/components/ui/page-utils";
 
-const EMPTY_TEXT: Record<DriveListingView, string> = {
-	my: "Nothing here yet. Upload files or create a folder.",
-	recent: "Files you add appear here.",
-	shared: "Nothing has been shared with you yet.",
-	attachments: "No attachments in your mailboxes.",
-	trash: "The trash is empty.",
+/** What each view says with nothing in it, as the dashed empty state the other lists use. */
+const EMPTY: Record<DriveListingView, { icon: LucideIcon; title: string; description: string }> = {
+	my: { icon: HardDrive, title: "Nothing here yet", description: "Upload files or create a folder." },
+	recent: { icon: Clock, title: "No recent files", description: "Files you add appear here." },
+	shared: {
+		icon: UsersRound,
+		title: "Nothing shared with you yet",
+		description: "Files and folders people share with you appear here.",
+	},
+	attachments: {
+		icon: Paperclip,
+		title: "No attachments",
+		description: "The attachments of the mail in your mailboxes appear here.",
+	},
+	trash: { icon: Trash2, title: "The trash is empty", description: "Items you move to the trash appear here." },
 };
+const EMPTY_SEARCH = { icon: Search, title: "No files match your search", description: "Try another name." };
 
 /** Whether new files and folders can go where the listing is: My Drive, or a folder you can edit. */
 function takesUploads(view: DriveListingView, folderId: string | null, listing: DriveListing | null, query: string) {
@@ -51,14 +62,12 @@ function ListState({
 	notFound,
 	pending,
 	empty,
-	emptyText,
 }: {
 	loading: boolean;
 	error: string | null;
 	notFound: boolean;
 	pending: boolean;
-	empty: boolean;
-	emptyText: string;
+	empty: { icon: LucideIcon; title: string; description: string } | null;
 }) {
 	if (loading)
 		return (
@@ -72,12 +81,14 @@ function ListState({
 		? "Drive needs a database update. An admin can apply it from the admin overview."
 		: notFound
 			? "This folder does not exist or is not shared with you."
-			: error
-				? error
-				: empty
-					? emptyText
-					: null;
-	return message ? <p className="p-12 text-center text-sm text-neutral-500">{message}</p> : null;
+			: error;
+	if (message) return <p className="p-12 text-center text-sm text-neutral-500">{message}</p>;
+	if (!empty) return null;
+	return (
+		<div className="p-4">
+			<EmptyState icon={empty.icon} title={empty.title} description={empty.description} />
+		</div>
+	);
 }
 
 function useListingQuery(view: DriveListingView, folderId: string | null) {
@@ -167,7 +178,7 @@ function HiddenInputs({
 
 function ColumnHeader({ view, selection }: { view: DriveListingView; selection: DriveSelection }) {
 	return (
-		<div className={`${DRIVE_GRID} ${TABLE_HEAD_CLASS} shrink-0 px-5 py-2`}>
+		<div className={`${DRIVE_GRID} ${LIST_HEAD_CLASS} shrink-0 px-5 py-2`}>
 			<Checkbox
 				checked={selection.allSelected}
 				onChange={selection.toggleAll}
@@ -335,8 +346,7 @@ export function DriveBrowser({ view, folderId = null }: { view: DriveListingView
 						error={error}
 						notFound={notFound}
 						pending={!!listing?.migrationPending}
-						empty={items.length === 0}
-						emptyText={query.query ? "No files match your search." : EMPTY_TEXT[view]}
+						empty={items.length === 0 ? (query.query ? EMPTY_SEARCH : EMPTY[view]) : null}
 					/>
 					{items.map((item) => (
 						<DriveItemRow

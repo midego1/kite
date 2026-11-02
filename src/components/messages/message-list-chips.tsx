@@ -1,10 +1,9 @@
 "use client";
 
-import clsx from "clsx";
-import Link from "next/link";
 import type { LucideIcon } from "lucide-react";
 import { Clock, Mail, Paperclip, Star, UserCheck, Zap } from "lucide-react";
 import { useMailSearch } from "@/components/mail-search/mail-search-context";
+import { FilterChip } from "@/components/ui/filter-chip";
 import { Tooltip } from "@/components/ui/tooltip";
 import type { MessageListHeaderProps } from "./message-list-header-types";
 import { hasSearchTerm, toggleSearchTerm, withoutChipTerms, type ChipSearchTerm } from "./message-list-chips-utils";
@@ -18,37 +17,18 @@ type Chip = {
 	href?: string;
 };
 
-const chipClass =
-	"inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-lg text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500";
-
 function ChipButton({ chip }: { chip: Chip }) {
-	const Icon = chip.icon;
-	const className = clsx(
-		chipClass,
-		chip.active
-			? "min-w-0 max-w-60 flex-1 bg-blue-500 px-3 text-[#fff]"
-			: "w-8 bg-neutral-100 text-neutral-500 hover:bg-neutral-200 hover:text-neutral-900",
-	);
-	const content = (
-		<>
-			<Icon className="h-4 w-4 shrink-0" fill={chip.active && chip.key === "all" ? "currentColor" : "none"} />
-			{chip.active && <span className="truncate">{chip.label}</span>}
-		</>
-	);
-	const control = chip.href ? (
-		<Link href={chip.href} aria-label={chip.label} className={className}>
-			{content}
-		</Link>
-	) : (
-		<button
-			type="button"
-			aria-label={chip.label}
-			aria-pressed={chip.active}
+	const control = (
+		<FilterChip
+			active={chip.active}
+			icon={chip.icon}
+			fillIcon={chip.key === "all"}
+			label={chip.label}
+			iconOnly={!chip.active}
+			href={chip.href}
 			onClick={chip.onClick}
-			className={className}
-		>
-			{content}
-		</button>
+			className={chip.active ? "min-w-0 max-w-60 flex-1" : undefined}
+		/>
 	);
 	return chip.active ? control : <Tooltip label={chip.label}>{control}</Tooltip>;
 }

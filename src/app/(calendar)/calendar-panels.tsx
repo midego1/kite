@@ -63,11 +63,9 @@ export function CalendarPanels({
 				label="Upcoming"
 				open={sheetOpen}
 				onOpenChange={setSheetOpen}
-				className={cn(
-					"w-full md:flex md:min-h-0 md:shrink-0 md:flex-col",
-					SECTION_PANEL_CLASS,
-					open ? "md:w-64" : "md:w-12",
-				)}
+				// A flex column at every width, so on phones the list scrolls inside the sheet (its day headings stick and
+				// the next batch loads on scroll), not the sheet around it.
+				className={cn("flex min-h-0 w-full shrink-0 flex-col", SECTION_PANEL_CLASS, open ? "md:w-64" : "md:w-12")}
 			>
 				<div
 					className={cn("flex h-14 shrink-0 items-center gap-2 border-b border-neutral-200", open ? "px-4" : "px-2")}

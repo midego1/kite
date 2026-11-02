@@ -1,8 +1,9 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
+import { PHONE_SHELL_VIEWPORT_QUERY } from "./fold-posture-utils";
 
-const mobileQuery = "(max-width: 767px)";
+const mobileQuery = PHONE_SHELL_VIEWPORT_QUERY;
 
 export function isMobileViewport(): boolean {
 	return window.matchMedia(mobileQuery).matches;

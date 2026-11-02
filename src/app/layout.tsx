@@ -6,6 +6,7 @@ import { legacyStorageMigrationScript } from "@/components/legacy-storage-utils"
 import { sidebarBootstrapScript } from "@/components/sidebar-state-utils";
 import { themeBootstrapScript } from "@/components/theme-utils";
 import { appearanceBootstrapScript } from "@/components/appearance-preferences";
+import { foldPostureBootstrapScript } from "@/components/fold-posture-utils";
 import { assetRecoveryScript } from "@/components/asset-recovery-utils";
 import { bootTraceScript } from "@/components/boot-trace-utils";
 import { reloadReturnBootstrapScript } from "@/components/reload-return-utils";
@@ -88,6 +89,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
 				{/* After the theme, so the kite's return (reload-return-utils.ts) paints in the right colours from the first frame. */}
 				<script nonce={nonce} dangerouslySetInnerHTML={{ __html: reloadReturnBootstrapScript }} />
 				<script nonce={nonce} dangerouslySetInnerHTML={{ __html: appearanceBootstrapScript }} />
+				<script nonce={nonce} dangerouslySetInnerHTML={{ __html: foldPostureBootstrapScript }} />
 				<link rel="icon" href="/api/branding/icon"></link>
 			</head>
 			<body className="antialiased">

@@ -106,6 +106,30 @@ const SHOTS: Shot[] = [
 			},
 		}),
 	),
+	...(["light", "dark"] as const).map(
+		(theme): Shot => ({
+			name: `2026-11-02-fold-two-panes-${theme}`,
+			theme,
+			viewport: { width: 884, height: 1104 },
+			open: async (page) => {
+				// The "two" override forces the unfolded layout, the same panes an unfolded foldable shows.
+				await page.addInitScript(() => {
+					localStorage.setItem("kite-fold-layout", "two");
+				});
+				await page.goto("/inbox");
+				await expect(page.locator("html")).toHaveAttribute("data-fold-posture", "unfolded");
+				await page
+					.getByRole("main")
+					.getByText(THREAD[0]!.subject, { exact: true })
+					.first()
+					.click();
+				await expect(page.getByRole("heading", { level: 1, name: THREAD[0]!.subject })).toBeVisible();
+				const list = page.getByRole("main").locator("[data-density]");
+				await expect(list.getByText(THREAD[0]!.subject, { exact: true })).toBeVisible();
+				return page;
+			},
+		}),
+	),
 	{
 		name: "2026-11-02-whats-new-images",
 		viewport: { width: 1100, height: 760 },

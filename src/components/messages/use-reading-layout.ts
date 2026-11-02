@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useState, useSyncExternalStore } from "react";
+import { useCallback, useLayoutEffect, useState } from "react";
 import { queueLayoutSave } from "@/components/layout-preferences-client";
 import type { LayoutPreferences } from "@/lib/preferences/layout-types";
 import type { MessageListDensity, ReadingPaneMode } from "./reading-layout-types";
@@ -9,7 +9,6 @@ import {
 	MESSAGE_DENSITY_STORAGE_KEY,
 	READING_LAYOUT_CHANGE_EVENT as CHANGE_EVENT,
 	READING_PANE_STORAGE_KEY,
-	WIDE_READING_QUERY,
 	parseMessageListDensity,
 	parseReadingPaneMode,
 } from "./reading-layout-utils";
@@ -93,17 +92,5 @@ export function useMessageListDensity(): [MessageListDensity, (next: MessageList
 		readMessageListDensity,
 		MESSAGE_DENSITY_STORAGE_KEY,
 		densityLayout,
-	);
-}
-
-export function useWideReadingViewport(): boolean {
-	return useSyncExternalStore(
-		(onChange) => {
-			const media = window.matchMedia(WIDE_READING_QUERY);
-			media.addEventListener("change", onChange);
-			return () => media.removeEventListener("change", onChange);
-		},
-		() => window.matchMedia(WIDE_READING_QUERY).matches,
-		() => true,
 	);
 }

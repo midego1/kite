@@ -1456,6 +1456,15 @@ button {
 	--tw-shadow-color: rgb(0 0 0 / 0.6);
 }
 
+/* Foldable devices: the split mail view puts the list on the first screen and the reader on the second,
+   leaving the hinge between them. The hook supplies the fallback geometry; these env() values win where the
+   browser reports Viewport Segments. */
+.fold-hinge {
+	padding-left: var(--kite-fold-left, 0px);
+	padding-right: var(--kite-fold-right, 0px);
+	column-gap: var(--kite-fold-gap, 0px);
+}
+
 @media (max-width: 767px) {
 	:root {
 		--kite-toast-bottom: calc(6rem + env(safe-area-inset-bottom));

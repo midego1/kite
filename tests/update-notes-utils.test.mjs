@@ -88,3 +88,8 @@ test("a rolled-back server and a development build give no notes", () => {
 	assert.deepEqual(pickUpdateNotes(CALENDAR, "development"), []);
 	assert.deepEqual(pickUpdateNotes([release("Unreleased")], "2026.10.28.0"), []);
 });
+
+test("the preview line of a note with a screenshot is its text alone", () => {
+	const notes = [release("5", ["The command center has cards. ![Command center](/changelog/a.webp)"])];
+	assert.equal(firstUpdateNoteLine(notes), "The command center has cards.");
+});

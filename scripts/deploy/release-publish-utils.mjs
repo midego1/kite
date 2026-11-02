@@ -1,3 +1,4 @@
+import { absoluteImageUrls } from "../changelog-images.mjs";
 import { renderCommitGroups } from "../release-notes.mjs";
 import { changelogSection, compareVersions, isCalendarVersion } from "../version-utils.mjs";
 import { planDeployment } from "./deploy-record-utils.mjs";
@@ -27,7 +28,10 @@ export function releaseTag(version) {
 
 /** The changelog section for `version`, then the commits since `base` grouped like the draft notes. */
 export function renderPublishedNotes({ version, changelog, base, subjects }) {
-	const section = changelogSection(changelog, version) || `CHANGELOG.md has no notes for ${version}.`;
+	// GitHub cannot reach /changelog/x.webp, so screenshots point at the repository's raw file.
+	const section = absoluteImageUrls(
+		changelogSection(changelog, version) || `CHANGELOG.md has no notes for ${version}.`,
+	);
 	return `${section}\n\n## Commits\n\nCompared with ${base}.\n\n${renderCommitGroups(subjects, "###")}\n`;
 }
 

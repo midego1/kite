@@ -1,3 +1,10 @@
+/** A screenshot written under a note as `![alt](/changelog/x.webp)`. */
+export interface ChangelogImage {
+	alt: string;
+	/** An app path under `/changelog/`, a static asset. */
+	src: string;
+}
+
 export interface ChangelogSection {
 	title: string;
 	items: string[];

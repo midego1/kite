@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { imageProblems } from "./changelog-images.mjs";
 
 /** Where pull requests leave their changelog entries until the next release folds them into CHANGELOG.md. */
 export const FRAGMENT_DIRECTORY = "changelog.d";
@@ -70,9 +71,15 @@ export function parseFragment(text, name = "fragment") {
 	return { sections: groups.filter((group) => ENTRY.test(group.body)), problems };
 }
 
-/** Every problem in a list of `{ name, text }` fragments. */
-export function fragmentProblems(fragments) {
-	return fragments.flatMap((fragment) => parseFragment(fragment.text, fragment.name).problems);
+/**
+ * Every problem in a list of `{ name, text }` fragments. Screenshots are always checked for alt text and a
+ * /changelog/ path; with `root` their files are checked too (exist, WebP, size).
+ */
+export function fragmentProblems(fragments, { root } = {}) {
+	return fragments.flatMap((fragment) => [
+		...parseFragment(fragment.text, fragment.name).problems,
+		...imageProblems(fragment.text, fragment.name, root),
+	]);
 }
 
 /**

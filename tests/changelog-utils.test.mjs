@@ -11,8 +11,12 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const bundleDirectory = makeBundleDirectory("kite-changelog-");
 after(() => rmSync(bundleDirectory, { recursive: true, force: true }));
 await build({
-	entryPoints: [join(root, "src/lib/changelog/changelog-utils.ts")],
-	outfile: join(bundleDirectory, "changelog.mjs"),
+	entryPoints: {
+		changelog: join(root, "src/lib/changelog/changelog-utils.ts"),
+		"changelog-image": join(root, "src/lib/changelog/changelog-image-utils.ts"),
+	},
+	outdir: bundleDirectory,
+	outExtension: { ".js": ".mjs" },
 	bundle: true,
 	sourcemap: "inline",
 	platform: "node",
@@ -25,6 +29,10 @@ await build({
 });
 const { changelogReleaseLabel, isAppChangelogHref, parseChangelog, parseInlineMarkdown } = await import(
 	pathToFileURL(join(bundleDirectory, "changelog.mjs")).href
+);
+
+const { hasChangelogImages, splitChangelogImages } = await import(
+	pathToFileURL(join(bundleDirectory, "changelog-image.mjs")).href
 );
 
 const markdown = readFileSync(join(root, "CHANGELOG.md"), "utf8");
@@ -209,4 +217,66 @@ test("the changelog only uses markup the dialog renders", () => {
 			}
 		}
 	}
+});
+
+test("screenshots under a bullet stay with it, indented or not, and are not shown as text", () => {
+	const releases = parseChangelog(
+		[
+			"## [Unreleased]",
+			"",
+			"### Added",
+			"- The command center.",
+			"  ![Command center in light mode](/changelog/a.webp)",
+			"  ![The same in dark mode](/changelog/b.webp)",
+			"- Cmd+K search.",
+			"![Search results](/changelog/c.webp)",
+			"- Plain note.",
+		].join("\n"),
+	);
+	const items = releases[0].sections[0].items;
+	assert.equal(items.length, 3, "an image line never becomes an item of its own");
+	assert.deepEqual(splitChangelogImages(items[0]), {
+		text: "The command center.",
+		images: [
+			{ alt: "Command center in light mode", src: "/changelog/a.webp" },
+			{ alt: "The same in dark mode", src: "/changelog/b.webp" },
+		],
+	});
+	assert.deepEqual(splitChangelogImages(items[1]).images, [{ alt: "Search results", src: "/changelog/c.webp" }]);
+	assert.deepEqual(splitChangelogImages(items[2]), { text: "Plain note.", images: [] });
+	assert.deepEqual(
+		parseInlineMarkdown(items[0]).map((token) => token.text),
+		["The command center."],
+	);
+});
+
+test("an image needs alt text and a /changelog/ WebP path, anything else stays literal text", () => {
+	for (const item of [
+		"Note ![](/changelog/a.webp)",
+		"Note ![x](https://example.com/a.webp)",
+		"Note ![x](//example.com/a.webp)",
+		"Note ![x](/other/a.webp)",
+		"Note ![x](/changelog/a.png)",
+		"Note ![x](/changelog/../a.webp)",
+	]) {
+		assert.deepEqual(splitChangelogImages(item), { text: item, images: [] }, item);
+		assert.ok(
+			parseInlineMarkdown(item).every((token) => token.type !== "link"),
+			`${item} makes no link`,
+		);
+	}
+	assert.equal(hasChangelogImages("A note ![x](/changelog/a.webp)"), true);
+	assert.equal(hasChangelogImages("A note"), false);
+});
+
+test("inline code that shows the image syntax is left alone by the item text", () => {
+	const { text, images } = splitChangelogImages(
+		"Write `code` then ![alt](/changelog/a.webp) and [a link](/settings/inbox).",
+	);
+	assert.equal(text, "Write `code` then and [a link](/settings/inbox).");
+	assert.equal(images.length, 1);
+	assert.deepEqual(
+		parseInlineMarkdown(text).filter((token) => token.type === "link"),
+		[{ type: "link", text: "a link", href: "/settings/inbox" }],
+	);
 });

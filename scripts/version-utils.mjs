@@ -143,8 +143,9 @@ export function checkPullRequest({
 	changelog,
 	fragments,
 	changedFragments,
+	root,
 }) {
-	const problems = fragmentProblems(fragments);
+	const problems = fragmentProblems(fragments, { root });
 	if (isReleaseBranch(branch)) {
 		problems.push(...checkReleaseBump({ baseVersion, headVersion, changelog }));
 		if (fragments.length) {

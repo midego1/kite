@@ -139,6 +139,7 @@
 		"src/lib/build-version-utils.ts",
 		"src/lib/backups/backup-writer-utils.ts",
 		"src/lib/changelog/changelog-utils.ts",
+		"src/lib/changelog/changelog-image-utils.ts",
 		"src/lib/changelog/changelog-nav-utils.ts",
 		"src/lib/changelog/update-notes-utils.ts",
 		"src/lib/changelog/calendar-version-utils.ts",

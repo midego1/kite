@@ -1,6 +1,8 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { absoluteImageUrls } from "./changelog-images.mjs";
+import { changelogSection, isCalendarVersion } from "./version-utils.mjs";
 
 const SECTIONS = [
 	["Features", /^feat(?:\(|:)/],
@@ -33,6 +35,14 @@ export function commitSubjects(base, head = "HEAD") {
 
 // Generate reviewable notes from an explicit, verified comparison ref.
 function main() {
+	// `npm run release:notes -- <version>` prints that version's CHANGELOG.md section as the GitHub release shows
+	// it, with screenshot paths rewritten to absolute URLs; anything else is a base revision for the commit list.
+	if (isCalendarVersion(process.argv[2] ?? "")) {
+		const section = changelogSection(readFileSync("CHANGELOG.md", "utf8"), process.argv[2]);
+		if (section === null) throw new Error(`CHANGELOG.md has no "## [${process.argv[2]}]" heading`);
+		process.stdout.write(`${absoluteImageUrls(section)}\n`);
+		return;
+	}
 	const base = process.argv[2] ?? "origin/main";
 	if (!/^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(base)) throw new Error("Invalid base revision");
 	const revision = execFileSync("git", ["rev-parse", "--verify", `${base}^{commit}`], { encoding: "utf8" }).trim();

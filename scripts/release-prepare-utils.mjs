@@ -36,7 +36,7 @@ export function stringifyLike(original, value) {
 export async function prepareRelease({ root, now = new Date(), writeOpenApi }) {
 	const file = (name) => path.join(root, name);
 	const fragments = readFragments(root);
-	const problems = fragmentProblems(fragments);
+	const problems = fragmentProblems(fragments, { root });
 	if (problems.length) throw new Error(`Fix the changelog fragments first:\n- ${problems.join("\n- ")}`);
 	const version = nextVersion(readFileSync(file("VERSION"), "utf8"), now);
 	const npmVersion = packageVersion(version);

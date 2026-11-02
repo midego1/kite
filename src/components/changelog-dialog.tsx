@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { BUILD_VERSION, BUILD_VERSION_LABEL } from "@/lib/build-version";
 import {
 	EAGER_RELEASE_COUNT,
@@ -14,9 +15,11 @@ import {
 	releaseAnchorId,
 	visibleReleases,
 } from "@/lib/changelog/changelog-nav-utils";
+import { hasChangelogImages } from "@/lib/changelog/changelog-image-utils";
 import { changelogReleaseLabel, parseChangelog } from "@/lib/changelog/changelog-utils";
 import type { ChangelogRelease } from "@/lib/changelog/types";
-import { InlineText } from "./changelog-inline-text";
+import { useShowChangelogImages } from "./changelog-images";
+import { ChangelogSections } from "./changelog-sections";
 
 function ReleaseNotes({ release, onNavigate }: { release: ChangelogRelease; onNavigate: () => void }) {
 	return (
@@ -31,21 +34,7 @@ function ReleaseNotes({ release, onNavigate }: { release: ChangelogRelease; onNa
 				</h3>
 				{release.date && <span className="text-xs text-neutral-500">{release.date}</span>}
 			</div>
-			{release.sections.map((section) => (
-				<div key={section.title} className="space-y-1.5">
-					<p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">{section.title}</p>
-					<ul className="space-y-1.5">
-						{section.items.map((item, index) => (
-							<li key={`${section.title}:${index}`} className="flex gap-2 text-sm leading-relaxed text-neutral-700">
-								<span aria-hidden className="mt-2 h-1 w-1 shrink-0 rounded-full bg-blue-400" />
-								<span className="min-w-0 break-words">
-									<InlineText text={item} onNavigate={onNavigate} />
-								</span>
-							</li>
-						))}
-					</ul>
-				</div>
-			))}
+			<ChangelogSections release={release} onNavigate={onNavigate} titleAs="p" textClassName="text-neutral-700" />
 		</>
 	);
 }
@@ -277,6 +266,17 @@ function ChangelogReader({ releases, onNavigate }: { releases: ChangelogRelease[
 	);
 }
 
+/** Screenshots are on by default; this turns them off for good in this browser (and on again). */
+function ShowImagesToggle() {
+	const [show, setShow] = useShowChangelogImages();
+	return (
+		<label className="flex shrink-0 cursor-pointer items-center gap-2 pt-0.5 text-sm text-neutral-700">
+			Show images
+			<Switch checked={show} onCheckedChange={setShow} aria-label="Show images" />
+		</label>
+	);
+}
+
 export function ChangelogDialog({
 	open,
 	onOpenChange,
@@ -309,18 +309,27 @@ export function ChangelogDialog({
 		};
 	}, [open, releases]);
 
+	const hasImages = useMemo(
+		() =>
+			releases?.some((release) => release.sections.some((section) => section.items.some(hasChangelogImages))) ?? false,
+		[releases],
+	);
+
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent
 				overlayClassName="z-[120]"
 				className="z-[120] flex h-[calc(100vh-4rem)] max-h-[44rem] w-[min(56rem,calc(100vw-32px))] flex-col gap-0 overflow-hidden p-0"
 			>
-				<DialogHeader className="mb-0 shrink-0 border-b border-neutral-200 px-6 py-4 pr-12">
-					<DialogTitle>What&apos;s new in Kite</DialogTitle>
-					<DialogDescription>
-						{`Kite v${BUILD_VERSION_LABEL}`}
-						{updatedLabel ? ` · Updated ${updatedLabel}` : ""}
-					</DialogDescription>
+				<DialogHeader className="mb-0 flex shrink-0 flex-row items-start justify-between gap-3 space-y-0 border-b border-neutral-200 px-6 py-4 pr-12">
+					<div className="min-w-0 space-y-1.5">
+						<DialogTitle>What&apos;s new in Kite</DialogTitle>
+						<DialogDescription>
+							{`Kite v${BUILD_VERSION_LABEL}`}
+							{updatedLabel ? ` · Updated ${updatedLabel}` : ""}
+						</DialogDescription>
+					</div>
+					{hasImages && <ShowImagesToggle />}
 				</DialogHeader>
 				{!releases && !failed && <p className="p-6 text-sm text-neutral-500">Loading release notes…</p>}
 				{failed && <p className="p-6 text-sm text-neutral-500">Could not load the release notes.</p>}

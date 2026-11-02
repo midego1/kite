@@ -59,6 +59,120 @@ test("the sidebar footer shows when this build was made and opens the release no
 	await expect(dialog).toBeHidden();
 });
 
+const IMAGES_KEY = "kite-changelog-images";
+/** The release whose notes carry the command center screenshots (public/changelog/). */
+const SCREENSHOT_RELEASE = "2026.11.01.2";
+
+async function openChangelogRelease(page: Page, name: string) {
+	await openInbox(page);
+	await page.getByRole("button", { name: /^Updated / }).click();
+	const dialog = page.getByRole("dialog", { name: /What's new in Kite/ });
+	await showRelease(dialog, name);
+	return dialog;
+}
+
+test("a release note shows its screenshots as thumbnails that open a larger view", async ({ page }) => {
+	const dialog = await openChangelogRelease(page, SCREENSHOT_RELEASE);
+	const light = dialog.getByRole("button", { name: /command center in light mode/i });
+	const dark = dialog.getByRole("button", { name: /same command center in dark mode/i });
+	await expect(light).toBeVisible();
+	await expect(dark).toBeVisible();
+	// The thumbnails are lazy static assets of this origin, and they really load.
+	const image = light.locator("img");
+	await expect(image).toHaveAttribute("loading", "lazy");
+	await expect(image).toHaveAttribute("src", /^\/changelog\/[\w.-]+\.webp$/);
+	await expect.poll(() => image.evaluate((element: HTMLImageElement) => element.naturalWidth)).toBeGreaterThan(0);
+
+	await light.focus();
+	await page.keyboard.press("Enter");
+	const viewer = page.getByRole("dialog", { name: /command center in light mode/i });
+	await expect(viewer).toBeVisible();
+	await expect(viewer.getByRole("img", { name: /command center in light mode/i })).toBeVisible();
+	await expect(viewer).toContainText("1 / 2");
+
+	// The arrow keys step between the release's screenshots, in both directions, and wrap around.
+	await page.keyboard.press("ArrowRight");
+	await expect(page.getByRole("dialog", { name: /same command center in dark mode/i })).toBeVisible();
+	await expect(page.getByRole("dialog", { name: /same command center in dark mode/i })).toContainText("2 / 2");
+	await page.keyboard.press("ArrowRight");
+	await expect(page.getByRole("dialog", { name: /command center in light mode/i })).toContainText("1 / 2");
+	await page.keyboard.press("ArrowLeft");
+	await expect(page.getByRole("dialog", { name: /same command center in dark mode/i })).toBeVisible();
+
+	// Actual size swaps the fit-to-screen view for the image's own pixels, scrolled inside the viewer.
+	const stage = page.getByTestId("changelog-lightbox-stage");
+	await page.getByRole("button", { name: "Actual size" }).click();
+	await expect(page.getByRole("button", { name: "Fit to screen" })).toBeVisible();
+	await expect.poll(() => stage.evaluate((element) => element.scrollWidth >= element.clientWidth)).toBe(true);
+	await page.getByRole("button", { name: "Fit to screen" }).click();
+
+	// Escape closes only the viewer; the focus lands on the thumbnail that was last shown, and the notes stay open.
+	await page.keyboard.press("Escape");
+	await expect(page.getByRole("dialog", { name: /same command center in dark mode/i })).toBeHidden();
+	await expect(dialog).toBeVisible();
+	await expect(dark).toBeFocused();
+	await page.keyboard.press("Escape");
+	await expect(dialog).toBeHidden();
+});
+
+test("a click on a thumbnail opens the larger view, and Close brings the focus back", async ({ page }) => {
+	const dialog = await openChangelogRelease(page, SCREENSHOT_RELEASE);
+	const light = dialog.getByRole("button", { name: /command center in light mode/i });
+	await light.click();
+	const viewer = page.getByRole("dialog", { name: /command center in light mode/i });
+	await expect(viewer).toBeVisible();
+	await viewer.getByRole("button", { name: "Close" }).click();
+	await expect(viewer).toBeHidden();
+	await expect(light).toBeFocused();
+});
+
+test("Show images turns the screenshots off, and the choice outlives a reload", async ({ page }) => {
+	const dialog = await openChangelogRelease(page, SCREENSHOT_RELEASE);
+	const toggle = dialog.getByRole("switch", { name: "Show images" });
+	// On by default.
+	await expect(toggle).toBeChecked();
+	await expect(dialog.getByRole("button", { name: /command center in light mode/i })).toBeVisible();
+
+	await toggle.click();
+	await expect(toggle).not.toBeChecked();
+	await expect(dialog.locator("img")).toHaveCount(0);
+	// The notes themselves stay.
+	await expect(dialog).toContainText("laid out as cards again");
+	expect(await page.evaluate((key) => localStorage.getItem(key), IMAGES_KEY)).toBe("false");
+
+	await page.reload();
+	await expect(page.getByRole("button", { name: "Compose new email", exact: true })).toBeVisible({ timeout: 15_000 });
+	await page.getByRole("button", { name: /^Updated / }).click();
+	const reopened = page.getByRole("dialog", { name: /What's new in Kite/ });
+	await showRelease(reopened, SCREENSHOT_RELEASE);
+	await expect(reopened.getByRole("switch", { name: "Show images" })).not.toBeChecked();
+	await expect(reopened.locator("img")).toHaveCount(0);
+
+	await reopened.getByRole("switch", { name: "Show images" }).click();
+	await expect(reopened.getByRole("button", { name: /command center in light mode/i })).toBeVisible();
+	expect(await page.evaluate((key) => localStorage.getItem(key), IMAGES_KEY)).toBe("true");
+});
+
+test("on a phone the thumbnails and the larger view fit the screen", async ({ page }) => {
+	await page.setViewportSize({ width: 390, height: 844 });
+	await page.goto("/inbox");
+	await page.getByRole("button", { name: "Open menu" }).click();
+	await page.getByRole("button", { name: /^Updated / }).click();
+	const dialog = page.getByRole("dialog", { name: /What's new in Kite/ });
+	await chooseOption(dialog.getByRole("combobox", { name: "Jump to release" }), SCREENSHOT_RELEASE);
+	const light = dialog.getByRole("button", { name: /command center in light mode/i });
+	await light.scrollIntoViewIfNeeded();
+	await expect(light).toBeVisible();
+	await light.click();
+	const viewer = page.getByRole("dialog", { name: /command center in light mode/i });
+	await expect(viewer).toBeVisible();
+	const box = await viewer.boundingBox();
+	expect(box).not.toBeNull();
+	expect(box!.x).toBeGreaterThanOrEqual(0);
+	expect(box!.x + box!.width).toBeLessThanOrEqual(390);
+	expect(box!.y + box!.height).toBeLessThanOrEqual(844);
+});
+
 test("a release note that links to a setting opens that page in the app", async ({ page }) => {
 	await openInbox(page);
 	await page.getByRole("button", { name: /^Updated / }).click();

@@ -5,6 +5,7 @@ Every pull request with a user-visible change adds one file here instead of edit
 - Name it after the change, in lowercase letters, digits, `.`, `_` or `-`, ending in `.md`: for example `changelog.d/screener-digest.md`.
 - Start with a `### Added`, `### Changed`, `### Deprecated`, `### Removed`, `### Fixed` or `### Security` heading, followed by entries written like the ones in `CHANGELOG.md`. One fragment may hold several headings; no other heading level is allowed, outside code blocks. An entry may start with an issue number such as `#123`.
 - Name every migration and every setting an operator has to add or change, and link a setting with an app path such as `[Settings → Notifications](/settings/notifications)`.
+- A user-visible UI change adds a screenshot under its entry, `  ![what it shows](/changelog/<name>.webp)`: a WebP of at most 1600 px and 200 KB in `public/changelog/`, with demo data only (take it with `npm run changelog:screenshot`; see [Releasing](../docs/releasing.md#screenshots-in-the-changelog)).
 - A change nobody can notice (CI, tests, refactoring) needs no fragment: give the pull request the `no-changelog` label instead.
 
 ```markdown

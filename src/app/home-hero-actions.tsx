@@ -1,7 +1,8 @@
 "use client";
 
+import type { ReactNode } from "react";
 import Link from "next/link";
-import { ArrowRight, ArrowUpRight } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SOURCE_CODE_URL } from "@/lib/source-code";
 import { getHeroActions } from "./utils";
@@ -16,8 +17,8 @@ function GitHubMark() {
 	);
 }
 
-/** The hero's buttons: the dashboard for a signed-in user, the deploy and self-host guides for a visitor. */
-export function HomeHeroActions() {
+/** The hero's buttons: the dashboard for a signed-in user, deploy and the source for a visitor. */
+export function HomeHeroActions({ children }: { children?: ReactNode }) {
 	const hasUser = !!useHomeAuth();
 
 	return (
@@ -34,8 +35,9 @@ export function HomeHeroActions() {
 				>
 					{action.external ? (
 						<a href={action.href} target="_blank" rel="noopener noreferrer">
+							{action.href === SOURCE_CODE_URL && <GitHubMark />}
 							{action.label}
-							{index === 0 ? <ArrowRight className="h-4 w-4" /> : <ArrowUpRight className="h-4 w-4" />}
+							{index === 0 && <ArrowRight className="h-4 w-4" />}
 						</a>
 					) : (
 						<Link href={action.href}>
@@ -45,12 +47,7 @@ export function HomeHeroActions() {
 					)}
 				</Button>
 			))}
-			<Button size="lg" variant="ghost" asChild className="rounded-full px-5">
-				<a href={SOURCE_CODE_URL} target="_blank" rel="noopener noreferrer">
-					<GitHubMark />
-					Source on GitHub
-				</a>
-			</Button>
+			{children}
 		</div>
 	);
 }

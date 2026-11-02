@@ -357,8 +357,8 @@ pre {
 	color: var(--color-blue-600);
 }
 
-/* The landing page's "that actually flows." stays part of the headline in every style, so the sentence is
-   never cut short: Kite classic sets it in the script face, the other styles keep the headline's own type. */
+/* The landing page's accent phrase stays part of the headline in every style, so the sentence is never cut
+   short: Kite classic sets it in the script face, the other styles keep the headline's own type. */
 :root[data-style="lavender"] .home-accent {
 	font-family: var(--font-script);
 	font-weight: 400;

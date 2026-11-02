@@ -1,14 +1,14 @@
 import { expect, test, type Page } from "@playwright/test";
 import { contrastBetween, luminancesBetween } from "./support/contrast";
 
-// The landing page at `/`: what a visitor sees (the hero, the ways in, the feature grid and "how it runs"),
+// The landing page at `/`: what a visitor sees (the hero, the proof, deploy, cost and comparison),
 // what a signed-in user sees instead (the dashboard button), and that it holds up in dark mode and on a phone.
 
 const SOURCE_URL = "https://github.com/midego1/kite";
 const DEPLOY_URL = `https://deploy.workers.cloudflare.com/?url=${SOURCE_URL}`;
 
 function hero(page: Page) {
-	return page.getByRole("region", { name: /that actually flows/ });
+	return page.getByRole("region", { name: /running in your Cloudflare account/ });
 }
 
 async function horizontalOverflow(page: Page): Promise<number> {
@@ -24,19 +24,18 @@ test.describe("visitor", () => {
 
 	test("shows the hero, the ways in, the product preview and every section", async ({ page }) => {
 		await page.goto("/");
-		await expect(page.getByRole("heading", { level: 1 })).toHaveText("Mail for your own domains, that actually flows.");
+		await expect(page.getByRole("heading", { level: 1 })).toHaveText(
+			"Your own inbox for your own domains, running in your Cloudflare account.",
+		);
 
 		const heroSection = hero(page);
 		const deploy = heroSection.getByRole("link", { name: "Deploy to Cloudflare" });
 		await expect(deploy).toHaveAttribute("href", DEPLOY_URL);
 		await expect(deploy).toHaveAttribute("target", "_blank");
-		await expect(heroSection.getByRole("link", { name: "Self-host with Docker" })).toHaveAttribute(
-			"href",
-			`${SOURCE_URL}/blob/main/docs/self-hosting.md`,
-		);
-		await expect(heroSection.getByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/login");
-		await expect(heroSection.getByRole("link", { name: "Source on GitHub" })).toHaveAttribute("href", SOURCE_URL);
+		await expect(heroSection.getByRole("link", { name: "View on GitHub" })).toHaveAttribute("href", SOURCE_URL);
+		await expect(heroSection.getByRole("link", { name: "Sign in" })).toHaveCount(0);
 		await expect(heroSection.getByRole("link", { name: "Open dashboard" })).toHaveCount(0);
+		await expect(heroSection.getByText("about 10 minutes the first time")).toBeVisible();
 		await expect(page.getByRole("banner").getByRole("link", { name: "Sign in" })).toHaveAttribute("href", "/login");
 
 		// The preview is a live demo on invented data; it renders on the server first and becomes interactive once its
@@ -51,24 +50,22 @@ test.describe("visitor", () => {
 		await expect(preview.getByText("Reply drafted")).toBeVisible();
 		await expect(page.getByText("Try it — it's a live demo")).toBeVisible();
 
-		await expect(
-			page.getByRole("heading", { level: 2, name: "One quiet place for your mail and what comes with it." }),
-		).toBeVisible();
+		await expect(page.getByRole("heading", { level: 2, name: "Six parts. All of them included." })).toBeVisible();
 		for (const title of [
-			"A real inbox for you@yourdomain",
-			"Your other accounts, in the same place",
-			"AI that reads and drafts, and asks before it acts",
-			"Calendar, Drive, Booking and more, as modules",
-			"Backups and storage that scale",
-			"JMAP, an API, webhooks and MCP",
-			"Your data, on your account",
+			"A real inbox, not just forwarding",
+			"Pick a provider per domain",
+			"Calendar, booking pages and Drive",
+			"Safer by default",
+			"AI that drafts, never sends",
+			"Open APIs",
 		]) {
 			await expect(page.getByRole("heading", { level: 3, name: title })).toBeVisible();
 		}
-		const runtime = page.getByRole("region", { name: "Your account, your server, your copy of the code." });
-		await expect(runtime.getByRole("link", { name: "Deploy to Cloudflare" })).toHaveAttribute("href", DEPLOY_URL);
-		await expect(runtime.getByRole("link", { name: "Self-hosting guide" })).toBeVisible();
-		await expect(runtime.getByRole("link", { name: "Source on GitHub" })).toHaveAttribute("href", SOURCE_URL);
+		await expect(page.getByRole("contentinfo")).toContainText("free software under the AGPL-3.0");
+		await expect(page.getByRole("contentinfo").getByRole("link", { name: "Mailflare" })).toHaveAttribute(
+			"href",
+			"https://github.com/hieunc229/mailflare",
+		);
 		await expect(page.getByRole("contentinfo").getByRole("link", { name: "Source code" })).toHaveAttribute(
 			"href",
 			SOURCE_URL,
@@ -76,9 +73,82 @@ test.describe("visitor", () => {
 		expect(await horizontalOverflow(page)).toBe(0);
 	});
 
-	test("Sign in from the hero opens the sign-in page", async ({ page }) => {
+	test("shows the proof, the cost, the comparison, the limits and the questions", async ({ page }) => {
 		await page.goto("/");
-		await hero(page).getByRole("link", { name: "Sign in" }).click();
+		const proof = page.getByRole("region", { name: "Proof" });
+		await expect(proof.getByText("AGPL-3.0")).toBeVisible();
+		await expect(proof.getByText("$0 to receive via Email Routing")).toBeVisible();
+		await expect(proof.getByText("2,000+ unit · 400+ browser tests in CI")).toBeVisible();
+		await expect(proof.getByText(/star/i)).toHaveCount(0);
+
+		const deploy = page.getByRole("region", { name: "Deploy in five steps" });
+		await expect(deploy.getByRole("listitem")).toHaveCount(5);
+		await expect(deploy.getByRole("link", { name: "Read the deployment guide" })).toHaveAttribute(
+			"href",
+			`${SOURCE_URL}/blob/main/docs/deployment.md`,
+		);
+		await expect(deploy.getByText("docker compose up -d --build")).toBeVisible();
+		await deploy.getByText("Show the deploy prompt").click();
+		await expect(deploy.getByText("Never print, commit, or place these secrets")).toBeVisible();
+
+		const cost = page.getByRole("region", { name: "Free to receive, free tiers to send" });
+		await expect(cost.getByRole("rowheader", { name: "Resend" })).toBeVisible();
+		await expect(cost.getByText("$0.10 per 1,000 emails")).toBeVisible();
+		await expect(cost.getByText("as of 2 Nov 2026")).toBeVisible();
+		await expect(cost.getByText(/\$1,800/)).toHaveCount(0);
+
+		const compare = page.getByRole("region", { name: "When Kite fits, and when it doesn't" });
+		await expect(compare.getByRole("columnheader", { name: "Mailflare" })).toBeVisible();
+		await expect(compare.getByRole("columnheader", { name: "Hosted inboxes" })).toBeVisible();
+		await expect(compare.getByRole("rowheader", { name: "Maturity" })).toBeVisible();
+		await expect(compare.getByRole("rowheader", { name: "Deliverability help" })).toBeVisible();
+		await expect(compare.getByText("Young project, small community")).toBeVisible();
+		await expect(compare.getByText(/spam filtering at scale/)).toBeVisible();
+		await expect(compare.getByRole("heading", { name: "Before and now" })).toBeVisible();
+		await expect(compare.getByText("Measured on a production build in a plain Chrome profile.")).toBeVisible();
+		await expect(compare.getByRole("link", { name: "Performance in the README" })).toHaveAttribute(
+			"href",
+			`${SOURCE_URL}#performance`,
+		);
+		await expect(compare.getByRole("columnheader", { name: "Before" })).toBeVisible();
+		await expect(compare.getByRole("columnheader", { name: "Now" })).toBeVisible();
+		await expect(compare.getByRole("rowheader", { name: "Opening a folder for the first time" })).toBeVisible();
+		await expect(compare.getByText("~340 ms with an empty page and loading bar")).toBeVisible();
+		await expect(compare.getByText("~35–50 ms")).toBeVisible();
+		await expect(compare.getByRole("rowheader", { name: "Backing up a 53 MB database" })).toBeVisible();
+		await expect(compare.getByText("Fails: Worker exceeds its 128 MB memory limit")).toBeVisible();
+		await expect(compare.getByText("Completes")).toBeVisible();
+
+		const limits = page.getByRole("region", { name: "Early beta: what's missing today" });
+		await expect(limits.getByText("No published third-party security audit.")).toBeVisible();
+		await expect(limits.getByRole("link", { name: "See all known limitations" })).toHaveAttribute(
+			"href",
+			`${SOURCE_URL}#known-limitations`,
+		);
+
+		const faq = page.getByRole("region", { name: "FAQ" });
+		await faq.getByText("How is Kite related to Mailflare?").click();
+		await expect(faq.getByText(/developed independently/)).toBeVisible();
+		await expect(faq.getByRole("link", { name: "Mailflare" })).toHaveAttribute(
+			"href",
+			"https://github.com/hieunc229/mailflare",
+		);
+
+		const closing = page.getByRole("region", { name: "Run your own inbox." });
+		await expect(closing.getByRole("link", { name: "Deploy to Cloudflare" })).toHaveAttribute("href", DEPLOY_URL);
+		await expect(closing.getByRole("link", { name: "Read the docs" })).toHaveAttribute(
+			"href",
+			`${SOURCE_URL}/tree/main/docs`,
+		);
+
+		const text = await page.locator("main").innerText();
+		expect(text).not.toMatch(/kitemail|Wall of Love|Boat CI|\$1,800/i);
+		expect(await horizontalOverflow(page)).toBe(0);
+	});
+
+	test("Sign in from the header opens the sign-in page", async ({ page }) => {
+		await page.goto("/");
+		await page.getByRole("banner").getByRole("link", { name: "Sign in" }).click();
 		await expect(page).toHaveURL(/\/login$/);
 		await expect(page.getByLabel("Email")).toBeVisible();
 	});
@@ -120,7 +190,7 @@ test.describe("visitor", () => {
 		await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
 		const heroSection = hero(page);
 		await expect(heroSection.getByRole("link", { name: "Deploy to Cloudflare" })).toBeVisible();
-		await expect(heroSection.getByRole("link", { name: "Sign in" })).toBeVisible();
+		await expect(page.getByRole("banner").getByRole("link", { name: "Sign in" })).toBeVisible();
 		// The header keeps only Sign in on a phone; the deploy button lives in the hero.
 		await expect(page.getByRole("banner").getByRole("link", { name: "Deploy to Cloudflare" })).toBeHidden();
 		// The preview shows the message list alone, like the app on a phone.
@@ -128,9 +198,10 @@ test.describe("visitor", () => {
 		await expect(preview.getByText("Design review notes for the new onboarding")).toBeVisible();
 		await expect(preview.getByRole("button", { name: "Summarize" })).toBeHidden();
 		expect(await horizontalOverflow(page)).toBe(0);
-		await page
-			.getByRole("heading", { level: 2, name: "Your account, your server, your copy of the code." })
-			.scrollIntoViewIfNeeded();
+		await page.getByRole("heading", { level: 2, name: "Deploy in five steps" }).scrollIntoViewIfNeeded();
+		expect(await horizontalOverflow(page)).toBe(0);
+		await page.getByRole("heading", { level: 2, name: "When Kite fits, and when it doesn't" }).scrollIntoViewIfNeeded();
+		await page.getByRole("heading", { level: 3, name: "Before and now" }).scrollIntoViewIfNeeded();
 		expect(await horizontalOverflow(page)).toBe(0);
 	});
 });

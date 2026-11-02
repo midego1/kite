@@ -30,13 +30,45 @@ export type HomeFeatureTheme = {
 	wide?: boolean;
 };
 
-/** One of the three "how it runs" cards. */
-export type HomeRuntimeCard = {
-	id: string;
-	icon: LucideIcon;
+export type HomeLink = {
+	href: string;
+	label: string;
+};
+
+export type HomeTextPart = {
+	text: string;
+	href?: string;
+	/** Renders as code, for an environment variable named in the README. */
+	code?: boolean;
+};
+
+export type HomeCompareRow = {
+	label: string;
+	/** One cell per column of `compareColumns`: Kite, Mailflare, Email Routing, hosted inboxes. */
+	cells: [string, string, string, string];
+};
+
+/** One README performance row: the earlier result, then this version. */
+export type HomeUpstreamRow = {
+	label: string;
+	before: string;
+	now: string;
+};
+
+export type HomeStep = {
 	title: string;
-	lines: string[];
-	link: { href: string; label: string };
+	text: string;
+};
+
+export type HomeCostRow = {
+	provider: string;
+	free: string;
+	after: string;
+};
+
+export type HomeFaq = {
+	question: string;
+	parts: HomeTextPart[];
 };
 
 export type HomeFooterLink = {

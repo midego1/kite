@@ -5,14 +5,14 @@ const DOCS = `${SOURCE_CODE_URL}/blob/main/docs`;
 
 export const DEPLOYMENT_GUIDE_URL = `${DOCS}/deployment.md`;
 export const SELF_HOST_URL = `${DOCS}/self-hosting.md`;
-export const PRIVACY_URL = `${DOCS}/privacy.md#usage-statistics`;
+const PRIVACY_URL = `${DOCS}/privacy.md#usage-statistics`;
 export const LIMITATIONS_URL = `${SOURCE_CODE_URL}#known-limitations`;
 export const PERFORMANCE_URL = `${SOURCE_CODE_URL}#performance`;
-export const NOTICE_URL = `${SOURCE_CODE_URL}/blob/main/NOTICE`;
-export const RELEASES_URL = `${SOURCE_CODE_URL}/releases`;
-export const ROADMAP_URL = `${SOURCE_CODE_URL}/blob/main/ROADMAP.md`;
-export const DISCUSSIONS_URL = `${SOURCE_CODE_URL}/discussions`;
-export const CHANGELOG_URL = `${SOURCE_CODE_URL}/blob/main/CHANGELOG.md`;
+const NOTICE_URL = `${SOURCE_CODE_URL}/blob/main/NOTICE`;
+const RELEASES_URL = `${SOURCE_CODE_URL}/releases`;
+const ROADMAP_URL = `${SOURCE_CODE_URL}/blob/main/ROADMAP.md`;
+const DISCUSSIONS_URL = `${SOURCE_CODE_URL}/discussions`;
+const CHANGELOG_URL = `${SOURCE_CODE_URL}/blob/main/CHANGELOG.md`;
 
 /** Approved proof chips. No star count: the project is too young for one to mean anything. */
 export const proofChips = [
@@ -94,7 +94,7 @@ export const compareRows: HomeCompareRow[] = [
 ];
 
 /**
- * Two rows from the README performance table, in that table's words (Before, then Now).
+ * Two rows from the README performance table, in that table's words (Before, then Now). They compare with earlier results, not a benchmark of another project.
  * The README measures them on a production build in a plain Chrome profile.
  */
 export const upstreamRows: HomeUpstreamRow[] = [
@@ -118,7 +118,7 @@ export const deploySteps: HomeStep[] = [
 	},
 	{
 		title: "Click Deploy to Cloudflare",
-		text: "Keep the Worker name kite. Email Routing rules and the Worker's self-binding use that name, and another name breaks receiving.",
+		text: "Keep the Worker name kite: Email Routing rules use it, and another name breaks receiving. Cloudflare asks for CF_TOKEN, SETUP_TOKEN and APP_ENCRYPTION_KEY. Save that key somewhere safe, because stored provider keys cannot be read without it.",
 	},
 	{
 		title: "Add APP_URL",
@@ -221,7 +221,7 @@ export const faqs: HomeFaq[] = [
 		question: "Does Kite phone home?",
 		parts: [
 			{
-				text: "It runs no update check and no license check. It sends pseudonymous usage statistics (counts as ranges, once a day). These are on by default and you can turn them off at setup, in Admin or with ",
+				text: "It runs no update check and no license check. Apart from the services you configure, it contacts Gravatar for contact avatars and Cloudflare's public DNS resolver for DNS checks. It also sends pseudonymous usage statistics (counts as ranges, once a day). These are on by default and you can turn them off at setup, in Admin or with ",
 			},
 			{ text: "KITE_TELEMETRY=0", code: true },
 			{ text: ". " },

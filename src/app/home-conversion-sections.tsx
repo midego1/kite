@@ -1,6 +1,6 @@
 import { ArrowUpRight, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { DOCS_URL, UPSTREAM_URL } from "./utils";
+import { DEPLOY_URL, DOCS_URL, UPSTREAM_URL } from "./utils";
 import { HomeDeployPrompt } from "./home-deploy-prompt";
 import { HomeHeroActions } from "./home-hero-actions";
 import {
@@ -92,7 +92,13 @@ export function HomeDeploy({ appName }: HomeSectionProps) {
 						</li>
 					))}
 				</ol>
-				<div className="mt-8 flex justify-center">
+				<div className="mt-8 flex flex-wrap justify-center gap-3">
+					<Button size="lg" asChild className="rounded-full px-6">
+						<a href={DEPLOY_URL} target="_blank" rel="noopener noreferrer">
+							Deploy to Cloudflare
+							<ArrowUpRight className="h-4 w-4" />
+						</a>
+					</Button>
 					<Button size="lg" variant="outline" asChild className="rounded-full bg-[#f6f8fc] px-6">
 						<a href={DEPLOYMENT_GUIDE_URL} target="_blank" rel="noopener noreferrer">
 							Read the deployment guide
@@ -277,7 +283,7 @@ function HomeUpstream() {
 	return (
 		<div className="mx-auto mt-12 max-w-3xl">
 			<h3 id="home-upstream-heading" className="text-center text-lg font-semibold tracking-tight text-neutral-950">
-				Vs upstream
+				Before and now
 			</h3>
 			<p className="mt-2 text-center text-sm leading-6 text-neutral-600">
 				Measured on a production build in a plain Chrome profile.{" "}

@@ -104,7 +104,7 @@ test.describe("visitor", () => {
 		await expect(compare.getByRole("rowheader", { name: "Deliverability help" })).toBeVisible();
 		await expect(compare.getByText("Young project, small community")).toBeVisible();
 		await expect(compare.getByText(/spam filtering at scale/)).toBeVisible();
-		await expect(compare.getByRole("heading", { name: "Vs upstream" })).toBeVisible();
+		await expect(compare.getByRole("heading", { name: "Before and now" })).toBeVisible();
 		await expect(compare.getByText("Measured on a production build in a plain Chrome profile.")).toBeVisible();
 		await expect(compare.getByRole("link", { name: "Performance in the README" })).toHaveAttribute(
 			"href",
@@ -201,7 +201,7 @@ test.describe("visitor", () => {
 		await page.getByRole("heading", { level: 2, name: "Deploy in five steps" }).scrollIntoViewIfNeeded();
 		expect(await horizontalOverflow(page)).toBe(0);
 		await page.getByRole("heading", { level: 2, name: "When Kite fits, and when it doesn't" }).scrollIntoViewIfNeeded();
-		await page.getByRole("heading", { level: 3, name: "Vs upstream" }).scrollIntoViewIfNeeded();
+		await page.getByRole("heading", { level: 3, name: "Before and now" }).scrollIntoViewIfNeeded();
 		expect(await horizontalOverflow(page)).toBe(0);
 	});
 });

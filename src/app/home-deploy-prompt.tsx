@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
  * The README's "Deploy with an AI coding agent" prompt, copied verbatim, including the token-handling lines.
  * Do not reword it here; change the README first and then this constant.
  */
-export const DEPLOY_PROMPT = `Install Kite from https://github.com/midego1/kite in my Cloudflare account.
+const DEPLOY_PROMPT = `Install Kite from https://github.com/midego1/kite in my Cloudflare account.
 Ask me for my Cloudflare account ID, a scoped deployment API token, and a separate
 runtime CF_TOKEN through a secret input. Generate a long random SETUP_TOKEN.
 Generate a long random APP_ENCRYPTION_KEY for a new database; when reusing a

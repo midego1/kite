@@ -14,6 +14,13 @@ const OTHER_HEADING = /^[ \t]{0,3}#{1,6}(?:[ \t]|$)/;
 // CHANGELOG.md's release headings; even inside a code block they would end the release they land in.
 const RELEASE_LEVEL = /^##[ \t]/;
 const FENCE = /^[ \t]{0,3}(`{3,}|~{3,})/;
+/**
+ * Opts a fragment out of the writing guard (`styleProblems`) for the rare entry that really needs a
+ * long or technical wording. The line is dropped when fragments are folded, so it never reaches CHANGELOG.md.
+ */
+export const STYLE_ESCAPE = "<!-- changelog-style: technical-ok -->";
+/** The longest entry, in characters, before `styleProblems` asks for a shorter one: about two short sentences. */
+export const MAX_ENTRY_LENGTH = 400;
 // Paragraph notes and lines such as "#123 ..." count as entries too; blank lines and headings alone do not.
 export const ENTRY = /^(?![ \t]{0,3}#{1,6}(?:[ \t]|$))[ \t]*\S/m;
 
@@ -37,6 +44,7 @@ export function parseFragment(text, name = "fragment") {
 	let fence = null;
 	let textBefore = false;
 	for (const line of String(text).split(/\r?\n/)) {
+		if (line.trim() === STYLE_ESCAPE) continue;
 		const marker = FENCE.exec(line)?.[1];
 		if (fence) {
 			// Inside a code block only the closing fence and release-level headings matter.
@@ -80,6 +88,67 @@ export function fragmentProblems(fragments, { root } = {}) {
 		...parseFragment(fragment.text, fragment.name).problems,
 		...imageProblems(fragment.text, fragment.name, root),
 	]);
+}
+
+/** The entries of a fragment as plain strings: bullets or paragraphs, without screenshots and code blocks. */
+function fragmentEntries(text) {
+	const entries = [];
+	let current = null;
+	let fence = null;
+	for (const line of String(text).split(/\r?\n/)) {
+		const marker = FENCE.exec(line)?.[1];
+		if (fence) {
+			if (marker?.[0] === fence[0] && marker.length >= fence.length && !line.trim().slice(marker.length)) fence = null;
+			continue;
+		}
+		if (marker) {
+			fence = marker;
+			current = null;
+		} else if (!line.trim() || SECTION_HEADING.test(line)) {
+			current = null;
+		} else if (/^[ \t]+!\[[^\]]*\]\([^)]*\)[ \t]*$/.test(line)) {
+			continue;
+		} else if (/^[-*][ \t]/.test(line) || !current) {
+			current = { text: line.replace(/^[-*][ \t]+/, "").trim() };
+			entries.push(current);
+		} else {
+			current.text += ` ${line.trim()}`;
+		}
+	}
+	return entries.map((entry) => entry.text);
+}
+
+/**
+ * Writing-style problems in `{ name, text }` fragments: entries are for the people using Kite, so they stay
+ * short and carry no code identifiers or "No migration" notes (docs/releasing.md#writing-entries). A fragment
+ * that really needs more adds STYLE_ESCAPE on a line of its own. Only fragments are checked, never
+ * CHANGELOG.md, so text that was already released cannot block a release.
+ */
+export function styleProblems(fragments) {
+	const problems = [];
+	for (const { name, text } of fragments) {
+		if (
+			String(text)
+				.split(/\r?\n/)
+				.some((line) => line.trim() === STYLE_ESCAPE)
+		)
+			continue;
+		for (const entry of fragmentEntries(text)) {
+			const start = `${name}: "${entry.slice(0, 50)}${entry.length > 50 ? "…" : ""}"`;
+			if (entry.length > MAX_ENTRY_LENGTH) {
+				problems.push(
+					`${start} is ${entry.length} characters; keep an entry to about two short sentences (${MAX_ENTRY_LENGTH} at most) and put the detail in the docs`,
+				);
+			}
+			if (/`[^`]+`/.test(entry)) {
+				problems.push(`${start} has code in backticks; say it in plain words (identifiers belong in docs and the PR)`);
+			}
+			if (/\bNo (?:database )?migrations?\b/i.test(entry)) {
+				problems.push(`${start} says "No migration"; leave it out unless the person must apply one`);
+			}
+		}
+	}
+	return problems;
 }
 
 /**

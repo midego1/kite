@@ -2,13 +2,12 @@ import type { DriveItemDto } from "@/lib/drive/types";
 import { needsRiskReview } from "@/lib/email/attachment-risk";
 import type { DriveListingView, DrivePreviewKind, DriveSortKey } from "./drive-types";
 
-/** Asks the open listing and the sidebar usage bar to reload, after a change made elsewhere on the page. */
+/** Asks the open listing and the usage bar to reload, after a change made elsewhere on the page. */
 export const DRIVE_REFRESH_EVENT = "kite:drive-refresh";
-/** Detail: `DriveUsage`. Sent whenever a listing loads, so the sidebar can draw the usage bar. */
+/** Detail: `DriveUsage`. Sent whenever a listing loads, so the Drive menu panel can draw the usage bar. */
 export const DRIVE_USAGE_EVENT = "kite:drive-usage";
-/** Asks the listing to open its file picker or new-folder dialog, from the sidebar's New menu. */
-export const DRIVE_COMMAND_EVENT = "kite:drive-command";
 
+/** What the buttons above the listing ask of it. */
 export type DriveCommand = "new-folder" | "upload-files" | "upload-folder";
 
 const extensionOf = (name: string) => {

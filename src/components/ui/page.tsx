@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { CARD_CLASS, FIELD_HINT_CLASS, SETTING_ROW_CLASS } from "./page-utils";
+import { CARD_CLASS, FIELD_HINT_CLASS, PANEL_HEADER_CLASS, SETTING_ROW_CLASS } from "./page-utils";
 
 /** A page's title, the line under it and its actions (the primary "New ..." button, for instance). */
 export function PageHeader({
@@ -42,13 +42,7 @@ export function PanelHeader({
 	className?: string;
 }) {
 	return (
-		<header
-			data-panel-header
-			className={cn(
-				"sticky top-0 z-10 flex h-14 shrink-0 items-center gap-2 border-b border-neutral-200 bg-white px-4 max-md:px-3",
-				className,
-			)}
-		>
+		<header data-panel-header className={cn(PANEL_HEADER_CLASS, className)}>
 			{/* The accent: near-black (white in dark mode) in Kite, blue or indigo in Classic and Kite classic. */}
 			{Icon && <Icon aria-hidden="true" className="h-4 w-4 shrink-0 text-blue-600" />}
 			<h1 className="min-w-0 flex-1 truncate text-base font-medium text-neutral-900">{title}</h1>

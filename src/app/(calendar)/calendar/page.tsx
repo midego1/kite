@@ -22,7 +22,6 @@ import {
 } from "lucide-react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { useStaleCommandCenterCards } from "@/components/command-center/use-card-query";
-import { mobilePrimaryActionClass } from "@/components/page-header-utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -34,8 +33,7 @@ import { DEFAULT_REPEAT_DAYS, parseCalendarRepeatDays } from "@/lib/calendar/rec
 import { DEFAULT_FOLDER_COLOR, FOLDER_COLOR_OPTIONS } from "@/lib/folders/colors";
 import type { CalendarRepeat } from "@/lib/calendar/types";
 import { useSelectedMailbox } from "@/components/mailbox-provider";
-import { useSidebar } from "@/components/sidebar-state";
-import { UpcomingSidebar } from "../upcoming-sidebar";
+import { CalendarPanels } from "../calendar-panels";
 import { DayEvents } from "./day-events";
 import { MonthView } from "./month-view";
 import { CalendarViewOptions, CalendarViewSelect } from "./view-selector";
@@ -94,7 +92,6 @@ export default function CalendarPage() {
 	const monthPickerPopupRef = useRef<HTMLDivElement | null>(null);
 	const [monthPickerPos, setMonthPickerPos] = useState<{ top: number; left: number } | null>(null);
 	const openedEventFromUrl = useRef<string | null>(null);
-	const [headerTarget, setHeaderTarget] = useState<HTMLElement | null>(null);
 	const [draggedEvent, setDraggedEvent] = useState<CalendarEvent | null>(null);
 	const [resizingEvent, setResizingEvent] = useState<CalendarEvent | null>(null);
 	const [dragPreview, setDragPreview] = useState<EventDragPreview | null>(null);
@@ -117,8 +114,6 @@ export default function CalendarPage() {
 	const router = useRouter();
 	const eventFromUrl = useSearchParams().get("event");
 	const { selectedMailbox } = useSelectedMailbox();
-	const { minimal: sidebarMinimal, mobile } = useSidebar();
-	const minimal = sidebarMinimal || mobile;
 
 	const now = new Date(currentTime);
 	const todayTime = startOfDay(now).getTime();
@@ -145,12 +140,6 @@ export default function CalendarPage() {
 		() => (dragPreview && previewEvent ? eventPosition(previewEvent, dragPreview.day) : null),
 		[dragPreview, previewEvent],
 	);
-
-	useEffect(() => {
-		// The slot is rendered by the calendar layout and only exists in the DOM after commit.
-		// eslint-disable-next-line react-hooks/set-state-in-effect
-		setHeaderTarget(document.getElementById("calendar-header-slot"));
-	}, []);
 
 	useEffect(() => {
 		const interval = window.setInterval(() => setCurrentTime(Date.now()), 60_000);
@@ -527,193 +516,181 @@ export default function CalendarPage() {
 	const busy = pendingAction !== null;
 	const activeEventId = draggedEvent?.id ?? resizingEvent?.id ?? null;
 
-	return (
-		<div
-			className={clsx(
-				"flex h-full min-h-0 flex-col bg-[#f6f8fc] md:px-2 md:pb-2 lg:flex-row transition-[gap] duration-200 ease-in-out motion-reduce:transition-none",
-				minimal ? "gap-0" : "gap-2",
-			)}
-		>
-			<h1 className="sr-only">Calendar</h1>
-			{loading && <RouteLoadingBarPortal />}
-			{headerTarget &&
-				createPortal(
-					<div className="flex min-w-0 flex-1 items-center justify-between gap-3 ">
-						<div className="flex shrink-0 items-center gap-2">
-							<div ref={monthPickerRef} className="relative shrink-0">
-								<button
-									type="button"
-									onClick={(event) => {
-										const rect = event.currentTarget.getBoundingClientRect();
-										setMonthPickerPos({
-											top: rect.bottom + 12,
-											left: Math.max(12, Math.min(rect.left, window.innerWidth - 460)),
-										});
-										setPickerMonth(startOfMonth(visibleDate));
-										setMonthPickerOpen((open) => !open);
-									}}
-									className="flex items-center gap-1.5 whitespace-nowrap rounded-lg px-1.5 py-1 text-base font-semibold text-neutral-900 hover:bg-neutral-200/60 max-md:font-medium"
-									aria-haspopup="dialog"
-									aria-expanded={monthPickerOpen}
-								>
-									{formatUserDate(visibleDate, { month: "long", year: "numeric" })}
-									<ChevronDown className="h-4 w-4 text-neutral-500" />
-								</button>
-								{monthPickerOpen &&
-									monthPickerPos &&
-									createPortal(
-										<div
-											ref={monthPickerPopupRef}
-											role="dialog"
-											aria-label="Choose a calendar date"
-											style={monthPickerPos}
-											className="fixed z-50 w-[448px] max-w-[calc(100vw-24px)] rounded-xl border border-neutral-200 bg-white p-4 shadow-lg"
+	const header = (
+		<>
+			<div className="flex shrink-0 items-center gap-2">
+				<div ref={monthPickerRef} className="relative shrink-0">
+					<button
+						type="button"
+						onClick={(event) => {
+							const rect = event.currentTarget.getBoundingClientRect();
+							setMonthPickerPos({
+								top: rect.bottom + 12,
+								left: Math.max(12, Math.min(rect.left, window.innerWidth - 460)),
+							});
+							setPickerMonth(startOfMonth(visibleDate));
+							setMonthPickerOpen((open) => !open);
+						}}
+						className="flex items-center gap-1.5 whitespace-nowrap rounded-lg px-1.5 py-1 text-base font-medium text-neutral-900 hover:bg-neutral-100"
+						aria-haspopup="dialog"
+						aria-expanded={monthPickerOpen}
+					>
+						{formatUserDate(visibleDate, { month: "long", year: "numeric" })}
+						<ChevronDown className="h-4 w-4 text-neutral-500" />
+					</button>
+					{monthPickerOpen &&
+						monthPickerPos &&
+						createPortal(
+							<div
+								ref={monthPickerPopupRef}
+								role="dialog"
+								aria-label="Choose a calendar date"
+								style={monthPickerPos}
+								className="fixed z-50 w-[448px] max-w-[calc(100vw-24px)] rounded-xl border border-neutral-200 bg-white p-4 shadow-lg"
+							>
+								<div className="mb-4 flex items-center justify-between gap-3">
+									<h2 className="text-base font-semibold text-neutral-900">
+										{formatUserDate(pickerMonth, { month: "long", year: "numeric" })}
+									</h2>
+									<div className="flex items-center gap-2">
+										<button
+											type="button"
+											aria-label="Previous month"
+											onClick={() => setPickerMonth(addMonths(pickerMonth, -1))}
+											className="flex h-8 w-8 items-center justify-center rounded-lg text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
 										>
-											<div className="mb-4 flex items-center justify-between gap-3">
-												<h2 className="text-base font-semibold text-neutral-900">
-													{formatUserDate(pickerMonth, { month: "long", year: "numeric" })}
-												</h2>
-												<div className="flex items-center gap-2">
-													<button
-														type="button"
-														aria-label="Previous month"
-														onClick={() => setPickerMonth(addMonths(pickerMonth, -1))}
-														className="flex h-8 w-8 items-center justify-center rounded-lg text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
-													>
-														<ChevronLeft className="h-4 w-4" />
-													</button>
-													<button
-														type="button"
-														aria-label="Next month"
-														onClick={() => setPickerMonth(addMonths(pickerMonth, 1))}
-														className="flex h-8 w-8 items-center justify-center rounded-lg text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
-													>
-														<ChevronRight className="h-4 w-4" />
-													</button>
-												</div>
-											</div>
-											<div className="grid grid-cols-7">
-												{["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"].map(
-													(weekday) => (
-														<span
-															key={weekday}
-															aria-label={weekday}
-															className="flex h-10 items-center justify-center text-sm font-medium text-neutral-500"
-														>
-															{weekday[0]}
-														</span>
-													),
-												)}
-												{pickerDates.map((day) => {
-													const selected = dateKey(day) === dateKey(visibleDate);
-													const isToday = dateKey(day) === dateKey(today);
-													const outsideMonth = dateKey(day).slice(0, 7) !== dateKey(pickerMonth).slice(0, 7);
-													return (
-														<button
-															key={dateKey(day)}
-															type="button"
-															aria-label={formatUserDate(day, {
-																weekday: "long",
-																month: "long",
-																day: "numeric",
-																year: "numeric",
-															})}
-															aria-pressed={selected}
-															onClick={() => {
-																setVisibleDate(day);
-																setMonthPickerOpen(false);
-															}}
-															className={clsx(
-																"mx-auto my-0.5 flex h-11 w-11 items-center justify-center rounded-full text-base font-medium hover:bg-neutral-200/80",
-																selected
-																	? "bg-blue-600 text-white hover:bg-blue-600"
-																	: isToday
-																		? "bg-neutral-200 text-neutral-900"
-																		: outsideMonth
-																			? "text-neutral-400"
-																			: "text-neutral-900",
-															)}
-														>
-															{formatUserDate(day, { day: "numeric" })}
-														</button>
-													);
+											<ChevronLeft className="h-4 w-4" />
+										</button>
+										<button
+											type="button"
+											aria-label="Next month"
+											onClick={() => setPickerMonth(addMonths(pickerMonth, 1))}
+											className="flex h-8 w-8 items-center justify-center rounded-lg text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
+										>
+											<ChevronRight className="h-4 w-4" />
+										</button>
+									</div>
+								</div>
+								<div className="grid grid-cols-7">
+									{["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"].map((weekday) => (
+										<span
+											key={weekday}
+											aria-label={weekday}
+											className="flex h-10 items-center justify-center text-sm font-medium text-neutral-500"
+										>
+											{weekday[0]}
+										</span>
+									))}
+									{pickerDates.map((day) => {
+										const selected = dateKey(day) === dateKey(visibleDate);
+										const isToday = dateKey(day) === dateKey(today);
+										const outsideMonth = dateKey(day).slice(0, 7) !== dateKey(pickerMonth).slice(0, 7);
+										return (
+											<button
+												key={dateKey(day)}
+												type="button"
+												aria-label={formatUserDate(day, {
+													weekday: "long",
+													month: "long",
+													day: "numeric",
+													year: "numeric",
 												})}
-											</div>
-										</div>,
-										document.body,
-									)}
-							</div>
-						</div>
-						<div className="flex shrink-0 items-center gap-1.5">
-							<button
-								type="button"
-								aria-label={`Previous ${view}`}
-								onClick={() => setVisibleDate(navigateCalendar(visibleDate, view, -1))}
-								className="flex h-8 w-8 items-center justify-center rounded-lg text-neutral-500 hover:bg-neutral-200/60 hover:text-neutral-900"
-							>
-								<ChevronLeft className="h-4 w-4" />
-							</button>
-							<button
-								type="button"
-								aria-label={`Next ${view}`}
-								onClick={() => setVisibleDate(navigateCalendar(visibleDate, view, 1))}
-								className="flex h-8 w-8 items-center justify-center rounded-lg text-neutral-500 hover:bg-neutral-200/60 hover:text-neutral-900"
-							>
-								<ChevronRight className="h-4 w-4" />
-							</button>
-							<button
-								type="button"
-								onClick={() => setVisibleDate(new Date())}
-								className="h-8 rounded-lg border border-neutral-200 bg-white px-3 text-sm font-medium text-neutral-700 hover:bg-neutral-100 hover:text-neutral-900 max-md:hidden"
+												aria-pressed={selected}
+												onClick={() => {
+													setVisibleDate(day);
+													setMonthPickerOpen(false);
+												}}
+												className={clsx(
+													"mx-auto my-0.5 flex h-11 w-11 items-center justify-center rounded-full text-base font-medium hover:bg-neutral-200/80",
+													selected
+														? "bg-blue-600 text-white hover:bg-blue-600"
+														: isToday
+															? "bg-neutral-200 text-neutral-900"
+															: outsideMonth
+																? "text-neutral-400"
+																: "text-neutral-900",
+												)}
+											>
+												{formatUserDate(day, { day: "numeric" })}
+											</button>
+										);
+									})}
+								</div>
+							</div>,
+							document.body,
+						)}
+				</div>
+			</div>
+			<div className="flex shrink-0 items-center gap-1.5">
+				<button
+					type="button"
+					aria-label={`Previous ${view}`}
+					onClick={() => setVisibleDate(navigateCalendar(visibleDate, view, -1))}
+					className="flex h-8 w-8 items-center justify-center rounded-lg text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
+				>
+					<ChevronLeft className="h-4 w-4" />
+				</button>
+				<button
+					type="button"
+					aria-label={`Next ${view}`}
+					onClick={() => setVisibleDate(navigateCalendar(visibleDate, view, 1))}
+					className="flex h-8 w-8 items-center justify-center rounded-lg text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
+				>
+					<ChevronRight className="h-4 w-4" />
+				</button>
+				<button
+					type="button"
+					onClick={() => setVisibleDate(new Date())}
+					className="h-8 rounded-lg border border-neutral-200 bg-white px-3 text-sm font-medium text-neutral-700 hover:bg-neutral-100 hover:text-neutral-900 max-md:hidden"
+				>
+					Today
+				</button>
+				<DropdownMenu.Root>
+					<DropdownMenu.Trigger asChild>
+						<button
+							type="button"
+							aria-label="Calendar options"
+							className="flex h-8 w-8 items-center justify-center rounded-lg text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 md:hidden"
+						>
+							<MoreVertical className="h-5 w-5" />
+						</button>
+					</DropdownMenu.Trigger>
+					<DropdownMenu.Portal>
+						<DropdownMenu.Content
+							align="end"
+							sideOffset={4}
+							className="z-[130] min-w-40 rounded-xl border border-neutral-200 bg-white p-1 text-sm shadow-xl md:hidden"
+						>
+							<DropdownMenu.Item
+								onSelect={() => setVisibleDate(new Date())}
+								className="cursor-pointer rounded-lg px-3 py-2 text-neutral-700 outline-none data-[highlighted]:bg-neutral-100"
 							>
 								Today
-							</button>
-							<DropdownMenu.Root>
-								<DropdownMenu.Trigger asChild>
-									<button
-										type="button"
-										aria-label="Calendar options"
-										className="flex h-8 w-8 items-center justify-center rounded-lg text-neutral-500 hover:bg-neutral-200/60 hover:text-neutral-900 md:hidden"
-									>
-										<MoreVertical className="h-5 w-5" />
-									</button>
-								</DropdownMenu.Trigger>
-								<DropdownMenu.Portal>
-									<DropdownMenu.Content
-										align="end"
-										sideOffset={4}
-										className="z-[130] min-w-40 rounded-xl border border-neutral-200 bg-white p-1 text-sm shadow-xl md:hidden"
-									>
-										<DropdownMenu.Item
-											onSelect={() => setVisibleDate(new Date())}
-											className="cursor-pointer rounded-lg px-3 py-2 text-neutral-700 outline-none data-[highlighted]:bg-neutral-100"
-										>
-											Today
-										</DropdownMenu.Item>
-										<DropdownMenu.Separator className="my-1 h-px bg-neutral-100" />
-										<CalendarViewOptions value={view} onChange={setView} />
-									</DropdownMenu.Content>
-								</DropdownMenu.Portal>
-							</DropdownMenu.Root>
-							<CalendarViewSelect value={view} onChange={setView} />
-							<Button
-								disabled={pendingAction !== null}
-								onClick={() => openNewEvent()}
-								className={clsx("ml-1 max-md:ml-0", mobilePrimaryActionClass)}
-							>
-								<Plus className="h-4 w-4" />
-								New event
-							</Button>
-						</div>
-					</div>,
-					headerTarget,
-				)}
-			<UpcomingSidebar events={events} onSelect={editEvent} />
+							</DropdownMenu.Item>
+							<DropdownMenu.Separator className="my-1 h-px bg-neutral-100" />
+							<CalendarViewOptions value={view} onChange={setView} />
+						</DropdownMenu.Content>
+					</DropdownMenu.Portal>
+				</DropdownMenu.Root>
+				<CalendarViewSelect value={view} onChange={setView} />
+				{/* On phones an icon button in the header, so nothing floats over the grid. */}
+				<Button
+					disabled={pendingAction !== null}
+					onClick={() => openNewEvent()}
+					className="ml-1 max-md:ml-0 max-md:h-8 max-md:w-8 max-md:px-0"
+				>
+					<Plus className="h-4 w-4" />
+					<span className="max-md:sr-only">New event</span>
+				</Button>
+			</div>
+		</>
+	);
 
-			<section
-				aria-busy={loading}
-				className="min-h-0 min-w-0 flex-1 bg-white flex flex-col overflow-hidden max-md:rounded-t-xl md:rounded-xl md:border md:border-neutral-200 md:shadow-xs"
-			>
+	return (
+		<CalendarPanels events={events} onSelect={editEvent} header={header}>
+			<h1 className="sr-only">Calendar</h1>
+			{loading && <RouteLoadingBarPortal />}
+			<section aria-busy={loading} className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
 				<div className="min-h-0 min-w-0 flex-1 overflow-auto overscroll-contain">
 					{view === "month" ? (
 						<MonthView
@@ -1096,6 +1073,6 @@ export default function CalendarPage() {
 					</DialogFrame>
 				</div>
 			)}
-		</div>
+		</CalendarPanels>
 	);
 }

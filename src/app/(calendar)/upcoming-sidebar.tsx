@@ -4,8 +4,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import clsx from "clsx";
 import { useKeyChanged } from "@/hooks/use-synced-state";
-import { SidebarResizeBoundary } from "@/components/sidebar-resize-boundary";
-import { useSidebar } from "@/components/sidebar-state";
 import { authFetch } from "@/lib/auth/client";
 import { normalizeCalendarColor } from "@/lib/calendar/colors";
 import type { CalendarEvent } from "./calendar/types";
@@ -20,10 +18,11 @@ import {
 } from "./calendar/utils";
 import type { UpcomingSidebarProps } from "./upcoming-sidebar-types";
 
-export function UpcomingSidebar({ events, onSelect, drawer = false, refreshKey }: UpcomingSidebarProps) {
-	const { minimal: sidebarMinimal, mobile } = useSidebar();
-	// The drawer variant is always expanded; it only mounts while the mobile menu is open.
-	const minimal = !drawer && (sidebarMinimal || mobile);
+/**
+ * The next 90 days of events grouped by day, as the left column of the Calendar and Booking pages
+ * (calendar-panels.tsx): loads itself unless the page passes its own events, and grows the list as it scrolls.
+ */
+export function UpcomingSidebar({ events, onSelect, refreshKey }: UpcomingSidebarProps) {
 	const router = useRouter();
 	const [loadedEvents, setLoadedEvents] = useState<CalendarEvent[]>([]);
 	const [loadError, setLoadError] = useState(false);
@@ -64,7 +63,7 @@ export function UpcomingSidebar({ events, onSelect, drawer = false, refreshKey }
 	if (useKeyChanged(shownEvents)) setVisibleCount(UPCOMING_BATCH_SIZE);
 
 	useEffect(() => {
-		if (minimal || visibleCount >= total || !scrollRef.current || !sentinelRef.current) return;
+		if (visibleCount >= total || !scrollRef.current || !sentinelRef.current) return;
 		const observer = new IntersectionObserver(
 			([entry]) => {
 				if (!entry?.isIntersecting) return;
@@ -75,7 +74,7 @@ export function UpcomingSidebar({ events, onSelect, drawer = false, refreshKey }
 		);
 		observer.observe(sentinelRef.current);
 		return () => observer.disconnect();
-	}, [minimal, total, visibleCount]);
+	}, [total, visibleCount]);
 
 	const awaiting = events === undefined && !loaded && !loadError;
 	const SKELETON = (
@@ -98,24 +97,26 @@ export function UpcomingSidebar({ events, onSelect, drawer = false, refreshKey }
 			))}
 		</div>
 	);
-	const list = !minimal && (
-		<div ref={scrollRef} className="h-full overflow-y-auto overscroll-contain px-4 py-4">
+	return (
+		<div
+			ref={scrollRef}
+			className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 md:[scrollbar-gutter:stable]"
+			data-upcoming-events
+		>
 			{awaiting ? (
 				SKELETON
 			) : groups.length === 0 ? (
-				<div>
-					<h2 className="text-base font-medium text-neutral-900">Upcoming</h2>
-					<p className="mt-4 text-sm text-neutral-500">
-						{loadError ? "Could not load upcoming events." : "No upcoming events."}
-					</p>
-				</div>
+				<p className="text-sm text-neutral-500">
+					{loadError ? "Could not load upcoming events." : "No upcoming events."}
+				</p>
 			) : (
 				visibleGroups.map((group) => (
 					<section key={group.key} className="mb-6 last:mb-0">
-						<h2 className="sticky -top-4 z-10 -mx-4 mb-2 bg-white px-4 py-2 text-xs font-medium text-neutral-500">
+						{/* The day label, like the sidebar's group labels ("Core", "Folders"). */}
+						<h2 className="sticky -top-4 z-10 -mx-4 mb-1 bg-white px-4 py-2 text-xs font-medium text-neutral-500">
 							{group.label}
 						</h2>
-						<div className="space-y-2">
+						<div className="space-y-px">
 							{group.events.map((event) => (
 								<button
 									key={event.id}
@@ -124,11 +125,11 @@ export function UpcomingSidebar({ events, onSelect, drawer = false, refreshKey }
 									onClick={() =>
 										onSelect ? onSelect(event) : router.push(`/calendar?event=${encodeURIComponent(event.id)}`)
 									}
-									className="group flex w-full items-start gap-3 text-left"
+									className="group -mx-2 flex w-[calc(100%+1rem)] items-start gap-3 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-neutral-100"
 								>
 									<span
 										className={clsx(
-											"mt-0.5 h-4 w-4 shrink-0 rounded-full",
+											"mt-1 h-3.5 w-3.5 shrink-0 rounded-full",
 											event.status === "tentative"
 												? "border-2 border-dashed border-neutral-500 bg-transparent"
 												: "border-2 border-white ring-1 ring-neutral-200",
@@ -140,7 +141,7 @@ export function UpcomingSidebar({ events, onSelect, drawer = false, refreshKey }
 										}
 									/>
 									<span className="min-w-0">
-										<span className="block truncate text-sm text-neutral-700 group-hover:text-neutral-950">
+										<span className="block truncate text-sm text-neutral-700 group-hover:text-neutral-900">
 											{event.title}
 										</span>
 										<span className="block text-xs text-neutral-500">
@@ -156,26 +157,5 @@ export function UpcomingSidebar({ events, onSelect, drawer = false, refreshKey }
 			)}
 			{visibleCount < total && <div ref={sentinelRef} aria-hidden="true" className="h-1" />}
 		</div>
-	);
-
-	if (drawer) return <div className="h-full min-h-0 bg-white">{list}</div>;
-
-	return (
-		<aside
-			className={clsx(
-				"relative shrink-0 overflow-hidden bg-white transition-[width,max-height] duration-200 ease-in-out motion-reduce:transition-none lg:h-full lg:max-h-none md:rounded-xl",
-				minimal
-					? "w-0 max-h-0"
-					: "w-full max-h-[36vh] md:border md:border-neutral-200 md:shadow-xs lg:w-[var(--sidebar-width)]",
-			)}
-			aria-hidden={minimal}
-		>
-			{list}
-			{!minimal && (
-				<div className="hidden lg:block">
-					<SidebarResizeBoundary />
-				</div>
-			)}
-		</aside>
 	);
 }

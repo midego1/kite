@@ -221,6 +221,8 @@ test.describe("a mouse window", () => {
 		await group.evaluate((element) => ((window as unknown as { __group: Element }).__group = element));
 		await assistant.click();
 		await expect(page.getByRole("button", { name: "Close email assistant" })).toBeVisible();
+		// The page panel narrows with a transition; check only once it is under the two-pane minimum.
+		await expect.poll(async () => (await page.getByRole("main").boundingBox())?.width ?? Infinity).toBeLessThan(539);
 		await expect(group).toHaveAttribute("data-reading-pane", "right");
 		expect(
 			await page.evaluate(

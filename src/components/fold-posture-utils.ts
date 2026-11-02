@@ -161,7 +161,10 @@ export const foldPostureBootstrapScript = `(() => {
 				: segmented || legacySpanned || (coarsePointer && width < ${UNFOLDED_MAX_WIDTH}) || width < ${DESKTOP_MIN_WIDTH}
 					? "unfolded"
 					: "desktop";
-		const saved = localStorage.getItem(${JSON.stringify(FOLD_LAYOUT_STORAGE_KEY)});
+		let saved = null;
+		try {
+			saved = localStorage.getItem(${JSON.stringify(FOLD_LAYOUT_STORAGE_KEY)});
+		} catch {}
 		const posture = saved === "single" ? "folded" : saved === "two" ? "unfolded" : base;
 		document.documentElement.setAttribute(${JSON.stringify("data-" + FOLD_POSTURE_ATTRIBUTE)}, posture);
 	} catch {}

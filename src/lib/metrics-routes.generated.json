@@ -153,6 +153,7 @@
 	"/api/finance/subscriptions/[id]/documents",
 	"/api/finance/subscriptions/[id]",
 	"/api/finance/subscriptions",
+	"/api/folders/[id]",
 	"/api/folders",
 	"/api/import/account/plan",
 	"/api/import/estimate",

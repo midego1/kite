@@ -3,8 +3,6 @@
 import clsx from "clsx";
 import { usePathname } from "next/navigation";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { DESKTOP_MIN_WIDTH, resolveFoldReadingPane } from "@/components/fold-posture-utils";
-import { useFoldViewport } from "@/components/use-fold-posture";
 import { useSidebar } from "@/components/sidebar-state";
 import { useAssistantOpen } from "@/components/agent/assistant-open-state";
 import { readColumnWidth, readInitialColumnWidth, saveColumnWidth } from "@/components/column-width-preferences";
@@ -32,7 +30,7 @@ import {
 	saveMessageListWithAssistant,
 } from "./message-list-visibility-utils";
 import { ReadingPaneEmptyState } from "./reading-pane-empty-state";
-import { useReadingPaneMode } from "./use-reading-layout";
+import { foldListBounds, useFoldSplit } from "./use-fold-split";
 import { getSelectionToolbarFolder } from "./utils";
 import type { BulkSelectionAction, MessageListVisibility, MessageSplitLayoutProps, SelectedMessage } from "./types";
 import { BootStep } from "@/components/boot-step";
@@ -102,13 +100,7 @@ export function MessageSplitLayout({ children, config }: MessageSplitLayoutProps
 	const [listWidth, setListWidth] = useState(LIST_WIDTH.fallback);
 	const [listHeight, setListHeight] = useState(LIST_HEIGHT.fallback);
 	const [manualListVisible, setManualListVisible] = useState(true);
-	const [preferredMode] = useReadingPaneMode();
-	const fold = useFoldViewport();
-	const mode = resolveFoldReadingPane(preferredMode, fold.posture, fold.width >= DESKTOP_MIN_WIDTH);
-	const split = mode !== "none";
-	const below = mode === "below";
-	// A vertical hinge gets its own space, and the list starts in the first screen instead of under the fold.
-	const hinge = split && fold.posture === "unfolded" && fold.hinge?.orientation === "vertical" ? fold.hinge : null;
+	const { mode, split, below, hinge, groupRef, hingeListWidth } = useFoldSplit();
 	const bulkActionRef = useRef<BulkSelectionAction | null>(null);
 	const listPanelRef = usePanelRef();
 	const { userId } = useSidebar();
@@ -140,27 +132,7 @@ export function MessageSplitLayout({ children, config }: MessageSplitLayoutProps
 	const changedByPanel = useSyncedPanel(listPanelRef, !listVisible, listSize);
 	// Pixels per percent of the group, as the list last reported, to read pixel sizes from a layout.
 	const groupScale = useRef(1);
-	const groupRef = useRef<HTMLDivElement | null>(null);
-	const [groupLeft, setGroupLeft] = useState<number | null>(null);
-	// hinge.first is in viewport coordinates, but a panel's size is measured inside the group, whose left edge
-	// the sidebar pushes right; the list gets only what is left of the first screen, so it cannot cross the hinge.
-	const hingeListWidth = hinge && groupLeft !== null ? Math.max(0, hinge.first.width - groupLeft) : null;
-	const listMaxSize = hingeListWidth === null ? listLimits.max : Math.min(listLimits.max, hingeListWidth);
-	const listMinSize = Math.min(listLimits.min, listMaxSize);
-
-	useLayoutEffect(() => {
-		if (!hinge) return;
-		const measure = () => setGroupLeft(groupRef.current?.getBoundingClientRect().left ?? 0);
-		measure();
-		// The group's width changes whenever its left edge can move: a sidebar drag, a window resize, the assistant.
-		const observer = new ResizeObserver(measure);
-		if (groupRef.current) observer.observe(groupRef.current);
-		window.addEventListener("resize", measure);
-		return () => {
-			observer.disconnect();
-			window.removeEventListener("resize", measure);
-		};
-	}, [hinge]);
+	const { min: listMinSize, max: listMaxSize } = foldListBounds(listLimits, hingeListWidth);
 
 	useLayoutEffect(() => {
 		// Persisted preferences are only readable in the browser and must apply before paint.

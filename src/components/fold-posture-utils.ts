@@ -2,18 +2,18 @@ export type FoldPosture = "folded" | "unfolded" | "desktop";
 export type FoldLayoutPreference = "auto" | "single" | "two";
 
 export const FOLD_LAYOUT_STORAGE_KEY = "kite-fold-layout";
-export const FOLD_POSTURE_ATTRIBUTE = "fold-posture";
+const FOLD_POSTURE_ATTRIBUTE = "fold-posture";
 
 /** A cover screen is narrow enough for one pane; at about 700 px a small tablet or an unfolded foldable starts. */
-export const FOLDED_MAX_WIDTH = 700;
+const FOLDED_MAX_WIDTH = 700;
 export const FOLDED_VIEWPORT_QUERY = `(max-width: ${FOLDED_MAX_WIDTH}px)`;
 /** Tailwind's `md` breakpoint, where the app has always switched from its phone shell to the sidebar. */
-export const PHONE_SHELL_MAX_WIDTH = 767;
+const PHONE_SHELL_MAX_WIDTH = 767;
 export const PHONE_SHELL_VIEWPORT_QUERY = `(max-width: ${PHONE_SHELL_MAX_WIDTH}px)`;
 /** Tailwind's `lg` breakpoint, where the desktop reading pane has always started. */
 export const DESKTOP_MIN_WIDTH = 1024;
 /** A touch device as wide as this is usually a tablet or an unfolded foldable, not a desktop. */
-export const UNFOLDED_MAX_WIDTH = 1100;
+const UNFOLDED_MAX_WIDTH = 1100;
 
 export const COARSE_POINTER_QUERY = "(pointer: coarse)";
 export const VIEWPORT_SEGMENTS_QUERY = "(horizontal-viewport-segments: 2)";
@@ -46,10 +46,6 @@ export interface FoldViewport {
 	coarsePointer: boolean;
 	segments: FoldSegment[];
 	hinge: FoldHinge | null;
-}
-
-export function isFoldLayoutPreference(value: unknown): value is FoldLayoutPreference {
-	return value === "auto" || value === "single" || value === "two";
 }
 
 /** The posture from the viewport alone; a narrow screen is folded however the preference is set. */

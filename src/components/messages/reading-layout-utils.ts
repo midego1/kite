@@ -50,10 +50,6 @@ export function parseMessageListDensity(stored: string | null): MessageListDensi
 	return isMessageListDensity(stored) ? stored : DEFAULT_MESSAGE_DENSITY;
 }
 
-export function getEffectiveReadingPaneMode(mode: ReadingPaneMode, wideViewport: boolean): ReadingPaneMode {
-	return wideViewport ? mode : "none";
-}
-
 /** Row spacing for the stacked rows of the list beside a reading pane. */
 export function getStackedRowDensity(density: MessageListDensity): MessageRowDensityStyle {
 	if (density === "comfortable") return { rowClassName: "py-3", showPreview: true };

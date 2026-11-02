@@ -51,13 +51,6 @@ test("density falls back to Default for unknown values", () => {
 	}
 });
 
-test("narrow viewports always read in one column", () => {
-	for (const mode of ["none", "right", "below"]) {
-		assert.equal(helpers.getEffectiveReadingPaneMode(mode, false), "none");
-		assert.equal(helpers.getEffectiveReadingPaneMode(mode, true), mode);
-	}
-});
-
 test("stacked rows show the snippet line only in comfortable density, as Zero's rows show sender and subject", () => {
 	assert.equal(helpers.getStackedRowDensity("compact").showPreview, false);
 	assert.equal(helpers.getStackedRowDensity("default").showPreview, false);

@@ -101,8 +101,3 @@ test("a stacked fold reports a horizontal hinge, and one screen has none", () =>
 	assert.equal(helpers.foldHingeFromSegments(segments.slice(0, 1)), null);
 	assert.equal(helpers.foldHingeFromSegments([]), null);
 });
-
-test("the stored fold preference only accepts its three values", () => {
-	for (const value of ["auto", "single", "two"]) assert.ok(helpers.isFoldLayoutPreference(value));
-	for (const value of ["", null, "three", 2]) assert.equal(helpers.isFoldLayoutPreference(value), false);
-});

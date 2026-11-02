@@ -2,6 +2,7 @@
 // appearanceBootstrapScript as a plain string. The hook lives in use-appearance-preference.ts.
 
 import { FONT_ASSETS, FONT_LINK_ATTRIBUTE, fontAsset } from "@/components/font-assets-utils";
+import { FOLD_LAYOUT_STORAGE_KEY, type FoldLayoutPreference } from "@/components/fold-posture-utils";
 import type { LayoutPreferences } from "@/lib/preferences/layout-types";
 
 export type AppearancePreference<T extends string> = {
@@ -18,8 +19,21 @@ export type AppearancePreference<T extends string> = {
 
 export type FontPreference = "auto" | "manrope" | "geist" | "inter" | "system" | "opendyslexic";
 export type TextSizePreference = "small" | "default" | "large" | "larger";
+export type { FoldLayoutPreference };
 
 export const APPEARANCE_CHANGED_EVENT = "kite:appearance-changed";
+
+/** How the mail panes follow a foldable device; the posture itself is detected live in use-fold-posture.ts. */
+export const FOLD_LAYOUT_PREFERENCE: AppearancePreference<FoldLayoutPreference> = {
+	storageKey: FOLD_LAYOUT_STORAGE_KEY,
+	attribute: "fold-layout",
+	defaultValue: "auto",
+	options: [
+		{ value: "auto", label: "Auto (follow the device)" },
+		{ value: "single", label: "Always single pane" },
+		{ value: "two", label: "Always two panes" },
+	],
+};
 
 export const FONT_PREFERENCE: AppearancePreference<FontPreference> = {
 	storageKey: "kite-font",
@@ -146,6 +160,7 @@ export const APPEARANCE_PREFERENCES = [
 	FONT_SCOPE_PREFERENCE,
 	TEXT_SIZE_PREFERENCE,
 	EMAIL_FONT_PREFERENCE,
+	FOLD_LAYOUT_PREFERENCE,
 ] as const;
 
 function isOption<T extends string>(preference: AppearancePreference<T>, value: unknown): value is T {

@@ -18,6 +18,7 @@ import {
 	ASSISTANT_LAYOUT_PREFERENCE,
 	ASSISTANT_STEPS_PREFERENCE,
 	EMAIL_FONT_PREFERENCE,
+	FOLD_LAYOUT_PREFERENCE,
 	LIST_SUMMARIES_PREFERENCE,
 	FONT_PREFERENCE,
 	FONT_SCOPE_PREFERENCE,
@@ -77,6 +78,18 @@ export function AppearanceSettings() {
 						The updated brand files are ready. We kept things light, clear, and connected.
 						<span className="mt-1 block font-script text-2xl text-blue-600">that actually flows.</span>
 					</p>
+				</SettingRows>
+			</SettingsCardSection>
+			<SettingsCardSection
+				title="Foldable screens"
+				description="How the message list and reader follow a foldable phone or tablet. This choice is kept in this browser."
+			>
+				<SettingRows>
+					<PreferenceRow
+						preference={FOLD_LAYOUT_PREFERENCE}
+						label="Fold layout"
+						description="Auto shows one pane on a folded screen and the list beside the reader when the screen is unfolded. Always single pane and Always two panes force one or the other on any device."
+					/>
 				</SettingRows>
 			</SettingsCardSection>
 			<SettingsCardSection title="Assistant" description="Where the assistant opens and how much of its work it shows.">

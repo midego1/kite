@@ -3,6 +3,8 @@
 import clsx from "clsx";
 import { usePathname } from "next/navigation";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { DESKTOP_MIN_WIDTH, resolveFoldReadingPane } from "@/components/fold-posture-utils";
+import { useFoldViewport } from "@/components/use-fold-posture";
 import { useSidebar } from "@/components/sidebar-state";
 import { useAssistantOpen } from "@/components/agent/assistant-open-state";
 import { readColumnWidth, readInitialColumnWidth, saveColumnWidth } from "@/components/column-width-preferences";
@@ -30,8 +32,7 @@ import {
 	saveMessageListWithAssistant,
 } from "./message-list-visibility-utils";
 import { ReadingPaneEmptyState } from "./reading-pane-empty-state";
-import { getEffectiveReadingPaneMode } from "./reading-layout-utils";
-import { useReadingPaneMode, useWideReadingViewport } from "./use-reading-layout";
+import { useReadingPaneMode } from "./use-reading-layout";
 import { getSelectionToolbarFolder } from "./utils";
 import type { BulkSelectionAction, MessageListVisibility, MessageSplitLayoutProps, SelectedMessage } from "./types";
 import { BootStep } from "@/components/boot-step";
@@ -102,10 +103,12 @@ export function MessageSplitLayout({ children, config }: MessageSplitLayoutProps
 	const [listHeight, setListHeight] = useState(LIST_HEIGHT.fallback);
 	const [manualListVisible, setManualListVisible] = useState(true);
 	const [preferredMode] = useReadingPaneMode();
-	const wideViewport = useWideReadingViewport();
-	const mode = getEffectiveReadingPaneMode(preferredMode, wideViewport);
+	const fold = useFoldViewport();
+	const mode = resolveFoldReadingPane(preferredMode, fold.posture, fold.width >= DESKTOP_MIN_WIDTH);
 	const split = mode !== "none";
 	const below = mode === "below";
+	// A vertical hinge gets its own space, and the list starts in the first screen instead of under the fold.
+	const hinge = split && fold.posture === "unfolded" && fold.hinge?.orientation === "vertical" ? fold.hinge : null;
 	const bulkActionRef = useRef<BulkSelectionAction | null>(null);
 	const listPanelRef = usePanelRef();
 	const { userId } = useSidebar();
@@ -279,9 +282,19 @@ export function MessageSplitLayout({ children, config }: MessageSplitLayoutProps
 				id={`kite-message-layout-${mode}`}
 				orientation={below ? "vertical" : "horizontal"}
 				data-reading-pane={mode}
+				data-fold-hinge={hinge ? hinge.orientation : undefined}
 				// The page panel is a flex column while the split view shows (dashboard layout), so the group fills it by
 				// stretching as well as by its height, and the list can never grow the page.
-				className="min-h-0 flex-1 overflow-hidden"
+				className={clsx("min-h-0 flex-1 overflow-hidden", hinge && "fold-hinge")}
+				style={
+					hinge
+						? ({
+								"--kite-fold-left": `env(viewport-segment-left 0 0, ${hinge.first.left}px)`,
+								"--kite-fold-gap": `max(${hinge.gap}px, calc(env(viewport-segment-left 1 0, 0px) - env(viewport-segment-right 0 0, 0px)))`,
+								"--kite-fold-right": `calc(100vw - env(viewport-segment-right 1 0, calc(100vw - ${hinge.second.left + hinge.second.width}px)))`,
+							} as React.CSSProperties)
+						: undefined
+				}
 				onLayoutChanged={(layout, meta) => {
 					if (meta.isUserInteraction) storeListSize(layoutPixels(layout[LIST_PANEL_ID], groupScale.current));
 				}}
@@ -293,8 +306,8 @@ export function MessageSplitLayout({ children, config }: MessageSplitLayoutProps
 					collapsedSize={0}
 					collapsedThreshold={listLimits.min}
 					minSize={listLimits.min}
-					maxSize={listLimits.max}
-					defaultSize={listVisible ? listSize : 0}
+					maxSize={hinge ? Math.max(listLimits.min, Math.min(listLimits.max, hinge.first.width)) : listLimits.max}
+					defaultSize={listVisible ? (hinge ? hinge.first.width : listSize) : 0}
 					groupResizeBehavior="preserve-pixel-size"
 					onResize={(size) => {
 						groupScale.current = pixelsPerPercent(size) ?? groupScale.current;

@@ -12,6 +12,7 @@ import { NewMessagePopup } from "@/components/new-message-popup";
 import { ThemeSync } from "@/components/theme-sync";
 import { UpdateAvailableHost } from "@/components/update-available-host";
 import { LayoutPreferencesSync } from "@/components/layout-preferences-sync";
+import { useFoldPosture } from "@/components/use-fold-posture";
 import { ConfirmDialogHost } from "@/components/ui/confirm-dialog";
 import { toasterProps } from "@/components/ui/toast-styles";
 import { useToastsAtTop } from "@/components/ui/toast-zone";
@@ -25,6 +26,7 @@ import type { AuthSessionChangedDetail } from "@/lib/auth/client-types";
 import { clearAppBadge } from "@/lib/app-badge-utils";
 
 export function Providers({ children, initialBranding }: { children: React.ReactNode; initialBranding?: Branding }) {
+	useFoldPosture();
 	const realtime = useMessagePolling();
 	const toastsAtTop = useToastsAtTop();
 

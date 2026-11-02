@@ -6,7 +6,7 @@ import type { CustomFolder } from "@/components/dashboard-nav-types";
 
 // Shared across toolbars so reopening a menu shows the folders immediately instead of popping in.
 const cache = new Map<string, CustomFolder[]>();
-/** Dispatched after a folder is created, so lists of several mailboxes' folders load it. */
+/** Dispatched after a folder is created, renamed or deleted, so lists of several mailboxes' folders load it. */
 export const FOLDERS_CHANGED_EVENT = "kite:folders-changed";
 
 async function loadFolders(mailboxId: string): Promise<CustomFolder[]> {
@@ -23,13 +23,19 @@ export function useMailboxFolders(mailboxId: string | undefined): CustomFolder[]
 	useEffect(() => {
 		if (!mailboxId) return;
 		let cancelled = false;
-		loadFolders(mailboxId)
-			.then((folders) => {
-				if (!cancelled) setFetched({ mailboxId, folders });
-			})
-			.catch(() => undefined);
+		function load() {
+			loadFolders(mailboxId!)
+				.then((folders) => {
+					if (!cancelled) setFetched({ mailboxId: mailboxId!, folders });
+				})
+				.catch(() => undefined);
+		}
+		load();
+		// A folder renamed or deleted elsewhere in the app leaves menus listing the old set.
+		window.addEventListener(FOLDERS_CHANGED_EVENT, load);
 		return () => {
 			cancelled = true;
+			window.removeEventListener(FOLDERS_CHANGED_EVENT, load);
 		};
 	}, [mailboxId]);
 

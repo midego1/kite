@@ -13,7 +13,7 @@ Your browser remembers the choice. Nothing is stored on the server, so another b
 - **Every mailbox you can open**, and only those: your own mailboxes and the shared ones you were given access to. Being an administrator does not add anyone else's mailbox; the view holds exactly the mailboxes you could open one by one.
 - **A label on each email** with the name of the mailbox it belongs to, in that mailbox's colour.
 - **Counts added up.** The numbers next to Inbox, Starred and the other folders are the totals of the mailboxes in view.
-- **Folders per mailbox.** Your own folders are listed under the name of the mailbox they belong to. New folders still belong to one mailbox: **Create folder** asks which one.
+- **Folders per mailbox.** Your own folders are listed under the name of the mailbox they belong to. New folders still belong to one mailbox: **Create folder** asks which one. Each folder's **⋯** menu (or a right-click on it) renames or deletes it, as in a single mailbox.
 - **Conversations per mailbox.** In conversation view a thread is grouped within one mailbox. When the same email reached two of your mailboxes, each mailbox shows its own conversation.
 - **The Screener** is listed while any mailbox in view holds new senders back, and shows their held mail together.
 

@@ -277,6 +277,19 @@ export const folderSchema = z.object({
 	color: z.enum(FOLDER_COLOR_VALUES).optional(),
 });
 
+export const folderUpdateSchema = z
+	.object({
+		name: z.string().trim().min(1).max(80).optional(),
+		/** Choosing a colour marks it as picked (`color_is_custom`), the default blue included. */
+		color: z.enum(FOLDER_COLOR_VALUES).optional(),
+	})
+	.refine((value) => value.name !== undefined || value.color !== undefined, { message: "Nothing to change" });
+
+/** Where a deleted folder's mail goes; left out only when the folder holds none. */
+export const folderDeleteSchema = z.object({
+	moveTo: z.enum(["inbox", "archive"]).optional(),
+});
+
 export const updateProfileSchema = z.object({
 	name: z.string().trim().min(1).max(100),
 	resetEmail: z.preprocess(

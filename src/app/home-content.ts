@@ -114,7 +114,7 @@ export const upstreamRows: HomeUpstreamRow[] = [
 export const deploySteps: HomeStep[] = [
 	{
 		title: "Create a scoped CF_TOKEN",
-		text: "In the Cloudflare dashboard, create a token with DNS, zone and Email Routing permissions. It is separate from the token Cloudflare uses to deploy.",
+		text: "In the Cloudflare dashboard, create a token with DNS, zone and Email Routing permissions, plus Email Sending: Edit if Cloudflare will send mail. It is separate from the token Cloudflare uses to deploy.",
 	},
 	{
 		title: "Click Deploy to Cloudflare",

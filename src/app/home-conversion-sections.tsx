@@ -14,8 +14,10 @@ import {
 	deploySteps,
 	faqs,
 	limitations,
+	PERFORMANCE_URL,
 	openLinks,
 	proofChips,
+	upstreamRows,
 } from "./home-content";
 import type { HomeSectionProps, HomeTextPart } from "./types";
 
@@ -265,7 +267,52 @@ export function HomeCompare({ appName }: HomeSectionProps) {
 					</tbody>
 				</table>
 			</div>
+			<HomeUpstream />
 		</section>
+	);
+}
+
+/** README performance rows only. Before is the earlier result; Now is this version. */
+function HomeUpstream() {
+	return (
+		<div className="mx-auto mt-12 max-w-3xl">
+			<h3 id="home-upstream-heading" className="text-center text-lg font-semibold tracking-tight text-neutral-950">
+				Vs upstream
+			</h3>
+			<p className="mt-2 text-center text-sm leading-6 text-neutral-600">
+				Measured on a production build in a plain Chrome profile.{" "}
+				<a href={PERFORMANCE_URL} target="_blank" rel="noopener noreferrer" className={textLinkClass}>
+					Performance in the README
+				</a>
+				.
+			</p>
+			<div className="mt-5 min-w-0 overflow-x-auto rounded-2xl border border-neutral-200 bg-white" tabIndex={0}>
+				<table className="w-full min-w-[640px] border-collapse text-left text-sm">
+					<thead>
+						<tr className="border-b border-neutral-200 bg-[#f6f8fc]">
+							<td className="px-4 py-3" />
+							<th scope="col" className="px-4 py-3 font-semibold text-neutral-700">
+								Before
+							</th>
+							<th scope="col" className="px-4 py-3 font-semibold text-neutral-950">
+								Now
+							</th>
+						</tr>
+					</thead>
+					<tbody>
+						{upstreamRows.map((row) => (
+							<tr key={row.label} className="border-b border-neutral-100 align-top last:border-b-0">
+								<th scope="row" className="px-4 py-4 font-medium text-neutral-950">
+									{row.label}
+								</th>
+								<td className="px-4 py-4 leading-6 text-neutral-600">{row.before}</td>
+								<td className="px-4 py-4 leading-6 text-neutral-900">{row.now}</td>
+							</tr>
+						))}
+					</tbody>
+				</table>
+			</div>
+		</div>
 	);
 }
 

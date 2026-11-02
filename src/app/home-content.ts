@@ -1,5 +1,5 @@
 import { SOURCE_CODE_URL } from "@/lib/source-code";
-import type { HomeCompareRow, HomeCostRow, HomeFaq, HomeLink, HomeStep } from "./types";
+import type { HomeCompareRow, HomeCostRow, HomeFaq, HomeLink, HomeStep, HomeUpstreamRow } from "./types";
 
 const DOCS = `${SOURCE_CODE_URL}/blob/main/docs`;
 
@@ -7,6 +7,7 @@ export const DEPLOYMENT_GUIDE_URL = `${DOCS}/deployment.md`;
 export const SELF_HOST_URL = `${DOCS}/self-hosting.md`;
 export const PRIVACY_URL = `${DOCS}/privacy.md#usage-statistics`;
 export const LIMITATIONS_URL = `${SOURCE_CODE_URL}#known-limitations`;
+export const PERFORMANCE_URL = `${SOURCE_CODE_URL}#performance`;
 export const NOTICE_URL = `${SOURCE_CODE_URL}/blob/main/NOTICE`;
 export const RELEASES_URL = `${SOURCE_CODE_URL}/releases`;
 export const ROADMAP_URL = `${SOURCE_CODE_URL}/blob/main/ROADMAP.md`;
@@ -89,6 +90,23 @@ export const compareRows: HomeCompareRow[] = [
 			"You only need forwarding",
 			"You want polish, mobile apps and someone else on call",
 		],
+	},
+];
+
+/**
+ * Two rows from the README performance table, in that table's words (Before, then Now).
+ * The README measures them on a production build in a plain Chrome profile.
+ */
+export const upstreamRows: HomeUpstreamRow[] = [
+	{
+		label: "Opening a folder for the first time",
+		before: "~340 ms with an empty page and loading bar",
+		now: "~35–50 ms",
+	},
+	{
+		label: "Backing up a 53 MB database",
+		before: "Fails: Worker exceeds its 128 MB memory limit",
+		now: "Completes",
 	},
 ];
 

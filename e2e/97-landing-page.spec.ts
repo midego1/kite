@@ -104,6 +104,20 @@ test.describe("visitor", () => {
 		await expect(compare.getByRole("rowheader", { name: "Deliverability help" })).toBeVisible();
 		await expect(compare.getByText("Young project, small community")).toBeVisible();
 		await expect(compare.getByText(/spam filtering at scale/)).toBeVisible();
+		await expect(compare.getByRole("heading", { name: "Vs upstream" })).toBeVisible();
+		await expect(compare.getByText("Measured on a production build in a plain Chrome profile.")).toBeVisible();
+		await expect(compare.getByRole("link", { name: "Performance in the README" })).toHaveAttribute(
+			"href",
+			`${SOURCE_URL}#performance`,
+		);
+		await expect(compare.getByRole("columnheader", { name: "Before" })).toBeVisible();
+		await expect(compare.getByRole("columnheader", { name: "Now" })).toBeVisible();
+		await expect(compare.getByRole("rowheader", { name: "Opening a folder for the first time" })).toBeVisible();
+		await expect(compare.getByText("~340 ms with an empty page and loading bar")).toBeVisible();
+		await expect(compare.getByText("~35–50 ms")).toBeVisible();
+		await expect(compare.getByRole("rowheader", { name: "Backing up a 53 MB database" })).toBeVisible();
+		await expect(compare.getByText("Fails: Worker exceeds its 128 MB memory limit")).toBeVisible();
+		await expect(compare.getByText("Completes")).toBeVisible();
 
 		const limits = page.getByRole("region", { name: "Early beta: what's missing today" });
 		await expect(limits.getByText("No published third-party security audit.")).toBeVisible();
@@ -187,6 +201,7 @@ test.describe("visitor", () => {
 		await page.getByRole("heading", { level: 2, name: "Deploy in five steps" }).scrollIntoViewIfNeeded();
 		expect(await horizontalOverflow(page)).toBe(0);
 		await page.getByRole("heading", { level: 2, name: "When Kite fits, and when it doesn't" }).scrollIntoViewIfNeeded();
+		await page.getByRole("heading", { level: 3, name: "Vs upstream" }).scrollIntoViewIfNeeded();
 		expect(await horizontalOverflow(page)).toBe(0);
 	});
 });

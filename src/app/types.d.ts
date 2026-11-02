@@ -48,6 +48,13 @@ export type HomeCompareRow = {
 	cells: [string, string, string, string];
 };
 
+/** One README performance row: the earlier result, then this version. */
+export type HomeUpstreamRow = {
+	label: string;
+	before: string;
+	now: string;
+};
+
 export type HomeStep = {
 	title: string;
 	text: string;

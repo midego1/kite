@@ -257,6 +257,8 @@ test("the writing guard flags long entries, code in backticks and migration note
 		]),
 		[],
 	);
+	// A fence line with trailing text does not close the block, as in parseFragment.
+	assert.deepEqual(styleProblems([fragment("### Fixed\n\n```sh\n```example\n`x`\n```\n- Short.\n")]), []);
 	assert.match(styleProblems([fragment("### Fixed\n\n- Use `ATTACHMENT_SHARING=off` now.\n")])[0], /code in backticks/);
 	assert.match(styleProblems([fragment("### Fixed\n\n- The reader works. No migration.\n")])[0], /No migration/);
 	assert.match(styleProblems([fragment("### Fixed\n\nA paragraph with `code`.\n")])[0], /code in backticks/);

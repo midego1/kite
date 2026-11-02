@@ -1,8 +1,9 @@
 import { expect, test, type Page } from "@playwright/test";
+import { BASE_URL } from "./support/constants";
 import { contrastBetween, luminancesBetween } from "./support/contrast";
 
 // The landing page at `/`: what a visitor sees (the hero, the proof, deploy, cost and comparison),
-// what a signed-in user sees instead (the dashboard button), and that it holds up in dark mode and on a phone.
+// what a signed-in user sees instead (the dashboard button), and that it stays dark and readable under every theme and on a phone.
 
 const SOURCE_URL = "https://github.com/midego1/kite";
 const DEPLOY_URL = `https://deploy.workers.cloudflare.com/?url=${SOURCE_URL}`;
@@ -153,35 +154,96 @@ test.describe("visitor", () => {
 		await expect(page.getByLabel("Email")).toBeVisible();
 	});
 
-	test("follows the dark theme with readable text", async ({ page }) => {
-		await page.addInitScript(() => localStorage.setItem("kite-theme", "dark"));
-		await page.goto("/");
-		await expect(page.locator("html")).toHaveClass(/dark/);
-		const heading = page.getByRole("heading", { level: 1 });
-		const body = page.locator("body");
-		expect((await luminancesBetween(heading, body)).background).toBeLessThan(0.1);
-		expect(await contrastBetween(heading, body)).toBeGreaterThanOrEqual(4.5);
-		// The preview is a dark card too, not a white block on a dark page.
-		const preview = page.getByTestId("home-product-mock");
-		expect((await luminancesBetween(preview, preview)).background).toBeLessThan(0.15);
-		expect(
-			await contrastBetween(preview.getByText("Design review notes for the new onboarding"), preview),
-		).toBeGreaterThanOrEqual(4.5);
+	test("stays dark and readable under every theme and style, and the app's own look is untouched", async ({ page }) => {
+		for (const [theme, style] of [
+			["light", "kite"],
+			["dark", "kite"],
+			["light", "lavender"],
+			["dark", "lavender"],
+		]) {
+			const visit = await page.context().newPage();
+			await visit.addInitScript(
+				([savedTheme, savedStyle]) => {
+					localStorage.setItem("kite-theme", savedTheme);
+					localStorage.setItem("kite-style", savedStyle);
+				},
+				[theme, style],
+			);
+			await visit.goto("/");
+			await expect(visit.locator("html")).toHaveAttribute("data-style", style);
+			const root = visit.locator(".home-page");
+			expect((await luminancesBetween(root, root)).background).toBeLessThan(0.02);
+			const heading = visit.getByRole("heading", { level: 1 });
+			expect(await contrastBetween(heading, root)).toBeGreaterThanOrEqual(7);
+			expect(await contrastBetween(visit.getByText(/is a self-hosted webmail app/), root)).toBeGreaterThanOrEqual(4.5);
+			expect(await contrastBetween(visit.getByText("Needs a Cloudflare account"), root)).toBeGreaterThanOrEqual(4.5);
+			// The page sets its own font whatever the style chose, and the demo stays a dark window of its own.
+			expect(await heading.evaluate((element) => getComputedStyle(element).fontFamily)).toMatch(/Geist|geist/);
+			const demo = await liveDemo(visit);
+			expect((await luminancesBetween(demo, demo)).background).toBeLessThan(0.15);
+			await demo.getByRole("button", { name: /Lena Fischer/ }).click();
+			expect(
+				await contrastBetween(demo.getByText("I lean towards letting them skip it."), demo),
+			).toBeGreaterThanOrEqual(4.5);
+			await demo.getByRole("button", { name: "Archive" }).click();
+			const toast = demo.getByRole("status");
+			expect(await contrastBetween(toast, toast)).toBeGreaterThanOrEqual(4.5);
+			await visit.close();
+		}
 
-		// Kite classic (the lavender style) in dark keeps the demo readable and sets the accent line in its script face.
-		await page.addInitScript(() => localStorage.setItem("kite-style", "lavender"));
+		// The home page's palette is scoped to its own wrapper: another page keeps the theme the visitor chose.
+		await page.addInitScript(() => localStorage.setItem("kite-theme", "light"));
+		await page.goto("/login");
+		await expect(page.locator(".home-page")).toHaveCount(0);
+		const body = page.locator("body");
+		expect((await luminancesBetween(body, body)).background).toBeGreaterThan(0.5);
+	});
+
+	test("keeps a sensible heading order, a skip link, visible focus and a still page for reduced motion", async ({
+		page,
+	}) => {
+		await page.emulateMedia({ reducedMotion: "reduce" });
 		await page.goto("/");
-		await expect(page.locator("html")).toHaveAttribute("data-style", "lavender");
-		const accent = page.locator("h1 .home-accent");
-		expect(await accent.evaluate((element) => getComputedStyle(element).fontFamily)).toMatch(/Madi|cursive/);
-		const demoAgain = await liveDemo(page);
-		await demoAgain.getByRole("button", { name: /Lena Fischer/ }).click();
-		expect(
-			await contrastBetween(demoAgain.getByText("I lean towards letting them skip it."), demoAgain),
-		).toBeGreaterThanOrEqual(4.5);
-		await demoAgain.getByRole("button", { name: "Archive" }).click();
-		const toast = demoAgain.getByRole("status");
-		expect(await contrastBetween(toast, toast)).toBeGreaterThanOrEqual(4.5);
+		const levels = await page.locator("main h1, main h2, main h3").evaluateAll((nodes) =>
+			// The demo's own headings belong to the app it shows, not to the page's outline.
+			nodes.filter((node) => !node.closest('[data-testid="home-product-mock"]')).map((node) => Number(node.tagName[1])),
+		);
+		expect(levels[0]).toBe(1);
+		expect(levels.filter((level) => level === 1)).toHaveLength(1);
+		levels.forEach((level, index) => {
+			if (index > 0) expect(level - levels[index - 1]).toBeLessThanOrEqual(1);
+		});
+
+		await page.keyboard.press("Tab");
+		const skip = page.getByRole("link", { name: "Skip to content" });
+		await expect(skip).toBeFocused();
+		await expect(skip).toBeVisible();
+		await page.keyboard.press("Tab");
+		await expect(page.getByRole("banner").getByRole("link", { name: /home$/ })).toBeFocused();
+		const outline = await page.locator(":focus-visible").evaluate((element) => getComputedStyle(element).outlineStyle);
+		expect(outline).toBe("solid");
+
+		// Nothing moves: the headline settles in and the kite drifts only when motion is allowed.
+		const animated = await page
+			.locator(".home-rise, .home-kite, .home-string")
+			.evaluateAll((nodes) => nodes.map((node) => getComputedStyle(node).animationName));
+		expect(animated.length).toBeGreaterThan(0);
+		expect(animated.every((name) => name === "none")).toBe(true);
+		await expect(page.locator("main svg[aria-hidden='true']").first()).toBeAttached();
+	});
+
+	test("asks no third party for anything", async ({ page }) => {
+		const origin = new URL(BASE_URL).origin;
+		const foreign: string[] = [];
+		page.on("request", (request) => {
+			const url = new URL(request.url());
+			if (!["http:", "https:"].includes(url.protocol)) return;
+			if (url.origin !== origin) foreign.push(request.url());
+		});
+		await page.goto("/");
+		await liveDemo(page);
+		await page.waitForLoadState("networkidle");
+		expect(foreign).toEqual([]);
 	});
 
 	test("fits a phone without horizontal overflow", async ({ page }) => {
@@ -206,12 +268,17 @@ test.describe("visitor", () => {
 	});
 });
 
-/** The live demo once its chunk has loaded (home-demo-host.tsx swaps it in during idle time or at the first hover). */
+/**
+ * The live demo once its chunk has loaded (home-demo-host.tsx swaps it in during idle time or at the first hover).
+ * The swap replaces the frame's elements, so an action that straddles it is retried as a whole.
+ */
 async function liveDemo(page: Page) {
 	const demo = page.getByTestId("home-product-mock");
-	await demo.scrollIntoViewIfNeeded();
-	await demo.hover();
-	await expect(demo).toHaveAttribute("data-demo", "ready");
+	await expect(async () => {
+		await demo.scrollIntoViewIfNeeded({ timeout: 3000 });
+		await demo.hover({ timeout: 3000 });
+		await expect(demo).toHaveAttribute("data-demo", "ready", { timeout: 3000 });
+	}).toPass({ timeout: 30_000 });
 	return demo;
 }
 

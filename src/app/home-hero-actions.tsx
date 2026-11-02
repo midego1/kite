@@ -3,10 +3,10 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { SOURCE_CODE_URL } from "@/lib/source-code";
 import { getHeroActions } from "./utils";
 import { useHomeAuth } from "./home-auth";
+import { ghostButton, primaryButton } from "./home-ui";
 
 /** The GitHub mark (lucide dropped its brand icons), drawn inline so no icon font or image is loaded. */
 function GitHubMark() {
@@ -22,31 +22,26 @@ export function HomeHeroActions({ children }: { children?: ReactNode }) {
 	const hasUser = !!useHomeAuth();
 
 	return (
-		<div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:justify-center">
-			{getHeroActions(hasUser).map((action, index) => (
-				<Button
-					key={action.href}
-					size="lg"
-					variant={action.variant}
-					asChild
-					className={
-						action.variant === "outline" ? "rounded-full border-neutral-200 bg-white px-6" : "rounded-full px-6"
-					}
-				>
-					{action.external ? (
-						<a href={action.href} target="_blank" rel="noopener noreferrer">
-							{action.href === SOURCE_CODE_URL && <GitHubMark />}
-							{action.label}
-							{index === 0 && <ArrowRight className="h-4 w-4" />}
-						</a>
-					) : (
-						<Link href={action.href}>
-							{action.label}
-							{index === 0 && <ArrowRight className="h-4 w-4" />}
-						</Link>
-					)}
-				</Button>
-			))}
+		<div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+			{getHeroActions(hasUser).map((action, index) => {
+				const className = action.variant === "outline" ? ghostButton : primaryButton;
+				const content = (
+					<>
+						{action.href === SOURCE_CODE_URL && <GitHubMark />}
+						{action.label}
+						{index === 0 && <ArrowRight className="h-4 w-4" aria-hidden="true" />}
+					</>
+				);
+				return action.external ? (
+					<a key={action.href} href={action.href} target="_blank" rel="noopener noreferrer" className={className}>
+						{content}
+					</a>
+				) : (
+					<Link key={action.href} href={action.href} className={className}>
+						{content}
+					</Link>
+				);
+			})}
 			{children}
 		</div>
 	);

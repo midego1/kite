@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Button } from "@/components/ui/button";
+import { ghostButtonSmall, MONO } from "./home-ui";
 
 /**
  * The README's "Deploy with an AI coding agent" prompt, copied verbatim, including the token-handling lines.
@@ -60,17 +60,21 @@ export function HomeDeployPrompt() {
 	return (
 		<div className="mt-4">
 			<div className="flex flex-wrap items-center justify-between gap-3">
-				<p className="max-w-xl text-sm leading-6 text-neutral-600">
+				<p className="max-w-xl text-sm leading-6 text-(--home-mute)">
 					Give the agent your Cloudflare account ID and two separate scoped API tokens through its secret input. Never
 					put them in a public chat, a repository or a committed file.
 				</p>
-				<Button type="button" variant="outline" className="bg-white" onClick={copyPrompt}>
+				<button
+					type="button"
+					className={`${ghostButtonSmall} border border-(--home-line-strong) text-(--home-ink)`}
+					onClick={copyPrompt}
+				>
 					{copied ? "Copied" : "Copy prompt"}
-				</Button>
+				</button>
 			</div>
 			<pre
 				ref={preRef}
-				className="mt-4 max-w-full overflow-x-auto whitespace-pre-wrap rounded-xl bg-[#f6f8fc] p-4 text-left font-mono text-xs leading-5 text-neutral-800"
+				className={`${MONO} mt-4 max-w-full overflow-x-auto whitespace-pre-wrap rounded-lg border border-(--home-line) bg-black p-4 text-left leading-5 text-(--home-mute)`}
 			>
 				{DEPLOY_PROMPT}
 			</pre>

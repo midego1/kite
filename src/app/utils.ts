@@ -1,4 +1,3 @@
-import { Calendar, Cloud, Inbox, Link2, ShieldCheck, Sparkles } from "lucide-react";
 import { SOURCE_CODE_URL } from "@/lib/source-code";
 import type { HomeAction, HomeFeatureTheme, HomeFooterLink } from "./types";
 
@@ -41,7 +40,6 @@ export function getHeroActions(isLoggedIn: boolean): HomeAction[] {
 export const featureThemes: HomeFeatureTheme[] = [
 	{
 		id: "inbox",
-		icon: Inbox,
 		title: "A real inbox, not just forwarding",
 		summary:
 			"Threads, search, folders, stars, snooze, archive, and personal or shared mailboxes, all in one unified inbox.",
@@ -49,14 +47,12 @@ export const featureThemes: HomeFeatureTheme[] = [
 	},
 	{
 		id: "providers",
-		icon: Cloud,
 		title: "Pick a provider per domain",
 		summary: "Each domain receives and sends through Cloudflare, Resend or Amazon SES.",
 		points: ["Email Routing and DNS are set up on Cloudflare, and it asks before it replaces existing MX records."],
 	},
 	{
 		id: "calendar",
-		icon: Calendar,
 		title: "Calendar, booking pages and Drive",
 		summary: "Day, week and month views, invitations by email, and public booking links.",
 		points: [
@@ -66,7 +62,6 @@ export const featureThemes: HomeFeatureTheme[] = [
 	},
 	{
 		id: "safety",
-		icon: ShieldCheck,
 		title: "Safer by default",
 		summary:
 			"Email HTML renders in a sandboxed frame with no scripts. Remote images stay blocked until you allow them.",
@@ -78,7 +73,6 @@ export const featureThemes: HomeFeatureTheme[] = [
 	},
 	{
 		id: "ai",
-		icon: Sparkles,
 		title: "AI that drafts, never sends",
 		summary: "Ask about your mail and get reply drafts. You confirm every send.",
 		points: [
@@ -88,7 +82,6 @@ export const featureThemes: HomeFeatureTheme[] = [
 	},
 	{
 		id: "api",
-		icon: Link2,
 		title: "Open APIs",
 		summary: "JMAP, a REST API, webhooks and MCP.",
 		points: ["IMAP is used to import mail and to read accounts you connect. There is no IMAP server for desktop apps."],

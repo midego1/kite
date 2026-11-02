@@ -19,15 +19,12 @@ export type HomeAction = {
 	external?: boolean;
 };
 
-/** One theme of the feature grid: a heading, one sentence and the things it covers. */
+/** One row of the feature list: a heading, one sentence and the things it covers. */
 export type HomeFeatureTheme = {
 	id: string;
-	icon: LucideIcon;
 	title: string;
 	summary: string;
 	points: string[];
-	/** Spans the whole row of the grid, for the seventh card so no card sits alone. */
-	wide?: boolean;
 };
 
 export type HomeLink = {

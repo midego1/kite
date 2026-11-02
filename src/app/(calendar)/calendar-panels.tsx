@@ -20,6 +20,7 @@ function CalendarSectionTabs() {
 	return (
 		<SegmentedLinks
 			label="Calendar sections"
+			landmark
 			current={pathname}
 			items={tabs.map((tab) => ({ key: tab.id, href: tab.href, label: tab.label }))}
 			className="flex-1"

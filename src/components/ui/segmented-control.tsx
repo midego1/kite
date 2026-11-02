@@ -76,22 +76,27 @@ export function SegmentedControl<T extends string | number>({
 
 /**
  * The same row as links between pages: the Settings menu's Settings | Admin switch and the Calendar panel's
- * Bookings | Calendar tabs. The current page is marked `aria-current="page"`.
+ * Bookings | Calendar tabs. The current page is marked `aria-current="page"`. A group by default; `landmark`
+ * makes it a `nav` of its own (the Calendar tabs), which the Settings menu, itself inside navigations, is not.
  */
 export function SegmentedLinks({
 	label,
 	items,
 	current,
+	landmark = false,
 	className,
 }: {
 	label: string;
 	items: readonly { href: string; label: string; key?: string }[];
 	/** The href of the page shown now. */
 	current: string | null;
+	landmark?: boolean;
 	className?: string;
 }) {
+	const Root = landmark ? "nav" : "div";
 	return (
-		<nav
+		<Root
+			role={landmark ? undefined : "group"}
 			aria-label={label}
 			className={cn("flex rounded-lg border border-neutral-200 bg-[#f6f8fc] p-0.5 text-sm", className)}
 		>
@@ -113,6 +118,6 @@ export function SegmentedLinks({
 					</Link>
 				);
 			})}
-		</nav>
+		</Root>
 	);
 }

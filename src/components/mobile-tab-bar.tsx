@@ -94,7 +94,11 @@ export function MobileTabBar() {
 								)}
 							</span>
 							<span className="max-w-full truncate">{meta.label}</span>
-							{badge > 0 && <span className="sr-only">, {badge} unread</span>}
+							{badge > 0 && (
+								<span className="sr-only">
+									, {badge} {id === "for-you" ? "open suggestions" : "unread"}
+								</span>
+							)}
 						</>
 					);
 

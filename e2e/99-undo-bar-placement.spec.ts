@@ -36,7 +36,6 @@ async function openComposer(page: Page) {
 	if (phone) await page.getByRole("button", { name: "Open menu" }).click();
 	await page.getByRole("button", { name: "Compose" }).click();
 	await expect(popup(page).getByLabel("To", { exact: true })).toBeAttached();
-	if (phone) await page.getByRole("button", { name: "Close menu" }).click();
 	await expect(page.getByRole("button", { name: "Close menu" })).toBeHidden();
 	await expect(popup(page).getByLabel("To", { exact: true })).toBeVisible();
 }

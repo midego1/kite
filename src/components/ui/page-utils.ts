@@ -9,6 +9,16 @@ export const SETTING_ROW_CLASS = "flex items-start gap-4 rounded-lg bg-neutral-5
 /** The line under a field explaining what it takes. */
 export const FIELD_HINT_CLASS = "text-xs leading-5 text-neutral-500";
 
+/** The column labels over a list of rows (Drive): small muted labels like the sidebar's group labels, with a hairline under them. */
+export const LIST_HEAD_CLASS = "border-b border-neutral-200 text-xs font-medium text-neutral-500";
+
+/**
+ * The top bar of a page that fills one panel (For you, Money Watch, Drive, Calendar): 56 px, the height of the
+ * inbox list and reader headers, with a hairline under it. It stays put while the page scrolls.
+ */
+export const PANEL_HEADER_CLASS =
+	"sticky top-0 z-10 flex h-14 shrink-0 items-center gap-2 border-b border-neutral-200 bg-white px-4 max-md:px-3";
+
 /** A table's header row: small muted labels on the muted fill. */
 export const TABLE_HEAD_CLASS = "border-b border-neutral-200 bg-[#f6f8fc] text-xs font-medium text-neutral-500";
 

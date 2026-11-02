@@ -3,7 +3,7 @@ import path from "node:path";
 import { expect, test, type Browser, type Locator, type Page } from "@playwright/test";
 import sharp from "sharp";
 import { STORAGE_STATE } from "../../e2e/support/constants";
-import { seedDemoData } from "./demo-data";
+import { seedDemoData, THREAD } from "./demo-data";
 
 // Screenshots for the changelog (docs/releasing.md#screenshots-in-the-changelog), taken against the isolated,
 // seeded e2e server, so only invented demo data appears. They land in public/changelog/<name>.webp, ready for a
@@ -50,6 +50,59 @@ const SHOTS: Shot[] = [
 				await page.goto("/accounts");
 				await expect(page.getByRole("link", { name: /Demo User/ })).toBeVisible();
 				return page.getByRole("main");
+			},
+		}),
+	),
+	...(["light", "dark"] as const).map(
+		(theme): Shot => ({
+			name: `2026-11-02-list-chips-${theme}`,
+			theme,
+			viewport: { width: 1280, height: 800 },
+			open: async (page) => {
+				await page.goto("/inbox");
+				const chips = page.getByRole("group", { name: "Show" });
+				await expect(chips.getByRole("button", { name: "Primary" })).toHaveAttribute("aria-pressed", "true");
+				await expect(page.getByRole("main").getByText(THREAD[0]!.subject).first()).toBeVisible();
+				return page.getByRole("complementary").filter({ has: chips });
+			},
+		}),
+	),
+	...(["light", "dark"] as const).map(
+		(theme): Shot => ({
+			name: `2026-11-02-drive-empty-${theme}`,
+			theme,
+			viewport: { width: 1280, height: 800 },
+			open: async (page) => {
+				await page.goto("/drive/trash");
+				await expect(page.getByText("The trash is empty")).toBeVisible();
+				return page;
+			},
+		}),
+	),
+	...(["light", "dark"] as const).map(
+		(theme): Shot => ({
+			name: `2026-11-02-calendar-frame-${theme}`,
+			theme,
+			viewport: { width: 1280, height: 800 },
+			open: async (page) => {
+				await page.goto("/calendar");
+				await expect(page.getByRole("button", { name: "New event" })).toBeVisible();
+				await expect(page.getByRole("navigation", { name: "Calendar sections" })).toBeVisible();
+				await expect(page.locator("[data-upcoming-events]").getByRole("button").first()).toBeVisible();
+				return page;
+			},
+		}),
+	),
+	...(["light", "dark"] as const).map(
+		(theme): Shot => ({
+			name: `2026-11-02-drive-frame-${theme}`,
+			theme,
+			viewport: { width: 1280, height: 800 },
+			open: async (page) => {
+				await page.goto("/drive");
+				await expect(page.getByRole("complementary", { name: "Drive menu" })).toBeVisible();
+				await expect(page.locator("[data-drive-item]").first()).toBeVisible();
+				return page;
 			},
 		}),
 	),

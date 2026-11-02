@@ -1,40 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import clsx from "clsx";
-import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import {
-	Clock,
-	FolderPlus,
-	FolderUp,
-	HardDrive,
-	Inbox,
-	Paperclip,
-	Plus,
-	Trash2,
-	Upload,
-	UsersRound,
-	type LucideIcon,
-} from "lucide-react";
-import { SidebarFooter } from "@/components/sidebar-footer";
-import { DashboardNotices } from "@/components/dashboard-notices";
-import { MailboxSelector } from "@/components/mailbox-selector";
-import { NavSectionLabel } from "@/components/nav-section-header";
-import { SidebarAccounts } from "@/components/sidebar-accounts";
-import { RAIL_ICON_SIZE, RAIL_ITEM_CLASS } from "@/components/sidebar-rail-utils";
-import { SidebarScaffold } from "@/components/sidebar-scaffold";
-import { useSidebar } from "@/components/sidebar-state";
+import { Clock, HardDrive, Paperclip, Trash2, UsersRound, type LucideIcon } from "lucide-react";
+import { SectionNavSheet } from "@/components/section-nav-sheet";
+import { SECTION_PANEL_CLASS } from "@/components/settings/section-nav-utils";
 import { formatDriveSize } from "@/lib/drive/name-utils";
 import type { DriveUsage } from "@/lib/drive/types";
-import {
-	DRIVE_COMMAND_EVENT,
-	DRIVE_USAGE_EVENT,
-	DRIVE_VIEW_TITLES,
-	usagePercent,
-	type DriveCommand,
-} from "./drive-utils";
+import { DRIVE_USAGE_EVENT, DRIVE_VIEW_TITLES, usagePercent } from "./drive-utils";
 
 const LINKS: { href: string; label: string; icon: LucideIcon; match: (path: string) => boolean }[] = [
 	{
@@ -59,61 +34,11 @@ const LINKS: { href: string; label: string; icon: LucideIcon; match: (path: stri
 	{ href: "/drive/trash", label: DRIVE_VIEW_TITLES.trash, icon: Trash2, match: (path) => path === "/drive/trash" },
 ];
 
-const menuItemClass =
-	"flex cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm text-neutral-700 outline-none data-[highlighted]:bg-neutral-100 data-[highlighted]:text-neutral-900";
-
-function sendCommand(command: DriveCommand) {
-	window.dispatchEvent(new CustomEvent(DRIVE_COMMAND_EVENT, { detail: command }));
-}
-
-function NewMenu({ compact }: { compact: boolean }) {
-	return (
-		<DropdownMenu.Root>
-			<DropdownMenu.Trigger asChild>
-				<button
-					type="button"
-					aria-label="New"
-					// Zero's "New email": a full-width muted button rather than a floating card.
-					className={clsx(
-						"flex items-center justify-center gap-2 border border-neutral-200 bg-neutral-100 text-sm font-medium text-neutral-900 transition-colors hover:bg-neutral-200",
-						compact ? RAIL_ITEM_CLASS : "mb-2 ml-3 h-9 w-[calc(100%-0.75rem)] rounded-lg px-3 max-md:min-h-11",
-					)}
-				>
-					<Plus size={compact ? RAIL_ICON_SIZE : 16} />
-					{!compact && "New"}
-				</button>
-			</DropdownMenu.Trigger>
-			<DropdownMenu.Portal>
-				<DropdownMenu.Content
-					align="start"
-					sideOffset={6}
-					className="z-[200] min-w-52 rounded-xl border border-neutral-200 bg-white p-1 shadow-lg"
-				>
-					<DropdownMenu.Item className={menuItemClass} onSelect={() => sendCommand("new-folder")}>
-						<FolderPlus size={16} />
-						New folder
-					</DropdownMenu.Item>
-					<DropdownMenu.Separator className="-mx-1 my-1 h-px bg-neutral-200" />
-					<DropdownMenu.Item className={menuItemClass} onSelect={() => sendCommand("upload-files")}>
-						<Upload size={16} />
-						Upload files
-					</DropdownMenu.Item>
-					<DropdownMenu.Item className={menuItemClass} onSelect={() => sendCommand("upload-folder")}>
-						<FolderUp size={16} />
-						Upload folder
-					</DropdownMenu.Item>
-				</DropdownMenu.Content>
-			</DropdownMenu.Portal>
-		</DropdownMenu.Root>
-	);
-}
-
-function UsageBar({ usage }: { usage: DriveUsage | null }) {
-	if (!usage) return null;
-	if (!usage.limit) return <p className="px-3 pb-2 text-xs text-neutral-600">{formatDriveSize(usage.used)} used</p>;
+function UsageBar({ usage }: { usage: DriveUsage }) {
+	if (!usage.limit) return <p className="text-xs text-neutral-500">{formatDriveSize(usage.used)} used</p>;
 	const percent = usagePercent(usage.used, usage.limit);
 	return (
-		<div className="px-3 pb-2" data-drive-usage>
+		<div data-drive-usage>
 			<div
 				role="progressbar"
 				aria-label="Drive storage used"
@@ -127,53 +52,22 @@ function UsageBar({ usage }: { usage: DriveUsage | null }) {
 					style={{ width: `${percent}%` }}
 				/>
 			</div>
-			<p className="text-xs text-neutral-600">
+			<p className="text-xs text-neutral-500">
 				{formatDriveSize(usage.used)} of {formatDriveSize(usage.limit)} used
 			</p>
 		</div>
 	);
 }
 
-function DriveNavLink({
-	href,
-	label,
-	icon: Icon,
-	active,
-	compact,
-	onClick,
-}: {
-	href: string;
-	label: string;
-	icon: LucideIcon;
-	active: boolean;
-	compact: boolean;
-	onClick?: () => void;
-}) {
-	return (
-		<Link
-			href={href}
-			onClick={onClick}
-			aria-current={active ? "page" : undefined}
-			aria-label={compact ? label : undefined}
-			title={compact ? label : undefined}
-			className={clsx(
-				"flex items-center gap-3 text-sm text-neutral-700 transition-colors",
-				compact ? RAIL_ITEM_CLASS : "ml-3 h-9 rounded-lg px-3 max-md:min-h-11 max-md:text-base",
-				active ? "bg-blue-100 font-medium text-blue-900" : "hover:bg-neutral-200/60 hover:text-neutral-900",
-			)}
-		>
-			<Icon size={compact ? RAIL_ICON_SIZE : 16} className="shrink-0" />
-			{!compact && <span className="truncate">{label}</span>}
-		</Link>
-	);
-}
-
-/** The Drive sidebar: the New menu, a way back to the mail, the views, and the storage you have used. */
-export function DriveNav() {
-	const { minimal, mobile, toggle } = useSidebar();
+/**
+ * The Drive views (My Drive, Recent, Shared with me, All attachments, Trash) as the menu panel beside the listing,
+ * drawn like the Settings menu beside its page: a bordered column from `md` up, a bottom sheet behind a pill on
+ * phones. The storage used sits at its foot. The mail menu stays in the sidebar, where it is on every page.
+ */
+function DriveNav() {
 	const pathname = usePathname();
 	const [usage, setUsage] = useState<DriveUsage | null>(null);
-	const compact = minimal && !mobile;
+	const current = LINKS.find((link) => link.match(pathname));
 
 	useEffect(() => {
 		const onUsage = (event: Event) => setUsage((event as CustomEvent<DriveUsage>).detail);
@@ -182,43 +76,56 @@ export function DriveNav() {
 	}, []);
 
 	return (
-		<SidebarScaffold
-			header={<SidebarAccounts />}
-			account={<MailboxSelector placement="sidebar" />}
-			footer={
-				<>
-					{!compact && <UsageBar usage={usage} />}
-					<SidebarFooter notices={<DashboardNotices slot="sidebar" />} />
-				</>
-			}
+		<SectionNavSheet
+			title="Drive menu"
+			label={current?.label ?? "Drive"}
+			className={clsx("w-full md:flex md:min-h-0 md:w-64 md:shrink-0 md:flex-col", SECTION_PANEL_CLASS)}
 		>
-			<NewMenu compact={compact} />
-			{/* One click back to the mail, also from the icon rail. */}
-			{!compact && <NavSectionLabel label="Mail" />}
-			<div aria-label="Mail" role="group" className="space-y-px">
-				<DriveNavLink
-					href="/inbox"
-					label="Inbox"
-					icon={Inbox}
-					active={false}
-					compact={compact}
-					onClick={mobile ? toggle : undefined}
-				/>
+			<div className="flex h-14 shrink-0 items-center gap-2 border-b border-neutral-200 px-4">
+				<HardDrive aria-hidden="true" className="h-4 w-4 shrink-0 text-blue-600" />
+				<h2 className="min-w-0 truncate text-base font-medium text-neutral-900">Drive</h2>
 			</div>
-			{compact ? <hr className="mx-6 my-2 border-neutral-200/70" /> : <NavSectionLabel label="Drive" />}
-			<div aria-label="Drive" role="group" className="space-y-px">
-				{LINKS.map(({ href, label, icon, match }) => (
-					<DriveNavLink
-						key={href}
-						href={href}
-						label={label}
-						icon={icon}
-						active={match(pathname)}
-						compact={compact}
-						onClick={mobile ? toggle : undefined}
-					/>
-				))}
-			</div>
-		</SidebarScaffold>
+			<nav
+				aria-label="Drive views"
+				className="flex flex-col gap-px px-2 pt-3 pb-4 md:min-h-0 md:flex-1 md:overflow-y-auto md:overscroll-contain"
+			>
+				{LINKS.map(({ href, label, icon: Icon, match }) => {
+					const active = match(pathname);
+					return (
+						<Link
+							key={href}
+							href={href}
+							aria-current={active ? "page" : undefined}
+							className={clsx(
+								"flex h-9 items-center gap-3 rounded-lg px-3 text-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 max-md:min-h-11 max-md:text-base",
+								active
+									? "bg-blue-100 font-medium text-blue-900"
+									: "text-neutral-700 hover:bg-neutral-100 hover:text-neutral-900",
+							)}
+						>
+							<Icon className={clsx("h-4 w-4 shrink-0", active ? "text-neutral-900" : "text-neutral-500")} />
+							{label}
+						</Link>
+					);
+				})}
+			</nav>
+			{usage && (
+				<div className="shrink-0 border-t border-neutral-200 px-4 py-3">
+					<UsageBar usage={usage} />
+				</div>
+			)}
+		</SectionNavSheet>
+	);
+}
+
+/** The Drive pages' two panels: the views menu at the left, the listing at the right, on the page background. */
+export function DrivePanels({ children }: { children: ReactNode }) {
+	return (
+		<div data-page-panels className="flex h-full min-h-0 flex-col bg-inherit md:flex-row md:gap-2">
+			<DriveNav />
+			<section className={clsx("flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-white", SECTION_PANEL_CLASS)}>
+				{children}
+			</section>
+		</div>
 	);
 }

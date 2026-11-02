@@ -1,10 +1,9 @@
 import type { CalendarEvent } from "./calendar/types";
 
 export type UpcomingSidebarProps = {
+	/** The events to list; loaded here when absent (the Booking page). */
 	events?: CalendarEvent[];
 	onSelect?: (event: CalendarEvent) => void;
-	/** Render only the list, for the mobile menu drawer. */
-	drawer?: boolean;
 	/** Refetch (keeping the current list on screen) when this value changes. */
 	refreshKey?: unknown;
 };

@@ -22,11 +22,6 @@ export type SidebarProviderProps = {
 	mobileOverlay?: boolean;
 };
 
-export type SidebarHeaderProps = {
-	href: string;
-	label?: string;
-};
-
 export type SidebarScaffoldProps = {
 	header: import("react").ReactNode;
 	footer?: import("react").ReactNode;

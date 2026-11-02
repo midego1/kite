@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRef, type KeyboardEvent } from "react";
 import { cn } from "@/lib/utils";
 
@@ -70,5 +71,53 @@ export function SegmentedControl<T extends string | number>({
 				);
 			})}
 		</div>
+	);
+}
+
+/**
+ * The same row as links between pages: the Settings menu's Settings | Admin switch and the Calendar panel's
+ * Bookings | Calendar tabs. The current page is marked `aria-current="page"`. A group by default; `landmark`
+ * makes it a `nav` of its own (the Calendar tabs), which the Settings menu, itself inside navigations, is not.
+ */
+export function SegmentedLinks({
+	label,
+	items,
+	current,
+	landmark = false,
+	className,
+}: {
+	label: string;
+	items: readonly { href: string; label: string; key?: string }[];
+	/** The href of the page shown now. */
+	current: string | null;
+	landmark?: boolean;
+	className?: string;
+}) {
+	const Root = landmark ? "nav" : "div";
+	return (
+		<Root
+			role={landmark ? undefined : "group"}
+			aria-label={label}
+			className={cn("flex rounded-lg border border-neutral-200 bg-[#f6f8fc] p-0.5 text-sm", className)}
+		>
+			{items.map((item) => {
+				const selected = item.href === current;
+				return (
+					<Link
+						key={item.key ?? item.href}
+						href={item.href}
+						aria-current={selected ? "page" : undefined}
+						className={cn(
+							"flex-1 rounded-md px-3 py-1 text-center transition-colors outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1",
+							selected
+								? "bg-white font-medium text-neutral-900 shadow-xs ring-1 ring-neutral-200"
+								: "text-neutral-500 hover:text-neutral-900",
+						)}
+					>
+						{item.label}
+					</Link>
+				);
+			})}
+		</Root>
 	);
 }

@@ -9,6 +9,7 @@ import { useModules } from "@/components/modules/modules-context";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import type { AuthMeUser } from "@/lib/auth/me-client-types";
 import { PageSearchInput } from "@/components/mail-search/page-search-input";
+import { SegmentedLinks } from "@/components/ui/segmented-control";
 import { Tooltip } from "@/components/ui/tooltip";
 import { SectionNavSheet } from "../section-nav-sheet";
 import type { NavMode, NavSearchGroup, NavSection } from "./section-nav-types";
@@ -33,31 +34,15 @@ const modes: NavMode[] = ["settings", "admin"];
 /** Settings or Admin, as a segmented control under the search field, like the list panel's chips. */
 function ModeSwitch({ mode, user }: { mode: NavMode; user: AuthMeUser | null }) {
 	return (
-		<div
-			role="group"
-			aria-label="Settings or admin"
-			className="grid grid-cols-2 gap-1 rounded-lg border border-neutral-200 bg-[#f6f8fc] p-0.5"
-		>
-			{modes.map((option) => {
-				const selected = option === mode;
-				return (
-					<Link
-						key={option}
-						href={selected ? navModeHome(option, user) : switchTarget(mode, user)}
-						aria-current={selected ? "page" : undefined}
-						className={cn(
-							"rounded-md px-3 py-1 text-center text-sm transition-colors",
-							focusRing,
-							selected
-								? "bg-white font-medium text-neutral-900 shadow-xs ring-1 ring-neutral-200"
-								: "text-neutral-500 hover:text-neutral-900",
-						)}
-					>
-						{navModeLabels[option]}
-					</Link>
-				);
-			})}
-		</div>
+		<SegmentedLinks
+			label="Settings or admin"
+			current={navModeHome(mode, user)}
+			items={modes.map((option) => ({
+				key: option,
+				href: option === mode ? navModeHome(option, user) : switchTarget(mode, user),
+				label: navModeLabels[option],
+			}))}
+		/>
 	);
 }
 

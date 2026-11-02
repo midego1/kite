@@ -6,6 +6,7 @@
 		"src/lib/alerts/delivery-utils.ts",
 		"src/lib/alerts/rules-utils.ts",
 		"src/lib/db/size-utils.ts",
+		"src/lib/folders/manage-utils.ts",
 		"src/lib/import/estimate-utils.ts",
 		"src/lib/import/size-guard-utils.ts",
 		"src/lib/import/message-hints-utils.ts",

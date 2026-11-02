@@ -12,7 +12,7 @@ export const ERROR_TEXT_CLASS = "text-[#b91c1c] dark:text-[#f19999]";
 
 /** The faint fills of the tones, for a badge, a card icon or a pill on a plain surface. */
 export const WARNING_FILL_CLASS = "bg-[#f59e0b]/10";
-export const SUCCESS_FILL_CLASS = "bg-[#22c55e]/10";
+const SUCCESS_FILL_CLASS = "bg-[#22c55e]/10";
 export const ERROR_FILL_CLASS = "bg-[#ef4444]/10";
 /** The hover fill of a button inside a warning notice (its dismiss button). */
 export const WARNING_HOVER_FILL_CLASS = "hover:bg-[#f59e0b]/15";

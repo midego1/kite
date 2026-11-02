@@ -3,7 +3,7 @@
 import clsx from "clsx";
 import { ChevronUp } from "lucide-react";
 import { usePathname } from "next/navigation";
-import { useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { useKeyChanged } from "@/hooks/use-synced-state";
 import { useIsMobile } from "./sidebar-mobile-utils";
 
@@ -12,16 +12,36 @@ type SectionNavSheetProps = {
 	title: string;
 	children: ReactNode;
 	className?: string;
+	/** Controlled: whether the phone sheet is open; the caller then draws its own trigger. */
+	open?: boolean;
+	onOpenChange?: (open: boolean) => void;
 };
 
-// Inline column from md up; on phones a bottom sheet opened from a floating pill showing the current section.
-export function SectionNavSheet({ label, title, children, className }: SectionNavSheetProps) {
+// Inline column from md up; on phones a bottom sheet opened from a floating pill showing the current section,
+// or from the caller's own button when it controls `open` (the Calendar keeps its header free of the grid).
+export function SectionNavSheet({
+	label,
+	title,
+	children,
+	className,
+	open: openProp,
+	onOpenChange,
+}: SectionNavSheetProps) {
 	const mobile = useIsMobile();
 	const pathname = usePathname();
-	const [open, setOpen] = useState(false);
+	const [ownOpen, setOwnOpen] = useState(false);
+	const controlled = openProp !== undefined;
+	const open = controlled ? openProp : ownOpen;
+	const setOpen = useCallback(
+		(next: boolean) => {
+			if (!controlled) setOwnOpen(next);
+			onOpenChange?.(next);
+		},
+		[controlled, onOpenChange],
+	);
 	const hidden = mobile && !open;
 
-	if (useKeyChanged(`${pathname}|${mobile}`)) setOpen(false);
+	if (useKeyChanged(`${pathname}|${mobile}`) && open) setOpen(false);
 
 	useEffect(() => {
 		if (!open) return;
@@ -30,20 +50,22 @@ export function SectionNavSheet({ label, title, children, className }: SectionNa
 		};
 		window.addEventListener("keydown", onKeyDown);
 		return () => window.removeEventListener("keydown", onKeyDown);
-	}, [open]);
+	}, [open, setOpen]);
 
 	return (
 		<>
-			<button
-				type="button"
-				onClick={() => setOpen(true)}
-				aria-haspopup="dialog"
-				aria-expanded={open}
-				className="fixed bottom-4 left-1/2 z-40 flex -translate-x-1/2 items-center gap-2 rounded-full bg-neutral-900 px-4 py-2.5 text-sm font-medium text-white shadow-lg md:hidden"
-			>
-				<span className="max-w-[60vw] truncate">{label}</span>
-				<ChevronUp size={16} aria-hidden="true" />
-			</button>
+			{!controlled && (
+				<button
+					type="button"
+					onClick={() => setOpen(true)}
+					aria-haspopup="dialog"
+					aria-expanded={open}
+					className="fixed bottom-4 left-1/2 z-40 flex -translate-x-1/2 items-center gap-2 rounded-full bg-neutral-900 px-4 py-2.5 text-sm font-medium text-white shadow-lg md:hidden"
+				>
+					<span className="max-w-[60vw] truncate">{label}</span>
+					<ChevronUp size={16} aria-hidden="true" />
+				</button>
+			)}
 			<div
 				onClick={() => setOpen(false)}
 				aria-hidden="true"

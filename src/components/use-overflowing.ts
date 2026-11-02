@@ -2,19 +2,32 @@
 
 import { useEffect, useState, type RefObject } from "react";
 
+export type OverflowEdges = {
+	/** Content is hidden above the top edge (the element is scrolled down). */
+	above: boolean;
+	/** Content is hidden below the bottom edge (there is more to scroll to). */
+	below: boolean;
+};
+
+const NONE: OverflowEdges = { above: false, below: false };
+
 /**
- * Whether the element's content is taller than the element, so it scrolls. Re-measured when the element is
+ * On which edges the element hides content that scrolls into view: re-measured on scroll, when the element is
  * resized, when a child is added or removed and when a child changes size, so a list that grows past the
  * viewport (a folder created, a section opened) is noticed without a scroll event. Deeper changes resize a
  * child, so only the direct children are watched.
  */
-export function useOverflowing(ref: RefObject<HTMLElement | null>): boolean {
-	const [overflowing, setOverflowing] = useState(false);
+export function useOverflowEdges(ref: RefObject<HTMLElement | null>): OverflowEdges {
+	const [edges, setEdges] = useState<OverflowEdges>(NONE);
 
 	useEffect(() => {
 		const element = ref.current;
 		if (!element) return;
-		const measure = () => setOverflowing(element.scrollHeight > element.clientHeight + 1);
+		const measure = () => {
+			const hidden = element.scrollHeight - element.clientHeight;
+			const next = { above: element.scrollTop > 1, below: hidden > 1 && element.scrollTop < hidden - 1 };
+			setEdges((current) => (current.above === next.above && current.below === next.below ? current : next));
+		};
 		const resize = new ResizeObserver(measure);
 		const watched = new Set<Element>();
 		const watchChildren = () => {
@@ -37,12 +50,14 @@ export function useOverflowing(ref: RefObject<HTMLElement | null>): boolean {
 		resize.observe(element);
 		watchChildren();
 		mutations.observe(element, { childList: true });
+		element.addEventListener("scroll", measure, { passive: true });
 		measure();
 		return () => {
 			resize.disconnect();
 			mutations.disconnect();
+			element.removeEventListener("scroll", measure);
 		};
 	}, [ref]);
 
-	return overflowing;
+	return edges;
 }

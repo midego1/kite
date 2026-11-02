@@ -1,6 +1,6 @@
 # Drive
 
-Drive keeps files and folders next to your mail. Open it from the **Drive** item in the sidebar or the mailbox menu, or with **Open Drive** in the command palette. It is a module: the owner can turn it off for everyone or for some users (see [Modules](modules.md)).
+Drive keeps files and folders next to your mail. Open it from the **Drive** item in the sidebar or the mailbox menu, or with **Open Drive** in the command palette. The sidebar stays the mail menu; the Drive views (My Drive, Recent, Shared with me, All attachments, Trash) are a menu beside the list, with the storage you have used at its foot. It is a module: the owner can turn it off for everyone or for some users (see [Modules](modules.md)).
 
 Apply database migration 0064 after deploying the release that adds Drive, from the database card on the admin overview. Until then Drive shows that the update is pending, lists nothing and refuses changes.
 
@@ -18,13 +18,13 @@ Search finds names, and the type chips (Photos, Videos, Documents, Others) narro
 
 ## Uploading
 
-Use **New → Upload files** or **Upload folder**, or drop files on the list. Folders keep their structure. Files are sent in parts of 32 MiB through Kite, or of 64 MiB straight to the storage provider when an admin has set that up under Admin → Storage, and the **Uploads** panel shows each one's progress. If an upload is interrupted, uploading the same file into the same folder again within three days continues where it stopped; after that the unfinished upload is removed. One account can have 20 uploads in progress at a time.
+Use **Upload files** or **Upload folder** above the list, or drop files on the list. Folders keep their structure. Files are sent in parts of 32 MiB through Kite, or of 64 MiB straight to the storage provider when an admin has set that up under Admin → Storage, and the **Uploads** panel shows each one's progress. If an upload is interrupted, uploading the same file into the same folder again within three days continues where it stopped; after that the unfinished upload is removed. One account can have 20 uploads in progress at a time.
 
 **Save to Drive** in an attachment's menu, in the reader or under All attachments, copies the attachment into the folder you choose. The copy is independent of the message: deleting the mail keeps the file. A flagged attachment (a program, a macro document, an archive, …; see [Risky attachments](spam-protection.md#risky-attachments)) shows its warning first, and the copy waits until you tick **I understand the risk**. The same goes for downloading one under All attachments: it opens the preview with the warning, and a bulk download skips it.
 
 ## Folders, moving and the trash
 
-**New → New folder** creates a folder; folders nest up to 64 levels. **Rename**, **Move** and **Move to trash** are in each row's menu. A folder in the trash takes everything inside it along, and **Restore** brings it all back. In the trash, **Delete forever** removes an item and its contents at once, after you confirm. Items left in the trash are deleted for good after the retention the admin sets (30 days by default), by a job that runs daily at 02:00 UTC.
+**New folder** above the list creates a folder; folders nest up to 64 levels. **Rename**, **Move** and **Move to trash** are in each row's menu. A folder in the trash takes everything inside it along, and **Restore** brings it all back. In the trash, **Delete forever** removes an item and its contents at once, after you confirm. Items left in the trash are deleted for good after the retention the admin sets (30 days by default), by a job that runs daily at 02:00 UTC.
 
 ## Sharing with people
 

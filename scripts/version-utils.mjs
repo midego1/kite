@@ -1,4 +1,4 @@
-import { ENTRY, foldUnreleased, fragmentProblems } from "./changelog-fragments.mjs";
+import { ENTRY, foldUnreleased, fragmentProblems, styleProblems } from "./changelog-fragments.mjs";
 
 const CALENDAR_VERSION = /^(\d{4}\.\d{2}\.\d{2})\.(\d+)$/;
 
@@ -153,6 +153,14 @@ export function checkPullRequest({
 		}
 		return problems;
 	}
+	// Only the fragments this pull request touched: others were checked in their own pull request.
+	problems.push(
+		...styleProblems(
+			fragments.filter((fragment) =>
+				changedFragments.some((file) => file === fragment.name || file.endsWith(`/${fragment.name}`)),
+			),
+		),
+	);
 	if (String(headVersion).trim() !== String(baseVersion).trim()) {
 		problems.push(
 			`VERSION changed from ${String(baseVersion).trim()} to ${String(headVersion).trim()}; only the release pull request changes it, so take the base's VERSION, package.json, package-lock.json, docs/openapi.json and CHANGELOG.md`,

@@ -9,3 +9,6 @@
 
 /changelog.json
   Cache-Control: no-cache
+
+/changelog/*
+  Cache-Control: public,max-age=86400

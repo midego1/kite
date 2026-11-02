@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { imageProblems } from "./changelog-images.mjs";
 import { readFragments } from "./changelog-fragments.mjs";
 import { changedFragmentFiles, pullRequestLabels, resolveBase } from "./release-check-utils.mjs";
 import { checkPullRequest, isReleaseBranch } from "./version-utils.mjs";
@@ -30,15 +31,18 @@ async function main() {
 	const branch = process.env.HEAD_REF || git("rev-parse", "--abbrev-ref", "HEAD");
 	const changedFragments = changedFragmentFiles(git, base);
 	const headVersion = readFileSync(path.join(root, "VERSION"), "utf8");
+	const changelog = readFileSync(path.join(root, "CHANGELOG.md"), "utf8");
 	const problems = checkPullRequest({
 		branch,
 		labels: await pullRequestLabels(process.env),
 		baseVersion,
 		headVersion,
-		changelog: readFileSync(path.join(root, "CHANGELOG.md"), "utf8"),
+		changelog,
 		fragments: readFragments(root),
 		changedFragments,
+		root,
 	});
+	problems.push(...imageProblems(changelog, "CHANGELOG.md", root));
 	if (!problems.length) {
 		console.log(
 			isReleaseBranch(branch)

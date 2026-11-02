@@ -9,7 +9,7 @@ import { BUILD_VERSION } from "@/lib/build-version";
 import { changelogReleaseLabel } from "@/lib/changelog/changelog-utils";
 import type { ChangelogRelease } from "@/lib/changelog/types";
 import { formatUserDate } from "@/lib/time/utils";
-import { InlineText } from "./changelog-inline-text";
+import { ChangelogSections } from "./changelog-sections";
 import { updateSubject } from "./update-available-utils";
 import { UPDATE_SENDER, UpdateSenderAvatar } from "./update-notice-row";
 import { closeUpdateReader, dismissUpdateNotice, useRegisterUpdateList, useUpdateNotice } from "./update-notice-store";
@@ -35,21 +35,12 @@ function ReleaseBody({ release }: { release: ChangelogRelease }) {
 				{changelogReleaseLabel(release)}
 				{release.date && <span className="text-xs font-normal text-neutral-500">{release.date}</span>}
 			</h2>
-			{release.sections.map((section, sectionIndex) => (
-				<div key={`${section.title}:${sectionIndex}`} className="space-y-1.5">
-					<h3 className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">{section.title}</h3>
-					<ul className="space-y-1.5">
-						{section.items.map((item, index) => (
-							<li key={`${section.title}:${index}`} className="flex gap-2 text-sm leading-relaxed text-neutral-800">
-								<span aria-hidden className="mt-2 h-1 w-1 shrink-0 rounded-full bg-blue-400" />
-								<span className="min-w-0 break-words">
-									<InlineText text={item} onNavigate={closeUpdateReader} />
-								</span>
-							</li>
-						))}
-					</ul>
-				</div>
-			))}
+			<ChangelogSections
+				release={release}
+				onNavigate={closeUpdateReader}
+				titleAs="h3"
+				textClassName="text-neutral-800"
+			/>
 		</section>
 	);
 }

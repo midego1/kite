@@ -18,6 +18,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Changed
 
 - The command palette (Cmd/Ctrl+K) is now a search over the whole app: a floating search box with a results panel below it that lists pages, messages, contacts, actions, settings and the modules that are on (Calendar, Money Watch, Drive, …) in a category column with a number key and a count each. Rows show a type badge, a subtitle (sender and date for mail, the address for a contact, the menu for a settings page) and their keyboard shortcut. Alt+1 to 9 switch categories, the arrow keys move, Enter opens, Esc closes, and Tab walks the search box, the categories and the list. On phones it fills the screen with the categories as a chip row. Mail is searched in the mailbox you are viewing with the same rules as the search field; a contact opens the mail from that address.
+  ![The command palette searching for "re", with categories on the left and results on the right](/changelog/2026-11-01-command-palette.webp)
 
 ## [2026.11.01.3] - 2026-11-01
 
@@ -31,6 +32,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Changed
 
 - The command center in the empty reading pane is laid out as cards again, in the app's own tokens: the counts that matter (unread, Screener, For you) are tiles with a large number that open their page; **Accounts**, **Quick actions**, **Needs attention**, Calendar's **Today** and Money Watch's renewals are cards on the panel fill with an icon, a title and a link, side by side when the pane is wide and one under the other when it is narrow. Accounts and the health rows show their state as a small pill, and a day or a week with nothing in it says so with a way into the Calendar or Money Watch. No migration.
+  ![The command center in light mode: unread and Screener tiles, Accounts, Quick actions, Needs attention, Today and Money Watch cards](/changelog/2026-11-01-command-center-light.webp)
+  ![The same command center in dark mode](/changelog/2026-11-01-command-center-dark.webp)
 
 ## [2026.11.01.1] - 2026-11-01
 

@@ -1,3 +1,4 @@
+import { isImageOnlyLine, splitChangelogImages } from "./changelog-image-utils";
 import type { ChangelogInline, ChangelogRelease, ChangelogSection } from "./types";
 
 /** Sections without a `###` heading of their own collect here. */
@@ -63,7 +64,8 @@ export function parseChangelog(markdown: string): ChangelogRelease[] {
 
 		const text = rawLine.trim();
 		if (!text || HORIZONTAL_RULE.test(text) || text.startsWith(">")) continue;
-		if (INDENTED.test(rawLine) && appendContinuation(release, text)) continue;
+		// An image on a line of its own belongs to the bullet above it, indented or not.
+		if ((INDENTED.test(rawLine) || isImageOnlyLine(text)) && appendContinuation(release, text)) continue;
 		appendItem(release, text.replace(LEADING_HASHES, ""));
 	}
 
@@ -75,7 +77,8 @@ export function changelogReleaseLabel(release: ChangelogRelease): string {
 	return release.name === "Unreleased" ? "Unreleased changes" : release.name;
 }
 
-const INLINE_PATTERN = /(`[^`]+`)|(\*\*[^*]+\*\*)|\[([^\]]+)\]\(([^)\s]+)\)/g;
+// `![alt](src)` is an image, never a link; the lookbehind keeps one that is not shown as literal text.
+const INLINE_PATTERN = /(`[^`]+`)|(\*\*[^*]+\*\*)|(?<!!)\[([^\]]+)\]\(([^)\s]+)\)/g;
 /** Absolute http(s) links open in a new tab. */
 const SAFE_HREF = /^https?:\/\/[^\s]+$/i;
 /**
@@ -95,7 +98,9 @@ export function isAppChangelogHref(href: string): boolean {
  * markup; a link that is neither plain http(s) nor an app path (`/settings/inbox`)
  * stays literal text, so a repository-relative file path never becomes a link.
  */
-export function parseInlineMarkdown(text: string): ChangelogInline[] {
+export function parseInlineMarkdown(source: string): ChangelogInline[] {
+	// Screenshots are drawn apart from the text (`splitChangelogImages`), so they are not part of it here.
+	const text = splitChangelogImages(source).text;
 	const tokens: ChangelogInline[] = [];
 	let consumed = 0;
 

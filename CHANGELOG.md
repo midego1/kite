@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.11.02.0] - 2026-11-02
+
+### Added
+
+- Release notes can show screenshots. In **What's new in Kite** (the version in the sidebar) and in the "Kite was updated" note, a change that comes with a picture shows a small thumbnail under its entry; click it for a larger view, step between a release's pictures with the left and right arrow keys, show it at its actual size, and close it with Escape. **Show images** in the dialog's header turns the thumbnails off in this browser (on by default, and it stays off after a reload); the pictures load only when the notes are opened. The command center and command palette releases already have theirs.
+  ![The What's new dialog with two thumbnails under the command center release, and the Show images switch in its header](/changelog/2026-11-02-whats-new-images.webp)
+- Folders can be renamed and deleted from the sidebar: a folder row has a **⋯** menu (also on right-click or the context-menu key, and in the collapsed sidebar) with **Rename** and **Delete**. Deleting asks where the folder's messages go, **Archive** (the default) or **Inbox**, and says how many inbox rules file mail into it; those rules are turned off, and the messages are moved before the folder is removed, so nothing is lost. If you are looking at the folder you delete, you land in the Inbox. A folder an import is still filing mail into cannot be deleted until the import ends. Needs full access to the mailbox. API: `PATCH` and `DELETE /api/folders/{id}`.
+
 ## [2026.11.01.5] - 2026-11-01
 
 ### Fixed

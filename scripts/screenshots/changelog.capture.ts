@@ -27,6 +27,33 @@ type Shot = {
 };
 
 const SHOTS: Shot[] = [
+	...(["light", "dark"] as const).map(
+		(theme): Shot => ({
+			name: `2026-11-02-calendar-frame-${theme}`,
+			theme,
+			viewport: { width: 1280, height: 800 },
+			open: async (page) => {
+				await page.goto("/calendar");
+				await expect(page.getByRole("button", { name: "New event" })).toBeVisible();
+				await expect(page.getByRole("navigation", { name: "Calendar sections" })).toBeVisible();
+				await expect(page.locator("[data-upcoming-events]").getByRole("button").first()).toBeVisible();
+				return page;
+			},
+		}),
+	),
+	...(["light", "dark"] as const).map(
+		(theme): Shot => ({
+			name: `2026-11-02-drive-frame-${theme}`,
+			theme,
+			viewport: { width: 1280, height: 800 },
+			open: async (page) => {
+				await page.goto("/drive");
+				await expect(page.getByRole("complementary", { name: "Drive menu" })).toBeVisible();
+				await expect(page.locator("[data-drive-item]").first()).toBeVisible();
+				return page;
+			},
+		}),
+	),
 	{
 		name: "2026-11-02-whats-new-images",
 		viewport: { width: 1100, height: 760 },

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { mobilePrimaryActionClass } from "@/components/page-header-utils";
+import { mobilePrimaryActionAboveNavClass } from "@/components/page-header-utils";
 import clsx from "clsx";
 import { CalendarDays, Check, Clock3, Copy, ExternalLink, MapPin, MoreHorizontal, Plus } from "lucide-react";
 import toast from "react-hot-toast";
@@ -10,8 +10,7 @@ import { Button } from "@/components/ui/button";
 import { RouteLoadingBarPortal } from "@/components/route-loading-bar-portal";
 import { authFetch } from "@/lib/auth/client";
 import { getUserTimeZone } from "@/lib/time/utils";
-import { useSidebar } from "@/components/sidebar-state";
-import { UpcomingSidebar } from "../../(calendar)/upcoming-sidebar";
+import { CalendarPanels } from "../../(calendar)/calendar-panels";
 import { BookingEditor } from "./booking-editor";
 import { BookingListSkeleton } from "./booking-list-skeleton";
 import { useBookingEventFromUrl } from "./use-event-from-url";
@@ -22,8 +21,6 @@ import { requestConfirmation } from "@/components/ui/confirm-dialog-utils";
 import { EmptyState } from "@/components/ui/page";
 
 export default function BookingsPage() {
-	const { minimal: sidebarMinimal, mobile } = useSidebar();
-	const minimal = sidebarMinimal || mobile;
 	const [events, setEvents] = useState<BookingEvent[]>([]);
 	const [username, setUsername] = useState("");
 	const [hosts, setHosts] = useState<BookingHost[]>([]);
@@ -194,15 +191,9 @@ export default function BookingsPage() {
 	}
 
 	return (
-		<div
-			className={clsx(
-				"flex h-full min-h-0 flex-col bg-[#f6f8fc] md:px-2 md:pb-2 transition-[gap] duration-200 ease-in-out motion-reduce:transition-none lg:flex-row",
-				minimal ? "gap-0" : "gap-2",
-			)}
-		>
+		<CalendarPanels>
 			{loading && <RouteLoadingBarPortal />}
-			<UpcomingSidebar />
-			<section className="min-h-0 min-w-0 flex-1 overflow-hidden overscroll-contain bg-white max-md:rounded-t-xl md:rounded-xl md:border md:border-neutral-200 md:shadow-xs">
+			<section className="min-h-0 min-w-0 flex-1 overflow-hidden overscroll-contain">
 				<div className="flex h-full min-h-0 min-w-0">
 					<div className="min-w-0 flex-1 overflow-y-auto overscroll-contain scrollbar-gutter-stable">
 						<div className="mx-auto max-w-6xl px-5 md:px-8">
@@ -229,7 +220,7 @@ export default function BookingsPage() {
 											type="button"
 											onClick={startCreate}
 											disabled={!currentUserId}
-											className={mobilePrimaryActionClass}
+											className={mobilePrimaryActionAboveNavClass}
 										>
 											<Plus size={18} />
 											New event
@@ -400,6 +391,6 @@ export default function BookingsPage() {
 					)}
 				</div>
 			</section>
-		</div>
+		</CalendarPanels>
 	);
 }

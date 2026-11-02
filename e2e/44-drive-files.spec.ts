@@ -171,21 +171,26 @@ test("Save to Drive from a message attachment puts it in the chosen folder, and 
 	}
 });
 
-test("Drive's menu leads back to the inbox in one click, also as the icon rail", async ({ browser }) => {
+test("Drive sits in the app frame: the mail menu leads back to the inbox, also as the icon rail", async ({
+	browser,
+}) => {
 	const admin = await apiContext(STORAGE_STATE);
 	const account = await driveAccount(admin, "drvback");
 	const { context, page } = await signedInPage(browser, account);
 	try {
 		await page.goto("/drive");
-		const menu = page.getByRole("group", { name: "Mail" });
-		await menu.getByRole("link", { name: "Inbox" }).click();
+		// The Drive views have their own menu beside the list; the sidebar is the mail menu, as on every page.
+		const views = page.getByRole("complementary", { name: "Drive menu" });
+		await expect(views.getByRole("link", { name: "My Drive" })).toHaveAttribute("aria-current", "page");
+		await expect(views.getByRole("link", { name: "Trash" })).toHaveAttribute("href", "/drive/trash");
+		const menu = page.getByRole("navigation").first();
+		await menu.getByRole("link", { name: /^Inbox\b/ }).click();
 		await expect(page).toHaveURL(/\/inbox$/);
 
 		await page.goto("/drive");
 		await page.getByRole("button", { name: "Collapse menu" }).click();
 		await expect(page.getByRole("button", { name: "Expand menu" })).toBeVisible();
-		const railInbox = page.getByRole("group", { name: "Mail" }).getByRole("link", { name: "Inbox" });
-		await expect(railInbox).toHaveAttribute("title", "Inbox");
+		const railInbox = page.getByRole("navigation").first().getByRole("link", { name: "Inbox", exact: true });
 		await railInbox.click();
 		await expect(page).toHaveURL(/\/inbox$/);
 		await page.getByRole("button", { name: "Expand menu" }).click();

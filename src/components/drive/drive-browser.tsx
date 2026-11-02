@@ -17,7 +17,6 @@ import type { DriveDialog, DriveListing, DriveListingView } from "./drive-types"
 import { DriveUploadPanel } from "./drive-upload-panel";
 import {
 	attachmentNeedsReview,
-	DRIVE_COMMAND_EVENT,
 	DRIVE_VIEW_TITLES,
 	driveFileUrl,
 	isSelectable,
@@ -220,11 +219,6 @@ function useDriveCommands(canWrite: boolean, openDialog: (dialog: DriveDialog) =
 		},
 		[canWrite, openDialog],
 	);
-	useEffect(() => {
-		const listener = (event: Event) => onCommand((event as CustomEvent<DriveCommand>).detail);
-		window.addEventListener(DRIVE_COMMAND_EVENT, listener);
-		return () => window.removeEventListener(DRIVE_COMMAND_EVENT, listener);
-	}, [onCommand]);
 	return { fileInput, folderInput, onCommand };
 }
 

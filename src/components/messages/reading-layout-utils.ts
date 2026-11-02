@@ -15,9 +15,6 @@ export const READING_LAYOUT_CHANGE_EVENT = "kite:reading-layout-changed";
 export const DEFAULT_READING_PANE_MODE: ReadingPaneMode = "right";
 export const DEFAULT_MESSAGE_DENSITY: MessageListDensity = "default";
 
-/** Viewports narrower than Tailwind's `lg` breakpoint always read in one column. */
-export const WIDE_READING_QUERY = "(min-width: 1024px)";
-
 export const READING_PANE_OPTIONS: ReadingLayoutOption<ReadingPaneMode>[] = [
 	{ value: "none", label: "No split", description: "The list fills the page and opening an email replaces it." },
 	{ value: "right", label: "Right of inbox", description: "The list stays on the left and emails open beside it." },
@@ -51,10 +48,6 @@ export function parseReadingPaneMode(stored: string | null, legacyTwoColumn: str
 
 export function parseMessageListDensity(stored: string | null): MessageListDensity {
 	return isMessageListDensity(stored) ? stored : DEFAULT_MESSAGE_DENSITY;
-}
-
-export function getEffectiveReadingPaneMode(mode: ReadingPaneMode, wideViewport: boolean): ReadingPaneMode {
-	return wideViewport ? mode : "none";
 }
 
 /** Row spacing for the stacked rows of the list beside a reading pane. */

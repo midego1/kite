@@ -8,7 +8,6 @@ import { useAssistantOpen } from "@/components/agent/assistant-open-state";
 import { readColumnWidth, readInitialColumnWidth, saveColumnWidth } from "@/components/column-width-preferences";
 import { queueLayoutSave } from "@/components/layout-preferences-client";
 import { LAYOUT_PREFERENCES_APPLIED_EVENT } from "@/components/layout-preferences-utils";
-import { LIST_HEIGHT_LIMITS, LIST_WIDTH_LIMITS } from "@/lib/preferences/layout-utils";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup, usePanelRef } from "@/components/ui/resizable";
 import { layoutPixels, pixelsPerPercent } from "@/components/ui/resizable-utils";
 import { useSyncedPanel } from "@/components/ui/use-synced-panel";
@@ -30,16 +29,13 @@ import {
 	saveMessageListWithAssistant,
 } from "./message-list-visibility-utils";
 import { ReadingPaneEmptyState } from "./reading-pane-empty-state";
-import { getEffectiveReadingPaneMode } from "./reading-layout-utils";
-import { useReadingPaneMode, useWideReadingViewport } from "./use-reading-layout";
+import { LIST_HEIGHT, LIST_WIDTH, foldHingeStyle, foldListBounds, useFoldSplit } from "./use-fold-split";
 import { getSelectionToolbarFolder } from "./utils";
 import type { BulkSelectionAction, MessageListVisibility, MessageSplitLayoutProps, SelectedMessage } from "./types";
 import { BootStep } from "@/components/boot-step";
 
 // The list and the reader are separate rounded panels on the page background, a few pixels apart.
 const PANEL_CLASS = "rounded-xl border border-neutral-200 shadow-xs";
-const LIST_WIDTH = { fallback: 360, ...LIST_WIDTH_LIMITS, reserved: 280 };
-const LIST_HEIGHT = { fallback: 320, ...LIST_HEIGHT_LIMITS, reserved: 200 };
 // Panel ids are DOM ids too, so they carry a prefix.
 const LIST_PANEL_ID = "kite-message-list-panel";
 
@@ -101,11 +97,7 @@ export function MessageSplitLayout({ children, config }: MessageSplitLayoutProps
 	const [listWidth, setListWidth] = useState(LIST_WIDTH.fallback);
 	const [listHeight, setListHeight] = useState(LIST_HEIGHT.fallback);
 	const [manualListVisible, setManualListVisible] = useState(true);
-	const [preferredMode] = useReadingPaneMode();
-	const wideViewport = useWideReadingViewport();
-	const mode = getEffectiveReadingPaneMode(preferredMode, wideViewport);
-	const split = mode !== "none";
-	const below = mode === "below";
+	const { mode, groupKey, split, below, hinge, groupLeft, setMeasured, hingeListWidth } = useFoldSplit();
 	const bulkActionRef = useRef<BulkSelectionAction | null>(null);
 	const listPanelRef = usePanelRef();
 	const { userId } = useSidebar();
@@ -132,8 +124,10 @@ export function MessageSplitLayout({ children, config }: MessageSplitLayoutProps
 	const [assistantListShown, setAssistantListShown] = useState(false);
 	// The hide-list toggle lives in the open message's header, so with nothing open the list always shows.
 	const listVisible = split && (!selectedMessageId || (manualListVisible && (!assistantOpen || assistantListShown)));
-	const listSize = below ? listHeight : listWidth;
 	const listLimits = below ? LIST_HEIGHT : LIST_WIDTH;
+	const { min: listMinSize, max: listMaxSize } = foldListBounds(listLimits, hingeListWidth);
+	// Beside a hinge the list takes the first screen, whatever width was saved; the saved width stays for other devices.
+	const listSize = hingeListWidth === null ? (below ? listHeight : listWidth) : listMaxSize;
 	const changedByPanel = useSyncedPanel(listPanelRef, !listVisible, listSize);
 	// Pixels per percent of the group, as the list last reported, to read pixel sizes from a layout.
 	const groupScale = useRef(1);
@@ -189,8 +183,16 @@ export function MessageSplitLayout({ children, config }: MessageSplitLayoutProps
 		saveColumnWidth(userId, "message-list-height", savedHeight);
 	}, [userId]);
 
+	// A zero-height stand-in for the panes' width, which decides whether two panes fit; it stays put when they change.
+	const measure = <div ref={setMeasured} aria-hidden className="pointer-events-none h-0 w-full shrink-0" />;
+
 	if (!split && !selectedMessageId && !updateReaderOpen)
-		return <UpdateReaderHostContext.Provider value>{children}</UpdateReaderHostContext.Provider>;
+		return (
+			<UpdateReaderHostContext.Provider value>
+				{measure}
+				{children}
+			</UpdateReaderHostContext.Provider>
+		);
 
 	function setListVisible(visible: boolean) {
 		if (assistantOpen) {
@@ -223,6 +225,9 @@ export function MessageSplitLayout({ children, config }: MessageSplitLayoutProps
 		if (below) setListHeight(next);
 		else setListWidth(next);
 	}
+
+	// A hidden list has no handle, and neither does a list that fills the first screen beside a hinge.
+	const handleOff = !listVisible || hinge !== null;
 
 	const visibility: MessageListVisibility = {
 		visible: listVisible,
@@ -266,22 +271,28 @@ export function MessageSplitLayout({ children, config }: MessageSplitLayoutProps
 
 	if (!split)
 		return (
-			<div className="h-full min-h-0 overflow-hidden">
-				<MessageFolderTitle config={config} />
-				{detail}
-			</div>
+			<>
+				{measure}
+				<div className="h-full min-h-0 overflow-hidden">
+					<MessageFolderTitle config={config} />
+					{detail}
+				</div>
+			</>
 		);
 
 	return (
 		<UpdateReaderHostContext.Provider value>
+			{measure}
 			<ResizablePanelGroup
-				key={mode}
+				key={groupKey}
 				id={`kite-message-layout-${mode}`}
 				orientation={below ? "vertical" : "horizontal"}
 				data-reading-pane={mode}
+				data-fold-hinge={hinge ? hinge.orientation : undefined}
 				// The page panel is a flex column while the split view shows (dashboard layout), so the group fills it by
 				// stretching as well as by its height, and the list can never grow the page.
-				className="min-h-0 flex-1 overflow-hidden"
+				className={clsx("min-h-0 flex-1 overflow-hidden", hinge && "fold-hinge")}
+				style={foldHingeStyle(hinge, groupLeft, listVisible)}
 				onLayoutChanged={(layout, meta) => {
 					if (meta.isUserInteraction) storeListSize(layoutPixels(layout[LIST_PANEL_ID], groupScale.current));
 				}}
@@ -292,8 +303,8 @@ export function MessageSplitLayout({ children, config }: MessageSplitLayoutProps
 					collapsible
 					collapsedSize={0}
 					collapsedThreshold={listLimits.min}
-					minSize={listLimits.min}
-					maxSize={listLimits.max}
+					minSize={listMinSize}
+					maxSize={listMaxSize}
 					defaultSize={listVisible ? listSize : 0}
 					groupResizeBehavior="preserve-pixel-size"
 					onResize={(size) => {
@@ -326,12 +337,12 @@ export function MessageSplitLayout({ children, config }: MessageSplitLayoutProps
 				<ResizableHandle
 					aria-label={below ? "Resize message list height" : "Resize message list"}
 					// A hidden list has no handle: it is not a tab stop, and arrow keys cannot drag the list back open.
-					disabled={!listVisible}
-					aria-hidden={listVisible ? undefined : true}
+					disabled={handleOff}
+					aria-hidden={handleOff ? true : undefined}
 					className={clsx(
 						// The handle sits in the gap between the two panels.
 						"bg-transparent aria-[orientation=horizontal]:my-1 aria-[orientation=vertical]:mx-1",
-						!listVisible && "pointer-events-none opacity-0",
+						handleOff && "pointer-events-none opacity-0",
 					)}
 				/>
 				<ResizablePanel id="kite-reader-panel" minSize={listLimits.reserved}>

@@ -12,6 +12,7 @@ import { NewMessagePopup } from "@/components/new-message-popup";
 import { ThemeSync } from "@/components/theme-sync";
 import { UpdateAvailableHost } from "@/components/update-available-host";
 import { LayoutPreferencesSync } from "@/components/layout-preferences-sync";
+import { FoldPostureSync } from "@/components/fold-posture-sync";
 import { ConfirmDialogHost } from "@/components/ui/confirm-dialog";
 import { toasterProps } from "@/components/ui/toast-styles";
 import { useToastsAtTop } from "@/components/ui/toast-zone";
@@ -75,6 +76,7 @@ export function Providers({ children, initialBranding }: { children: React.React
 					{children}
 				</TooltipProvider>
 				<ThemeSync />
+				<FoldPostureSync />
 				<ConfirmDialogHost />
 				<CopyCodeHost />
 				<Toaster {...toasterProps(toastsAtTop)} />

@@ -7,10 +7,11 @@ import { Link2, Plus } from "lucide-react";
 import { useSelectedMailbox } from "@/components/mailbox-provider";
 import { MAILBOXES_CHANGED_EVENT } from "@/components/mailbox-provider-utils";
 import { useModules } from "@/components/modules/modules-context";
-import { SUCCESS_NOTICE_CLASS, WARNING_NOTICE_CLASS } from "@/components/notice-styles";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/components/ui/confirm-dialog";
+import { List, ListRow, ListRowDetail, ListRowTitle } from "@/components/ui/list";
+import { Notice } from "@/components/ui/notice";
 import { EmptyState, PageHeader } from "@/components/ui/page";
 import type { ExternalAccountView } from "@/lib/external-accounts/types";
 import { AccountFormDialog } from "./account-form-dialog";
@@ -76,11 +77,7 @@ export function ConnectedAccountsSettings() {
 					)
 				}
 			/>
-			{data?.refusalText && (
-				<p role="status" className={WARNING_NOTICE_CLASS}>
-					{data.refusalText}
-				</p>
-			)}
+			{data?.refusalText && <Notice tone="warning">{data.refusalText}</Notice>}
 			{error && (
 				<p role="alert" className="text-sm text-red-600">
 					{error.message}
@@ -113,20 +110,15 @@ export function ConnectedAccountsSettings() {
 function ConnectedNotice({ text, accountId }: { text: string; accountId?: string }) {
 	const { isEnabled } = useModules();
 	return (
-		<p role="status" className={SUCCESS_NOTICE_CLASS}>
+		<Notice tone="success">
 			{text}
 			{accountId && isEnabled("import") && (
 				<>
 					{" "}
-					<Link
-						className="underline underline-offset-2"
-						href={`/settings/import?account=${encodeURIComponent(accountId)}`}
-					>
-						Import existing mail
-					</Link>
+					<Link href={`/settings/import?account=${encodeURIComponent(accountId)}`}>Import existing mail</Link>
 				</>
 			)}
-		</p>
+		</Notice>
 	);
 }
 
@@ -149,20 +141,19 @@ function AccountList({
 			/>
 		);
 	return (
-		<ul
-			className="divide-y divide-neutral-200 rounded-xl border border-neutral-200 bg-white"
-			aria-label="Connected accounts"
-		>
-			{data.accounts.map((account) => (
-				<AccountRow
-					key={account.id}
-					account={account}
-					usable={!data.refusal}
-					onEdit={() => onEdit(account)}
-					onChanged={onChanged}
-				/>
-			))}
-		</ul>
+		<List asChild>
+			<ul aria-label="Connected accounts">
+				{data.accounts.map((account) => (
+					<AccountRow
+						key={account.id}
+						account={account}
+						usable={!data.refusal}
+						onEdit={() => onEdit(account)}
+						onChanged={onChanged}
+					/>
+				))}
+			</ul>
+		</List>
 	);
 }
 
@@ -226,10 +217,12 @@ function AccountRow({
 	};
 
 	return (
-		<li className="flex flex-wrap items-start justify-between gap-3 p-4" data-external-account={account.address}>
-			<AccountDetails account={account} message={message} usable={usable} onChanged={onChanged} />
-			<AccountActions account={account} usable={usable} busy={busy} actions={actions} />
-		</li>
+		<ListRow asChild className="flex-wrap items-start justify-between gap-3">
+			<li data-external-account={account.address}>
+				<AccountDetails account={account} message={message} usable={usable} onChanged={onChanged} />
+				<AccountActions account={account} usable={usable} busy={busy} actions={actions} />
+			</li>
+		</ListRow>
 	);
 }
 
@@ -250,14 +243,17 @@ function AccountDetails({
 	const syncText = syncStatusText(account, new Date());
 	return (
 		<div className="min-w-0 space-y-1">
-			<div className="flex flex-wrap items-center gap-2">
-				<p className="truncate text-sm font-semibold text-neutral-900">{account.label}</p>
-				<Badge variant={account.status === "active" ? "success" : "outline"}>{STATUS_LABELS[account.status]}</Badge>
-			</div>
-			<p className="text-xs text-neutral-500">
+			<ListRowTitle
+				badge={
+					<Badge variant={account.status === "active" ? "success" : "outline"}>{STATUS_LABELS[account.status]}</Badge>
+				}
+			>
+				{account.label}
+			</ListRowTitle>
+			<ListRowDetail>
 				{account.address} · {account.presetLabel}
 				{mailbox ? ` · Mail goes to ${mailbox.displayName || `${mailbox.localPart}@${mailbox.hostname}`}` : ""}
-			</p>
+			</ListRowDetail>
 			{hint && <p className="text-xs text-[#8a4b0a] dark:text-[#d4a35a]">{hint}</p>}
 			<AccountSending account={account} usable={usable} onChanged={onChanged} />
 			<AccountSpamSync account={account} usable={usable} onChanged={onChanged} />

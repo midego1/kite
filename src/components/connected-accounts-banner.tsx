@@ -8,7 +8,8 @@ import { useCurrentUser } from "@/hooks/use-current-user";
 import { MODULE_NOTICE_EVENT } from "@/hooks/message-realtime-utils";
 import type { ModuleNoticeEvent } from "@/hooks/message-realtime-types";
 import { authFetch } from "@/lib/auth/client";
-import { NOTICE_LINK_CLASS, WARNING_NOTICE_CLASS } from "./notice-styles";
+import { NOTICE_LINK_CLASS } from "./notice-styles";
+import { Notice } from "./ui/notice";
 import { connectedAccountsBannerContent, parseAttentionAccounts } from "./connected-accounts-banner-utils";
 
 // Under ["external-accounts"] so every change on the Connected accounts page refreshes the notice too.
@@ -48,22 +49,21 @@ export function ConnectedAccountsBanner() {
 	if (!data?.length) return null;
 	const content = connectedAccountsBannerContent(data);
 	return (
-		<section
+		<Notice
+			tone="warning"
+			compact
+			icon={Link2Off}
 			role="status"
 			aria-label="Connected accounts"
-			title={data.map((account) => account.address).join(", ")}
-			className={WARNING_NOTICE_CLASS}
+			tooltip={data.map((account) => account.address).join(", ")}
+			title={content.title}
 		>
-			<Link2Off className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-			<div className="min-w-0 flex-1">
-				<p className="truncate font-medium">{content.title}</p>
-				<p className="mt-0.5 line-clamp-2 opacity-90">{content.body}</p>
-				<div className="mt-1.5 flex items-center gap-3">
-					<Link href="/settings/connected-accounts" className={NOTICE_LINK_CLASS}>
-						{data.some((account) => account.status === "auth_failed") ? "Reconnect" : "Review"}
-					</Link>
-				</div>
+			<p className="line-clamp-2 opacity-90">{content.body}</p>
+			<div className="mt-1.5 flex items-center gap-3">
+				<Link href="/settings/connected-accounts" className={NOTICE_LINK_CLASS}>
+					{data.some((account) => account.status === "auth_failed") ? "Reconnect" : "Review"}
+				</Link>
 			</div>
-		</section>
+		</Notice>
 	);
 }

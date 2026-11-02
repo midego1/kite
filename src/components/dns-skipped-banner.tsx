@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { NOTICE_LINK_CLASS, WARNING_NOTICE_CLASS } from "./notice-styles";
+import { NOTICE_LINK_CLASS } from "./notice-styles";
+import { Notice } from "./ui/notice";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Globe2 } from "lucide-react";
@@ -58,38 +59,37 @@ export function DnsSkippedBanner() {
 	const content = dnsSkippedBannerContent(data);
 
 	return (
-		<section
+		<Notice
+			tone="warning"
+			compact
+			icon={Globe2}
 			role="status"
 			aria-label="DNS setup"
-			title={data.map((domain) => domain.hostname).join(", ")}
-			className={WARNING_NOTICE_CLASS}
+			tooltip={data.map((domain) => domain.hostname).join(", ")}
+			title={content.title}
 		>
-			<Globe2 className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-			<div className="min-w-0 flex-1">
-				<p className="truncate font-medium">{content.title}</p>
-				<p className="mt-0.5 line-clamp-2 opacity-90">
-					{error ? (
-						<span role="alert" className="text-red-600">
-							{error}
-						</span>
-					) : (
-						content.body
-					)}
-				</p>
-				<div className="mt-1.5 flex items-center gap-3">
-					<Link href="/domains" className={NOTICE_LINK_CLASS}>
-						Review
-					</Link>
-					<button
-						type="button"
-						className={NOTICE_LINK_CLASS}
-						disabled={markDone.isPending}
-						onClick={() => markDone.mutate(data)}
-					>
-						{markDone.isPending ? "Saving…" : "Mark as done"}
-					</button>
-				</div>
+			<p className="line-clamp-2 opacity-90">
+				{error ? (
+					<span role="alert" className="text-red-600">
+						{error}
+					</span>
+				) : (
+					content.body
+				)}
+			</p>
+			<div className="mt-1.5 flex items-center gap-3">
+				<Link href="/domains" className={NOTICE_LINK_CLASS}>
+					Review
+				</Link>
+				<button
+					type="button"
+					className={NOTICE_LINK_CLASS}
+					disabled={markDone.isPending}
+					onClick={() => markDone.mutate(data)}
+				>
+					{markDone.isPending ? "Saving…" : "Mark as done"}
+				</button>
 			</div>
-		</section>
+		</Notice>
 	);
 }

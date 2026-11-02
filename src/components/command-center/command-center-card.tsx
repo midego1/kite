@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 import { SUCCESS_TEXT_CLASS, WARNING_TEXT_CLASS } from "@/components/notice-styles";
+import { CardIcon } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import type { CommandCenterTone } from "./command-center-types";
 
@@ -133,11 +134,7 @@ export function CommandCenterCard({
 	return (
 		<section aria-label={title} data-testid={testId} className={cn(COMMAND_CENTER_CARD_CLASS, className)}>
 			<div className="mb-3 flex min-h-8 items-center gap-2.5">
-				{Icon && (
-					<span className={cn(COMMAND_CENTER_ICON_CLASS, "h-7 w-7 rounded-lg")}>
-						<Icon className="h-4 w-4" aria-hidden="true" />
-					</span>
-				)}
+				{Icon && <CardIcon icon={Icon} />}
 				<h3 className="min-w-0 flex-1 truncate text-sm font-semibold text-neutral-900">{title}</h3>
 				{action && (
 					<Link href={action.href} className={COMMAND_CENTER_LINK_CLASS}>

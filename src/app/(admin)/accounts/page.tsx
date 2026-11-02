@@ -12,7 +12,8 @@ import { Select } from "@/components/ui/select";
 import { authFetch } from "@/lib/auth/client";
 import { ProgressiveAvatarImage } from "@/components/progressive-avatar-image";
 import { getAvatarColorStyle } from "@/lib/avatar-colors";
-import { List, ListRow } from "@/components/ui/list";
+import { Badge } from "@/components/ui/badge";
+import { List, ListRow, ListRowDetail, ListRowTitle } from "@/components/ui/list";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { AccountAliases } from "./account-aliases";
 import { PageHeader } from "@/components/ui/page";
@@ -120,7 +121,7 @@ export default function AccountsPage() {
 							<>
 								<span
 									style={getAvatarColorStyle(account.email)}
-									className="relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full font-semibold duration-200"
+									className="relative flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full text-sm font-medium duration-200"
 								>
 									{account.name.charAt(0).toUpperCase()}
 									{account.hasAvatar && (
@@ -131,16 +132,17 @@ export default function AccountsPage() {
 										/>
 									)}
 								</span>
-								<span className="min-w-0">
-									<span className="flex items-center gap-2">
-										<span className="truncate font-semibold text-neutral-900">{account.name}</span>
-										<span
-											className={`rounded-full px-2 py-0.5 text-xs font-medium capitalize ${account.isPrimaryAdmin ? "bg-amber-100 text-amber-800" : "bg-neutral-100 text-neutral-600"}`}
-										>
-											{account.isPrimaryAdmin ? "Primary admin" : account.role}
-										</span>
-									</span>
-									<span className="block truncate text-sm text-neutral-500">{account.email}</span>
+								<span className="min-w-0 space-y-1">
+									<ListRowTitle
+										badge={
+											<Badge variant={account.isPrimaryAdmin ? "warning" : "secondary"}>
+												{account.isPrimaryAdmin ? "Primary admin" : account.role === "admin" ? "Admin" : "User"}
+											</Badge>
+										}
+									>
+										{account.name}
+									</ListRowTitle>
+									<ListRowDetail>{account.email}</ListRowDetail>
 								</span>
 							</>
 						);

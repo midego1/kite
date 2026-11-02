@@ -3,8 +3,8 @@
 import type { FormEvent } from "react";
 import { useState } from "react";
 import { useSelectedMailbox, type MailboxOption } from "@/components/mailbox-provider";
-import { WARNING_NOTICE_CLASS } from "@/components/notice-styles";
 import { Button } from "@/components/ui/button";
+import { Notice } from "@/components/ui/notice";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -107,7 +107,7 @@ export function AccountFormDialog({
 					</div>
 					<ProviderFields form={form} setForm={setForm} presets={presets} preset={preset} />
 					{preset?.passwordSignIn === false && onForwardInstead && (
-						<p className={WARNING_NOTICE_CLASS}>
+						<Notice tone="warning" compact icon={false} role="none">
 							Forward this account&apos;s mail to Kite instead: it needs no password.{" "}
 							<button
 								type="button"
@@ -116,7 +116,7 @@ export function AccountFormDialog({
 							>
 								Set up forwarding
 							</button>
-						</p>
+						</Notice>
 					)}
 					{form.preset === "other" && <ServerFields form={form} setForm={setForm} />}
 					{preset?.passwordSignIn !== false && (
@@ -125,9 +125,9 @@ export function AccountFormDialog({
 					<MailboxField form={form} setForm={setForm} mailboxes={managed} />
 					<IntervalField form={form} setForm={setForm} />
 					{mailbox?.type === "shared" && (
-						<p className={WARNING_NOTICE_CLASS}>
+						<Notice tone="warning" compact icon={false} role="none">
 							Everyone with access to {mailbox.displayName || mailboxAddress(mailbox)} will see mail from this account.
-						</p>
+						</Notice>
 					)}
 					{error && (
 						<p

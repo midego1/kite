@@ -73,6 +73,15 @@ export const compareRows: HomeCompareRow[] = [
 		],
 	},
 	{
+		label: "Deliverability help",
+		cells: [
+			"Documentation only",
+			"Documentation",
+			"Not applicable",
+			"The strongest of these: support, reputation management and spam filtering at scale",
+		],
+	},
+	{
 		label: "Best when",
 		cells: [
 			"You want an inbox you control, with an API and no license keys",

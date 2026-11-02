@@ -25,6 +25,18 @@ export async function generateMetadata(): Promise<Metadata> {
 	return {
 		title: branding.appName,
 		description: `${branding.appName} is a self-hosted webmail app on Cloudflare Workers. It receives through Email Routing and sends through Cloudflare, Resend or Amazon SES. Your mail stays in your D1 database and R2 bucket. Every feature is free. Early beta.`,
+		keywords: [
+			"cloudflare",
+			"cloudflare-workers",
+			"d1",
+			"email",
+			"email-client",
+			"jmap",
+			"nextjs",
+			"r2",
+			"self-hosted",
+			"webmail",
+		],
 		icons: { icon: branding.hasCustomIcon ? "/api/branding/icon" : "/icon-96.png" },
 	};
 }

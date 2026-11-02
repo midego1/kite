@@ -101,9 +101,11 @@ test.describe("visitor", () => {
 		await expect(compare.getByRole("columnheader", { name: "Mailflare" })).toBeVisible();
 		await expect(compare.getByRole("columnheader", { name: "Hosted inboxes" })).toBeVisible();
 		await expect(compare.getByRole("rowheader", { name: "Maturity" })).toBeVisible();
+		await expect(compare.getByRole("rowheader", { name: "Deliverability help" })).toBeVisible();
 		await expect(compare.getByText("Young project, small community")).toBeVisible();
+		await expect(compare.getByText(/spam filtering at scale/)).toBeVisible();
 
-		const limits = page.getByRole("region", { name: "What's missing today" });
+		const limits = page.getByRole("region", { name: "Early beta: what's missing today" });
 		await expect(limits.getByText("No published third-party security audit.")).toBeVisible();
 		await expect(limits.getByRole("link", { name: "See all known limitations" })).toHaveAttribute(
 			"href",

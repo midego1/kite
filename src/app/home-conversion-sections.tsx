@@ -119,7 +119,9 @@ export function HomeDeploy({ appName }: HomeSectionProps) {
 						</a>
 					</div>
 					<div className="min-w-0 rounded-2xl border border-neutral-200 p-6">
-						<h3 className="text-lg font-semibold tracking-tight text-neutral-950">Or hand it to a coding agent</h3>
+						<h3 className="text-lg font-semibold tracking-tight text-neutral-950">
+							Or paste the deploy prompt into a coding agent
+						</h3>
 						<details suppressHydrationWarning className="group mt-2">
 							<summary className="cursor-pointer list-none text-sm font-semibold text-blue-700 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 [&::-webkit-details-marker]:hidden">
 								Show the deploy prompt
@@ -293,12 +295,12 @@ export function HomeOpen() {
 export function HomeLimits() {
 	return (
 		<section id="limits" aria-labelledby="home-limits-heading" className="mx-auto max-w-3xl px-4 py-16 sm:px-6 lg:px-8">
-			<div className="text-center">
-				<p className="text-sm font-semibold text-blue-700">Early beta</p>
-				<h2 id="home-limits-heading" className="mt-2 text-3xl font-bold tracking-tight text-neutral-950 sm:text-4xl">
-					What&apos;s missing today
-				</h2>
-			</div>
+			<h2
+				id="home-limits-heading"
+				className="text-center text-3xl font-bold tracking-tight text-neutral-950 sm:text-4xl"
+			>
+				Early beta: what&apos;s missing today
+			</h2>
 			<ul className="mt-8 space-y-3">
 				{limitations.map((item) => (
 					<li key={item} className="flex gap-3 text-sm leading-6 text-neutral-700">

@@ -43,17 +43,16 @@ export const featureThemes: HomeFeatureTheme[] = [
 		id: "inbox",
 		icon: Inbox,
 		title: "A real inbox, not just forwarding",
-		summary: "Threads, search, folders, stars, snooze, archive, and personal or shared mailboxes, in one inbox.",
-		points: ["Resizable panes, Gmail-style keys and a command palette.", "Undo send, for the message you regret."],
+		summary:
+			"Threads, search, folders, stars, snooze, archive, and personal or shared mailboxes, all in one unified inbox.",
+		points: ["Resizable panes, Gmail-style keys and a Cmd+K palette."],
 	},
 	{
 		id: "providers",
 		icon: Cloud,
 		title: "Pick a provider per domain",
 		summary: "Each domain receives and sends through Cloudflare, Resend or Amazon SES.",
-		points: [
-			"Email Routing and DNS are set up on Cloudflare. Existing MX records are replaced only after you confirm.",
-		],
+		points: ["Email Routing and DNS are set up on Cloudflare, and it asks before it replaces existing MX records."],
 	},
 	{
 		id: "calendar",
@@ -61,8 +60,8 @@ export const featureThemes: HomeFeatureTheme[] = [
 		title: "Calendar, booking pages and Drive",
 		summary: "Day, week and month views, invitations by email, and public booking links.",
 		points: [
-			"Files and folders sit next to your mail, with sharing and public links that expire.",
-			"Each module can be switched off. What is off disappears, and nothing is deleted.",
+			"Files and folders sit next to your mail, with sharing and expiring public links.",
+			"Each module can be switched off.",
 		],
 	},
 	{
@@ -74,6 +73,7 @@ export const featureThemes: HomeFeatureTheme[] = [
 		points: [
 			"Sessions live in HttpOnly cookies, and provider keys are encrypted with AES-GCM.",
 			"A local spam filter learns from you, phishing warnings flag risky mail, and a Screener holds first-time senders.",
+			"Undo send gives you a moment to take a message back.",
 		],
 	},
 	{

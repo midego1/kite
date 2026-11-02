@@ -11,10 +11,16 @@ export const FOLDED_VIEWPORT_QUERY = `(max-width: ${FOLDED_MAX_WIDTH}px)`;
 const PHONE_SHELL_MAX_WIDTH = 767;
 export const PHONE_SHELL_VIEWPORT_QUERY = `(max-width: ${PHONE_SHELL_MAX_WIDTH}px)`;
 /** Tailwind's `lg` breakpoint, where the desktop reading pane has always started. */
-export const DESKTOP_MIN_WIDTH = 1024;
+const DESKTOP_MIN_WIDTH = 1024;
 /** A touch device as wide as this is usually a tablet or an unfolded foldable, not a desktop. */
 const UNFOLDED_MAX_WIDTH = 1100;
+/** A touch screen this short is a phone held sideways, which is too low for two panes. */
+const SHORT_MAX_HEIGHT = 500;
 
+/** The viewport thresholds the posture depends on; the hook only recomputes when one of these flips. */
+export const WIDE_VIEWPORT_QUERY = `(min-width: ${DESKTOP_MIN_WIDTH}px)`;
+export const TABLET_VIEWPORT_QUERY = `(max-width: ${UNFOLDED_MAX_WIDTH - 1}px)`;
+export const SHORT_VIEWPORT_QUERY = `(max-height: ${SHORT_MAX_HEIGHT}px)`;
 export const COARSE_POINTER_QUERY = "(pointer: coarse)";
 export const VIEWPORT_SEGMENTS_QUERY = "(horizontal-viewport-segments: 2)";
 export const LEGACY_SCREEN_SPANNING_QUERY = "(screen-spanning: single-fold-vertical)";
@@ -42,23 +48,25 @@ export interface FoldViewport {
 	/** What the device and the viewport say, before the override. */
 	basePosture: FoldPosture;
 	override: FoldLayoutPreference;
-	width: number;
+	/** At least the desktop width, where the reading-pane preference applies on a desktop. */
+	wide: boolean;
 	coarsePointer: boolean;
 	segments: FoldSegment[];
 	hinge: FoldHinge | null;
 }
 
-/** The posture from the viewport alone; a narrow screen is folded however the preference is set. */
+/** The posture from the device and the viewport; the per-browser override is applied on top of it. */
 export function resolveBaseFoldPosture(input: {
 	width: number;
+	height: number;
 	coarsePointer: boolean;
 	segmented: boolean;
 	legacySpanned: boolean;
 }): FoldPosture {
 	if (input.width <= FOLDED_MAX_WIDTH) return "folded";
 	if (input.segmented || input.legacySpanned) return "unfolded";
+	if (input.coarsePointer && input.height <= SHORT_MAX_HEIGHT) return "folded";
 	if (input.coarsePointer && input.width < UNFOLDED_MAX_WIDTH) return "unfolded";
-	if (input.width < DESKTOP_MIN_WIDTH) return "unfolded";
 	return "desktop";
 }
 
@@ -69,17 +77,19 @@ export function resolveFoldPosture(base: FoldPosture, override: FoldLayoutPrefer
 }
 
 /**
- * The list/reader split for a posture. Desktop keeps the user's reading-pane choice exactly as before; a
- * folded screen always shows one pane, and an unfolded one shows the list and reader side by side.
+ * The list/reader split for a posture. A folded screen shows one pane. An unfolded one keeps the user's
+ * reading-pane choice, except that "Always two panes" never ends up with a single pane. Desktop keeps the
+ * choice exactly as before, and only from the desktop width up.
  */
 export function resolveFoldReadingPane(
 	preference: "none" | "right" | "below",
 	posture: FoldPosture,
-	desktopWide: boolean,
+	wide: boolean,
+	override: FoldLayoutPreference = "auto",
 ): "none" | "right" | "below" {
 	if (posture === "folded") return "none";
-	if (posture === "unfolded") return "right";
-	return desktopWide ? preference : "none";
+	if (posture === "unfolded") return override === "two" && preference === "none" ? "right" : preference;
+	return wide ? preference : "none";
 }
 
 function validSegment(value: unknown): value is FoldSegment {
@@ -137,6 +147,7 @@ export function applyFoldPostureAttribute(posture: FoldPosture): void {
 export const foldPostureBootstrapScript = `(() => {
 	try {
 		const width = window.innerWidth || document.documentElement.clientWidth || ${DESKTOP_MIN_WIDTH};
+		const height = window.innerHeight || document.documentElement.clientHeight || ${SHORT_MAX_HEIGHT + 1};
 		const match = (query) => {
 			try {
 				return window.matchMedia(query).matches;
@@ -154,9 +165,13 @@ export const foldPostureBootstrapScript = `(() => {
 		const base =
 			width <= ${FOLDED_MAX_WIDTH}
 				? "folded"
-				: segmented || legacySpanned || (coarsePointer && width < ${UNFOLDED_MAX_WIDTH}) || width < ${DESKTOP_MIN_WIDTH}
+				: segmented || legacySpanned
 					? "unfolded"
-					: "desktop";
+					: coarsePointer && height <= ${SHORT_MAX_HEIGHT}
+						? "folded"
+						: coarsePointer && width < ${UNFOLDED_MAX_WIDTH}
+							? "unfolded"
+							: "desktop";
 		let saved = null;
 		try {
 			saved = localStorage.getItem(${JSON.stringify(FOLD_LAYOUT_STORAGE_KEY)});

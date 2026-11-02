@@ -88,7 +88,7 @@ export function AppearanceSettings() {
 					<PreferenceRow
 						preference={FOLD_LAYOUT_PREFERENCE}
 						label="Fold layout"
-						description="Auto shows one pane on a folded screen and the list beside the reader when the screen is unfolded. Always single pane and Always two panes force one or the other on any device."
+						description="Auto shows one pane on a folded screen and the list beside the reader when the screen is unfolded. Always single pane and Always two panes force one or the other on any device, when two panes fit."
 					/>
 				</SettingRows>
 			</SettingsCardSection>

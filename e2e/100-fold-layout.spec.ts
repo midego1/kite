@@ -8,7 +8,15 @@ import { chooseOption } from "./support/select";
 
 const FOLDED = { width: 390, height: 844 };
 const UNFOLDED = { width: 884, height: 1104 };
+const LANDSCAPE_PHONE = { width: 844, height: 390 };
+const NARROW_WINDOW = { width: 900, height: 800 };
+// The narrowest phone-shell width that still has room for the list and the reader.
+const TWO_PANES_MIN = { width: 700, height: 900 };
+const SMALL_TABLET = { width: 800, height: 1000 };
 const DESKTOP = { width: 1440, height: 900 };
+
+// A tablet or an unfolded foldable has a touch screen; a mouse window of the same width is just a narrow desktop.
+test.use({ hasTouch: true });
 
 let subject: string;
 
@@ -70,6 +78,102 @@ test("an unfolded tablet shows the list beside the reader", async ({ page }) => 
 	await expect(layout).not.toHaveAttribute("data-fold-hinge", /.+/);
 });
 
+test("an unfolded tablet keeps the No split and Below inbox choices", async ({ page }) => {
+	await page.setViewportSize(UNFOLDED);
+	// Only the first load: the later one must keep the choice made in between.
+	await page.addInitScript(() => {
+		if (!localStorage.getItem("kite-reading-pane")) localStorage.setItem("kite-reading-pane", "none");
+	});
+	await page.goto("/inbox");
+	await expectPosture(page, "unfolded");
+	await expect(page.locator("[data-reading-pane]")).toHaveCount(0);
+	await openMessage(page, subject);
+	await expect(page.getByRole("button", { name: "Back to Inbox" })).toBeVisible();
+
+	await page.evaluate(() => {
+		localStorage.setItem("kite-reading-pane", "below");
+		window.dispatchEvent(new Event("kite:reading-layout-changed"));
+	});
+	await page.goto("/inbox");
+	await expect(page.locator("[data-reading-pane]")).toHaveAttribute("data-reading-pane", "below");
+});
+
+test("the email list can be hidden and shown again below the desktop width", async ({ page }) => {
+	await page.setViewportSize(UNFOLDED);
+	await page.goto("/inbox");
+	await openMessage(page, subject);
+	const list = page.getByRole("main").locator("[data-density]");
+	await expect(list).toBeVisible();
+	await page.getByRole("button", { name: "Hide email list" }).click();
+	await expect(list).toBeHidden();
+	await page.getByRole("button", { name: "Show email list" }).click();
+	await expect(list).toBeVisible();
+});
+
+test("a phone held sideways keeps one pane", async ({ page }) => {
+	await page.setViewportSize(LANDSCAPE_PHONE);
+	await page.goto("/inbox");
+	await expectPosture(page, "folded");
+	await expect(page.locator("[data-reading-pane]")).toHaveCount(0);
+	await openMessage(page, subject);
+	await expect(page.getByRole("button", { name: "Back to Inbox" })).toBeVisible();
+});
+
+test("two panes that cannot fit fall back to one pane", async ({ page }) => {
+	// A small tablet next to the 260px sidebar leaves less than the list and reader need.
+	await page.setViewportSize(SMALL_TABLET);
+	await page.goto("/inbox");
+	await expectPosture(page, "unfolded");
+	await expect(page.locator("[data-reading-pane]")).toHaveCount(0);
+	await openMessage(page, subject);
+	await expect(page.getByRole("heading", { level: 1, name: subject })).toBeVisible();
+	await expect(page.getByRole("button", { name: "Back to Inbox" })).toBeVisible();
+});
+
+test.describe("a fold with a hinge", () => {
+	const FIRST = { left: 0, top: 0, width: 600, height: 900 };
+	const SECOND = { left: 640, top: 0, width: 600, height: 900 };
+
+	test.beforeEach(async ({ page }) => {
+		await page.setViewportSize({ width: 1240, height: 900 });
+		await page.addInitScript(
+			(segments) => {
+				Object.defineProperty(window, "viewport", { value: { segments }, configurable: true });
+			},
+			[FIRST, SECOND],
+		);
+	});
+
+	async function expectClearOfHinge(page: Page) {
+		const list = page.locator("#kite-message-list-panel");
+		const reader = page.locator("#kite-reader-panel");
+		await expect(page.locator("[data-reading-pane]")).toHaveAttribute("data-fold-hinge", "vertical");
+		await expect(async () => {
+			const listBox = await list.boundingBox();
+			const readerBox = await reader.boundingBox();
+			expect(readerBox).not.toBeNull();
+			expect(readerBox!.x).toBeGreaterThanOrEqual(SECOND.left - 1);
+			expect(readerBox!.x + readerBox!.width).toBeLessThanOrEqual(SECOND.left + SECOND.width + 1);
+			if (listBox && listBox.width > 0) expect(listBox.x + listBox.width).toBeLessThanOrEqual(FIRST.width + 1);
+		}).toPass();
+	}
+
+	test("the list stays on the first screen and the reader on the second", async ({ page }) => {
+		// A saved list width from the desktop would reach into the hinge.
+		await page.addInitScript(() => localStorage.setItem("kite-reading-pane", "right"));
+		await page.goto("/inbox");
+		await expectPosture(page, "unfolded");
+		await expectClearOfHinge(page);
+		await openMessage(page, subject);
+		await expect(page.getByRole("heading", { level: 1, name: subject })).toBeVisible();
+		await expectClearOfHinge(page);
+		await page.getByRole("button", { name: "Hide email list" }).click();
+		await expectClearOfHinge(page);
+		await page.getByRole("button", { name: "Show email list" }).click();
+		await expectClearOfHinge(page);
+	});
+});
+
 test("a desktop keeps the existing reading-pane preference", async ({ page }) => {
 	await page.setViewportSize(DESKTOP);
 	await page.goto("/inbox");
@@ -78,8 +182,19 @@ test("a desktop keeps the existing reading-pane preference", async ({ page }) =>
 	await expect(page.getByRole("button", { name: "Open menu" })).toHaveCount(0);
 });
 
+test.describe("a mouse window", () => {
+	test.use({ hasTouch: false });
+
+	test("is a narrow desktop and keeps one pane", async ({ page }) => {
+		await page.setViewportSize(NARROW_WINDOW);
+		await page.goto("/inbox");
+		await expectPosture(page, "desktop");
+		await expect(page.locator("[data-reading-pane]")).toHaveCount(0);
+	});
+});
+
 test("the Appearance setting forces one or two panes on any device", async ({ page }) => {
-	await page.setViewportSize(FOLDED);
+	await page.setViewportSize(TWO_PANES_MIN);
 	await chooseFoldLayout(page, "two");
 	await expectPosture(page, "unfolded");
 	await page.goto("/inbox");
@@ -87,6 +202,11 @@ test("the Appearance setting forces one or two panes on any device", async ({ pa
 	await openMessage(page, subject);
 	await expect(page.getByRole("heading", { level: 1, name: subject })).toBeVisible();
 	await expect(page.getByRole("main").locator("[data-density]").getByText(subject, { exact: true })).toBeVisible();
+
+	// On the cover screen itself there is no room for two panes, so the choice falls back to one.
+	await page.setViewportSize(FOLDED);
+	await expectPosture(page, "unfolded");
+	await expect(page.locator("[data-reading-pane]")).toHaveCount(0);
 
 	await page.setViewportSize(DESKTOP);
 	await chooseFoldLayout(page, "single");

@@ -86,6 +86,8 @@ export async function updateFolder(
 		...(patch.name !== undefined ? { name: patch.name } : {}),
 		...(patch.color !== undefined ? { color: patch.color } : {}),
 	};
+	// Nothing to write when the name is sent unchanged.
+	if (Object.keys(values).length === 0) return;
 	try {
 		await db
 			.update(folders)

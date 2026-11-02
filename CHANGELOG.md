@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.11.02.3] - 2026-11-02
+
+### Added
+
+- On a phone, a tab bar at the bottom now switches between Mail, Calendar, Drive and Money Watch, with More opening the full menu. It steps aside while you read a message or write one, and the sidebar returns on wider screens.
+  ![The phone tab bar under the inbox](/changelog/2026-11-02-mobile-tab-bar-light.webp)
+
+### Changed
+
+- The home page now leads with what you get, what sending costs, how this inbox compares with the earlier version, and what the early beta still lacks. Deploy is five steps, with the Docker command beside it.
+  ![The home page hero and the live inbox demo](/changelog/2026-11-02-home-landing.webp)
+
 ## [2026.11.02.2] - 2026-11-02
 
 ### Added

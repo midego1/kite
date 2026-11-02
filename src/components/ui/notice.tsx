@@ -14,7 +14,8 @@ const icons: Record<NoticeTone, LucideIcon> = {
 /**
  * An inline message on a page, in a card or in the sidebar: blue for information, green for a success, amber for
  * a warning and red for an error. Errors announce themselves (`role="alert"`); the others are a status, unless
- * the caller names the box as a landmark (`role="region"` with an `aria-label`, as the sidebar banners do).
+ * the caller names the box as a landmark (`role="region"` with an `aria-label`, as the sidebar banners do) or
+ * asks for no role at all (a note inside a dialog).
  * `compact` is the sidebar size: smaller type, tighter padding and the smaller radius.
  */
 export function Notice({
@@ -38,7 +39,8 @@ export function Notice({
 	compact?: boolean;
 	/** The HTML `title`, for the full list a truncated title stands for. */
 	tooltip?: string;
-	role?: "region" | "status" | "alert";
+	/** `"none"` for a plain note inside a dialog, which must not become a live region of its own. */
+	role?: "region" | "status" | "alert" | "none";
 	className?: string;
 	"aria-label"?: string;
 	"data-testid"?: string;
@@ -46,7 +48,7 @@ export function Notice({
 	const Icon = typeof icon === "boolean" ? icons[tone] : icon;
 	return (
 		<div
-			role={role ?? noticeRole(tone)}
+			role={role === "none" ? undefined : (role ?? noticeRole(tone))}
 			title={tooltip}
 			className={cn("flex items-start", noticeClass(tone, compact), className)}
 			{...props}

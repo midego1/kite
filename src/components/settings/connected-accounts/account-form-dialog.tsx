@@ -107,7 +107,7 @@ export function AccountFormDialog({
 					</div>
 					<ProviderFields form={form} setForm={setForm} presets={presets} preset={preset} />
 					{preset?.passwordSignIn === false && onForwardInstead && (
-						<Notice tone="warning" compact icon={false}>
+						<Notice tone="warning" compact icon={false} role="none">
 							Forward this account&apos;s mail to Kite instead: it needs no password.{" "}
 							<button
 								type="button"
@@ -125,7 +125,7 @@ export function AccountFormDialog({
 					<MailboxField form={form} setForm={setForm} mailboxes={managed} />
 					<IntervalField form={form} setForm={setForm} />
 					{mailbox?.type === "shared" && (
-						<Notice tone="warning" compact icon={false}>
+						<Notice tone="warning" compact icon={false} role="none">
 							Everyone with access to {mailbox.displayName || mailboxAddress(mailbox)} will see mail from this account.
 						</Notice>
 					)}

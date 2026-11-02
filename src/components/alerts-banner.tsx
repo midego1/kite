@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { TriangleAlert, X } from "lucide-react";
-import { NOTICE_LINK_CLASS } from "./notice-styles";
+import { NOTICE_LINK_CLASS, WARNING_HOVER_FILL_CLASS } from "./notice-styles";
 import { Notice } from "./ui/notice";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { authFetch } from "@/lib/auth/client";
@@ -61,7 +61,7 @@ export function AlertsBanner() {
 					type="button"
 					aria-label="Dismiss"
 					title="Dismiss"
-					className="-mr-1.5 -mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded hover:bg-[#f59e0b]/15"
+					className={`-mr-1.5 -mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded ${WARNING_HOVER_FILL_CLASS}`}
 					onClick={() => {
 						storeDismissedSignature(browserStorage(), signature);
 						setDismissed(signature);

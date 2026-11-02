@@ -1,6 +1,6 @@
 import * as React from "react";
 import type { LucideIcon } from "lucide-react";
-import { ERROR_TEXT_CLASS, WARNING_TEXT_CLASS } from "@/components/notice-styles";
+import { ERROR_FILL_CLASS, ERROR_TEXT_CLASS, WARNING_FILL_CLASS, WARNING_TEXT_CLASS } from "@/components/notice-styles";
 import { cn } from "@/lib/utils";
 
 export function Card({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
@@ -26,8 +26,8 @@ export function CardContent({ className, ...props }: React.HTMLAttributes<HTMLDi
 const CARD_ICON_TONE = {
 	/** The accent's faintest tint with the accent itself, as each style remaps them. */
 	neutral: "bg-blue-50 text-blue-600",
-	warning: `bg-[#f59e0b]/10 ${WARNING_TEXT_CLASS}`,
-	critical: `bg-[#ef4444]/10 ${ERROR_TEXT_CLASS}`,
+	warning: `${WARNING_FILL_CLASS} ${WARNING_TEXT_CLASS}`,
+	critical: `${ERROR_FILL_CLASS} ${ERROR_TEXT_CLASS}`,
 } as const;
 
 /**

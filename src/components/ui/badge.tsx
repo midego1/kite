@@ -1,5 +1,5 @@
 import { cva, type VariantProps } from "class-variance-authority";
-import { WARNING_TEXT_CLASS } from "@/components/notice-styles";
+import { WARNING_FILL_CLASS, WARNING_TEXT_CLASS } from "@/components/notice-styles";
 import { cn } from "@/lib/utils";
 
 const badgeVariants = cva(
@@ -8,7 +8,7 @@ const badgeVariants = cva(
 		variants: {
 			variant: {
 				success: "border-transparent bg-green-600/10 text-green-800",
-				warning: `border-transparent bg-[#f59e0b]/12 ${WARNING_TEXT_CLASS}`,
+				warning: `border-transparent ${WARNING_FILL_CLASS} ${WARNING_TEXT_CLASS}`,
 				default: "border-transparent bg-neutral-900 text-neutral-50",
 				secondary: "border-transparent bg-neutral-100 text-neutral-900",
 				outline: "border-neutral-200 bg-transparent text-neutral-700",

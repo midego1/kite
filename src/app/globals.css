@@ -2,8 +2,16 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 /* The home page shows its list and reader together unless the fold posture (fold-posture-utils.ts, set on <html> before
-   paint) says folded: a cover screen, a narrow window or a phone held sideways. */
-@custom-variant split (&:where(html:not([data-fold-posture="folded"]) *));
+   paint) says folded: a cover screen, a narrow window or a phone held sideways. The width floor is the one the posture
+   itself uses (FOLDED_MAX_WIDTH): a saved "Always two panes" still applies below it, and at 320 px the 280 px list would
+   leave the reader unusable with no way to scroll to it, so there it falls back to one pane, as use-fold-split.ts does. */
+@custom-variant split {
+	@media (min-width: 701px) {
+		&:where(html:not([data-fold-posture="folded"]) *) {
+			@slot;
+		}
+	}
+}
 
 :root {
 	/* Where toasts and the send bars sit: above the reply box (about 4.5rem tall) and the assistant button. */

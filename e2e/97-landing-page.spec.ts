@@ -682,6 +682,9 @@ test.describe("visitor", () => {
 		await expect(openEmail(page).getByText("fabrikam-invoice-2026-10.pdf")).toBeVisible();
 		await page.getByLabel("Search mail").fill("fabrikam");
 		await expect(page.getByRole("region", { name: "Search results" }).getByRole("listitem")).toHaveCount(1);
+		// The suggestion's draft text is indexed too.
+		await page.getByLabel("Search mail").fill("DNS step");
+		await expect(page.getByRole("region", { name: "Search results" }).getByRole("listitem")).toHaveCount(1);
 		await page.getByLabel("Search mail").fill("example");
 		expect(await page.getByRole("region", { name: "Search results" }).getByRole("listitem").count()).toBe(4);
 		await page.getByLabel("Search mail").fill("");

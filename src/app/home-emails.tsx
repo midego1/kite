@@ -58,8 +58,17 @@ function email(
 	sample?: HomeSample,
 ): Email {
 	const names = sample ? [sample.sender.name, sample.sender.address, "Example"] : [];
+	// The suggestion card's draft is part of what the open email shows, so the search box finds it too.
+	const suggestion = sample?.suggestion ? [sample.suggestion.text] : [];
 	return {
-		meta: { id, folder, subject, preview, text: [subject, preview, ...names, ...text].join(" "), sample },
+		meta: {
+			id,
+			folder,
+			subject,
+			preview,
+			text: [subject, preview, ...names, ...suggestion, ...text].join(" "),
+			sample,
+		},
 		body,
 	};
 }

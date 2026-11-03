@@ -80,7 +80,7 @@ export function HomeKiteArt({ className }: { className?: string }) {
 
 			{/* Centre lines of the spine and the spar, dash-dot as on a drawing sheet. */}
 			<g stroke={FAINT} strokeDasharray="14 3 2 3" {...fade(0.2)}>
-				<path d="M290 48 V566" />
+				<path d="M290 48 V800" />
 				<path d="M118 230 H462" />
 			</g>
 

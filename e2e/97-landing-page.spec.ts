@@ -225,7 +225,7 @@ test.describe("visitor", () => {
 
 		// Nothing moves: the headline settles in and the kite drifts only when motion is allowed.
 		const animated = await page
-			.locator(".home-rise, .home-kite, .home-string")
+			.locator(".home-rise, .home-trace, .home-fade, .home-flyline")
 			.evaluateAll((nodes) => nodes.map((node) => getComputedStyle(node).animationName));
 		expect(animated.length).toBeGreaterThan(0);
 		expect(animated.every((name) => name === "none")).toBe(true);

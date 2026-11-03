@@ -318,7 +318,7 @@ export function HomeFaq() {
 export function HomeClosing({ appName }: HomeSectionProps) {
 	return (
 		<section aria-labelledby="home-closing-heading" className="relative overflow-hidden border-t border-(--home-line)">
-			<HomeKiteArt className="pointer-events-none absolute -right-20 top-6 h-[88%] w-auto opacity-50 md:right-[4%] md:opacity-100" />
+			<HomeKiteArt className="pointer-events-none absolute right-0 top-[4%] hidden h-[92%] w-auto lg:block" />
 			<div className={`${PAGE_X} relative py-24 lg:py-40`}>
 				<h2
 					id="home-closing-heading"

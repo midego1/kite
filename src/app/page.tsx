@@ -91,8 +91,7 @@ export default async function HomePage() {
 
 				<main id="main">
 					<section aria-labelledby="home-hero-heading" className="relative overflow-x-clip">
-						<HomeKiteArt className="pointer-events-none absolute -right-24 top-0 h-[520px] w-auto opacity-40 sm:right-[-4%] md:right-0 md:h-[700px] md:opacity-60 xl:opacity-100" />
-						<div className={`${PAGE_X} relative pb-16 pt-14 md:pt-24 lg:pb-24`}>
+						<div className={`${PAGE_X} relative z-10 pb-10 pt-14 md:pt-24 lg:pb-24`}>
 							<h1
 								id="home-hero-heading"
 								className="home-rise max-w-[17em] text-balance text-[clamp(2.5rem,6.2vw,5.5rem)] font-medium leading-[1] tracking-[-0.04em]"
@@ -118,6 +117,7 @@ export default async function HomePage() {
 								</div>
 							</div>
 						</div>
+						<HomeKiteArt className="pointer-events-none relative mx-auto mb-16 block h-[460px] w-auto lg:absolute lg:right-0 lg:top-0 lg:mb-0 lg:h-[480px] min-[1200px]:h-[620px] xl:h-[720px]" />
 						<div className={`${PAGE_X} relative pb-20 lg:pb-32`}>
 							<div className="mb-4 flex flex-col gap-1 lg:flex-row lg:items-baseline lg:justify-between">
 								<h2 className={`${MONO} flex items-center gap-2 text-(--home-ink)`}>

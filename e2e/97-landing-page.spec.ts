@@ -710,6 +710,215 @@ test.describe("visitor", () => {
 		await expect(openEmail(page)).toHaveAttribute("id", "open");
 	});
 
+	test("two panes on an unfolded screen, one on a cover screen and a phone, in landscape too", async ({ browser }) => {
+		const shape = async (width: number, height: number, touch: boolean) => {
+			const context = await browser.newContext({
+				storageState: { cookies: [], origins: [] },
+				viewport: { width, height },
+				hasTouch: touch,
+				isMobile: touch && width < 900,
+			});
+			const page = await context.newPage();
+			await visit(page);
+			const panes = await page.evaluate(() => {
+				const shown = (selector: string) => {
+					const element = document.querySelector(selector);
+					return !!element && element.getBoundingClientRect().width > 0;
+				};
+				return {
+					posture: document.documentElement.dataset.foldPosture,
+					list: shown('[data-home-pane="list"]'),
+					reader: shown('[data-home-pane="reader"]'),
+				};
+			});
+			const scroll = await pageScroll(page);
+			await context.close();
+			return { ...panes, scroll };
+		};
+		// A cover screen and phones show one pane; the unfolded screens (touch, 701 to 1099 wide) show list and reader.
+		for (const [width, height] of [
+			[344, 882],
+			[390, 844],
+			[430, 932],
+			[673, 841],
+		]) {
+			const result = await shape(width, height, true);
+			expect(result.posture, `${width}`).toBe("folded");
+			expect(result.list).toBe(false);
+			expect(result.reader).toBe(true);
+			expect(result.scroll.vertical).toBeLessThanOrEqual(0);
+		}
+		for (const [width, height] of [
+			[768, 1024],
+			[884, 1000],
+			[884, 1104],
+			[1024, 768],
+			[1104, 884],
+		]) {
+			const result = await shape(width, height, true);
+			expect(result.posture, `${width}`).toBe(width < 1100 ? "unfolded" : "desktop");
+			expect(result.list, `list at ${width}`).toBe(true);
+			expect(result.reader, `reader at ${width}`).toBe(true);
+		}
+		// A phone held sideways is too low for two panes, but everything is reachable and the header stays slim.
+		for (const [width, height] of [
+			[844, 390],
+			[667, 375],
+		]) {
+			const result = await shape(width, height, true);
+			expect(result.posture).toBe("folded");
+			expect(result.list).toBe(false);
+			expect(result.scroll.vertical).toBeLessThanOrEqual(0);
+		}
+	});
+
+	test("an unfolded screen with a hinge keeps the list on the first screen and the reader on the second", async ({
+		browser,
+	}) => {
+		const context = await browser.newContext({
+			storageState: { cookies: [], origins: [] },
+			viewport: { width: 884, height: 1104 },
+			hasTouch: true,
+		});
+		// Chromium has no Viewport Segments here, so the two screens are reported the way a foldable browser would.
+		await context.addInitScript(() => {
+			const segments = [
+				{ left: 0, top: 0, width: 400, height: 1104 },
+				{ left: 484, top: 0, width: 400, height: 1104 },
+			];
+			Object.defineProperty(window, "viewport", {
+				value: { segments, addEventListener() {}, removeEventListener() {} },
+			});
+			const original = window.matchMedia.bind(window);
+			window.matchMedia = (query: string) => {
+				const list = original(query.includes("horizontal-viewport-segments") ? "(min-width: 0px)" : query);
+				if (!query.includes("horizontal-viewport-segments")) return list;
+				return new Proxy(list, {
+					get: (target, key) => {
+						if (key === "matches") return true;
+						if (key === "media") return query;
+						const value = Reflect.get(target, key, target);
+						return typeof value === "function" ? value.bind(target) : value;
+					},
+				});
+			};
+		});
+		const page = await context.newPage();
+		await visit(page);
+		const geometry = await page.evaluate(() => {
+			const box = (selector: string) => document.querySelector(selector)!.getBoundingClientRect();
+			return { list: box('[data-home-pane="list"]'), reader: box('[data-home-pane="reader"]') };
+		});
+		// Nothing sits in the hinge between 400 and 484 px.
+		expect(geometry.list.left).toBeGreaterThanOrEqual(0);
+		expect(geometry.list.right).toBeLessThanOrEqual(401);
+		expect(geometry.reader.left).toBeGreaterThanOrEqual(483);
+		expect(geometry.reader.right).toBeLessThanOrEqual(885);
+		// The folders stay in the menu, which opens over the first screen.
+		await expect(sidebar(page)).toBeHidden();
+		await page.getByRole("button", { name: "Open menu" }).click();
+		await expect(sidebar(page)).toBeVisible();
+		expect((await sidebar(page).boundingBox())!.x + (await sidebar(page).boundingBox())!.width).toBeLessThanOrEqual(
+			401,
+		);
+		await sidebar(page).getByRole("button", { name: /^Cost/ }).click();
+		await expect(openEmail(page)).toHaveAttribute("id", "cost");
+		await context.close();
+	});
+
+	test("a saved single-pane choice is honoured, as in the app", async ({ browser }) => {
+		const context = await browser.newContext({
+			storageState: { cookies: [], origins: [] },
+			viewport: { width: 1440, height: 900 },
+		});
+		await context.addInitScript(() => localStorage.setItem("kite-fold-layout", "single"));
+		const page = await context.newPage();
+		await visit(page);
+		await expect(page.locator('[data-home-pane="list"]')).toBeHidden();
+		await expect(sidebar(page)).toBeHidden();
+		await page.getByRole("button", { name: "Back to list" }).click();
+		await expect(page.locator('[data-home-pane="list"]')).toBeVisible();
+		await context.close();
+	});
+
+	test("every listed size fits: no sideways scrolling, no clipped header and a usable reader", async ({ browser }) => {
+		const sizes = [
+			[320, 568],
+			[344, 882],
+			[390, 844],
+			[430, 932],
+			[600, 960],
+			[673, 841],
+			[768, 1024],
+			[884, 1000],
+			[884, 1104],
+			[1024, 768],
+			[1104, 884],
+			[1180, 820],
+			[1280, 800],
+			[1366, 768],
+			[1440, 900],
+			[1920, 1080],
+			[2560, 1440],
+			[844, 390],
+			[667, 375],
+		];
+		for (const [width, height] of sizes) {
+			for (const zoom of [false, true]) {
+				if (zoom && ![320, 390, 884, 1440].includes(width)) continue;
+				const touch = width <= 1180;
+				const context = await browser.newContext({
+					storageState: { cookies: [], origins: [] },
+					viewport: { width, height },
+					hasTouch: touch,
+					isMobile: touch && width < 900,
+				});
+				const page = await context.newPage();
+				for (const id of ["welcome", "deploy", "cost", "compare", "sample-launch-plan"]) {
+					await visit(page, `/#${id}`);
+					if (zoom) await page.addStyleTag({ content: "html{font-size:200% !important}" });
+					const result = await page.evaluate(() => {
+						const open = document.querySelector('article[data-open="true"]')!;
+						const pane = open.closest(".home-scroll")!;
+						const list = document.querySelector('[data-home-pane="list"] .home-scroll');
+						const header = [...document.querySelectorAll("header a, header button")].filter(
+							(element) => element.getBoundingClientRect().width > 0,
+						);
+						const boxes = header.map((element) => element.getBoundingClientRect());
+						const clipped = boxes.some((box) => box.left < -1 || box.right > window.innerWidth + 1);
+						const overlap = boxes.some((a, i) =>
+							boxes.some(
+								(b, j) =>
+									j > i && a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1,
+							),
+						);
+						const table = open.querySelector("table");
+						return {
+							page: [
+								document.documentElement.scrollHeight - innerHeight,
+								document.documentElement.scrollWidth - innerWidth,
+							],
+							reader: pane.scrollWidth - pane.clientWidth,
+							list: list ? list.scrollWidth - list.clientWidth : 0,
+							clipped,
+							overlap,
+							table: table ? table.getBoundingClientRect().right - pane.getBoundingClientRect().right : -1,
+						};
+					});
+					const where = `${width}x${height}${zoom ? " at 200%" : ""} ${id}`;
+					expect(result.page[0], `page height ${where}`).toBeLessThanOrEqual(0);
+					expect(result.page[1], `page width ${where}`).toBeLessThanOrEqual(0);
+					expect(result.reader, `reader ${where}`).toBeLessThanOrEqual(0);
+					expect(result.list, `list ${where}`).toBeLessThanOrEqual(0);
+					expect(result.clipped, `header clipped ${where}`).toBe(false);
+					expect(result.overlap, `header overlap ${where}`).toBe(false);
+					expect(result.table, `table ${where}`).toBeLessThanOrEqual(1);
+				}
+				await context.close();
+			}
+		}
+	});
+
 	test("the folder menu below lg takes the focus, holds it and gives it back", async ({ page }) => {
 		await page.setViewportSize({ width: 884, height: 1104 });
 		await visit(page);

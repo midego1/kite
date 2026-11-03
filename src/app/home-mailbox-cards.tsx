@@ -26,7 +26,7 @@ export function PersonAvatar({ person, icon, size }: { person: HomePerson; icon:
 /** The small label that marks a row or an email as an example. */
 export function ExampleLabel() {
 	return (
-		<span className="shrink-0 rounded-full border border-neutral-300 px-2 py-px text-[11px] font-medium text-neutral-600">
+		<span className="shrink-0 rounded-full border border-neutral-300 px-2 py-px text-xs font-medium text-neutral-600">
 			Example
 		</span>
 	);
@@ -36,7 +36,7 @@ export function ExampleNotice() {
 	return (
 		<p className="flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-neutral-300 px-3 py-2 text-xs text-neutral-600">
 			<ExampleLabel />
-			<span className="min-w-0 flex-1">
+			<span className="min-w-0 flex-1 basis-40 [overflow-wrap:anywhere]">
 				An example mail: the people and addresses are invented, and nothing you do here leaves this page.
 			</span>
 		</p>
@@ -53,13 +53,13 @@ export function SuggestionCard({ sample, onReview, onDismiss }: CardProps) {
 	if (!sample.suggestion) return null;
 	return (
 		<div className="rounded-xl border border-neutral-200 bg-[#f6f8fc] p-4">
-			<p className="flex items-center gap-2 text-sm font-medium text-neutral-900">
+			<p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-neutral-900">
 				<Sparkles className="h-4 w-4 shrink-0 text-violet-500" aria-hidden="true" />
 				<span className="min-w-0">{sample.suggestion.title}</span>
-				<span className="ml-auto shrink-0 text-xs font-normal text-neutral-500">Suggestion, nothing sent</span>
+				<span className="ml-auto text-xs font-normal text-neutral-500">Suggestion, nothing sent</span>
 			</p>
 			<p className="mt-2 text-sm leading-6 text-neutral-700">{sample.suggestion.text}</p>
-			<p className="mt-3 flex gap-2">
+			<p className="mt-3 flex flex-wrap gap-2">
 				<button type="button" onClick={onReview} className={PRIMARY}>
 					{sample.suggestion.action}
 				</button>

@@ -16,11 +16,13 @@ export function ExternalLink({ href, children }: { href: string; children: React
 }
 
 export function Para({ children }: { children: ReactNode }) {
-	return <p className="text-[15px] leading-7 text-neutral-800">{children}</p>;
+	return (
+		<p className="max-w-[68ch] text-[15px] leading-7 text-neutral-800 @5xl:text-base @5xl:leading-8">{children}</p>
+	);
 }
 
 export function Quiet({ children }: { children: ReactNode }) {
-	return <p className="text-sm leading-6 text-neutral-500">{children}</p>;
+	return <p className="max-w-[68ch] text-sm leading-6 text-neutral-500">{children}</p>;
 }
 
 /** A heading inside an email; the Welcome email's subject is the page's h1, so its headings are h2. */
@@ -31,7 +33,7 @@ export function Heading({ children, level = 3 }: { children: ReactNode; level?: 
 
 export function Bullets({ items }: { items: string[] }) {
 	return (
-		<ul className="list-disc space-y-1.5 pl-5 text-[15px] leading-7 text-neutral-700 marker:text-neutral-400">
+		<ul className="max-w-[68ch] list-disc space-y-1.5 pl-5 text-[15px] leading-7 text-neutral-700 marker:text-neutral-400">
 			{items.map((item) => (
 				<li key={item}>{item}</li>
 			))}

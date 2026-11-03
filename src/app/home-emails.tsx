@@ -182,7 +182,7 @@ function Attachments({ files }: { files: { name: string; size: string; color: st
 				{files.map((file) => (
 					<li
 						key={file.name}
-						className="inline-flex items-center gap-2 rounded-lg border border-neutral-200 bg-[#f6f8fc] px-3 py-2 text-sm text-neutral-800"
+						className="inline-flex max-w-full flex-wrap items-center gap-x-2 rounded-lg border border-neutral-200 bg-[#f6f8fc] px-3 py-2 text-sm text-neutral-800 [overflow-wrap:anywhere]"
 					>
 						<FileText className={`h-4 w-4 ${file.color}`} aria-hidden="true" />
 						{file.name}
@@ -306,7 +306,7 @@ function deployEmail(appName: string): Email {
 						</span>
 						<div>
 							<h3 className="pt-0.5 text-base font-semibold text-neutral-900">{step.title}</h3>
-							<p className="mt-1 text-[15px] leading-7 text-neutral-700">{step.text}</p>
+							<p className="mt-1 max-w-[68ch] text-[15px] leading-7 text-neutral-700">{step.text}</p>
 						</div>
 					</li>
 				))}
@@ -423,7 +423,7 @@ function limitsEmail(): Email {
 		limitations[0],
 		limitations,
 		<>
-			<ol className="list-decimal space-y-2 pl-6 text-[15px] leading-7 text-neutral-800 marker:text-neutral-500">
+			<ol className="max-w-[68ch] list-decimal space-y-2 pl-6 text-[15px] leading-7 text-neutral-800 marker:text-neutral-500">
 				{limitations.map((item) => (
 					<li key={item}>{item}</li>
 				))}

@@ -14,7 +14,7 @@ export function HomeToast({
 	return (
 		<div
 			role="status"
-			className="absolute bottom-4 left-1/2 z-40 flex max-w-[calc(100%-2rem)] -translate-x-1/2 items-center gap-3 rounded-lg bg-neutral-900 px-4 py-2.5 text-sm text-white shadow-lg"
+			className="absolute bottom-[max(1rem,env(safe-area-inset-bottom))] left-1/2 z-40 flex max-w-[calc(100%-2rem)] -translate-x-1/2 items-center gap-3 rounded-lg bg-neutral-900 px-4 py-2.5 text-sm text-white shadow-lg"
 		>
 			<span className="min-w-0">{state.toast.text}</span>
 			<button
@@ -42,7 +42,7 @@ export function HomeComposer({
 		<div
 			role="dialog"
 			aria-label="New message"
-			className="absolute inset-x-0 bottom-0 z-40 flex max-h-[85%] flex-col rounded-t-2xl border border-neutral-200 bg-white shadow-2xl md:inset-x-auto md:bottom-4 md:right-4 md:w-[440px] md:rounded-2xl"
+			className="absolute inset-x-0 bottom-0 z-40 flex max-h-[85%] flex-col pb-[env(safe-area-inset-bottom)] rounded-t-2xl border border-neutral-200 bg-white shadow-2xl split:inset-x-auto split:bottom-4 split:right-4 split:w-[440px] split:rounded-2xl"
 		>
 			<div className="flex items-center justify-between border-b border-neutral-200 px-4 py-2.5 text-sm font-semibold text-neutral-900">
 				New message

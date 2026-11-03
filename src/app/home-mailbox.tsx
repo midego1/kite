@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, type MouseEvent } from "react";
+import { useFoldViewport } from "@/components/use-fold-posture";
+import { hingeGrid, homeHinge } from "./home-mailbox-fold";
 import { HomeList } from "./home-mailbox-list";
 import { HomeComposer, HomeToast } from "./home-mailbox-overlays";
 import { HomeReader } from "./home-mailbox-reader";
@@ -240,18 +242,17 @@ export function HomeMailbox({ appName, icon, emails, bodies, chrome, footer, hea
 		wasMenuOpen.current = menuOpen;
 	}, [menuOpen]);
 
-	// An email counts as read once it is on screen, also when the window is widened to show it.
+	// An email counts as read once it is on screen: in the reader, or beside the list when the screen is not folded
+	// (a cover screen, a narrow window and a phone held sideways show one pane), also when it is widened to show it.
+	const fold = useFoldViewport();
+	const hinge = homeHinge(fold);
+	const twoPanes = fold.posture !== "folded";
 	useEffect(() => {
-		const wide = window.matchMedia("(min-width: 768px)");
-		const mark = () => {
-			const current = stateRef.current;
-			if (current.openId && (wide.matches || current.pane === "reader"))
-				rawDispatch({ type: "markRead", id: current.openId });
-		};
-		mark();
-		wide.addEventListener("change", mark);
-		return () => wide.removeEventListener("change", mark);
-	}, [state.openId, state.pane]);
+		const current = stateRef.current;
+		if (current.openId && (twoPanes || current.pane === "reader")) {
+			rawDispatch({ type: "markRead", id: current.openId });
+		}
+	}, [state.openId, state.pane, twoPanes]);
 
 	// The skip link opens the open email for a phone too, where the list may be showing: the hash would not change.
 	const skipToMessage = (event: MouseEvent<HTMLAnchorElement>) => {
@@ -272,7 +273,7 @@ export function HomeMailbox({ appName, icon, emails, bodies, chrome, footer, hea
 		<div
 			ref={rootRef}
 			onClick={onClick}
-			className="home-page relative flex h-dvh flex-col overflow-clip bg-white text-neutral-900"
+			className="home-page relative flex h-dvh flex-col overflow-clip bg-white pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] text-neutral-900"
 		>
 			{/* Targets the open email's article (each is focusable), so it skips the folders and the list, and the
 			    hash it sets always names an email, never a fragment the hash listener would read as Welcome. */}
@@ -290,10 +291,26 @@ export function HomeMailbox({ appName, icon, emails, bodies, chrome, footer, hea
 			<div className="shrink-0 border-b border-neutral-200 bg-white">{chrome}</div>
 			<main
 				id="main"
-				className="relative grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[minmax(280px,340px)_minmax(0,1fr)] lg:grid-cols-[232px_minmax(300px,360px)_minmax(0,1fr)]"
+				style={hinge ? hingeGrid(hinge) : undefined}
+				className="relative grid min-h-0 flex-1 grid-cols-1 split:grid-cols-[minmax(280px,340px)_minmax(0,1fr)] split:lg:grid-cols-[232px_minmax(300px,360px)_minmax(0,1fr)]"
 			>
-				<HomeSidebar state={state} emails={emails} dispatch={dispatch} mailbox={mailbox} footer={footer} />
-				<HomeList state={state} emails={emails} appName={appName} icon={icon} onOpen={openEmail} dispatch={dispatch} />
+				<HomeSidebar
+					state={state}
+					emails={emails}
+					dispatch={dispatch}
+					mailbox={mailbox}
+					footer={footer}
+					menuOnly={!!hinge}
+				/>
+				<HomeList
+					state={state}
+					emails={emails}
+					appName={appName}
+					icon={icon}
+					onOpen={openEmail}
+					dispatch={dispatch}
+					menuOnly={!!hinge}
+				/>
 				<HomeReader
 					ref={readerRef}
 					state={state}
@@ -305,6 +322,7 @@ export function HomeMailbox({ appName, icon, emails, bodies, chrome, footer, hea
 					dispatch={dispatch}
 					onCopyLink={(id) => void copyLink(id)}
 					onContact={openContact}
+					secondScreen={!!hinge}
 				/>
 				<HomeToast state={state} dispatch={dispatch} />
 				{/* Remount for a new target: the To and Subject inputs are uncontrolled (defaultValue). */}

@@ -21,6 +21,8 @@ type ReaderProps = {
 	dispatch: (action: HomeMailboxAction) => void;
 	onCopyLink: (id: string) => void;
 	onContact: (person: HomePerson, chip: HTMLElement) => void;
+	/** The reader sits on a foldable's second screen, after the hinge. */
+	secondScreen?: boolean;
 };
 
 /** The headline sets its second half in the quieter tone, as the old page did. */
@@ -30,7 +32,7 @@ function Subject({ email, headline }: { email: HomeEmailMeta; headline: string }
 		return (
 			<h1
 				id={`${email.id}-subject`}
-				className="text-balance text-[clamp(1.9rem,4vw,3.25rem)] font-semibold leading-[1.05] tracking-[-0.035em] text-neutral-900"
+				className="text-balance [overflow-wrap:anywhere] text-[clamp(1.9rem,4vw,3.25rem)] font-semibold leading-[1.05] tracking-[-0.035em] text-neutral-900"
 			>
 				{headline.slice(0, split)}
 				<span className="text-neutral-500">{headline.slice(split)}</span>
@@ -38,7 +40,10 @@ function Subject({ email, headline }: { email: HomeEmailMeta; headline: string }
 		);
 	}
 	return (
-		<h2 id={`${email.id}-subject`} className="text-xl font-semibold tracking-tight text-neutral-900">
+		<h2
+			id={`${email.id}-subject`}
+			className="text-xl font-semibold tracking-tight text-neutral-900 [overflow-wrap:anywhere]"
+		>
 			{email.subject}
 		</h2>
 	);
@@ -46,7 +51,7 @@ function Subject({ email, headline }: { email: HomeEmailMeta; headline: string }
 
 /** One email: subject, the people as chips (each opens its contact card), the sender line and the body. */
 export const HomeReader = forwardRef<HTMLDivElement, ReaderProps>(function HomeReader(
-	{ state, emails, bodies, people, icon, headline, dispatch, onCopyLink, onContact },
+	{ state, emails, bodies, people, icon, headline, dispatch, onCopyLink, onContact, secondScreen },
 	ref,
 ) {
 	const current = emails.find((email) => email.id === state.openId);
@@ -58,21 +63,22 @@ export const HomeReader = forwardRef<HTMLDivElement, ReaderProps>(function HomeR
 		<section
 			aria-label="Reading pane"
 			data-home-pane="reader"
-			className={`${state.pane === "reader" ? "flex" : "hidden md:flex"} min-h-0 min-w-0 flex-col bg-white`}
+			style={secondScreen ? { gridColumn: 3 } : undefined}
+			className={`${state.pane === "reader" ? "flex" : "hidden split:flex"} min-h-0 min-w-0 flex-col bg-white`}
 		>
 			<div
 				data-home-toolbar
-				className="flex h-14 shrink-0 items-center justify-between border-b border-neutral-200 px-4 text-neutral-600"
+				className="flex h-14 shrink-0 items-center justify-between [@media(max-height:500px)]:h-11 border-b border-neutral-200 px-4 text-neutral-600"
 			>
 				<button
 					type="button"
 					aria-label="Back to list"
 					onClick={() => dispatch({ type: "back" })}
-					className={`flex h-8 w-8 items-center justify-center rounded-lg bg-neutral-100 hover:bg-neutral-200 md:hidden ${FOCUS_RING}`}
+					className={`flex h-8 w-8 items-center justify-center rounded-lg bg-neutral-100 hover:bg-neutral-200 split:hidden ${FOCUS_RING}`}
 				>
 					<ArrowLeft className="h-4 w-4" aria-hidden="true" />
 				</button>
-				<span className="hidden md:block" />
+				<span className="hidden split:block" />
 				{current && (
 					<span className="flex items-center gap-2">
 						<button
@@ -116,7 +122,7 @@ export const HomeReader = forwardRef<HTMLDivElement, ReaderProps>(function HomeR
 							data-open={open ? "true" : "false"}
 							tabIndex={-1}
 							aria-labelledby={`${email.id}-subject`}
-							className={`mx-auto max-w-3xl scroll-mt-5 space-y-5 ${open ? "" : "hidden"}`}
+							className={`mx-auto max-w-3xl scroll-mt-5 space-y-5 focus:outline-none ${open ? "" : "hidden"}`}
 						>
 							<header>
 								<Subject email={email} headline={headline} />
@@ -165,7 +171,7 @@ export const HomeReader = forwardRef<HTMLDivElement, ReaderProps>(function HomeR
 									)}
 								</ul>
 							</header>
-							<p className="text-xs text-neutral-500">
+							<p className="text-xs text-neutral-500 [overflow-wrap:anywhere]">
 								<span className="font-medium text-neutral-800">{sender.name}</span> &lt;{sender.address}&gt; to{" "}
 								{people.me.address}
 							</p>

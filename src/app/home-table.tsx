@@ -59,9 +59,9 @@ export function HomeTable({ label, from, cornerLabel, columns, rows, rowHeadClas
 						) : (
 							<td role="cell" className="w-44" />
 						)}
-						{columns.map((column) => (
+						{columns.map((column, index) => (
 							<th
-								key={column.label}
+								key={index}
 								scope="col"
 								role="columnheader"
 								className={`${th} ${column.ink ? "text-(--home-ink)" : "text-(--home-dim)"}`}
@@ -81,7 +81,7 @@ export function HomeTable({ label, from, cornerLabel, columns, rows, rowHeadClas
 								const column = columns[index];
 								return (
 									<td
-										key={column.label}
+										key={index}
 										role="cell"
 										data-label={column.label}
 										className={`${css.cell} pr-6 ${column.big ? "text-xl leading-7 tracking-[-0.01em]" : "leading-6"} ${

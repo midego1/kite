@@ -34,9 +34,9 @@ function isTyping(event: KeyboardEvent): boolean {
 	);
 }
 
-/** Below lg the menu is a layer over the page: Tab goes round inside it. */
-function trapTab(event: KeyboardEvent, root: HTMLElement | null) {
-	if (window.matchMedia("(min-width: 1024px)").matches) return;
+/** An overlay menu holds Tab: below lg always, and on a foldable at any width, where the menu only ever overlays. */
+function trapTab(event: KeyboardEvent, root: HTMLElement | null, overlay: boolean) {
+	if (!overlay && window.matchMedia("(min-width: 1024px)").matches) return;
 	const items = [...(root?.querySelectorAll<HTMLElement>('aside[aria-label="Folders"] :is(button, a[href])') ?? [])];
 	if (items.length === 0) return;
 	const active = document.activeElement as HTMLElement | null;
@@ -78,6 +78,7 @@ export function HomeMailbox({ appName, icon, emails, bodies, chrome, footer, hea
 	const contactOpener = useRef<HTMLElement | null>(null);
 	const composerOpener = useRef<HTMLElement | null>(null);
 	const stateRef = useRef(state);
+	const menuOverlayRef = useRef(false);
 	const wasMenuOpen = useRef(false);
 	const wasComposerOpen = useRef(false);
 
@@ -198,8 +199,12 @@ export function HomeMailbox({ appName, icon, emails, bodies, chrome, footer, hea
 		rawDispatch({ type: "openContact", address: person.address, left });
 	}, []);
 
+	const fold = useFoldViewport();
+	const hinge = homeHinge(fold);
+
 	useEffect(() => {
 		stateRef.current = state;
+		menuOverlayRef.current = !!hinge;
 	});
 
 	// Keys work from a fresh load, wherever the focus is, except in a field. After a move the focus follows the open
@@ -215,7 +220,7 @@ export function HomeMailbox({ appName, icon, emails, bodies, chrome, footer, hea
 					dispatch(action);
 				}
 			} else if (event.key === "Tab") {
-				if (current.menuOpen) trapTab(event, root);
+				if (current.menuOpen) trapTab(event, root, menuOverlayRef.current);
 			} else if ((event.key === "j" || event.key === "k") && !current.composer && !isTyping(event)) {
 				event.preventDefault();
 				dispatch({ type: "move", direction: event.key === "j" ? 1 : -1 });
@@ -244,8 +249,6 @@ export function HomeMailbox({ appName, icon, emails, bodies, chrome, footer, hea
 
 	// An email counts as read once it is on screen: in the reader, or beside the list when the screen is not folded
 	// (a cover screen, a narrow window and a phone held sideways show one pane), also when it is widened to show it.
-	const fold = useFoldViewport();
-	const hinge = homeHinge(fold);
 	const twoPanes = fold.posture !== "folded";
 	useEffect(() => {
 		const current = stateRef.current;

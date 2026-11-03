@@ -34,6 +34,7 @@ export function HomeMailbox({ appName, icon, emails, bodies, chrome, footer, hea
 	const readerRef = useRef<HTMLDivElement>(null);
 	const rootRef = useRef<HTMLDivElement>(null);
 	const contactOpener = useRef<HTMLElement | null>(null);
+	const composerOpener = useRef<HTMLElement | null>(null);
 
 	const mailbox = useMemo(() => ({ name: "You", address: "you@yourdomain.example" }), []);
 	const people = useMemo<{ sender: HomePerson; me: HomePerson }>(() => {
@@ -92,7 +93,15 @@ export function HomeMailbox({ appName, icon, emails, bodies, chrome, footer, hea
 	// The composer and the contact card take the focus when they open and give it back when they close.
 	const composerOpen = !!state.composer;
 	useEffect(() => {
-		if (composerOpen) rootRef.current?.querySelector<HTMLElement>('[aria-label="New message"] input')?.focus();
+		if (composerOpen) {
+			composerOpener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+			rootRef.current?.querySelector<HTMLElement>('[aria-label="New message"] input')?.focus();
+		} else if (
+			composerOpener.current?.isConnected &&
+			(!document.activeElement || document.activeElement === document.body)
+		) {
+			composerOpener.current.focus();
+		}
 	}, [composerOpen]);
 	const cardOpen = !!state.contactCard;
 	useEffect(() => {

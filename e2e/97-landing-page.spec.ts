@@ -94,8 +94,18 @@ test.describe("visitor", () => {
 		await expect(page.locator("article#welcome")).toBeVisible();
 		await expect(page.locator("article#welcome").getByText("Every feature is free.")).toBeVisible();
 		// Every other email is in the document, each with its own subject heading.
-		expect(await page.locator("article").count()).toBe(21);
-		for (const id of ["deploy", "cost", "compare", "before-and-now", "limits", "faq-cost", "feature-ai", "open"]) {
+		expect(await page.locator("article").count()).toBe(25);
+		for (const id of [
+			"deploy",
+			"cost",
+			"compare",
+			"before-and-now",
+			"limits",
+			"faq-cost",
+			"feature-ai",
+			"open",
+			"sample-invoice",
+		]) {
 			await expect(page.locator(`article#${id} :is(h1, h2)`).first()).toHaveCount(1);
 		}
 		expect(await page.locator("article#deploy").textContent()).toContain("docker compose up -d --build");
@@ -110,6 +120,8 @@ test.describe("visitor", () => {
 			["limits", "No published third-party security audit."],
 			["faq-move", "Use IMAP import"],
 			["open", "Discussions"],
+			["sample-launch-plan", "launch-plan.pdf"],
+			["sample-invoice", "fabrikam-invoice-2026-10.pdf"],
 		]) {
 			await expect(page.locator(`article#${id}`).getByText(text).first()).toBeVisible();
 		}
@@ -229,7 +241,8 @@ test.describe("visitor", () => {
 		}
 
 		// The folders count what is unread, and opening an email clears its dot.
-		await expect(sidebar(page).getByRole("button", { name: /^Inbox/ })).not.toContainText("1");
+		// Four example mails stay unread in the Inbox until they are opened.
+		await expect(sidebar(page).getByRole("button", { name: /^Inbox/ })).toContainText("4");
 	});
 
 	test("search looks through every email", async ({ page }) => {
@@ -543,6 +556,142 @@ test.describe("visitor", () => {
 			await page.waitForTimeout(300);
 			expect(await page.evaluate(() => document.activeElement === document.body)).toBe(true);
 		}
+	});
+
+	test("the comparison is a table with its columns side by side in a wide reader and stacked blocks in a narrow one", async ({
+		page,
+	}) => {
+		const state = () =>
+			openEmail(page).evaluate((article) => {
+				const table = article.querySelector("table")!;
+				const heads = [...table.querySelectorAll('th[scope="col"]')].map((cell) => cell.getBoundingClientRect());
+				const pane = article.closest(".home-scroll")!;
+				return {
+					display: getComputedStyle(table).display,
+					headLefts: heads.map((rect) => Math.round(rect.left)),
+					headVisible: heads.every((rect) => rect.width > 4),
+					overflow: pane.scrollWidth - pane.clientWidth,
+					paneWidth: pane.clientWidth,
+				};
+			});
+
+		// The pane's width decides, not the window's: the sidebar and the list take room, so 1366 px is still stacked.
+		for (const [width, wide] of [
+			[1920, true],
+			[1440, true],
+			[1280, false],
+			[884, false],
+			[390, false],
+		] as const) {
+			await page.setViewportSize({ width, height: 900 });
+			await visit(page, "/#compare");
+			const compare = await state();
+			expect(compare.display, `compare at ${width}`).toBe(wide ? "table" : "block");
+			expect(compare.overflow).toBeLessThanOrEqual(0);
+			if (wide) {
+				// Four columns beside each other, each with its own left edge, named by its header.
+				expect(new Set(compare.headLefts).size).toBe(4);
+				expect(compare.headVisible).toBe(true);
+				await expect(openEmail(page).getByRole("columnheader", { name: "Mailflare" })).toBeVisible();
+				await expect(openEmail(page).getByRole("columnheader", { name: "Email Routing alone" })).toBeVisible();
+				await expect(openEmail(page).getByRole("columnheader", { name: "Hosted inboxes" })).toBeVisible();
+			} else {
+				// Stacked: every cell names its column.
+				await expect(openEmail(page).locator('td[data-label="Mailflare"]').first()).toBeVisible();
+				await expect(openEmail(page).getByRole("columnheader", { name: "Mailflare" })).toBeAttached();
+			}
+			const scroll = await pageScroll(page);
+			expect(scroll.vertical).toBeLessThanOrEqual(0);
+			expect(scroll.horizontal).toBeLessThanOrEqual(0);
+
+			// The price table fits the same pane and is a table once it has 36rem.
+			await visit(page, "/#cost");
+			const cost = await state();
+			expect(cost.display, `cost at ${width}`).toBe(cost.paneWidth >= 576 + 48 ? "table" : "block");
+			expect(cost.overflow).toBeLessThanOrEqual(0);
+		}
+	});
+
+	test("a wide comparison keeps its header in view while the reader scrolls", async ({ page }) => {
+		await page.setViewportSize({ width: 1440, height: 700 });
+		await visit(page, "/#compare");
+		const header = openEmail(page).getByRole("columnheader", { name: "Kite" }).first();
+		const pane = reader(page).locator(".home-scroll");
+		await pane.evaluate((element) => element.scrollTo({ top: 400 }));
+		await page.waitForTimeout(150);
+		const paneTop = (await pane.boundingBox())!.y;
+		const headTop = (await header.boundingBox())!.y;
+		expect(Math.abs(headTop - paneTop)).toBeLessThan(40);
+		expect(await pane.evaluate((element) => element.scrollTop)).toBeGreaterThan(200);
+	});
+
+	test("example mails show the inbox in use, are marked as examples and act only on the page", async ({ page }) => {
+		await visit(page);
+		const inbox = page.getByRole("region", { name: "Inbox" });
+		// Below the feature emails and before Built in the open, each marked on its row.
+		const subjects = await inbox.getByRole("listitem").evaluateAll((rows) => rows.map((row) => row.textContent ?? ""));
+		const at = (text: string) => subjects.findIndex((row) => row.includes(text));
+		expect(at("Open APIs")).toBeLessThan(at("Re: Launch plan for the new inbox"));
+		expect(at("Your October invoice is ready")).toBeLessThan(at("Built in the open"));
+		expect(await inbox.getByText("Example", { exact: true }).count()).toBe(4);
+		await expect(inbox.getByText("New sender")).toHaveCount(1);
+		await expect(sidebar(page).getByRole("button", { name: /^Inbox/ })).toContainText("12");
+
+		// Reply drafted: the card, its wording, the draft in the composer, and nothing sent.
+		await inbox.getByRole("button", { name: /Re: Launch plan for the new inbox/ }).click();
+		const mail = openEmail(page);
+		await expect(mail).toHaveAttribute("id", "sample-launch-plan");
+		await expect(mail.getByText("An example mail: the people and addresses are invented")).toBeVisible();
+		await expect(mail.getByText("Reply drafted")).toBeVisible();
+		await expect(mail.getByText("Suggestion, nothing sent")).toBeVisible();
+		await expect(mail.getByText("launch-plan.pdf")).toBeVisible();
+		await expect(mail.getByText("rollout-checklist.csv")).toBeVisible();
+		await mail.getByRole("button", { name: "Review draft" }).click();
+		const composer = page.getByRole("dialog", { name: "New message" });
+		await expect(composer.getByLabel("To")).toHaveValue("sofia@northwind.test");
+		await expect(composer.getByLabel("Message")).toHaveValue(/Thanks Sofia, both files are in\./);
+		await composer.getByRole("button", { name: "Send" }).click();
+		await expect(page.getByRole("status")).toContainText("Demo: nothing sent");
+		await mail.getByRole("button", { name: "Dismiss" }).click();
+		await expect(mail.getByText("Reply drafted")).toHaveCount(0);
+
+		// The contact card of an example sender shows an invented address.
+		await mail.getByRole("button", { name: "Sofia Marchetti", exact: true }).click();
+		await expect(
+			page.getByRole("dialog", { name: "Contact card for Sofia Marchetti" }).getByText("sofia@northwind.test"),
+		).toBeVisible();
+		await page.keyboard.press("Escape");
+
+		// New sender: the label on the row, the Screener bar in the email, and a local decision.
+		await inbox.getByRole("button", { name: /A question about a shared mailing/ }).click();
+		await expect(openEmail(page)).toHaveAttribute("id", "sample-api-question");
+		await openEmail(page).getByRole("button", { name: "Approve" }).click();
+		await expect(page.getByRole("status")).toContainText(
+			"Approved. Mail from Ava Lindqvist now arrives in your Inbox.",
+		);
+		await expect(inbox.getByText("New sender")).toHaveCount(0);
+		await expect(openEmail(page).getByRole("button", { name: "Deny" })).toHaveCount(0);
+
+		// Attachments, a deep link and search.
+		await visit(page, "/#sample-invoice");
+		await expect(openEmail(page).getByText("fabrikam-invoice-2026-10.pdf")).toBeVisible();
+		await page.getByLabel("Search mail").fill("fabrikam");
+		await expect(page.getByRole("region", { name: "Search results" }).getByRole("listitem")).toHaveCount(1);
+		await page.getByLabel("Search mail").fill("example");
+		expect(await page.getByRole("region", { name: "Search results" }).getByRole("listitem").count()).toBe(4);
+		await page.getByLabel("Search mail").fill("");
+
+		// j and k step through the examples in list order.
+		await visit(page, "/#feature-api");
+		await page.keyboard.press("j");
+		await expect(openEmail(page)).toHaveAttribute("id", "sample-launch-plan");
+		await page.keyboard.press("j");
+		await expect(openEmail(page)).toHaveAttribute("id", "sample-design-review");
+		await page.keyboard.press("j");
+		await page.keyboard.press("j");
+		await expect(openEmail(page)).toHaveAttribute("id", "sample-invoice");
+		await page.keyboard.press("j");
+		await expect(openEmail(page)).toHaveAttribute("id", "open");
 	});
 
 	test("the folder menu below lg takes the focus, holds it and gives it back", async ({ page }) => {

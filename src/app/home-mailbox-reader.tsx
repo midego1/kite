@@ -1,5 +1,6 @@
 import { forwardRef, type ReactNode } from "react";
 import { ArrowLeft, Link2, CornerUpLeft, Star } from "lucide-react";
+import { ExampleNotice, PersonAvatar, ScreenerBar, SuggestionCard } from "./home-mailbox-cards";
 import { HomeContactCard } from "./home-mailbox-contact";
 import { FOCUS_RING } from "./home-mailbox-sidebar";
 import { WELCOME_ID } from "./home-mailbox-state-utils";
@@ -47,7 +48,9 @@ export const HomeReader = forwardRef<HTMLDivElement, ReaderProps>(function HomeR
 ) {
 	const current = emails.find((email) => email.id === state.openId);
 	const starred = !!current && state.starred.includes(current.id);
-	const person = (address: string) => (address === people.me.address ? people.me : people.sender);
+	const known = [people.sender, people.me, ...emails.flatMap((email) => (email.sample ? [email.sample.sender] : []))];
+	const person = (address: string) => known.find((candidate) => candidate.address === address) ?? people.sender;
+	const senderOf = (email: HomeEmailMeta) => email.sample?.sender ?? people.sender;
 	return (
 		<section
 			aria-label="Reading pane"
@@ -85,7 +88,7 @@ export const HomeReader = forwardRef<HTMLDivElement, ReaderProps>(function HomeR
 						<button
 							type="button"
 							onClick={() =>
-								dispatch({ type: "compose", to: people.sender.address, subject: `Re: ${current.subject}` })
+								dispatch({ type: "compose", to: senderOf(current).address, subject: `Re: ${current.subject}` })
 							}
 							className={TOOL_BUTTON}
 						>
@@ -101,6 +104,8 @@ export const HomeReader = forwardRef<HTMLDivElement, ReaderProps>(function HomeR
 			>
 				{emails.map((email) => {
 					const open = email.id === state.openId;
+					const sender = senderOf(email);
+					const sample = email.sample;
 					return (
 						<article
 							key={email.id}
@@ -113,7 +118,7 @@ export const HomeReader = forwardRef<HTMLDivElement, ReaderProps>(function HomeR
 							<header>
 								<Subject email={email} headline={headline} />
 								<ul className="relative mt-3 flex flex-wrap gap-2" aria-label="People in this conversation">
-									{[people.sender, people.me].map((chipPerson) => {
+									{[sender, people.me].map((chipPerson) => {
 										const shown = open && state.contactCard?.address === chipPerson.address;
 										return (
 											<li key={chipPerson.address} className="group relative">
@@ -124,9 +129,7 @@ export const HomeReader = forwardRef<HTMLDivElement, ReaderProps>(function HomeR
 													onClick={(event) => onContact(chipPerson, event.currentTarget)}
 													className={`inline-flex cursor-pointer items-center gap-2 rounded-full border border-neutral-200 bg-white py-1 pl-1 pr-3 text-sm text-neutral-800 hover:bg-neutral-50 ${FOCUS_RING}`}
 												>
-													<span className="flex h-6 w-6 items-center justify-center rounded-full bg-neutral-200 text-xs font-medium text-neutral-700">
-														{chipPerson.own ? chipPerson.initial : <img src={icon} alt="" width={14} height={14} />}
-													</span>
+													<PersonAvatar person={chipPerson} icon={icon} size="sm" />
 													{chipPerson.name}
 												</button>
 												{!shown && (
@@ -160,10 +163,33 @@ export const HomeReader = forwardRef<HTMLDivElement, ReaderProps>(function HomeR
 								</ul>
 							</header>
 							<p className="text-xs text-neutral-500">
-								<span className="font-medium text-neutral-800">{people.sender.name}</span> &lt;{people.sender.address}
-								&gt; to {people.me.address}
+								<span className="font-medium text-neutral-800">{sender.name}</span> &lt;{sender.address}&gt; to{" "}
+								{people.me.address}
 							</p>
-							<div className="space-y-4 border-t border-neutral-200 pt-5">{bodies[email.id]}</div>
+							<div className="space-y-4 border-t border-neutral-200 pt-5">
+								{sample && <ExampleNotice />}
+								{sample?.screening && !state.decided.includes(email.id) && (
+									<ScreenerBar
+										sender={sender}
+										onDecide={(approve) => dispatch({ type: "decideSender", id: email.id, approve })}
+									/>
+								)}
+								{sample?.suggestion && !state.dismissed.includes(email.id) && (
+									<SuggestionCard
+										sample={sample}
+										onReview={() =>
+											dispatch({
+												type: "compose",
+												to: sender.address,
+												subject: `Re: ${email.subject}`,
+												body: sample.suggestion?.text,
+											})
+										}
+										onDismiss={() => dispatch({ type: "dismissSuggestion", id: email.id })}
+									/>
+								)}
+								{bodies[email.id]}
+							</div>
 						</article>
 					);
 				})}

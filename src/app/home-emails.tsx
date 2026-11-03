@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { FileText } from "lucide-react";
 import { HomeCopyPrompt } from "./home-copy-prompt";
 import { Bullets, EmailTable, ExternalLink, Heading, LINK, Mono, Para, Parts, Quiet } from "./home-email-parts";
 import {
@@ -34,7 +35,7 @@ import {
 import { HomeKiteArt } from "./home-kite-art";
 import { MONO } from "./home-ui";
 import { UPSTREAM_URL, featureThemes } from "./utils";
-import type { HomeEmailMeta, HomeFolderId } from "./home-mailbox-types";
+import type { HomeEmailMeta, HomeFolderId, HomePerson, HomeSample } from "./home-mailbox-types";
 import type { HomeTextPart } from "./types";
 
 /*
@@ -54,8 +55,13 @@ function email(
 	preview: string,
 	text: string[],
 	body: ReactNode,
+	sample?: HomeSample,
 ): Email {
-	return { meta: { id, folder, subject, preview, text: [subject, preview, ...text].join(" ") }, body };
+	const names = sample ? [sample.sender.name, sample.sender.address, "Example"] : [];
+	return {
+		meta: { id, folder, subject, preview, text: [subject, preview, ...names, ...text].join(" "), sample },
+		body,
+	};
 }
 
 function welcome(appName: string): Email {
@@ -143,6 +149,122 @@ function featureEmails(): Email[] {
 		),
 	);
 	return [intro, ...themes];
+}
+
+/* Example mails: everyday mail from invented people (.test and .example addresses), to show how an inbox looks in use. */
+
+const person = (name: string, address: string, avatarClassName: string): HomePerson => ({
+	name,
+	address,
+	initial: name.charAt(0),
+	own: false,
+	avatarClassName,
+});
+const sofia = person("Sofia Marchetti", "sofia@northwind.test", "bg-neutral-200 text-neutral-700");
+const lena = person("Lena Fischer", "lena@northwind.test", "bg-blue-100 text-blue-800");
+const ava = person("Ava Lindqvist", "ava@lindqvist.example", "bg-amber-100 text-amber-800");
+const fabrikam = person("Fabrikam Billing", "billing@fabrikam.example", "bg-violet-100 text-violet-800");
+
+function Attachments({ files }: { files: { name: string; size: string; color: string }[] }) {
+	return (
+		<div>
+			<p className="text-sm text-neutral-500">Attachments ({files.length})</p>
+			<ul className="mt-2 flex flex-wrap gap-2">
+				{files.map((file) => (
+					<li
+						key={file.name}
+						className="inline-flex items-center gap-2 rounded-lg border border-neutral-200 bg-[#f6f8fc] px-3 py-2 text-sm text-neutral-800"
+					>
+						<FileText className={`h-4 w-4 ${file.color}`} aria-hidden="true" />
+						{file.name}
+						<span className="text-neutral-500">{file.size}</span>
+					</li>
+				))}
+			</ul>
+		</div>
+	);
+}
+
+function sampleEmails(): Email[] {
+	const launch = [
+		"Good call, the tour is in. Attached are the updated plan and the rollout checklist; shout if anything is missing before Monday.",
+		"Sofia",
+	];
+	const review = [
+		"Notes from this morning's review are in the doc. Two things still open: the empty state copy on the first screen, and whether the domain step can be skipped for people who want to try the inbox first.",
+		"I lean towards letting them skip it. Thoughts?",
+		"Lena",
+	];
+	const question = [
+		"Hi, I run a small newsletter and a friend suggested I write to you. Could we find ten minutes next week to talk about sharing a mailing?",
+		"Thanks, Ava",
+	];
+	const invoice = [
+		"Your Fabrikam Team plan renews on November 3. This month's invoice (US$17.99) is attached. Nothing to do if your card on file is current.",
+		"The Fabrikam billing team",
+	];
+	const paragraphs = (lines: string[]) => lines.map((line) => <Para key={line}>{line}</Para>);
+	return [
+		email(
+			"sample-launch-plan",
+			"inbox",
+			"Re: Launch plan for the new inbox",
+			launch[0],
+			[...launch, "launch-plan.pdf", "rollout-checklist.csv", "Reply drafted"],
+			<>
+				{paragraphs(launch)}
+				<Attachments
+					files={[
+						{ name: "launch-plan.pdf", size: "47 KB", color: "text-red-600" },
+						{ name: "rollout-checklist.csv", size: "2 KB", color: "text-green-600" },
+					]}
+				/>
+			</>,
+			{
+				sender: sofia,
+				suggestion: {
+					title: "Reply drafted",
+					text: "Thanks Sofia, both files are in. The checklist still needs the DNS step from Daniel. We will confirm Monday morning.",
+					action: "Review draft",
+				},
+			},
+		),
+		email(
+			"sample-design-review",
+			"inbox",
+			"Design review notes for the new onboarding",
+			review[0],
+			review,
+			<>{paragraphs(review)}</>,
+			{
+				sender: lena,
+			},
+		),
+		email(
+			"sample-api-question",
+			"inbox",
+			"A question about a shared mailing",
+			question[0],
+			question,
+			<>{paragraphs(question)}</>,
+			{
+				sender: ava,
+				screening: true,
+			},
+		),
+		email(
+			"sample-invoice",
+			"inbox",
+			"Your October invoice is ready",
+			invoice[0],
+			[...invoice, "fabrikam-invoice-2026-10.pdf"],
+			<>
+				{paragraphs(invoice)}
+				<Attachments files={[{ name: "fabrikam-invoice-2026-10.pdf", size: "31 KB", color: "text-red-600" }]} />
+			</>,
+			{ sender: fabrikam },
+		),
+	];
 }
 
 function deployEmail(appName: string): Email {
@@ -327,6 +449,7 @@ export function buildHomeEmails(appName: string): { metas: HomeEmailMeta[]; bodi
 	const all = [
 		welcome(appName),
 		...featureEmails(),
+		...sampleEmails(),
 		openEmail(),
 		deployEmail(appName),
 		costEmail(appName),

@@ -377,6 +377,11 @@ pre {
 	--home-draw-hatch: rgb(255 255 255 / 0.1);
 	--home-draw-text: rgb(255 255 255 / 0.6);
 }
+/* The page never scrolls, not even for a link to an email: overflow clip leaves no scroll position to move. */
+html:has(.home-page),
+body:has(.home-page) {
+	overflow: clip;
+}
 .home-page .home-scroll {
 	scrollbar-width: thin;
 	scrollbar-color: color-mix(in srgb, currentColor 22%, transparent) transparent;

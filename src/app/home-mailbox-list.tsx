@@ -1,4 +1,5 @@
 import { Menu, Search, Star } from "lucide-react";
+import { ExampleLabel, PersonAvatar } from "./home-mailbox-cards";
 import { FOCUS_RING } from "./home-mailbox-sidebar";
 import { listEmails, viewTitle } from "./home-mailbox-state-utils";
 import type { HomeEmailMeta, HomeMailboxAction, HomeMailboxState } from "./home-mailbox-types";
@@ -20,6 +21,7 @@ function Row({
 	appName,
 	icon,
 	showFolder,
+	decided,
 	onOpen,
 }: {
 	email: HomeEmailMeta;
@@ -29,8 +31,10 @@ function Row({
 	appName: string;
 	icon: string;
 	showFolder: boolean;
+	decided: boolean;
 	onOpen: (id: string) => void;
 }) {
+	const sender = email.sample?.sender ?? { name: appName, address: "", initial: "", own: false, brand: true };
 	return (
 		<li className={selected ? "bg-neutral-100" : ""}>
 			<button
@@ -39,10 +43,8 @@ function Row({
 				aria-current={selected ? "true" : undefined}
 				className={`flex w-full min-w-0 items-start gap-3 px-4 py-3 text-left hover:bg-neutral-100 ${FOCUS_RING} focus-visible:ring-inset`}
 			>
-				<span className="relative mt-0.5 h-9 w-9 shrink-0" aria-hidden="true">
-					<span className="flex h-9 w-9 items-center justify-center rounded-full bg-neutral-200">
-						<img src={icon} alt="" width={20} height={20} />
-					</span>
+				<span className="relative mt-0.5 h-9 w-9 shrink-0">
+					<PersonAvatar person={sender} icon={icon} size="md" />
 					{unread && (
 						<span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-blue-500 ring-2 ring-[var(--color-white)]" />
 					)}
@@ -51,7 +53,7 @@ function Row({
 					<span className="flex items-baseline justify-between gap-2">
 						<span className={`truncate text-sm ${unread ? "font-semibold text-neutral-900" : "text-neutral-800"}`}>
 							{unread && <span className="sr-only">Unread </span>}
-							{appName}
+							{sender.name}
 						</span>
 						<span className="flex shrink-0 items-center gap-1.5 text-xs text-neutral-500">
 							{starred && <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-500" aria-label="Starred" />}
@@ -63,7 +65,15 @@ function Row({
 					>
 						{email.subject}
 					</span>
-					<span className="block truncate text-xs text-neutral-500">{email.preview}</span>
+					<span className="mt-0.5 flex items-center gap-1.5">
+						<span className="min-w-0 flex-1 truncate text-xs text-neutral-500">{email.preview}</span>
+						{email.sample && <ExampleLabel />}
+						{email.sample?.screening && !decided && (
+							<span className="shrink-0 rounded-full border border-amber-300 bg-amber-50 px-2 py-px text-[11px] font-medium text-amber-800">
+								New sender
+							</span>
+						)}
+					</span>
 				</span>
 			</button>
 		</li>
@@ -122,6 +132,7 @@ export function HomeList({ state, emails, appName, icon, onOpen, dispatch }: Lis
 								appName={appName}
 								icon={icon}
 								showFolder={searching || state.view === "starred"}
+								decided={state.decided.includes(email.id)}
 								onOpen={onOpen}
 							/>
 						))}

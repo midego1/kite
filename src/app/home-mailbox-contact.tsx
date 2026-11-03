@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Ban, Check, Copy, Pencil, PenSquare, Search } from "lucide-react";
+import { PersonAvatar } from "./home-mailbox-cards";
 import { FOCUS_RING } from "./home-mailbox-sidebar";
 import type { HomePerson } from "./home-mailbox-types";
 
@@ -64,12 +65,7 @@ export function HomeContactCard({ person, icon, left, onNewEmail, onSearch, onNo
 			className="absolute top-full z-20 mt-2 w-[min(20rem,100%)] rounded-xl border border-neutral-200 bg-white p-2 text-neutral-900 shadow-lg"
 		>
 			<div className="flex items-center gap-3 px-3 pb-2 pt-2">
-				<span
-					aria-hidden="true"
-					className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-neutral-200 text-sm font-medium text-neutral-700"
-				>
-					{person.own ? person.initial : <img src={icon} alt="" width={22} height={22} />}
-				</span>
+				<PersonAvatar person={person} icon={icon} size="lg" />
 				<div className="min-w-0 flex-1">
 					<p className="flex items-center gap-2 text-sm font-medium">
 						<span className="truncate">{person.name}</span>

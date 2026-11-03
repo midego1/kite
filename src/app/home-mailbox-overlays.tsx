@@ -72,7 +72,11 @@ export function HomeComposer({
 				</label>
 				<label className="flex flex-col gap-1">
 					<span className="sr-only">Message</span>
-					<textarea rows={6} className="resize-none bg-transparent text-neutral-900 focus:outline-none" />
+					<textarea
+						rows={6}
+						defaultValue={composer.body}
+						className="resize-none bg-transparent text-neutral-900 focus:outline-none"
+					/>
 				</label>
 				<div className="flex items-center justify-between gap-3">
 					<p className="text-xs text-neutral-500">Nothing leaves this page.</p>

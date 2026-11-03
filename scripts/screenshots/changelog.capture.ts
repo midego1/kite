@@ -155,6 +155,18 @@ const SHOTS: Shot[] = [
 		},
 	},
 	{
+		// The home page's Inbox with its invented example mails, one open with the drafted-reply suggestion.
+		name: "2026-11-03-home-examples",
+		viewport: { width: 1440, height: 900 },
+		open: async (page) => {
+			await page.context().clearCookies();
+			await page.goto("/#sample-launch-plan");
+			await page.locator('[data-hydrated="true"]').waitFor();
+			await expect(page.getByText("Suggestion, nothing sent")).toBeVisible();
+			return page;
+		},
+	},
+	{
 		name: "2026-11-02-whats-new-images",
 		viewport: { width: 1100, height: 760 },
 		open: async (page) => {

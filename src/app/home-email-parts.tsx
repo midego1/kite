@@ -77,7 +77,7 @@ type EmailTableProps = {
 	cornerLabel?: string;
 	columns: { label: string; ink?: boolean; big?: boolean }[];
 	rows: { key: string; head: string; cells: string[] }[];
-	/** The container width from which it is a table; narrower, each row stacks with its columns named. */
+	/** The container width from which it is a table (the reader's own width, not the window's, since the sidebar and list take room); narrower, each row stacks with its columns named. A wide table keeps its header in view as the reader scrolls. */
 	from: "wide" | "narrow";
 };
 
@@ -92,12 +92,12 @@ const STACK = {
 		cell: "block @max-xl:pb-2.5 @xl:table-cell @xl:py-4 before:mb-0.5 before:block before:text-xs before:text-neutral-500 before:content-[attr(data-label)] @xl:before:hidden",
 	},
 	wide: {
-		table: "block w-full @5xl:table",
-		head: "@max-5xl:sr-only",
-		body: "block @5xl:table-row-group",
-		row: "block @max-5xl:py-4 @5xl:table-row",
-		rowHead: "block @max-5xl:pb-1.5 @5xl:table-cell @5xl:py-4",
-		cell: "block @max-5xl:pb-2.5 @5xl:table-cell @5xl:py-4 before:mb-0.5 before:block before:text-xs before:text-neutral-500 before:content-[attr(data-label)] @5xl:before:hidden",
+		table: "block w-full @2xl:table",
+		head: "@max-2xl:sr-only",
+		body: "block @2xl:table-row-group",
+		row: "block @max-2xl:py-4 @2xl:table-row",
+		rowHead: "block @max-2xl:pb-1.5 @2xl:table-cell @2xl:py-4",
+		cell: "block @max-2xl:pb-2.5 @2xl:table-cell @2xl:py-4 before:mb-0.5 before:block before:text-xs before:text-neutral-500 before:content-[attr(data-label)] @2xl:before:hidden",
 	},
 } as const;
 
@@ -107,7 +107,7 @@ const STACK = {
  */
 export function EmailTable({ label, cornerLabel, columns, rows, from }: EmailTableProps) {
 	const css = STACK[from];
-	const th = "py-2 pr-4 text-left text-xs font-medium";
+	const th = `py-2 pr-4 text-left text-xs font-medium ${from === "wide" ? "@2xl:sticky @2xl:top-0 @2xl:z-10 @2xl:border-b @2xl:border-neutral-200 @2xl:bg-white" : ""}`;
 	return (
 		<table className={`${css.table} border-collapse text-left text-sm`} role="table" aria-label={label}>
 			<thead className={css.head} role="rowgroup">

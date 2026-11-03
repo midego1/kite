@@ -95,7 +95,13 @@ export function HomeMailbox({ appName, icon, emails, bodies, chrome, footer, hea
 	const people = useMemo<{ sender: HomePerson; me: HomePerson }>(() => {
 		const slug = appName.toLowerCase().replace(/[^a-z0-9]/g, "") || "kite";
 		return {
-			sender: { name: appName, address: `hello@${slug}.example`, initial: appName.charAt(0).toUpperCase(), own: false },
+			sender: {
+				name: appName,
+				address: `hello@${slug}.example`,
+				initial: appName.charAt(0).toUpperCase(),
+				own: false,
+				brand: true,
+			},
 			me: { name: "You", address: mailbox.address, initial: "Y", own: true },
 		};
 	}, [appName, mailbox.address]);
@@ -266,7 +272,7 @@ export function HomeMailbox({ appName, icon, emails, bodies, chrome, footer, hea
 		<div
 			ref={rootRef}
 			onClick={onClick}
-			className="home-page relative flex h-dvh flex-col overflow-hidden bg-white text-neutral-900"
+			className="home-page relative flex h-dvh flex-col overflow-clip bg-white text-neutral-900"
 		>
 			{/* Targets the open email's article (each is focusable), so it skips the folders and the list, and the
 			    hash it sets always names an email, never a fragment the hash listener would read as Welcome. */}
@@ -303,7 +309,7 @@ export function HomeMailbox({ appName, icon, emails, bodies, chrome, footer, hea
 				<HomeToast state={state} dispatch={dispatch} />
 				{/* Remount for a new target: the To and Subject inputs are uncontrolled (defaultValue). */}
 				<HomeComposer
-					key={state.composer ? `${state.composer.to}\n${state.composer.subject}` : "closed"}
+					key={state.composer ? `${state.composer.to}\n${state.composer.subject}\n${state.composer.body}` : "closed"}
 					state={state}
 					dispatch={dispatch}
 				/>

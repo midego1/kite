@@ -71,6 +71,8 @@ export function createMailboxState(): HomeMailboxState {
 		// The Welcome email is what a phone opens on, so the page reads without a tap.
 		pane: "reader",
 		composer: null,
+		dismissed: [],
+		decided: [],
 		toast: null,
 		contactCard: null,
 	};
@@ -136,11 +138,23 @@ const HANDLERS: { [T in HomeMailboxAction["type"]]: Handler<T> } = {
 	// The composer opens over the page, so a menu below lg closes: its Close button would otherwise take the next Tab.
 	compose: (state, action) => ({
 		...state,
-		composer: { to: action.to, subject: action.subject },
+		composer: { to: action.to, subject: action.subject, body: action.body ?? "" },
 		contactCard: null,
 		menuOpen: false,
 	}),
 	closeComposer: (state) => ({ ...state, composer: null }),
+	dismissSuggestion: (state, action) => ({
+		...state,
+		dismissed: [...state.dismissed, action.id],
+		toast: { text: "Suggestion dismissed", n: (state.toast?.n ?? 0) + 1 },
+	}),
+	decideSender: (state, action, emails) => {
+		const name = emails.find((email) => email.id === action.id)?.sample?.sender.name ?? "this sender";
+		const text = action.approve
+			? `Approved. Mail from ${name} now arrives in your Inbox.`
+			: `Denied. Mail from ${name} goes to Trash.`;
+		return { ...state, decided: [...state.decided, action.id], toast: { text, n: (state.toast?.n ?? 0) + 1 } };
+	},
 	send: (state) => ({ ...state, composer: null, toast: { text: "Demo: nothing sent", n: (state.toast?.n ?? 0) + 1 } }),
 	toast: (state, action) => ({ ...state, toast: { text: action.text, n: (state.toast?.n ?? 0) + 1 } }),
 	dismissToast: (state) => ({ ...state, toast: null }),

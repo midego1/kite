@@ -100,11 +100,14 @@ export default async function HomePage() {
 					</div>
 
 					<main id="main">
-						<section aria-labelledby="home-hero-heading" className="relative border-t border-(--home-line)">
+						<section
+							aria-labelledby="home-hero-heading"
+							className="relative border-t border-(--home-line) lg:grid lg:grid-cols-[minmax(0,1fr)_auto]"
+						>
 							<div className={`${PAD} relative z-10 pb-10 pt-14 md:pt-20 lg:pb-24`}>
 								<h1
 									id="home-hero-heading"
-									className="home-rise max-w-[17em] text-balance text-[clamp(2.5rem,6.2vw,5.5rem)] font-medium leading-[1] tracking-[-0.04em]"
+									className="home-rise max-w-[17em] text-balance text-[clamp(2.5rem,6.2vw,5.5rem)] lg:text-[clamp(2.5rem,5.4vw,5.25rem)] font-medium leading-[1] tracking-[-0.04em]"
 								>
 									Your own inbox for your own domains,{" "}
 									<span className="text-(--home-dim)">running in your Cloudflare account.</span>
@@ -128,12 +131,12 @@ export default async function HomePage() {
 									</div>
 								</div>
 							</div>
-							{/* The drawing: below the text on a phone, on the right from lg, where the kite's centre line carries on down the sheet. */}
+							{/* The drawing: below the text on a phone and a tablet, in its own column from lg so the headline can never reach it. It is as tall as the first screen allows, and its centre line carries on down the sheet. */}
 							<div
 								aria-hidden="true"
-								className="pointer-events-none relative mx-auto mb-16 w-fit lg:absolute lg:inset-y-0 lg:right-0 lg:m-0 lg:flex lg:flex-col"
+								className="pointer-events-none relative mx-auto mb-16 w-fit lg:m-0 lg:flex lg:flex-col"
 							>
-								<HomeKiteArt className="block h-[460px] w-auto lg:h-[480px] min-[1200px]:h-[620px] xl:h-[720px]" />
+								<HomeKiteArt className="block h-[460px] w-auto lg:h-[clamp(420px,calc(100svh-9.5rem),480px)] min-[1200px]:h-[clamp(420px,calc(100svh-9.5rem),620px)] xl:h-[clamp(440px,calc(100svh-9.5rem),720px)]" />
 								<span className="ml-[55.77%] hidden w-0 flex-1 border-l border-dashed border-(--home-line-strong) lg:block" />
 							</div>
 						</section>

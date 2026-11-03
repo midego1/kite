@@ -111,7 +111,8 @@ const HANDLERS: { [T in HomeMailboxAction["type"]]: Handler<T> } = {
 			contactCard: null,
 			// Wider screens keep a message in the reader; a phone shows the list.
 			openId: action.view === "starred" ? state.openId : (first?.id ?? state.openId),
-			read: first && !state.read.includes(first.id) ? [...state.read, first.id] : state.read,
+			// Only a shown email becomes read: on a phone the reader is hidden, so the first email stays unread.
+			read: first && !action.phone && !state.read.includes(first.id) ? [...state.read, first.id] : state.read,
 			pane: "list",
 		};
 	},

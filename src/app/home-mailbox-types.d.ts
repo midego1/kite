@@ -52,7 +52,11 @@ export type HomeMailboxState = {
 
 export type HomeMailboxAction =
 	| { type: "open"; id: string }
-	| { type: "view"; view: HomeViewId }
+	| {
+			type: "view";
+			view: HomeViewId;
+			/** Below the md breakpoint the folder opens as a list, so its first email is not displayed. */ phone?: boolean;
+	  }
 	| { type: "search"; text: string }
 	| { type: "star"; id: string }
 	| { type: "back" }

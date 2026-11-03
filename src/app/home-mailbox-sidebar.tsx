@@ -57,7 +57,7 @@ function Item({
 		<li>
 			<button
 				type="button"
-				onClick={() => dispatch({ type: "view", view })}
+				onClick={() => dispatch({ type: "view", view, phone: !window.matchMedia("(min-width: 768px)").matches })}
 				aria-current={active ? "page" : undefined}
 				className={`flex h-9 w-full items-center justify-between rounded-lg px-3 text-sm ${FOCUS_RING} ${
 					active ? "bg-neutral-100 font-medium text-neutral-900" : "text-neutral-600 hover:bg-neutral-100"

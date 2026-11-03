@@ -26,9 +26,15 @@ export const WELCOME_ID = "welcome";
 /** Old section anchors that name a whole folder, and the email they open. */
 const ALIASES: Record<string, string> = { features: "features-intro", faq: "faq-mailflare" };
 
-/** The email a URL hash names, or the Welcome email for an empty or unknown one. */
+/** The email a URL hash names, or the Welcome email for an empty, malformed or unknown one. */
 export function emailFromHash(hash: string, emails: HomeEmailMeta[]): string {
-	const id = decodeURIComponent(hash.replace(/^#/, ""));
+	let id: string;
+	try {
+		id = decodeURIComponent(hash.replace(/^#/, ""));
+	} catch {
+		// A malformed escape (/#%) must not break the page.
+		return WELCOME_ID;
+	}
 	const target = ALIASES[id] ?? id;
 	return emails.some((email) => email.id === target) ? target : WELCOME_ID;
 }

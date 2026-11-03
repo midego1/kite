@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Ban, Check, Copy, Pencil, PenSquare, Search } from "lucide-react";
 import { FOCUS_RING } from "./home-mailbox-sidebar";
 import type { HomePerson } from "./home-mailbox-types";
@@ -26,6 +26,7 @@ type CardProps = {
 
 export function HomeContactCard({ person, icon, left, onNewEmail, onSearch, onNote }: CardProps) {
 	const [copied, setCopied] = useState(false);
+	const addressRef = useRef<HTMLParagraphElement>(null);
 
 	useEffect(() => {
 		if (!copied) return;
@@ -33,12 +34,25 @@ export function HomeContactCard({ person, icon, left, onNewEmail, onSearch, onNo
 		return () => window.clearTimeout(timer);
 	}, [copied]);
 
+	// Without the clipboard API (plain http, as a Docker install is served) or its permission, select the address
+	// instead; where execCommand still works that selection is copied, else it stays selected.
+	const selectAddress = () => {
+		const node = addressRef.current;
+		if (!node) return;
+		const range = document.createRange();
+		range.selectNodeContents(node);
+		const selection = window.getSelection();
+		selection?.removeAllRanges();
+		selection?.addRange(range);
+		setCopied(document.execCommand("copy"));
+	};
+
 	const copy = () => {
-		// The clipboard may be refused (plain http, no permission); the card then simply stays as it was.
-		void navigator.clipboard?.writeText(person.address).then(
-			() => setCopied(true),
-			() => undefined,
-		);
+		if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+			void navigator.clipboard.writeText(person.address).then(() => setCopied(true), selectAddress);
+			return;
+		}
+		selectAddress();
 	};
 
 	return (
@@ -65,7 +79,9 @@ export function HomeContactCard({ person, icon, left, onNewEmail, onSearch, onNo
 							</span>
 						)}
 					</p>
-					<p className="break-all text-xs text-neutral-500">{person.address}</p>
+					<p ref={addressRef} className="break-all text-xs text-neutral-500">
+						{person.address}
+					</p>
 				</div>
 				<button
 					type="button"

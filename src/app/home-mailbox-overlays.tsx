@@ -16,7 +16,7 @@ export function HomeToast({
 			role="status"
 			className="absolute bottom-4 left-1/2 z-40 flex max-w-[calc(100%-2rem)] -translate-x-1/2 items-center gap-3 rounded-lg bg-neutral-900 px-4 py-2.5 text-sm text-white shadow-lg"
 		>
-			<span className="min-w-0">{state.toast}</span>
+			<span className="min-w-0">{state.toast.text}</span>
 			<button
 				type="button"
 				aria-label="Dismiss"

@@ -46,7 +46,8 @@ export type HomeMailboxState = {
 	/** Which pane a phone shows; wider screens show the list and the reader. */
 	pane: "list" | "reader";
 	composer: { to: string; subject: string } | null;
-	toast: string | null;
+	/** The counter makes every toast a new value, so a repeated text still restarts the expiry timer. */
+	toast: { text: string; n: number } | null;
 	contactCard: { address: string; left: number } | null;
 };
 
@@ -55,7 +56,8 @@ export type HomeMailboxAction =
 	| {
 			type: "view";
 			view: HomeViewId;
-			/** Below the md breakpoint the folder opens as a list, so its first email is not displayed. */ phone?: boolean;
+			/** Below the md breakpoint the folder opens as a list, so its first email is not displayed. */
+			phone?: boolean;
 	  }
 	| { type: "search"; text: string }
 	| { type: "star"; id: string }

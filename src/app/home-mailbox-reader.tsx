@@ -122,7 +122,7 @@ export const HomeReader = forwardRef<HTMLDivElement, ReaderProps>(function HomeR
 							data-open={open ? "true" : "false"}
 							tabIndex={-1}
 							aria-labelledby={`${email.id}-subject`}
-							className={`mx-auto max-w-3xl scroll-mt-5 space-y-5 focus:outline-none ${open ? "" : "hidden"}`}
+							className={`mx-auto max-w-3xl scroll-mt-5 space-y-5 ${FOCUS_RING} ${open ? "" : "hidden"}`}
 						>
 							<header>
 								<Subject email={email} headline={headline} />

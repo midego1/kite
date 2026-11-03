@@ -180,7 +180,12 @@ export function HomeMailbox({ appName, icon, emails, bodies, chrome, footer, hea
 					onContact={openContact}
 				/>
 				<HomeToast state={state} dispatch={dispatch} />
-				<HomeComposer state={state} dispatch={dispatch} />
+				{/* Remount for a new target: the To and Subject inputs are uncontrolled (defaultValue). */}
+				<HomeComposer
+					key={state.composer ? `${state.composer.to}\n${state.composer.subject}` : "closed"}
+					state={state}
+					dispatch={dispatch}
+				/>
 			</main>
 		</div>
 	);

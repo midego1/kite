@@ -1,8 +1,8 @@
 import { useId, type CSSProperties } from "react";
 
 /*
- * The hero's and the closing section's drawing: a front view of a kite as an engineering sheet, in thin white
- * lines on the page. Centre lines, a symmetric kite (two pairs of equal sides), the spine and spar as rods,
+ * The Welcome email's drawing: a front view of a kite as an engineering sheet, in thin lines in the page's ink
+ * (dark on the light theme, light on the dark one). Centre lines, a symmetric kite (two pairs of equal sides), the spine and spar as rods,
  * hem and fabric hatching, a bridle to a tow point, dimension lines with arrowheads and ticks, numbered
  * callouts and a small title block. Labels name parts only; dimensions carry reference letters, never values.
  * Decorative, so hidden from assistive technology. The lines drawing themselves in and the flying line drifting

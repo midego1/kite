@@ -115,6 +115,13 @@ test.describe("visitor", () => {
 		}
 		await expect(page.getByRole("complementary", { name: "Folders" })).toBeHidden();
 		await expect(page.getByRole("button", { name: /^Cost/ })).toHaveCount(0);
+		// With no script neither theme class is set and the app's look is the light one: the drawing's lines are dark.
+		const ink = await page
+			.locator(".home-page")
+			.evaluate((element) => getComputedStyle(element).getPropertyValue("--home-draw-ink"));
+		expect(ink).toContain("10 10 11");
+		const root = page.locator(".home-page");
+		expect((await luminancesBetween(root, root)).background).toBeGreaterThan(0.8);
 		await context.close();
 	});
 
@@ -550,6 +557,22 @@ test.describe("visitor", () => {
 		await openMenu.click();
 		await sidebar(page).getByRole("button", { name: /^Cost/ }).click();
 		await expect(openEmail(page)).toHaveAttribute("id", "cost");
+		await expect(openMenu).toBeFocused();
+
+		// New email from the menu closes it, so the composer's own fields are what Tab reaches, and closing it lands on Open menu.
+		await openMenu.click();
+		await sidebar(page).getByRole("button", { name: "New email" }).click();
+		await expect(sidebar(page)).toBeHidden();
+		const composer = page.getByRole("dialog", { name: "New message" });
+		await expect(composer.getByLabel("To")).toBeFocused();
+		await page.keyboard.press("Tab");
+		await expect(composer.getByLabel("Subject")).toBeFocused();
+		await page.keyboard.press("Tab");
+		await expect(composer.getByLabel("Message")).toBeFocused();
+		await page.keyboard.press("Tab");
+		await expect(composer.getByRole("button", { name: "Send" })).toBeFocused();
+		await page.keyboard.press("Escape");
+		await expect(composer).toHaveCount(0);
 		await expect(openMenu).toBeFocused();
 	});
 

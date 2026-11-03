@@ -359,22 +359,23 @@ pre {
 
 /* ── Landing page ────────────────────────────────────────────────────────────
    The public home page is the product: a mailbox in the app's own look, in the theme the visitor chose (the theme
-   script puts .dark or .light on <html> before paint). Its blueprint kite draws with the --home-draw-* tokens
-   below, dark linework on light and light on dark; its panes scroll with a quiet scrollbar because the page
+   script puts .dark or .light on <html> before paint; with no script at all neither is there and the app's own look is
+   the light one). Its blueprint kite draws with the --home-draw-* tokens below, dark linework on light (the default)
+   and light on dark; its panes scroll with a quiet scrollbar because the page
    itself never scrolls. Nothing here reaches another page. */
 .home-page {
-	--home-draw-ink: rgb(255 255 255 / 0.55);
-	--home-draw-soft: rgb(255 255 255 / 0.3);
-	--home-draw-faint: rgb(255 255 255 / 0.16);
-	--home-draw-hatch: rgb(255 255 255 / 0.1);
-	--home-draw-text: rgb(255 255 255 / 0.6);
-}
-:root.light .home-page {
 	--home-draw-ink: rgb(10 10 11 / 0.74);
 	--home-draw-soft: rgb(10 10 11 / 0.44);
 	--home-draw-faint: rgb(10 10 11 / 0.22);
 	--home-draw-hatch: rgb(10 10 11 / 0.13);
 	--home-draw-text: rgb(10 10 11 / 0.72);
+}
+:root.dark .home-page {
+	--home-draw-ink: rgb(255 255 255 / 0.55);
+	--home-draw-soft: rgb(255 255 255 / 0.3);
+	--home-draw-faint: rgb(255 255 255 / 0.16);
+	--home-draw-hatch: rgb(255 255 255 / 0.1);
+	--home-draw-text: rgb(255 255 255 / 0.6);
 }
 .home-page .home-scroll {
 	scrollbar-width: thin;

@@ -11,11 +11,11 @@ export const UPSTREAM_URL = "https://github.com/hieunc229/mailflare";
 /** The header's buttons for a visitor without a session; a signed-in user gets the account menu instead. */
 export function getHomeActions(isLoggedIn: boolean): HomeAction[] {
 	if (isLoggedIn) {
-		return [{ href: "/inbox", label: "Open dashboard", variant: "default" }];
+		return [{ href: "/inbox", label: "Open dashboard" }];
 	}
 	return [
-		{ href: "/login", label: "Sign in", variant: "outline" },
-		{ href: DEPLOY_URL, label: "Deploy to Cloudflare", variant: "default", external: true },
+		{ href: "/login", label: "Sign in" },
+		{ href: DEPLOY_URL, label: "Deploy to Cloudflare", external: true },
 	];
 }
 

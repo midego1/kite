@@ -149,11 +149,11 @@ export function HomeMailbox({ appName, icon, emails, bodies, chrome, footer, hea
 	useEffect(() => {
 		if (composerOpen) {
 			rootRef.current?.querySelector<HTMLElement>('[aria-label="New message"] input')?.focus();
-		} else if (
-			composerOpener.current?.isConnected &&
-			(!document.activeElement || document.activeElement === document.body)
-		) {
-			composerOpener.current.focus();
+		} else if (!document.activeElement || document.activeElement === document.body) {
+			// The opener may be the menu's New email button, hidden again below lg: the menu's own button stands in.
+			const opener = composerOpener.current;
+			const shown = opener?.isConnected && opener.getClientRects().length > 0;
+			(shown ? opener : rootRef.current?.querySelector<HTMLElement>('button[aria-label="Open menu"]'))?.focus();
 		}
 	}, [composerOpen]);
 	const cardOpen = !!state.contactCard;

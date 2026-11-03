@@ -1,4 +1,3 @@
-import type { ButtonProps } from "@/components/ui/button";
 import type { MailboxSelectorUser } from "@/components/mailbox-selector-types";
 import type { ReactNode } from "react";
 
@@ -13,7 +12,6 @@ export type HomeAccountMenuProps = {
 export type HomeAction = {
 	href: string;
 	label: string;
-	variant: ButtonProps["variant"];
 	/** Opens in a new tab (the deploy button, the source and the docs live on other sites). */
 	external?: boolean;
 };

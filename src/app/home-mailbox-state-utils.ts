@@ -133,7 +133,13 @@ const HANDLERS: { [T in HomeMailboxAction["type"]]: Handler<T> } = {
 	// An email counts as read once it is shown: a folder tapped on a phone opens its first email unseen.
 	markRead: (state, action) =>
 		state.read.includes(action.id) ? state : { ...state, read: [...state.read, action.id] },
-	compose: (state, action) => ({ ...state, composer: { to: action.to, subject: action.subject }, contactCard: null }),
+	// The composer opens over the page, so a menu below lg closes: its Close button would otherwise take the next Tab.
+	compose: (state, action) => ({
+		...state,
+		composer: { to: action.to, subject: action.subject },
+		contactCard: null,
+		menuOpen: false,
+	}),
 	closeComposer: (state) => ({ ...state, composer: null }),
 	send: (state) => ({ ...state, composer: null, toast: { text: "Demo: nothing sent", n: (state.toast?.n ?? 0) + 1 } }),
 	toast: (state, action) => ({ ...state, toast: { text: action.text, n: (state.toast?.n ?? 0) + 1 } }),

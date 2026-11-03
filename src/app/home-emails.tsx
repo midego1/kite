@@ -82,7 +82,7 @@ function welcome(appName: string): Email {
 				<Mono>{young}</Mono>
 			</div>
 			<div aria-hidden="true" className="pointer-events-none flex justify-center @2xl:justify-end">
-				<HomeKiteArt className="block h-[440px] w-auto" />
+				<HomeKiteArt className="block h-[440px] w-auto max-w-full" />
 			</div>
 		</div>,
 	);

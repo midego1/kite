@@ -32,9 +32,12 @@ export function HomeToast({
 export function HomeComposer({
 	state,
 	dispatch,
+	secondScreen,
 }: {
 	state: HomeMailboxState;
 	dispatch: (action: HomeMailboxAction) => void;
+	/** On a foldable the composer floats inside the second screen: its grid column becomes its containing block. */
+	secondScreen?: boolean;
 }) {
 	const composer = state.composer;
 	if (!composer) return null;
@@ -42,7 +45,8 @@ export function HomeComposer({
 		<div
 			role="dialog"
 			aria-label="New message"
-			className="absolute inset-x-0 bottom-0 z-40 flex max-h-[85%] flex-col pb-[env(safe-area-inset-bottom)] rounded-t-2xl border border-neutral-200 bg-white shadow-2xl split:inset-x-auto split:bottom-4 split:right-4 split:w-[440px] split:rounded-2xl"
+			style={secondScreen ? { gridColumn: 3 } : undefined}
+			className="absolute inset-x-0 bottom-0 z-40 flex max-h-[85%] flex-col pb-[env(safe-area-inset-bottom)] rounded-t-2xl border border-neutral-200 bg-white shadow-2xl split:inset-x-auto split:bottom-4 split:right-4 split:w-[min(440px,calc(100%_-_2rem))] split:rounded-2xl"
 		>
 			<div className="flex items-center justify-between border-b border-neutral-200 px-4 py-2.5 text-sm font-semibold text-neutral-900">
 				New message

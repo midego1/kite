@@ -333,6 +333,7 @@ export function HomeMailbox({ appName, icon, emails, bodies, chrome, footer, hea
 					key={state.composer ? `${state.composer.to}\n${state.composer.subject}\n${state.composer.body}` : "closed"}
 					state={state}
 					dispatch={dispatch}
+					secondScreen={!!hinge}
 				/>
 			</main>
 		</div>

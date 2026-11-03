@@ -12,7 +12,7 @@ const HEADLINE = "Your own inbox for your own domains, running in your Cloudflar
 const reader = (page: Page) => page.getByRole("region", { name: "Reading pane" });
 const sidebar = (page: Page) => page.getByRole("complementary", { name: "Folders" });
 /** The open email: the one article that is not hidden. */
-const openEmail = (page: Page) => page.locator("article:not([hidden])");
+const openEmail = (page: Page) => page.locator('article[data-open="true"]');
 
 /** Opens a folder from the sidebar and an email of it from the list (on a phone the list shows first). */
 async function openFolderEmail(page: Page, folder: string, subject: string | RegExp) {
@@ -100,6 +100,21 @@ test.describe("visitor", () => {
 		}
 		expect(await page.locator("article#deploy").textContent()).toContain("docker compose up -d --build");
 		expect(await page.locator("article#cost").textContent()).toContain("$0.10 per 1,000 emails");
+		// Without JavaScript the folders could do nothing, so every email is shown, not only present, and they are gone.
+		for (const [id, text] of [
+			["feature-ai", "scoped keys that only see the tools they are allowed."],
+			["deploy", "docker compose up -d --build"],
+			["cost", "$0.10 per 1,000 emails"],
+			["compare", "Young project, small community"],
+			["before-and-now", "Completes"],
+			["limits", "No published third-party security audit."],
+			["faq-move", "Use IMAP import"],
+			["open", "Discussions"],
+		]) {
+			await expect(page.locator(`article#${id}`).getByText(text).first()).toBeVisible();
+		}
+		await expect(page.getByRole("complementary", { name: "Folders" })).toBeHidden();
+		await expect(page.getByRole("button", { name: /^Cost/ })).toHaveCount(0);
 		await context.close();
 	});
 
@@ -115,7 +130,7 @@ test.describe("visitor", () => {
 			["Open APIs", "There is no IMAP server for desktop apps."],
 		];
 		for (const [subject, text] of features) {
-			await openFolderEmail(page, "Features", subject);
+			await openFolderEmail(page, "Inbox", subject);
 			await expect(openEmail(page).getByRole("heading", { name: subject, level: 2 })).toBeVisible();
 			await expect(openEmail(page)).toContainText(text);
 		}
@@ -249,9 +264,9 @@ test.describe("visitor", () => {
 			["cost", "cost", "Cost"],
 			["compare", "compare", "Compare"],
 			["limits", "limits", "Limits"],
-			["features", "features-intro", "Features"],
+			["features", "features-intro", "Inbox"],
 			["faq", "faq-mailflare", "FAQ"],
-			["feature-ai", "feature-ai", "Features"],
+			["feature-ai", "feature-ai", "Inbox"],
 		]) {
 			await visit(page, `/#${hash}`);
 			await expect(openEmail(page)).toHaveAttribute("id", id);
@@ -366,7 +381,7 @@ test.describe("visitor", () => {
 			if (url.origin !== origin) foreign.push(request.url());
 		});
 		await visit(page);
-		for (const folder of ["Features", "Deploy", "Cost", "Compare", "Limits", "FAQ"]) {
+		for (const folder of ["Deploy", "Cost", "Compare", "Limits", "FAQ"]) {
 			await sidebar(page)
 				.getByRole("button", { name: new RegExp(`^${folder}`) })
 				.click();
@@ -391,7 +406,23 @@ test.describe("visitor", () => {
 		await expect(page.getByRole("region", { name: "Cost" })).toBeVisible();
 		await expect(openEmail(page)).toHaveAttribute("id", "cost");
 
-		// j and k move through the list.
+		// j and k work from a fresh load, before anything is focused, and keep working after a link was used.
+		await visit(page);
+		await page.keyboard.press("j");
+		await expect(openEmail(page)).toHaveAttribute("id", "features-intro");
+		await openEmail(page).getByRole("link", { name: "Open APIs" }).focus();
+		await page.keyboard.press("Enter");
+		await expect(openEmail(page)).toHaveAttribute("id", "feature-api");
+		await page.keyboard.press("k");
+		await expect(openEmail(page)).toHaveAttribute("id", "feature-ai");
+		await page.keyboard.press("k");
+		await expect(openEmail(page)).toHaveAttribute("id", "feature-safety");
+		// In a field they type.
+		await page.getByLabel("Search mail").fill("j");
+		await expect(openEmail(page)).toHaveAttribute("id", "feature-safety");
+		await page.getByLabel("Search mail").fill("");
+
+		// j and k move through a folder's list.
 		await sidebar(page).getByRole("button", { name: /^FAQ/ }).click();
 		await page.getByRole("region", { name: "FAQ" }).getByRole("button", { name: "What does it cost?" }).focus();
 		await page.keyboard.press("Enter");
@@ -496,6 +527,76 @@ test.describe("visitor", () => {
 		await page.locator('[data-hydrated="true"]').waitFor();
 		await expect(page.locator("html")).toHaveClass(/light/);
 		await context.close();
+	});
+
+	test("the folder menu below lg takes the focus, holds it and gives it back", async ({ page }) => {
+		await page.setViewportSize({ width: 884, height: 1104 });
+		await visit(page);
+		const openMenu = page.getByRole("button", { name: "Open menu" });
+		await openMenu.click();
+		await expect(sidebar(page).getByRole("button", { name: "Close menu" })).toBeFocused();
+		// Tab goes round inside the menu and never reaches what is behind the backdrop.
+		const stops = sidebar(page).locator("button, a[href]");
+		const count = await stops.count();
+		for (let step = 0; step < count + 2; step++) {
+			await page.keyboard.press("Tab");
+			expect(await page.evaluate(() => !!document.activeElement?.closest('aside[aria-label="Folders"]'))).toBe(true);
+		}
+		await page.keyboard.press("Shift+Tab");
+		expect(await page.evaluate(() => !!document.activeElement?.closest('aside[aria-label="Folders"]'))).toBe(true);
+		await page.keyboard.press("Escape");
+		await expect(sidebar(page)).toBeHidden();
+		await expect(openMenu).toBeFocused();
+		await openMenu.click();
+		await sidebar(page).getByRole("button", { name: /^Cost/ }).click();
+		await expect(openEmail(page)).toHaveAttribute("id", "cost");
+		await expect(openMenu).toBeFocused();
+	});
+
+	test("on a phone the skip link opens the message, and a folder's first email is read once it is shown", async ({
+		page,
+	}) => {
+		await page.setViewportSize({ width: 390, height: 844 });
+		await visit(page, "/#cost");
+		await page.getByRole("button", { name: "Back to list" }).click();
+		await expect(reader(page)).toBeHidden();
+		await page.keyboard.press("Tab");
+		await page.getByRole("link", { name: "Skip to the message" }).press("Enter");
+		await expect(reader(page)).toBeVisible();
+		await expect(openEmail(page)).toBeFocused();
+
+		// A folder tapped on a phone leaves its first email unread until the reader shows it, e.g. after widening.
+		await page.getByRole("button", { name: "Back to list" }).click();
+		await page.getByRole("button", { name: "Open menu" }).click();
+		await sidebar(page)
+			.getByRole("button", { name: /^Limits/ })
+			.click();
+		await expect(reader(page)).toBeHidden();
+		await page.setViewportSize({ width: 1440, height: 900 });
+		await expect(reader(page)).toBeVisible();
+		await expect(sidebar(page).getByRole("button", { name: /^Limits/ })).not.toContainText("1");
+	});
+
+	test("the brand goes home from an open email, and the composer from the contact card returns to its chip", async ({
+		page,
+	}) => {
+		await visit(page, "/#deploy");
+		await expect(openEmail(page)).toHaveAttribute("id", "deploy");
+		await page.getByRole("banner").getByRole("link", { name: "Kite home" }).click();
+		await expect(openEmail(page)).toHaveAttribute("id", "welcome");
+		await expect(page).toHaveURL(/\/$/);
+		await page.goBack();
+		await expect(openEmail(page)).toHaveAttribute("id", "deploy");
+
+		const chip = openEmail(page).getByRole("button", { name: "Kite", exact: true });
+		await chip.click();
+		await page
+			.getByRole("dialog", { name: "Contact card for Kite" })
+			.getByRole("button", { name: "New email" })
+			.click();
+		await expect(page.getByRole("dialog", { name: "New message" }).getByLabel("To")).toBeFocused();
+		await page.keyboard.press("Escape");
+		await expect(chip).toBeFocused();
 	});
 
 	test("on a phone it shows one pane at a time, with Back and the folders in a menu", async ({ page }) => {

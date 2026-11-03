@@ -51,9 +51,13 @@ export const HomeReader = forwardRef<HTMLDivElement, ReaderProps>(function HomeR
 	return (
 		<section
 			aria-label="Reading pane"
+			data-home-pane="reader"
 			className={`${state.pane === "reader" ? "flex" : "hidden md:flex"} min-h-0 min-w-0 flex-col bg-white`}
 		>
-			<div className="flex h-14 shrink-0 items-center justify-between border-b border-neutral-200 px-4 text-neutral-600">
+			<div
+				data-home-toolbar
+				className="flex h-14 shrink-0 items-center justify-between border-b border-neutral-200 px-4 text-neutral-600"
+			>
 				<button
 					type="button"
 					aria-label="Back to list"
@@ -101,10 +105,10 @@ export const HomeReader = forwardRef<HTMLDivElement, ReaderProps>(function HomeR
 						<article
 							key={email.id}
 							id={email.id}
-							hidden={!open}
+							data-open={open ? "true" : "false"}
 							tabIndex={-1}
 							aria-labelledby={`${email.id}-subject`}
-							className="mx-auto max-w-3xl scroll-mt-5 space-y-5"
+							className={`mx-auto max-w-3xl scroll-mt-5 space-y-5 ${open ? "" : "hidden"}`}
 						>
 							<header>
 								<Subject email={email} headline={headline} />

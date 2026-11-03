@@ -111,7 +111,7 @@ function openEmail(): Email {
 function featureEmails(): Email[] {
 	const intro = email(
 		"features-intro",
-		"features",
+		"inbox",
 		"Six parts. All of them included.",
 		FEATURES_LEAD,
 		featureThemes.map((theme) => theme.title),
@@ -132,7 +132,7 @@ function featureEmails(): Email[] {
 	const themes = featureThemes.map((theme) =>
 		email(
 			`feature-${theme.id}`,
-			"features",
+			"inbox",
 			theme.title,
 			theme.summary,
 			[theme.summary, ...theme.points],
@@ -326,8 +326,8 @@ function faqEmails(): Email[] {
 export function buildHomeEmails(appName: string): { metas: HomeEmailMeta[]; bodies: Record<string, ReactNode> } {
 	const all = [
 		welcome(appName),
-		openEmail(),
 		...featureEmails(),
+		openEmail(),
 		deployEmail(appName),
 		costEmail(appName),
 		...compareEmails(appName),

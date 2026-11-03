@@ -1,16 +1,61 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, type MouseEvent } from "react";
 import { HomeList } from "./home-mailbox-list";
 import { HomeComposer, HomeToast } from "./home-mailbox-overlays";
 import { HomeReader } from "./home-mailbox-reader";
 import { HomeSidebar } from "./home-mailbox-sidebar";
 import { createMailboxState, emailFromHash, reduceMailbox, WELCOME_ID } from "./home-mailbox-state-utils";
-import type { HomeMailboxAction, HomeMailboxProps, HomePerson } from "./home-mailbox-types";
+import type { HomeMailboxAction, HomeMailboxProps, HomeMailboxState, HomePerson } from "./home-mailbox-types";
 
 const TOAST_MS = 5000;
+const NO_JS_CSS =
+	'main{display:block!important;overflow:hidden}[data-home-pane="folders"],[data-home-pane="list"],[data-home-toolbar]{display:none!important}[data-home-pane="reader"]{display:flex!important;height:100%}article[data-open]{display:block!important}article+article{border-top:1px solid rgb(128 128 128 / .3);padding-top:1.5rem;margin-top:1.5rem}';
 /** The contact card is 20rem wide, or the whole chip row when that is narrower. */
 const CARD_WIDTH = 320;
+
+/** Escape closes whatever is on top: the contact card, the composer, then the menu. */
+function escapeAction(state: HomeMailboxState): HomeMailboxAction | null {
+	if (state.contactCard) return { type: "closeContact" };
+	if (state.composer) return { type: "closeComposer" };
+	return state.menuOpen ? { type: "closeMenu" } : null;
+}
+
+/** A key meant for a field, or a shortcut of the browser, is never the mailbox's. */
+function isTyping(event: KeyboardEvent): boolean {
+	const target = event.target as HTMLElement | null;
+	return (
+		!!target?.closest("input, textarea, select, [contenteditable='true']") ||
+		event.metaKey ||
+		event.ctrlKey ||
+		event.altKey
+	);
+}
+
+/** Below lg the menu is a layer over the page: Tab goes round inside it. */
+function trapTab(event: KeyboardEvent, root: HTMLElement | null) {
+	if (window.matchMedia("(min-width: 1024px)").matches) return;
+	const items = [...(root?.querySelectorAll<HTMLElement>('aside[aria-label="Folders"] :is(button, a[href])') ?? [])];
+	if (items.length === 0) return;
+	const active = document.activeElement as HTMLElement | null;
+	const inside = !!active && items.includes(active);
+	const edge = items[event.shiftKey ? 0 : items.length - 1];
+	if (!inside || active === edge) {
+		event.preventDefault();
+		items[event.shiftKey ? items.length - 1 : 0].focus();
+	}
+}
+
+/** After a move the focus follows the open email's row (or its article on a phone) when the element that had it is gone. */
+function settleFocus(root: HTMLElement | null) {
+	window.requestAnimationFrame(() => {
+		const active = document.activeElement;
+		if (active && active !== document.body && active.isConnected && !active.closest('[data-open="false"]')) return;
+		const article = root?.querySelector<HTMLElement>('article[data-open="true"]');
+		const row = root?.querySelector<HTMLElement>('[aria-current="true"]');
+		(row && row.getClientRects().length > 0 ? row : article)?.focus();
+	});
+}
 
 /**
  * The home page: a full-viewport mailbox whose emails are the page's content. The page itself never scrolls;
@@ -26,15 +71,24 @@ export function HomeMailbox({ appName, icon, emails, bodies, chrome, footer, hea
 	);
 	// Whether the open email last changed by a click or key (a new history entry) or by the URL (never a new entry).
 	const origin = useRef<"user" | "hash">("user");
-	const mounted = useRef(false);
-	const dispatch = useCallback((action: HomeMailboxAction) => {
-		origin.current = "user";
-		rawDispatch(action);
-	}, []);
 	const readerRef = useRef<HTMLDivElement>(null);
 	const rootRef = useRef<HTMLDivElement>(null);
 	const contactOpener = useRef<HTMLElement | null>(null);
 	const composerOpener = useRef<HTMLElement | null>(null);
+	const stateRef = useRef(state);
+	const wasMenuOpen = useRef(false);
+
+	const mounted = useRef(false);
+	const dispatch = useCallback((action: HomeMailboxAction) => {
+		origin.current = "user";
+		if (action.type === "compose") {
+			// What had the focus when it opened gets it back on close; from the contact card that is its chip, as the
+			// card's own button goes away with the card.
+			const active = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+			composerOpener.current = !active || active.closest("[data-contact-card]") ? contactOpener.current : active;
+		}
+		rawDispatch(action);
+	}, []);
 
 	const mailbox = useMemo(() => ({ name: "You", address: "you@yourdomain.example" }), []);
 	const people = useMemo<{ sender: HomePerson; me: HomePerson }>(() => {
@@ -88,13 +142,12 @@ export function HomeMailbox({ appName, icon, emails, bodies, chrome, footer, hea
 		if (!state.toast) return;
 		const timer = window.setTimeout(() => dispatch({ type: "dismissToast" }), TOAST_MS);
 		return () => window.clearTimeout(timer);
-	}, [state.toast]);
+	}, [state.toast, dispatch]);
 
 	// The composer and the contact card take the focus when they open and give it back when they close.
 	const composerOpen = !!state.composer;
 	useEffect(() => {
 		if (composerOpen) {
-			composerOpener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
 			rootRef.current?.querySelector<HTMLElement>('[aria-label="New message"] input')?.focus();
 		} else if (
 			composerOpener.current?.isConnected &&
@@ -114,48 +167,93 @@ export function HomeMailbox({ appName, icon, emails, bodies, chrome, footer, hea
 		}
 	}, [cardOpen]);
 
-	const copyLink = useCallback(async (id: string) => {
-		const url = `${window.location.origin}${window.location.pathname}#${id}`;
-		try {
-			await navigator.clipboard.writeText(url);
-			dispatch({ type: "toast", text: "Link copied" });
-		} catch {
-			dispatch({ type: "toast", text: "Could not copy the link" });
-		}
-	}, []);
+	const copyLink = useCallback(
+		async (id: string) => {
+			const url = `${window.location.origin}${window.location.pathname}#${id}`;
+			try {
+				await navigator.clipboard.writeText(url);
+				dispatch({ type: "toast", text: "Link copied" });
+			} catch {
+				dispatch({ type: "toast", text: "Could not copy the link" });
+			}
+		},
+		[dispatch],
+	);
 
 	const openContact = useCallback((person: HomePerson, chip: HTMLElement) => {
 		const item = chip.closest("li");
 		const row = item?.parentElement;
 		const left = item && row ? Math.max(0, Math.min(item.offsetLeft, row.clientWidth - CARD_WIDTH)) : 0;
 		contactOpener.current = chip;
-		dispatch({ type: "openContact", address: person.address, left });
+		rawDispatch({ type: "openContact", address: person.address, left });
 	}, []);
 
-	const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-		if (event.key === "Escape") {
-			const action: HomeMailboxAction | null = state.contactCard
-				? { type: "closeContact" }
-				: state.composer
-					? { type: "closeComposer" }
-					: state.menuOpen
-						? { type: "closeMenu" }
-						: null;
-			if (action) {
+	useEffect(() => {
+		stateRef.current = state;
+	});
+
+	// Keys work from a fresh load, wherever the focus is, except in a field. After a move the focus follows the open
+	// email's row (or the reader on a phone) when the element that had it has gone.
+	useEffect(() => {
+		const onKey = (event: KeyboardEvent) => {
+			const current = stateRef.current;
+			const root = rootRef.current;
+			if (event.key === "Escape") {
+				const action = escapeAction(current);
+				if (action) {
+					event.preventDefault();
+					dispatch(action);
+				}
+			} else if (event.key === "Tab") {
+				if (current.menuOpen) trapTab(event, root);
+			} else if ((event.key === "j" || event.key === "k") && !current.composer && !isTyping(event)) {
 				event.preventDefault();
-				dispatch(action);
+				dispatch({ type: "move", direction: event.key === "j" ? 1 : -1 });
+				settleFocus(root);
 			}
-			return;
+		};
+		document.addEventListener("keydown", onKey);
+		return () => document.removeEventListener("keydown", onKey);
+	}, [dispatch]);
+
+	// The menu takes the focus when it opens and, when it closes, hands it back to the button that opened it.
+	const menuOpen = state.menuOpen;
+	useEffect(() => {
+		if (menuOpen) {
+			rootRef.current?.querySelector<HTMLElement>('aside[aria-label="Folders"] button')?.focus();
+		} else if (
+			wasMenuOpen.current &&
+			(!document.activeElement ||
+				document.activeElement === document.body ||
+				document.activeElement.closest('aside[aria-label="Folders"]'))
+		) {
+			rootRef.current?.querySelector<HTMLElement>('button[aria-label="Open menu"]')?.focus();
 		}
-		const target = event.target as HTMLElement;
-		if (target.closest("input, textarea") || event.metaKey || event.ctrlKey || event.altKey) return;
-		if (event.key === "j" || event.key === "k") {
-			event.preventDefault();
-			dispatch({ type: "move", direction: event.key === "j" ? 1 : -1 });
-		}
+		wasMenuOpen.current = menuOpen;
+	}, [menuOpen]);
+
+	// An email counts as read once it is on screen, also when the window is widened to show it.
+	useEffect(() => {
+		const wide = window.matchMedia("(min-width: 768px)");
+		const mark = () => {
+			const current = stateRef.current;
+			if (current.openId && (wide.matches || current.pane === "reader"))
+				rawDispatch({ type: "markRead", id: current.openId });
+		};
+		mark();
+		wide.addEventListener("change", mark);
+		return () => wide.removeEventListener("change", mark);
+	}, [state.openId, state.pane]);
+
+	// The skip link opens the open email for a phone too, where the list may be showing: the hash would not change.
+	const skipToMessage = (event: MouseEvent<HTMLAnchorElement>) => {
+		event.preventDefault();
+		const id = stateRef.current.openId ?? WELCOME_ID;
+		dispatch({ type: "open", id });
+		window.requestAnimationFrame(() => rootRef.current?.querySelector<HTMLElement>(`article[id="${id}"]`)?.focus());
 	};
 
-	const onClick = (event: React.MouseEvent<HTMLDivElement>) => {
+	const onClick = (event: MouseEvent<HTMLDivElement>) => {
 		// A click outside an open card closes it; a click on a chip is handled by the chip.
 		if (state.contactCard && !(event.target as HTMLElement).closest("[data-contact-card], [aria-haspopup='dialog']")) {
 			dispatch({ type: "closeContact" });
@@ -165,7 +263,6 @@ export function HomeMailbox({ appName, icon, emails, bodies, chrome, footer, hea
 	return (
 		<div
 			ref={rootRef}
-			onKeyDown={onKeyDown}
 			onClick={onClick}
 			className="home-page relative flex h-dvh flex-col overflow-hidden bg-white text-neutral-900"
 		>
@@ -173,10 +270,15 @@ export function HomeMailbox({ appName, icon, emails, bodies, chrome, footer, hea
 			    hash it sets always names an email, never a fragment the hash listener would read as Welcome. */}
 			<a
 				href={`#${state.openId ?? WELCOME_ID}`}
+				onClick={skipToMessage}
 				className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-white focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-neutral-900 focus:shadow"
 			>
 				Skip to the message
 			</a>
+			{/* Without JavaScript the folders do nothing, so the page is one long reader with every email open. */}
+			<noscript>
+				<style>{NO_JS_CSS}</style>
+			</noscript>
 			<div className="shrink-0 border-b border-neutral-200 bg-white">{chrome}</div>
 			<main
 				id="main"

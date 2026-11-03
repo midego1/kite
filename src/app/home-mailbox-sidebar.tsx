@@ -3,7 +3,6 @@ import {
 	CircleDollarSign,
 	CircleHelp,
 	Inbox,
-	Layers,
 	Rocket,
 	Scale,
 	SquarePen,
@@ -24,7 +23,6 @@ import type {
 const ICONS: Record<HomeFolderId | "starred", LucideIcon> = {
 	inbox: Inbox,
 	starred: Star,
-	features: Layers,
 	deploy: Rocket,
 	cost: CircleDollarSign,
 	compare: Scale,
@@ -82,12 +80,15 @@ export function HomeSidebar({ state, emails, dispatch, mailbox, footer }: Sideba
 				<button
 					type="button"
 					aria-label="Close menu"
+					tabIndex={-1}
+					aria-hidden="true"
 					onClick={() => dispatch({ type: "closeMenu" })}
 					className="absolute inset-0 z-20 bg-black/30 lg:hidden"
 				/>
 			)}
 			<aside
 				aria-label="Folders"
+				data-home-pane="folders"
 				className={`${
 					state.menuOpen
 						? "absolute inset-y-0 left-0 z-30 flex w-64 shadow-2xl lg:static lg:w-auto lg:shadow-none"

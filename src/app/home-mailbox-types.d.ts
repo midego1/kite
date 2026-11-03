@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
  * email's body into the page; the client shell (home-mailbox.tsx) shows one at a time and keeps the state.
  */
 
-export type HomeFolderId = "inbox" | "features" | "deploy" | "cost" | "compare" | "limits" | "faq";
+export type HomeFolderId = "inbox" | "deploy" | "cost" | "compare" | "limits" | "faq";
 /** Starred is a view over every folder, not a folder of its own. */
 export type HomeViewId = HomeFolderId | "starred";
 
@@ -66,6 +66,7 @@ export type HomeMailboxAction =
 	| { type: "closeMenu" }
 	| { type: "openContact"; address: string; left: number }
 	| { type: "closeContact" }
+	| { type: "markRead"; id: string }
 	| { type: "compose"; to: string; subject: string }
 	| { type: "closeComposer" }
 	| { type: "send" }

@@ -1,5 +1,5 @@
-import Link from "next/link";
 import { SOURCE_CODE_URL } from "@/lib/source-code";
+import { HomeBrandLink } from "./home-brand-link";
 import { HomeHeaderActions } from "./home-header-actions";
 import { HomeThemeToggle } from "./home-theme-toggle";
 import { ctaGhost } from "./home-ui";
@@ -17,12 +17,12 @@ function GitHubMark() {
 export function HomeChrome({ appName, icon }: { appName: string; icon: string }) {
 	return (
 		<header className="flex min-h-14 flex-wrap items-center justify-between gap-x-2 px-3 py-2 sm:px-4">
-			<Link href="/" className="flex min-w-0 items-center gap-2.5" aria-label={`${appName} home`}>
+			<HomeBrandLink label={`${appName} home`}>
 				<img src={icon} height={28} width={28} alt="" />
 				<span className="hidden truncate text-lg font-bold tracking-tight text-neutral-900 min-[420px]:inline">
 					{appName}
 				</span>
-			</Link>
+			</HomeBrandLink>
 			<div className="flex flex-wrap items-center justify-end gap-1.5 sm:gap-2">
 				<HomeThemeToggle />
 				<a

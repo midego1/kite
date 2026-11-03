@@ -13,7 +13,6 @@ import type {
 
 export const FOLDERS: { id: HomeFolderId; label: string }[] = [
 	{ id: "inbox", label: "Inbox" },
-	{ id: "features", label: "Features" },
 	{ id: "deploy", label: "Deploy" },
 	{ id: "cost", label: "Cost" },
 	{ id: "compare", label: "Compare" },
@@ -131,6 +130,9 @@ const HANDLERS: { [T in HomeMailboxAction["type"]]: Handler<T> } = {
 		contactCard: state.contactCard?.address === action.address ? null : { address: action.address, left: action.left },
 	}),
 	closeContact: (state) => ({ ...state, contactCard: null }),
+	// An email counts as read once it is shown: a folder tapped on a phone opens its first email unseen.
+	markRead: (state, action) =>
+		state.read.includes(action.id) ? state : { ...state, read: [...state.read, action.id] },
 	compose: (state, action) => ({ ...state, composer: { to: action.to, subject: action.subject }, contactCard: null }),
 	closeComposer: (state) => ({ ...state, composer: null }),
 	send: (state) => ({ ...state, composer: null, toast: { text: "Demo: nothing sent", n: (state.toast?.n ?? 0) + 1 } }),

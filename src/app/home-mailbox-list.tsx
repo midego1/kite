@@ -78,6 +78,7 @@ export function HomeList({ state, emails, appName, icon, onOpen, dispatch }: Lis
 	return (
 		<section
 			aria-label={title}
+			data-home-pane="list"
 			className={`${state.pane === "reader" ? "hidden md:flex" : "flex"} min-h-0 min-w-0 flex-col border-r border-neutral-200 bg-white`}
 		>
 			<div className="flex h-14 shrink-0 items-center gap-3 border-b border-neutral-200 px-4 text-base font-semibold text-neutral-900">

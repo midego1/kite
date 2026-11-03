@@ -220,7 +220,11 @@ test.describe("visitor", () => {
 		await page.getByLabel("Search mail").fill("zzzz");
 		await expect(page.getByText('No mail matches "zzzz".')).toBeVisible();
 		await page.getByLabel("Search mail").fill("");
-		await expect(page.getByRole("region", { name: "Inbox" })).toBeVisible();
+		// Opening a result moved the view to its folder, so clearing the search shows the opened email's folder.
+		await expect(page.getByRole("region", { name: "Cost" })).toBeVisible();
+		await expect(
+			page.getByRole("region", { name: "Cost" }).getByRole("button", { name: /Free to receive/ }),
+		).toHaveAttribute("aria-current", "true");
 	});
 
 	test("Copy prompt copies the verbatim deploy prompt", async ({ browser }) => {

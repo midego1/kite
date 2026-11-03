@@ -82,8 +82,9 @@ function open(state: HomeMailboxState, emails: HomeEmailMeta[], id: string): Hom
 	if (!email) return state;
 	return {
 		...state,
-		// Opening from the search or a link lands in the email's own folder.
-		view: state.search.trim() || state.view === "starred" ? state.view : email.folder,
+		// Opening from the search or a link lands in the email's own folder, so the list and the reader agree
+		// once the search is cleared; only Starred keeps its cross-folder list.
+		view: state.view === "starred" ? state.view : email.folder,
 		openId: id,
 		read: state.read.includes(id) ? state.read : [...state.read, id],
 		pane: "reader",

@@ -142,19 +142,15 @@ const SHOTS: Shot[] = [
 		}),
 	),
 	{
-		// The public home page for a visitor: its demo inbox is invented data, whatever the demo admin's session holds.
+		// The public home page for a visitor: the mailbox whose emails are the page's content, with the Welcome email open.
 		name: "2026-11-02-home-page",
 		viewport: { width: 1440, height: 900 },
 		open: async (page) => {
 			await page.context().clearCookies();
 			await page.goto("/");
+			await page.locator('[data-hydrated="true"]').waitFor();
 			await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
 			await expect(page.getByRole("banner").getByRole("link", { name: "Sign in" })).toBeVisible();
-			const demo = page.getByTestId("home-product-mock");
-			await demo.scrollIntoViewIfNeeded();
-			await demo.hover();
-			await expect(demo).toHaveAttribute("data-demo", "ready");
-			await page.evaluate(() => window.scrollTo(0, 0));
 			return page;
 		},
 	},

@@ -1,4 +1,3 @@
-import type { LucideIcon } from "lucide-react";
 import type { ButtonProps } from "@/components/ui/button";
 import type { MailboxSelectorUser } from "@/components/mailbox-selector-types";
 import type { ReactNode } from "react";
@@ -71,48 +70,4 @@ export type HomeFaq = {
 export type HomeFooterLink = {
 	href: string;
 	label: string;
-};
-
-export type HomeMockSidebarItem = {
-	label: string;
-	icon: LucideIcon;
-	active?: boolean;
-	count?: string;
-};
-
-export type HomeMockRow = {
-	initial: string;
-	/** Tailwind classes of the avatar circle, as the real list colours them per sender. */
-	avatarClassName: string;
-	sender: string;
-	threadCount?: number;
-	subject: string;
-	time: string;
-	unread?: boolean;
-	selected?: boolean;
-	attachment?: boolean;
-	/** The small badge the real list shows for a suggestion, an invite or a sender waiting in the Screener. */
-	badge?: { icon: LucideIcon; label: string; className: string };
-	/** A chip after the subject, like "New sender" in the Screener's Inbox mode. */
-	chip?: string;
-};
-
-export type HomeMockParticipant = {
-	initial: string;
-	name: string;
-	avatarClassName: string;
-};
-
-export type HomeMockAttachment = {
-	name: string;
-	size: string;
-	iconClassName: string;
-};
-
-export type HomeProductMockProps = {
-	appName: string;
-};
-
-export type HomeSectionProps = {
-	appName: string;
 };

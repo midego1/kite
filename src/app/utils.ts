@@ -2,8 +2,8 @@ import { SOURCE_CODE_URL } from "@/lib/source-code";
 import type { HomeAction, HomeFeatureTheme, HomeFooterLink } from "./types";
 
 /** The one-click deploy of the repository (README "Deploy"). */
-export const DEPLOY_URL = `https://deploy.workers.cloudflare.com/?url=${SOURCE_CODE_URL}`;
-export const DOCS_URL = `${SOURCE_CODE_URL}/tree/main/docs`;
+const DEPLOY_URL = `https://deploy.workers.cloudflare.com/?url=${SOURCE_CODE_URL}`;
+const DOCS_URL = `${SOURCE_CODE_URL}/tree/main/docs`;
 const CHANGELOG_URL = `${SOURCE_CODE_URL}/blob/main/CHANGELOG.md`;
 const LICENSE_URL = `${SOURCE_CODE_URL}/blob/main/LICENSE`;
 export const UPSTREAM_URL = "https://github.com/hieunc229/mailflare";
@@ -16,20 +16,6 @@ export function getHomeActions(isLoggedIn: boolean): HomeAction[] {
 	return [
 		{ href: "/login", label: "Sign in", variant: "outline" },
 		{ href: DEPLOY_URL, label: "Deploy to Cloudflare", variant: "default", external: true },
-	];
-}
-
-/** The hero's buttons. A signed-in user opens the dashboard; a visitor deploys or reads the source. */
-export function getHeroActions(isLoggedIn: boolean): HomeAction[] {
-	if (isLoggedIn) {
-		return [
-			{ href: "/inbox", label: "Open dashboard", variant: "default" },
-			{ href: SOURCE_CODE_URL, label: "View on GitHub", variant: "outline", external: true },
-		];
-	}
-	return [
-		{ href: DEPLOY_URL, label: "Deploy to Cloudflare", variant: "default", external: true },
-		{ href: SOURCE_CODE_URL, label: "View on GitHub", variant: "outline", external: true },
 	];
 }
 

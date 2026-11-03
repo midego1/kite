@@ -2,23 +2,30 @@
 
 import { useEffect, useState } from "react";
 import { Ban, Check, Copy, Pencil, PenSquare, Search } from "lucide-react";
-import { demoMailbox } from "./home-demo-data";
-import { FOCUS_RING } from "./home-demo-parts";
-import type { DemoPerson } from "./home-demo-types";
+import { FOCUS_RING } from "./home-mailbox-sidebar";
+import type { HomePerson } from "./home-mailbox-types";
 
 /*
- * The contact card of a person chip in the demo's reader, in the look and order of the app's card
+ * The contact card of a person chip in the reader, in the look and order of the app's card
  * (components/contacts/contact-card.tsx): avatar, name, address and Copy, then New email, a search for their mail,
  * Edit contact and Block contact. It is drawn here with local state instead of reusing that component, which would
  * bring the composer, search, router and contact requests into the home page. Nothing leaves the page: Copy uses
- * the clipboard, the rest acts in the demo (home-demo-state-utils.ts).
+ * the clipboard, the rest acts in the mailbox.
  */
 
 const ITEM = `flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-100 ${FOCUS_RING}`;
 
-export function DemoContactCard({ person, left }: { person: DemoPerson; left: number }) {
+type CardProps = {
+	person: HomePerson;
+	icon: string;
+	left: number;
+	onNewEmail: () => void;
+	onSearch: () => void;
+	onNote: () => void;
+};
+
+export function HomeContactCard({ person, icon, left, onNewEmail, onSearch, onNote }: CardProps) {
 	const [copied, setCopied] = useState(false);
-	const own = person.address === demoMailbox.address;
 
 	useEffect(() => {
 		if (!copied) return;
@@ -45,14 +52,14 @@ export function DemoContactCard({ person, left }: { person: DemoPerson; left: nu
 			<div className="flex items-center gap-3 px-3 pb-2 pt-2">
 				<span
 					aria-hidden="true"
-					className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-medium ${person.avatarClassName}`}
+					className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-neutral-200 text-sm font-medium text-neutral-700"
 				>
-					{person.initial}
+					{person.own ? person.initial : <img src={icon} alt="" width={22} height={22} />}
 				</span>
 				<div className="min-w-0 flex-1">
 					<p className="flex items-center gap-2 text-sm font-medium">
 						<span className="truncate">{person.name}</span>
-						{own && (
+						{person.own && (
 							<span className="shrink-0 rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-600">
 								You
 							</span>
@@ -74,22 +81,22 @@ export function DemoContactCard({ person, left }: { person: DemoPerson; left: nu
 					{copied ? "Copied" : "Copy"}
 				</button>
 			</div>
-			{!own && (
+			{!person.own && (
 				<>
 					<hr className="my-1 border-neutral-100" />
-					<button type="button" data-action="contactNewEmail" data-id={person.address} className={ITEM}>
+					<button type="button" onClick={onNewEmail} className={ITEM}>
 						<PenSquare className="h-4 w-4 shrink-0" aria-hidden="true" />
 						New email
 					</button>
-					<button type="button" data-action="contactSearch" data-id={person.address} className={ITEM}>
+					<button type="button" onClick={onSearch} className={ITEM}>
 						<Search className="h-4 w-4 shrink-0" aria-hidden="true" />
 						<span className="min-w-0 truncate">Search Inbox for mail from {person.name}</span>
 					</button>
-					<button type="button" data-action="contactNote" className={ITEM}>
+					<button type="button" onClick={onNote} className={ITEM}>
 						<Pencil className="h-4 w-4 shrink-0" aria-hidden="true" />
 						Edit contact
 					</button>
-					<button type="button" data-action="contactNote" className={ITEM}>
+					<button type="button" onClick={onNote} className={ITEM}>
 						<Ban className="h-4 w-4 shrink-0" aria-hidden="true" />
 						Block contact
 					</button>

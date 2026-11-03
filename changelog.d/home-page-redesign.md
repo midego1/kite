@@ -1,4 +1,4 @@
 ### Changed
 
-- The public home page has a new look: a dark page laid out like an engineering drawing, with one large headline, thin lines instead of cards and a schematic drawing of a kite. The live demo inbox, the deploy steps and every fact on it are the same. It looks the same under every theme, and the app itself is unchanged.
-  ![The new home page with its live demo inbox](/changelog/2026-11-02-home-page.webp)
+- The public home page is now the mailbox itself. The page does not scroll: the folders on the left are the navigation, and each email is a part of what used to be a long page, from the Welcome email to deploy, cost, comparison, limits and the questions. Light and dark follow your theme, and a sun and moon button switches it.
+  ![The new home page: a mailbox with the Welcome email open](/changelog/2026-11-02-home-page.webp)

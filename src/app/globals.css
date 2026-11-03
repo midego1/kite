@@ -358,75 +358,31 @@ pre {
 }
 
 /* ── Landing page ────────────────────────────────────────────────────────────
-   The public home page follows the app's own theme: the theme script puts .dark or .light on <html> before paint
-   (theme-utils.ts), and the page has a dark version (the default, as everywhere) and a light one of its own, each
-   a set of --home-* tokens. It is always set in Geist, so none of the app's styles or fonts change it. The demo
-   inside keeps the app's real look for the theme and style in use. Nothing here reaches another page. */
+   The public home page is the product: a mailbox in the app's own look, in the theme the visitor chose (the theme
+   script puts .dark or .light on <html> before paint). Its blueprint kite draws with the --home-draw-* tokens
+   below, dark linework on light and light on dark; its panes scroll with a quiet scrollbar because the page
+   itself never scrolls. Nothing here reaches another page. */
 .home-page {
-	--font-ui: var(--font-geist-sans), system-ui, sans-serif;
-	--home-bg: #070707;
-	--home-ink: #fafafa;
-	--home-mute: #a3a3a8;
-	--home-dim: #8a8a90;
-	--home-line: rgb(255 255 255 / 0.13);
-	--home-line-strong: rgb(255 255 255 / 0.32);
-	--home-signal: #8fb0ff;
-	--home-code: #000;
 	--home-draw-ink: rgb(255 255 255 / 0.55);
 	--home-draw-soft: rgb(255 255 255 / 0.3);
 	--home-draw-faint: rgb(255 255 255 / 0.16);
 	--home-draw-hatch: rgb(255 255 255 / 0.1);
 	--home-draw-text: rgb(255 255 255 / 0.6);
-	background: var(--home-bg);
-	color: var(--home-ink);
-	font-family: var(--font-ui);
-	color-scheme: dark;
 }
-/* Drawing paper: cool white with ink-dark hairlines and a dark kite with the same detail. */
 :root.light .home-page {
-	--home-bg: #f8f9fa;
-	--home-ink: #0a0a0b;
-	--home-mute: #52525a;
-	--home-dim: #666670;
-	--home-line: rgb(10 10 11 / 0.14);
-	--home-line-strong: rgb(10 10 11 / 0.36);
-	--home-signal: #2b5bd7;
-	--home-code: #eceef1;
 	--home-draw-ink: rgb(10 10 11 / 0.74);
 	--home-draw-soft: rgb(10 10 11 / 0.44);
 	--home-draw-faint: rgb(10 10 11 / 0.22);
 	--home-draw-hatch: rgb(10 10 11 / 0.13);
 	--home-draw-text: rgb(10 10 11 / 0.72);
-	color-scheme: light;
 }
-.home-page ::selection {
-	background: var(--home-ink);
-	color: var(--home-bg);
-}
-.home-page :focus-visible {
-	outline: 2px solid var(--home-signal);
-	outline-offset: 3px;
+.home-page .home-scroll {
+	scrollbar-width: thin;
+	scrollbar-color: color-mix(in srgb, currentColor 22%, transparent) transparent;
 }
 
-/* The landing page's demo has no scrolling inside it. Its panes clip at the frame (overflow: clip makes no scroll
-   container, so wheel, touch and keyboard scrolling all reach the page and no scrollbar shows) and fade out at
-   the bottom edge where content is cut, so the cut looks chosen. Scoped to the demo's own root: the app's panes
-   keep their scrolling. Dialogs inside the demo (composer, chat) are short and are not faded. */
-.home-page [data-testid="home-product-mock"] :is(.overflow-y-auto, .overflow-hidden) {
-	overflow: clip;
-}
-.home-page [data-testid="home-product-mock"] .overflow-y-auto:not([role="dialog"] *) {
-	-webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 56px), transparent);
-	mask-image: linear-gradient(to bottom, #000 calc(100% - 56px), transparent);
-}
-
-/* The page's one authored moment: the headline settles in while the drawing traces itself, then its flying
-   line drifts. Everything is visible without them, and all of it stops under prefers-reduced-motion. */
+/* The page's one authored moment: the Welcome email's drawing traces itself, then its flying line drifts. Everything is visible without them, and all of it stops under prefers-reduced-motion. */
 @media (prefers-reduced-motion: no-preference) {
-	.home-rise {
-		animation: home-rise 1.1s cubic-bezier(0.16, 1, 0.3, 1) both;
-		animation-delay: var(--home-delay, 0ms);
-	}
 	.home-trace {
 		stroke-dasharray: 1;
 		stroke-dashoffset: 1;
@@ -438,13 +394,6 @@ pre {
 	.home-flyline {
 		transform-origin: 356px 392px;
 		animation: home-sway 9s ease-in-out 3s infinite alternate;
-	}
-}
-@keyframes home-rise {
-	from {
-		opacity: 0;
-		transform: translateY(14px);
-		filter: blur(6px);
 	}
 }
 @keyframes home-sway {

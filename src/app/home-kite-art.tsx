@@ -143,7 +143,7 @@ export function HomeKiteArt({ className }: { className?: string }) {
 				{CALLOUTS.map(({ n, circle, target }) => (
 					<g key={n}>
 						<path d={`M${point(circle)} L${point(target)}`} />
-						<circle cx={circle[0]} cy={circle[1]} r="8" fill="var(--home-bg)" />
+						<circle cx={circle[0]} cy={circle[1]} r="8" fill="var(--color-white)" />
 						<circle cx={target[0]} cy={target[1]} r="1.6" fill={SOFT} stroke="none" />
 						<text x={circle[0]} y={circle[1] + 3.4} fill={TEXT} fontSize="9.5" textAnchor="middle" stroke="none">
 							{n}

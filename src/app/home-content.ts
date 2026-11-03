@@ -242,3 +242,55 @@ export const faqs: HomeFaq[] = [
 		],
 	},
 ];
+
+/** The headline of the Welcome email and the page's one h1; the text after the comma is set in the quieter tone. */
+export const HEADLINE = "Your own inbox for your own domains, running in your Cloudflare account.";
+
+/** The README's "Deploy with an AI coding agent" prompt, verbatim, including the token-handling lines. Do not reword it here; change the README first and then this constant. */
+export const DEPLOY_PROMPT = `Install Kite from https://github.com/midego1/kite in my Cloudflare account.
+Ask me for my Cloudflare account ID, a scoped deployment API token, and a separate
+runtime CF_TOKEN through a secret input. Generate a long random SETUP_TOKEN.
+Generate a long random APP_ENCRYPTION_KEY for a new database; when reusing a
+database that already holds a Kite install, ask me for the existing
+APP_ENCRYPTION_KEY through a secret input, because a new key makes the provider
+keys it stores unreadable. Never print, commit, or place these secrets in a command
+argument or a tracked file. Use the deployment token only for Wrangler
+authentication (CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID).
+
+Read README.md, docs/deployment.md, and wrangler.jsonc first. Keep the Worker name
+exactly kite. In the selected account, create or reuse the D1 database kite,
+R2 bucket kite-raw, and Queues kite-inbound, kite-outbound, and kite-agent.
+Set the D1 database_id in the local Wrangler config without committing that
+account-specific ID. Install dependencies,
+run npm run deploy, and set CF_TOKEN, SETUP_TOKEN, and APP_ENCRYPTION_KEY as Worker
+secrets. Then give me SETUP_TOKEN and a copy of APP_ENCRYPTION_KEY to keep safe:
+I need the token to open /setup, and losing the key makes the provider keys Kite
+stores unreadable. Do not run remote D1 migrations manually; the /setup flow
+initializes the database.
+
+Give me the deployed URL and any remaining Cloudflare account actions. I will
+open /setup, create the first admin account, and connect my domain there.`;
+
+export const SETUP_NOTE =
+	"Needs a Cloudflare account with a domain on Cloudflare DNS. Plan on about 10 minutes the first time.";
+export const BETA_LINE = "Open source · AGPL-3.0 · Early beta";
+
+export function welcomeIntro(appName: string): string {
+	return `${appName} is a self-hosted webmail app on Cloudflare Workers. It receives through Email Routing and sends through Cloudflare, Resend or Amazon SES. Your mail stays in your D1 database and R2 bucket (SQLite and local files with Docker). Every feature is free.`;
+}
+
+export const FEATURES_LEAD = "Each one is in the app today. None of it needs a plan, a seat or a license key.";
+export const DEPLOY_LEAD = (appName: string) =>
+	`About 10 minutes the first time, for a domain whose DNS is already on Cloudflare. ${appName} sets up Email Routing for you. You still create the token, set the address and finish setup.`;
+export const COST_LEAD = (appName: string) =>
+	`Receiving through Cloudflare Email Routing is free. You pay your own Cloudflare and sending-provider usage, and ${appName} itself costs nothing.`;
+export const COST_RECEIVING =
+	"Receiving: Cloudflare Email Routing is free. Resend receiving is included in every plan. Amazon SES receiving is $0.10 per 1,000 messages, plus small S3 and SNS charges. New Amazon SES accounts start in a sandbox that only delivers to verified addresses.";
+export const DOCKER_TEXT =
+	"Run one container with SQLite and local files. A built-in SMTP listener, or a small relay Worker, receives mail. Any SMTP relay, Cloudflare, Resend or Amazon SES sends it.";
+export const DOCKER_COMMAND = "docker compose up -d --build";
+export const PROMPT_NOTE =
+	"The prompt is the one in the README. It tells the agent to ask for your tokens, and never to print them.";
+export const PROMPT_WARNING =
+	"Give the agent your Cloudflare account ID and two separate scoped API tokens through its secret input. Never put them in a public chat, a repository or a committed file.";
+export const CLOSING_LINE = "Open source, every feature included, deployed into your own Cloudflare account.";

@@ -4,7 +4,7 @@ import { Moon, Sun } from "lucide-react";
 import { saveThemePreference } from "@/components/theme-utils";
 
 /**
- * The header's sun and moon. It uses the app's own theme setting (theme-utils.ts): it saves the choice under the
+ * The chrome's sun and moon. It uses the app's own theme setting (theme-utils.ts): it saves the choice under the
  * same key, flips the html class the same way and tells the rest of the app through the same event. The icon and the
  * name follow the html class in CSS, so the server markup is right for either theme and nothing flashes.
  */
@@ -18,7 +18,7 @@ export function HomeThemeToggle() {
 		<button
 			type="button"
 			onClick={toggle}
-			className="flex h-10 w-10 items-center justify-center rounded-full text-(--home-mute) transition-colors hover:text-(--home-ink)"
+			className="flex h-9 w-9 items-center justify-center rounded-lg text-neutral-600 hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
 		>
 			<Sun className="hidden h-[18px] w-[18px] dark:block" aria-hidden="true" />
 			<Moon className="block h-[18px] w-[18px] dark:hidden" aria-hidden="true" />

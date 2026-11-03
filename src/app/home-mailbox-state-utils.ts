@@ -42,13 +42,17 @@ export function viewTitle(view: HomeViewId): string {
 	return view === "starred" ? "Starred" : (FOLDERS.find((folder) => folder.id === view)?.label ?? "Inbox");
 }
 
-function matches(email: HomeEmailMeta, query: string): boolean {
-	return email.text.toLowerCase().includes(query.trim().toLowerCase());
+function matches(email: HomeEmailMeta, query: string, dismissed: boolean): boolean {
+	// A dismissed suggestion card no longer shows its draft, so the search must not match it either.
+	const text =
+		dismissed && email.sample?.suggestion ? email.text.replace(email.sample.suggestion.text, "") : email.text;
+	return text.toLowerCase().includes(query.trim().toLowerCase());
 }
 
 /** The rows of a view; a search looks through every folder. */
 export function listEmails(state: HomeMailboxState, emails: HomeEmailMeta[]): HomeEmailMeta[] {
-	if (state.search.trim()) return emails.filter((email) => matches(email, state.search));
+	if (state.search.trim())
+		return emails.filter((email) => matches(email, state.search, state.dismissed.includes(email.id)));
 	if (state.view === "starred") return emails.filter((email) => state.starred.includes(email.id));
 	return emails.filter((email) => email.folder === state.view);
 }

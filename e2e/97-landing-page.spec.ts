@@ -657,8 +657,16 @@ test.describe("visitor", () => {
 		await reader(page).getByRole("button", { name: "Reply", exact: true }).click();
 		await expect(composer.getByLabel("Subject")).toHaveValue("Re: Launch plan for the new inbox");
 		await composer.getByRole("button", { name: "Close" }).click();
+		// The suggestion's draft text is indexed while the card is shown.
+		await page.getByLabel("Search mail").fill("DNS step");
+		await expect(page.getByRole("region", { name: "Search results" }).getByRole("listitem")).toHaveCount(1);
+		await page.getByLabel("Search mail").fill("");
 		await mail.getByRole("button", { name: "Dismiss" }).click();
 		await expect(mail.getByText("Reply drafted")).toHaveCount(0);
+		// Once dismissed, the suggestion's draft text no longer matches the search.
+		await page.getByLabel("Search mail").fill("DNS step");
+		await expect(page.getByRole("region", { name: "Search results" }).getByRole("listitem")).toHaveCount(0);
+		await page.getByLabel("Search mail").fill("");
 
 		// The contact card of an example sender shows an invented address.
 		await mail.getByRole("button", { name: "Sofia Marchetti", exact: true }).click();
@@ -682,9 +690,9 @@ test.describe("visitor", () => {
 		await expect(openEmail(page).getByText("fabrikam-invoice-2026-10.pdf")).toBeVisible();
 		await page.getByLabel("Search mail").fill("fabrikam");
 		await expect(page.getByRole("region", { name: "Search results" }).getByRole("listitem")).toHaveCount(1);
-		// The suggestion's draft text is indexed too.
+		// Dismissed above, the suggestion's draft text still does not match after the deep link.
 		await page.getByLabel("Search mail").fill("DNS step");
-		await expect(page.getByRole("region", { name: "Search results" }).getByRole("listitem")).toHaveCount(1);
+		await expect(page.getByRole("region", { name: "Search results" }).getByRole("listitem")).toHaveCount(0);
 		await page.getByLabel("Search mail").fill("example");
 		expect(await page.getByRole("region", { name: "Search results" }).getByRole("listitem").count()).toBe(4);
 		await page.getByLabel("Search mail").fill("");

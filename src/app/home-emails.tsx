@@ -246,7 +246,7 @@ function compareEmails(appName: string): Email[] {
 	const compare = email(
 		"compare",
 		"compare",
-		"When Kite fits, and when it doesn't",
+		`When ${appName} fits, and when it doesn't`,
 		lead,
 		compareRows.flatMap((row) => [row.label, ...row.cells]),
 		<>
@@ -255,7 +255,7 @@ function compareEmails(appName: string): Email[] {
 				<ExternalLink href={UPSTREAM_URL}>Mailflare</ExternalLink> if you want the upstream project.
 			</Para>
 			<EmailTable
-				label="Comparison of Kite, Mailflare, Email Routing and hosted inboxes"
+				label={`Comparison of ${appName}, Mailflare, Email Routing and hosted inboxes`}
 				from="wide"
 				columns={columns}
 				rows={compareRows.map((row) => ({ key: row.label, head: row.label, cells: row.cells }))}

@@ -15,7 +15,9 @@ export function homeHinge(fold: FoldViewport): FoldHinge | null {
 
 /** Columns of the first screen, the hinge and the second screen. */
 export function hingeGrid(hinge: FoldHinge): CSSProperties {
-	const first = `env(viewport-segment-width 0 0, ${hinge.first.width}px)`;
+	// The grid starts after the root's left safe-area inset, not at the viewport's left edge, so the first
+	// column ends at the first screen's right edge minus that inset; the max() keeps a length valid.
+	const first = `max(0px, calc(env(viewport-segment-right 0 0, ${hinge.first.left + hinge.first.width}px) - env(safe-area-inset-left, 0px)))`;
 	const gap = `max(${hinge.gap}px, calc(env(viewport-segment-left 1 0, 0px) - env(viewport-segment-right 0 0, 0px)))`;
 	return { gridTemplateColumns: `${first} ${gap} minmax(0, 1fr)` };
 }

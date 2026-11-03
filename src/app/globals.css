@@ -357,14 +357,63 @@ pre {
 	color: var(--color-blue-600);
 }
 
-/* The landing page's accent phrase stays part of the headline in every style, so the sentence is never cut
-   short: Kite classic sets it in the script face, the other styles keep the headline's own type. */
-:root[data-style="lavender"] .home-accent {
-	font-family: var(--font-script);
-	font-weight: 400;
-	letter-spacing: normal;
-	line-height: 1.1;
-	font-size: 1.15em;
+/* ── Landing page ────────────────────────────────────────────────────────────
+   The public home page is the product: a mailbox in the app's own look, in the theme the visitor chose (the theme
+   script puts .dark or .light on <html> before paint; with no script at all neither is there and the app's own look is
+   the light one). Its blueprint kite draws with the --home-draw-* tokens below, dark linework on light (the default)
+   and light on dark; its panes scroll with a quiet scrollbar because the page
+   itself never scrolls. Nothing here reaches another page. */
+.home-page {
+	--home-draw-ink: rgb(10 10 11 / 0.74);
+	--home-draw-soft: rgb(10 10 11 / 0.44);
+	--home-draw-faint: rgb(10 10 11 / 0.22);
+	--home-draw-hatch: rgb(10 10 11 / 0.13);
+	--home-draw-text: rgb(10 10 11 / 0.72);
+}
+:root.dark .home-page {
+	--home-draw-ink: rgb(255 255 255 / 0.55);
+	--home-draw-soft: rgb(255 255 255 / 0.3);
+	--home-draw-faint: rgb(255 255 255 / 0.16);
+	--home-draw-hatch: rgb(255 255 255 / 0.1);
+	--home-draw-text: rgb(255 255 255 / 0.6);
+}
+.home-page .home-scroll {
+	scrollbar-width: thin;
+	scrollbar-color: color-mix(in srgb, currentColor 22%, transparent) transparent;
+}
+
+/* The page's one authored moment: the Welcome email's drawing traces itself, then its flying line drifts. Everything is visible without them, and all of it stops under prefers-reduced-motion. */
+@media (prefers-reduced-motion: no-preference) {
+	.home-trace {
+		stroke-dasharray: 1;
+		stroke-dashoffset: 1;
+		animation: home-draw 2.4s cubic-bezier(0.16, 1, 0.3, 1) var(--d, 0s) forwards;
+	}
+	.home-fade {
+		animation: home-fade 1.4s ease-out var(--d, 0s) both;
+	}
+	.home-flyline {
+		transform-origin: 356px 392px;
+		animation: home-sway 9s ease-in-out 3s infinite alternate;
+	}
+}
+@keyframes home-sway {
+	from {
+		transform: rotate(-2deg);
+	}
+	to {
+		transform: rotate(2.5deg);
+	}
+}
+@keyframes home-fade {
+	from {
+		opacity: 0;
+	}
+}
+@keyframes home-draw {
+	to {
+		stroke-dashoffset: 0;
+	}
 }
 
 /* Thin, quiet scrollbars in the list and the reader, as in Zero's panels. */

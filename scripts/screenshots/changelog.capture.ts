@@ -142,6 +142,19 @@ const SHOTS: Shot[] = [
 		}),
 	),
 	{
+		// The public home page for a visitor: the mailbox whose emails are the page's content, with the Welcome email open.
+		name: "2026-11-02-home-page",
+		viewport: { width: 1440, height: 900 },
+		open: async (page) => {
+			await page.context().clearCookies();
+			await page.goto("/");
+			await page.locator('[data-hydrated="true"]').waitFor();
+			await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+			await expect(page.getByRole("banner").getByRole("link", { name: "Sign in" })).toBeVisible();
+			return page;
+		},
+	},
+	{
 		name: "2026-11-02-whats-new-images",
 		viewport: { width: 1100, height: 760 },
 		open: async (page) => {

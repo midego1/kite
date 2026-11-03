@@ -207,7 +207,7 @@ function costEmail(appName: string): Email {
 	return email(
 		"cost",
 		"cost",
-		"Free to receive, free tiers to send",
+		"Free to receive with Cloudflare, free tiers to send",
 		lead,
 		[
 			...costRows.flatMap((row) => [row.provider, row.free, row.after]),

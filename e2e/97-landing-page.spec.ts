@@ -135,7 +135,7 @@ test.describe("visitor", () => {
 		);
 		await expect(deploy).toContainText("Never print, commit, or place these secrets");
 
-		await openFolderEmail(page, "Cost", "Free to receive, free tiers to send");
+		await openFolderEmail(page, "Cost", "Free to receive with Cloudflare, free tiers to send");
 		const cost = openEmail(page);
 		await expect(cost.getByRole("rowheader", { name: "Resend" })).toBeVisible();
 		await expect(cost.getByRole("rowheader", { name: "Amazon SES" })).toBeVisible();
@@ -215,7 +215,7 @@ test.describe("visitor", () => {
 		await page.getByLabel("Search mail").fill("amazon ses");
 		const results = page.getByRole("region", { name: "Search results" });
 		expect(await results.getByRole("listitem").count()).toBeGreaterThan(2);
-		await results.getByRole("button", { name: /Free to receive, free tiers to send/ }).click();
+		await results.getByRole("button", { name: /Free to receive with Cloudflare, free tiers to send/ }).click();
 		await expect(openEmail(page)).toHaveAttribute("id", "cost");
 		await page.getByLabel("Search mail").fill("zzzz");
 		await expect(page.getByText('No mail matches "zzzz".')).toBeVisible();
@@ -259,7 +259,7 @@ test.describe("visitor", () => {
 
 		await visit(page);
 		await expect(openEmail(page)).toHaveAttribute("id", "welcome");
-		await openFolderEmail(page, "Cost", "Free to receive, free tiers to send");
+		await openFolderEmail(page, "Cost", "Free to receive with Cloudflare, free tiers to send");
 		await expect(page).toHaveURL(/#cost$/);
 		await openFolderEmail(page, "Deploy", "Deploy in five steps");
 		await expect(page).toHaveURL(/#deploy$/);

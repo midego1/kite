@@ -6,6 +6,8 @@ import { actionFromDataset, createDemoState, reduceDemo } from "./home-demo-stat
 import type { DemoAction, DemoClick, DemoState, HomeDemoProps } from "./home-demo-types";
 
 const TOAST_MS = 6000;
+/** The contact card is 20rem wide, or the whole row when that is narrower. */
+const CARD_WIDTH = 320;
 const OPENS_DIALOG: DemoAction["type"][] = ["reply", "takeSuggestion", "toggleChat"];
 
 function initialState(click: DemoClick | null | undefined): DemoState {
@@ -16,6 +18,7 @@ function initialState(click: DemoClick | null | undefined): DemoState {
 
 /** Escape closes whatever is on top: the composer, the chat, the phone menu, then the open message. */
 function escapeAction(state: DemoState): DemoAction | null {
+	if (state.contactCard) return { type: "closeContact" };
 	if (state.composer) return { type: "closeComposer" };
 	if (state.chatOpen) return { type: "toggleChat" };
 	if (state.menuOpen) return { type: "toggleMenu" };
@@ -37,6 +40,7 @@ export function HomeDemo({ appName, initialAction }: HomeDemoProps) {
 	const [chatInput, setChatInput] = useState("");
 	const root = useRef<HTMLDivElement>(null);
 	const opener = useRef<HTMLElement | null>(null);
+	const contactOpener = useRef<HTMLElement | null>(null);
 	const dialogWasOpen = useRef(false);
 	const dialogOpen = !!state.composer || state.chatOpen;
 
@@ -54,6 +58,17 @@ export function HomeDemo({ appName, initialAction }: HomeDemoProps) {
 		if (state.chatOpen) focusWithin(root.current, '[role="dialog"] form input');
 	}, [state.chatOpen]);
 
+	// The contact card takes the focus when it opens and gives it back to its chip when it closes.
+	const contactOpen = !!state.contactCard;
+	useEffect(() => {
+		if (contactOpen) focusWithin(root.current, "[data-contact-card] button");
+		else if (contactOpener.current?.isConnected) {
+			// Only when the card took the focus with it; never when the person already moved on to something else.
+			const active = document.activeElement;
+			if (!active || active === document.body) contactOpener.current.focus();
+		}
+	}, [contactOpen]);
+
 	useEffect(() => {
 		if (dialogWasOpen.current && !dialogOpen) {
 			if (opener.current?.isConnected) opener.current.focus();
@@ -63,11 +78,22 @@ export function HomeDemo({ appName, initialAction }: HomeDemoProps) {
 	}, [dialogOpen]);
 
 	const onClick = (event: MouseEvent<HTMLDivElement>) => {
-		const button = (event.target as HTMLElement).closest<HTMLElement>("[data-action]");
+		const target = event.target as HTMLElement;
+		if (state.contactCard && !target.closest("[data-contact-card], [data-action='openContact']")) {
+			dispatch({ type: "closeContact" });
+		}
+		const button = target.closest<HTMLElement>("[data-action]");
 		if (!button || !event.currentTarget.contains(button)) return;
 		const action = actionFromDataset(button.dataset);
 		if (!action) return;
 		if (OPENS_DIALOG.includes(action.type) && !dialogOpen) opener.current = button;
+		if (action.type === "openContact") {
+			// The card sits under the chips, level with the chip it belongs to and kept inside the row.
+			const chip = button.closest("li");
+			const row = chip?.parentElement;
+			if (chip && row) action.left = Math.max(0, Math.min(chip.offsetLeft, row.clientWidth - CARD_WIDTH));
+			contactOpener.current = button;
+		}
 		dispatch(action);
 	};
 

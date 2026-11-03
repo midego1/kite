@@ -7,10 +7,10 @@ import type { CSSProperties } from "react";
  * the hero drawing and stays still under prefers-reduced-motion.
  */
 
-const INK = "rgb(255 255 255 / 0.55)";
-const SOFT = "rgb(255 255 255 / 0.3)";
-const FAINT = "rgb(255 255 255 / 0.16)";
-const TEXT = "rgb(255 255 255 / 0.6)";
+const INK = "var(--home-draw-ink)";
+const SOFT = "var(--home-draw-soft)";
+const FAINT = "var(--home-draw-faint)";
+const TEXT = "var(--home-draw-text)";
 
 const delay = (seconds: number) => ({ "--d": `${seconds}s` }) as CSSProperties;
 

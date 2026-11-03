@@ -116,6 +116,8 @@ export type DemoState = {
 	summarized: string[];
 	/** Ids whose earlier messages are unfolded. */
 	expanded: string[];
+	/** The open contact card of a person chip in the reader, by address. */
+	contactCard: { address: string; left: number } | null;
 };
 
 export type DemoActionType =
@@ -143,7 +145,12 @@ export type DemoActionType =
 	| "summarize"
 	| "expand"
 	| "toggleMenu"
-	| "move";
+	| "move"
+	| "openContact"
+	| "closeContact"
+	| "contactNewEmail"
+	| "contactSearch"
+	| "contactNote";
 
 export type DemoAction = {
 	type: DemoActionType;
@@ -151,10 +158,12 @@ export type DemoAction = {
 	view?: DemoView;
 	text?: string;
 	direction?: 1 | -1;
+	/** Where the contact card sits under the chips, in px from their row's left edge. */
+	left?: number;
 };
 
 /** What a clicked button carries; the host keeps it as plain strings so it never imports the demo's code. */
-export type DemoClick = { action?: string; id?: string; view?: string };
+export type DemoClick = { action?: string; id?: string; view?: string; left?: number };
 
 /** The demo's counts for the sidebar. */
 export type DemoCounts = Partial<Record<DemoView, number>>;

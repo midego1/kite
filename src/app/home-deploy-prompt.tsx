@@ -74,7 +74,7 @@ export function HomeDeployPrompt() {
 			</div>
 			<pre
 				ref={preRef}
-				className={`${MONO} mt-4 max-w-full overflow-x-auto whitespace-pre-wrap rounded-lg border border-(--home-line) bg-black p-4 text-left leading-5 text-(--home-mute)`}
+				className={`${MONO} mt-4 max-w-full overflow-x-auto whitespace-pre-wrap rounded-lg border border-(--home-line) bg-(--home-code) p-4 text-left leading-5 text-(--home-mute)`}
 			>
 				{DEPLOY_PROMPT}
 			</pre>

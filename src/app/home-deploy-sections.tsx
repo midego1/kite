@@ -51,7 +51,7 @@ export function HomeDeploy({ appName }: HomeSectionProps) {
 						mail. Any SMTP relay, Cloudflare, Resend or Amazon SES sends it.
 					</p>
 					<pre
-						className={`${MONO} mt-5 overflow-x-auto rounded-lg border border-(--home-line) bg-black px-4 py-3 text-sm text-(--home-ink)`}
+						className={`${MONO} mt-5 overflow-x-auto rounded-lg border border-(--home-line) bg-(--home-code) px-4 py-3 text-sm text-(--home-ink)`}
 					>
 						docker compose up -d --build
 					</pre>

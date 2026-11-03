@@ -126,7 +126,7 @@ export function HomeFaq() {
 						suppressHydrationWarning
 						className="group border-t border-(--home-line) first:border-t-0"
 					>
-						<summary className="flex cursor-pointer list-none items-center justify-between gap-6 py-6 text-lg font-medium tracking-[-0.01em] transition-colors hover:text-white [&::-webkit-details-marker]:hidden">
+						<summary className="flex cursor-pointer list-none items-center justify-between gap-6 py-6 text-lg font-medium tracking-[-0.01em] transition-colors hover:text-(--home-ink) [&::-webkit-details-marker]:hidden">
 							{faq.question}
 							<span aria-hidden="true" className={`${MONO} text-base text-(--home-dim) group-open:hidden`}>
 								+

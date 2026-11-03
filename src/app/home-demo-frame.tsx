@@ -21,7 +21,7 @@ export function DemoFrame(props: DemoFrameProps) {
 			ref={rootRef}
 			onClick={onClick}
 			onKeyDown={onKeyDown}
-			className="relative mx-auto h-[600px] w-full max-w-none overflow-hidden rounded-xl border border-(--home-line-strong) bg-white text-left md:h-[700px]"
+			className="relative mx-auto h-[600px] w-full max-w-none overflow-clip rounded-xl border border-(--home-line-strong) bg-white text-left md:h-[800px]"
 		>
 			<div className="grid h-full grid-cols-1 md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:grid-cols-[200px_minmax(0,0.9fr)_minmax(0,1.1fr)]">
 				<DemoSidebar {...props} />

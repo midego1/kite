@@ -4,6 +4,7 @@ import { getHomeBranding } from "./home-server-utils";
 import { HomeAuthProvider } from "./home-auth";
 import { HomeHeaderActions } from "./home-header-actions";
 import { HomeHeroActions } from "./home-hero-actions";
+import { HomeThemeToggle } from "./home-theme-toggle";
 import { HomeProductMock } from "./home-product-mock";
 import { HomeKiteArt } from "./home-kite-art";
 import { HomeFeatures, HomeFooter } from "./home-sections";
@@ -38,9 +39,9 @@ export async function generateMetadata(): Promise<Metadata> {
 /*
  * The landing page of an install, laid out as one engineering drawing sheet. A signed-in user keeps the page (the
  * header shows their account and the hero's first button opens the dashboard); a visitor gets the ways in.
- * Everything but the two button groups renders on the server. The page is always dark and set in Geist
- * (.home-page in globals.css), so it looks the same under every theme and style, and nothing it sets reaches the
- * signed-in app.
+ * Everything but the two button groups renders on the server. The page follows the app's own theme (the html
+ * dark and light classes the theme script sets before paint) in a dark and a light version of its own, and is set
+ * in Geist whatever the style (.home-page in globals.css); nothing it sets reaches the signed-in app.
  */
 const ZONES = Array.from({ length: 12 }, (_, index) => index + 1);
 const BRACKET = "pointer-events-none absolute h-4 w-4 border-(--home-line-strong)";
@@ -52,7 +53,7 @@ export default async function HomePage() {
 
 	return (
 		<HomeAuthProvider>
-			<div className="home-page dark min-h-dvh overflow-x-clip antialiased sm:px-6">
+			<div className="home-page min-h-dvh overflow-x-clip antialiased sm:px-6">
 				<div className={SHEET}>
 					<a
 						href="#main"
@@ -83,6 +84,7 @@ export default async function HomePage() {
 							</a>
 						</nav>
 						<div className="flex items-center gap-1 sm:gap-2">
+							<HomeThemeToggle />
 							<HomeHeaderActions />
 						</div>
 					</header>

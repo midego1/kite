@@ -154,13 +154,14 @@ test.describe("visitor", () => {
 		await expect(page.getByLabel("Email")).toBeVisible();
 	});
 
-	test("stays dark and readable under every theme and style, and the app's own look is untouched", async ({ page }) => {
+	test("is readable in dark and in light under every style, and the app's own look is untouched", async ({ page }) => {
 		for (const [theme, style] of [
-			["light", "kite"],
 			["dark", "kite"],
-			["light", "lavender"],
+			["light", "kite"],
 			["dark", "lavender"],
+			["light", "lavender"],
 		]) {
+			const dark = theme === "dark";
 			const visit = await page.context().newPage();
 			await visit.addInitScript(
 				([savedTheme, savedStyle]) => {
@@ -171,17 +172,27 @@ test.describe("visitor", () => {
 			);
 			await visit.goto("/");
 			await expect(visit.locator("html")).toHaveAttribute("data-style", style);
+			await expect(visit.locator("html")).toHaveClass(dark ? /dark/ : /light/);
 			const root = visit.locator(".home-page");
-			expect((await luminancesBetween(root, root)).background).toBeLessThan(0.02);
+			const rootLuminance = (await luminancesBetween(root, root)).background;
+			// Near-black sheet in dark, drawing-paper white in light.
+			if (dark) expect(rootLuminance).toBeLessThan(0.02);
+			else expect(rootLuminance).toBeGreaterThan(0.9);
 			const heading = visit.getByRole("heading", { level: 1 });
 			expect(await contrastBetween(heading, root)).toBeGreaterThanOrEqual(7);
 			expect(await contrastBetween(visit.getByText(/is a self-hosted webmail app/), root)).toBeGreaterThanOrEqual(4.5);
 			expect(await contrastBetween(visit.getByText("Needs a Cloudflare account"), root)).toBeGreaterThanOrEqual(4.5);
-			// The page sets its own font whatever the style chose, and the demo stays a dark window of its own.
+			expect(await contrastBetween(visit.getByText("Open source · AGPL-3.0"), root)).toBeGreaterThanOrEqual(4.5);
+			// The page sets its own font whatever the style chose, and the demo keeps the app's real look for the theme.
 			expect(await heading.evaluate((element) => getComputedStyle(element).fontFamily)).toMatch(/Geist|geist/);
 			const demo = await liveDemo(visit);
-			expect((await luminancesBetween(demo, demo)).background).toBeLessThan(0.15);
-			await demo.getByRole("button", { name: /Lena Fischer/ }).click();
+			const demoLuminance = (await luminancesBetween(demo, demo)).background;
+			if (dark) expect(demoLuminance).toBeLessThan(0.15);
+			else expect(demoLuminance).toBeGreaterThan(0.8);
+			await demo
+				.getByRole("button", { name: /Lena Fischer/ })
+				.first()
+				.click();
 			expect(
 				await contrastBetween(demo.getByText("I lean towards letting them skip it."), demo),
 			).toBeGreaterThanOrEqual(4.5);
@@ -191,12 +202,46 @@ test.describe("visitor", () => {
 			await visit.close();
 		}
 
-		// The home page's palette is scoped to its own wrapper: another page keeps the theme the visitor chose.
+		// The page's palette is scoped to its own wrapper: another page keeps the theme the visitor chose.
 		await page.addInitScript(() => localStorage.setItem("kite-theme", "light"));
 		await page.goto("/login");
 		await expect(page.locator(".home-page")).toHaveCount(0);
 		const body = page.locator("body");
 		expect((await luminancesBetween(body, body)).background).toBeGreaterThan(0.5);
+	});
+
+	test("the header toggle switches the app's theme, keeps it after a reload and honours the system setting", async ({
+		browser,
+	}) => {
+		const context = await browser.newContext({ storageState: { cookies: [], origins: [] }, colorScheme: "light" });
+		const page = await context.newPage();
+		await page.goto("/");
+		// Kite is dark-first: with nothing saved the page is dark, whatever the system says.
+		await expect(page.locator("html")).toHaveClass(/dark/);
+		const root = page.locator(".home-page");
+		expect((await luminancesBetween(root, root)).background).toBeLessThan(0.02);
+
+		await page.getByRole("banner").getByRole("button", { name: "Switch to light mode" }).click();
+		await expect(page.locator("html")).toHaveClass(/light/);
+		expect(await page.evaluate(() => localStorage.getItem("kite-theme"))).toBe("light");
+		expect((await luminancesBetween(root, root)).background).toBeGreaterThan(0.9);
+
+		// No flash on load: the first paint after a reload is already light.
+		await page.reload();
+		await expect(page.locator("html")).toHaveClass(/light/);
+		await expect(page.getByRole("banner").getByRole("button", { name: "Switch to dark mode" })).toBeVisible();
+		expect((await luminancesBetween(root, root)).background).toBeGreaterThan(0.9);
+
+		await page.getByRole("banner").getByRole("button", { name: "Switch to dark mode" }).click();
+		await expect(page.locator("html")).toHaveClass(/dark/);
+		// Dark is the default, so choosing it clears the saved value, as in Settings.
+		expect(await page.evaluate(() => localStorage.getItem("kite-theme"))).toBeNull();
+
+		// "Match system" in Settings is honoured: the toggle starts from what that resolves to.
+		await page.evaluate(() => localStorage.setItem("kite-theme", "system"));
+		await page.reload();
+		await expect(page.locator("html")).toHaveClass(/light/);
+		await context.close();
 	});
 
 	test("keeps a sensible heading order, a skip link, visible focus and a still page for reduced motion", async ({

@@ -9,10 +9,10 @@ import { useId, type CSSProperties } from "react";
  * are CSS (globals.css) and stop under prefers-reduced-motion.
  */
 
-const INK = "rgb(255 255 255 / 0.55)";
-const SOFT = "rgb(255 255 255 / 0.3)";
-const FAINT = "rgb(255 255 255 / 0.16)";
-const TEXT = "rgb(255 255 255 / 0.6)";
+const INK = "var(--home-draw-ink)";
+const SOFT = "var(--home-draw-soft)";
+const FAINT = "var(--home-draw-faint)";
+const TEXT = "var(--home-draw-text)";
 
 /** Kite corners: top, left, right, bottom of the front view. */
 const TOP = [290, 80] as const;
@@ -85,7 +85,7 @@ export function HomeKiteArt({ className }: { className?: string }) {
 			</g>
 
 			{/* Fabric hatching in two opposite sail panels, then the hem. */}
-			<path d={HATCH} stroke="rgb(255 255 255 / 0.1)" clipPath={`url(#${clip})`} {...fade(0.9)} />
+			<path d={HATCH} stroke="var(--home-draw-hatch)" clipPath={`url(#${clip})`} {...fade(0.9)} />
 			<path d="M290 96 L418 232 L290 502 L162 232 Z" stroke={SOFT} strokeDasharray="4 3" {...fade(0.8)} />
 
 			{/* Sail outline, spine and spar as two-line rods. */}
@@ -143,7 +143,7 @@ export function HomeKiteArt({ className }: { className?: string }) {
 				{CALLOUTS.map(({ n, circle, target }) => (
 					<g key={n}>
 						<path d={`M${point(circle)} L${point(target)}`} />
-						<circle cx={circle[0]} cy={circle[1]} r="8" fill="#070707" />
+						<circle cx={circle[0]} cy={circle[1]} r="8" fill="var(--home-bg)" />
 						<circle cx={target[0]} cy={target[1]} r="1.6" fill={SOFT} stroke="none" />
 						<text x={circle[0]} y={circle[1] + 3.4} fill={TEXT} fontSize="9.5" textAnchor="middle" stroke="none">
 							{n}

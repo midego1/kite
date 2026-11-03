@@ -14,7 +14,8 @@ import {
 	Trash2,
 	X,
 } from "lucide-react";
-import { findMessage } from "./home-demo-state-utils";
+import { DemoContactCard } from "./home-demo-contact";
+import { findMessage, findPerson } from "./home-demo-state-utils";
 import { FOCUS_RING, PRIMARY_BUTTON, SECONDARY_BUTTON } from "./home-demo-parts";
 import type { DemoMessage, DemoPartProps, DemoPerson, DemoState } from "./home-demo-types";
 
@@ -180,17 +181,39 @@ function OpenMessage({ message, state }: { message: DemoMessage; state: DemoStat
 					<CalendarDays className="h-4 w-4" aria-hidden="true" />
 					{message.sentAt}
 				</p>
-				<ul className="mt-3 flex flex-wrap gap-2" aria-label="People in this conversation">
-					{message.participants.map((person) => (
-						<li
-							key={person.address}
-							className="inline-flex items-center gap-2 rounded-full border border-neutral-200 bg-white py-1 pl-1 pr-3 text-sm text-neutral-800"
-							title={person.address}
-						>
-							<Avatar person={person} size="h-6 w-6 text-xs" />
-							{person.name}
-						</li>
-					))}
+				<ul className="relative mt-3 flex flex-wrap gap-2" aria-label="People in this conversation">
+					{message.participants.map((person) => {
+						const shown = state.contactCard?.address === person.address;
+						return (
+							<li key={person.address} className="group relative">
+								<button
+									type="button"
+									data-action="openContact"
+									data-id={person.address}
+									aria-haspopup="dialog"
+									aria-expanded={shown}
+									className={`inline-flex cursor-pointer items-center gap-2 rounded-full border border-neutral-200 bg-white py-1 pl-1 pr-3 text-sm text-neutral-800 hover:bg-neutral-50 ${FOCUS_RING}`}
+								>
+									<Avatar person={person} size="h-6 w-6 text-xs" />
+									{person.name}
+								</button>
+								{!shown && (
+									<span
+										role="tooltip"
+										className="pointer-events-none absolute left-0 top-full z-20 mt-1 hidden whitespace-nowrap rounded-md bg-neutral-900 px-2 py-1 text-xs text-white group-focus-within:block group-hover:block"
+									>
+										{person.address}
+									</span>
+								)}
+							</li>
+						);
+					})}
+					{state.contactCard && (
+						<DemoContactCard
+							person={findPerson(state, state.contactCard.address) ?? message.from}
+							left={state.contactCard.left}
+						/>
+					)}
 				</ul>
 			</div>
 			{message.screening && <ScreenerBar message={message} />}

@@ -11,8 +11,8 @@ const BUTTON =
 	"inline-flex items-center justify-center gap-2 rounded-full text-[15px] font-medium transition-colors duration-200";
 
 /** The one filled action: white on the near-black sheet. */
-export const primaryButton = `${BUTTON} h-12 bg-(--home-ink) px-7 text-(--home-bg) hover:bg-white/80`;
-export const primaryButtonSmall = `${BUTTON} h-10 bg-(--home-ink) px-5 text-(--home-bg) hover:bg-white/80`;
+export const primaryButton = `${BUTTON} h-12 bg-(--home-ink) px-7 text-(--home-bg) hover:opacity-85`;
+export const primaryButtonSmall = `${BUTTON} h-10 bg-(--home-ink) px-5 text-(--home-bg) hover:opacity-85`;
 /** The quiet action: a hairline ring that brightens on hover. */
 export const ghostButton = `${BUTTON} h-12 border border-(--home-line-strong) px-7 text-(--home-ink) hover:border-(--home-ink)`;
 export const ghostButtonSmall = `${BUTTON} h-10 px-4 text-(--home-mute) hover:text-(--home-ink)`;

@@ -6,6 +6,7 @@ import type {
 	DemoListView,
 	DemoMessage,
 	DemoPanelView,
+	DemoPerson,
 	DemoState,
 	DemoView,
 } from "./home-demo-types";
@@ -36,6 +37,7 @@ export function createDemoState(): DemoState {
 		chat: [{ role: "assistant", text: demoChatOpening }],
 		summarized: [],
 		expanded: [],
+		contactCard: null,
 	};
 }
 
@@ -242,10 +244,41 @@ const HANDLERS: Record<DemoActionType, (state: DemoState, action: DemoAction) =>
 	expand: withId((state, id) => ({ ...state, expanded: toggle(state.expanded, id) })),
 	toggleMenu: (state) => ({ ...state, menuOpen: !state.menuOpen }),
 	move: (state, { direction }) => (direction ? move(state, direction) : state),
+	// A person chip in the reader opens a small card, as in the app. Its actions stay on this page: New email opens
+	// the demo's composer, the search narrows the list, and Edit and Block only say that nothing changes here.
+	openContact: (state, { id, left }) =>
+		!id || state.contactCard?.address === id
+			? { ...state, contactCard: null }
+			: { ...state, contactCard: { address: id, left: left ?? 0 } },
+	closeContact: (state) => ({ ...state, contactCard: null }),
+	contactNewEmail: withId((state, address) => ({
+		...state,
+		composer: { to: address, subject: "", body: "", fromAssistant: false, messageId: state.openId ?? "" },
+	})),
+	contactSearch: withId((state, address) => {
+		const person = findPerson(state, address);
+		return { ...state, view: "inbox", openId: null, mobilePane: "list", search: person?.name ?? address };
+	}),
+	contactNote: (state) => ({ ...state, toast: { text: "Demo: nothing changes here", undo: null } }),
 };
 
+/** The people the demo knows, found by address in its messages. */
+export function findPerson(state: DemoState, address: string): DemoPerson | undefined {
+	for (const message of state.messages) {
+		const person = [message.from, ...message.participants].find((candidate) => candidate.address === address);
+		if (person) return person;
+	}
+	return undefined;
+}
+
+// These keep an open card; every other action (opening a message, a folder, a toast timing out aside) closes it.
+const KEEPS_CARD: DemoActionType[] = ["openContact", "dismissToast", "search", "chatSend", "dismissUpdate", "star"];
+
 export function reduceDemo(state: DemoState, action: DemoAction): DemoState {
-	return HANDLERS[action.type](state, action);
+	const next = HANDLERS[action.type](state, action);
+	return next.contactCard && !KEEPS_CARD.includes(action.type) && next.contactCard === state.contactCard
+		? { ...next, contactCard: null }
+		: next;
 }
 
 /** Reads a button's `data-action`, `data-id` and `data-view` into an action; null for anything else. */

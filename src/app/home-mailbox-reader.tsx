@@ -137,6 +137,8 @@ export const HomeReader = forwardRef<HTMLDivElement, ReaderProps>(function HomeR
 									})}
 									{open && state.contactCard && (
 										<HomeContactCard
+											// Remount on a chip switch, so the Copy button's "Copied" resets.
+											key={state.contactCard.address}
 											person={person(state.contactCard.address)}
 											icon={icon}
 											left={state.contactCard.left}

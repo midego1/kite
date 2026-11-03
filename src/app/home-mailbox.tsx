@@ -77,6 +77,7 @@ export function HomeMailbox({ appName, icon, emails, bodies, chrome, footer, hea
 	const composerOpener = useRef<HTMLElement | null>(null);
 	const stateRef = useRef(state);
 	const wasMenuOpen = useRef(false);
+	const wasComposerOpen = useRef(false);
 
 	const mounted = useRef(false);
 	const dispatch = useCallback((action: HomeMailboxAction) => {
@@ -149,12 +150,13 @@ export function HomeMailbox({ appName, icon, emails, bodies, chrome, footer, hea
 	useEffect(() => {
 		if (composerOpen) {
 			rootRef.current?.querySelector<HTMLElement>('[aria-label="New message"] input')?.focus();
-		} else if (!document.activeElement || document.activeElement === document.body) {
-			// The opener may be the menu's New email button, hidden again below lg: the menu's own button stands in.
+		} else if (wasComposerOpen.current && (!document.activeElement || document.activeElement === document.body)) {
+			// Only once it has been open: on load nothing is restored. The opener may be the menu's New email button, hidden again below lg: the menu's own button stands in.
 			const opener = composerOpener.current;
 			const shown = opener?.isConnected && opener.getClientRects().length > 0;
 			(shown ? opener : rootRef.current?.querySelector<HTMLElement>('button[aria-label="Open menu"]'))?.focus();
 		}
+		wasComposerOpen.current = composerOpen;
 	}, [composerOpen]);
 	const cardOpen = !!state.contactCard;
 	useEffect(() => {

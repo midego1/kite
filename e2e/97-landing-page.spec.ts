@@ -536,6 +536,15 @@ test.describe("visitor", () => {
 		await context.close();
 	});
 
+	test("a load never moves the focus", async ({ page }) => {
+		for (const width of [884, 390, 1440]) {
+			await page.setViewportSize({ width, height: 900 });
+			await visit(page);
+			await page.waitForTimeout(300);
+			expect(await page.evaluate(() => document.activeElement === document.body)).toBe(true);
+		}
+	});
+
 	test("the folder menu below lg takes the focus, holds it and gives it back", async ({ page }) => {
 		await page.setViewportSize({ width: 884, height: 1104 });
 		await visit(page);

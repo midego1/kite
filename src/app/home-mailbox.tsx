@@ -5,7 +5,7 @@ import { HomeList } from "./home-mailbox-list";
 import { HomeComposer, HomeToast } from "./home-mailbox-overlays";
 import { HomeReader } from "./home-mailbox-reader";
 import { HomeSidebar } from "./home-mailbox-sidebar";
-import { createMailboxState, emailFromHash, reduceMailbox } from "./home-mailbox-state-utils";
+import { createMailboxState, emailFromHash, reduceMailbox, WELCOME_ID } from "./home-mailbox-state-utils";
 import type { HomeMailboxAction, HomeMailboxProps, HomePerson } from "./home-mailbox-types";
 
 const TOAST_MS = 5000;
@@ -169,6 +169,14 @@ export function HomeMailbox({ appName, icon, emails, bodies, chrome, footer, hea
 			onClick={onClick}
 			className="home-page relative flex h-dvh flex-col overflow-hidden bg-white text-neutral-900"
 		>
+			{/* Targets the open email's article (each is focusable), so it skips the folders and the list, and the
+			    hash it sets always names an email, never a fragment the hash listener would read as Welcome. */}
+			<a
+				href={`#${state.openId ?? WELCOME_ID}`}
+				className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-white focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-neutral-900 focus:shadow"
+			>
+				Skip to the message
+			</a>
 			<div className="shrink-0 border-b border-neutral-200 bg-white">{chrome}</div>
 			<main
 				id="main"

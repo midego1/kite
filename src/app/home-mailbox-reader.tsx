@@ -102,6 +102,7 @@ export const HomeReader = forwardRef<HTMLDivElement, ReaderProps>(function HomeR
 							key={email.id}
 							id={email.id}
 							hidden={!open}
+							tabIndex={-1}
 							aria-labelledby={`${email.id}-subject`}
 							className="mx-auto max-w-3xl scroll-mt-5 space-y-5"
 						>

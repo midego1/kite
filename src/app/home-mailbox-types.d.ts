@@ -77,7 +77,7 @@ export type HomeMailboxAction =
 	| {
 			type: "view";
 			view: HomeViewId;
-			/** Below the md breakpoint the folder opens as a list, so its first email is not displayed. */
+			/** A one-pane shell (a folded posture or a viewport below the split floor) opens the folder as a list, so its first email is not displayed. */
 			phone?: boolean;
 	  }
 	| { type: "search"; text: string }

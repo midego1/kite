@@ -247,9 +247,10 @@ export function HomeMailbox({ appName, icon, emails, bodies, chrome, footer, hea
 		wasMenuOpen.current = menuOpen;
 	}, [menuOpen]);
 
-	// An email counts as read once it is on screen: in the reader, or beside the list when the screen is not folded
-	// (a cover screen, a narrow window and a phone held sideways show one pane), also when it is widened to show it.
-	const twoPanes = fold.posture !== "folded";
+	// An email counts as read once it is on screen: in the reader, or beside the list when the split shows it. A
+	// cover screen, a phone held sideways and a window below the split variant's width floor show one pane, even
+	// with a saved "Always two panes", so the posture alone is not enough; also when it is widened to show it.
+	const twoPanes = fold.posture !== "folded" && fold.splitWidth;
 	useEffect(() => {
 		const current = stateRef.current;
 		if (current.openId && (twoPanes || current.pane === "reader")) {

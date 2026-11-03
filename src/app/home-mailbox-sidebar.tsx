@@ -11,6 +11,7 @@ import {
 	X,
 	type LucideIcon,
 } from "lucide-react";
+import { TWO_PANE_VIEWPORT_QUERY } from "@/components/fold-posture-utils";
 import { FOLDERS, unreadCount } from "./home-mailbox-state-utils";
 import type {
 	HomeEmailMeta,
@@ -58,7 +59,15 @@ function Item({
 			<button
 				type="button"
 				onClick={() =>
-					dispatch({ type: "view", view, phone: document.documentElement.dataset.foldPosture === "folded" })
+					// One pane shows the folder's list, not its first email: a folded shell, or one narrower than the
+					// split variant's floor even with a saved "Always two panes".
+					dispatch({
+						type: "view",
+						view,
+						phone:
+							document.documentElement.dataset.foldPosture === "folded" ||
+							!window.matchMedia(TWO_PANE_VIEWPORT_QUERY).matches,
+					})
 				}
 				aria-current={active ? "page" : undefined}
 				className={`flex h-9 w-full items-center justify-between rounded-lg px-3 text-sm ${FOCUS_RING} ${

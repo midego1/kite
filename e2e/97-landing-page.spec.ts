@@ -983,6 +983,34 @@ test.describe("visitor", () => {
 		await expect(sidebar(page).getByRole("button", { name: /^Limits/ })).not.toContainText("1");
 	});
 
+	test("a saved two-pane choice below the split floor still reads an email only once it is shown", async ({
+		browser,
+	}) => {
+		const context = await browser.newContext({
+			storageState: { cookies: [], origins: [] },
+			viewport: { width: 390, height: 844 },
+		});
+		await context.addInitScript(() => localStorage.setItem("kite-fold-layout", "two"));
+		const page = await context.newPage();
+		await visit(page);
+		// The override unfolds the posture, but at 390 px the split variant's width floor still shows one pane.
+		expect(await page.evaluate(() => document.documentElement.dataset.foldPosture)).toBe("unfolded");
+		await page.getByRole("button", { name: "Back to list" }).click();
+		await expect(reader(page)).toBeHidden();
+		await page.getByRole("button", { name: "Open menu" }).click();
+		await sidebar(page)
+			.getByRole("button", { name: /^Limits/ })
+			.click();
+		// The folder's first email stays unread while the reader is hidden, and is read once widening shows it.
+		await expect(reader(page)).toBeHidden();
+		await page.getByRole("button", { name: "Open menu" }).click();
+		await expect(sidebar(page).getByRole("button", { name: /^Limits/ })).toContainText("1");
+		await page.setViewportSize({ width: 1440, height: 900 });
+		await expect(reader(page)).toBeVisible();
+		await expect(sidebar(page).getByRole("button", { name: /^Limits/ })).not.toContainText("1");
+		await context.close();
+	});
+
 	test("the brand goes home from an open email, and the composer from the contact card returns to its chip", async ({
 		page,
 	}) => {

@@ -8,6 +8,7 @@ import {
 	LEGACY_SCREEN_SPANNING_QUERY,
 	SHORT_VIEWPORT_QUERY,
 	TABLET_VIEWPORT_QUERY,
+	TWO_PANE_VIEWPORT_QUERY,
 	VIEWPORT_SEGMENTS_QUERY,
 	WIDE_VIEWPORT_QUERY,
 	applyFoldPostureAttribute,
@@ -23,6 +24,7 @@ import {
 const QUERIES = [
 	FOLDED_VIEWPORT_QUERY,
 	WIDE_VIEWPORT_QUERY,
+	TWO_PANE_VIEWPORT_QUERY,
 	TABLET_VIEWPORT_QUERY,
 	SHORT_VIEWPORT_QUERY,
 	COARSE_POINTER_QUERY,
@@ -38,6 +40,7 @@ const SERVER_VIEWPORT: FoldViewport = {
 	basePosture: "desktop",
 	override: "auto",
 	wide: true,
+	splitWidth: true,
 	coarsePointer: false,
 	segments: [],
 	hinge: null,
@@ -73,11 +76,13 @@ function readFoldViewport(): FoldViewport {
 	const posture = resolveFoldPosture(basePosture, override);
 	const hinge = posture === "unfolded" ? foldHingeFromSegments(segments) : null;
 	const wide = match(WIDE_VIEWPORT_QUERY);
+	const splitWidth = match(TWO_PANE_VIEWPORT_QUERY);
 	const key = [
 		posture,
 		basePosture,
 		override,
 		wide,
+		splitWidth,
 		coarsePointer,
 		segmented,
 		legacySpanned,
@@ -86,7 +91,7 @@ function readFoldViewport(): FoldViewport {
 	].join("|");
 	if (cachedViewport && key === cachedKey) return cachedViewport;
 	cachedKey = key;
-	cachedViewport = { posture, basePosture, override, wide, coarsePointer, segments, hinge };
+	cachedViewport = { posture, basePosture, override, wide, splitWidth, coarsePointer, segments, hinge };
 	return cachedViewport;
 }
 

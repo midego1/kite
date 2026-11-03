@@ -649,9 +649,14 @@ test.describe("visitor", () => {
 		await mail.getByRole("button", { name: "Review draft" }).click();
 		const composer = page.getByRole("dialog", { name: "New message" });
 		await expect(composer.getByLabel("To")).toHaveValue("sofia@northwind.test");
+		await expect(composer.getByLabel("Subject")).toHaveValue("Re: Launch plan for the new inbox");
 		await expect(composer.getByLabel("Message")).toHaveValue(/Thanks Sofia, both files are in\./);
 		await composer.getByRole("button", { name: "Send" }).click();
 		await expect(page.getByRole("status")).toContainText("Demo: nothing sent");
+		// The Reply button keeps the one Re: prefix the subject already has.
+		await reader(page).getByRole("button", { name: "Reply", exact: true }).click();
+		await expect(composer.getByLabel("Subject")).toHaveValue("Re: Launch plan for the new inbox");
+		await composer.getByRole("button", { name: "Close" }).click();
 		await mail.getByRole("button", { name: "Dismiss" }).click();
 		await expect(mail.getByText("Reply drafted")).toHaveCount(0);
 

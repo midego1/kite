@@ -8,6 +8,9 @@ import type { HomeEmailMeta, HomeMailboxAction, HomeMailboxState, HomePerson } f
 
 const TOOL_BUTTON = `flex h-8 items-center justify-center gap-1.5 rounded-lg bg-neutral-100 px-2.5 text-sm text-neutral-700 hover:bg-neutral-200 ${FOCUS_RING}`;
 
+/** A reply keeps an existing Re: prefix instead of doubling it. */
+const replySubject = (subject: string) => (/^re:/i.test(subject) ? subject : `Re: ${subject}`);
+
 type ReaderProps = {
 	state: HomeMailboxState;
 	emails: HomeEmailMeta[];
@@ -88,7 +91,7 @@ export const HomeReader = forwardRef<HTMLDivElement, ReaderProps>(function HomeR
 						<button
 							type="button"
 							onClick={() =>
-								dispatch({ type: "compose", to: senderOf(current).address, subject: `Re: ${current.subject}` })
+								dispatch({ type: "compose", to: senderOf(current).address, subject: replySubject(current.subject) })
 							}
 							className={TOOL_BUTTON}
 						>
@@ -181,7 +184,7 @@ export const HomeReader = forwardRef<HTMLDivElement, ReaderProps>(function HomeR
 											dispatch({
 												type: "compose",
 												to: sender.address,
-												subject: `Re: ${email.subject}`,
+												subject: replySubject(email.subject),
 												body: sample.suggestion?.text,
 											})
 										}

@@ -13,6 +13,18 @@ export function parseShard(value) {
 	return { current, total };
 }
 
+/**
+ * `E2E_PAIR=2/10` → slices 3 and 4 of 20: each of the ten jobs runs two slices side by side, on ports far enough
+ * apart that the fakes derived from them (E2E_PORT + 95 to 97) stay clear of the other slice.
+ */
+export function pairSlices(value, basePort = 3200) {
+	const { current, total } = parseShard(value);
+	return [0, 1].map((index) => {
+		const slice = 2 * current - 1 + index;
+		return { slice, shard: `${slice}/${2 * total}`, port: basePort + index * 100 };
+	});
+}
+
 /** A file opts into splitting per test with a top-level `test.describe.configure({ mode: "parallel" })`. */
 export function isParallelFile(source) {
 	return /^test\.describe\.configure\(\s*\{\s*mode:\s*["']parallel["']\s*\}\s*\)/m.test(source);

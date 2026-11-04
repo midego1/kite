@@ -17,7 +17,8 @@ import {
 
 const run = promisify(execFile);
 const PLAYWRIGHT = path.join("node_modules", ".bin", process.platform === "win32" ? "playwright.cmd" : "playwright");
-const LIST_FILE = "test-results/e2e-shard-list.txt";
+// E2E_SLICE: see e2e/support/constants.ts.
+const LIST_FILE = `${process.env.E2E_SLICE ? `test-results/slice-${process.env.E2E_SLICE}` : "test-results"}/e2e-shard-list.txt`;
 
 async function listTests(extraArgs = []) {
 	const { stdout } = await run(PLAYWRIGHT, ["test", "--list", "--reporter=json", ...extraArgs], {

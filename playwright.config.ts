@@ -4,6 +4,8 @@ import {
 	E2E_APP_ENCRYPTION_KEY,
 	E2E_PERSIST_DIR,
 	E2E_PORT,
+	E2E_REPORT_DIR,
+	E2E_RESULTS_DIR,
 	E2E_TELEMETRY_URL,
 	E2E_VITE_CACHE_DIR,
 	FAKE_ABUSE_CH_PORT,
@@ -14,10 +16,10 @@ import {
 
 export default defineConfig({
 	testDir: "./e2e",
-	outputDir: "test-results/playwright",
+	outputDir: `${E2E_RESULTS_DIR}/playwright`,
 	testMatch: /.*\.spec\.ts$/,
 	// Every spec shares one D1 database, so run them one at a time. CI still
-	// splits the suite (scripts/quality/e2e-shard.mjs): each shard has its own
+	// splits the suite (scripts/quality/e2e-shard.mjs): each slice has its own
 	// server and database, and a file is one unit unless it opts into
 	// `mode: "parallel"`.
 	fullyParallel: false,
@@ -28,7 +30,11 @@ export default defineConfig({
 	expect: { timeout: 15_000 },
 	// The JSON file sits outside outputDir, which Playwright empties at the start of a run.
 	reporter: process.env.CI
-		? [["list"], ["html", { open: "never" }], ["json", { outputFile: "test-results/playwright-results.json" }]]
+		? [
+				["list"],
+				["html", { open: "never", outputFolder: E2E_REPORT_DIR }],
+				["json", { outputFile: `${E2E_RESULTS_DIR}/playwright-results.json` }],
+			]
 		: [["list"]],
 	globalSetup: "./e2e/global-setup.ts",
 	use: {
@@ -49,6 +55,9 @@ export default defineConfig({
 		env: {
 			KITE_PERSIST_DIR: E2E_PERSIST_DIR,
 			KITE_VITE_CACHE_DIR: E2E_VITE_CACHE_DIR,
+			// Side by side (scripts/quality/e2e-pair.mjs): vinext allows one dev server per checkout unless told
+			// otherwise, and two servers starting together would both pick the first free inspector port.
+			...(process.env.E2E_SLICE ? { VINEXT_NO_DEV_LOCK: "1", KITE_NO_INSPECTOR: "1" } : {}),
 			// Lets specs point the alert webhook at an in-spec http receiver on 127.0.0.1.
 			ALERT_WEBHOOK_ALLOW_INSECURE: "1",
 			// Lets specs point the agent provider at the fake model on 127.0.0.1 (e2e/support/fake-model.ts).

@@ -108,11 +108,12 @@ jobs:
 
   e2e:
     # The suite runs one test at a time against a shared database, so a single
-    # runner needs about 20 minutes. Each shard starts its own dev server and
-    # database and runs a slice planned from e2e/timings.json so every shard
-    # takes about as long (scripts/quality/e2e-shard.mjs). Public repositories
-    # get standard runners for free; the shard count is the only knob, kept low
-    # enough that a pull request's jobs fit the account's concurrent-job limit.
+    # runner needs about 20 minutes. Each job runs two slices of 20 side by side
+    # (scripts/quality/e2e-pair.mjs), because a slice mostly waits on the app, not
+    # the CPU; each slice starts its own dev server and database and is planned from
+    # e2e/timings.json so every slice takes about as long (scripts/quality/e2e-shard.mjs).
+    # Public repositories get standard runners for free; the job count is the only
+    # knob, kept low enough that a pull request's jobs fit the account's concurrent-job limit.
     name: E2E (shard ${{ matrix.shard }} of 10)
     # Measurement only: pull requests labelled boat-e2e run the shards on boat-large
     # under the same actor rules and kill switch as Mission validation, to compare
@@ -160,10 +161,10 @@ jobs:
         with:
           path: ~/.cache/ms-playwright
           key: ${{ steps.playwright-browser.outputs.cache-primary-key }}
-      - name: Run the end-to-end slice
-        run: npm run quality:timings -- test:e2e:shard
+      - name: Run two end-to-end slices side by side
+        run: npm run quality:timings -- test:e2e:pair
         env:
-          E2E_SHARD: ${{ matrix.shard }}/10
+          E2E_PAIR: ${{ matrix.shard }}/10
       - name: Summarize timings and flaky tests
         if: always()
         run: node scripts/quality/ci-summary.mjs >> "$GITHUB_STEP_SUMMARY"

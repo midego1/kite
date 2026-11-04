@@ -11,11 +11,15 @@ export const FAKE_ABUSE_CH_PORT = Number(process.env.E2E_FAKE_ABUSE_CH_PORT ?? E
 export const FAKE_CLOUDFLARE_PORT = Number(process.env.E2E_FAKE_CLOUDFLARE_PORT ?? E2E_PORT + 96);
 /** The fake S3 that stands in for `<account>.r2.cloudflarestorage.com` in the same setup. */
 export const FAKE_R2_S3_PORT = Number(process.env.E2E_FAKE_R2_S3_PORT ?? E2E_PORT + 95);
-export const E2E_PERSIST_DIR = ".wrangler/e2e-state";
-export const E2E_VITE_CACHE_DIR = ".wrangler/e2e-vite-cache";
+/** Set by scripts/quality/e2e-pair.mjs for each of the two slices it runs side by side, so nothing collides. */
+const SLICE = process.env.E2E_SLICE;
+export const E2E_PERSIST_DIR = SLICE ? `.wrangler/e2e-state-${SLICE}` : ".wrangler/e2e-state";
+export const E2E_VITE_CACHE_DIR = SLICE ? `.wrangler/e2e-vite-cache-${SLICE}` : ".wrangler/e2e-vite-cache";
+export const E2E_RESULTS_DIR = SLICE ? `test-results/slice-${SLICE}` : "test-results";
+export const E2E_REPORT_DIR = SLICE ? `playwright-report/slice-${SLICE}` : "playwright-report";
 /** The e2e server's KITE_TELEMETRY_URL: https on the loopback discard port, where nothing answers. */
 export const E2E_TELEMETRY_URL = "https://127.0.0.1:9/v1/heartbeat";
-export const STORAGE_STATE = "test-results/.auth/admin.json";
+export const STORAGE_STATE = `${E2E_RESULTS_DIR}/.auth/admin.json`;
 
 export const ADMIN = { email: "admin@example.com", password: "demo-password-change-me", name: "Demo User" };
 export const SUPPORT_ADDRESS = "support@example.com";

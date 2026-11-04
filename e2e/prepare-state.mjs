@@ -13,8 +13,11 @@ if (!target.startsWith(resolve(root, ".wrangler") + "/")) {
 }
 
 rmSync(target, { recursive: true, force: true });
-execFileSync("node", ["scripts/generate-migration-bundle.mjs"], { cwd: root, stdio: "inherit" });
-execFileSync("node", ["scripts/generate-changelog-bundle.mjs"], { cwd: root, stdio: "inherit" });
+// Servers running side by side share the generated bundles: scripts/quality/e2e-pair.mjs writes them once up front.
+if (!process.env.E2E_BUNDLES_READY) {
+	execFileSync("node", ["scripts/generate-migration-bundle.mjs"], { cwd: root, stdio: "inherit" });
+	execFileSync("node", ["scripts/generate-changelog-bundle.mjs"], { cwd: root, stdio: "inherit" });
+}
 execFileSync("npx", ["wrangler", "d1", "migrations", "apply", "DB", "--local", "--persist-to", persistDir], {
 	cwd: root,
 	stdio: "inherit",

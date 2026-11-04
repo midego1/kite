@@ -13,6 +13,7 @@
 		"check": "npm run typecheck && npm run typecheck:relay && npm run lint && npm run test",
 		"test:e2e": "playwright test",
 		"test:e2e:shard": "node scripts/quality/e2e-shard.mjs",
+		"test:e2e:pair": "node scripts/quality/e2e-pair.mjs",
 		"e2e:timings": "node scripts/quality/e2e-timings.mjs",
 		"deploy": "npm run build && npm run deploy:worker",
 		"deploy:worker": "wrangler deploy",

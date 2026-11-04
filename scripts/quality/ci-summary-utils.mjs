@@ -35,12 +35,12 @@ export function renderTimings(timings) {
 	].join("\n");
 }
 
-export function renderPlaywright(report) {
-	if (!report) return "_Playwright: not run._";
+export function renderPlaywright(report, heading = "Playwright") {
+	if (!report) return `_${heading}: not run._`;
 	const stats = report.stats ?? {};
 	const flaky = collectPlaywrightTests(report).filter((test) => test.status === "flaky");
 	const lines = [
-		"### Playwright",
+		`### ${heading}`,
 		"",
 		`Passed ${stats.expected ?? 0}, failed ${stats.unexpected ?? 0}, flaky ${stats.flaky ?? 0}, skipped ${stats.skipped ?? 0}`,
 	];
@@ -67,6 +67,10 @@ export function renderCoverage(summary) {
 	].join("\n");
 }
 
-export function renderSummary({ timings, playwright, coverage }) {
-	return `## CI summary\n\n${[renderTimings(timings), renderPlaywright(playwright), renderCoverage(coverage)].join("\n\n")}\n`;
+/** `slices` holds the results of slices run side by side (scripts/quality/e2e-pair.mjs), each under its own heading. */
+export function renderSummary({ timings, playwright, slices = [], coverage }) {
+	const browser = slices.length
+		? slices.map(({ slice, report }) => renderPlaywright(report, `Playwright (slice ${slice})`))
+		: [renderPlaywright(playwright)];
+	return `## CI summary\n\n${[renderTimings(timings), ...browser, renderCoverage(coverage)].join("\n\n")}\n`;
 }

@@ -11,9 +11,9 @@ export function PreviousMessage({ message }: PreviousMessageProps) {
 					Previous message {message.direction} at {message.dateLine}
 				</span>
 			</summary>
-			<div className="pb-2 pl-5 text-neutral-600">
+			<div dir="auto" className="pb-2 ps-5 text-neutral-600">
 				{message.content && (
-					<pre className="reading-text whitespace-pre-wrap text-sm font-sans">
+					<pre dir="auto" className="reading-text whitespace-pre-wrap text-sm font-sans">
 						<LinkifiedText text={message.content} />
 					</pre>
 				)}

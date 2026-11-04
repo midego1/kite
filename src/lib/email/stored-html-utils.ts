@@ -1,4 +1,5 @@
 import { Parser } from "htmlparser2";
+import { rootDirection, withRootDirection } from "@/lib/email/root-direction-utils";
 
 /**
  * Received HTML is cleaned once before it is stored, so the API, JMAP, webhooks,
@@ -169,12 +170,18 @@ export function sanitizeStoredEmailHtml(html: string | null | undefined): string
 	let output = "";
 	// Depth inside a dropped element; the tokenizer reports every open tag with a matching close.
 	let dropped = 0;
+	// The direction the mail declares on its own <html> and <body>, which are not stored; the first of each counts.
+	const root: { html?: string; body?: string } = {};
 	const parser = new Parser(
 		{
 			onopentag(name, attributes) {
 				if (dropped > 0 || DROP_CONTENT_TAGS.has(name)) {
 					dropped += 1;
 					return;
+				}
+				// Only a root tag that opens the mail counts: in a fragment, a later one is content, not a root.
+				if ((name === "html" || name === "body") && root[name] === undefined && output.trim() === "") {
+					root[name] = attributes.dir ?? "";
 				}
 				if (STORED_TAGS.has(name)) output += openTag(name, attributes);
 			},
@@ -193,5 +200,5 @@ export function sanitizeStoredEmailHtml(html: string | null | undefined): string
 	);
 	parser.write(html);
 	parser.end();
-	return output;
+	return withRootDirection(output, rootDirection(root.body, root.html));
 }

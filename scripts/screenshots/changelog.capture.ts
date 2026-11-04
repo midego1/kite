@@ -3,7 +3,7 @@ import path from "node:path";
 import { expect, test, type Browser, type Locator, type Page } from "@playwright/test";
 import sharp from "sharp";
 import { STORAGE_STATE } from "../../e2e/support/constants";
-import { seedDemoData, THREAD } from "./demo-data";
+import { RTL_MAIL, seedDemoData, seedRtlMail, THREAD } from "./demo-data";
 
 // Screenshots for the changelog (docs/releasing.md#screenshots-in-the-changelog), taken against the isolated,
 // seeded e2e server, so only invented demo data appears. They land in public/changelog/<name>.webp, ready for a
@@ -185,6 +185,21 @@ const SHOTS: Shot[] = [
 				await body.pressSequentially("Thanks Lena, the new version follows tomorrow.");
 				await expect(body.locator("> div")).toHaveCount(2);
 				return page.locator("form").filter({ has: page.getByRole("button", { name: "Close composer" }) });
+			},
+		}),
+	),
+	...(["light", "dark"] as const).map(
+		(theme): Shot => ({
+			name: `2026-11-04-rtl-message-${theme}`,
+			theme,
+			viewport: { width: 1280, height: 800 },
+			open: async (page) => {
+				await seedRtlMail();
+				await page.goto("/inbox");
+				await page.getByRole("main").getByText(RTL_MAIL[0]!.subject, { exact: true }).first().click();
+				await expect(page.getByRole("heading", { level: 1, name: RTL_MAIL[0]!.subject })).toBeVisible();
+				await expect(page.frameLocator('iframe[title="Message body"]').getByText("مرحباً،")).toBeVisible();
+				return page;
 			},
 		}),
 	),

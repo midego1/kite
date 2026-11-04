@@ -42,9 +42,13 @@ function ForYouEntry({
 	const subject = suggestion.message.subject || "(No subject)";
 	const summary = (
 		<>
-			<span className="block truncate text-sm font-medium text-neutral-900">{subject}</span>
-			<span className="block truncate text-sm text-neutral-600">{suggestion.title}</span>
-			<span className="block truncate text-xs text-neutral-500">
+			<span dir="auto" className="block truncate text-sm font-medium text-neutral-900">
+				{subject}
+			</span>
+			<span dir="auto" className="block truncate text-sm text-neutral-600">
+				{suggestion.title}
+			</span>
+			<span dir="auto" className="block truncate text-xs text-neutral-500">
 				{[suggestion.message.from, mailbox].filter(Boolean).join(" · ")}
 			</span>
 		</>

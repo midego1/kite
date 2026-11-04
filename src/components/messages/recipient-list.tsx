@@ -23,12 +23,15 @@ export function RecipientList({
 			{entries.map((entry, index) => (
 				<span key={`${entry}-${index}`} title={getEmailAddress(entry)}>
 					{index > 0 && ", "}
-					<ContactDetailsTrigger
-						mailboxId={mailboxId}
-						address={entry}
-						name={recipientContactName(entry)}
-						label={formatRecipientAddress(entry, style)}
-					/>
+					{/* Isolated, so an Arabic or Hebrew name next to the comma and the next recipient keeps its order. */}
+					<bdi>
+						<ContactDetailsTrigger
+							mailboxId={mailboxId}
+							address={entry}
+							name={recipientContactName(entry)}
+							label={formatRecipientAddress(entry, style)}
+						/>
+					</bdi>
 				</span>
 			))}
 		</>

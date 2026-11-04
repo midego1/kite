@@ -60,8 +60,12 @@ export function TodayCard(_context: ReadingPaneSlotContext) {
 						<li key={line.id}>
 							<Link href={line.href} className={COMMAND_CENTER_LINK_ROW_CLASS} data-today-event>
 								<span className="w-16 shrink-0 whitespace-nowrap tabular-nums text-neutral-500">{line.when}</span>
-								<span className="min-w-0 flex-1 truncate text-neutral-900">{line.what}</span>
-								<span className={`max-w-[40%] truncate ${COMMAND_CENTER_DETAIL_CLASS}`}>{line.meta}</span>
+								<span dir="auto" className="min-w-0 flex-1 truncate text-neutral-900">
+									{line.what}
+								</span>
+								<span dir="auto" className={`max-w-[40%] truncate ${COMMAND_CENTER_DETAIL_CLASS}`}>
+									{line.meta}
+								</span>
 							</Link>
 						</li>
 					))}

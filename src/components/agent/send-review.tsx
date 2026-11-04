@@ -89,7 +89,7 @@ export function SendReview({
 						</>
 					)}
 					<dt className="text-neutral-500">Subject</dt>
-					<dd>{snapshot.subject}</dd>
+					<dd dir="auto">{snapshot.subject}</dd>
 					{snapshot.scheduledAt && (
 						<>
 							<dt className="text-neutral-500">Send at</dt>
@@ -97,7 +97,10 @@ export function SendReview({
 						</>
 					)}
 				</dl>
-				<pre className="mt-4 max-h-72 overflow-auto whitespace-pre-wrap rounded-lg border border-neutral-200 p-3 text-sm">
+				<pre
+					dir="auto"
+					className="mt-4 max-h-72 overflow-auto whitespace-pre-wrap rounded-lg border border-neutral-200 p-3 text-sm"
+				>
 					{snapshot.text || htmlToPlainText(snapshot.html || "")}
 				</pre>
 				{snapshot.attachments.length > 0 && (

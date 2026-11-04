@@ -49,14 +49,18 @@ function PaletteOption({
 			</span>
 			<span className="flex min-w-0 flex-1 flex-col">
 				<span className="flex min-w-0 items-center gap-2">
-					<span data-palette-title className="truncate text-sm font-semibold">
+					<span data-palette-title dir="auto" className="truncate text-sm font-semibold">
 						{item.title}
 					</span>
 					<span className="shrink-0 rounded border border-neutral-200 bg-white px-1.5 text-[10px] font-semibold uppercase leading-4 tracking-wider text-neutral-500">
 						{item.type}
 					</span>
 				</span>
-				{item.subtitle && <span className="truncate text-xs text-neutral-500">{item.subtitle}</span>}
+				{item.subtitle && (
+					<span dir="auto" className="truncate text-xs text-neutral-500">
+						{item.subtitle}
+					</span>
+				)}
 			</span>
 			{item.shortcut && (
 				<span className="hidden shrink-0 items-center gap-1 sm:flex" aria-label={`Shortcut ${item.shortcut}`}>

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { getAuthorizedSenderAddress, SenderRefusedError } from "@/lib/email/sender";
+import { getAuthorizedSenderAddress } from "@/lib/email/sender";
+import { SenderRefusedError } from "@/lib/email/sender-errors";
 import { createLogger } from "@/lib/logger.mjs";
 import { RequestBodyTooLargeError } from "@/lib/http/errors";
 import { readJsonBody } from "@/lib/http/request";
@@ -25,7 +26,7 @@ export async function getDraftSender(
 	} catch (error) {
 		// Only a refusal written for the sender reaches the screen; anything else (a database error) is logged, not shown.
 		if (error instanceof SenderRefusedError) return { error: error.message };
-		log.error("draft.sender_check_failed", { reason: error instanceof Error ? error.message : String(error) });
+		log.error("draft.sender_check_failed", { error });
 		return { error: "Could not check the sender; try again" };
 	}
 }

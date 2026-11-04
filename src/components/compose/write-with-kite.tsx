@@ -50,7 +50,9 @@ export function WriteWithKite({
 	// The composer's own mailbox (its From), not the sidebar's. The answer is kept per mailbox, so changing From hides
 	// the button until that mailbox's answer arrives.
 	const [checked, setChecked] = useState<{ mailboxId: string; available: boolean } | null>(null);
-	const [open, setOpen] = useState<{ selection: WriteWithKiteSelection | null } | null>(null);
+	const [openState, setOpen] = useState<{ mailboxId: string; selection: WriteWithKiteSelection | null } | null>(null);
+	// A panel belongs to the mailbox it was opened for: changing From closes it, and it does not come back with the answer.
+	const open = openState?.mailboxId === mailboxId ? openState : null;
 	const available = !!mailboxId && checked?.mailboxId === mailboxId && checked.available;
 
 	useEffect(() => {
@@ -69,7 +71,7 @@ export function WriteWithKite({
 
 	function openPanel() {
 		const editor = document.getElementById(editorId);
-		if (editor) setOpen({ selection: editorSelection(editor) });
+		if (editor && mailboxId) setOpen({ mailboxId, selection: editorSelection(editor) });
 	}
 
 	useEffect(() => {
@@ -78,11 +80,11 @@ export function WriteWithKite({
 		const onKeyDown = (event: KeyboardEvent) => {
 			if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "j") return;
 			event.preventDefault();
-			setOpen({ selection: editorSelection(editor) });
+			if (mailboxId) setOpen({ mailboxId, selection: editorSelection(editor) });
 		};
 		editor.addEventListener("keydown", onKeyDown);
 		return () => editor.removeEventListener("keydown", onKeyDown);
-	}, [available, editorId]);
+	}, [available, editorId, mailboxId]);
 
 	if (!available) return null;
 	return (

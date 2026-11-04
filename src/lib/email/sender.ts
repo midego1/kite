@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { domains, mailboxes, users } from "@/db/schema";
+import { SenderRefusedError } from "@/lib/email/sender-errors";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { formatEmailAddress, getEmailAddress } from "@/lib/email/address";
 import { getMailboxDomainAddresses } from "@/lib/mailboxes/domain-addresses";
@@ -10,14 +11,6 @@ import {
 	isOwnConnectedAddress,
 	resolveSendIdentity,
 } from "@/lib/external-accounts/identities";
-
-/** A refusal whose text is meant for the person sending (as opposed to a failure of the database or the runtime). */
-export class SenderRefusedError extends Error {
-	constructor(message: string) {
-		super(message);
-		this.name = "SenderRefusedError";
-	}
-}
 
 export type AuthorizedSender = {
 	fromAddr: string;

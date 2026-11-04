@@ -1014,22 +1014,22 @@ test.describe("visitor", () => {
 		await expect(openEmail(page)).toHaveAttribute("id", "sample-invoice");
 	});
 
-	test("Deny on the only search result or the only starred email shows Welcome and keeps the focus", async ({
-		page,
-	}) => {
+	test("Deny on the only search result shows Welcome and keeps the focus", async ({ page }) => {
 		await visit(page, "/#sample-api-question");
 		await page.getByLabel("Search mail").fill("shared mailing");
 		await page
-			.getByRole("region", { name: "Inbox" })
+			.getByRole("region", { name: "Search results" })
 			.getByRole("button", { name: /A question about a shared mailing/ })
 			.click();
 		await openEmail(page).getByRole("button", { name: "Deny" }).click();
 		await expect(page.getByText('No mail matches "shared mailing".')).toBeVisible();
 		await expect(openEmail(page)).toHaveAttribute("id", "welcome");
 		await expect.poll(() => page.evaluate(() => document.activeElement?.id)).toBe("welcome");
+	});
 
+	test("Deny on the only starred email shows Welcome and keeps the focus", async ({ page }) => {
 		await visit(page, "/#sample-api-question");
-		await openEmail(page).getByRole("button", { name: "Star" }).click();
+		await reader(page).getByRole("button", { name: "Star" }).click();
 		await sidebar(page)
 			.getByRole("button", { name: /^Starred/ })
 			.click();

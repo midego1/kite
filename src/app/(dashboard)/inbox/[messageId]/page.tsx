@@ -287,7 +287,7 @@ export default function MessageDetailPage() {
 												{fromName}
 											</ContactCard>
 										</b>{" "}
-										<span className="text-neutral-500 text-xs flex-1 overflow-hidden text-ellipsis min-w-0">
+										<span dir="ltr" className="text-neutral-500 text-xs flex-1 overflow-hidden text-ellipsis min-w-0">
 											&lt;{fromAddress}&gt;
 										</span>
 									</p>
@@ -361,7 +361,7 @@ export default function MessageDetailPage() {
 								quotedColours={readerBody.quotedColours}
 								className="email-body mx-auto"
 								fallback={
-									<pre className="reading-text whitespace-pre-wrap text-sm text mx-auto">
+									<pre dir="auto" className="reading-text whitespace-pre-wrap text-sm text mx-auto">
 										<LinkifiedText text={cloudAttachmentResult.content} />
 									</pre>
 								}

@@ -128,6 +128,7 @@ function SkippedRow({ job }: { job: ActivitySkippedJob }) {
 				{reasonText(job.reason) ?? "Skipped"}
 			</p>
 			<Link
+				dir="auto"
 				href={`/inbox/${encodeURIComponent(job.sourceMessageId)}`}
 				className="block truncate text-sm text-blue-700 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
 			>

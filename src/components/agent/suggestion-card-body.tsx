@@ -65,7 +65,9 @@ function ReplyBlock({ suggestion, onChanged }: { suggestion: CardSuggestion; onC
 	return (
 		<div data-suggestion-block="reply" data-suggestion-id={suggestion.id} className="mt-3 first:mt-0">
 			<div className="flex items-start justify-between gap-2">
-				<p className="font-medium text-neutral-900">{suggestion.title}</p>
+				<p dir="auto" className="font-medium text-neutral-900">
+					{suggestion.title}
+				</p>
 				<SuggestionCardMenu suggestion={suggestion} onChanged={onChanged} />
 			</div>
 			<p className="text-neutral-600">{replyStatusText(suggestion)}</p>

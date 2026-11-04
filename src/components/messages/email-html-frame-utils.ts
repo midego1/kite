@@ -1,4 +1,5 @@
 import { readerFontStyles } from "@/components/font-assets-utils";
+import { wrappedRootDirection } from "@/lib/email/root-direction-utils";
 import type { EmailColourFacts, EmailFrameDocumentOptions } from "./email-html-frame-types";
 
 /**
@@ -14,9 +15,9 @@ const BASE_STYLES = [
 	'body{margin:0;padding:0;font-size:14px;line-height:1.5;overflow-wrap:anywhere;font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif}',
 	"img{max-width:100%;height:auto}",
 	"table{max-width:100%}",
-	"ul{list-style:disc;padding-left:1.5rem;margin:.25rem 0}",
-	"ol{list-style:decimal;padding-left:1.5rem;margin:.25rem 0}",
-	"blockquote{border-left:2px solid #d4d4d4;margin:.25rem 0;padding-left:.75rem}",
+	"ul{list-style:disc;padding-inline-start:1.5rem;margin:.25rem 0}",
+	"ol{list-style:decimal;padding-inline-start:1.5rem;margin:.25rem 0}",
+	"blockquote{border-inline-start:2px solid #d4d4d4;margin:.25rem 0;padding-inline-start:.75rem}",
 	"a{text-decoration:underline}",
 	"p{margin:0 0 .5rem}",
 	".email-quote-toggle{margin-top:1.4em}",
@@ -31,7 +32,7 @@ const BASE_STYLES = [
 const LIGHT_STYLES = "html{color-scheme:light}body{color:#171717}a{color:#2563eb}blockquote{color:#525252}";
 // The frame's color-scheme must match the app's for its canvas to stay transparent.
 const DARK_STYLES =
-	"html{color-scheme:dark}body{color:#e8eaed}a{color:#8ab4f8}blockquote{color:#9aa0a6;border-left-color:#5f6368}.email-quote-toggle>summary{background:#3c4043;color:#e8eaed}.email-quote-toggle>summary:hover{background:#5f6368}";
+	"html{color-scheme:dark}body{color:#e8eaed}a{color:#8ab4f8}blockquote{color:#9aa0a6;border-inline-start-color:#5f6368}.email-quote-toggle>summary{background:#3c4043;color:#e8eaed}.email-quote-toggle>summary:hover{background:#5f6368}";
 
 // Designed mail (newsletters, notifications) paints its own light backgrounds but
 // often leaves text colour to inherit, so restyling only the text would put light
@@ -110,7 +111,11 @@ export function buildEmailFrameDocument(html: string, options: EmailFrameDocumen
 		'<base target="_blank">',
 		`<style>${BASE_STYLES}${colorStyles}${muted}${neutral}</style>`,
 		font,
-		"</head><body>",
+		// The direction follows the first strong character of the mail, so Arabic, Hebrew, Persian and Urdu mail reads
+		// right to left in an English interface; a `dir` the sender put on an element still wins for that element.
+		// A direction the sender declared on <html> or <body> arrives as one wrapper and goes on the body, which
+		// keeps the viewport in that direction and the whole width of a wide mail reachable.
+		`</head><body dir="${wrappedRootDirection(html) ?? "auto"}">`,
 		html,
 		"</body></html>",
 	].join("");

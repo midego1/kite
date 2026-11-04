@@ -87,7 +87,7 @@ export function SubscriptionBlock({ suggestion, onChanged, menu, why }: Suggesti
 			<div className="flex items-start justify-between gap-2">
 				<p className="flex items-center gap-2 font-medium text-neutral-900">
 					<WalletCards aria-hidden className="h-4 w-4 shrink-0 text-blue-700" />
-					{suggestion.title}
+					<span dir="auto">{suggestion.title}</span>
 				</p>
 				{menu}
 			</div>

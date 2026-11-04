@@ -17,6 +17,7 @@ import { UpdateReaderHostContext, closeUpdateReader, useUpdateReaderOpen } from 
 import { BulkMessageSelectionPane } from "./bulk-message-selection-pane";
 import { OpenRowContext, useRowLookupHolder } from "./open-row-context";
 import { MessageFolderPage } from "./message-folder-page";
+import { setListBesideReader } from "./list-beside-reader";
 import { MessageFolderTitle } from "./message-folder-title";
 import { useLeaveOpenMessage } from "./use-leave-open-message";
 import { MessageDetailNavigationProvider } from "./message-detail-navigation";
@@ -124,6 +125,10 @@ export function MessageSplitLayout({ children, config }: MessageSplitLayoutProps
 	const [assistantListShown, setAssistantListShown] = useState(false);
 	// The hide-list toggle lives in the open message's header, so with nothing open the list always shows.
 	const listVisible = split && (!selectedMessageId || (manualListVisible && (!assistantOpen || assistantListShown)));
+	useLayoutEffect(() => {
+		setListBesideReader(listVisible);
+		return () => setListBesideReader(false);
+	}, [listVisible]);
 	const listLimits = below ? LIST_HEIGHT : LIST_WIDTH;
 	const { min: listMinSize, max: listMaxSize } = foldListBounds(listLimits, hingeListWidth);
 	// Beside a hinge the list takes the first screen, whatever width was saved; the saved width stays for other devices.

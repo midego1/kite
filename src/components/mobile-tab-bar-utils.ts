@@ -97,10 +97,12 @@ export function mobileActiveTabId(tabs: readonly MobileTabId[], pathname: string
 
 /**
  * A folder's message route (the reader) and the full-screen Compose page drop the bar: the reader keeps
- * its own Back button and reply bar, and the tab bar would only steal that room.
+ * its own Back button and reply bar, and the tab bar would only steal that room. With the list beside the
+ * reader (`listBesideReader`) the message route keeps the bar, so it does not come and go as a message opens.
  */
-export function hidesMobileTabBar(pathname: string): boolean {
+export function hidesMobileTabBar(pathname: string, listBesideReader = false): boolean {
 	if (pathname === "/compose" || pathname.startsWith("/compose/")) return true;
+	if (listBesideReader) return false;
 	if (/^\/(inbox|starred|snoozed|sent|drafts|archived|spam|trash|screener)\/[^/]+\/?$/.test(pathname)) return true;
 	return /^\/folders\/[^/]+\/[^/]+\/?$/.test(pathname);
 }

@@ -2,7 +2,6 @@
 
 import { lazy, Suspense, useEffect, useState } from "react";
 import { Sparkles } from "lucide-react";
-import { useSelectedMailbox } from "@/components/mailbox-provider";
 import { Tooltip } from "@/components/ui/tooltip";
 import { authFetch } from "@/lib/auth/client";
 import type { WriteWithKiteComposer, WriteWithKiteSelection } from "./write-with-kite-types";
@@ -38,11 +37,20 @@ function shortcutLabel(): string {
  * The composer's Write with Kite button. It shows only when the assistant may write for this mailbox (assistant on,
  * a provider configured, an external provider allowed by the primary admin, and send access), and opens with ⌘J.
  */
-export function WriteWithKite({ editorId, composer }: { editorId: string; composer: WriteWithKiteComposer }) {
-	// The answer is kept per mailbox, so switching the From mailbox hides the button until its own answer arrives.
+export function WriteWithKite({
+	editorId,
+	mailboxId,
+	composer,
+}: {
+	editorId: string;
+	/** The mailbox the composer sends from, which the sidebar's choice does not decide. */
+	mailboxId: string | undefined;
+	composer: WriteWithKiteComposer;
+}) {
+	// The composer's own mailbox (its From), not the sidebar's. The answer is kept per mailbox, so changing From hides
+	// the button until that mailbox's answer arrives.
 	const [checked, setChecked] = useState<{ mailboxId: string; available: boolean } | null>(null);
 	const [open, setOpen] = useState<{ selection: WriteWithKiteSelection | null } | null>(null);
-	const mailboxId = useSelectedMailbox().selectedMailbox?.id;
 	const available = !!mailboxId && checked?.mailboxId === mailboxId && checked.available;
 
 	useEffect(() => {

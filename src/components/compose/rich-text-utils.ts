@@ -133,7 +133,6 @@ function signatureBlocks(signature: string | null | undefined, attribute = SIGNA
 	];
 }
 
-const DIRECTION_ATTRIBUTE = /\sdir="(?:auto|rtl|ltr)"/gi;
 const OPTIONAL_DIRECTION = String.raw`(?:\s+dir="(?:auto|rtl|ltr)")?`;
 
 function escapeRegExp(text: string): string {
@@ -147,14 +146,15 @@ function escapeRegExp(text: string): string {
  */
 function directionTolerantPattern(block: string): RegExp {
 	const source = block
-		.split(/(<[a-z][a-z0-9]*(?:\s[^>]*)?>)/i)
+		// A tag, quoted attribute values included (a `>` inside one does not end it).
+		.split(/(<[a-z][a-z0-9]*(?:"[^"]*"|'[^']*'|[^>"'])*>)/i)
 		.map((part, index) => {
 			if (index % 2 === 0) return escapeRegExp(part);
 			const [, name = "", attributes = ""] = /^<([a-z][a-z0-9]*)([\s\S]*)>$/i.exec(part) ?? [];
-			// The `dir` goes from the tag's own attributes only, never from text; it may sit between any two of them.
-			const kept = (attributes.replace(DIRECTION_ATTRIBUTE, "").match(/\s+[^\s=>]+(?:="[^"]*")?/g) ?? []).map(
-				(attribute) => `${OPTIONAL_DIRECTION}${escapeRegExp(attribute)}`,
-			);
+			// The `dir` goes from the tag's own attributes only, never from text or another value; it may sit between any two.
+			const kept = (attributes.match(/\s+[^\s=>]+(?:=(?:"[^"]*"|'[^']*'|[^\s"'>]+))?/g) ?? [])
+				.filter((attribute) => !/^\s+dir="(?:auto|rtl|ltr)"$/i.test(attribute))
+				.map((attribute) => `${OPTIONAL_DIRECTION}${escapeRegExp(attribute)}`);
 			return `<${escapeRegExp(name)}${kept.join("")}${OPTIONAL_DIRECTION}>`;
 		})
 		.join("");

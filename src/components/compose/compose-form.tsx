@@ -951,7 +951,7 @@ export function ComposeForm({
 										<Paperclip className="h-4 w-4" />
 									</button>
 								</Tooltip>
-								<WriteWithKite editorId={`${mode}-text`} composer={kiteComposer} />
+								<WriteWithKite editorId={`${mode}-text`} mailboxId={selectedMailbox?.id} composer={kiteComposer} />
 								<span className="flex-1" />
 								<Tooltip label="Delete draft">
 									<button

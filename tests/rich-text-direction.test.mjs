@@ -241,6 +241,17 @@ test("direction in the middle of a tag's attributes, and signature text that loo
 	}
 });
 
+test("an attribute value with a greater-than sign in it does not break the match", () => {
+	const html = '<p title="a>b" lang="ar">Sam</p>';
+	const fresh = h.applyMailboxSignatureHtml("<div>Body</div>", "", html);
+	assert.match(fresh, /title="a(&gt;|>)b"/);
+	for (const edited of [fresh.replace('lang="ar"', 'dir="rtl" lang="ar"'), fresh.replace("<p ", '<p dir="ltr" ')]) {
+		assert.notEqual(edited, fresh);
+		assert.equal(h.applyMailboxSignatureHtml(edited, html, "Shared").includes("Sam"), false);
+		assert.equal(h.applyMailboxSignatureHtml(edited, "", html), edited);
+	}
+});
+
 test("the same signature in the other mailbox keeps the direction given to its lines", () => {
 	const signature = `<div>${ARABIC}</div><div>Sam</div>`;
 	const fresh = h.applyMailboxSignatureHtml("<div>Body</div>", "", signature);

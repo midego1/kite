@@ -160,6 +160,11 @@ test.describe("composer From and signature of a reopened draft", () => {
 		});
 		const { context, page } = await openAs(browser, account, account.mailboxId);
 		try {
+			const writerChecks: string[] = [];
+			page.on("request", (request) => {
+				const url = new URL(request.url());
+				if (url.pathname === "/api/agent/compose") writerChecks.push(url.searchParams.get("mailboxId") ?? "");
+			});
 			await page.goto("/inbox");
 			await openMessage(page, subject);
 			await expect(page.getByRole("heading", { level: 1, name: subject })).toBeVisible();
@@ -182,6 +187,10 @@ test.describe("composer From and signature of a reopened draft", () => {
 			await expect(popup.getByRole("textbox", { name: "Message body" })).toContainText(OWN_SIGNATURE);
 			await expect(popup.getByRole("textbox", { name: "Message body" })).not.toContainText(SHARED_SIGNATURE);
 
+			// Write with Kite asks about the composer's mailbox, never the sidebar's.
+			expect(writerChecks).toContain(account.mailboxId);
+			expect(writerChecks).not.toContain(sharedId);
+
 			const sendRequest = page.waitForRequest((request) => new URL(request.url()).pathname === "/api/send");
 			await popup.getByRole("button", { name: "Send", exact: true }).click();
 			const body = (await sendRequest).postData() ?? "";
@@ -189,6 +198,43 @@ test.describe("composer From and signature of a reopened draft", () => {
 			expect(body).not.toContain(sharedId);
 			expect(body).toContain("inReplyTo");
 			expect(body).toContain(`${setup.username}@${DOMAIN}`);
+		} finally {
+			await context.close();
+			await account.api.dispose();
+		}
+	});
+
+	test("a new message in All mailboxes keeps the address it started from when the sidebar picks a mailbox", async ({
+		browser,
+	}) => {
+		const setup = await setUp(api, OWN_SIGNATURE);
+		const { account, sharedId } = setup;
+		const { domains } = await okJson<{ domains: { id: string; hostname: string }[] }>(await api.get("/api/domains"));
+		const domain = domains.find((item) => item.hostname === DOMAIN)!;
+		const aliasName = `pinalias${uniqueToken("")}`;
+		await okJson(
+			await api.post(`/api/mailboxes/${sharedId}/aliases`, { data: { domainId: domain.id, localPart: aliasName } }),
+		);
+		const alias = `${sharedId}|${aliasName}@${DOMAIN}`;
+		const { context, page } = await openAs(browser, account, account.mailboxId);
+		await page.addInitScript(
+			([mailboxId, address]) => {
+				localStorage.setItem("kite-all-mailboxes", "true");
+				localStorage.setItem("kite-compose-last-from", JSON.stringify({ mailboxId, address }));
+			},
+			[sharedId, `${aliasName}@${DOMAIN}`],
+		);
+		try {
+			await page.goto("/inbox");
+			await page.getByRole("button", { name: "Compose" }).click();
+			await expectSelectValue(fromSelect(page), alias);
+
+			await page.getByRole("button", { name: "Open account menu" }).click();
+			await page.getByRole("button", { name: /^Inboxes \(\d+\)/ }).click();
+			await page.getByRole("button", { name: new RegExp(`^${setup.sharedName} Shared inbox`) }).click();
+			await expect(page).toHaveURL(/\/inbox$/);
+			await expect(page.getByRole("button", { name: "Open account menu" })).toContainText(setup.sharedName);
+			await expectSelectValue(fromSelect(page), alias);
 		} finally {
 			await context.close();
 			await account.api.dispose();

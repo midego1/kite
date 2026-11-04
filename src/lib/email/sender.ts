@@ -11,6 +11,14 @@ import {
 	resolveSendIdentity,
 } from "@/lib/external-accounts/identities";
 
+/** A refusal whose text is meant for the person sending (as opposed to a failure of the database or the runtime). */
+export class SenderRefusedError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = "SenderRefusedError";
+	}
+}
+
 export type AuthorizedSender = {
 	fromAddr: string;
 	mailboxId: string;
@@ -34,7 +42,7 @@ export async function getAuthorizedSenderAddress(
 		connectedAccounts?: boolean;
 	},
 ): Promise<AuthorizedSender> {
-	if (!input.mailboxId) throw new Error("Mailbox is required");
+	if (!input.mailboxId) throw new SenderRefusedError("Mailbox is required");
 
 	const db = getDb(env);
 	const [mailbox] = await db
@@ -55,13 +63,13 @@ export async function getAuthorizedSenderAddress(
 		.where(eq(mailboxes.id, input.mailboxId))
 		.limit(1);
 
-	if (!mailbox) throw new Error("Mailbox not found");
+	if (!mailbox) throw new SenderRefusedError("Mailbox not found");
 	const [actor] = await db.select().from(users).where(eq(users.id, input.userId)).limit(1);
-	if (!actor || actor.disabled) throw new Error("Sender account not found");
+	if (!actor || actor.disabled) throw new SenderRefusedError("Sender account not found");
 
 	const access = await getMailboxAccessLevel(db, actor, mailbox.id);
 	if (!access?.canSendOnBehalf) {
-		throw new Error("You do not have permission to send from this mailbox");
+		throw new SenderRefusedError("You do not have permission to send from this mailbox");
 	}
 
 	const requestedAddress = getEmailAddress(input.from);
@@ -69,15 +77,16 @@ export async function getAuthorizedSenderAddress(
 	if (!permittedAddresses.includes(requestedAddress.toLowerCase())) {
 		if (!input.connectedAccounts) {
 			// A draft from the composer may carry a connected From into approvals, the assistant or JMAP: say why not.
-			if (await isOwnConnectedAddress(env, actor.id, requestedAddress)) throw new Error(CONNECTED_FROM_COMPOSER_ONLY);
-			throw new Error("Sender address does not match the selected mailbox");
+			if (await isOwnConnectedAddress(env, actor.id, requestedAddress))
+				throw new SenderRefusedError(CONNECTED_FROM_COMPOSER_ONLY);
+			throw new SenderRefusedError("Sender address does not match the selected mailbox");
 		}
 		const identity = await resolveSendIdentity(env, {
 			userId: actor.id,
 			mailboxId: mailbox.id,
 			address: requestedAddress,
 		});
-		if (!identity) throw new Error("Sender address does not match the selected mailbox");
+		if (!identity) throw new SenderRefusedError("Sender address does not match the selected mailbox");
 		return {
 			fromAddr: formatEmailAddress(identity.address, identity.displayName ?? actor.name),
 			mailboxId: mailbox.id,

@@ -2,9 +2,10 @@ import { expect, test, type Browser, type Locator, type Page } from "@playwright
 import { DOMAIN, STORAGE_STATE, SUPPORT_ADDRESS } from "./support/constants";
 import { apiContext, deliverInbound, openMessage, setSendingSettings, signIn, uniqueToken } from "./support/helpers";
 
-// The interface direction setting (ROADMAP milestone 1): Automatic follows the browser language, Left to right and Right
-// to left are stored like the reading layout, and <html dir> is right before the first paint. A mirrored interface keeps
-// every drag, key and floating window on the correct side; a left-to-right one is untouched.
+// The interface direction setting (ROADMAP milestone 1): Left to right and Right to left are stored like the reading
+// layout, Automatic stays left to right until the interface is translated, and <html dir> is right before the first
+// paint. A mirrored interface keeps every drag, key and floating window on the correct side; a left-to-right one is
+// untouched, and a change from elsewhere never throws away what is being typed.
 
 const DIRECTION_KEY = "kite-interface-direction";
 const SIDEBAR = "#kite-sidebar-panel";
@@ -107,6 +108,7 @@ test.describe("the setting", () => {
 		await page.getByRole("button", { name: "Open account menu" }).click();
 		const direction = page.getByRole("radiogroup", { name: "Direction" });
 		await expect(direction.getByRole("radio", { name: "Automatic" })).toHaveAttribute("aria-checked", "true");
+		await expect(page.getByText("Left to right until Kite is translated.")).toBeVisible();
 		await direction.getByRole("radio", { name: "Right to left" }).click();
 
 		await expectDirection(page, "rtl");
@@ -147,51 +149,46 @@ test.describe("the setting", () => {
 		expect(menu.y + menu.height).toBeLessThanOrEqual(trigger.y + 1);
 	});
 
-	test("Automatic follows the browser language, and a stored choice wins over it", async ({ browser }) => {
-		for (const [locale, expected] of [
-			["ar-EG", "rtl"],
-			["he", "rtl"],
-			["fa-IR", "rtl"],
-			["nl-NL", "ltr"],
-		] as const) {
+	test("Automatic stays left to right in every browser language, and only an explicit choice mirrors", async ({
+		browser,
+	}) => {
+		for (const locale of ["ar-EG", "he", "fa-IR", "nl-NL"]) {
 			const context = await browser.newContext({ locale, storageState: STORAGE_STATE });
 			const page = await context.newPage();
 			await page.addInitScript(() => localStorage.setItem("kite-layout-sync", "off"));
 			await watchFirstPaintDirection(page);
 			await page.goto("/inbox");
 			await expect(page.locator(SIDEBAR)).toBeVisible();
-			expect((await firstPaintDirection(page)).atBody, locale).toBe(expected);
-			await expectDirection(page, expected);
+			expect((await firstPaintDirection(page)).atBody, locale).toBe("ltr");
+			await expectDirection(page, "ltr");
 			await context.close();
 		}
-		const context = await browser.newContext({ locale: "ar-EG", storageState: STORAGE_STATE });
-		const page = await context.newPage();
-		await chooseDirection(page, "ltr");
-		await page.goto("/inbox");
-		await expect(page.locator(SIDEBAR)).toBeVisible();
-		await expectDirection(page, "ltr");
-		await context.close();
+		for (const choice of ["ltr", "rtl"] as const) {
+			const context = await browser.newContext({ locale: "ar-EG", storageState: STORAGE_STATE });
+			const page = await context.newPage();
+			await chooseDirection(page, choice);
+			await page.goto("/inbox");
+			await expect(page.locator(SIDEBAR)).toBeVisible();
+			await expectDirection(page, choice);
+			await context.close();
+		}
 	});
 
-	test("signed-out pages follow the browser language and the stored choice", async ({ browser }) => {
+	test("signed-out pages stay left to right unless this browser chose otherwise", async ({ browser }) => {
 		const signedOut = { cookies: [], origins: [] };
-		for (const [locale, expected] of [
-			["ar-EG", "rtl"],
-			["en-US", "ltr"],
-		] as const) {
-			const context = await browser.newContext({ locale, storageState: signedOut });
-			const page = await context.newPage();
-			await page.goto("/login");
-			await expect(page.getByRole("button", { name: /sign in/i }).first()).toBeVisible();
-			await expectDirection(page, expected);
-			await context.close();
-		}
-		const context = await browser.newContext({ locale: "en-US", storageState: signedOut });
+		const context = await browser.newContext({ locale: "ar-EG", storageState: signedOut });
 		const page = await context.newPage();
-		await chooseDirection(page, "rtl");
 		await page.goto("/login");
-		await expectDirection(page, "rtl");
+		await expect(page.getByRole("button", { name: /sign in/i }).first()).toBeVisible();
+		await expectDirection(page, "ltr");
 		await context.close();
+
+		const chosen = await browser.newContext({ locale: "en-US", storageState: signedOut });
+		const chosenPage = await chosen.newPage();
+		await chooseDirection(chosenPage, "rtl");
+		await chosenPage.goto("/login");
+		await expectDirection(chosenPage, "rtl");
+		await chosen.close();
 	});
 
 	test("the choice follows the account to another browser", async ({ browser }) => {
@@ -226,10 +223,89 @@ test.describe("the setting", () => {
 		await first.getByRole("radio", { name: "Right to left" }).click();
 		await saved;
 
+		// On the next browser the account's choice lands in storage and waits for a navigation.
 		const second = await openDevice(browser);
+		await expect.poll(() => second.evaluate((key) => localStorage.getItem(key), DIRECTION_KEY)).toBe("rtl");
+		await expectDirection(second, "ltr");
+		await second.getByRole("link", { name: "Sent" }).first().click();
 		await expectDirection(second, "rtl");
 		await second.context().close();
 		await first.context().close();
+	});
+});
+
+test.describe("a change from elsewhere", () => {
+	/**
+	 * Starts a reply to a message of its own (a draft from another test would come back) and types into it; the composer's
+	 * editor is marked to tell a remount from a survivor.
+	 */
+	async function typeReply(page: Page, text: string) {
+		const replySubject = `Reply kept ${uniqueToken()}`;
+		const api = await apiContext(STORAGE_STATE);
+		await deliverInbound(api, {
+			from: `"Keeper" <keeper@outside.test>`,
+			to: SUPPORT_ADDRESS,
+			subject: replySubject,
+			text: "Answer me.",
+		});
+		await api.dispose();
+		await openInbox(page);
+		await openMessage(page, replySubject);
+		await page.getByRole("button", { name: /^Reply to / }).click();
+		const body = page.getByRole("main").getByRole("textbox", { name: "Message body" });
+		await expect(body).toHaveAttribute("contenteditable", "true");
+		await body.click();
+		await page.keyboard.type(text);
+		await expect(body).toContainText(text);
+		await body.evaluate((element) => element.setAttribute("data-rtl-probe", "typed"));
+		return body;
+	}
+
+	test("another tab's choice waits for a navigation and leaves a typed reply alone", async ({ page }) => {
+		await chooseDirection(page, "ltr");
+		const text = `Keep me ${uniqueToken()}`;
+		const body = await typeReply(page, text);
+		const sidebarGroup = page.locator("#kite-sidebar-layout");
+		await sidebarGroup.evaluate((element) => element.setAttribute("data-rtl-probe", "group"));
+
+		// A real `storage` event: the other tab shares this one's storage.
+		const other = await page.context().newPage();
+		await other.goto("/settings/appearance");
+		await other.getByRole("button", { name: "Open account menu" }).click();
+		await other.getByRole("radio", { name: "Right to left" }).click();
+		await expectDirection(other, "rtl");
+		await expect.poll(() => page.evaluate((key) => localStorage.getItem(key), DIRECTION_KEY)).toBe("rtl");
+		await other.close();
+
+		// Nothing moved under the typing: same direction, same panels, same editor, same text.
+		await expect(body).toHaveAttribute("data-rtl-probe", "typed");
+		await expect(sidebarGroup).toHaveAttribute("data-rtl-probe", "group");
+		await expect(body).toContainText(text);
+		await expectDirection(page, "ltr");
+		await page.bringToFront();
+		await body.click();
+		await page.keyboard.type(" and more");
+		await expect(body).toContainText(`${text} and more`);
+
+		await page.getByRole("link", { name: "Sent" }).first().click();
+		await expectDirection(page, "rtl");
+		await expect(page.locator(SIDEBAR)).toBeVisible();
+	});
+
+	test("choosing here with a reply open keeps the typed text", async ({ page }) => {
+		await chooseDirection(page, "ltr");
+		const text = `Still here ${uniqueToken()}`;
+		await typeReply(page, text);
+		await page.getByRole("button", { name: "Open account menu" }).click();
+		await page.getByRole("radio", { name: "Right to left" }).click();
+		await expectDirection(page, "rtl");
+		await page.locator("body").click({ position: { x: 700, y: 5 } });
+		// The reply either stays open or folds into its saved draft, which the reply box reopens.
+		const body = page.getByRole("main").getByRole("textbox", { name: "Message body" });
+		await expect(async () => {
+			if (!(await body.isVisible())) await page.getByRole("button", { name: /^Reply to / }).click({ timeout: 2_000 });
+			await expect(body).toContainText(text, { timeout: 2_000 });
+		}).toPass();
 	});
 });
 
@@ -397,6 +473,65 @@ test.describe("a mirrored interface", () => {
 		await expect(picker).toBeVisible();
 		const found = await box(picker);
 		expect(Math.abs(found.x + found.width - (button.x + button.width))).toBeLessThanOrEqual(2);
+	});
+
+	test("English sentences keep their full stop, placeholders their brackets and code its order", async ({ page }) => {
+		await page.goto("/settings/account");
+		await expect(page.getByRole("heading", { name: "My account" })).toBeVisible();
+		const results = await page.getByRole("main").evaluate((main: HTMLElement) => {
+			const host = document.createElement("div");
+			host.innerHTML = `
+				<div data-case="plain div">Hello there.</div>
+				<div data-case="div with a link">Hello <a href="#">there</a>.</div>
+				<p data-case="paragraph">Hello there.</p>
+				<div class="flex"><span data-case="flex item">Hello there.</span></div>
+				<div data-buttons><button type="button">One</button> <button type="button">Two</button></div>
+				<kbd data-kbd>⌘K</kbd>
+				<ol class="list-decimal ps-5"><li data-marker>Step one.</li></ol>
+			`;
+			main.prepend(host);
+			const charBox = (element: Element, index: number) => {
+				const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+				let node = walker.nextNode();
+				let at = index < 0 ? (element.textContent?.length ?? 0) + index : index;
+				while (node && at >= (node.textContent?.length ?? 0)) {
+					at -= node.textContent?.length ?? 0;
+					node = walker.nextNode();
+				}
+				const range = document.createRange();
+				range.setStart(node!, at);
+				range.setEnd(node!, at + 1);
+				return range.getBoundingClientRect();
+			};
+			const sentences = Array.from(host.querySelectorAll("[data-case]")).map((element) => {
+				const edge = element.getBoundingClientRect();
+				const first = charBox(element, 0);
+				const stop = charBox(element, -1);
+				return {
+					name: element.getAttribute("data-case"),
+					stopAfterText: stop.left > first.left,
+					againstInterfaceStart: Math.abs(stop.right - edge.right) <= 1,
+				};
+			});
+			const [one, two] = Array.from(host.querySelectorAll("[data-buttons] button"));
+			const buttonsMirrored = one!.getBoundingClientRect().left > two!.getBoundingClientRect().left;
+			const kbd = host.querySelector("[data-kbd]")!;
+			const kbdDirection = getComputedStyle(kbd).direction;
+			const markerDirection = getComputedStyle(host.querySelector("[data-marker]")!, "::marker").direction;
+			host.remove();
+			return { sentences, buttonsMirrored, kbdDirection, markerDirection };
+		});
+		for (const sentence of results.sentences) {
+			expect(sentence.stopAfterText, `${sentence.name}: the full stop follows the text`).toBe(true);
+			expect(sentence.againstInterfaceStart, `${sentence.name}: lined up with the interface`).toBe(true);
+		}
+		expect(results.buttonsMirrored, "a row of nothing but buttons still mirrors").toBe(true);
+		expect(results.kbdDirection).toBe("ltr");
+		expect(results.markerDirection, 'a list number reads "1.", not ".1"').toBe("ltr");
+
+		const email = page.getByPlaceholder("recovery@example.com");
+		expect(await email.evaluate((input) => getComputedStyle(input, "::placeholder").unicodeBidi)).toBe("plaintext");
+		expect(await email.evaluate((input) => getComputedStyle(input).unicodeBidi)).toBe("plaintext");
 	});
 
 	test("dates keep their order and English text its ellipsis at the end", async ({ page }) => {

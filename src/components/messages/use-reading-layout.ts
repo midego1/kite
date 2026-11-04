@@ -1,6 +1,7 @@
 import { useCallback, useLayoutEffect, useState } from "react";
 import {
 	DEFAULT_INTERFACE_DIRECTION,
+	INTERFACE_DIRECTION_CHOSEN_EVENT,
 	INTERFACE_DIRECTION_STORAGE_KEY,
 	parseInterfaceDirection,
 } from "@/components/interface-direction-utils";
@@ -112,10 +113,18 @@ export function useInterfaceDirectionPreference(): [
 	LayoutInterfaceDirection,
 	(next: LayoutInterfaceDirection) => void,
 ] {
-	return useStoredPreference(
+	const [value, update] = useStoredPreference(
 		DEFAULT_INTERFACE_DIRECTION,
 		readInterfaceDirection,
 		INTERFACE_DIRECTION_STORAGE_KEY,
 		interfaceDirectionLayout,
 	);
+	const choose = useCallback(
+		(next: LayoutInterfaceDirection) => {
+			update(next);
+			window.dispatchEvent(new Event(INTERFACE_DIRECTION_CHOSEN_EVENT));
+		},
+		[update],
+	);
+	return [value, choose];
 }

@@ -285,7 +285,7 @@ export function formatEventTime(value: Date): string {
 export function formatEventRange(event: CalendarEvent): string {
 	const start = new Date(event.startsAt);
 	const end = new Date(event.endsAt);
-	return `${formatEventTime(start)} – ${formatEventTime(end)}`;
+	return isolateDirection(`${formatEventTime(start)} – ${formatEventTime(end)}`);
 }
 
 export function groupUpcomingEvents(events: CalendarEvent[], today: Date): EventGroup[] {

@@ -897,7 +897,7 @@ export default function CalendarPage() {
 												onFocus={() => setDurationOptionsOpen(true)}
 												onChange={(event) => setStartsAt(event.target.value)}
 												aria-label="From date and time"
-												className={`${eventFieldClass} ps-14`}
+												className={`${eventFieldClass} ps-14 rtl:[&::-webkit-calendar-picker-indicator]:hidden`}
 											/>
 										</label>
 										<div aria-hidden="true" className="h-px w-full self-center bg-neutral-200 sm:h-6 sm:w-px" />
@@ -911,7 +911,7 @@ export default function CalendarPage() {
 												onFocus={() => setDurationOptionsOpen(true)}
 												onChange={(event) => setEndsAt(event.target.value)}
 												aria-label="To date and time"
-												className={`${eventFieldClass} ps-14`}
+												className={`${eventFieldClass} ps-14 rtl:[&::-webkit-calendar-picker-indicator]:hidden`}
 											/>
 										</label>
 									</div>

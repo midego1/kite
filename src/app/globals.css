@@ -1510,13 +1510,18 @@ button {
    of its sentence and a truncated run cuts at its end. Each block still lines up with the interface: match-parent reads an
    inherited `start` against the parent's direction (Chromium only honours the prefixed spelling), while `start` itself
    would follow the text, which is why `text-start` and `text-end` are pinned below. The composer's paragraphs and text
-   that names a direction of its own keep it. */
+   that names a direction of its own keep it.
+
+   A block with no text of its own has no strong letter to go by and would fall back to left to right, so a div counts
+   only when it holds text (no element children but inline text ones), and a span or link only where it is a block by
+   being a flex or grid item. An inline one stays part of its sentence. */
 @layer base {
 	html[dir="rtl"]
 		:is(
 			.truncate,
 			.text-ellipsis,
 			.block,
+			.font-mono,
 			p,
 			h1,
 			h2,
@@ -1531,15 +1536,49 @@ button {
 			td,
 			label,
 			figcaption,
-			summary
+			summary,
+			legend,
+			div:not(:has(> :not(a, b, code, em, i, kbd, small, span, strong, time))),
+			:is(.flex, .inline-flex, .grid, .inline-grid) > :is(a, span),
+			input:not(
+				[type="checkbox"],
+				[type="radio"],
+				[type="range"],
+				[type="color"],
+				[type="file"],
+				[type="date"],
+				[type="time"],
+				[type="datetime-local"],
+				[type="month"],
+				[type="week"]
+			),
+			textarea
 		):not([dir="ltr"], [dir="rtl"], [contenteditable] *) {
 		unicode-bidi: plaintext;
 		text-align: match-parent;
 		text-align: -webkit-match-parent;
 	}
 
-	html[dir="rtl"] :is(a, button):not([dir="ltr"], [dir="rtl"], [contenteditable] *) {
+	html[dir="rtl"] button:not([dir="ltr"], [dir="rtl"], [contenteditable] *) {
 		unicode-bidi: plaintext;
+	}
+
+	/* A placeholder has its own box, which does not inherit this: `"Maya Chen" <maya@example.com>` keeps its brackets. */
+	html[dir="rtl"] :is(input, textarea)::placeholder {
+		unicode-bidi: plaintext;
+	}
+
+	/* "1." stays "1.", not ".1", with its gap on the side of the text. */
+	html[dir="rtl"] ol.list-decimal > li::marker {
+		content: "\00a0" counter(list-item) ".";
+		direction: ltr;
+		unicode-bidi: isolate;
+	}
+
+	/* Code, keys and shortcuts read left to right whatever surrounds them. */
+	html[dir="rtl"] :is(code, kbd, samp, pre) {
+		direction: ltr;
+		unicode-bidi: isolate;
 	}
 }
 

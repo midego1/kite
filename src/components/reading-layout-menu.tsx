@@ -4,7 +4,7 @@ import clsx from "clsx";
 import { Columns2, List, Rows2 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useInterfaceDirection } from "@/components/interface-direction-provider";
-import { INTERFACE_DIRECTION_OPTIONS } from "@/components/interface-direction-utils";
+import { AUTOMATIC_DIRECTION_HINT, INTERFACE_DIRECTION_OPTIONS } from "@/components/interface-direction-utils";
 import { MESSAGE_DENSITY_OPTIONS, readingPaneOptions } from "@/components/messages/reading-layout-utils";
 import {
 	useInterfaceDirectionPreference,
@@ -123,6 +123,9 @@ export function ReadingLayoutMenu() {
 						</SegmentButton>
 					))}
 				</div>
+				{directionPreference === "auto" && (
+					<p className="mt-1.5 text-[11px] text-neutral-500">{AUTOMATIC_DIRECTION_HINT}</p>
+				)}
 			</div>
 		</div>
 	);

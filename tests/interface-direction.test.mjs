@@ -76,18 +76,31 @@ test("a right-to-left browser language is recognised, by its first subtag or its
 		assert.equal(direction.isRtlLanguage(language), expected, `${language}`);
 });
 
-test("a stored choice wins over the browser language, and Automatic follows it", () => {
+test("until the interface is translated, Automatic stays left to right whatever the browser language", () => {
+	assert.equal(direction.AUTOMATIC_FOLLOWS_BROWSER_LANGUAGE, false);
+	for (const [language] of LANGUAGES)
+		assert.equal(direction.resolveInterfaceDirection("auto", language), "ltr", `${language}`);
 	assert.equal(direction.resolveInterfaceDirection("rtl", "en-US"), "rtl");
 	assert.equal(direction.resolveInterfaceDirection("ltr", "ar"), "ltr");
-	assert.equal(direction.resolveInterfaceDirection("auto", "ar"), "rtl");
-	assert.equal(direction.resolveInterfaceDirection("auto", "en-US"), "ltr");
 	assert.equal(direction.parseInterfaceDirection("rtl"), "rtl");
 	assert.equal(direction.parseInterfaceDirection("sideways"), "auto");
 	assert.equal(direction.parseInterfaceDirection(null), "auto");
 });
 
+test("once switched on, Automatic follows the browser language and a stored choice still wins", () => {
+	assert.equal(direction.resolveInterfaceDirection("auto", "ar", true), "rtl");
+	assert.equal(direction.resolveInterfaceDirection("auto", "en-US", true), "ltr");
+	assert.equal(direction.resolveInterfaceDirection("ltr", "ar", true), "ltr");
+	assert.equal(direction.resolveInterfaceDirection("rtl", "en-US", true), "rtl");
+});
+
 /** The bootstrap script as the browser runs it, in a sandbox. */
-function runBootstrap({ saved, language, storageThrows = false }) {
+function runBootstrap({
+	saved,
+	language,
+	storageThrows = false,
+	script = direction.interfaceDirectionBootstrapScript,
+}) {
 	const documentElement = { dir: "" };
 	const sandbox = {
 		document: { documentElement },
@@ -99,21 +112,31 @@ function runBootstrap({ saved, language, storageThrows = false }) {
 			},
 		},
 	};
-	vm.runInNewContext(direction.interfaceDirectionBootstrapScript, sandbox);
+	vm.runInNewContext(script, sandbox);
 	return documentElement.dir;
 }
 
-test("the bootstrap script agrees with the helpers it must stay in sync with", () => {
-	for (const saved of [null, "auto", "ltr", "rtl", "sideways"])
-		for (const [language] of LANGUAGES) {
-			const expected = direction.resolveInterfaceDirection(direction.parseInterfaceDirection(saved), language);
-			assert.equal(runBootstrap({ saved, language }), expected, `${saved} ${language}`);
-		}
+test("the bootstrap script agrees with the helpers it must stay in sync with, with the switch off and on", () => {
+	for (const follow of [false, true]) {
+		const script = direction.directionBootstrapScript(follow);
+		for (const saved of [null, "auto", "ltr", "rtl", "sideways"])
+			for (const [language] of LANGUAGES) {
+				const expected = direction.resolveInterfaceDirection(
+					direction.parseInterfaceDirection(saved),
+					language,
+					follow,
+				);
+				assert.equal(runBootstrap({ saved, language, script }), expected, `${follow} ${saved} ${language}`);
+			}
+	}
+	assert.equal(direction.interfaceDirectionBootstrapScript, direction.directionBootstrapScript(false));
 });
 
-test("the bootstrap script still follows the browser language when storage is blocked", () => {
-	assert.equal(runBootstrap({ language: "ar", storageThrows: true }), "rtl");
-	assert.equal(runBootstrap({ language: "en", storageThrows: true }), "ltr");
+test("with storage blocked the bootstrap script still answers", () => {
+	assert.equal(runBootstrap({ language: "ar", storageThrows: true }), "ltr");
+	const script = direction.directionBootstrapScript(true);
+	assert.equal(runBootstrap({ language: "ar", storageThrows: true, script }), "rtl");
+	assert.equal(runBootstrap({ language: "en", storageThrows: true, script }), "ltr");
 });
 
 test("drags, swipes and arrow keys read along the document's direction", () => {

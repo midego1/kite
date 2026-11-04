@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, type MouseEvent } from "react";
 import { useFoldViewport } from "@/components/use-fold-posture";
+import { useInterfaceDirection } from "@/components/interface-direction-provider";
 import { hingeGrid, homeHinge } from "./home-mailbox-fold";
 import { HomeList } from "./home-mailbox-list";
 import { HomeComposer, HomeToast } from "./home-mailbox-overlays";
@@ -211,6 +212,7 @@ export function HomeMailbox({ appName, icon, emails, bodies, chrome, footer, hea
 
 	const fold = useFoldViewport();
 	const hinge = homeHinge(fold);
+	const direction = useInterfaceDirection();
 
 	useEffect(() => {
 		stateRef.current = state;
@@ -314,7 +316,7 @@ export function HomeMailbox({ appName, icon, emails, bodies, chrome, footer, hea
 			<div className="shrink-0 border-b border-neutral-200 bg-white">{chrome}</div>
 			<main
 				id="main"
-				style={hinge ? hingeGrid(hinge) : undefined}
+				style={hinge ? hingeGrid(hinge, direction === "rtl") : undefined}
 				className="relative grid min-h-0 flex-1 grid-cols-1 split:grid-cols-[minmax(280px,340px)_minmax(0,1fr)] split:lg:grid-cols-[232px_minmax(300px,360px)_minmax(0,1fr)]"
 			>
 				<HomeSidebar

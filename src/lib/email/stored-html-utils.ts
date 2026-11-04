@@ -179,7 +179,10 @@ export function sanitizeStoredEmailHtml(html: string | null | undefined): string
 					dropped += 1;
 					return;
 				}
-				if ((name === "html" || name === "body") && root[name] === undefined) root[name] = attributes.dir ?? "";
+				// Only a root tag that opens the mail counts: in a fragment, a later one is content, not a root.
+				if ((name === "html" || name === "body") && root[name] === undefined && output.trim() === "") {
+					root[name] = attributes.dir ?? "";
+				}
 				if (STORED_TAGS.has(name)) output += openTag(name, attributes);
 			},
 			onclosetag(name) {

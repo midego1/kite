@@ -183,3 +183,49 @@ test("a direction the sender declares on html or body wins over the first letter
 	expect(await quote.evaluate((element) => getComputedStyle(element).borderRightWidth)).toBe("2px");
 	expect(await quote.evaluate((element) => getComputedStyle(element).borderLeftWidth)).toBe("0px");
 });
+
+/** Scrolls the frame as far as it goes towards its left edge, then says whether `locator` is on screen at that edge. */
+async function leftEndReachable(locator: Locator): Promise<boolean> {
+	return locator.evaluate((element) => {
+		const root = element.ownerDocument.documentElement;
+		root.scrollLeft = -1_000_000;
+		return element.getBoundingClientRect().left >= -1;
+	});
+}
+
+const WIDE_TABLE = `<table><tr><td style="min-width:700px">first</td><td style="min-width:700px">second</td><td style="min-width:700px">LEFTEND</td></tr></table>`;
+
+test("the whole width of a wide right-to-left mail can be scrolled to, with a declared root and with Arabic detected", async ({
+	page,
+}) => {
+	const token = uniqueToken("rtl-wide");
+	const declared = `Declared wide ${token}`;
+	await deliverInbound(api, {
+		from: `"Weekly" <weekly-${token}@outside.test>`,
+		to: SUPPORT_ADDRESS,
+		subject: declared,
+		text: "Weekly",
+		html: `<html dir="rtl"><body><p>Weekly digest</p>${WIDE_TABLE}</body></html>`,
+	});
+	const detected = `مرحبا عريض ${token}`;
+	await deliverInbound(api, {
+		from: `"Weekly" <detected-${token}@outside.test>`,
+		to: SUPPORT_ADDRESS,
+		subject: detected,
+		text: "مرحبا",
+		html: `<p>مرحبا بكم في النشرة</p>${WIDE_TABLE}`,
+	});
+
+	await page.goto("/inbox");
+	for (const [subject, firstText] of [
+		[declared, "Weekly digest"],
+		[detected, "مرحبا بكم في النشرة"],
+	]) {
+		await openMessage(page, subject);
+		const frame = page.frameLocator('iframe[title="Message body"]');
+		await expect(frame.getByText(firstText)).toBeVisible();
+		await expect(frame.locator("body")).toHaveAttribute("dir", subject === declared ? "rtl" : "auto");
+		expect(await direction(frame.locator("body"))).toBe("rtl");
+		expect(await leftEndReachable(frame.getByText("LEFTEND"))).toBe(true);
+	}
+});

@@ -1,4 +1,5 @@
 import { readerFontStyles } from "@/components/font-assets-utils";
+import { wrappedRootDirection } from "@/lib/email/root-direction-utils";
 import type { EmailColourFacts, EmailFrameDocumentOptions } from "./email-html-frame-types";
 
 /**
@@ -112,7 +113,9 @@ export function buildEmailFrameDocument(html: string, options: EmailFrameDocumen
 		font,
 		// The direction follows the first strong character of the mail, so Arabic, Hebrew, Persian and Urdu mail reads
 		// right to left in an English interface; a `dir` the sender put on an element still wins for that element.
-		'</head><body dir="auto">',
+		// A direction the sender declared on <html> or <body> arrives as one wrapper and goes on the body, which
+		// keeps the viewport in that direction and the whole width of a wide mail reachable.
+		`</head><body dir="${wrappedRootDirection(html) ?? "auto"}">`,
 		html,
 		"</body></html>",
 	].join("");

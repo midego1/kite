@@ -44,6 +44,14 @@ test("the email frame body follows the direction of the mail and keeps the sende
 	assert.equal((buildEmailFrameDocument(HEBREW).match(/<body\b/g) ?? []).length, 1);
 });
 
+test("the frame body takes the direction of a wrapper that holds the whole mail, and detects it otherwise", () => {
+	const wrapped = buildEmailFrameDocument('<div dir="rtl"><table><tr><td>x</td></tr></table></div>');
+	assert.match(wrapped, /<body dir="rtl">/);
+	assert.match(buildEmailFrameDocument('<div dir="ltr"><p>مرحبا</p></div>'), /<body dir="ltr">/);
+	assert.match(buildEmailFrameDocument('<div dir="rtl">a</div><p>b</p>'), /<body dir="auto">/);
+	assert.match(buildEmailFrameDocument("<p>مرحبا</p>"), /<body dir="auto">/);
+});
+
 test("the frame's list and quote indents use logical properties, which equal the physical ones in left-to-right mail", () => {
 	const document = buildEmailFrameDocument("<ul><li>a</li></ul>", { dark: true });
 	assert.match(document, /ul\{[^}]*padding-inline-start:1\.5rem/);

@@ -16,7 +16,7 @@ await build({
 		contents: `
 			export { createEmailHtmlSanitizer } from "./src/app/(dashboard)/inbox/[messageId]/email-html-sanitizer-utils.ts";
 			export { sanitizeStoredEmailHtml } from "./src/lib/email/stored-html-utils.ts";
-			export { rootDirection } from "./src/lib/email/root-direction-utils.ts";
+			export { rootDirection, withRootDirection, wrappedRootDirection } from "./src/lib/email/root-direction-utils.ts";
 			export { parseCssColour, isNearBlackNeutral, isUnreadableOnDark, paintsBackground } from "./src/components/messages/email-colour-utils.ts";
 		`,
 		resolveDir: root,
@@ -37,6 +37,8 @@ const {
 	createEmailHtmlSanitizer,
 	sanitizeStoredEmailHtml,
 	rootDirection,
+	withRootDirection,
+	wrappedRootDirection,
 	parseCssColour,
 	isNearBlackNeutral,
 	isUnreadableOnDark,
@@ -396,7 +398,13 @@ const ROOT_CASES = [
 	['<html dir="ltr"><body dir="rtl"><div>x</div></body></html>', '<div dir="rtl"><div>x</div></div>'],
 	['<html dir="rtl"><body dir="ltr"><div>x</div></body></html>', '<div dir="ltr"><div>x</div></div>'],
 	['<html dir="RTL"><body><div>x</div></body></html>', '<div dir="rtl"><div>x</div></div>'],
-	['<body DIR="Auto"><div>x</div></body>', '<div dir="auto"><div>x</div></div>'],
+	// `auto` is what the reader's frame does anyway, so it needs no wrapper; the body's `auto` also beats the html's `rtl`.
+	['<body DIR="Auto"><div>x</div></body>', "<div>x</div>"],
+	['<html dir="rtl"><body dir="auto"><div>x</div></body></html>', "<div>x</div>"],
+	[
+		'<html><head><title>T</title><style>p{}</style></head><body dir="rtl"><div>x</div></body></html>',
+		'<div dir="rtl"><div>x</div></div>',
+	],
 	// An unusable body value does not hide the html element's declared one.
 	['<html dir="rtl"><body dir="sideways"><div>x</div></body></html>', '<div dir="rtl"><div>x</div></div>'],
 ];
@@ -413,6 +421,20 @@ const ROOT_REJECTED = [
 test("the direction declared on <html> or <body> survives storing, in one wrapper and nothing else", () => {
 	for (const [html, expected] of ROOT_CASES) assert.equal(sanitizeStoredEmailHtml(html), expected, html);
 	for (const html of ROOT_REJECTED) assert.equal(sanitizeStoredEmailHtml(html), "<div>x</div>", html);
+	// A root tag after content is not a root: the mail is a fragment, and the rest of it is not made right to left.
+	assert.equal(
+		sanitizeStoredEmailHtml('<p>English reply</p><blockquote><body dir="rtl"><div>x</div></body></blockquote>'),
+		"<p>English reply</p><blockquote><div>x</div></blockquote>",
+	);
+	assert.equal(
+		sanitizeStoredEmailHtml('<p>English reply</p><html dir="rtl"><div>x</div></html>'),
+		"<p>English reply</p><div>x</div>",
+	);
+	// An empty body stays empty, so the reader falls back to the text part instead of an empty frame.
+	for (const html of ['<html dir="rtl"><body></body></html>', '<html dir="rtl"><body dir="ltr">\n  </body></html>']) {
+		assert.ok(!sanitizeStoredEmailHtml(html).includes("<div"), html);
+		assert.equal(sanitizeStoredEmailHtml(html).trim(), "", html);
+	}
 });
 
 test("the direction declared on <html> or <body> survives the reader's sanitizer, in one wrapper and nothing else", () => {
@@ -427,6 +449,8 @@ test("the direction declared on <html> or <body> survives the reader's sanitizer
 	const stored = sanitizeStoredEmailHtml('<html><body dir="rtl"><div dir="ltr">x</div></body></html>');
 	assert.equal(stored, '<div dir="rtl"><div dir="ltr">x</div></div>');
 	assert.equal(sanitizeEmailHtml(stored), stored);
+	// An empty body stays empty here too.
+	assert.equal(sanitizeEmailHtml('<html dir="rtl"><body></body></html>'), "");
 	// The security properties stay: nothing else from the root tags, no script.
 	assert.doesNotMatch(
 		sanitizeEmailHtml(
@@ -442,4 +466,26 @@ test("rootDirection takes only the exact values, the body's before the html elem
 	assert.equal(rootDirection("", "ltr"), "ltr");
 	assert.equal(rootDirection(" rtl", null), null);
 	assert.equal(rootDirection("x", "y"), null);
+});
+
+test("withRootDirection wraps only for ltr and rtl, and never an empty body", () => {
+	assert.equal(withRootDirection("<p>x</p>", "rtl"), '<div dir="rtl"><p>x</p></div>');
+	assert.equal(withRootDirection("<p>x</p>", "ltr"), '<div dir="ltr"><p>x</p></div>');
+	assert.equal(withRootDirection("<p>x</p>", "auto"), "<p>x</p>");
+	assert.equal(withRootDirection("<p>x</p>", null), "<p>x</p>");
+	assert.equal(withRootDirection("", "rtl"), "");
+	assert.equal(withRootDirection(" \n", "rtl"), " \n");
+});
+
+test("wrappedRootDirection finds the wrapper only when it encloses the whole mail", () => {
+	assert.equal(wrappedRootDirection('<div dir="rtl"><div>a</div><p>b</p></div>'), "rtl");
+	assert.equal(wrappedRootDirection('<div dir="ltr"><div dir="rtl">a</div></div>\n'), "ltr");
+	// A sender's own first div is not the wrapper unless it holds everything.
+	assert.equal(wrappedRootDirection('<div dir="rtl">a</div><p>b</p>'), null);
+	assert.equal(wrappedRootDirection('<div dir="rtl">a</div><div>b</div>'), null);
+	assert.equal(wrappedRootDirection('<div dir="auto">a</div>'), null);
+	assert.equal(wrappedRootDirection('<div dir="rtl" class="x">a</div>'), null);
+	assert.equal(wrappedRootDirection('<p dir="rtl">a</p>'), null);
+	assert.equal(wrappedRootDirection('<div dir="rtl"><div>a</div>'), null);
+	assert.equal(wrappedRootDirection(""), null);
 });

@@ -168,6 +168,102 @@ test("an Arabic signature is swapped, not duplicated, whichever direction the ed
 	assert.equal(h.applyMailboxSignatureHtml(editor.innerHTML, ARABIC, "Sam").includes(ARABIC), false);
 });
 
+test("a block-level signature is swapped, not duplicated, whatever direction each of its lines was given", () => {
+	const signature = `<div>${ARABIC}</div><div>Sam</div><p>${HEBREW}</p>`;
+	const fresh = h.applyMailboxSignatureHtml("", "", signature);
+	const directions = ["", ' dir="auto"', ' dir="rtl"', ' dir="ltr"'];
+	for (const first of directions) {
+		for (const second of directions) {
+			for (const third of directions) {
+				const edited = `<div>Body</div>${fresh
+					.replace(`<div>${ARABIC}</div>`, `<div${first}>${ARABIC}</div>`)
+					.replace("<div>Sam</div>", `<div${second}>Sam</div>`)
+					.replace(`<p>${HEBREW}</p>`, `<p${third}>${HEBREW}</p>`)
+					.replace("<div><br></div>", "")}`;
+				// The same signature again stays one; another one replaces it, with nothing of the old one left.
+				const again = h.applyMailboxSignatureHtml(edited, signature, signature);
+				assert.equal(again.match(/data-kite-signature/g)?.length, 1, again);
+				assert.equal(again.match(/Sam/g)?.length, 1, again);
+				const swapped = h.applyMailboxSignatureHtml(edited, signature, "Shared");
+				assert.equal(swapped.match(/data-kite-signature/g)?.length, 1, swapped);
+				assert.equal(swapped.includes("Sam"), false, swapped);
+				assert.equal(swapped.includes(ARABIC), false, swapped);
+				assert.equal(swapped.startsWith("<div>Body</div>"), true, swapped);
+				assert.match(swapped, /Shared<\/div>$/);
+				// Opening the draft again, with no previous signature known, finds it too.
+				assert.equal(h.applyMailboxSignatureHtml(edited, "", signature), edited);
+			}
+		}
+	}
+});
+
+test("the direction button on the block of a plain signature and on its lines still keeps one signature", () => {
+	const signature = "Sam\nTreasurer";
+	const fresh = h.applyMailboxSignatureHtml("<div>Body</div>", "", signature);
+	for (const direction of ["auto", "rtl", "ltr"]) {
+		const edited = fresh.replace('data-kite-signature="1"', `data-kite-signature="1" dir="${direction}"`);
+		assert.equal(h.applyMailboxSignatureHtml(edited, "", signature), edited);
+		const swapped = h.applyMailboxSignatureHtml(edited, signature, "New");
+		assert.equal(swapped.match(/data-kite-signature/g)?.length, 1, swapped);
+		assert.match(swapped, new RegExp(`data-kite-signature="1" dir="${direction}"`));
+	}
+});
+
+test("switching to a mailbox with no signature removes a block-level signature whose lines were given a direction", () => {
+	const signature = `<div>${ARABIC}</div><div>Sam</div>`;
+	const fresh = h.applyMailboxSignatureHtml("<div>Body</div>", "", signature);
+	for (const direction of ["rtl", "ltr", "auto"]) {
+		const edited = fresh.replace("<div>Sam</div>", `<div dir="${direction}">Sam</div>`);
+		for (const next of ["", null, undefined]) {
+			const swapped = h.applyMailboxSignatureHtml(edited, signature, next);
+			assert.equal(swapped, "<div>Body</div>", swapped);
+		}
+	}
+	// With no signature before or after, nothing is added or removed.
+	assert.equal(h.applyMailboxSignatureHtml("<div>Body</div>", "", ""), "<div>Body</div>");
+});
+
+test("direction in the middle of a tag's attributes, and signature text that looks like an attribute", () => {
+	const signature = `<p lang="ar" title="Sig">${ARABIC}</p><p>Say dir="rtl" here</p>`;
+	const fresh = h.applyMailboxSignatureHtml("<div>Body</div>", "", signature);
+	for (const edited of [
+		fresh.replace('lang="ar"', 'dir="rtl" lang="ar"'),
+		fresh.replace('lang="ar"', 'lang="ar" dir="ltr"'),
+		fresh.replace('title="Sig"', 'dir="rtl" title="Sig"'),
+		fresh.replace('title="Sig"', 'title="Sig" dir="rtl"'),
+	]) {
+		assert.notEqual(edited, fresh);
+		assert.equal(
+			h.applyMailboxSignatureHtml(edited, signature, "Shared"),
+			"<div>Body</div>" + h.applyMailboxSignatureHtml("", "", "Shared").replace("<div><br></div>", ""),
+		);
+		assert.equal(h.applyMailboxSignatureHtml(edited, "", signature), edited);
+	}
+});
+
+test("an attribute value with a greater-than sign in it does not break the match", () => {
+	const html = '<p title="a>b" lang="ar">Sam</p>';
+	const fresh = h.applyMailboxSignatureHtml("<div>Body</div>", "", html);
+	assert.match(fresh, /title="a(&gt;|>)b"/);
+	for (const edited of [fresh.replace('lang="ar"', 'dir="rtl" lang="ar"'), fresh.replace("<p ", '<p dir="ltr" ')]) {
+		assert.notEqual(edited, fresh);
+		assert.equal(h.applyMailboxSignatureHtml(edited, html, "Shared").includes("Sam"), false);
+		assert.equal(h.applyMailboxSignatureHtml(edited, "", html), edited);
+	}
+});
+
+test("the same signature in the other mailbox keeps the direction given to its lines", () => {
+	const signature = `<div>${ARABIC}</div><div>Sam</div>`;
+	const fresh = h.applyMailboxSignatureHtml("<div>Body</div>", "", signature);
+	const edited = fresh.replace("<div>Sam</div>", '<div dir="rtl">Sam</div>');
+	assert.equal(h.applyMailboxSignatureHtml(edited, signature, signature), edited);
+});
+
+test("a replacement signature is inserted as written, whatever characters it holds", () => {
+	const fresh = h.applyMailboxSignatureHtml("<div>Body</div>", "", "Old");
+	assert.match(h.applyMailboxSignatureHtml(fresh, "Old", "Cost $& $1 $$"), /Cost \$&amp; \$1 \$\$<\/div>$/);
+});
+
 test("plain text stays logical: the same characters in the same order, with no direction marks", () => {
 	// The text is what it is without the attribute; dir only changes how it is drawn.
 	for (const html of [

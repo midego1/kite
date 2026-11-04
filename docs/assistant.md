@@ -120,7 +120,7 @@ The profile needs migration 0070; until it is applied the switch is hidden and s
 
 ## Write with Kite in the composer
 
-The composer toolbar has a **Write with Kite** button (the sparkles, or ⌘J on a Mac and Ctrl+J elsewhere in the message body). It shows only when the assistant is on, a provider is configured, an external provider is allowed by the primary admin (see [Privacy](#privacy); Workers AI needs no opt-in) and you can send from the selected mailbox.
+The composer toolbar has a **Write with Kite** button (the sparkles, or ⌘J on a Mac and Ctrl+J elsewhere in the message body). It shows only when the assistant is on, a provider is configured, an external provider is allowed by the primary admin (see [Privacy](#privacy); Workers AI needs no opt-in) and you can send from the mailbox the message is written from (its From), whichever mailbox is open in the sidebar. Kite uses that mailbox's instructions, writing style and model, and reads a reply's original from it.
 
 - **Write.** In an empty message, say what the email should say (up to 2,000 characters) and choose **Write**. In a reply, Kite reads the email you are answering itself, from the mailbox; it never uses the quoted copy in the composer.
 - **Rewrite.** With text selected, or with text in the body and nothing selected (then the whole body counts), choose **Shorter**, **Longer**, **More formal**, **More casual**, **Fix spelling and grammar**, **Translate to** a language (your browser's, English, Dutch, German, French, Spanish, or any other up to 40 characters) or a **Custom** instruction (up to 300 characters). A translation replaces the text and keeps the original below it in a quote block, so the recipient can read both.

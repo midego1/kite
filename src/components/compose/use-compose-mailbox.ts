@@ -15,17 +15,21 @@ type LastFrom = { mailboxId: string; address: string };
 
 /**
  * The mailbox a composer sends from, among the mailboxes the user may send from (never a read-only
- * shared one). With one mailbox selected it is that mailbox, and choosing another From switches to it
- * as before. In All mailboxes the choice stays with the composer (the view keeps listing every
- * mailbox), a reply or forward keeps its draft's mailbox, and a new message starts from the From used
- * last while that is still allowed.
+ * shared one). It starts with the mailbox in view (in All mailboxes: the From used last while that is
+ * still allowed, address included) and is then the composer's own: switching mailbox in the sidebar, or the
+ * view going to or leaving All mailboxes, never moves a message being written, a reply or a loaded draft, nor
+ * changes the address it started with. Only the From menu (and a loaded draft's mailbox) changes it. A reply
+ * or forward keeps its draft's mailbox.
  */
 export function useComposeMailbox() {
-	const { selectedMailbox, setSelectedMailbox, mailboxes, allMailboxes } = useSelectedMailbox();
+	const { selectedMailbox, mailboxes, allMailboxes } = useSelectedMailbox();
 	const [lastFrom, setLastFrom] = useStoredState<LastFrom | null>(LAST_FROM_STORAGE_KEY, null);
-	const [chosenId, setChosenId] = useState<string | null>(null);
+	// The mailbox the composer settled on, with the address it started from (only a new message in All mailboxes has one).
+	const [choice, setChoice] = useState<{ id: string; startFrom: string | null } | null>(null);
 	const sendable = useMemo(() => mailboxes.filter((mailbox) => canSendFromMailbox(mailbox.permission)), [mailboxes]);
-	const chooseLocal = useCallback((mailbox: MailboxOption | null) => setChosenId(mailbox?.id ?? null), []);
+	const chooseLocal = useCallback((mailbox: MailboxOption | null) => {
+		setChoice(mailbox ? { id: mailbox.id, startFrom: null } : null);
+	}, []);
 	const rememberFrom = useCallback(
 		(mailbox: MailboxOption | null, address: string) => {
 			if (mailbox && address) setLastFrom({ mailboxId: mailbox.id, address });
@@ -33,16 +37,19 @@ export function useComposeMailbox() {
 		[setLastFrom],
 	);
 
-	if (!allMailboxes) {
-		const mailbox = pickComposeMailbox(sendable, [selectedMailbox?.id]);
-		return { selectedMailbox: mailbox, setSelectedMailbox, mailboxes: sendable, defaultFrom: null, rememberFrom };
+	const mailbox = allMailboxes
+		? pickComposeMailbox(sendable, [choice?.id, lastFrom?.mailboxId, selectedMailbox?.id])
+		: pickComposeMailbox(sendable, [choice?.id, selectedMailbox?.id]);
+	// Once the composer has a mailbox it keeps it, whatever the view does afterwards.
+	if (choice === null && mailbox && sendable.length > 0) {
+		const startFrom = allMailboxes && lastFrom?.mailboxId === mailbox.id ? lastFrom.address : null;
+		setChoice({ id: mailbox.id, startFrom });
 	}
-	const mailbox = pickComposeMailbox(sendable, [chosenId, lastFrom?.mailboxId, selectedMailbox?.id]);
 	return {
 		selectedMailbox: mailbox,
 		setSelectedMailbox: chooseLocal,
 		mailboxes: sendable,
-		defaultFrom: lastFrom && lastFrom.mailboxId === mailbox?.id ? lastFrom.address : null,
+		defaultFrom: choice?.id === mailbox?.id ? (choice?.startFrom ?? null) : null,
 		rememberFrom,
 	};
 }

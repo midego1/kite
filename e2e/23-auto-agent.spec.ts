@@ -566,19 +566,32 @@ test.describe("admin automatic reading settings", () => {
 		// Restoring saves the provider, so one that came from the environment or the defaults reads back as saved,
 		// with an empty rate (no input, no output) for each of its models. Which of the two the first run in a fresh
 		// database starts from depends on the specs that ran before it in the same shard.
-		const withoutEmptyRates = (state: typeof original) => ({
+		const withoutEmptyRates = (rates: typeof original.config.rates) =>
+			Object.fromEntries(
+				Object.entries(rates).filter(([, rate]) => rate.input !== null || rate.output !== null || rate.reasoningEffort),
+			);
+		// The list of saved providers is empty until the first save, so a database no spec has saved a provider in yet
+		// starts with none. The first save in this test then adds the provider it started with as the one active entry
+		// (not a race with another spec: the list changes when this test saves, on its own).
+		const restored = await readAdminAgent(api);
+		if (original.providers.length === 0) {
+			expect(restored.providers).toHaveLength(1);
+			expect(restored.providers[0]).toMatchObject({
+				active: true,
+				provider: original.config.provider,
+				baseUrl: original.config.baseUrl,
+				models: original.config.models,
+			});
+		}
+		const comparable = (state: typeof original) => ({
 			...state,
-			config: {
-				...state.config,
-				source: original.config.source,
-				rates: Object.fromEntries(
-					Object.entries(state.config.rates).filter(
-						([, rate]) => rate.input !== null || rate.output !== null || rate.reasoningEffort,
-					),
-				),
-			},
+			config: { ...state.config, source: original.config.source, rates: withoutEmptyRates(state.config.rates) },
+			providers:
+				original.providers.length === 0
+					? []
+					: state.providers.map((entry) => ({ ...entry, rates: withoutEmptyRates(entry.rates) })),
 		});
-		expect(withoutEmptyRates(await readAdminAgent(api))).toEqual(withoutEmptyRates(original));
+		expect(comparable(restored)).toEqual(comparable(original));
 	});
 
 	test("a reasoning effort can be saved per model, and none is refused", async () => {

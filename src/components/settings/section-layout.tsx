@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import { LifeBuoy } from "lucide-react";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -19,13 +19,12 @@ function SectionTrail({ mode }: { mode: NavMode }) {
 		// The page's own heading names it for assistive technology; the trail repeats it for sighted readers only.
 		<p aria-hidden="true" className="flex min-w-0 items-center gap-1.5 truncate text-sm">
 			{trail.map((part, index) => (
-				<span
-					key={`${index}-${part}`}
-					className={index === trail.length - 1 ? "truncate font-medium text-neutral-900" : "text-neutral-500"}
-				>
-					{index > 0 && <span className="me-1.5 text-neutral-300">/</span>}
-					{part}
-				</span>
+				<Fragment key={`${index}-${part}`}>
+					{index > 0 && <span className="text-neutral-300">/</span>}
+					<span className={index === trail.length - 1 ? "truncate font-medium text-neutral-900" : "text-neutral-500"}>
+						{part}
+					</span>
+				</Fragment>
 			))}
 		</p>
 	);

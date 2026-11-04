@@ -2,6 +2,7 @@ import { forYouVisible } from "@/lib/agent/auto-read/for-you-utils";
 import type { ExternalAccountView } from "@/lib/external-accounts/types";
 import type { OverviewData } from "@/app/(admin)/admin/overview-types";
 import type { AccountLine, AccountLinesInput, HealthLine, StatusChip, StatusChipsInput } from "./command-center-types";
+import { isolateDirection } from "@/lib/bidi-utils";
 
 /** How many connected accounts the card lists before pointing at Settings. */
 const MAX_ACCOUNT_LINES = 4;
@@ -150,8 +151,8 @@ export function attentionHref(href: string): string {
 
 /** Megabytes with one decimal below a gigabyte, gigabytes above. */
 function formatBytes(bytes: number): string {
-	if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
-	return `${Math.max(1, Math.round(bytes / 1024 ** 2))} MB`;
+	if (bytes >= 1024 ** 3) return isolateDirection(`${(bytes / 1024 ** 3).toFixed(1)} GB`);
+	return isolateDirection(`${Math.max(1, Math.round(bytes / 1024 ** 2))} MB`);
 }
 
 /**

@@ -7,6 +7,7 @@ import { htmlToReadableText, splitRepliedEmailContent } from "@/lib/email/reply-
 import { splitQuotedHtml } from "@/components/compose/rich-text-utils";
 import type { Message } from "@/hooks/types";
 import type { MessageAttachment, MessageBodyDisplay, MessageDetailResponse } from "./types";
+import { isolateDirection } from "@/lib/bidi-utils";
 
 export async function fetchMessageDetail(messageId: string): Promise<MessageDetailResponse> {
 	return (await fetchCachedMessageDetail(messageId)) as MessageDetailResponse;
@@ -102,7 +103,7 @@ export function resolveInlineAttachmentUrls(
 }
 
 export function formatAttachmentSize(size: number): string {
-	if (size < 1024) return `${size} B`;
-	if (size < 1024 * 1024) return `${Math.ceil(size / 1024)} KB`;
-	return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+	if (size < 1024) return isolateDirection(`${size} B`);
+	if (size < 1024 * 1024) return isolateDirection(`${Math.ceil(size / 1024)} KB`);
+	return isolateDirection(`${(size / (1024 * 1024)).toFixed(1)} MB`);
 }

@@ -72,6 +72,7 @@ import {
 import clsx from "clsx";
 import { DialogFrame } from "@/components/dialog-frame";
 import { requestConfirmation } from "@/components/ui/confirm-dialog-utils";
+import { documentDirection } from "@/components/interface-direction-utils";
 
 const eventFieldClass =
 	"h-9 border-transparent bg-transparent px-2 shadow-none hover:bg-white/60 focus:border-blue-600 focus:bg-white focus:shadow-sm";
@@ -90,7 +91,7 @@ export default function CalendarPage() {
 	const [pickerMonth, setPickerMonth] = useState(() => new Date());
 	const monthPickerRef = useRef<HTMLDivElement | null>(null);
 	const monthPickerPopupRef = useRef<HTMLDivElement | null>(null);
-	const [monthPickerPos, setMonthPickerPos] = useState<{ top: number; left: number } | null>(null);
+	const [monthPickerPos, setMonthPickerPos] = useState<{ top: number; insetInlineStart: number } | null>(null);
 	const openedEventFromUrl = useRef<string | null>(null);
 	const [draggedEvent, setDraggedEvent] = useState<CalendarEvent | null>(null);
 	const [resizingEvent, setResizingEvent] = useState<CalendarEvent | null>(null);
@@ -526,7 +527,13 @@ export default function CalendarPage() {
 							const rect = event.currentTarget.getBoundingClientRect();
 							setMonthPickerPos({
 								top: rect.bottom + 12,
-								left: Math.max(12, Math.min(rect.left, window.innerWidth - 460)),
+								insetInlineStart: Math.max(
+									12,
+									Math.min(
+										documentDirection() === "rtl" ? window.innerWidth - rect.right : rect.left,
+										window.innerWidth - 460,
+									),
+								),
 							});
 							setPickerMonth(startOfMonth(visibleDate));
 							setMonthPickerOpen((open) => !open);

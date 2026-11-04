@@ -3,11 +3,32 @@
 // Ported from the shadcn/ui new-york Resizable (MIT, see NOTICE) to react-resizable-panels 4, whose sizes
 // take pixel values, and restyled with Kite's palette. Kite's handle is a hairline with a wider invisible
 // hit area that turns blue while hovered, focused or dragged.
+import { Children } from "react";
 import * as ResizablePrimitive from "react-resizable-panels";
+import { useInterfaceDirection } from "@/components/interface-direction-provider";
 import { cn } from "@/lib/utils";
 
-export function ResizablePanelGroup({ className, ...props }: React.ComponentProps<typeof ResizablePrimitive.Group>) {
-	return <ResizablePrimitive.Group className={cn("h-full w-full", className)} {...props} />;
+/**
+ * The library measures drags and arrow keys physically and takes the panel before a separator to be on its left, so
+ * under `dir="rtl"` it would grow the wrong panel. A mirrored side-by-side group therefore stays a left-to-right flex
+ * row with its panels in reverse order, and each panel reads right to left inside. Sizes are keyed by panel id, so
+ * saved ones stay valid. Switching direction remounts the group, because the library only orders panels on mount.
+ */
+export function ResizablePanelGroup({
+	className,
+	children,
+	...props
+}: React.ComponentProps<typeof ResizablePrimitive.Group>) {
+	const mirrored = useInterfaceDirection() === "rtl" && props.orientation !== "vertical";
+	return (
+		<ResizablePrimitive.Group
+			key={mirrored ? "mirrored" : "plain"}
+			className={cn("h-full w-full", mirrored && "[direction:ltr] *:[direction:rtl]", className)}
+			{...props}
+		>
+			{mirrored ? Children.toArray(children).reverse() : children}
+		</ResizablePrimitive.Group>
+	);
 }
 
 export const ResizablePanel = ResizablePrimitive.Panel;

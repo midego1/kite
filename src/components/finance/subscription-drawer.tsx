@@ -186,7 +186,7 @@ export function SubscriptionDrawer({ state, today, locale, onClose, onEdit, onCh
 			<DialogContent
 				data-finance-drawer
 				data-finance-drawer-state={state.kind}
-				className="bottom-0 left-auto right-0 top-0 h-full w-[min(440px,100vw)] max-w-full translate-x-0 translate-y-0 overflow-y-auto rounded-none rounded-l-2xl"
+				className="bottom-0 left-auto right-0 top-0 h-full w-[min(440px,100vw)] max-w-full translate-x-0 translate-y-0 overflow-y-auto rounded-none rounded-s-2xl rtl:left-0 rtl:right-auto"
 			>
 				<DialogHeader>
 					<DialogTitle className="pe-8">

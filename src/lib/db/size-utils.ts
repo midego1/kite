@@ -1,3 +1,5 @@
+import { isolateDirection } from "@/lib/bidi-utils";
+
 /** D1's database limit on Workers Paid. Workers Free installs set `D1_MAX_BYTES=500000000`. */
 const D1_DEFAULT_MAX_BYTES = 10_000_000_000;
 /** Warn from this share of the limit. */
@@ -25,10 +27,10 @@ export function databaseUseLevel(usedBytes: number, limitBytes: number | null): 
 /** `1.9 GB`, `640 MB`, `12 KB`: decimal units, as Cloudflare states the limits. */
 export function formatDatabaseBytes(bytes: number): string {
 	const value = Math.max(0, bytes);
-	if (value >= 1e9) return `${trim(value / 1e9)} GB`;
-	if (value >= 1e6) return `${trim(value / 1e6)} MB`;
-	if (value >= 1e3) return `${Math.round(value / 1e3)} KB`;
-	return `${Math.round(value)} B`;
+	if (value >= 1e9) return isolateDirection(`${trim(value / 1e9)} GB`);
+	if (value >= 1e6) return isolateDirection(`${trim(value / 1e6)} MB`);
+	if (value >= 1e3) return isolateDirection(`${Math.round(value / 1e3)} KB`);
+	return isolateDirection(`${Math.round(value)} B`);
 }
 
 function trim(value: number): string {

@@ -16,7 +16,7 @@ const DEFAULT_SIZE: WindowSize = { width: 440, height: 620 };
 const MIN_SIZE: WindowSize = { width: 340, height: 360 };
 const MAX_SIZE: WindowSize = { width: 1200, height: 1400 };
 
-// Keeps the window clear of the left edge and the header.
+// Keeps the window clear of the opposite screen edge and the header.
 function clampWindowSize(size: WindowSize): WindowSize {
 	const roomWidth = typeof window === "undefined" ? MAX_SIZE.width : window.innerWidth - 64;
 	const roomHeight = typeof window === "undefined" ? MAX_SIZE.height : window.innerHeight - 88;
@@ -61,7 +61,7 @@ export function FloatingAssistant({
 					aria-expanded={open}
 					aria-controls={open ? "email-assistant-panel" : undefined}
 					className={clsx(
-						"fixed right-8 z-[44] flex h-12 items-center gap-2.5 rounded-full bg-blue-900 ps-4 pe-3 text-sm font-medium text-blue-50 shadow-lg shadow-blue-900/25 transition-colors hover:bg-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2",
+						"fixed end-8 z-[44] flex h-12 items-center gap-2.5 rounded-full bg-blue-900 ps-4 pe-3 text-sm font-medium text-blue-50 shadow-lg shadow-blue-900/25 transition-colors hover:bg-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2",
 						bubblePlacement === "above-reply" ? "bottom-[5.5rem]" : "bottom-6",
 					)}
 				>
@@ -127,13 +127,13 @@ function FloatingAssistantWindow({
 			className={
 				fullSize
 					? "fixed left-1/2 top-1/2 z-[45] h-[86vh] w-[min(860px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2"
-					: "fixed bottom-[5.5rem] right-8 z-[45] h-[min(var(--assistant-window-height),calc(100vh-88px-5.5rem))] w-[min(var(--assistant-window-width),calc(100vw-32px))] max-md:inset-0 max-md:h-auto max-md:w-auto"
+					: "fixed bottom-[5.5rem] end-8 z-[45] h-[min(var(--assistant-window-height),calc(100vh-88px-5.5rem))] w-[min(var(--assistant-window-width),calc(100vw-32px))] max-md:inset-0 max-md:h-auto max-md:w-auto"
 			}
 			style={{ "--assistant-window-height": `${size.height}px` } as React.CSSProperties}
 		>
 			{!fullSize && (
 				<>
-					<div className="absolute inset-y-0 left-0 z-10 hidden w-0 md:block">
+					<div className="absolute inset-y-0 start-0 z-10 hidden w-0 md:block">
 						<ResizeHandle
 							label="Resize assistant width"
 							{...resizeProps}

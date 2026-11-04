@@ -1,4 +1,5 @@
 import type { DriveCrumb, DriveRole, DriveRow } from "./types";
+import { isolateDirection } from "@/lib/bidi-utils";
 
 const DRIVE_MAX_NAME_LENGTH = 255;
 /** Folder nesting limit; the recursive queries stop here, so a cycle in restored data cannot loop. */
@@ -43,7 +44,7 @@ export function toDriveCrumbs(chain: Pick<DriveRow, "id" | "name">[]): DriveCrum
 }
 
 export function formatDriveSize(bytes: number): string {
-	if (bytes < 1024) return `${bytes} B`;
+	if (bytes < 1024) return isolateDirection(`${bytes} B`);
 	const units = ["KB", "MB", "GB", "TB"];
 	let value = bytes / 1024;
 	let unit = 0;
@@ -51,5 +52,5 @@ export function formatDriveSize(bytes: number): string {
 		value /= 1024;
 		unit += 1;
 	}
-	return `${value >= 10 ? Math.round(value) : value.toFixed(1)} ${units[unit]}`;
+	return isolateDirection(`${value >= 10 ? Math.round(value) : value.toFixed(1)} ${units[unit]}`);
 }

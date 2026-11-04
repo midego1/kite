@@ -15,7 +15,7 @@ export const READING_LAYOUT_CHANGE_EVENT = "kite:reading-layout-changed";
 export const DEFAULT_READING_PANE_MODE: ReadingPaneMode = "right";
 export const DEFAULT_MESSAGE_DENSITY: MessageListDensity = "default";
 
-export const READING_PANE_OPTIONS: ReadingLayoutOption<ReadingPaneMode>[] = [
+const READING_PANE_OPTIONS: ReadingLayoutOption<ReadingPaneMode>[] = [
 	{ value: "none", label: "No split", description: "The list fills the page and opening an email replaces it." },
 	{ value: "right", label: "Right of inbox", description: "The list stays on the left and emails open beside it." },
 	{ value: "below", label: "Below inbox", description: "The list stays on top and emails open underneath it." },
@@ -26,6 +26,16 @@ export const MESSAGE_DENSITY_OPTIONS: ReadingLayoutOption<MessageListDensity>[] 
 	{ value: "comfortable", label: "Comfortable", description: "More room around every email, with a preview line." },
 	{ value: "compact", label: "Compact", description: "Fit more emails on screen." },
 ];
+
+/** The reading pane options as they read in the interface's direction: when mirrored, the reader opens left of the list. */
+export function readingPaneOptions(rtl: boolean): ReadingLayoutOption<ReadingPaneMode>[] {
+	if (!rtl) return READING_PANE_OPTIONS;
+	return READING_PANE_OPTIONS.map((option) =>
+		option.value === "right"
+			? { ...option, label: "Left of inbox", description: "The list stays on the right and emails open beside it." }
+			: option,
+	);
+}
 
 export function isReadingPaneMode(value: unknown): value is ReadingPaneMode {
 	return value === "none" || value === "right" || value === "below";

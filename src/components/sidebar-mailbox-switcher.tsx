@@ -15,6 +15,7 @@ import { getAccountInitial, getMailboxAddress, getMailboxName } from "./mailbox-
 import { useSidebar } from "./sidebar-state";
 import { AllMailboxesFilter, AllMailboxesOption } from "./all-mailboxes-option";
 import { ALL_MAILBOXES_LABEL } from "./messages/utils";
+import { documentDirection } from "@/components/interface-direction-utils";
 
 export function MailboxAvatar({ mailbox, className }: { mailbox: MailboxOption; className?: string }) {
 	const [failed, setFailed] = useState(false);
@@ -41,7 +42,7 @@ export function MailboxAvatar({ mailbox, className }: { mailbox: MailboxOption; 
 	);
 }
 
-type MenuAnchor = { top: number; left: number; width: number; container: HTMLElement };
+type MenuAnchor = { top: number; insetInlineStart: number; width: number; container: HTMLElement };
 
 /**
  * Where the menu opens: fixed under the button in <body>, or, inside the phone menu sheet (a modal
@@ -49,12 +50,14 @@ type MenuAnchor = { top: number; left: number; width: number; container: HTMLEle
  */
 function menuAnchor(button: HTMLElement): MenuAnchor {
 	const rect = button.getBoundingClientRect();
-	const width = Math.min(Math.max(rect.width, 320), window.innerWidth - rect.left - 12);
+	const rtl = documentDirection() === "rtl";
+	const room = rtl ? rect.right : window.innerWidth - rect.left;
+	const width = Math.min(Math.max(rect.width, 320), room - 12);
 	const dialog = button.closest<HTMLElement>('[role="dialog"]');
-	const origin = dialog?.getBoundingClientRect() ?? { top: 0, left: 0 };
+	const origin = dialog?.getBoundingClientRect() ?? { top: 0, left: 0, right: window.innerWidth };
 	return {
 		top: rect.bottom + 6 - origin.top,
-		left: rect.left - origin.left,
+		insetInlineStart: rtl ? origin.right - rect.right : rect.left - origin.left,
 		width,
 		container: dialog ?? document.body,
 	};
@@ -128,7 +131,7 @@ export function SidebarMailboxSwitcher() {
 					// Portalled out of the sidebar, which clips overflow and, on phones, is transformed, which would trap a fixed menu.
 					<div
 						ref={menuRef}
-						style={{ top: anchor.top, left: anchor.left, width: anchor.width }}
+						style={{ top: anchor.top, insetInlineStart: anchor.insetInlineStart, width: anchor.width }}
 						className={cn(
 							anchor.container === document.body ? "fixed" : "absolute",
 							"z-[200] max-h-[70vh] overflow-y-auto rounded-xl border border-neutral-200 bg-white p-1.5 shadow-xl shadow-neutral-900/15",

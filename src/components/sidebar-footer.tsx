@@ -32,7 +32,7 @@ function StyleToggle() {
 				className={`relative h-4 w-7 rounded-full transition-colors ${lavender ? "bg-blue-600" : "bg-neutral-300"}`}
 			>
 				<span
-					className={`absolute top-0.5 h-3 w-3 rounded-full bg-[#fff] shadow-sm transition-[left] ${lavender ? "left-3.5" : "left-0.5"}`}
+					className={`absolute top-0.5 h-3 w-3 rounded-full bg-[#fff] shadow-sm transition-[inset-inline-start] ${lavender ? "start-3.5" : "start-0.5"}`}
 				/>
 			</span>
 		</button>

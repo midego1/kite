@@ -2,6 +2,7 @@
 
 import { useRef, type ReactNode } from "react";
 import { saveColumnWidth } from "./column-width-preferences";
+import { useInterfaceDirection } from "./interface-direction-provider";
 import { useSidebar } from "./sidebar-state";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup, usePanelRef } from "./ui/resizable";
 import { layoutPixels, pixelsPerPercent } from "./ui/resizable-utils";
@@ -21,6 +22,7 @@ const SIDEBAR_PANEL_ID = "kite-sidebar-panel";
  */
 export function SidebarPanels({ sidebar, children }: { sidebar: ReactNode; children: ReactNode }) {
 	const { minimal, width, userId, setMinimal, setWidth } = useSidebar();
+	const rtl = useInterfaceDirection() === "rtl";
 	const panelRef = usePanelRef();
 	const changedByPanel = useSyncedPanel(panelRef, minimal, width);
 	// Pixels per percent of the group, as the sidebar last reported, to read pixel sizes from a layout.
@@ -61,7 +63,7 @@ export function SidebarPanels({ sidebar, children }: { sidebar: ReactNode; child
 			>
 				{sidebar}
 			</ResizablePanel>
-			<ResizableHandle aria-label="Resize left menu" className="bg-transparent" />
+			<ResizableHandle aria-label={rtl ? "Resize right menu" : "Resize left menu"} className="bg-transparent" />
 			<ResizablePanel id="kite-page-panel" minSize={PAGE_MIN_WIDTH}>
 				{children}
 			</ResizablePanel>

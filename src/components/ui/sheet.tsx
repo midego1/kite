@@ -12,7 +12,7 @@ export const Sheet = SheetPrimitive.Root;
 export const SheetTitle = SheetPrimitive.Title;
 
 export function SheetContent({
-	side = "left",
+	side = "start",
 	className,
 	children,
 	closeLabel = "Close",
@@ -20,7 +20,8 @@ export function SheetContent({
 	returnFocusTo,
 	...props
 }: React.ComponentPropsWithoutRef<typeof SheetPrimitive.Content> & {
-	side?: "left" | "right";
+	/** The edge it slides in from, along the reading direction. */
+	side?: "start" | "end";
 	closeLabel?: string;
 	/** Off keeps the sheet where it is rendered in the DOM instead of moving it to the end of `body`. */
 	portal?: boolean;
@@ -36,7 +37,7 @@ export function SheetContent({
 				data-side={side}
 				className={cn(
 					"sheet-content fixed inset-y-0 z-[110] flex w-[min(85vw,300px)] flex-col bg-white shadow-xl focus:outline-none",
-					side === "left" ? "left-0" : "right-0",
+					side === "start" ? "start-0" : "end-0",
 					className,
 				)}
 				{...returnFocus}

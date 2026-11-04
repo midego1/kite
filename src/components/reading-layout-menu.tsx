@@ -3,8 +3,14 @@
 import clsx from "clsx";
 import { Columns2, List, Rows2 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { MESSAGE_DENSITY_OPTIONS, READING_PANE_OPTIONS } from "@/components/messages/reading-layout-utils";
-import { useMessageListDensity, useReadingPaneMode } from "@/components/messages/use-reading-layout";
+import { useInterfaceDirection } from "@/components/interface-direction-provider";
+import { INTERFACE_DIRECTION_OPTIONS } from "@/components/interface-direction-utils";
+import { MESSAGE_DENSITY_OPTIONS, readingPaneOptions } from "@/components/messages/reading-layout-utils";
+import {
+	useInterfaceDirectionPreference,
+	useMessageListDensity,
+	useReadingPaneMode,
+} from "@/components/messages/use-reading-layout";
 import { saveMessageListVisible } from "@/components/messages/message-list-visibility-utils";
 import type { ReadingPaneMode } from "@/components/messages/reading-layout-types";
 import type { ReadingLayoutSegmentProps } from "./reading-layout-menu-types";
@@ -30,10 +36,12 @@ function SegmentButton({ checked, label, description, onSelect, children }: Read
 	);
 }
 
-/** Quick reading-pane and density switches for the account menu; changes apply to every open list at once. */
+/** Quick reading-pane, density and direction switches for the account menu; changes apply at once. */
 export function ReadingLayoutMenu() {
 	const [readingPane, setReadingPane] = useReadingPaneMode();
 	const [density, setDensity] = useMessageListDensity();
+	const [directionPreference, setDirectionPreference] = useInterfaceDirectionPreference();
+	const rtl = useInterfaceDirection() === "rtl";
 
 	return (
 		<div className="mt-3 space-y-3 border-t border-neutral-100 px-3 pt-3">
@@ -49,7 +57,7 @@ export function ReadingLayoutMenu() {
 					aria-labelledby="reading-pane-menu-label"
 					className="flex gap-1 rounded-xl bg-neutral-100 p-1"
 				>
-					{READING_PANE_OPTIONS.map((option) => {
+					{readingPaneOptions(rtl).map((option) => {
 						const Icon = READING_PANE_ICONS[option.value];
 						return (
 							<SegmentButton
@@ -85,6 +93,31 @@ export function ReadingLayoutMenu() {
 							label={option.label}
 							description={option.description}
 							onSelect={() => setDensity(option.value)}
+						>
+							<span className="truncate">{option.label}</span>
+						</SegmentButton>
+					))}
+				</div>
+			</div>
+			<div>
+				<p
+					id="interface-direction-menu-label"
+					className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-neutral-500"
+				>
+					Direction
+				</p>
+				<div
+					role="radiogroup"
+					aria-labelledby="interface-direction-menu-label"
+					className="flex gap-1 rounded-xl bg-neutral-100 p-1"
+				>
+					{INTERFACE_DIRECTION_OPTIONS.map((option) => (
+						<SegmentButton
+							key={option.value}
+							checked={directionPreference === option.value}
+							label={option.label}
+							description={option.description}
+							onSelect={() => setDirectionPreference(option.value)}
 						>
 							<span className="truncate">{option.label}</span>
 						</SegmentButton>

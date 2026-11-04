@@ -3,6 +3,7 @@
 import clsx from "clsx";
 import { useRef, useState, type PointerEvent, type ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
+import { toInlineDelta } from "@/components/interface-direction-utils";
 
 type SwipeAction = {
 	label: string;
@@ -62,15 +63,17 @@ export function SwipeableRow({ children, startAction, endAction, disabled, role 
 		if (!current.active) return;
 		swiped.current = true;
 		setDragging(false);
-		const dx = event.clientX - current.x;
+		const distance = toInlineDelta(event.clientX - current.x);
 		setOffset(0);
 		if (event.type !== "pointercancel") {
-			if (dx >= COMMIT_DISTANCE) startAction.onTrigger();
-			else if (dx <= -COMMIT_DISTANCE) endAction.onTrigger();
+			if (distance >= COMMIT_DISTANCE) startAction.onTrigger();
+			else if (distance <= -COMMIT_DISTANCE) endAction.onTrigger();
 		}
 	}
 
-	const action = offset > 0 ? startAction : offset < 0 ? endAction : null;
+	// A row pulled away from the start of the line (rightward, or leftward when mirrored) shows the start action there.
+	const fromStart = toInlineDelta(offset) > 0;
+	const action = offset === 0 ? null : fromStart ? startAction : endAction;
 	const Icon = action?.icon;
 	const armed = Math.abs(offset) >= COMMIT_DISTANCE;
 
@@ -81,7 +84,7 @@ export function SwipeableRow({ children, startAction, endAction, disabled, role 
 					aria-hidden="true"
 					className={clsx(
 						"absolute inset-0 flex items-center px-6 text-white",
-						offset > 0 ? "justify-start" : "justify-end",
+						fromStart ? "justify-start" : "justify-end",
 						action.className,
 					)}
 				>

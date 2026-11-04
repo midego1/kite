@@ -16,7 +16,7 @@ const PHYSICAL_UTILITY = new RegExp(
 	"^-?(?:" +
 		[
 			"(?:m|p|scroll-m|scroll-p)[lr]-.+",
-			"(?:left|right)-(?:\\d.*|\\[.*|auto|px|full)",
+			"(?:left|right)-(?:\\d.*|\\[.*|\\(.*|auto|px|full)",
 			"text-(?:left|right)",
 			"border-[lr](?:-.+)?",
 			"rounded-(?:l|r|tl|tr|bl|br)(?:-.+)?",
@@ -26,14 +26,33 @@ const PHYSICAL_UTILITY = new RegExp(
 		].join("|") +
 		")$",
 );
+// An arbitrary property naming a physical side: `[left:4px]`, `[margin-right:1rem]`, `[text-align:left]`.
+const PHYSICAL_ARBITRARY =
+	/^\[(?:(?:left|right|(?:margin|padding|border|scroll-margin|scroll-padding)-(?:left|right)(?:-[a-z]+)?|border-(?:top|bottom)-(?:left|right)-radius):|(?:text-align|float|clear):(?:left|right)\b)/;
 // Plain CSS and CSS-in-strings (`globals.css`, inline style strings, injected stylesheets), and inline style object keys.
-const PHYSICAL_PROPERTY =
-	/(?<![\w-])(?:margin|padding|border)-(?:left|right)\s*:|(?<![\w-])text-align\s*:\s*(?:left|right)\b|(?<![\w-])float\s*:\s*(?:left|right)\b|\b(?:margin|padding|border)(?:Left|Right)\s*:|\btextAlign\s*:\s*["'](?:left|right)["']/;
+// Not looked for, because they would mostly find code that is right: `left`/`right` as inline style keys and inside
+// `cssText` (a position measured with getBoundingClientRect is physical on purpose, and off-screen hosts do not matter).
+const PHYSICAL_PROPERTY = new RegExp(
+	[
+		"(?<![\\w\\[-])(?:margin|padding|border|scroll-margin|scroll-padding)-(?:left|right)(?:-(?:color|style|width))?\\s*:",
+		"(?<![\\w\\[-])border-(?:top|bottom)-(?:left|right)-radius\\s*:",
+		"(?<![\\w\\[-])text-align\\s*:\\s*(?:left|right)\\b",
+		"(?<![\\w\\[-])float\\s*:\\s*(?:left|right)\\b",
+		"\\b(?:margin|padding|border|scrollMargin|scrollPadding)(?:Left|Right)(?:Color|Style|Width)?\\s*:",
+		"\\bborder(?:Top|Bottom)(?:Left|Right)Radius\\s*:",
+		"\\btextAlign\\s*:\\s*[\"'](?:left|right)[\"']",
+	].join("|"),
+);
 const CSS_POSITION = /^\s*(?:left|right)\s*:/;
+// A logical offset moved by a physical translate only lines up in one direction (`start-1/2 -translate-x-1/2`).
+const LOGICAL_OFFSET = /^-?(?:start|end)-/;
+const NONZERO_TRANSLATE = /^-?translate-x-(?!0$)/;
 
 /**
- * Physical utilities that stay physical. `token` is the exact class (or CSS property text) as written; each entry may
- * match several lines in its file. Keep reasons specific: they are the review record for the logical-CSS work.
+ * Physical utilities that stay physical. `token` is the exact class or CSS declaration as written (a string must equal
+ * the whole hit; use a RegExp for a family, or for a declaration with more text behind it), and `rule` optionally the
+ * CSS rule it must be in. Each entry may match several lines in its file. Keep reasons specific: they are the review
+ * record for the logical-CSS work.
  */
 const ALLOWED = [
 	// Centring with a physical offset and the matching translate: it centres the same way in either direction.
@@ -56,48 +75,11 @@ const ALLOWED = [
 		token: /^(?:aria-\[orientation=horizontal\]:)?after:left-(?:1\/2|0)$/,
 		reason: "the divider's hit area is centred on a pane edge the drag code measures physically",
 	},
-	// Floating windows docked to a screen corner: their size and offsets are computed from each other in JS and CSS.
-	{
-		file: "src/components/compose/compose-frame.ts",
-		token: /^(?:md:)?right-(?:8|\[calc\(3rem\+min\(var\(--assistant-window-width,440px\),100vw-32px\)\)\])$/,
-		reason: "the docked composer mirrors the assistant window's right-8 and its resizable width; they move together",
-	},
-	{
-		file: "src/app/(dashboard)/floating-assistant-window.tsx",
-		token: /^(?:right-8|left-0)$/,
-		reason: "the assistant window is docked at the right edge and resized from its left edge by a physical drag delta",
-	},
-	{
-		file: "src/app/(dashboard)/dashboard-shell.tsx",
-		token: "left-1",
-		reason: "the resize handle of the assistant pane sits on the pane's physical left edge; the drag delta is physical",
-	},
-	{
-		file: "src/components/ui/resize-handle.tsx",
-		token: "right-0",
-		reason:
-			"the vertical resize handle straddles the physical right edge of the pane it resizes; the drag delta is physical",
-	},
-	{
-		file: "src/components/ui/toast-styles.ts",
-		token: "right-[var(--kite-toast-inset)]",
-		reason: "toasts stand at the physical bottom right and clear the docked composer through --kite-toast-inset",
-	},
-	// Sheets and drawers docked to a physical side.
-	{
-		file: "src/components/ui/sheet.tsx",
-		token: /^(?:left-0|right-0)$/,
-		reason: "the `side` prop names a physical side, and sheet-content animates from it (globals.css)",
-	},
 	{
 		file: "src/components/finance/subscription-drawer.tsx",
-		token: /^(?:left-auto|right-0|rounded-l-2xl)$/,
-		reason: "a dialog docked to the physical right edge with its rounded corners on the left",
-	},
-	{
-		file: "src/components/sidebar-footer.tsx",
-		token: /^(?:left-0\.5|left-3\.5)$/,
-		reason: "the toggle knob animates `left` (transition-[left]) between two physical positions",
+		token: /^(?:left-auto|right-0|rtl:left-0|rtl:right-auto)$/,
+		reason:
+			"DialogContent centres with a physical left-1/2, and Tailwind puts left after start/end, so the drawer can only undo it physically, per direction",
 	},
 	{
 		file: "src/app/home-mailbox.tsx",
@@ -112,28 +94,37 @@ const ALLOWED = [
 	// CSS
 	{
 		file: "src/app/globals.css",
-		token: /^\s*padding-(?:left|right): var\(--kite-fold-(?:left|right), 0px\);$/,
+		rule: /^\.fold-hinge\b/,
+		token: /^padding-(?:left|right): var\(--kite-fold-(?:left|right), 0px\);$/,
 		reason: "the fold hinge reports physical display segments (Viewport Segments)",
 	},
 	{
 		file: "src/app/globals.css",
-		token: /^\s*(?:left|right): .+;$/,
-		reason:
-			"decorative kite flight and reload animations are placed and moved physically; sheet-content keyframes name physical sides",
+		rule: /^\.reload-return-(?:arrive|cloud-[12]|wind|wind-2|static)\b/,
+		token: /^(?:left: (?:50%|6%|0|calc\(50% \+ [46]rem\))|right: (?:4%|0));$/,
+		reason: "the decorative reload scene: the kite, clouds and wind are placed physically and fly one way",
 	},
 	{
 		file: "src/app/globals.css",
-		token: /^\s*margin-left: calc\(var\(--reload-return-width\) \/ -2\);$/,
+		rule: /^\.reload-return-arrive\b/,
+		token: "margin-left: calc(var(--reload-return-width) / -2);",
 		reason: "centres the reload-return scene (left: 50%) with a matching physical negative margin",
 	},
 	{
+		file: "src/app/globals.css",
+		rule: /^html\[dir="rtl"\] \.text-(?:start|end)\b/,
+		token: /^text-align: (?:left|right);$/,
+		reason:
+			"only in a right-to-left interface, where unicode-bidi: plaintext would make start and end follow the text rather than the interface",
+	},
+	{
 		file: "src/components/message-actions/utils.ts",
-		token: "border-left:1px solid #ccc;padding-left:1ex",
+		token: /^border-left:1px solid #ccc;padding-left:1ex;opacity:0\.6";$/,
 		reason: "the quoted original inside outgoing mail: the receiving client, not Kite, decides the direction",
 	},
 	{
 		file: "src/components/compose/send-preview-utils.ts",
-		token: "border-left:1px solid #ccc;padding-left:1ex",
+		token: /^border-left:1px solid #ccc;padding-left:1ex}",$/,
 		reason: "the same quote style as sent mail, shown in the send preview so it matches what is sent",
 	},
 ];
@@ -142,7 +133,7 @@ function walk(directory, files = []) {
 	for (const entry of readdirSync(directory, { withFileTypes: true })) {
 		const path = join(directory, entry.name);
 		if (entry.isDirectory()) walk(path, files);
-		else if (/\.(?:tsx?|css)$/.test(entry.name) && !entry.name.endsWith(".d.ts")) files.push(path);
+		else if (/\.(?:tsx?|s?css)$/.test(entry.name) && !entry.name.endsWith(".d.ts")) files.push(path);
 	}
 	return files;
 }
@@ -163,42 +154,83 @@ function splitVariants(token) {
 	return parts;
 }
 
-/** The physical utilities and properties found in one line of source, as written. */
-export function physicalHits(line, isCss) {
-	if (/^\s*(?:\/\/|\/\*|\*)/.test(line)) return [];
-	const hits = [];
-	for (const raw of line.split(/[\s"'`{}]+/)) {
-		if (!raw) continue;
-		const base = splitVariants(raw).pop().replace(/^!|!$/g, "");
-		if (PHYSICAL_UTILITY.test(base)) hits.push(raw);
+/**
+ * The line without its comments, tracking a block comment across lines in `state`. Code after a closed `/* ... *\/` still
+ * counts; a line that opens with `//` is a comment to its end, in code only (a CSS `//` is not one).
+ */
+export function withoutComments(line, state, isCss) {
+	let code = "";
+	let rest = line;
+	while (rest) {
+		if (state.inBlock) {
+			const close = rest.indexOf("*/");
+			if (close === -1) return code;
+			state.inBlock = false;
+			rest = rest.slice(close + 2);
+		}
+		const open = rest.indexOf("/*");
+		if (open === -1) {
+			code += rest;
+			break;
+		}
+		code += rest.slice(0, open);
+		rest = rest.slice(open + 2);
+		state.inBlock = true;
 	}
-	const property = PHYSICAL_PROPERTY.exec(line);
-	if (property) hits.push(line.slice(property.index).trim());
-	if (isCss && CSS_POSITION.test(line)) hits.push(line.trim());
+	return !isCss && /^\s*\/\//.test(code) ? "" : code;
+}
+
+/** The physical utilities and properties found in one line of source, as written. */
+export function physicalHits(line, isCss, state = { inBlock: false }) {
+	const code = withoutComments(line, state, isCss);
+	const hits = [];
+	const tokens = code
+		.split(/[\s"'`{}]+/)
+		.filter(Boolean)
+		.map((raw) => {
+			const variants = splitVariants(raw);
+			return { raw, base: variants.pop().replace(/^!|!$/g, ""), prefix: variants.join(":") };
+		});
+	for (const { raw, base } of tokens) {
+		if (PHYSICAL_UTILITY.test(base) || PHYSICAL_ARBITRARY.test(base)) hits.push(raw);
+	}
+	// A logical offset with a non-zero translate of the same variants needs its `rtl:` opposite.
+	for (const { raw, base, prefix } of tokens) {
+		if (!NONZERO_TRANSLATE.test(base)) continue;
+		const offset = tokens.some((token) => LOGICAL_OFFSET.test(token.base) && token.prefix === prefix);
+		const flipped = tokens.some(
+			(token) => token.prefix === `rtl${prefix ? `:${prefix}` : ""}` && NONZERO_TRANSLATE.test(token.base),
+		);
+		if (offset && !flipped && !prefix.split(":").includes("rtl")) hits.push(raw);
+	}
+	const property = PHYSICAL_PROPERTY.exec(code);
+	if (property) hits.push(code.slice(property.index).trim());
+	if (isCss && CSS_POSITION.test(code)) hits.push(code.trim());
 	return hits;
 }
 
-function allowed(file, hit) {
-	return ALLOWED.filter(
-		(entry) =>
-			entry.file === file &&
-			(typeof entry.token === "string" ? hit === entry.token || hit.includes(entry.token) : entry.token.test(hit)),
-	);
+function matches(entry, file, hit, rule) {
+	if (entry.file !== file || (entry.rule && !entry.rule.test(rule))) return false;
+	return typeof entry.token === "string" ? hit === entry.token : entry.token.test(hit);
 }
 
 const used = new Set();
 const violations = [];
 for (const path of walk(srcRoot)) {
 	const file = relative(root, path).split("\\").join("/");
-	const isCss = path.endsWith(".css");
+	const isCss = /\.s?css$/.test(path);
+	const state = { inBlock: false };
+	let rule = "";
 	readFileSync(path, "utf8")
 		.split("\n")
 		.forEach((line, index) => {
-			for (const hit of physicalHits(line, isCss)) {
-				const entries = allowed(file, hit);
+			for (const hit of physicalHits(line, isCss, state)) {
+				const entries = ALLOWED.filter((entry) => matches(entry, file, hit, rule));
 				if (entries.length === 0) violations.push(`${file}:${index + 1}  ${hit}`);
 				for (const entry of entries) used.add(entry);
 			}
+			// The innermost rule a declaration on a later line is in.
+			if (isCss && /\{\s*$/.test(line)) rule = line.trim();
 		});
 }
 
@@ -244,4 +276,64 @@ test("the detector separates physical from logical utilities", () => {
 	assert.deepEqual(hits("padding-inline-start: 1rem; margin-inline: auto;"), []);
 	assert.deepEqual(physicalHits("\tleft: 50%;", true), ["left: 50%;"]);
 	assert.deepEqual(physicalHits("\tinset-inline-start: 50%;", true), []);
+});
+
+test("the detector catches the forms a substring or a coarse pattern used to let through", () => {
+	const hits = (text) => physicalHits(text, false);
+	// Arbitrary properties and the `(--var)` shorthand.
+	assert.deepEqual(hits('className="[left:4px] md:[margin-right:1rem] [text-align:left] left-(--x) -right-(--y)"'), [
+		"[left:4px]",
+		"md:[margin-right:1rem]",
+		"[text-align:left]",
+		"left-(--x)",
+		"-right-(--y)",
+	]);
+	assert.deepEqual(hits('className="[inset-inline-start:4px] [text-align:start] [leftover:1px]"'), []);
+	// CSS longhands, in CSS and as style keys.
+	for (const declaration of [
+		"border-left-color: red;",
+		"border-right-width: 1px;",
+		"border-top-left-radius: 2px;",
+		"border-bottom-right-radius: 2px;",
+		"scroll-margin-left: 1rem;",
+		"scroll-padding-right: 1rem;",
+	])
+		assert.deepEqual(physicalHits(declaration, true), [declaration], declaration);
+	assert.equal(hits("borderTopLeftRadius: 2,").length, 1);
+	assert.equal(hits("scrollMarginLeft: 2,").length, 1);
+	assert.equal(hits("borderLeftColor: x,").length, 1);
+	assert.deepEqual(physicalHits("border-start-start-radius: 2px;", true), []);
+	// A logical offset with a physical translate, unless the translate also flips.
+	assert.deepEqual(hits('className="start-1/2 -translate-x-1/2"'), ["-translate-x-1/2"]);
+	assert.deepEqual(hits('className="md:end-0 md:translate-x-1/2"'), ["md:translate-x-1/2"]);
+	assert.deepEqual(hits('className="end-0 translate-x-1/2 rtl:-translate-x-1/2"'), []);
+	assert.deepEqual(hits('className="start-0 translate-x-0"'), []);
+	assert.deepEqual(hits('className="start-0 md:translate-x-1/2"'), []);
+});
+
+test("a comment only hides what is inside it", () => {
+	const hits = (text, isCss = false, state) => physicalHits(text, isCss, state);
+	assert.deepEqual(hits('/* note */ className="ml-2"'), ["ml-2"]);
+	assert.deepEqual(hits("/* note */ margin-left: 1px;", true), ["margin-left: 1px;"]);
+	assert.deepEqual(hits('{/* ml-2 */} <div className="mr-2" />'), ["mr-2"]);
+	assert.deepEqual(hits("/* ml-2 */"), []);
+	assert.deepEqual(hits("// ml-2"), []);
+	const state = { inBlock: false };
+	assert.deepEqual(hits("/** first line", false, state), []);
+	assert.deepEqual(hits(" * ml-2 in the block", false, state), []);
+	assert.deepEqual(hits(' */ const a = "ml-2";', false, state), ["ml-2"]);
+	assert.deepEqual(hits('const b = "mr-2";', false, state), ["mr-2"]);
+	// Outside a block comment, a line starting with `*` is code, such as a multiplication or a CSS hack.
+	assert.deepEqual(hits('* "ml-2"'), ["ml-2"]);
+});
+
+test("a string token in the allowlist must equal the hit", () => {
+	const entry = { file: "a.tsx", token: "left-1" };
+	assert.equal(matches(entry, "a.tsx", "left-1", ""), true);
+	assert.equal(matches(entry, "a.tsx", "left-10", ""), false);
+	assert.equal(matches(entry, "a.tsx", "md:left-1", ""), false);
+	assert.equal(matches(entry, "b.tsx", "left-1", ""), false);
+	const inRule = { file: "a.css", rule: /^\.kite\b/, token: "left: 0;" };
+	assert.equal(matches(inRule, "a.css", "left: 0;", ".kite {"), true);
+	assert.equal(matches(inRule, "a.css", "left: 0;", ".other {"), false);
 });

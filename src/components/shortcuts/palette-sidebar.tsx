@@ -4,6 +4,7 @@ import React, { useRef } from "react";
 import clsx from "clsx";
 import type { PaletteCategory, PaletteCategoryId } from "./palette-types";
 import { NUMBERED_CATEGORIES, adjacentCategory } from "./palette-utils";
+import { logicalArrowKey } from "@/components/interface-direction-utils";
 
 type PaletteSidebarProps = {
 	categories: readonly PaletteCategory[];
@@ -23,7 +24,7 @@ export function PaletteSidebar({ categories, counts, active, panelId, onSelect }
 	const tabs = useRef(new Map<PaletteCategoryId, HTMLButtonElement>());
 
 	function onKeyDown(event: React.KeyboardEvent<HTMLButtonElement>) {
-		const next = adjacentCategory(categories, active, event.key);
+		const next = adjacentCategory(categories, active, logicalArrowKey(event.key));
 		if (next === active) return;
 		event.preventDefault();
 		onSelect(next);

@@ -203,6 +203,25 @@ const SHOTS: Shot[] = [
 			},
 		}),
 	),
+	...(["light", "dark"] as const).map(
+		(theme): Shot => ({
+			name: `2026-11-04-rtl-interface-${theme}`,
+			theme,
+			viewport: { width: 1280, height: 800 },
+			open: async (page) => {
+				await page.addInitScript(() => {
+					localStorage.setItem("kite-layout-sync", "off");
+					localStorage.setItem("kite-interface-direction", "rtl");
+				});
+				await seedRtlMail();
+				await page.goto("/inbox");
+				await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
+				await page.getByRole("main").getByText(RTL_MAIL[0]!.subject, { exact: true }).first().click();
+				await expect(page.frameLocator('iframe[title="Message body"]').getByText("مرحباً،")).toBeVisible();
+				return page;
+			},
+		}),
+	),
 	{
 		name: "2026-11-02-whats-new-images",
 		viewport: { width: 1100, height: 760 },

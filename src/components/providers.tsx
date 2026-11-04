@@ -13,6 +13,7 @@ import { ThemeSync } from "@/components/theme-sync";
 import { UpdateAvailableHost } from "@/components/update-available-host";
 import { LayoutPreferencesSync } from "@/components/layout-preferences-sync";
 import { FoldPostureSync } from "@/components/fold-posture-sync";
+import { InterfaceDirectionProvider } from "@/components/interface-direction-provider";
 import { ConfirmDialogHost } from "@/components/ui/confirm-dialog";
 import { toasterProps } from "@/components/ui/toast-styles";
 import { useToastsAtTop } from "@/components/ui/toast-zone";
@@ -69,27 +70,29 @@ export function Providers({ children, initialBranding }: { children: React.React
 	}, [client]);
 
 	return (
-		<QueryClientProvider client={client}>
-			<BrandingProvider initialBranding={initialBranding}>
-				{/* One provider for every Tooltip: they open at once and share the skip-delay between neighbours. */}
-				<TooltipProvider delayDuration={0} skipDelayDuration={300}>
-					{children}
-				</TooltipProvider>
-				<ThemeSync />
-				<FoldPostureSync />
-				<ConfirmDialogHost />
-				<CopyCodeHost />
-				<Toaster {...toasterProps(toastsAtTop)} />
-				<ModuleNoticeHost />
-				<UpdateAvailableHost />
-				<LayoutPreferencesSync />
-				{/* A live region without role="status": specs and pages look up the single status line by role. */}
-				<div aria-live="polite" aria-atomic="true">
-					{realtime.notification && (
-						<NewMessagePopup notification={realtime.notification} onDismiss={realtime.dismissNotification} />
-					)}
-				</div>
-			</BrandingProvider>
-		</QueryClientProvider>
+		<InterfaceDirectionProvider>
+			<QueryClientProvider client={client}>
+				<BrandingProvider initialBranding={initialBranding}>
+					{/* One provider for every Tooltip: they open at once and share the skip-delay between neighbours. */}
+					<TooltipProvider delayDuration={0} skipDelayDuration={300}>
+						{children}
+					</TooltipProvider>
+					<ThemeSync />
+					<FoldPostureSync />
+					<ConfirmDialogHost />
+					<CopyCodeHost />
+					<Toaster {...toasterProps(toastsAtTop)} />
+					<ModuleNoticeHost />
+					<UpdateAvailableHost />
+					<LayoutPreferencesSync />
+					{/* A live region without role="status": specs and pages look up the single status line by role. */}
+					<div aria-live="polite" aria-atomic="true">
+						{realtime.notification && (
+							<NewMessagePopup notification={realtime.notification} onDismiss={realtime.dismissNotification} />
+						)}
+					</div>
+				</BrandingProvider>
+			</QueryClientProvider>
+		</InterfaceDirectionProvider>
 	);
 }

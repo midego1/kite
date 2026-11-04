@@ -98,7 +98,7 @@ export function MessageSplitLayout({ children, config }: MessageSplitLayoutProps
 	const [listWidth, setListWidth] = useState(LIST_WIDTH.fallback);
 	const [listHeight, setListHeight] = useState(LIST_HEIGHT.fallback);
 	const [manualListVisible, setManualListVisible] = useState(true);
-	const { mode, groupKey, split, below, hinge, groupLeft, setMeasured, hingeListWidth } = useFoldSplit();
+	const { mode, groupKey, split, below, hinge, groupEdges, rtl, setMeasured, hingeListWidth } = useFoldSplit();
 	const bulkActionRef = useRef<BulkSelectionAction | null>(null);
 	const listPanelRef = usePanelRef();
 	const { userId } = useSidebar();
@@ -297,7 +297,7 @@ export function MessageSplitLayout({ children, config }: MessageSplitLayoutProps
 				// The page panel is a flex column while the split view shows (dashboard layout), so the group fills it by
 				// stretching as well as by its height, and the list can never grow the page.
 				className={clsx("min-h-0 flex-1 overflow-hidden", hinge && "fold-hinge")}
-				style={foldHingeStyle(hinge, groupLeft, listVisible)}
+				style={foldHingeStyle(hinge, groupEdges, listVisible, rtl)}
 				onLayoutChanged={(layout, meta) => {
 					if (meta.isUserInteraction) storeListSize(layoutPixels(layout[LIST_PANEL_ID], groupScale.current));
 				}}

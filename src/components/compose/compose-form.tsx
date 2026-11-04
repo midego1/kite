@@ -284,7 +284,9 @@ export function ComposeForm({
 	useEffect(() => {
 		if (loadingDraft) return;
 		const nextSignature = selectedMailbox?.signature ?? "";
-		setHtml((current) => applyMailboxSignatureHtml(current, previousSignature.current, nextSignature));
+		// Read now: React may run the updater after the line below, when the ref already holds the new signature.
+		const previous = previousSignature.current;
+		setHtml((current) => applyMailboxSignatureHtml(current, previous, nextSignature));
 		previousSignature.current = nextSignature;
 	}, [loadingDraft, selectedMailbox?.id, selectedMailbox?.signature]);
 

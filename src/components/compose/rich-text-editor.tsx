@@ -22,7 +22,7 @@ import { cn } from "@/lib/utils";
 import {
 	applyAutoDirection,
 	hasLooseContentInRange,
-	isInLooseRtlRun,
+	findLooseRun,
 	nextParagraphDirection,
 	paragraphDirection,
 	paragraphsInRange,
@@ -47,6 +47,34 @@ const DIRECTIONS: Record<ParagraphDirection, { name: string; icon: ToolbarComman
 	rtl: { name: "right to left", icon: PilcrowLeft },
 	ltr: { name: "left to right", icon: PilcrowRight },
 };
+
+/** How many characters of the editor's text come before a selection point. */
+function characterOffset(root: HTMLElement, node: Node | null, offset: number): number {
+	if (!node || !root.contains(node)) return 0;
+	const range = document.createRange();
+	range.selectNodeContents(root);
+	range.setEnd(node, offset);
+	return range.toString().length;
+}
+
+/** The point itself when its node is still in the editor and still long enough. */
+function pointKept(root: HTMLElement, node: Node | null, offset: number): { node: Node; offset: number } | null {
+	const length = node?.nodeType === Node.TEXT_NODE ? (node.textContent?.length ?? 0) : (node?.childNodes.length ?? 0);
+	return node?.isConnected && root.contains(node) && offset <= length ? { node, offset } : null;
+}
+
+/** The text position that many characters into the editor; the end of the text when it is past it. */
+function pointAtCharacter(root: HTMLElement, characters: number): { node: Node; offset: number } | null {
+	const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+	let seen = 0;
+	let last: Text | null = null;
+	for (let node = walker.nextNode() as Text | null; node; node = walker.nextNode() as Text | null) {
+		if (characters < seen + node.length) return { node, offset: characters - seen };
+		seen += node.length;
+		last = node;
+	}
+	return last ? { node: last, offset: last.length } : null;
+}
 
 /** The paragraph the caret is in: the first one a selection touches. */
 function currentParagraphDirection(root: HTMLElement): ParagraphDirection {
@@ -127,8 +155,8 @@ export function RichTextEditor({
 		if (!selection || selection.rangeCount === 0 || !element.contains(selection.anchorNode)) return;
 		// The first line typed into an empty editor is loose text; a paragraph is needed to carry a direction.
 		const touched = selection.getRangeAt(0);
-		if (hasLooseContentInRange(element, touched) || paragraphsInRange(element, touched).length === 0)
-			document.execCommand("formatBlock", false, "div");
+		if (hasLooseContentInRange(element, touched)) wrapLooseText(element, { onlyRtl: false });
+		else if (paragraphsInRange(element, touched).length === 0) document.execCommand("formatBlock", false, "div");
 		const range = selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
 		const paragraphs = range ? paragraphsInRange(element, range) : [];
 		const [first] = paragraphs;
@@ -188,13 +216,36 @@ export function RichTextEditor({
 		const text = event.clipboardData.getData("text/plain");
 		document.execCommand("insertText", false, text);
 		// The insert's own input event ran inside this command, where a second command is refused: wrap the line now.
-		if (wrapLooseLine(event.currentTarget)) emit();
+		if (wrapLooseText(event.currentTarget, { onlyRtl: true })) emit();
 	}
 
-	/** The first line typed or pasted into an empty editor has no paragraph around it; give it one once it reads right to left. */
-	function wrapLooseLine(element: HTMLElement): boolean {
-		if (!isInLooseRtlRun(element, window.getSelection()?.anchorNode ?? null)) return false;
-		return document.execCommand("formatBlock", false, "div");
+	/**
+	 * The first line typed or pasted into an empty editor has no paragraph around it, so it cannot carry a direction. Each
+	 * run of loose text is given one with `formatBlock` (which keeps the undo history), one run at a time, with the
+	 * caret put at its start so that nothing else the selection holds is turned into a plain div; then the selection is
+	 * put back. With `onlyRtl`, only text that reads right to left is wrapped. Returns true when something was wrapped.
+	 */
+	function wrapLooseText(element: HTMLElement, { onlyRtl }: { onlyRtl: boolean }): boolean {
+		const selection = window.getSelection();
+		let run = findLooseRun(element, { onlyRtl });
+		if (!selection || !run) return false;
+		const before = [selection.anchorNode, selection.anchorOffset, selection.focusNode, selection.focusOffset] as const;
+		const anchorAt = characterOffset(element, before[0], before[1]);
+		const focusAt = characterOffset(element, before[2], before[3]);
+		let wrapped = false;
+		// A few runs at most; a refused command leaves the run where it is, so stop rather than ask again.
+		for (let attempts = 0; run && attempts < 10; attempts += 1) {
+			selection.collapse(run, 0);
+			if (!document.execCommand("formatBlock", false, "div")) break;
+			wrapped = true;
+			run = findLooseRun(element, { onlyRtl });
+		}
+		// The command may have replaced the text nodes the selection sat in: put it back by character position.
+		// A node that is still there keeps its place, so a caret at the end of one line does not move to the next.
+		const anchor = pointKept(element, before[0], before[1]) ?? pointAtCharacter(element, anchorAt);
+		const focus = pointKept(element, before[2], before[3]) ?? pointAtCharacter(element, focusAt);
+		if (anchor && focus) selection.setBaseAndExtent(anchor.node, anchor.offset, focus.node, focus.offset);
+		return wrapped;
 	}
 
 	// The space the author just typed ends a web or email address: link it, keeping the caret after the space.
@@ -203,7 +254,7 @@ export function RichTextEditor({
 		if (inputType === "insertText" && (data === " " || data === " ")) autolinkBeforeCaret(event.currentTarget);
 		// Not while an input method is composing, and not for undo or redo: undoing the wrap would otherwise wrap again,
 		// clear the redo history and keep Ctrl+Z from ever reaching the typed text.
-		if (!isComposing && !inputType.startsWith("history")) wrapLooseLine(event.currentTarget);
+		if (!isComposing && !inputType.startsWith("history")) wrapLooseText(event.currentTarget, { onlyRtl: true });
 		emit();
 	}
 

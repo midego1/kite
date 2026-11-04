@@ -233,14 +233,23 @@ export function setParagraphDirection(element: Element, direction: ParagraphDire
 	else element.setAttribute("dir", direction);
 }
 
-/** True when the node is loose text, or sits inside a loose inline element, of a run (see `wrapLooseRuns`) that starts right to left. */
-export function isInLooseRtlRun(root: Element, node: Node | null): boolean {
-	let top: Node | null = node;
-	while (top && top.parentNode !== root) top = top.parentNode;
-	if (!top || isBlock(top)) return false;
-	let first: Node = top;
-	while (first.previousSibling && !isBlock(first.previousSibling)) first = first.previousSibling;
-	let text = "";
-	for (let next: Node | null = first; next && !isBlock(next); next = next.nextSibling) text += next.textContent ?? "";
-	return firstStrongDirection(text) === "rtl";
+/**
+ * The first node of the first run of loose text (text and inline elements with no block around them, as the first line
+ * typed into an empty editor is) in the root, or null. With `onlyRtl`, only a run that starts right to left counts.
+ */
+export function findLooseRun(root: Element, { onlyRtl = false }: { onlyRtl?: boolean } = {}): Node | null {
+	let run: Node[] = [];
+	const qualifies = () => {
+		const text = run.map((node) => node.textContent ?? "").join("");
+		return text.trim() !== "" && (!onlyRtl || firstStrongDirection(text) === "rtl");
+	};
+	for (const child of Array.from(root.childNodes)) {
+		if (!isBlock(child)) {
+			run.push(child);
+			continue;
+		}
+		if (run.length > 0 && qualifies()) return run[0] ?? null;
+		run = [];
+	}
+	return run.length > 0 && qualifies() ? (run[0] ?? null) : null;
 }

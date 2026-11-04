@@ -115,15 +115,18 @@ export function signatureToHtml(signature: string | null | undefined): string {
 const SIGNATURE_DIRECTIONS = ["auto", "rtl", "ltr"];
 
 /**
- * The signature block as inserted, then as the editor may hold it: with each direction on the block, and the `dir` the
- * editor gives paragraphs inside it (an English line in an Arabic signature) worked out the same way it does.
+ * The signature block as inserted, then as the editor may hold it: with the `dir` it gives the paragraphs inside, and
+ * with each direction on the block itself (the editor puts one on a right-to-left line of loose text, the direction
+ * button can change it) and the `dir` it then gives the paragraphs inside, worked out the way the editor works it out.
  */
 function signatureBlocks(signature: string | null | undefined, attribute = SIGNATURE_ATTRIBUTE): string[] {
 	const html = signatureToHtml(signature);
 	if (!html) return [];
 	const block = (direction = "") => `<div ${attribute}="1"${direction}><br><br>${html}</div>`;
+	// Block-level lines (`<div>مرحبا</div>`, a paragraph, a list) get their `dir` inside the block, none on it.
 	return [
 		block(),
+		withAutoDirection(block(), { wrapLooseText: false }),
 		...SIGNATURE_DIRECTIONS.map((direction) =>
 			withAutoDirection(block(` dir="${direction}"`), { wrapLooseText: false }),
 		),
@@ -144,7 +147,8 @@ export function applyMailboxSignatureHtml(
 	for (const attribute of [SIGNATURE_ATTRIBUTE, LEGACY_SIGNATURE_ATTRIBUTE]) {
 		const previousBlocks = signatureBlocks(previousSignature, attribute);
 		// The new signature keeps the direction the old one was given.
-		const index = previousBlocks.findIndex((block) => html.includes(block));
+		// The last that matches: where two forms are the same text, the one with the direction on the block is the one meant.
+		const index = previousBlocks.findLastIndex((block) => html.includes(block));
 		if (index >= 0) return html.replace(previousBlocks[index] as string, nextBlocks[index] ?? nextBlock);
 	}
 	if (!nextBlock || nextBlocks.some((block) => html.includes(block))) return html;

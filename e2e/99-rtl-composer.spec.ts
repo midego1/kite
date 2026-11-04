@@ -1,6 +1,7 @@
 import { expect, test, type APIRequestContext, type Locator, type Page } from "@playwright/test";
-import { createSignedInAccount, okJson, selectMailbox } from "./support/auto-read";
-import { STORAGE_STATE, SUPPORT_ADDRESS } from "./support/constants";
+import { createSharedMailbox, createSignedInAccount, okJson, selectMailbox, shareMailbox } from "./support/auto-read";
+import { DOMAIN, STORAGE_STATE, SUPPORT_ADDRESS } from "./support/constants";
+import { chooseOption } from "./support/select";
 import {
 	apiContext,
 	deliverInbound,
@@ -361,6 +362,106 @@ test.describe("right-to-left composer", () => {
 		await expect(list).not.toHaveAttribute("dir", /.*/);
 		expect(await direction(list)).toBe("ltr");
 	});
+
+	test("a multi-line right-to-left paste has every line in a paragraph that reads right to left", async ({ page }) => {
+		await openComposer(page, `Paste ${uniqueToken()}`);
+		const body = editor(page);
+		await body.click();
+		await body.evaluate((element, text) => {
+			const clipboardData = new DataTransfer();
+			clipboardData.setData("text/plain", text);
+			element.dispatchEvent(new ClipboardEvent("paste", { clipboardData, bubbles: true, cancelable: true }));
+		}, `${ARABIC}\n${HEBREW}\n${ARABIC}`);
+		const paragraphs = body.locator("> div");
+		await expect(paragraphs).toHaveCount(3);
+		for (let index = 0; index < 3; index += 1) {
+			await expect(paragraphs.nth(index)).toHaveAttribute("dir", "auto");
+			expect(await direction(paragraphs.nth(index))).toBe("rtl");
+		}
+		// The caret is at the end of the pasted text: what is typed next goes there.
+		await page.keyboard.type("!");
+		await expect(paragraphs.nth(2)).toContainText(`${ARABIC}!`);
+	});
+
+	test("the button wraps only the loose first line and leaves a selected quote a quote", async ({ page }) => {
+		await openComposer(page, `Quote ${uniqueToken()}`);
+		const body = editor(page);
+		await body.click();
+		await body.pressSequentially("Hello");
+		await page.keyboard.press("Enter");
+		await body.pressSequentially("Quoted line");
+		await page.getByRole("button", { name: "Quote", exact: true }).click();
+		await expect(body.locator("blockquote")).toHaveCount(1);
+		await page.keyboard.press("Control+A");
+		await page.getByRole("button", { name: /^Paragraph direction/ }).click();
+		await expect(body.locator("blockquote")).toHaveCount(1);
+		await expect(body.locator("blockquote")).toContainText("Quoted line");
+		await expect(body.locator("> div").filter({ hasText: "Hello" })).toHaveAttribute("dir", "rtl");
+		await expect(body.locator("blockquote[dir='rtl']")).toHaveCount(1);
+	});
+
+	for (const [shape, html] of [
+		["lines in divs", `<div>${ARABIC}</div><div>Sam</div>`],
+		["a paragraph", `<p>${ARABIC}</p>`],
+		["a list", `<ul><li>${ARABIC}</li><li>Sam</li></ul>`],
+	] as const) {
+		test(`switching mailbox keeps one signature when it is ${shape}, in the editor and when a draft is reopened`, async ({
+			browser,
+		}) => {
+			const username = `rtlswap${uniqueToken("")}`;
+			const account = await createSignedInAccount(api, username);
+			const sharedName = `rtlshared${uniqueToken("")}`;
+			const sharedId = await createSharedMailbox(api, sharedName);
+			await shareMailbox(api, sharedId, account.id, "full_access");
+			await okJson(await api.patch(`/api/mailboxes/${sharedId}`, { data: { signature: "Shared signature" } }));
+			await okJson(await account.api.patch(`/api/mailboxes/${account.mailboxId}`, { data: { signature: html } }));
+			const own = `${account.mailboxId}|${username}@${DOMAIN}`;
+			const shared = `${sharedId}|${sharedName}@${DOMAIN}`;
+			const context = await browser.newContext({ storageState: await account.api.storageState() });
+			const page = await context.newPage();
+			try {
+				await selectMailbox(page, account.mailboxId);
+				const signatures = () => editor(page).locator("[data-kite-signature]");
+				const from = () => page.getByRole("combobox", { name: "From" });
+
+				// In the editor: type above the signature, then send from the shared mailbox.
+				await page.goto("/inbox");
+				await page.getByRole("button", { name: "Compose" }).click();
+				await expect(editor(page)).toContainText(ARABIC);
+				await editor(page).locator("> div").first().click();
+				await page.keyboard.type("Body text");
+				await chooseOption(from(), shared);
+				await expect(editor(page)).toContainText("Shared signature");
+				await expect(signatures()).toHaveCount(1);
+				await expect(editor(page)).not.toContainText(ARABIC);
+				await expect(editor(page)).toContainText("Body text");
+
+				// Back to the first mailbox, then reopen the saved draft.
+				await chooseOption(from(), own);
+				await expect(signatures()).toHaveCount(1);
+				await expect(editor(page)).toContainText(ARABIC);
+				let draftId = "";
+				await expect
+					.poll(async () => {
+						const { drafts } = (await (await account.api.get("/api/drafts")).json()) as {
+							drafts: { id: string; htmlBody: string | null }[];
+						};
+						const draft = drafts.find((item) => item.htmlBody?.includes("Body text"));
+						draftId = draft?.id ?? "";
+						return draft?.htmlBody?.includes(ARABIC) ?? false;
+					})
+					.toBe(true);
+				await page.goto(`/drafts/${draftId}`);
+				await expect(editor(page)).toContainText("Body text");
+				await expect(editor(page)).toContainText(ARABIC);
+				// Opening it finds the saved signature again instead of adding a second one.
+				await expect(signatures()).toHaveCount(1);
+			} finally {
+				await context.close();
+				await account.api.dispose();
+			}
+		});
+	}
 
 	test("an Arabic signature reads right to left, and typing above it, the caret and undo still work", async ({
 		browser,

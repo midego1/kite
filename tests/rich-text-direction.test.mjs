@@ -389,3 +389,43 @@ test("an assistant's draft text carries its directions without the composer", ()
 		`<div dir="rtl">${ARABIC}</div><div><br></div><div dir="ltr">Hello &lt;b&gt;</div><div dir="rtl">${HEBREW}</div>`,
 	);
 });
+
+test("block-level right-to-left signatures are found again as the editor holds them", () => {
+	for (const signature of [
+		`<div>${ARABIC}</div><div>Sam</div>`,
+		`<p>${ARABIC}</p>`,
+		`<ul><li>${ARABIC}</li><li>Sam</li></ul>`,
+		`<p>${ARABIC}</p><ul><li>${HEBREW}</li></ul>`,
+	]) {
+		const fresh = h.applyMailboxSignatureHtml("<div>Body</div>", "", signature);
+		// What the editor holds after its own pass, and what a draft saved from it holds.
+		const editor = element(fresh);
+		h.applyAutoDirection(editor);
+		for (const held of [fresh, editor.innerHTML, h.joinQuotedHtml(editor.innerHTML, null)]) {
+			const swapped = h.applyMailboxSignatureHtml(held, signature, "Alex");
+			assert.equal(swapped.match(/data-kite-signature/g).length, 1, signature);
+			assert.equal(swapped.includes(ARABIC), false, signature);
+			assert.equal(h.applyMailboxSignatureHtml(held, signature, signature).match(/data-kite-signature/g).length, 1);
+		}
+		// And switching back to it from a plain signature, then away again, never leaves two.
+		const back = h.applyMailboxSignatureHtml(
+			h.applyMailboxSignatureHtml(editor.innerHTML, signature, "Alex"),
+			"Alex",
+			signature,
+		);
+		assert.equal(back.match(/data-kite-signature/g).length, 1);
+	}
+});
+
+test("loose text is found run by run, optionally only when it starts right to left", () => {
+	assert.equal(h.findLooseRun(element("<div>One</div><div>Two</div>")), null);
+	assert.equal(h.findLooseRun(element("  <div>One</div>\n<div>Two</div>")), null);
+	const english = element(`Hello<div>${ARABIC}</div>`);
+	assert.equal(h.findLooseRun(english), english.firstChild);
+	assert.equal(h.findLooseRun(english, { onlyRtl: true }), null);
+	const arabic = element(`${ARABIC}<br>more<div>x</div>`);
+	assert.equal(h.findLooseRun(arabic, { onlyRtl: true }), arabic.firstChild);
+	// A run after a block is found too, as a multi-line paste can leave one.
+	const later = element(`<div>x</div><b>${ARABIC}</b>`);
+	assert.equal(h.findLooseRun(later, { onlyRtl: true }), later.lastChild);
+});

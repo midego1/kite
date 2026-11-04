@@ -12,6 +12,15 @@ type AdminAgentState = {
 		hasApiKey: boolean;
 		configured: boolean;
 	};
+	/** The saved providers, the one in use marked active; empty until the first provider save. */
+	providers: Array<{
+		id: string;
+		provider: "cloudflare" | "compatible";
+		baseUrl: string;
+		models: string[];
+		rates: Record<string, { input: number | null; output: number | null; reasoningEffort?: string }>;
+		active: boolean;
+	}>;
 	assistantEnabled: boolean;
 	cloudflareAvailable: boolean;
 	autoReadEnabled: boolean;

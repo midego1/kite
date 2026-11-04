@@ -133,6 +133,37 @@ function signatureBlocks(signature: string | null | undefined, attribute = SIGNA
 	];
 }
 
+const DIRECTION_ATTRIBUTE = /\sdir="(?:auto|rtl|ltr)"/gi;
+const OPTIONAL_DIRECTION = String.raw`(?:\s+dir="(?:auto|rtl|ltr)")?`;
+
+function escapeRegExp(text: string): string {
+	return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Matches a signature block whatever `dir` each of its elements carries. The direction button sets `dir` on any
+ * paragraph, including the lines inside a block-level signature, one at a time or all at once, so the few forms of
+ * `signatureBlocks` cannot cover every state the editor leaves it in.
+ */
+function directionTolerantPattern(block: string): RegExp {
+	const source = block
+		.replace(DIRECTION_ATTRIBUTE, "")
+		.split(/(<[a-z][a-z0-9]*(?:\s[^>]*)?>)/i)
+		.map((part, index) => {
+			if (index % 2 === 0) return escapeRegExp(part);
+			const [, name = "", attributes = ""] = /^<([a-z][a-z0-9]*)([\s\S]*)>$/i.exec(part) ?? [];
+			return `<${escapeRegExp(name)}${OPTIONAL_DIRECTION}${escapeRegExp(attributes)}${OPTIONAL_DIRECTION}>`;
+		})
+		.join("");
+	return new RegExp(source, "i");
+}
+
+/** The `dir` on the block itself (its first tag), else null. */
+function blockDirection(block: string): string | null {
+	const direction = /^<[^>]*?\sdir="(auto|rtl|ltr)"/i.exec(block)?.[1]?.toLowerCase();
+	return direction ?? null;
+}
+
 /**
  * Swap or append the mailbox signature, mirroring the plain-text behaviour. An empty body gets one empty line
  * before the signature, so the caret, and what the user types, starts in the body rather than inside the block.
@@ -149,9 +180,20 @@ export function applyMailboxSignatureHtml(
 		// The new signature keeps the direction the old one was given.
 		// The last that matches: where two forms are the same text, the one with the direction on the block is the one meant.
 		const index = previousBlocks.findLastIndex((block) => html.includes(block));
-		if (index >= 0) return html.replace(previousBlocks[index] as string, nextBlocks[index] ?? nextBlock);
+		if (index >= 0) return html.replace(previousBlocks[index] as string, () => nextBlocks[index] ?? nextBlock);
 	}
 	if (!nextBlock || nextBlocks.some((block) => html.includes(block))) return html;
+	// Any other `dir` on its elements: the direction button changed the lines inside.
+	for (const attribute of [SIGNATURE_ATTRIBUTE, LEGACY_SIGNATURE_ATTRIBUTE]) {
+		for (const block of signatureBlocks(previousSignature, attribute)) {
+			const found = directionTolerantPattern(block).exec(html);
+			if (!found) continue;
+			const own = blockDirection(found[0]);
+			const next = nextBlocks[own ? 2 + SIGNATURE_DIRECTIONS.indexOf(own) : 1] ?? nextBlock;
+			return html.slice(0, found.index) + next + html.slice(found.index + found[0].length);
+		}
+	}
+	if (nextBlocks.some((block) => directionTolerantPattern(block).test(html))) return html;
 	return `${html.trim() ? html : "<div><br></div>"}${nextBlock}`;
 }
 

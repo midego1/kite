@@ -110,12 +110,21 @@ export function ComposeForm({
 	const [toast, setToast] = useState<ComposeToastState>(null);
 	const [loading, setLoading] = useState(false);
 	const [loadedDraftId, setLoadedDraftId] = useState<string | null>(null);
-	const loadingDraft = !!draftIdToLoad && loadedDraftId !== draftIdToLoad;
+	// The mailbox a loaded draft was written in, until it has been selected: once, not whenever the user switches From.
+	const [loadedDraftMailboxId, setLoadedDraftMailboxId] = useState<string | null>(null);
+	// The draft counts as loading until its mailbox is selected, so the signature swap never sees the mailbox
+	// that happened to be selected when the draft opened (it would add that signature next to the draft's own).
+	const draftMailboxPending =
+		!!loadedDraftMailboxId &&
+		selectedMailbox?.id !== loadedDraftMailboxId &&
+		mailboxes.some((mailbox) => mailbox.id === loadedDraftMailboxId);
+	const loadingDraft = (!!draftIdToLoad && loadedDraftId !== draftIdToLoad) || draftMailboxPending;
+	// Pinned once per loaded draft: let go as soon as its mailbox is selected, so a different From sticks.
+	if (loadedDraftMailboxId && selectedMailbox?.id === loadedDraftMailboxId) setLoadedDraftMailboxId(null);
 	const formRef = useDraftBodyFocus(draftIdToLoad, loadingDraft);
 	const [deletingDraft, setDeletingDraft] = useState(false);
 	const [scheduledAt, setScheduledAt] = useState<Date | null>(null);
 	const [scheduleInvalid, setScheduleInvalid] = useState(false);
-	const [loadedDraftMailboxId, setLoadedDraftMailboxId] = useState<string | null>(null);
 	const [loadedDraftFrom, setLoadedDraftFrom] = useState<string | null>(null);
 	const [chosenFrom, setSelectedFrom] = useState("");
 	const { settings: sendingSettings } = useSendingSettings();
@@ -134,16 +143,16 @@ export function ComposeForm({
 		[selectedMailbox],
 	);
 	const senderOptions = useMemo(() => senderOptionsFor(mailboxes), [mailboxes]);
-	// A loaded draft's From wins whenever it or the available addresses change.
+	// A loaded draft's From wins once, as soon as its address is among the available ones; after that the user's choice stays.
 	const loadedDraftFromChanged = useKeyChanged(loadedDraftFrom);
 	const senderAddressesChanged = useKeyChanged(senderAddresses);
 	if (
 		(loadedDraftFromChanged || senderAddressesChanged) &&
 		loadedDraftFrom &&
-		senderAddresses.includes(loadedDraftFrom) &&
-		chosenFrom !== loadedDraftFrom
+		senderAddresses.includes(loadedDraftFrom)
 	) {
 		setSelectedFrom(loadedDraftFrom);
+		setLoadedDraftFrom(null);
 	}
 	const selectedFrom = pickFromAddress(senderAddresses, [chosenFrom, defaultFrom]);
 	const kiteComposer = { html, setHtml, subject, to, threading, onInserted: () => setAiAssisted(true) };

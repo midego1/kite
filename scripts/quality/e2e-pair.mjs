@@ -3,6 +3,7 @@
 // Both always finish, and the exit code fails if either did. Results go to test-results/slice-K and
 // playwright-report/slice-K. The slices wait on the app rather than the CPU, which is why two fit one runner.
 import { execFileSync, spawn } from "node:child_process";
+import fs from "node:fs";
 import os from "node:os";
 import { performance } from "node:perf_hooks";
 import { createInterface } from "node:readline";
@@ -11,7 +12,10 @@ import { pairSlices } from "./e2e-shard-utils.mjs";
 const MB = 1024 * 1024;
 const SAMPLE_MS = 10_000;
 const args = process.argv.slice(2);
+const plan = args.includes("--plan");
 const slices = pairSlices(process.env.E2E_PAIR, Number(process.env.E2E_PORT ?? 3200));
+// A reused server has its own database, which the specs' direct database commands would miss.
+if (process.env.E2E_REUSE_SERVER === "1") throw new Error("E2E_REUSE_SERVER does not work with test:e2e:pair");
 
 function runSlice({ slice, shard, port }) {
 	const started = performance.now();
@@ -33,10 +37,15 @@ function runSlice({ slice, shard, port }) {
 }
 
 // The servers share these generated files, so they are written once before either starts (e2e/prepare-state.mjs).
-if (!args.includes("--plan")) {
+if (!plan) {
 	execFileSync("node", ["scripts/generate-migration-bundle.mjs"], { stdio: "inherit" });
 	execFileSync("node", ["scripts/generate-changelog-bundle.mjs"], { stdio: "inherit" });
 	process.env.E2E_BUNDLES_READY = "1";
+	// An empty results directory makes a slice that dies before writing its report show as "not run" in ci-summary.mjs.
+	for (const { slice } of slices) {
+		fs.rmSync(`test-results/slice-${slice}`, { recursive: true, force: true });
+		fs.mkdirSync(`test-results/slice-${slice}`, { recursive: true });
+	}
 }
 
 let lowestFree = os.freemem();

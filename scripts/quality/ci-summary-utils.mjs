@@ -69,8 +69,7 @@ export function renderCoverage(summary) {
 
 /** `slices` holds the results of slices run side by side (scripts/quality/e2e-pair.mjs), each under its own heading. */
 export function renderSummary({ timings, playwright, slices = [], coverage }) {
-	const browser = slices.length
-		? slices.map(({ slice, report }) => renderPlaywright(report, `Playwright (slice ${slice})`))
-		: [renderPlaywright(playwright)];
+	const browser = slices.map(({ slice, report }) => renderPlaywright(report, `Playwright (slice ${slice})`));
+	if (playwright || !slices.length) browser.unshift(renderPlaywright(playwright));
 	return `## CI summary\n\n${[renderTimings(timings), ...browser, renderCoverage(coverage)].join("\n\n")}\n`;
 }

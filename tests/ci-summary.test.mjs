@@ -74,3 +74,9 @@ test("slices run side by side each get their own Playwright section", () => {
 	assert.match(out, /slice 9[\s\S]*_Playwright \(slice 10\): not run\._/);
 	assert.doesNotMatch(out, /_Playwright: not run/);
 });
+
+test("a plain run's results still show next to slices left from an earlier run", () => {
+	const text = renderSummary({ playwright, slices: [{ slice: 3, report: null }] });
+	assert.match(text, /### Playwright\n\nPassed 3/);
+	assert.match(text, /_Playwright \(slice 3\): not run\._/);
+});

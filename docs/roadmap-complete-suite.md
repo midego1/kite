@@ -233,7 +233,7 @@ Position note: **shipped in [#50](https://github.com/midego1/kite/pull/50)**, sp
    - The owner turns it off for the install or per user from Admin → Modules. Off means absent: no nav item, suggestions, cron work, tools or events; pages answer 404 through `requireModulePage` and every API method through `withModule`; data is kept. The spec decides `defaultEnabled`.
    - A record kind (`<id>:subscription`) with a `resolveRefs` resolver, and webhook events (`subscription.detected`, `subscription.renewal.due`) declared in the manifest with record refs, so they appear in webhooks, search, For you and Activity like Calendar's.
    - The assistant suggesting "enable Money Watch for this invoice PDF" while the module is off stays in milestone 19, item 5.
-   - Test: extend `e2e/27-modules.spec.ts` (or a sibling spec) to turn Money Watch off and on and check nav, pages, API, suggestions and cron behavior.
+   - Test: extend `e2e/27-modules-surfaces.spec.ts` (or a sibling spec) to turn Money Watch off and on and check nav, pages, API, suggestions and cron behavior.
 
 ## Milestone 19: Module platform and app directory (the extendable core)
 

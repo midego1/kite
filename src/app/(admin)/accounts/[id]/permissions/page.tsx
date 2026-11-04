@@ -127,7 +127,7 @@ export default function AccountPermissionsPage() {
 				</p>
 			</section>
 			<div className="overflow-hidden rounded-xl border border-neutral-200 bg-white">
-				<table className="w-full text-left">
+				<table className="w-full text-start">
 					<thead className={TABLE_HEAD_CLASS}>
 						<tr>
 							<th scope="col" className="px-5 py-3">

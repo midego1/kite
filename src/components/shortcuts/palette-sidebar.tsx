@@ -34,7 +34,7 @@ export function PaletteSidebar({ categories, counts, active, panelId, onSelect }
 		<div
 			role="tablist"
 			aria-label="Categories"
-			className="flex shrink-0 gap-2 overflow-x-auto border-b border-neutral-200 px-3 py-2 md:w-56 md:flex-col md:gap-0.5 md:overflow-y-auto md:border-b-0 md:border-r md:bg-neutral-50 md:p-2"
+			className="flex shrink-0 gap-2 overflow-x-auto border-b border-neutral-200 px-3 py-2 md:w-56 md:flex-col md:gap-0.5 md:overflow-y-auto md:border-b-0 md:border-e md:bg-neutral-50 md:p-2"
 		>
 			{categories.map((category, index) => {
 				const Icon = category.icon;
@@ -66,7 +66,7 @@ export function PaletteSidebar({ categories, counts, active, panelId, onSelect }
 					>
 						<Icon className="h-4 w-4 shrink-0 text-neutral-500" aria-hidden="true" />
 						<span className="truncate">{category.label}</span>
-						<span className="ml-auto flex items-center gap-1.5 pl-1">
+						<span className="ms-auto flex items-center gap-1.5 ps-1">
 							{digit !== null && (
 								<kbd
 									aria-hidden="true"

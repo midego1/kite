@@ -26,7 +26,7 @@ export function ScreenerRowControls({ message, compact = false }: { message: Mes
 	}
 
 	return (
-		<span className={clsx("relative z-10 inline-flex items-center gap-1.5 align-middle", compact ? "mt-1" : "mr-2")}>
+		<span className={clsx("relative z-10 inline-flex items-center gap-1.5 align-middle", compact ? "mt-1" : "me-2")}>
 			<span className="rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700">New sender</span>
 			{canManage && (
 				<>

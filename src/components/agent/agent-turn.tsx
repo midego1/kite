@@ -37,7 +37,7 @@ export function AgentTurnView({
 			{turn.activity.length ? (
 				turn.activity.map((item) =>
 					item.role === "reasoning" ? (
-						<p key={item.id} className="whitespace-pre-wrap break-words text-xs text-neutral-600 pl-5">
+						<p key={item.id} className="whitespace-pre-wrap break-words text-xs text-neutral-600 ps-5">
 							{item.content}
 						</p>
 					) : (
@@ -54,7 +54,7 @@ export function AgentTurnView({
 	return (
 		<div className="space-y-3 py-2">
 			{turn.user && (
-				<div className="ml-auto reading-font w-fit max-w-[90%] whitespace-pre-wrap break-words rounded-xl rounded-tr-sm bg-blue-100/70 px-3 py-2.5 text-sm leading-relaxed text-neutral-900">
+				<div className="ms-auto reading-font w-fit max-w-[90%] whitespace-pre-wrap break-words rounded-xl rounded-se-sm bg-blue-100/70 px-3 py-2.5 text-sm leading-relaxed text-neutral-900">
 					{turn.user.content}
 				</div>
 			)}
@@ -90,7 +90,7 @@ export function AgentTurnView({
 							</details>
 						)}
 						{turn.assistant?.content && (
-							<div className="reading-font break-words text-sm leading-relaxed text-neutral-900 [&_a]:text-blue-700 [&_li]:ml-4 [&_li]:list-disc [&_p]:mb-3 message-content">
+							<div className="reading-font break-words text-sm leading-relaxed text-neutral-900 [&_a]:text-blue-700 [&_li]:ms-4 [&_li]:list-disc [&_p]:mb-3 message-content">
 								<ReactMarkdown
 									remarkPlugins={[remarkGfm]}
 									skipHtml

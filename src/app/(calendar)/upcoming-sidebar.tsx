@@ -125,7 +125,7 @@ export function UpcomingSidebar({ events, onSelect, refreshKey }: UpcomingSideba
 									onClick={() =>
 										onSelect ? onSelect(event) : router.push(`/calendar?event=${encodeURIComponent(event.id)}`)
 									}
-									className="group -mx-2 flex w-[calc(100%+1rem)] items-start gap-3 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-neutral-100"
+									className="group -mx-2 flex w-[calc(100%+1rem)] items-start gap-3 rounded-lg px-2 py-1.5 text-start transition-colors hover:bg-neutral-100"
 								>
 									<span
 										className={clsx(
@@ -146,7 +146,7 @@ export function UpcomingSidebar({ events, onSelect, refreshKey }: UpcomingSideba
 										</span>
 										<span className="block text-xs text-neutral-500">
 											{formatEventRange(event)}
-											{event.status === "tentative" && <span className="ml-1 italic">Tentative</span>}
+											{event.status === "tentative" && <span className="ms-1 italic">Tentative</span>}
 										</span>
 									</span>
 								</button>

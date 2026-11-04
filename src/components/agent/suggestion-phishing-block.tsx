@@ -77,7 +77,7 @@ export function PhishingBlock({
 				{menu}
 			</div>
 			{reasons.length > 0 && (
-				<ul data-phishing-reasons className="mt-2 list-disc space-y-1 pl-6 text-sm text-red-800">
+				<ul data-phishing-reasons className="mt-2 list-disc space-y-1 ps-6 text-sm text-red-800">
 					{reasons.map((reason) => (
 						<li key={reason}>{reason}</li>
 					))}

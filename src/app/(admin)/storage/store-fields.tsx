@@ -80,11 +80,11 @@ export function CopyBlock({ text, label }: { text: string; label: string }) {
 		);
 	return (
 		<div className="relative">
-			<pre className="max-h-48 overflow-auto rounded-lg bg-neutral-100 p-3 pr-20 text-xs text-neutral-800">{text}</pre>
+			<pre className="max-h-48 overflow-auto rounded-lg bg-neutral-100 p-3 pe-20 text-xs text-neutral-800">{text}</pre>
 			<button
 				type="button"
 				onClick={copy}
-				className="absolute top-2 right-2 inline-flex items-center gap-1 rounded-md border border-neutral-200 bg-white px-2 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-50"
+				className="absolute top-2 end-2 inline-flex items-center gap-1 rounded-md border border-neutral-200 bg-white px-2 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-50"
 			>
 				{copied ? <Check aria-hidden className="h-3.5 w-3.5" /> : <Copy aria-hidden className="h-3.5 w-3.5" />}
 				{copied ? "Copied" : `Copy ${label}`}
@@ -379,7 +379,7 @@ function SecretField({ form, setForm, errors, onBlur, store }: FieldsProps) {
 						value={form.secretAccessKey}
 						autoComplete="new-password"
 						spellCheck={false}
-						className="pr-11 font-mono"
+						className="pe-11 font-mono"
 						placeholder={store ? "Unchanged" : undefined}
 						onBlur={() => onBlur("secretAccessKey")}
 						onChange={(event) => setForm((current) => ({ ...current, secretAccessKey: event.target.value }))}
@@ -390,7 +390,7 @@ function SecretField({ form, setForm, errors, onBlur, store }: FieldsProps) {
 						aria-label="Show secret"
 						aria-pressed={shown}
 						onClick={() => setShown((value) => !value)}
-						className="absolute inset-y-0 right-0 flex w-10 items-center justify-center rounded-r-lg text-neutral-500 hover:text-neutral-800"
+						className="absolute inset-y-0 end-0 flex w-10 items-center justify-center rounded-e-lg text-neutral-500 hover:text-neutral-800"
 					>
 						{shown ? <EyeOff aria-hidden className="h-4 w-4" /> : <Eye aria-hidden className="h-4 w-4" />}
 					</button>

@@ -131,7 +131,7 @@ export function AppliedNotice({ summary, onDismiss, className, compact = false }
 					aria-label="Dismiss"
 					onClick={leave}
 					disabled={Boolean(exit)}
-					className={`-mr-1 -mt-0.5 shrink-0 rounded-md p-1 opacity-70 hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-current ${compact ? "" : "p-1.5"}`}
+					className={`-me-1 -mt-0.5 shrink-0 rounded-md p-1 opacity-70 hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-current ${compact ? "" : "p-1.5"}`}
 				>
 					<X className={compact ? "h-3.5 w-3.5" : "h-4 w-4"} aria-hidden="true" />
 				</button>

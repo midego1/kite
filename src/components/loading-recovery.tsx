@@ -54,7 +54,7 @@ function BootDetails() {
 	if (!snapshot) return null;
 	return (
 		<details
-			className="mt-3 text-left text-xs text-neutral-600"
+			className="mt-3 text-start text-xs text-neutral-600"
 			onToggle={(event) => {
 				if (event.currentTarget.open) setSnapshot(readBootDetails());
 			}}

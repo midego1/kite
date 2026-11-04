@@ -56,7 +56,7 @@ export function SuggestionCard({ sample, onReview, onDismiss }: CardProps) {
 			<p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-neutral-900">
 				<Sparkles className="h-4 w-4 shrink-0 text-violet-500" aria-hidden="true" />
 				<span className="min-w-0">{sample.suggestion.title}</span>
-				<span className="ml-auto text-xs font-normal text-neutral-500">Suggestion, nothing sent</span>
+				<span className="ms-auto text-xs font-normal text-neutral-500">Suggestion, nothing sent</span>
 			</p>
 			<p className="mt-2 text-sm leading-6 text-neutral-700">{sample.suggestion.text}</p>
 			<p className="mt-3 flex flex-wrap gap-2">

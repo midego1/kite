@@ -282,7 +282,7 @@ export default function MessageDetailPage() {
 												ownAddress={ownAddress}
 												ownAddresses={ownAddresses}
 												tooltip={false}
-												triggerClassName="rounded-sm text-left hover:underline"
+												triggerClassName="rounded-sm text-start hover:underline"
 											>
 												{fromName}
 											</ContactCard>
@@ -385,7 +385,7 @@ export default function MessageDetailPage() {
 											href={attachment.url}
 											target="_blank"
 											rel="noreferrer"
-											className="flex items-center gap-3 rounded-lg border border-neutral-200 p-3 text-left hover:border-blue-200 hover:bg-blue-50/40"
+											className="flex items-center gap-3 rounded-lg border border-neutral-200 p-3 text-start hover:border-blue-200 hover:bg-blue-50/40"
 										>
 											<Cloud className="h-5 w-5 shrink-0 text-blue-600" />
 											<span className="min-w-0 flex-1">

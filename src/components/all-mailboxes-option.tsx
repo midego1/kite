@@ -38,7 +38,7 @@ export function AllMailboxesOption({ counts, onSelect }: { counts: MailboxCount[
 			aria-selected={allMailboxes}
 			onClick={onSelect}
 			className={cn(
-				"flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left hover:bg-neutral-100",
+				"flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-start hover:bg-neutral-100",
 				allMailboxes && "bg-blue-50",
 			)}
 		>
@@ -116,7 +116,7 @@ export function AllMailboxesSquare({ onSelect }: { onSelect: () => void }) {
 		>
 			<AllMailboxesIcon className="h-7 w-7" />
 			{allMailboxes && (
-				<span className="absolute -bottom-1 -right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-blue-500 ring-2 ring-[var(--background)]">
+				<span className="absolute -bottom-1 -end-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-blue-500 ring-2 ring-[var(--background)]">
 					<Check className="h-2.5 w-2.5 text-[#fff]" strokeWidth={3} />
 				</span>
 			)}

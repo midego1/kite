@@ -65,7 +65,7 @@ function RowAvatar({ showCheckbox, ...props }: RowViewProps & { showCheckbox: bo
 			{row.unread && !showCheckbox && (
 				<span
 					aria-hidden="true"
-					className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-blue-500 ring-2 ring-[var(--color-white)]"
+					className="absolute bottom-0 end-0 h-2.5 w-2.5 rounded-full bg-blue-500 ring-2 ring-[var(--color-white)]"
 				/>
 			)}
 			<span
@@ -100,17 +100,14 @@ function RowCornerStar({
 	// With hover actions the toggle lives in their pill; the corner then only marks a starred row at rest.
 	if (hoverActions)
 		return row.starred ? (
-			<span
-				aria-hidden="true"
-				className="absolute bottom-1 right-1 group-hover:hidden group-has-[:focus-visible]:hidden"
-			>
+			<span aria-hidden="true" className="absolute bottom-1 end-1 group-hover:hidden group-has-[:focus-visible]:hidden">
 				<Icon className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
 			</span>
 		) : null;
 	return (
 		<span
 			className={clsx(
-				"absolute bottom-0 right-0",
+				"absolute bottom-0 end-0",
 				!row.starred && "opacity-0 group-hover:opacity-100 group-has-[:focus-visible]:opacity-100",
 			)}
 		>
@@ -195,7 +192,7 @@ function StackedMessageRow(props: RowViewProps) {
 					<span
 						className={clsx(
 							"flex items-baseline justify-between gap-3",
-							showHoverActions && "group-hover:pr-[9.25rem] group-has-[:focus-visible]:pr-[9.25rem]",
+							showHoverActions && "group-hover:pe-[9.25rem] group-has-[:focus-visible]:pe-[9.25rem]",
 						)}
 					>
 						<MessageRowParty
@@ -250,7 +247,7 @@ function WideMessageRow(props: RowViewProps) {
 			data-message-row={message.id}
 			role="listitem"
 			className={clsx(
-				"group relative mx-2 grid grid-cols-[24px_32px_28px_minmax(140px,240px)_1fr_auto] items-center gap-3 rounded-lg px-4 text-left text-sm hover:z-10 hover:bg-neutral-100/70 has-[a:focus-visible]:ring-2 has-[a:focus-visible]:ring-inset has-[a:focus-visible]:ring-blue-600",
+				"group relative mx-2 grid grid-cols-[24px_32px_28px_minmax(140px,240px)_1fr_auto] items-center gap-3 rounded-lg px-4 text-start text-sm hover:z-10 hover:bg-neutral-100/70 has-[a:focus-visible]:ring-2 has-[a:focus-visible]:ring-inset has-[a:focus-visible]:ring-blue-600",
 				getWideRowDensity(density).rowClassName,
 				(active || selected) && "bg-blue-50 hover:bg-blue-50",
 				row.draggable && "cursor-grab active:cursor-grabbing",
@@ -321,7 +318,7 @@ function WideMessageRow(props: RowViewProps) {
 				<time
 					dateTime={message.createdAt}
 					className={clsx(
-						"whitespace-nowrap text-right text-xs",
+						"whitespace-nowrap text-end text-xs",
 						row.unread ? "font-medium text-neutral-900" : "text-neutral-500",
 					)}
 				>

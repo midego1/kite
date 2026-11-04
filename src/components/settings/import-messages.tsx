@@ -58,7 +58,7 @@ export function ImportMessages({ destination, sourceLabel }: ImportMessagesProps
 							accept=".eml,.mbox,.mbx,message/rfc822,application/mbox"
 							multiple
 							onChange={(event) => setFiles(Array.from(event.target.files ?? []))}
-							className="block w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm shadow-sm shadow-neutral-200/50 file:mr-3 file:rounded-md file:border-0 file:bg-neutral-100 file:px-3 file:py-1.5 file:text-sm file:font-medium"
+							className="block w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm shadow-sm shadow-neutral-200/50 file:me-3 file:rounded-md file:border-0 file:bg-neutral-100 file:px-3 file:py-1.5 file:text-sm file:font-medium"
 						/>
 						<p className="text-xs leading-5 text-neutral-500">
 							Imports up to 100 messages and 25 MB per upload. Duplicate Message-ID values are skipped.
@@ -73,7 +73,7 @@ export function ImportMessages({ destination, sourceLabel }: ImportMessagesProps
 						<div className="rounded-lg border border-[#22c55e]/25 bg-[#22c55e]/10 text-[#166534] dark:text-[#86c99d] px-4 py-3 text-sm">
 							<p className="font-medium">{getImportSummary(result)}</p>
 							{result.errors && result.errors.length > 0 && (
-								<ul className="mt-2 list-disc space-y-1 pl-5 text-xs">
+								<ul className="mt-2 list-disc space-y-1 ps-5 text-xs">
 									{result.errors.slice(0, 5).map((item) => (
 										<li key={item}>{item}</li>
 									))}

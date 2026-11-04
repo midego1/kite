@@ -194,7 +194,7 @@ export function UsageActivity({ report, loading, onFiltersChange, onPageChange }
 				aria-busy={loading}
 				className={cn(CARD_CLASS, "overflow-x-auto")}
 			>
-				<table className="w-full min-w-[900px] text-left text-sm">
+				<table className="w-full min-w-[900px] text-start text-sm">
 					<thead className={TABLE_HEAD_CLASS}>
 						<tr>
 							<th scope="col" className="w-10 px-2 py-3">
@@ -212,13 +212,13 @@ export function UsageActivity({ report, loading, onFiltersChange, onPageChange }
 							<th scope="col" className="px-3 py-3">
 								Status
 							</th>
-							<th scope="col" className="px-3 py-3 text-right">
+							<th scope="col" className="px-3 py-3 text-end">
 								Input tokens
 							</th>
-							<th scope="col" className="px-3 py-3 text-right">
+							<th scope="col" className="px-3 py-3 text-end">
 								Output tokens
 							</th>
-							<th scope="col" className="px-4 py-3 text-right">
+							<th scope="col" className="px-4 py-3 text-end">
 								Spending
 							</th>
 						</tr>
@@ -246,7 +246,10 @@ export function UsageActivity({ report, loading, onFiltersChange, onPageChange }
 												}}
 											>
 												<ChevronRight
-													className={cn("h-4 w-4 transition-transform", open && "rotate-90")}
+													className={cn(
+														"h-4 w-4 transition-transform rtl:-scale-x-100",
+														open && "rotate-90 rtl:-rotate-90",
+													)}
 													aria-hidden="true"
 												/>
 											</button>
@@ -261,9 +264,9 @@ export function UsageActivity({ report, loading, onFiltersChange, onPageChange }
 											{STATUS_LABELS[row.status]}
 											{row.errorCode && <span className="block text-xs">{formatErrorCode(row.errorCode)}</span>}
 										</td>
-										<td className="px-3 py-2.5 text-right tabular-nums">{formatTokenCount(row.inputTokens)}</td>
-										<td className="px-3 py-2.5 text-right tabular-nums">{formatTokenCount(row.outputTokens)}</td>
-										<td className="px-4 py-2.5 text-right tabular-nums">{costText(row)}</td>
+										<td className="px-3 py-2.5 text-end tabular-nums">{formatTokenCount(row.inputTokens)}</td>
+										<td className="px-3 py-2.5 text-end tabular-nums">{formatTokenCount(row.outputTokens)}</td>
+										<td className="px-4 py-2.5 text-end tabular-nums">{costText(row)}</td>
 									</tr>
 									{open && (
 										<tr id={detailsId} className="bg-[#f6f8fc]">

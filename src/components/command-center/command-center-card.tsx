@@ -34,7 +34,7 @@ export const COMMAND_CENTER_TILE_CLASS =
 	"flex min-w-0 items-center gap-3 rounded-xl border border-neutral-200 bg-white px-3 py-2.5 text-sm font-medium text-neutral-900 shadow-2xs transition-colors hover:border-neutral-300 hover:bg-neutral-100";
 
 /** The detail at the right of a row: muted and small, like the counts in the sidebar. */
-export const COMMAND_CENTER_DETAIL_CLASS = "ml-auto shrink-0 text-xs text-neutral-500";
+export const COMMAND_CENTER_DETAIL_CLASS = "ms-auto shrink-0 text-xs text-neutral-500";
 
 /** A text link in a card's header or under its rows: small, in the style's accent, underlined on hover. */
 export const COMMAND_CENTER_LINK_CLASS =

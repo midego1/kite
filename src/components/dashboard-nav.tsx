@@ -80,7 +80,7 @@ function NavToggle({
 			type="button"
 			onClick={onClick}
 			aria-expanded={expanded}
-			className="ml-3 flex h-9 w-[calc(100%-0.75rem)] items-center rounded-lg pl-10 text-left text-sm text-neutral-500 transition-colors hover:bg-neutral-200/60 hover:text-neutral-800 max-md:min-h-11 max-md:text-base"
+			className="ms-3 flex h-9 w-[calc(100%-0.75rem)] items-center rounded-lg ps-10 text-start text-sm text-neutral-500 transition-colors hover:bg-neutral-200/60 hover:text-neutral-800 max-md:min-h-11 max-md:text-base"
 		>
 			{expanded ? expandedLabel : collapsedLabel}
 		</button>

@@ -51,7 +51,7 @@ export function BookingEditor({
 	}
 	const sectionClass = "border-b border-neutral-200 px-5 py-5";
 	const headingClass =
-		"flex w-full items-center justify-between gap-3 text-left text-base font-semibold text-neutral-900";
+		"flex w-full items-center justify-between gap-3 text-start text-base font-semibold text-neutral-900";
 	const fieldClass = "h-10 w-full rounded-xl border border-neutral-200 bg-white px-3 text-sm";
 	const toggle = (section: BookingEditorSection) =>
 		setActiveSection((current) => (current === section ? null : section));
@@ -72,7 +72,7 @@ export function BookingEditor({
 			<div
 				className={clsx(
 					"flex h-full w-[min(392px,100vw)] flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl shadow-neutral-100 transition-transform duration-300 ease-in-out motion-reduce:transition-none",
-					open ? "translate-x-0" : "translate-x-full",
+					open ? "translate-x-0" : "translate-x-full rtl:-translate-x-full",
 				)}
 			>
 				<div className="min-h-0 flex-1 overflow-y-auto overscroll-contain scrollbar-gutter-stable">
@@ -107,7 +107,7 @@ export function BookingEditor({
 										setNameEditing(true);
 									}}
 									className={clsx(
-										"min-w-0 flex-1 break-words text-left text-xl font-semibold text-neutral-900",
+										"min-w-0 flex-1 break-words text-start text-xl font-semibold text-neutral-900",
 										activeSection === "event"
 											? "cursor-text rounded-lg bg-neutral-100 px-2 py-1"
 											: "hover:text-blue-700",
@@ -230,7 +230,7 @@ export function BookingEditor({
 							<button
 								type="button"
 								onClick={() => toggle("duration")}
-								className="mt-2 flex w-full items-center gap-2 text-left text-sm text-neutral-500"
+								className="mt-2 flex w-full items-center gap-2 text-start text-sm text-neutral-500"
 							>
 								<Clock3 className="h-4 w-4" />
 								{durationLabel(form.durationMinutes)}
@@ -265,7 +265,7 @@ export function BookingEditor({
 							<button
 								type="button"
 								onClick={() => toggle("location")}
-								className="mt-2 flex w-full items-center gap-2 text-left text-sm text-neutral-500"
+								className="mt-2 flex w-full items-center gap-2 text-start text-sm text-neutral-500"
 							>
 								<MapPin className="h-4 w-4" />
 								{form.location || "No location set"}
@@ -396,7 +396,7 @@ export function BookingEditor({
 							<button
 								type="button"
 								onClick={() => toggle("availability")}
-								className="mt-2 flex w-full items-center gap-2 text-left text-sm text-neutral-500"
+								className="mt-2 flex w-full items-center gap-2 text-start text-sm text-neutral-500"
 							>
 								<CalendarDays className="h-4 w-4 shrink-0" />
 								{formAvailabilityLabel(form)}
@@ -510,7 +510,7 @@ export function BookingEditor({
 							<button
 								type="button"
 								onClick={() => toggle("host")}
-								className="mt-2 flex w-full items-center gap-2 text-left text-sm text-neutral-500"
+								className="mt-2 flex w-full items-center gap-2 text-start text-sm text-neutral-500"
 							>
 								<span className="flex shrink-0 -space-x-1">
 									{form.hostIds.slice(0, 3).map((id) => {
@@ -544,14 +544,14 @@ export function BookingEditor({
 								More
 							</Button>
 							{moreOpen && (
-								<div className="absolute bottom-full right-0 z-20 mb-2 w-40 rounded-xl border border-neutral-200 bg-white p-1 shadow-lg">
+								<div className="absolute bottom-full end-0 z-20 mb-2 w-40 rounded-xl border border-neutral-200 bg-white p-1 shadow-lg">
 									<button
 										type="button"
 										onClick={() => {
 											setMoreOpen(false);
 											onToggleEnabled();
 										}}
-										className="block w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-neutral-100"
+										className="block w-full rounded-lg px-3 py-2 text-start text-sm hover:bg-neutral-100"
 									>
 										Turn {form.enabled ? "off" : "on"}
 									</button>
@@ -561,7 +561,7 @@ export function BookingEditor({
 											setMoreOpen(false);
 											onDelete();
 										}}
-										className="block w-full rounded-lg px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50"
+										className="block w-full rounded-lg px-3 py-2 text-start text-sm text-red-600 hover:bg-red-50"
 									>
 										Delete
 									</button>

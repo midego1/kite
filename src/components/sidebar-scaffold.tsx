@@ -23,7 +23,7 @@ export function SidebarScaffold({ header, footer, account, children, className }
 				ref={scroller}
 				className={cn(
 					"flex min-h-0 flex-1 flex-col gap-px overflow-y-auto [&>*]:shrink-0 overscroll-contain py-3",
-					minimal ? "px-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" : "pl-1 pr-4 [scrollbar-gutter:stable]",
+					minimal ? "px-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" : "ps-1 pe-4 [scrollbar-gutter:stable]",
 					// The fade marks content scrolling under an edge, so each edge shows it only while something is hidden there.
 					edges.above &&
 						edges.below &&

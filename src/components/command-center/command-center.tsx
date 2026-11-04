@@ -77,9 +77,9 @@ export function CommandCenter({ config }: { config: MessageFolderConfig }) {
 	];
 
 	return (
-		<div className="@container relative mx-auto w-full max-w-4xl px-6 py-7 text-left @2xl:px-8" data-command-center>
+		<div className="@container relative mx-auto w-full max-w-4xl px-6 py-7 text-start @2xl:px-8" data-command-center>
 			<FloatingKite />
-			<header className="pr-20">
+			<header className="pe-20">
 				{/* Small and muted in Kite and Classic; Kite classic sets it in its script face (globals.css). */}
 				<p aria-hidden="true" className="command-center-greeting text-sm text-neutral-500">
 					{greeting},

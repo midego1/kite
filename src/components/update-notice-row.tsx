@@ -48,8 +48,8 @@ function Actions({ compact }: { compact: boolean }) {
 			className={clsx(
 				"absolute z-10 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-has-[:focus-visible]:opacity-100 pointer-coarse:opacity-100",
 				compact
-					? "-right-1 -top-1.5 h-6 gap-0 rounded-md border border-neutral-200 bg-white shadow-sm pointer-coarse:-bottom-0.5 pointer-coarse:top-auto"
-					: "right-6 top-1/2 -translate-y-1/2 bg-[#f2f6fc] pl-3",
+					? "-end-1 -top-1.5 h-6 gap-0 rounded-md border border-neutral-200 bg-white shadow-sm pointer-coarse:-bottom-0.5 pointer-coarse:top-auto"
+					: "end-6 top-1/2 -translate-y-1/2 bg-[#f2f6fc] ps-3",
 			)}
 		>
 			{ACTIONS.map(({ label, tooltip, Icon, run }) => (
@@ -94,7 +94,7 @@ function Opener({
 			onClick={openUpdateReader}
 			aria-current={notice.open ? "true" : undefined}
 			aria-label={`${notice.read ? "" : "Unread, "}${subject}, from ${UPDATE_SENDER}. Open what's new`}
-			className={clsx("text-left", className)}
+			className={clsx("text-start", className)}
 		>
 			{children}
 		</button>
@@ -139,7 +139,7 @@ export function UpdateNoticeRow({ compact, density = "default" }: { compact: boo
 					{unread && (
 						<span
 							aria-hidden="true"
-							className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-blue-500 ring-2 ring-[var(--color-white)]"
+							className="absolute bottom-0 end-0 h-2.5 w-2.5 rounded-full bg-blue-500 ring-2 ring-[var(--color-white)]"
 						/>
 					)}
 				</span>
@@ -172,7 +172,7 @@ export function UpdateNoticeRow({ compact, density = "default" }: { compact: boo
 							{subject}
 						</span>
 						{/* Always shown, as a message's one-line summary is: it says what to do. */}
-						<span className="reading-font mt-0.5 block truncate text-xs text-neutral-500 pointer-coarse:pr-14">
+						<span className="reading-font mt-0.5 block truncate text-xs text-neutral-500 pointer-coarse:pe-14">
 							{preview}
 						</span>
 					</Opener>
@@ -186,7 +186,7 @@ export function UpdateNoticeRow({ compact, density = "default" }: { compact: boo
 			role="listitem"
 			data-update-notice=""
 			className={clsx(
-				"group relative mx-2 grid grid-cols-[24px_32px_28px_minmax(140px,240px)_1fr_auto] items-center gap-3 rounded-lg px-4 text-left text-sm hover:z-10 has-[button:focus-visible]:ring-2 has-[button:focus-visible]:ring-inset has-[button:focus-visible]:ring-blue-600",
+				"group relative mx-2 grid grid-cols-[24px_32px_28px_minmax(140px,240px)_1fr_auto] items-center gap-3 rounded-lg px-4 text-start text-sm hover:z-10 has-[button:focus-visible]:ring-2 has-[button:focus-visible]:ring-inset has-[button:focus-visible]:ring-blue-600",
 				getWideRowDensity(density).rowClassName,
 				notice.open ? "bg-blue-50 hover:bg-blue-50" : "hover:bg-neutral-100/70",
 			)}
@@ -214,7 +214,7 @@ export function UpdateNoticeRow({ compact, density = "default" }: { compact: boo
 				<Time
 					notice={notice}
 					className={clsx(
-						"whitespace-nowrap text-right text-xs",
+						"whitespace-nowrap text-end text-xs",
 						unread ? "font-medium text-neutral-900" : "text-neutral-500",
 					)}
 				/>

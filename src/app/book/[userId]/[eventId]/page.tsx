@@ -147,17 +147,17 @@ export default function PublicBookingEventPage() {
 							setError("");
 							writeBookingPageSelection(selectedDate, null, timeZone, true);
 						}}
-						className="mb-5 inline-flex items-center gap-2 self-start text-sm text-neutral-600 hover:text-blue-700 max-sm:ml-4"
+						className="mb-5 inline-flex items-center gap-2 self-start text-sm text-neutral-600 hover:text-blue-700 max-sm:ms-4"
 					>
-						<ArrowLeft className="h-4 w-4" />
+						<ArrowLeft className="h-4 w-4 rtl:-scale-x-100" />
 						Back to calendar
 					</button>
 				) : (
 					<Link
 						href={username ? `/c/${username}` : `/book/${userId}`}
-						className="mb-5 inline-flex items-center gap-2 self-start text-sm text-neutral-600 hover:text-blue-700 max-sm:ml-4"
+						className="mb-5 inline-flex items-center gap-2 self-start text-sm text-neutral-600 hover:text-blue-700 max-sm:ms-4"
 					>
-						<ArrowLeft className="h-4 w-4" />
+						<ArrowLeft className="h-4 w-4 rtl:-scale-x-100" />
 						All meetings
 					</Link>
 				)}
@@ -171,7 +171,7 @@ export default function PublicBookingEventPage() {
 					<div
 						className={`page-transition-enter grid overflow-hidden border border-neutral-200 bg-white shadow-xs max-sm:rounded-t-xl max-sm:border-x-0 max-sm:border-b-0 sm:rounded-t-xl lg:mb-4 lg:rounded-xl lg:min-h-0 lg:flex-1 ${selectedSlot || done ? "lg:grid-cols-[minmax(260px,1fr)_minmax(420px,2fr)]" : "lg:grid-cols-[minmax(240px,.95fr)_minmax(380px,1.65fr)_minmax(240px,.95fr)]"}`}
 					>
-						<aside className="min-w-0 border-b border-neutral-200 p-7 max-sm:p-5 sm:p-9 lg:min-h-0 lg:overflow-y-auto lg:border-b-0 flex flex-col border-r">
+						<aside className="min-w-0 border-b border-neutral-200 p-7 max-sm:p-5 sm:p-9 lg:min-h-0 lg:overflow-y-auto lg:border-b-0 flex flex-col border-e">
 							<h1 className="text-xl font-semibold tracking-tight">{event.name}</h1>
 
 							{event.description && (
@@ -334,7 +334,7 @@ export default function PublicBookingEventPage() {
 											onClick={() => setMonth(moveMonth(visibleMonth, -1))}
 											className="flex h-8 w-8 items-center justify-center rounded-lg border border-neutral-200 text-blue-600 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-30"
 										>
-											<ChevronLeft className="h-5 w-5" />
+											<ChevronLeft className="h-5 w-5 rtl:-scale-x-100" />
 										</button>
 										<button
 											type="button"
@@ -343,7 +343,7 @@ export default function PublicBookingEventPage() {
 											onClick={() => setMonth(moveMonth(visibleMonth, 1))}
 											className="flex h-8 w-8 items-center justify-center rounded-lg border border-neutral-200 text-blue-600 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-30"
 										>
-											<ChevronRight className="h-5 w-5" />
+											<ChevronRight className="h-5 w-5 rtl:-scale-x-100" />
 										</button>
 									</div>
 									<div className="mx-auto mt-6 grid max-w-[440px] grid-cols-7 max-sm:px-5 text-center text-sm text-neutral-500">
@@ -386,7 +386,7 @@ export default function PublicBookingEventPage() {
 										))}
 									</div>
 
-									<div className="flex min-w-0 items-center gap-2 w-full pl-3 pr-2 max-sm:px-5 text-sm text-neutral-600 focus-within:border-blue-600 max-w-[440px] my-4 mx-auto">
+									<div className="flex min-w-0 items-center gap-2 w-full ps-3 pe-2 max-sm:px-5 text-sm text-neutral-600 focus-within:border-blue-600 max-w-[440px] my-4 mx-auto">
 										<Globe2 aria-hidden="true" className="h-4 w-4 shrink-0" />
 										<label htmlFor="booking-time-zone" className="shrink-0 whitespace-nowrap">
 											Time zone
@@ -404,7 +404,7 @@ export default function PublicBookingEventPage() {
 												setMonth(nextToday.slice(0, 7));
 												writeBookingPageSelection(nextToday, null, input.target.value);
 											}}
-											className="ml-auto h-9 min-w-0 max-w-full flex-1 truncate border-0 bg-transparent px-1 text-sm text-neutral-700 shadow-none outline-none text-right"
+											className="ms-auto h-9 min-w-0 max-w-full flex-1 truncate border-0 bg-transparent px-1 text-sm text-neutral-700 shadow-none outline-none text-end"
 										>
 											{timeZones.map((zone) => (
 												<option key={zone} value={zone}>
@@ -425,7 +425,7 @@ export default function PublicBookingEventPage() {
 										<h3 className="mb-6 shrink-0 text-lg font-semibold">
 											{formatCalendarDate(selectedDate, { weekday: "long", month: "short", day: "numeric" })}
 										</h3>
-										<div className="min-h-0 max-h-[50dvh] flex-1 space-y-3 overflow-y-auto pr-1 lg:max-h-none">
+										<div className="min-h-0 max-h-[50dvh] flex-1 space-y-3 overflow-y-auto pe-1 lg:max-h-none">
 											{(slotsByDate.get(selectedDate) ?? []).length === 0 ? (
 												<p className="text-sm text-neutral-500">
 													No times are available on this date. Choose another highlighted date.

@@ -119,7 +119,7 @@ const PRINT_STYLES = [
 	".print-message+.print-message{margin-top:24px;border-top:1px solid #d4d4d4}",
 	".print-message-subject{margin:0 0 8px;font-size:15px;font-weight:600}",
 	".print-headers{border-collapse:collapse;margin:0 0 12px;font-size:13px;break-inside:avoid;break-after:avoid}",
-	".print-headers th{padding:1px 12px 1px 0;color:#525252;font-weight:600;text-align:left;vertical-align:top;white-space:nowrap}",
+	".print-headers th{padding:1px 0;padding-inline-end:12px;color:#525252;font-weight:600;text-align:start;vertical-align:top;white-space:nowrap}",
 	".print-headers td{padding:1px 0}",
 	".print-attachments{margin:0 0 12px;padding:8px 12px;border:1px solid #e5e5e5;border-radius:6px;font-size:13px;break-inside:avoid}",
 	".print-attachments p{margin:0 0 2px;color:#525252;font-weight:600}",

@@ -52,7 +52,7 @@ function FailureGroup({ group }: { group: AiFailureGroup }) {
 				<span className="font-medium text-neutral-900">
 					{group.count} {group.count === 1 ? "failure" : "failures"}
 				</span>
-				<span className="text-xs text-neutral-500 sm:ml-auto">{span(group)}</span>
+				<span className="text-xs text-neutral-500 sm:ms-auto">{span(group)}</span>
 			</div>
 			<p className="text-neutral-900">{group.cause}</p>
 			<p className="text-neutral-700">

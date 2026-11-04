@@ -80,7 +80,7 @@ export default function BrandingPage() {
 							<button
 								type="button"
 								onClick={() => inputRef.current?.click()}
-								className="flex items-center gap-4 rounded-xl border border-dashed border-neutral-300 p-4 text-left hover:bg-neutral-50"
+								className="flex items-center gap-4 rounded-xl border border-dashed border-neutral-300 p-4 text-start hover:bg-neutral-50"
 							>
 								<img
 									src={preview ?? branding.iconUrl}

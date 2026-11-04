@@ -40,7 +40,7 @@ export function AccountMappingTable({ plan, kiteFolders, onChange }: Props) {
 				</p>
 			)}
 			<div className={`overflow-x-auto ${CARD_CLASS}`}>
-				<table className="w-full text-left text-sm">
+				<table className="w-full text-start text-sm">
 					<caption className="sr-only">Folders to import</caption>
 					<thead className={TABLE_HEAD_CLASS}>
 						<tr>
@@ -50,10 +50,10 @@ export function AccountMappingTable({ plan, kiteFolders, onChange }: Props) {
 							<th scope="col" className="px-3 py-2 font-medium">
 								Source folder
 							</th>
-							<th scope="col" className="px-3 py-2 text-right font-medium">
+							<th scope="col" className="px-3 py-2 text-end font-medium">
 								Messages
 							</th>
-							<th scope="col" className="px-3 py-2 text-right font-medium">
+							<th scope="col" className="px-3 py-2 text-end font-medium">
 								Size
 							</th>
 							<th scope="col" className="px-3 py-2 font-medium">
@@ -73,14 +73,12 @@ export function AccountMappingTable({ plan, kiteFolders, onChange }: Props) {
 								</td>
 								<td className="px-3 py-2">
 									<span className="font-medium text-neutral-900">{folder.displayName}</span>
-									<span className="ml-2 text-xs text-neutral-500">{roleLabels[folder.role]}</span>
+									<span className="ms-2 text-xs text-neutral-500">{roleLabels[folder.role]}</span>
 								</td>
-								<td className="px-3 py-2 text-right tabular-nums text-neutral-700">
+								<td className="px-3 py-2 text-end tabular-nums text-neutral-700">
 									{folder.messages === null ? "—" : folder.messages.toLocaleString("en-US")}
 								</td>
-								<td className="px-3 py-2 text-right tabular-nums text-neutral-700">
-									{formatPlannedBytes(folder.bytes)}
-								</td>
+								<td className="px-3 py-2 text-end tabular-nums text-neutral-700">{formatPlannedBytes(folder.bytes)}</td>
 								<td className="min-w-48 px-3 py-2">
 									<DestinationSelect
 										folder={folder}

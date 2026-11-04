@@ -25,7 +25,7 @@ export function HomeToast({
 				type="button"
 				aria-label="Dismiss"
 				onClick={() => dispatch({ type: "dismissToast" })}
-				className={`-mr-1 flex h-6 w-6 shrink-0 items-center justify-center rounded ${FOCUS_RING}`}
+				className={`-me-1 flex h-6 w-6 shrink-0 items-center justify-center rounded ${FOCUS_RING}`}
 			>
 				<X className="h-3.5 w-3.5" aria-hidden="true" />
 			</button>
@@ -50,7 +50,7 @@ export function HomeComposer({
 			role="dialog"
 			aria-label="New message"
 			style={secondScreen ? { gridColumn: 3 } : undefined}
-			className="absolute inset-x-0 bottom-0 z-40 flex max-h-[85%] flex-col pb-[env(safe-area-inset-bottom)] rounded-t-2xl border border-neutral-200 bg-white shadow-2xl split:inset-x-auto split:bottom-4 split:right-4 split:w-[min(440px,calc(100%_-_2rem))] split:rounded-2xl"
+			className="absolute inset-x-0 bottom-0 z-40 flex max-h-[85%] flex-col pb-[env(safe-area-inset-bottom)] rounded-t-2xl border border-neutral-200 bg-white shadow-2xl split:inset-x-auto split:bottom-4 split:end-4 split:w-[min(440px,calc(100%_-_2rem))] split:rounded-2xl"
 		>
 			<div className="flex items-center justify-between border-b border-neutral-200 px-4 py-2.5 text-sm font-semibold text-neutral-900">
 				New message
@@ -58,7 +58,7 @@ export function HomeComposer({
 					type="button"
 					aria-label="Close"
 					onClick={() => dispatch({ type: "closeComposer" })}
-					className={`-mr-1 rounded-md p-1 ${FOCUS_RING}`}
+					className={`-me-1 rounded-md p-1 ${FOCUS_RING}`}
 				>
 					<X className="h-4 w-4" aria-hidden="true" />
 				</button>

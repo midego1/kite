@@ -75,7 +75,11 @@ export function UpdateNoticeReader() {
 						onClick={closeAndReturnFocus}
 						aria-label={headerLabel}
 					>
-						{singleColumn ? <ArrowLeft size={18} aria-hidden="true" /> : <X size={18} aria-hidden="true" />}
+						{singleColumn ? (
+							<ArrowLeft size={18} aria-hidden="true" className="rtl:-scale-x-100" />
+						) : (
+							<X size={18} aria-hidden="true" />
+						)}
 					</button>
 				</Tooltip>
 			</div>

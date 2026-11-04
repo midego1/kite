@@ -32,7 +32,7 @@ export default function ActivityPage() {
 				aria-label="Activity"
 				className="overflow-x-auto rounded-xl border border-neutral-200 bg-white"
 			>
-				<table className="w-full min-w-[760px] table-fixed text-left text-sm">
+				<table className="w-full min-w-[760px] table-fixed text-start text-sm">
 					<thead className={TABLE_HEAD_CLASS}>
 						<tr>
 							<th scope="col" className="w-40 px-5 py-3">

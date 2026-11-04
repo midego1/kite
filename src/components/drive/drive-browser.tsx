@@ -184,9 +184,9 @@ function ColumnHeader({ view, selection }: { view: DriveListingView; selection: 
 				onChange={selection.toggleAll}
 				disabled={selection.selectable.length === 0}
 				aria-label="Select all"
-				className="ml-1"
+				className="ms-1"
 			/>
-			<span className="pl-7 font-medium">Name</span>
+			<span className="ps-7 font-medium">Name</span>
 			<span className="hidden font-medium md:block">{view === "attachments" ? "From" : "Owner"}</span>
 			<span className="hidden font-medium md:block">{view === "trash" ? "Trashed" : "Modified"}</span>
 			<span className="hidden font-medium md:block">Size</span>
@@ -214,7 +214,7 @@ function DropOverlay() {
 	return (
 		<div className="pointer-events-none absolute inset-2 z-20 flex items-center justify-center rounded-xl border-2 border-dashed border-blue-500 bg-blue-50/80 text-neutral-900">
 			<UploadCloud size={28} />
-			<span className="ml-3 text-base font-medium">Drop to upload</span>
+			<span className="ms-3 text-base font-medium">Drop to upload</span>
 		</div>
 	);
 }

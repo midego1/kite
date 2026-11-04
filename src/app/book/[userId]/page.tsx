@@ -88,7 +88,7 @@ export default function PublicBookingListPage() {
 										)}
 									</p>
 								</div>
-								<ArrowRight className="h-5 w-5 text-neutral-400 group-hover:text-blue-700" />
+								<ArrowRight className="h-5 w-5 text-neutral-400 group-hover:text-blue-700 rtl:-scale-x-100" />
 							</Link>
 						))}
 					</div>

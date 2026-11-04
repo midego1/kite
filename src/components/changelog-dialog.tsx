@@ -58,7 +58,7 @@ function ReleaseNavItem({
 			data-release-nav={release.name}
 			aria-current={active ? "location" : undefined}
 			onClick={onSelect}
-			className={`flex w-full flex-col items-start gap-0.5 rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 ${
+			className={`flex w-full flex-col items-start gap-0.5 rounded-lg px-2.5 py-1.5 text-start text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 ${
 				active
 					? "bg-neutral-100 font-medium text-neutral-900"
 					: "text-neutral-600 hover:bg-neutral-100/70 hover:text-neutral-900"
@@ -209,7 +209,7 @@ function ChangelogReader({ releases, onNavigate }: { releases: ChangelogRelease[
 		<div className="flex min-h-0 flex-1 flex-col md:flex-row">
 			<nav
 				aria-label="Releases"
-				className="hidden w-56 shrink-0 border-r border-neutral-200 md:block md:overflow-y-auto"
+				className="hidden w-56 shrink-0 border-e border-neutral-200 md:block md:overflow-y-auto"
 			>
 				<ul ref={navRef} onKeyDown={onNavKeyDown} className="space-y-0.5 p-3">
 					{shown.map((release) => (
@@ -321,7 +321,7 @@ export function ChangelogDialog({
 				overlayClassName="z-[120]"
 				className="z-[120] flex h-[calc(100vh-4rem)] max-h-[44rem] w-[min(56rem,calc(100vw-32px))] flex-col gap-0 overflow-hidden p-0"
 			>
-				<DialogHeader className="mb-0 flex shrink-0 flex-row items-start justify-between gap-3 space-y-0 border-b border-neutral-200 px-6 py-4 pr-12">
+				<DialogHeader className="mb-0 flex shrink-0 flex-row items-start justify-between gap-3 space-y-0 border-b border-neutral-200 px-6 py-4 pe-12">
 					<div className="min-w-0 space-y-1.5">
 						<DialogTitle>What&apos;s new in Kite</DialogTitle>
 						<DialogDescription>

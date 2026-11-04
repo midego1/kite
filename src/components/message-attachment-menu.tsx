@@ -46,7 +46,7 @@ export function MessageAttachmentMenu({
 					<button
 						type="button"
 						aria-label={`More actions for ${filename}`}
-						className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
+						className="absolute end-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
 					>
 						<MoreVertical className="h-4 w-4" />
 					</button>
@@ -64,7 +64,7 @@ export function MessageAttachmentMenu({
 							<button
 								key={slot.id}
 								type="button"
-								className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-100"
+								className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm text-neutral-700 hover:bg-neutral-100"
 								onClick={() => {
 									setOpen(false);
 									setOpenOverlay(slot.id);

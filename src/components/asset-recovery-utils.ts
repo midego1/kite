@@ -257,7 +257,7 @@ export function assetRecoveryScript({ dev = false }: { dev?: boolean } = {}): st
 		if (!current || typeof current.text !== "function") return null;
 		try {
 			const section = document.createElement("details");
-			section.style.cssText = "margin-top:12px;text-align:left;font-size:12px;opacity:0.8";
+			section.style.cssText = "margin-top:12px;text-align:start;font-size:12px;opacity:0.8";
 			const summary = document.createElement("summary");
 			summary.textContent = "Details";
 			summary.style.cssText = "cursor:pointer;text-align:center";

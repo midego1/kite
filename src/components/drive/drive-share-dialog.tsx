@@ -27,7 +27,7 @@ export function DriveShareDialog({
 				data-drive-share
 			>
 				<DialogHeader>
-					<DialogTitle className="truncate pr-8">Share “{item.name}”</DialogTitle>
+					<DialogTitle className="truncate pe-8">Share “{item.name}”</DialogTitle>
 					<DialogDescription>
 						People you share with see it under Shared with me. Anyone with a public link can open it until the link
 						expires or you revoke it.

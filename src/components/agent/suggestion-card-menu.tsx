@@ -25,7 +25,7 @@ export function SuggestionCardMenu({ suggestion, onChanged }: { suggestion: Card
 				<button
 					type="button"
 					aria-label="More Kite actions"
-					className="-mr-1 -mt-1 shrink-0 rounded-md p-1 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+					className="-me-1 -mt-1 shrink-0 rounded-md p-1 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
 				>
 					<MoreHorizontal aria-hidden className="h-4 w-4" />
 				</button>

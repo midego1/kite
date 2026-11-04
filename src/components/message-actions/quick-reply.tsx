@@ -55,9 +55,9 @@ export function QuickReply({ name, message, body, ownAddress, ownAddresses }: Qu
 						: void reply("reply")
 				}
 				disabled={pending !== null}
-				className="flex w-full items-center gap-2.5 rounded-xl border border-neutral-200 bg-white px-4 py-3 text-left text-sm text-neutral-500 transition-colors hover:border-blue-300 hover:text-neutral-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 disabled:opacity-60"
+				className="flex w-full items-center gap-2.5 rounded-xl border border-neutral-200 bg-white px-4 py-3 text-start text-sm text-neutral-500 transition-colors hover:border-blue-300 hover:text-neutral-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 disabled:opacity-60"
 			>
-				<Reply className="h-4 w-4 shrink-0" aria-hidden="true" />
+				<Reply className="h-4 w-4 shrink-0 rtl:-scale-x-100" aria-hidden="true" />
 				{pending ? (
 					<span>Opening the reply…</span>
 				) : message.direction === "inbound" ? (

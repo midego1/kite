@@ -15,7 +15,7 @@ export function ChatWelcome({ selectedMessageId, prompts, disabled, busy, onSubm
 	return (
 		<div className="flex items-start gap-2.5">
 			<KiteAvatar className="mt-0.5" />
-			<div className="min-w-0 flex-1 rounded-xl rounded-tl-sm bg-blue-50/70 p-3">
+			<div className="min-w-0 flex-1 rounded-xl rounded-ss-sm bg-blue-50/70 p-3">
 				<p className="agent-welcome-heading text-sm leading-relaxed text-neutral-800">
 					{selectedMessageId ? "I can help with this conversation." : "How can I help with your inbox?"}
 				</p>

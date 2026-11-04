@@ -73,7 +73,7 @@ function PublicDriveView({
 			>
 				{path.map((crumb, index) => (
 					<span key={crumb.id} className="flex items-center gap-1">
-						{index > 0 && <ChevronRight size={18} className="text-neutral-500" />}
+						{index > 0 && <ChevronRight size={18} className="text-neutral-500 rtl:-scale-x-100" />}
 						{index === path.length - 1 ? (
 							<h1 className="px-1.5 py-0.5 font-medium text-neutral-900">{crumb.name}</h1>
 						) : (
@@ -90,7 +90,7 @@ function PublicDriveView({
 				{isFile && (
 					<a
 						href={publicContentUrl(token, item.id, true)}
-						className="ml-auto inline-flex h-9 items-center gap-2 rounded-lg bg-blue-600 px-4 text-sm font-medium text-white hover:bg-blue-700"
+						className="ms-auto inline-flex h-9 items-center gap-2 rounded-lg bg-blue-600 px-4 text-sm font-medium text-white hover:bg-blue-700"
 					>
 						<Download size={16} />
 						Download
@@ -132,7 +132,7 @@ function PublicRow({ entry, token, onOpen }: { entry: PublicDriveItem; token: st
 			<button
 				type="button"
 				onClick={() => onOpen(entry.id)}
-				className="flex min-w-0 flex-1 items-center gap-4 py-3 text-left"
+				className="flex min-w-0 flex-1 items-center gap-4 py-3 text-start"
 			>
 				<Icon size={16} className={className} fill={entry.kind === "folder" ? "currentColor" : "none"} />
 				<span className="truncate text-neutral-900">{entry.name}</span>

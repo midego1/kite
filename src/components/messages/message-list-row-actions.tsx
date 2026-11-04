@@ -20,7 +20,7 @@ export function MessageListRowActions({ message, onAction, compact = false, star
 	return (
 		<>
 			<div
-				className={`absolute z-10 flex items-center gap-1 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-has-[:focus-visible]:pointer-events-auto group-has-[:focus-visible]:opacity-100 ${snoozeOpen ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0"} ${compact ? "-right-1 -top-1.5 h-6 gap-0 rounded-md border border-neutral-200 bg-white shadow-sm" : "right-6 top-1/2 -translate-y-1/2 bg-[#f2f6fc] pl-3"}`}
+				className={`absolute z-10 flex items-center gap-1 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-has-[:focus-visible]:pointer-events-auto group-has-[:focus-visible]:opacity-100 ${snoozeOpen ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0"} ${compact ? "-end-1 -top-1.5 h-6 gap-0 rounded-md border border-neutral-200 bg-white shadow-sm" : "end-6 top-1/2 -translate-y-1/2 bg-[#f2f6fc] ps-3"}`}
 			>
 				{star && (
 					// One name in both states, so the pressed state carries it ("Star", pressed); the tooltip says what a click does.

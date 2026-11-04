@@ -73,7 +73,7 @@ export function ReaderThreadHeader({
 							</>
 						);
 						const chipClass =
-							"flex h-8 items-center gap-2 rounded-full border border-neutral-200 py-1 pl-1 pr-3 text-sm text-neutral-900";
+							"flex h-8 items-center gap-2 rounded-full border border-neutral-200 py-1 ps-1 pe-3 text-sm text-neutral-900";
 						return (
 							<li key={person.address || person.name}>
 								{person.address ? (

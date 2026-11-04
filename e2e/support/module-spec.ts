@@ -146,3 +146,37 @@ export async function expectLink(scope: Locator, name: string, on: boolean) {
 	if (on) await expect(link, name).toBeVisible();
 	else await expect(link, name).toHaveCount(0);
 }
+
+/**
+ * Every 27-modules file ends with this in `test.afterAll`: the install-wide module state is shared by the whole
+ * slice, so a test that leaves a module off or a user restricted would break whichever file runs next.
+ */
+export async function expectEveryModuleOn(): Promise<void> {
+	const api = await owner();
+	try {
+		const { modules } = (await (await api.get("/api/admin/modules")).json()) as {
+			modules: { id: string; enabled: boolean; restrictedUsers: unknown[] }[];
+		};
+		expect(
+			modules.map((item) => [item.id, item.enabled, item.restrictedUsers.length]),
+			"a test in this file left a module off or a user restricted",
+		).toEqual([
+			["calendar", true, 0],
+			["booking", true, 0],
+			["templates", true, 0],
+			["import", true, 0],
+			["finance", true, 0],
+			["drive", true, 0],
+		]);
+		expect((await (await api.get("/api/auth/me")).json()).modules).toEqual([
+			"calendar",
+			"booking",
+			"templates",
+			"import",
+			"finance",
+			"drive",
+		]);
+	} finally {
+		await api.dispose();
+	}
+}

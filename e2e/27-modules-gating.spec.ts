@@ -3,7 +3,14 @@ import { BASE_URL } from "./support/constants";
 import { signIn } from "./support/helpers";
 import { restoreModules, setModuleState } from "./support/modules";
 import { expectNotFoundPage, openAccountMenu } from "./support/module-flows";
-import { MEMBER_PASSWORD, createMember, owner, ownerBooking, visitor } from "./support/module-spec";
+import {
+	MEMBER_PASSWORD,
+	createMember,
+	expectEveryModuleOn,
+	owner,
+	ownerBooking,
+	visitor,
+} from "./support/module-spec";
 
 test("the session answer lists the six modules that are on for the owner", async ({ request }) => {
 	const response = await request.get("/api/auth/me");
@@ -447,4 +454,9 @@ test("changing the time zone works with Calendar off and still answers the new z
 		await restoreModules(api);
 		await api.dispose();
 	}
+});
+
+// Fails this file when one of its tests left a module off or a user restricted.
+test.afterAll(async () => {
+	await expectEveryModuleOn();
 });

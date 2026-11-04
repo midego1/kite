@@ -18,7 +18,14 @@ import { createSignedInAccount, okJson, selectMailbox } from "./support/auto-rea
 import { futureAt, inviteAttachment } from "./support/invites";
 import { readSuggestions, waitForFinishedJob } from "./support/triage";
 import { restoreModules, setModuleState } from "./support/modules";
-import { createMember, fakeAssistant, lastChatRequest, moduleAccessCleanup, owner } from "./support/module-spec";
+import {
+	createMember,
+	expectEveryModuleOn,
+	fakeAssistant,
+	lastChatRequest,
+	moduleAccessCleanup,
+	owner,
+} from "./support/module-spec";
 
 const CALENDAR_PROMPT = "Use calendar tools only for the user's personal calendar";
 
@@ -484,4 +491,9 @@ test("a calendar invitation suggestion is hidden while Calendar is off, no new o
 		await cleanup();
 		await api.dispose();
 	}
+});
+
+// Fails this file when one of its tests left a module off or a user restricted.
+test.afterAll(async () => {
+	await expectEveryModuleOn();
 });

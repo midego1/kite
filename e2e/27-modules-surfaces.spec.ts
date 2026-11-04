@@ -14,6 +14,7 @@ import {
 	createEvent,
 	createTemplate,
 	deleteKeys,
+	expectEveryModuleOn,
 	expectLink,
 	fakeAssistant,
 	lastChatRequest,
@@ -248,4 +249,9 @@ test("Money Watch off then on removes and restores every finance surface: nav, p
 			await deleteKeys(rig.api, { mcp: [key.id] });
 		}
 	});
+});
+
+// Fails this file when one of its tests left a module off or a user restricted.
+test.afterAll(async () => {
+	await expectEveryModuleOn();
 });

@@ -18,6 +18,7 @@ import { bookAppointment, expectPaletteCommands, openAccountMenu, watchCoreTraff
 import {
 	createEvent,
 	createTemplate,
+	expectEveryModuleOn,
 	expectLink,
 	fakeAssistant,
 	lastChatRequest,
@@ -430,29 +431,7 @@ test("a mail-only install backs up and restores with its module data and with ev
 	}
 });
 
-test("after the spec every module is on and no user is restricted", async () => {
-	const api = await owner();
-	try {
-		const { modules } = (await (await api.get("/api/admin/modules")).json()) as {
-			modules: { id: string; enabled: boolean; restrictedUsers: unknown[] }[];
-		};
-		expect(modules.map((item) => [item.id, item.enabled, item.restrictedUsers.length])).toEqual([
-			["calendar", true, 0],
-			["booking", true, 0],
-			["templates", true, 0],
-			["import", true, 0],
-			["finance", true, 0],
-			["drive", true, 0],
-		]);
-		expect((await (await api.get("/api/auth/me")).json()).modules).toEqual([
-			"calendar",
-			"booking",
-			"templates",
-			"import",
-			"finance",
-			"drive",
-		]);
-	} finally {
-		await api.dispose();
-	}
+// Fails this file when one of its tests left a module off or a user restricted.
+test.afterAll(async () => {
+	await expectEveryModuleOn();
 });

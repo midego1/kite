@@ -6,6 +6,7 @@ import {
 	MEMBER_PASSWORD,
 	createMember,
 	createTemplate,
+	expectEveryModuleOn,
 	openSendMenu,
 	owner,
 	templateStatusRows,
@@ -182,4 +183,9 @@ test("the New template dialog works after the send menu has closed, and an earli
 		for (const id of created) await api.delete(`/api/templates/${id}`);
 		await api.dispose();
 	}
+});
+
+// Fails this file when one of its tests left a module off or a user restricted.
+test.afterAll(async () => {
+	await expectEveryModuleOn();
 });

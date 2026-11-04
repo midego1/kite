@@ -6,6 +6,7 @@ import { expectNotFoundPage, openAccountMenu } from "./support/module-flows";
 import {
 	MEMBER_PASSWORD,
 	createMember,
+	expectEveryModuleOn,
 	moduleAccessCleanup,
 	moduleSection,
 	moduleSwitch,
@@ -469,4 +470,9 @@ test("a non-owner admin never sees or reaches Modules, and non-admins and signed
 		await anonymous.dispose();
 		await api.dispose();
 	}
+});
+
+// Fails this file when one of its tests left a module off or a user restricted.
+test.afterAll(async () => {
+	await expectEveryModuleOn();
 });

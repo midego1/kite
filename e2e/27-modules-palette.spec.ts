@@ -1,7 +1,7 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { restoreModules, setModuleState } from "./support/modules";
 import { PALETTE_PLACEHOLDER, openPalette } from "./support/module-flows";
-import { owner } from "./support/module-spec";
+import { expectEveryModuleOn, owner } from "./support/module-spec";
 
 async function runPaletteCommand(page: Page, query: string) {
 	const search = await openPalette(page);
@@ -215,4 +215,9 @@ test("Import off removes the import command, Export stays and opens its page", a
 		await restoreModules(api);
 		await api.dispose();
 	}
+});
+
+// Fails this file when one of its tests left a module off or a user restricted.
+test.afterAll(async () => {
+	await expectEveryModuleOn();
 });

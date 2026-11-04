@@ -302,7 +302,6 @@
 	"27-modules-import-retry.spec.ts › a queued import retry that arrives while Import is off is skipped and the job resumes unchanged": 49800,
 	"27-modules-install.spec.ts › a mail-only install (every module off) keeps the inbox, reader, composer, search, settings, export and assistant working": 27100,
 	"27-modules-install.spec.ts › a mail-only install backs up and restores with its module data and with every module still off": 22400,
-	"27-modules-install.spec.ts › after the spec every module is on and no user is restricted": 100,
 	"27-modules-install.spec.ts › an open calendar tab gets 404 from its calendar calls once Calendar is turned off in another tab, and not-found on reload": 5300,
 	"27-modules-install.spec.ts › the Modules page and the Calendar confirmation read clearly in Kite, Classic and dark mode": 7200,
 	"27-modules-install.spec.ts › with migration 0062 applied the owner sees every module surface as before and reaches Modules from the inbox through the admin navigation": 20800,

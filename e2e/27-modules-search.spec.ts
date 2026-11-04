@@ -1,7 +1,15 @@
 import { expect, test, type APIRequestContext } from "@playwright/test";
 import { uniqueToken } from "./support/helpers";
 import { restoreModules, setModuleState } from "./support/modules";
-import { createEvent, createMember, deleteKeys, owner, searchSections, visitor } from "./support/module-spec";
+import {
+	createEvent,
+	createMember,
+	deleteKeys,
+	expectEveryModuleOn,
+	owner,
+	searchSections,
+	visitor,
+} from "./support/module-spec";
 
 test("GET /api/search returns the viewer's own events with refs and links, and nothing for anyone else", async () => {
 	const api = await owner();
@@ -274,4 +282,9 @@ test("the dropdown is keyboard driven and gone with Calendar off", async ({ page
 		if (id) await api.delete(`/api/calendar/events/${id}`);
 		await api.dispose();
 	}
+});
+
+// Fails this file when one of its tests left a module off or a user restricted.
+test.afterAll(async () => {
+	await expectEveryModuleOn();
 });

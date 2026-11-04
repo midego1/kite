@@ -1,7 +1,7 @@
 import { expect, test, type APIRequestContext } from "@playwright/test";
 import { uniqueToken } from "./support/helpers";
 import { restoreModules, setModuleState } from "./support/modules";
-import { owner } from "./support/module-spec";
+import { expectEveryModuleOn, owner } from "./support/module-spec";
 
 type ImportJobRow = { id: string; status: string; attempts: number; lastError: string | null; updatedAt: string };
 
@@ -62,4 +62,9 @@ test("a queued import retry that arrives while Import is off is skipped and the 
 		if (jobId) await api.delete(`/api/import/jobs/${jobId}`);
 		await api.dispose();
 	}
+});
+
+// Fails this file when one of its tests left a module off or a user restricted.
+test.afterAll(async () => {
+	await expectEveryModuleOn();
 });

@@ -10,6 +10,7 @@ import {
 	FINANCE_EVENTS,
 	createMember,
 	deleteKeys,
+	expectEveryModuleOn,
 	moduleSwitch,
 	owner,
 	ownerBooking,
@@ -638,4 +639,9 @@ test("JMAP answers the same session and methods with every module on and every m
 		await jmap.dispose();
 		await api.dispose();
 	}
+});
+
+// Fails this file when one of its tests left a module off or a user restricted.
+test.afterAll(async () => {
+	await expectEveryModuleOn();
 });

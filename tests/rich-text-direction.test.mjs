@@ -223,6 +223,31 @@ test("switching to a mailbox with no signature removes a block-level signature w
 	assert.equal(h.applyMailboxSignatureHtml("<div>Body</div>", "", ""), "<div>Body</div>");
 });
 
+test("direction in the middle of a tag's attributes, and signature text that looks like an attribute", () => {
+	const signature = `<p lang="ar" title="Sig">${ARABIC}</p><p>Say dir="rtl" here</p>`;
+	const fresh = h.applyMailboxSignatureHtml("<div>Body</div>", "", signature);
+	for (const edited of [
+		fresh.replace('lang="ar"', 'dir="rtl" lang="ar"'),
+		fresh.replace('lang="ar"', 'lang="ar" dir="ltr"'),
+		fresh.replace('title="Sig"', 'dir="rtl" title="Sig"'),
+		fresh.replace('title="Sig"', 'title="Sig" dir="rtl"'),
+	]) {
+		assert.notEqual(edited, fresh);
+		assert.equal(
+			h.applyMailboxSignatureHtml(edited, signature, "Shared"),
+			"<div>Body</div>" + h.applyMailboxSignatureHtml("", "", "Shared").replace("<div><br></div>", ""),
+		);
+		assert.equal(h.applyMailboxSignatureHtml(edited, "", signature), edited);
+	}
+});
+
+test("the same signature in the other mailbox keeps the direction given to its lines", () => {
+	const signature = `<div>${ARABIC}</div><div>Sam</div>`;
+	const fresh = h.applyMailboxSignatureHtml("<div>Body</div>", "", signature);
+	const edited = fresh.replace("<div>Sam</div>", '<div dir="rtl">Sam</div>');
+	assert.equal(h.applyMailboxSignatureHtml(edited, signature, signature), edited);
+});
+
 test("a replacement signature is inserted as written, whatever characters it holds", () => {
 	const fresh = h.applyMailboxSignatureHtml("<div>Body</div>", "", "Old");
 	assert.match(h.applyMailboxSignatureHtml(fresh, "Old", "Cost $& $1 $$"), /Cost \$&amp; \$1 \$\$<\/div>$/);

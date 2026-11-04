@@ -147,12 +147,15 @@ function escapeRegExp(text: string): string {
  */
 function directionTolerantPattern(block: string): RegExp {
 	const source = block
-		.replace(DIRECTION_ATTRIBUTE, "")
 		.split(/(<[a-z][a-z0-9]*(?:\s[^>]*)?>)/i)
 		.map((part, index) => {
 			if (index % 2 === 0) return escapeRegExp(part);
 			const [, name = "", attributes = ""] = /^<([a-z][a-z0-9]*)([\s\S]*)>$/i.exec(part) ?? [];
-			return `<${escapeRegExp(name)}${OPTIONAL_DIRECTION}${escapeRegExp(attributes)}${OPTIONAL_DIRECTION}>`;
+			// The `dir` goes from the tag's own attributes only, never from text; it may sit between any two of them.
+			const kept = (attributes.replace(DIRECTION_ATTRIBUTE, "").match(/\s+[^\s=>]+(?:="[^"]*")?/g) ?? []).map(
+				(attribute) => `${OPTIONAL_DIRECTION}${escapeRegExp(attribute)}`,
+			);
+			return `<${escapeRegExp(name)}${kept.join("")}${OPTIONAL_DIRECTION}>`;
 		})
 		.join("");
 	return new RegExp(source, "i");
@@ -188,6 +191,8 @@ export function applyMailboxSignatureHtml(
 		for (const block of signatureBlocks(previousSignature, attribute)) {
 			const found = directionTolerantPattern(block).exec(html);
 			if (!found) continue;
+			// The same signature in the other mailbox: what the user did to its lines stays.
+			if (signatureToHtml(previousSignature) === signatureToHtml(nextSignature)) return html;
 			const own = blockDirection(found[0]);
 			const next = nextBlocks[own ? 2 + SIGNATURE_DIRECTIONS.indexOf(own) : 1] ?? nextBlock;
 			return html.slice(0, found.index) + next + html.slice(found.index + found[0].length);

@@ -1,7 +1,7 @@
 import { expect, test, type APIRequestContext, type Browser, type Page } from "@playwright/test";
 import { createSharedMailbox, createSignedInAccount, okJson, selectMailbox, shareMailbox } from "./support/auto-read";
 import { DOMAIN, STORAGE_STATE } from "./support/constants";
-import { apiContext, deliverInbound, setSendingSettings, uniqueToken } from "./support/helpers";
+import { apiContext, deliverInbound, openMessage, setSendingSettings, uniqueToken } from "./support/helpers";
 import { chooseOption, expectSelectValue } from "./support/select";
 
 // A reopened draft goes back to its own mailbox once, when it loads. After that the From the user picks stays, the
@@ -161,7 +161,7 @@ test.describe("composer From and signature of a reopened draft", () => {
 		const { context, page } = await openAs(browser, account, account.mailboxId);
 		try {
 			await page.goto("/inbox");
-			await page.getByRole("main").getByText(subject, { exact: true }).first().click();
+			await openMessage(page, subject);
 			await expect(page.getByRole("heading", { level: 1, name: subject })).toBeVisible();
 			await page.getByRole("button", { name: /^Reply to Pin Sender/ }).click();
 			await page.getByRole("button", { name: "Pop out composer" }).click();

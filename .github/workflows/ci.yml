@@ -51,17 +51,23 @@ jobs:
 
   mission-validation:
     name: Mission validation
-    # Boat bills per runner start ($20 plan: ~200 starts/day), so only this job
-    # uses it: on main, or on PRs labelled boat-ci. A/B showed ~2.9x faster on
-    # boat-large. The label is read when the run starts, so it applies from the
-    # next push or reopen.
+    # Boat bills per runner start (the $20 plan allows 12 starts a minute, 60 an
+    # hour, 200 a day and 277 h of boat-large a month), so only this job uses it by
+    # default: on every run whose actor rules hold below. Mission validation took a
+    # median 842 s on ubuntu-latest; the Boat figure (417 s) rests on only 3 jobs,
+    # and this change's own run took 508 s with a cache-miss npm ci.
     # Boat runs jobs of a public repo only for its allowed GitHub users and never
     # for bots (it cancels the job), so Boat is used only when the actor is in the
     # list below (the one place to edit; runs-on cannot read env), the run was not
     # rerun by someone else, and a PR is the actor's own. Bot merges to main
     # (auto-merge), release/next dispatches and everything else run on
     # ubuntu-latest, which also keeps main validated when Boat is down.
-    runs-on: ${{ (contains(fromJSON('["midego1"]'), github.actor) && github.triggering_actor == github.actor && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'boat-ci') && github.event.pull_request.user.login == github.actor))) && 'boat-large' || 'ubuntu-latest' }}
+    # Kill switch: the repository variable BOAT_CI set to off puts every job of this
+    # workflow on ubuntu-latest (unset means on). It does not free a job already
+    # queued (its runs-on is resolved): set it, cancel the waiting run, then rerun or
+    # push. A job paused by a plan limit does not restart by itself. That a rerun
+    # re-reads the variable is untested until first real use.
+    runs-on: ${{ (vars.BOAT_CI != 'off' && contains(fromJSON('["midego1"]'), github.actor) && github.triggering_actor == github.actor && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'pull_request' && github.event.pull_request.user.login == github.actor))) && 'boat-large' || 'ubuntu-latest' }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -108,7 +114,11 @@ jobs:
     # get standard runners for free; the shard count is the only knob, kept low
     # enough that a pull request's jobs fit the account's concurrent-job limit.
     name: E2E (shard ${{ matrix.shard }} of 10)
-    runs-on: ubuntu-latest
+    # Measurement only: pull requests labelled boat-e2e run the shards on boat-large
+    # under the same actor rules and kill switch as Mission validation, to compare
+    # with about 720 s per shard on ubuntu-latest. Without the label they stay on
+    # ubuntu-latest (ten shards would use ten of the day's 200 starts).
+    runs-on: ${{ (vars.BOAT_CI != 'off' && contains(fromJSON('["midego1"]'), github.actor) && github.triggering_actor == github.actor && github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'boat-e2e') && github.event.pull_request.user.login == github.actor) && 'boat-large' || 'ubuntu-latest' }}
     timeout-minutes: 15
     strategy:
       fail-fast: false

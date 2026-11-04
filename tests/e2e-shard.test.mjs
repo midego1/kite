@@ -7,6 +7,7 @@ import {
 	collectTests,
 	formatTestList,
 	isParallelFile,
+	pairSlices,
 	parseShard,
 	timingsFromReports,
 } from "../scripts/quality/e2e-shard-utils.mjs";
@@ -128,4 +129,24 @@ test("e2e/timings.json is sorted and holds whole-millisecond durations", () => {
 		[...keys].sort((a, b) => a.localeCompare(b)),
 	);
 	for (const value of Object.values(timings)) assert.ok(Number.isInteger(value) && value >= 0);
+});
+
+test("pairSlices gives job N slices 2N-1 and 2N, on ports that stay clear of each other's fakes", () => {
+	assert.deepEqual(pairSlices("1/10"), [
+		{ slice: 1, shard: "1/20", port: 3200 },
+		{ slice: 2, shard: "2/20", port: 3300 },
+	]);
+	assert.deepEqual(
+		pairSlices("10/10").map((entry) => entry.shard),
+		["19/20", "20/20"],
+	);
+	assert.throws(() => pairSlices("11/10"));
+	assert.throws(() => pairSlices(undefined));
+	const seen = Array.from({ length: 10 }, (_, index) =>
+		pairSlices(`${index + 1}/10`).map((entry) => entry.slice),
+	).flat();
+	assert.deepEqual(
+		seen,
+		Array.from({ length: 20 }, (_, index) => index + 1),
+	);
 });

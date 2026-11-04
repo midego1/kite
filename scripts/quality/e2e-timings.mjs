@@ -1,6 +1,6 @@
 // Refreshes e2e/timings.json from Playwright JSON reports, for example the
-// `test-results/playwright-results.json` in each CI "e2e-evidence-shard-N" artifact:
-//   npm run e2e:timings -- shard-*/test-results/playwright-results.json
+// `test-results/slice-K/playwright-results.json` files in each CI "e2e-evidence-shard-N" artifact:
+//   npm run e2e:timings -- shard-*/test-results/slice-*/playwright-results.json
 // Entries for tests that are not in the given reports are kept, so a partial refresh never loses data.
 import fs from "node:fs/promises";
 import { timingsFromReports } from "./e2e-shard-utils.mjs";

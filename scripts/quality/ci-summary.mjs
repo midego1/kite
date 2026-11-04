@@ -13,10 +13,19 @@ async function readJson(relative) {
 	}
 }
 
+const entries = await fs.readdir(dir).catch(() => []);
+const sliceNumbers = entries.flatMap((entry) => /^slice-(\d+)$/.exec(entry)?.[1] ?? []).map(Number);
+const slices = await Promise.all(
+	sliceNumbers
+		.sort((a, b) => a - b)
+		.map(async (slice) => ({ slice, report: await readJson(`slice-${slice}/playwright-results.json`) })),
+);
+
 process.stdout.write(
 	renderSummary({
 		timings: await readJson("quality/timings.json"),
 		playwright: await readJson("playwright-results.json"),
+		slices,
 		coverage: await readJson("coverage/summary.json"),
 	}),
 );

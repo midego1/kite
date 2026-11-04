@@ -41,6 +41,7 @@ export default defineConfig(({ command }) => ({
 			remoteBindings: process.env.CLOUDFLARE_REMOTE_BINDINGS === "true",
 			// The E2E suite points this at a throwaway directory so it never touches .wrangler/state.
 			...(process.env.KITE_PERSIST_DIR ? { persistState: { path: process.env.KITE_PERSIST_DIR } } : {}),
+			...(process.env.KITE_NO_INSPECTOR ? { inspectorPort: false as const } : {}),
 			viteEnvironment: { name: "rsc", childEnvironments: ["ssr"] },
 			// The customizer also runs for `vite build`, which would bake the flags into dist/server/wrangler.json.
 			config: () => {

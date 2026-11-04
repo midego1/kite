@@ -62,3 +62,21 @@ test("the CLI reads the files under the given directory", () => {
 	const out = execFileSync("node", ["scripts/quality/ci-summary.mjs", "--dir", dir], { encoding: "utf8" });
 	assert.match(out, /build:node \| skipped/);
 });
+
+test("slices run side by side each get their own Playwright section", () => {
+	const dir = mkdtempSync(path.join(tmpdir(), "ci-summary-"));
+	mkdirSync(path.join(dir, "slice-10"));
+	mkdirSync(path.join(dir, "slice-9"));
+	writeFileSync(path.join(dir, "slice-9/playwright-results.json"), JSON.stringify(playwright));
+	const out = execFileSync("node", ["scripts/quality/ci-summary.mjs", "--dir", dir], { encoding: "utf8" });
+	assert.match(out, /### Playwright \(slice 9\)\n\nPassed 3, failed 0, flaky 1, skipped 2/);
+	// Started, then died before writing its report: that must show too, after slice 9 in number order.
+	assert.match(out, /slice 9[\s\S]*_Playwright \(slice 10\): not run\._/);
+	assert.doesNotMatch(out, /_Playwright: not run/);
+});
+
+test("a plain run's results still show next to slices left from an earlier run", () => {
+	const text = renderSummary({ playwright, slices: [{ slice: 3, report: null }] });
+	assert.match(text, /### Playwright\n\nPassed 3/);
+	assert.match(text, /_Playwright \(slice 3\): not run\._/);
+});

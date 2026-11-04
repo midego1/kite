@@ -154,6 +154,20 @@ function splitVariants(token) {
 	return parts;
 }
 
+/** Where a block comment opens in `text`, skipping any `/*` inside a string on the line (an ARN, `accept="image/*"`). */
+function commentOpening(text) {
+	let quote = null;
+	for (let index = 0; index < text.length; index += 1) {
+		const character = text[index];
+		if (quote) {
+			if (character === "\\") index += 1;
+			else if (character === quote) quote = null;
+		} else if (character === '"' || character === "'" || character === "`") quote = character;
+		else if (character === "/" && text[index + 1] === "*") return index;
+	}
+	return -1;
+}
+
 /**
  * The line without its comments, tracking a block comment across lines in `state`. Code after a closed `/* ... *\/` still
  * counts; a line that opens with `//` is a comment to its end, in code only (a CSS `//` is not one).
@@ -168,7 +182,7 @@ export function withoutComments(line, state, isCss) {
 			state.inBlock = false;
 			rest = rest.slice(close + 2);
 		}
-		const open = rest.indexOf("/*");
+		const open = commentOpening(rest);
 		if (open === -1) {
 			code += rest;
 			break;
@@ -318,6 +332,11 @@ test("a comment only hides what is inside it", () => {
 	assert.deepEqual(hits('{/* ml-2 */} <div className="mr-2" />'), ["mr-2"]);
 	assert.deepEqual(hits("/* ml-2 */"), []);
 	assert.deepEqual(hits("// ml-2"), []);
+	// A `/*` in a string opens nothing, on this line or the next.
+	const inString = { inBlock: false };
+	assert.deepEqual(hits('const route = "/*"; className="ml-2"', false, inString), ["ml-2"]);
+	assert.deepEqual(hits("Resource: `arn:aws:s3:::${bucket}/*`,", false, inString), []);
+	assert.deepEqual(hits('className="mr-2"', false, inString), ["mr-2"]);
 	const state = { inBlock: false };
 	assert.deepEqual(hits("/** first line", false, state), []);
 	assert.deepEqual(hits(" * ml-2 in the block", false, state), []);

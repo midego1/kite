@@ -8,8 +8,8 @@ import { useReadingPaneMode } from "./use-reading-layout";
 // What the list may be and what the reader keeps, in pixels: width beside the reader, height above it.
 export const LIST_WIDTH = { fallback: 360, ...LIST_WIDTH_LIMITS, reserved: 280 };
 export const LIST_HEIGHT = { fallback: 320, ...LIST_HEIGHT_LIMITS, reserved: 200 };
-/** The horizontal edges of the panel group in viewport coordinates. */
-export type GroupEdges = { left: number; right: number };
+/** The horizontal edges of the panel group in viewport coordinates, and the width of that viewport. */
+export type GroupEdges = { left: number; right: number; viewportWidth: number };
 /** The hairline handle between the panels and its 4px margin on each side. */
 const HANDLE_WIDTH = 9;
 /** Two panes need this much room; below it the list and reader would overlap or clip. */
@@ -46,7 +46,7 @@ export function useFoldSplit() {
 			const box = measured.getBoundingClientRect();
 			// A width of 0 is a panel that is not laid out (a full-size assistant), not a screen that is too small.
 			if (box.width > 0) setFits(box.width >= SPLIT_MIN_WIDTH);
-			if (followsEdges) setGroupEdges({ left: box.left, right: box.right });
+			if (followsEdges) setGroupEdges({ left: box.left, right: box.right, viewportWidth: window.innerWidth });
 		};
 		measure();
 		// The width changes whenever an edge can move too: a sidebar drag, a window resize, the assistant.
@@ -80,7 +80,10 @@ export function useFoldSplit() {
  * whose edge the sidebar pushes inward, so the list gets only what is left of its screen and cannot cross the hinge.
  */
 function foldHingeListWidth(hinge: FoldHinge, group: GroupEdges, rtl: boolean): number {
-	return Math.max(0, rtl ? group.right - hinge.second.left : hinge.first.width - group.left);
+	if (!rtl) return Math.max(0, hinge.first.width - group.left);
+	// The group is padded by what lies past the second screen (`--kite-fold-right`), and the list starts at that padding.
+	const rightPadding = Math.max(0, group.viewportWidth - (hinge.second.left + hinge.second.width));
+	return Math.max(0, group.right - rightPadding - hinge.second.left);
 }
 
 /** The list's size limits, capped to the space before a hinge when there is one. */

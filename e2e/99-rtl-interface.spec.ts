@@ -133,6 +133,30 @@ test.describe("the setting", () => {
 		await expect(page.getByRole("radio", { name: "Left of inbox" })).toBeVisible();
 	});
 
+	test("arrow keys move through the menu's radio groups and follow the direction", async ({ page }) => {
+		await page.addInitScript(() => localStorage.setItem("kite-layout-sync", "off"));
+		await openInbox(page);
+		await page.getByRole("button", { name: "Open account menu" }).click();
+		const density = page.getByRole("radiogroup", { name: "Density" });
+		const checked = density.getByRole("radio", { checked: true });
+		await checked.focus();
+		const start = await checked.getAttribute("aria-label");
+		await page.keyboard.press("ArrowRight");
+		await expect(density.getByRole("radio", { checked: true })).not.toHaveAttribute("aria-label", start!);
+		await expect(density.getByRole("radio", { checked: true })).toBeFocused();
+		await page.keyboard.press("ArrowLeft");
+		await expect(density.getByRole("radio", { checked: true })).toHaveAttribute("aria-label", start!);
+
+		// Mirrored, the arrow pointing along the reading direction goes forward.
+		await page.getByRole("radio", { name: "Right to left" }).click();
+		await expectDirection(page, "rtl");
+		await page.getByRole("button", { name: "Open account menu" }).click();
+		const mirrored = page.getByRole("radiogroup", { name: "Density" });
+		await mirrored.getByRole("radio", { checked: true }).focus();
+		await page.keyboard.press("ArrowLeft");
+		await expect(mirrored.getByRole("radio", { checked: true })).not.toHaveAttribute("aria-label", start!);
+	});
+
 	test("the account menu opens in place beside its button", async ({ page }) => {
 		await chooseDirection(page, "rtl");
 		await openInbox(page);

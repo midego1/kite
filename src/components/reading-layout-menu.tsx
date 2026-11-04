@@ -3,8 +3,13 @@
 import clsx from "clsx";
 import { Columns2, List, Rows2 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import type { KeyboardEvent } from "react";
 import { useInterfaceDirection } from "@/components/interface-direction-provider";
-import { AUTOMATIC_DIRECTION_HINT, INTERFACE_DIRECTION_OPTIONS } from "@/components/interface-direction-utils";
+import {
+	AUTOMATIC_DIRECTION_HINT,
+	INTERFACE_DIRECTION_OPTIONS,
+	logicalArrowKey,
+} from "@/components/interface-direction-utils";
 import { MESSAGE_DENSITY_OPTIONS, readingPaneOptions } from "@/components/messages/reading-layout-utils";
 import {
 	useInterfaceDirectionPreference,
@@ -17,12 +22,24 @@ import type { ReadingLayoutSegmentProps } from "./reading-layout-menu-types";
 
 const READING_PANE_ICONS: Record<ReadingPaneMode, LucideIcon> = { none: List, right: Columns2, below: Rows2 };
 
+/** Arrow keys move through a radio group and choose as they go; the group is one Tab stop. */
+function moveWithArrows(event: KeyboardEvent<HTMLDivElement>) {
+	const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[logicalArrowKey(event.key)];
+	if (!step) return;
+	event.preventDefault();
+	const radios = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('[role="radio"]'));
+	const next = radios[(radios.indexOf(event.target as HTMLElement) + step + radios.length) % radios.length];
+	next?.focus();
+	next?.click();
+}
+
 function SegmentButton({ checked, label, description, onSelect, children }: ReadingLayoutSegmentProps) {
 	return (
 		<button
 			type="button"
 			role="radio"
 			aria-checked={checked}
+			tabIndex={checked ? 0 : -1}
 			aria-label={label}
 			title={description}
 			onClick={onSelect}
@@ -56,6 +73,7 @@ export function ReadingLayoutMenu() {
 					role="radiogroup"
 					aria-labelledby="reading-pane-menu-label"
 					className="flex gap-1 rounded-xl bg-neutral-100 p-1"
+					onKeyDown={moveWithArrows}
 				>
 					{readingPaneOptions(rtl).map((option) => {
 						const Icon = READING_PANE_ICONS[option.value];
@@ -85,6 +103,7 @@ export function ReadingLayoutMenu() {
 					role="radiogroup"
 					aria-labelledby="density-menu-label"
 					className="flex gap-1 rounded-xl bg-neutral-100 p-1"
+					onKeyDown={moveWithArrows}
 				>
 					{MESSAGE_DENSITY_OPTIONS.map((option) => (
 						<SegmentButton
@@ -110,6 +129,7 @@ export function ReadingLayoutMenu() {
 					role="radiogroup"
 					aria-labelledby="interface-direction-menu-label"
 					className="flex gap-1 rounded-xl bg-neutral-100 p-1"
+					onKeyDown={moveWithArrows}
 				>
 					{INTERFACE_DIRECTION_OPTIONS.map((option) => (
 						<SegmentButton

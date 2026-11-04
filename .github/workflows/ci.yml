@@ -67,7 +67,10 @@ jobs:
     # queued (its runs-on is resolved): set it, cancel the waiting run, then rerun or
     # push. A job paused by a plan limit does not restart by itself. That a rerun
     # re-reads the variable is untested until first real use.
-    runs-on: ${{ (vars.BOAT_CI != 'off' && contains(fromJSON('["midego1"]'), github.actor) && github.triggering_actor == github.actor && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'pull_request' && github.event.pull_request.user.login == github.actor))) && 'boat-large' || 'ubuntu-latest' }}
+    # Runner size: the repository variable BOAT_RUNNER (default boat-large when
+    # unset). Only boat-small, boat and boat-large fit the plan; a typo makes Boat
+    # refuse the job.
+    runs-on: ${{ (vars.BOAT_CI != 'off' && contains(fromJSON('["midego1"]'), github.actor) && github.triggering_actor == github.actor && ((github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'pull_request' && github.event.pull_request.user.login == github.actor))) && (vars.BOAT_RUNNER || 'boat-large') || 'ubuntu-latest' }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -115,11 +118,9 @@ jobs:
     # Public repositories get standard runners for free; the job count is the only
     # knob, kept low enough that a pull request's jobs fit the account's concurrent-job limit.
     name: E2E (shard ${{ matrix.shard }} of 10)
-    # Measurement only: pull requests labelled boat-e2e run the shards on boat-large
-    # under the same actor rules and kill switch as Mission validation, to compare
-    # with about 500 s per job on ubuntu-latest. Without the label they stay on
-    # ubuntu-latest (ten shards would use ten of the day's 200 starts).
-    runs-on: ${{ (vars.BOAT_CI != 'off' && contains(fromJSON('["midego1"]'), github.actor) && github.triggering_actor == github.actor && github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'boat-e2e') && github.event.pull_request.user.login == github.actor) && 'boat-large' || 'ubuntu-latest' }}
+    # Stays on ubuntu-latest: measured on boat-large the shards took 718-896 s against
+    # 586-804 s here, because a slice mostly waits and does not use the CPU. Do not retry.
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
       fail-fast: false

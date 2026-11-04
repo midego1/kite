@@ -48,14 +48,20 @@ function trapTab(event: KeyboardEvent, root: HTMLElement | null, overlay: boolea
 	}
 }
 
-/** After a move the focus follows the open email's row (or its article on a phone) when the element that had it is gone. */
+/**
+ * After a move the focus follows the open email's row (or its article on a phone) when the element that had it is
+ * gone; with neither on screen (a phone showing an empty list) it lands on the search field.
+ */
 function settleFocus(root: HTMLElement | null) {
 	window.requestAnimationFrame(() => {
 		const active = document.activeElement;
 		if (active && active !== document.body && active.isConnected && !active.closest('[data-open="false"]')) return;
 		const article = root?.querySelector<HTMLElement>('article[data-open="true"]');
 		const row = root?.querySelector<HTMLElement>('[aria-current="true"]');
-		(row && row.getClientRects().length > 0 ? row : article)?.focus();
+		const shown = (element: HTMLElement | null | undefined) =>
+			element && element.getClientRects().length > 0 ? element : null;
+		const target = shown(row) ?? shown(article) ?? root?.querySelector<HTMLElement>('input[type="search"]');
+		target?.focus();
 	});
 }
 
@@ -113,7 +119,11 @@ export function HomeMailbox({ appName, icon, emails, bodies, chrome, footer, hea
 	useLayoutEffect(() => {
 		const apply = () => {
 			origin.current = "hash";
-			rawDispatch({ type: "open", id: emailFromHash(window.location.hash, emails) });
+			const named = emailFromHash(window.location.hash, emails);
+			// Back onto a denied example names mail that is gone: show Welcome and rewrite the URL to say so.
+			const id = stateRef.current.denied.includes(named) ? WELCOME_ID : named;
+			if (id !== named) window.history.replaceState(null, "", `#${id}`);
+			rawDispatch({ type: "open", id });
 		};
 		if (window.location.hash) apply();
 		window.addEventListener("hashchange", apply);

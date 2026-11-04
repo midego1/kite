@@ -1,5 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
-import { openMessage } from "./support/helpers";
+import { STORAGE_STATE, SUPPORT_ADDRESS } from "./support/constants";
+import { apiContext, deliverInbound, openMessage, uniqueToken } from "./support/helpers";
+import { restoreModules, setModuleState } from "./support/modules";
+import { expectEveryModuleOn } from "./support/module-spec";
 
 // The phone tab bar: Mail, the modules that are on, and More (the full mail menu), in the space the
 // section pill used to own. It folds away for the reader and Compose and returns from md up to the sidebar.
@@ -16,7 +19,7 @@ test.describe("on a phone", () => {
 		const bar = primaryNav(page);
 		await expect(bar).toBeVisible();
 		await expect(bar.getByRole("link", { name: /^Mail/ })).toHaveAttribute("aria-current", "page");
-		for (const label of ["Calendar", "Drive", "Money"]) {
+		for (const label of ["Calendar", "Drive", "Money Watch"]) {
 			await expect(bar.getByRole("link", { name: label, exact: true })).toBeVisible();
 		}
 
@@ -28,9 +31,9 @@ test.describe("on a phone", () => {
 		await expect(page).toHaveURL(/\/drive$/);
 		await expect(bar.getByRole("link", { name: "Drive", exact: true })).toHaveAttribute("aria-current", "page");
 
-		await bar.getByRole("link", { name: "Money", exact: true }).click();
+		await bar.getByRole("link", { name: "Money Watch", exact: true }).click();
 		await expect(page).toHaveURL(/\/finance$/);
-		await expect(bar.getByRole("link", { name: "Money", exact: true })).toHaveAttribute("aria-current", "page");
+		await expect(bar.getByRole("link", { name: "Money Watch", exact: true })).toHaveAttribute("aria-current", "page");
 
 		await bar.getByRole("button", { name: "More navigation" }).click();
 		const menu = page.getByRole("dialog", { name: "Menu" });
@@ -38,6 +41,34 @@ test.describe("on a phone", () => {
 		await expect(menu.getByRole("link", { name: /^Inbox\b/ })).toBeVisible();
 		await page.keyboard.press("Escape");
 		await expect(menu).toHaveCount(0);
+	});
+
+	test("a module that is off has no tab, and its slot goes to a core folder", async ({ page }) => {
+		const api = await apiContext(STORAGE_STATE);
+		try {
+			await setModuleState(api, { modules: { drive: false } });
+			await page.goto("/inbox");
+			const bar = primaryNav(page);
+			await expect(bar).toBeVisible();
+			await expect(bar.getByRole("link", { name: "Drive", exact: true })).toHaveCount(0);
+			for (const label of ["Mail", "Calendar", "Money Watch", "Starred"]) {
+				await expect(bar.getByRole("link", { name: new RegExp(`^${label}`) })).toBeVisible();
+			}
+			await expect(bar.getByRole("button", { name: "More navigation" })).toBeVisible();
+		} finally {
+			await restoreModules(api);
+			await api.dispose();
+		}
+	});
+
+	test("the Money Watch tab shows a short label that is not clipped at 320 px", async ({ page }) => {
+		await page.setViewportSize({ width: 320, height: 640 });
+		await page.goto("/inbox");
+		const tab = primaryNav(page).getByRole("link", { name: "Money Watch", exact: true });
+		await expect(tab).toBeVisible();
+		await expect(tab).toContainText("Money");
+		const clipped = await tab.locator("span.truncate").evaluate((label) => label.scrollWidth > label.clientWidth);
+		expect(clipped).toBe(false);
 	});
 
 	test("opening a message and Compose hide the bar, and Back brings it back", async ({ page }) => {
@@ -94,4 +125,50 @@ test("the bar folds away at the sidebar breakpoint and returns when the window n
 	await expect(primaryNav(page)).toBeVisible();
 	await page.setViewportSize({ width: 1024, height: 800 });
 	await expect(primaryNav(page)).toHaveCount(0);
+});
+
+test.describe("on an unfolded screen with the list beside the reader", () => {
+	test.use({ viewport: { width: 720, height: 900 }, hasTouch: true });
+
+	let subject: string;
+
+	test.beforeAll(async () => {
+		const api = await apiContext(STORAGE_STATE);
+		subject = `Tab bar pane ${uniqueToken()}`;
+		await deliverInbound(api, {
+			from: `"Tab Sender" <tabs@outside.test>`,
+			to: SUPPORT_ADDRESS,
+			subject,
+			text: "Read beside the list.",
+		});
+		await api.dispose();
+	});
+
+	test("the bar stays while a message is open and goes once the list is hidden", async ({ page }) => {
+		await page.goto("/inbox");
+		await expect(page.locator("[data-reading-pane]")).toHaveAttribute("data-reading-pane", "right");
+		await expect(primaryNav(page)).toBeVisible();
+
+		await openMessage(page, subject);
+		const list = page.getByRole("main").locator("[data-density]");
+		await expect(list).toBeVisible();
+		await expect(primaryNav(page)).toBeVisible();
+
+		// The reader alone is the full-screen view again, so the bar steps aside as it does on a phone.
+		await page.getByRole("button", { name: "Hide email list" }).click();
+		await expect(list).toBeHidden();
+		await expect(primaryNav(page)).toHaveCount(0);
+		await page.getByRole("button", { name: "Show email list" }).click();
+		await expect(primaryNav(page)).toBeVisible();
+	});
+
+	test("Compose still hides the bar", async ({ page }) => {
+		await page.goto("/compose");
+		await expect(primaryNav(page)).toHaveCount(0);
+	});
+});
+
+// Fails this file when one of its tests left a module off or a user restricted.
+test.afterAll(async () => {
+	await expectEveryModuleOn();
 });

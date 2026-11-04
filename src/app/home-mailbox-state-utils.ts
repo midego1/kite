@@ -88,7 +88,8 @@ export function createMailboxState(): HomeMailboxState {
 
 function open(state: HomeMailboxState, emails: HomeEmailMeta[], id: string): HomeMailboxState {
 	const email = emails.find((candidate) => candidate.id === id);
-	if (!email) return state;
+	// A denied example is gone from the mailbox: Back, Forward or a typed hash must not bring it back.
+	if (!email || state.denied.includes(id)) return state;
 	return {
 		...state,
 		// Opening from the search or a link lands in the email's own folder, so the list and the reader agree
@@ -170,7 +171,8 @@ const HANDLERS: { [T in HomeMailboxAction["type"]]: Handler<T> } = {
 		const next = rows[at + 1] ?? rows[at - 1];
 		const denied = { ...decided, denied: [...state.denied, action.id] };
 		if (state.openId !== action.id) return denied;
-		return { ...denied, openId: next?.id ?? null, pane: "list" };
+		// With no neighbour left (the only search result, the only starred email) the reader shows Welcome, not a blank pane.
+		return { ...denied, openId: next?.id ?? WELCOME_ID, pane: "list" };
 	},
 	send: (state) => ({ ...state, composer: null, toast: { text: "Demo: nothing sent", n: (state.toast?.n ?? 0) + 1 } }),
 	toast: (state, action) => ({ ...state, toast: { text: action.text, n: (state.toast?.n ?? 0) + 1 } }),

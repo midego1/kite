@@ -18,19 +18,21 @@ import { cn } from "@/lib/utils";
 import { useMessageCounts } from "@/hooks/use-message-counts";
 import { useOpenSuggestions } from "@/hooks/use-open-suggestions";
 import { useCompose } from "./compose/compose-context";
+import { useListBesideReader } from "./messages/list-beside-reader";
 import { useSelectedMailbox } from "./mailbox-provider";
 import { useModules } from "./modules/modules-context";
 import { useSidebar } from "./sidebar-state";
 import { hidesMobileTabBar, mobileActiveTabId, mobilePrimaryTabIds, type MobileTabId } from "./mobile-tab-bar-utils";
 
-type TabMeta = { label: string; icon: LucideIcon; href?: string };
+/** `name` is the accessible name where the label is shortened to fit a 320 px tab ("Money Watch" would be cut off). */
+type TabMeta = { label: string; name?: string; icon: LucideIcon; href?: string };
 
 const TAB_META: Record<MobileTabId, TabMeta> = {
 	mail: { label: "Mail", icon: Inbox, href: "/inbox" },
 	"for-you": { label: "For you", icon: Sparkles, href: "/for-you" },
 	calendar: { label: "Calendar", icon: CalendarDays, href: "/calendar" },
 	drive: { label: "Drive", icon: HardDrive, href: "/drive" },
-	finance: { label: "Money", icon: WalletCards, href: "/finance" },
+	finance: { label: "Money", name: "Money Watch", icon: WalletCards, href: "/finance" },
 	starred: { label: "Starred", icon: Star, href: "/starred" },
 	sent: { label: "Sent", icon: Send, href: "/sent" },
 	drafts: { label: "Drafts", icon: FileText, href: "/drafts" },
@@ -40,7 +42,7 @@ const TAB_META: Record<MobileTabId, TabMeta> = {
 /**
  * The phone's primary navigation, as a tab bar under the page: Mail, the modules that are on (Calendar,
  * Drive, Money), and More, which opens the full mail menu. A folder's open message and the Compose page
- * hide it, because they keep their own Back button and need the room. From `md` up the sidebar takes over.
+ * hide it, because they keep their own Back button and need the room (unless an unfolded screen still shows the list beside the reader). From `md` up the sidebar takes over.
  */
 export function MobileTabBar() {
 	const pathname = usePathname();
@@ -50,8 +52,9 @@ export function MobileTabBar() {
 	const { counts } = useMessageCounts(mailboxScope, mobile);
 	const { loaded: suggestionsLoaded, total: suggestions } = useOpenSuggestions();
 	const { open: composerOpen, placement: composerPlacement } = useCompose();
+	const listBesideReader = useListBesideReader();
 
-	if (hidesMobileTabBar(pathname)) return null;
+	if (hidesMobileTabBar(pathname, listBesideReader)) return null;
 	// The floating composer opens without a route change and would cover the bar, so the bar steps aside.
 	if (composerOpen && composerPlacement === "popup") return null;
 
@@ -119,7 +122,13 @@ export function MobileTabBar() {
 					}
 
 					return (
-						<Link key={id} href={meta.href!} aria-current={current ? "page" : undefined} className={className}>
+						<Link
+							key={id}
+							href={meta.href!}
+							aria-label={meta.name}
+							aria-current={current ? "page" : undefined}
+							className={className}
+						>
 							{content}
 						</Link>
 					);

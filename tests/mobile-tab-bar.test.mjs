@@ -72,3 +72,11 @@ test("the reader and Compose hide the bar; folder and module pages keep it", () 
 	assert.equal(hidesMobileTabBar("/drive"), false);
 	assert.equal(hidesMobileTabBar("/finance"), false);
 });
+
+test("a message route keeps the bar while the list is still beside the reader, Compose never does", () => {
+	assert.equal(hidesMobileTabBar("/inbox/message-1", true), false);
+	assert.equal(hidesMobileTabBar("/starred/message-1", true), false);
+	assert.equal(hidesMobileTabBar("/folders/folder-1/message-1", true), false);
+	assert.equal(hidesMobileTabBar("/compose", true), true);
+	assert.equal(hidesMobileTabBar("/inbox/message-1", false), true);
+});

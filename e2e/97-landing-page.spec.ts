@@ -278,6 +278,42 @@ test.describe("visitor", () => {
 		await context.close();
 	});
 
+	test("Copy prompt goes back to its label after a few seconds", async ({ browser }) => {
+		const context = await browser.newContext({ storageState: { cookies: [], origins: [] } });
+		await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin: new URL(BASE_URL).origin });
+		const page = await context.newPage();
+		await page.clock.install();
+		await visit(page, "/#deploy");
+		const email = openEmail(page);
+		await email.getByRole("button", { name: "Copy prompt" }).click();
+		await expect(email.getByRole("button", { name: "Copied" })).toBeVisible();
+		await page.clock.runFor(3500);
+		await expect(email.getByRole("button", { name: "Copy prompt" })).toBeVisible();
+		await expect(email.getByRole("button", { name: "Copied" })).toHaveCount(0);
+		await context.close();
+	});
+
+	test("Copy prompt says so when copying fails, then goes back to its label", async ({ browser }) => {
+		const context = await browser.newContext({ storageState: { cookies: [], origins: [] } });
+		await context.addInitScript(() => {
+			Object.defineProperty(navigator, "clipboard", {
+				value: { writeText: () => Promise.reject(new Error("blocked")) },
+				configurable: true,
+			});
+			document.execCommand = () => false;
+		});
+		const page = await context.newPage();
+		await page.clock.install();
+		await visit(page, "/#deploy");
+		const email = openEmail(page);
+		await email.getByRole("button", { name: "Copy prompt" }).click();
+		await expect(email.getByRole("button", { name: "Could not copy" })).toBeVisible();
+		await expect(email.getByRole("button", { name: "Copied" })).toHaveCount(0);
+		await page.clock.runFor(3500);
+		await expect(email.getByRole("button", { name: "Copy prompt" })).toBeVisible();
+		await context.close();
+	});
+
 	test("deep links open the right email, and Back moves between emails", async ({ page }) => {
 		for (const [hash, id, folder] of [
 			["deploy", "deploy", "Deploy"],
@@ -939,35 +975,83 @@ test.describe("visitor", () => {
 	test("Deny removes the example from the Inbox, and the toast makes no claim about where its mail goes", async ({
 		page,
 	}) => {
-		await visit(page, "/#sample-api-question");
+		// The next email is read first, so marking it read cannot move the count: only the denied mail can.
+		await visit(page, "/#sample-invoice");
 		const inbox = page.getByRole("region", { name: "Inbox" });
-		const unreadBefore = await sidebar(page)
-			.getByRole("button", { name: /^Inbox/ })
-			.innerText();
+		await inbox.getByRole("button", { name: /A question about a shared mailing/ }).click();
+		await expect(openEmail(page)).toHaveAttribute("id", "sample-api-question");
+		const count = () =>
+			sidebar(page)
+				.getByRole("button", { name: /^Inbox/ })
+				.innerText();
+		const unreadBefore = await count();
+		const rowsBefore = await inbox.getByRole("listitem").count();
 		await openEmail(page).getByRole("button", { name: "Deny" }).click();
 		await expect(page.getByRole("status")).toContainText("Denied. Ava Lindqvist can no longer reach your Inbox.");
 		await expect(page.getByRole("status")).not.toContainText(/Trash|Spam/);
-		// The row is gone from the list and from the count, the reader moves to its neighbour, and the focus is not lost.
+		// The row is gone from the list, the reader moves to its neighbour, and the focus is not lost.
 		await expect(inbox.getByRole("button", { name: /A question about a shared mailing/ })).toHaveCount(0);
+		await expect(inbox.getByRole("listitem")).toHaveCount(rowsBefore - 1);
 		await expect(openEmail(page)).toHaveAttribute("id", "sample-invoice");
-		expect(
-			await sidebar(page)
-				.getByRole("button", { name: /^Inbox/ })
-				.innerText(),
-		).not.toBe(unreadBefore);
+		expect(await count()).toBe(unreadBefore);
 		await expect(page).toHaveURL(/#sample-invoice$/);
 		expect(await page.evaluate(() => document.activeElement === document.body)).toBe(false);
 		await page.getByLabel("Search mail").fill("shared mailing");
 		await expect(page.getByText('No mail matches "shared mailing".')).toBeVisible();
 	});
 
+	test("Back after Deny does not reopen the denied example", async ({ page }) => {
+		await visit(page, "/#sample-api-question");
+		await openEmail(page).getByRole("button", { name: "Deny" }).click();
+		await expect(openEmail(page)).toHaveAttribute("id", "sample-invoice");
+		await page.goBack();
+		await expect(page).toHaveURL(/#welcome$/);
+		await expect(openEmail(page)).toHaveAttribute("id", "welcome");
+		await expect(
+			page.getByRole("region", { name: "Inbox" }).getByRole("button", { name: /A question about a shared mailing/ }),
+		).toHaveCount(0);
+		await page.goForward();
+		await expect(openEmail(page)).toHaveAttribute("id", "sample-invoice");
+	});
+
+	test("Deny on the only search result or the only starred email shows Welcome and keeps the focus", async ({
+		page,
+	}) => {
+		await visit(page, "/#sample-api-question");
+		await page.getByLabel("Search mail").fill("shared mailing");
+		await page
+			.getByRole("region", { name: "Inbox" })
+			.getByRole("button", { name: /A question about a shared mailing/ })
+			.click();
+		await openEmail(page).getByRole("button", { name: "Deny" }).click();
+		await expect(page.getByText('No mail matches "shared mailing".')).toBeVisible();
+		await expect(openEmail(page)).toHaveAttribute("id", "welcome");
+		await expect.poll(() => page.evaluate(() => document.activeElement?.id)).toBe("welcome");
+
+		await visit(page, "/#sample-api-question");
+		await openEmail(page).getByRole("button", { name: "Star" }).click();
+		await sidebar(page)
+			.getByRole("button", { name: /^Starred/ })
+			.click();
+		await page
+			.getByRole("region", { name: "Starred" })
+			.getByRole("button", { name: /A question about a shared mailing/ })
+			.click();
+		await openEmail(page).getByRole("button", { name: "Deny" }).click();
+		await expect(page.getByRole("region", { name: "Starred" }).getByText("Nothing here.")).toBeVisible();
+		await expect(openEmail(page)).toHaveAttribute("id", "welcome");
+		await expect.poll(() => page.evaluate(() => document.activeElement?.id)).toBe("welcome");
+	});
+
 	test("Dismiss and Approve keep the focus in the mailbox", async ({ page }) => {
+		// The focus settles on the next frame, so it is polled rather than read straight after the click.
+		const focusKept = () => page.evaluate(() => document.activeElement !== document.body);
 		await visit(page, "/#sample-launch-plan");
 		await openEmail(page).getByRole("button", { name: "Dismiss" }).click();
-		expect(await page.evaluate(() => document.activeElement === document.body)).toBe(false);
+		await expect.poll(focusKept).toBe(true);
 		await visit(page, "/#sample-api-question");
 		await openEmail(page).getByRole("button", { name: "Approve" }).click();
-		expect(await page.evaluate(() => document.activeElement === document.body)).toBe(false);
+		await expect.poll(focusKept).toBe(true);
 	});
 
 	test("the folder menu below lg takes the focus, holds it and gives it back", async ({ page }) => {

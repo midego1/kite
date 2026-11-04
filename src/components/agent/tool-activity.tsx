@@ -115,11 +115,11 @@ export function AgentToolActivity({
 				<span className="truncate flex-1 min-w-0">{display.label}</span>
 				<ChevronLeft
 					size={13}
-					className="shrink-0 text-neutral-400 transition-transform group-open/tool:-rotate-90"
+					className="shrink-0 text-neutral-400 transition-transform group-open/tool:-rotate-90 rtl:-scale-x-100 rtl:group-open/tool:rotate-90"
 					aria-hidden="true"
 				/>
 			</summary>
-			<div className="mt-1.5 space-y-2 pl-[18px] text-neutral-600">
+			<div className="mt-1.5 space-y-2 ps-[18px] text-neutral-600">
 				<p>{display.description}</p>
 				{result && <AgentToolResult result={result} detail={detail} />}
 				{!result && item.content && <p className="whitespace-pre-wrap break-words">{item.content}</p>}
@@ -184,7 +184,7 @@ function ApprovedAction({ item, proposal }: { item: AgentMessage; proposal: Agen
 	}
 	return (
 		<div className="flex flex-wrap items-center justify-end gap-3" data-agent-action-state="approved">
-			<span className="mr-auto text-neutral-600">{approvedActionText(proposal)}</span>
+			<span className="me-auto text-neutral-600">{approvedActionText(proposal)}</span>
 			{error && (
 				<span role="alert" className="text-red-600">
 					{error}

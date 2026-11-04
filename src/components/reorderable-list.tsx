@@ -207,7 +207,7 @@ export function ReorderableList({ lists, storageKey, enabled = true }: Reorderab
 				createPortal(
 					<div
 						aria-hidden="true"
-						className="pointer-events-none fixed z-[301] cursor-grabbing overflow-hidden rounded-r-full bg-white opacity-90 shadow-lg ring-1 ring-neutral-200"
+						className="pointer-events-none fixed z-[301] cursor-grabbing overflow-hidden rounded-e-full bg-white opacity-90 shadow-lg ring-1 ring-neutral-200"
 						style={{ left: drag.left, width: drag.width, top: drag.pointerY - drag.offsetY }}
 					>
 						{nodes.get(drag.id)}

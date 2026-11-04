@@ -105,11 +105,11 @@ export function HomeSidebar({ state, emails, dispatch, mailbox, footer, menuOnly
 				data-home-pane="folders"
 				className={`${
 					state.menuOpen
-						? `absolute inset-y-0 left-0 z-30 flex w-64 max-w-[85%] shadow-2xl ${column ? "split:lg:static split:lg:w-auto split:lg:max-w-none split:lg:shadow-none" : ""}`
+						? `absolute inset-y-0 start-0 z-30 flex w-64 max-w-[85%] shadow-2xl ${column ? "split:lg:static split:lg:w-auto split:lg:max-w-none split:lg:shadow-none" : ""}`
 						: column
 							? "hidden split:lg:flex"
 							: "hidden"
-				} home-scroll min-h-0 min-w-0 flex-col gap-1 overflow-y-auto border-r border-neutral-200 bg-[#f6f8fc] px-3 py-4`}
+				} home-scroll min-h-0 min-w-0 flex-col gap-1 overflow-y-auto border-e border-neutral-200 bg-[#f6f8fc] px-3 py-4`}
 			>
 				<div className="mb-1 flex items-start justify-between gap-2 px-1">
 					<div className="min-w-0">

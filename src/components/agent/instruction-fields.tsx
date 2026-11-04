@@ -34,7 +34,7 @@ export function InstructionFields({
 					<details key={field.key} open={field.key === "general"} className="group px-3 py-2">
 						<summary className="cursor-pointer text-sm font-medium text-neutral-800">
 							{field.label}
-							{values[field.key].trim() && <span className="ml-2 text-xs font-normal text-blue-700">Set</span>}
+							{values[field.key].trim() && <span className="ms-2 text-xs font-normal text-blue-700">Set</span>}
 						</summary>
 						<label htmlFor={id} className="sr-only">
 							{field.label}

@@ -32,7 +32,7 @@ function CollapseButton() {
 					minimal ? RAIL_ITEM_CLASS : "h-8 w-8 rounded-lg",
 				)}
 			>
-				<PanelLeft size={minimal ? RAIL_ICON_SIZE : 16} />
+				<PanelLeft size={minimal ? RAIL_ICON_SIZE : 16} className="rtl:-scale-x-100" />
 			</button>
 		</Tooltip>
 	);
@@ -88,7 +88,7 @@ export function SidebarAccounts() {
 					>
 						<MailboxAvatar mailbox={mailbox} className="h-7 w-7 rounded-md text-xs" />
 						{active && (
-							<span className="absolute -bottom-1 -right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-blue-500 ring-2 ring-[var(--background)]">
+							<span className="absolute -bottom-1 -end-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-blue-500 ring-2 ring-[var(--background)]">
 								<Check className="h-2.5 w-2.5 text-[#fff]" strokeWidth={3} />
 							</span>
 						)}

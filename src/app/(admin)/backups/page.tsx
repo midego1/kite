@@ -270,7 +270,7 @@ export default function BackupsPage() {
 								type="button"
 								size="sm"
 								variant="outline"
-								className="ml-auto border-amber-300 bg-white/70"
+								className="ms-auto border-amber-300 bg-white/70"
 								disabled={backups.isFetching}
 								onClick={() => void backups.refetch()}
 							>
@@ -418,7 +418,7 @@ export default function BackupsPage() {
 												else setSettings({ ...settings, retentionDays: lastSavedSettings()?.retentionDays ?? 30 });
 											}}
 										/>
-										<span className="text-sm text-neutral-500 absolute z-10 right-6">days</span>
+										<span className="text-sm text-neutral-500 absolute z-10 end-6">days</span>
 									</div>
 								</div>
 							</div>

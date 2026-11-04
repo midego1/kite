@@ -403,7 +403,7 @@ export default function DomainsPage() {
 										<p>{(create.error as Error).message}</p>
 										<div className={skipDns ? "hidden" : "space-y-2"}>
 											<p className="font-medium">Check that your Cloudflare API token has these permissions:</p>
-											<ul className="list-disc space-y-1 pl-5">
+											<ul className="list-disc space-y-1 ps-5">
 												<li>
 													All accounts — DNS Settings:Edit, Email Routing Addresses:Edit; Email Sending:Edit for
 													outbound mail

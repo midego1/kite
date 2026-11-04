@@ -252,7 +252,7 @@ export function ConversationMessageCard({
 							void runSingleMessageAction(message.id, "read").catch(() => setLocallyRead(false));
 						}}
 						aria-expanded={expanded}
-						className="flex min-w-0 flex-1 basis-40 items-center gap-3 text-left cursor-pointer"
+						className="flex min-w-0 flex-1 basis-40 items-center gap-3 text-start cursor-pointer"
 					>
 						<ContactAvatar
 							mailboxId={mailboxId}
@@ -271,7 +271,7 @@ export function ConversationMessageCard({
 									)}
 								>
 									<span dir="auto">{sender}</span>
-									{expanded && <span className="text-xs ml-1 opacity-50 font-normal">&lt;{senderEmail}&gt;</span>}
+									{expanded && <span className="text-xs ms-1 opacity-50 font-normal">&lt;{senderEmail}&gt;</span>}
 								</span>
 								{expanded && recipients && (
 									<span className="text-xs font-normal text-neutral-500">to {recipients}</span>
@@ -291,7 +291,7 @@ export function ConversationMessageCard({
 						</span>
 					</button>
 					<span
-						className={clsx(!locallyRead ? "font-semibold" : "", "flex shrink-0 items-center gap-2 text-xs mr-2 mt-2")}
+						className={clsx(!locallyRead ? "font-semibold" : "", "flex shrink-0 items-center gap-2 text-xs me-2 mt-2")}
 					>
 						<ViaAccountChip message={message} filter className="font-medium" />
 						{attachments.length > 0 && (

@@ -93,7 +93,7 @@ export function MissingRates({ report }: { report: UsageReport }) {
 								{formatUsageProvider(item.provider)} · {formatTokenCount(item.requests)} requests without a cost
 							</p>
 						</div>
-						<div className="text-right text-xs">
+						<div className="text-end text-xs">
 							{item.rate ? (
 								<p className="text-neutral-600">
 									Estimated at {formatRate(item.rate)} (
@@ -242,8 +242,8 @@ export function UsageOutcomes({ report }: { report: UsageReport }) {
 							<span className={cn("h-2.5 w-2.5 rounded-sm", STATUS_BAR[item.status])} aria-hidden="true" />
 							{STATUS_LABELS[item.status]}
 						</dt>
-						<dd className="text-right tabular-nums text-neutral-900">{formatTokenCount(item.requests)}</dd>
-						<dd className="text-right tabular-nums text-neutral-500">{formatPercent(item.requests, total)}</dd>
+						<dd className="text-end tabular-nums text-neutral-900">{formatTokenCount(item.requests)}</dd>
+						<dd className="text-end tabular-nums text-neutral-500">{formatPercent(item.requests, total)}</dd>
 					</div>
 				))}
 			</dl>

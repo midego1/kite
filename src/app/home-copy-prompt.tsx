@@ -68,7 +68,7 @@ export function HomeCopyPrompt({ text }: { text: string }) {
 			</div>
 			<pre
 				ref={preRef}
-				className={`${MONO} max-w-full overflow-x-auto whitespace-pre-wrap rounded-lg border border-neutral-200 bg-neutral-100 p-4 text-left leading-5 text-neutral-700`}
+				className={`${MONO} max-w-full overflow-x-auto whitespace-pre-wrap rounded-lg border border-neutral-200 bg-neutral-100 p-4 text-start leading-5 text-neutral-700`}
 			>
 				{text}
 			</pre>

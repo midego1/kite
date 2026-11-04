@@ -305,7 +305,7 @@ export function RichTextEditor({
 						</button>
 						{showQuoted && (
 							<div
-								className="email-body mt-2 max-w-none border-l-2 border-neutral-200 pl-3 text-sm text-neutral-600"
+								className="email-body mt-2 max-w-none border-s-2 border-neutral-200 ps-3 text-sm text-neutral-600"
 								dangerouslySetInnerHTML={{ __html: quotedHtml }}
 							/>
 						)}
@@ -388,7 +388,7 @@ export function RichTextEditor({
 							event.stopPropagation();
 							setLinkOpen(false);
 						}}
-						className="absolute bottom-full left-2 z-10 mb-1 flex items-center gap-2 rounded-lg border border-neutral-200 bg-white p-2 shadow-lg"
+						className="absolute bottom-full start-2 z-10 mb-1 flex items-center gap-2 rounded-lg border border-neutral-200 bg-white p-2 shadow-lg"
 					>
 						<input
 							autoFocus

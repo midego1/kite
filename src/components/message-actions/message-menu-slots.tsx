@@ -37,7 +37,7 @@ export function useMessageMenuSlots(
 						<button
 							key={slot.id}
 							type="button"
-							className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-100"
+							className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm text-neutral-700 hover:bg-neutral-100"
 							onClick={() => {
 								closeMenu();
 								setOpenOverlay(slot.id);

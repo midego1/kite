@@ -18,7 +18,7 @@ export function DriveBreadcrumbs({ title, rootHref, path }: { title: string; roo
 			</Link>
 			{path.map((crumb, index) => (
 				<span key={crumb.id} className="flex min-w-0 items-center gap-1">
-					<ChevronRight size={16} className="shrink-0 text-neutral-400" aria-hidden="true" />
+					<ChevronRight size={16} className="shrink-0 text-neutral-400 rtl:-scale-x-100" aria-hidden="true" />
 					{index === path.length - 1 ? (
 						<h1 className="truncate px-1.5 py-0.5 font-medium text-neutral-900">{crumb.name}</h1>
 					) : (
@@ -111,7 +111,7 @@ export function DriveBulkBar({
 			>
 				<X size={16} />
 			</button>
-			<span className="pr-2 font-medium">{selected.length} selected</span>
+			<span className="pe-2 font-medium">{selected.length} selected</span>
 			{inTrash ? (
 				<>
 					<BulkButton icon={RotateCcw} label="Restore" onClick={handlers.onRestore} />

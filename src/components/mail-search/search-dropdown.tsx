@@ -33,7 +33,7 @@ export function SearchDropdown({ sections, activeKey, onPick }: SearchDropdownPr
 								onMouseDown={(event) => event.preventDefault()}
 								onClick={() => onPick(item)}
 								className={clsx(
-									"flex w-full flex-col rounded-lg px-3 py-2 text-left hover:bg-blue-50",
+									"flex w-full flex-col rounded-lg px-3 py-2 text-start hover:bg-blue-50",
 									key === activeKey && "bg-blue-50",
 								)}
 							>

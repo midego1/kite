@@ -142,7 +142,7 @@ export function SectionNav({ mode: modeProp }: { mode?: NavMode }) {
 							focusRing,
 						)}
 					>
-						<ArrowLeft className="h-4 w-4" />
+						<ArrowLeft className="h-4 w-4 rtl:-scale-x-100" />
 					</Link>
 				</Tooltip>
 				<h2 className="min-w-0 truncate text-base font-medium text-neutral-900">{title}</h2>

@@ -76,7 +76,7 @@ export const HomeReader = forwardRef<HTMLDivElement, ReaderProps>(function HomeR
 					onClick={() => dispatch({ type: "back" })}
 					className={`flex h-8 w-8 items-center justify-center rounded-lg bg-neutral-100 hover:bg-neutral-200 split:hidden ${FOCUS_RING}`}
 				>
-					<ArrowLeft className="h-4 w-4" aria-hidden="true" />
+					<ArrowLeft className="h-4 w-4 rtl:-scale-x-100" aria-hidden="true" />
 				</button>
 				<span className="hidden split:block" />
 				{current && (
@@ -101,7 +101,7 @@ export const HomeReader = forwardRef<HTMLDivElement, ReaderProps>(function HomeR
 							}
 							className={TOOL_BUTTON}
 						>
-							<CornerUpLeft className="h-4 w-4" aria-hidden="true" />
+							<CornerUpLeft className="h-4 w-4 rtl:-scale-x-100" aria-hidden="true" />
 							Reply
 						</button>
 					</span>
@@ -136,7 +136,7 @@ export const HomeReader = forwardRef<HTMLDivElement, ReaderProps>(function HomeR
 													aria-haspopup="dialog"
 													aria-expanded={shown}
 													onClick={(event) => onContact(chipPerson, event.currentTarget)}
-													className={`inline-flex cursor-pointer items-center gap-2 rounded-full border border-neutral-200 bg-white py-1 pl-1 pr-3 text-sm text-neutral-800 hover:bg-neutral-50 ${FOCUS_RING}`}
+													className={`inline-flex cursor-pointer items-center gap-2 rounded-full border border-neutral-200 bg-white py-1 ps-1 pe-3 text-sm text-neutral-800 hover:bg-neutral-50 ${FOCUS_RING}`}
 												>
 													<PersonAvatar person={chipPerson} icon={icon} size="sm" />
 													{chipPerson.name}
@@ -144,7 +144,7 @@ export const HomeReader = forwardRef<HTMLDivElement, ReaderProps>(function HomeR
 												{!shown && (
 													<span
 														role="tooltip"
-														className="pointer-events-none absolute left-0 top-full z-20 mt-1 hidden whitespace-nowrap rounded-md bg-neutral-900 px-2 py-1 text-xs text-white group-focus-within:block group-hover:block"
+														className="pointer-events-none absolute start-0 top-full z-20 mt-1 hidden whitespace-nowrap rounded-md bg-neutral-900 px-2 py-1 text-xs text-white group-focus-within:block group-hover:block"
 													>
 														{chipPerson.address}
 													</span>

@@ -23,7 +23,7 @@ function SectionTrail({ mode }: { mode: NavMode }) {
 					key={`${index}-${part}`}
 					className={index === trail.length - 1 ? "truncate font-medium text-neutral-900" : "text-neutral-500"}
 				>
-					{index > 0 && <span className="mr-1.5 text-neutral-300">/</span>}
+					{index > 0 && <span className="me-1.5 text-neutral-300">/</span>}
 					{part}
 				</span>
 			))}

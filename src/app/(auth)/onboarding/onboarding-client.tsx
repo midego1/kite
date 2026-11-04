@@ -135,7 +135,7 @@ export function OnboardingClient() {
 			footer={
 				<span className="inline-flex items-center gap-2 text-neutral-500">
 					Setup completes in the inbox
-					<ArrowRight className="h-4 w-4" />
+					<ArrowRight className="h-4 w-4 rtl:-scale-x-100" />
 				</span>
 			}
 		>

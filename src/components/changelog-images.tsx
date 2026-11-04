@@ -107,7 +107,7 @@ export function ChangelogLightbox({
 						}
 					}}
 				>
-					<DialogTitle className="pr-8 text-sm font-medium">{image.alt}</DialogTitle>
+					<DialogTitle className="pe-8 text-sm font-medium">{image.alt}</DialogTitle>
 					<DialogDescription className="sr-only">
 						{`Screenshot ${index + 1} of ${images.length}. Use the left and right arrow keys for the other screenshots.`}
 					</DialogDescription>
@@ -144,7 +144,7 @@ export function ChangelogLightbox({
 									aria-label="Previous image"
 									className="rounded-md p-1.5 text-neutral-700 hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
 								>
-									<ChevronLeft className="h-4 w-4" aria-hidden="true" />
+									<ChevronLeft className="h-4 w-4 rtl:-scale-x-100" aria-hidden="true" />
 								</button>
 								<span aria-hidden="true" className="min-w-10 text-center text-xs text-neutral-500">
 									{index + 1} / {images.length}
@@ -155,7 +155,7 @@ export function ChangelogLightbox({
 									aria-label="Next image"
 									className="rounded-md p-1.5 text-neutral-700 hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
 								>
-									<ChevronRight className="h-4 w-4" aria-hidden="true" />
+									<ChevronRight className="h-4 w-4 rtl:-scale-x-100" aria-hidden="true" />
 								</button>
 							</div>
 						)}

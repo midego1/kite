@@ -36,7 +36,7 @@ export function AttachmentRiskNotice({
 			<Icon className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
 			<div className="min-w-0 flex-1">
 				<p className="font-medium">{danger ? "This file can harm your computer." : "Be careful with this file."}</p>
-				<ul className="mt-1 list-disc space-y-0.5 pl-5">
+				<ul className="mt-1 list-disc space-y-0.5 ps-5">
 					{risk.reasons.map((reason) => (
 						<li key={reason} className="break-words">
 							{reason}

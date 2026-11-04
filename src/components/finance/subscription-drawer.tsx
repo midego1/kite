@@ -39,7 +39,7 @@ function Field({ label, value }: { label: string; value: string }) {
 	return (
 		<div className="flex justify-between gap-4 py-1.5 text-sm">
 			<dt className="text-neutral-500">{label}</dt>
-			<dd className="min-w-0 break-words text-right text-neutral-900">{value}</dd>
+			<dd className="min-w-0 break-words text-end text-neutral-900">{value}</dd>
 		</div>
 	);
 }
@@ -64,7 +64,7 @@ function DocumentEntry({
 				<div className="min-w-0">
 					<span className="font-medium text-neutral-900">{documentLabel(document.docType)}</span>
 					{paired && (
-						<span className="ml-2 rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">{paired}</span>
+						<span className="ms-2 rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">{paired}</span>
 					)}
 					<span className="block text-xs text-neutral-500">
 						{[document.documentOn && shortDay(document.documentOn), period].filter(Boolean).join(" · ")}
@@ -189,7 +189,7 @@ export function SubscriptionDrawer({ state, today, locale, onClose, onEdit, onCh
 				className="bottom-0 left-auto right-0 top-0 h-full w-[min(440px,100vw)] max-w-full translate-x-0 translate-y-0 overflow-y-auto rounded-none rounded-l-2xl"
 			>
 				<DialogHeader>
-					<DialogTitle className="pr-8">
+					<DialogTitle className="pe-8">
 						{state.kind === "ready" ? state.detail.subscription.vendor : "Subscription"}
 					</DialogTitle>
 					<DialogDescription>{DESCRIPTIONS[state.kind]}</DialogDescription>

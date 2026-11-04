@@ -27,7 +27,7 @@ export function MessageReplyButtons(props: MessageReplyInput) {
 				className={buttonClass}
 				onClick={() => void reply("reply")}
 			>
-				<Reply className="h-4 w-4" />
+				<Reply className="h-4 w-4 rtl:-scale-x-100" />
 				Reply
 			</Button>
 			{canForward && (
@@ -39,7 +39,7 @@ export function MessageReplyButtons(props: MessageReplyInput) {
 					aria-label="Forward"
 					onClick={() => void forward()}
 				>
-					<Forward className="h-4 w-4" />
+					<Forward className="h-4 w-4 rtl:-scale-x-100" />
 					Forward
 				</Button>
 			)}

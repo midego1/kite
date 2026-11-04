@@ -588,12 +588,12 @@ export function AgentPanel({ open, fullSize, docked, onClose, onToggleFullSize }
 					{view === "settings" ? (
 						<button
 							type="button"
-							className="-ml-2 rounded-lg p-1.5 text-blue-700 hover:bg-blue-100 hover:text-blue-900"
+							className="-ms-2 rounded-lg p-1.5 text-blue-700 hover:bg-blue-100 hover:text-blue-900"
 							onClick={() => setView("chat")}
 							aria-label="Back to assistant"
 							title="Back to assistant"
 						>
-							<ArrowLeft size={18} />
+							<ArrowLeft size={18} className="rtl:-scale-x-100" />
 						</button>
 					) : (
 						<KiteAvatar />
@@ -623,7 +623,7 @@ export function AgentPanel({ open, fullSize, docked, onClose, onToggleFullSize }
 						>
 							<History size={18} />
 						</summary>
-						<div className="absolute -right-24 top-full z-30 mt-2 flex w-72 flex-col overflow-hidden rounded-2xl border border-neutral-200 bg-white py-2 text-sm shadow-xl">
+						<div className="absolute -end-24 top-full z-30 mt-2 flex w-72 flex-col overflow-hidden rounded-2xl border border-neutral-200 bg-white py-2 text-sm shadow-xl">
 							{conversations.length ? (
 								<>
 									<p className="px-4 pb-1 text-xs font-medium text-neutral-500">Previous chats</p>
@@ -635,14 +635,14 @@ export function AgentPanel({ open, fullSize, docked, onClose, onToggleFullSize }
 											>
 												<button
 													type="button"
-													className="min-w-0 flex-1 truncate py-2 pl-4 pr-2 text-left"
+													className="min-w-0 flex-1 truncate py-2 ps-4 pe-2 text-start"
 													onClick={() => void selectConversation(item.id)}
 												>
 													{item.title}
 												</button>
 												<button
 													type="button"
-													className="mr-2 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-neutral-500 opacity-0 transition-opacity hover:bg-red-50 hover:text-red-600 focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100"
+													className="me-2 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-neutral-500 opacity-0 transition-opacity hover:bg-red-50 hover:text-red-600 focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100"
 													aria-label={`Delete ${item.title}`}
 													title="Delete chat"
 													disabled={deletingConversationId !== null}
@@ -820,7 +820,7 @@ export function AgentPanel({ open, fullSize, docked, onClose, onToggleFullSize }
 							name="message"
 							disabled={!settings || !chatReady || loadingConversation}
 						/>
-						<div className="absolute bottom-11 right-5 flex justify-end gap-2">
+						<div className="absolute bottom-11 end-5 flex justify-end gap-2">
 							{busy ? (
 								<Button
 									type="button"
@@ -939,7 +939,7 @@ export function AgentPanel({ open, fullSize, docked, onClose, onToggleFullSize }
 							<p key={job.id} className="text-xs">
 								{job.kind === "triage" ? "Automatic reading" : "Auto-draft"} {job.status}: {reasonText(job.reason)}
 								{job.status === "failed" && (
-									<button type="button" className="ml-2 text-blue-700 underline" onClick={() => void retryJob(job.id)}>
+									<button type="button" className="ms-2 text-blue-700 underline" onClick={() => void retryJob(job.id)}>
 										Retry
 									</button>
 								)}

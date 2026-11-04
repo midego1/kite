@@ -103,14 +103,14 @@ export function SidebarMailboxSwitcher() {
 	if (minimal || !selectedMailbox) return null;
 
 	return (
-		<div ref={ref} className="relative mb-3 ml-3">
+		<div ref={ref} className="relative mb-3 ms-3">
 			<button
 				type="button"
 				onClick={toggleMenu}
 				aria-haspopup="dialog"
 				aria-expanded={open}
 				aria-label={`Switch mailbox, current: ${allMailboxes ? ALL_MAILBOXES_LABEL : getMailboxAddress(selectedMailbox)}`}
-				className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-neutral-200/60 max-md:min-h-11"
+				className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-start transition-colors hover:bg-neutral-200/60 max-md:min-h-11"
 			>
 				<span className="min-w-0 flex-1">
 					<span className="block truncate text-[15px] font-medium text-neutral-900">
@@ -163,7 +163,7 @@ export function SidebarMailboxSwitcher() {
 											router.push("/inbox");
 										}}
 										className={cn(
-											"flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left hover:bg-neutral-100",
+											"flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-start hover:bg-neutral-100",
 											active && "bg-blue-50",
 										)}
 									>

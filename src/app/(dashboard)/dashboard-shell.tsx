@@ -80,8 +80,8 @@ function DockedAssistant({
 			className={clsx(
 				// Beside the page the panel sits where the list and the reader do: the page's 8px inset,
 				// plus the 1px their transparent border adds while the split view is showing.
-				fullSize ? "pl-0 pb-2" : "pl-2 md:py-2 md:group-has-[[data-reading-pane]]/page:py-[9px]",
-				"relative min-h-0 min-w-0 shrink-0 overflow-hidden pr-2 max-md:p-0",
+				fullSize ? "ps-0 pb-2" : "ps-2 md:py-2 md:group-has-[[data-reading-pane]]/page:py-[9px]",
+				"relative min-h-0 min-w-0 shrink-0 overflow-hidden pe-2 max-md:p-0",
 				!resizing && "transition-[width] duration-300 ease-in-out motion-reduce:transition-none",
 				visible ? "" : "opacity-0",
 			)}

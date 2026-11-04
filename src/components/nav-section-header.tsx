@@ -26,7 +26,7 @@ export function NavSectionHeader({
 	children?: ReactNode;
 }) {
 	return (
-		<div className="mt-3 flex h-7 shrink-0 items-center justify-between pl-6 pr-4">
+		<div className="mt-3 flex h-7 shrink-0 items-center justify-between ps-6 pe-4">
 			<button
 				type="button"
 				onClick={onToggle}
@@ -43,5 +43,5 @@ export function NavSectionHeader({
 
 /** A small muted label over a group of menu links that does not fold, like Zero's "Core". */
 export function NavSectionLabel({ label }: { label: string }) {
-	return <p className="mt-1 flex h-7 shrink-0 items-center pl-6 text-xs font-medium text-neutral-500">{label}</p>;
+	return <p className="mt-1 flex h-7 shrink-0 items-center ps-6 text-xs font-medium text-neutral-500">{label}</p>;
 }

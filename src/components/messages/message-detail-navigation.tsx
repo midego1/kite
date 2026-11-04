@@ -120,7 +120,7 @@ export function MessageDetailNavigation({ messageId, unread }: MessageDetailNavi
 					disabled={!previousId}
 					onClick={() => open(previousId)}
 				>
-					<ChevronLeft size={18} />
+					<ChevronLeft size={18} className="rtl:-scale-x-100" />
 				</Button>
 			</Tooltip>
 			<Tooltip label={shortcutsEnabled ? "Older email (j)" : "Older email"}>
@@ -132,7 +132,7 @@ export function MessageDetailNavigation({ messageId, unread }: MessageDetailNavi
 					disabled={!nextId}
 					onClick={() => open(nextId)}
 				>
-					<ChevronRight size={18} />
+					<ChevronRight size={18} className="rtl:-scale-x-100" />
 				</Button>
 			</Tooltip>
 		</div>

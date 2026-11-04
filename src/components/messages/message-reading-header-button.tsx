@@ -25,7 +25,7 @@ export function MessageReadingHeaderButton() {
 				aria-label={label}
 				aria-pressed={singleColumn ? undefined : visible}
 			>
-				{singleColumn ? <ArrowLeft size={18} /> : <PanelIcon size={18} />}
+				{singleColumn ? <ArrowLeft size={18} className="rtl:-scale-x-100" /> : <PanelIcon size={18} />}
 			</button>
 		</Tooltip>
 	);

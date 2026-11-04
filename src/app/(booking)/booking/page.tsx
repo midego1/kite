@@ -204,7 +204,7 @@ export default function BookingsPage() {
 										<p className="mt-1 text-sm text-neutral-500">Set the meetings people can book with you.</p>
 									</div>
 									<div className="flex shrink-0 items-center gap-2">
-										<Button asChild variant="ghost" size="icon" className="max-md:-mr-2">
+										<Button asChild variant="ghost" size="icon" className="max-md:-me-2">
 											<Link
 												href={`/c/${username}`}
 												target="_blank"
@@ -257,7 +257,7 @@ export default function BookingsPage() {
 														<button
 															type="button"
 															onClick={() => startEdit(event)}
-															className="text-left text-base font-semibold text-neutral-900 hover:text-blue-700"
+															className="text-start text-base font-semibold text-neutral-900 hover:text-blue-700"
 														>
 															{event.name}
 														</button>
@@ -280,7 +280,7 @@ export default function BookingsPage() {
 														<p className="mt-2 text-sm text-neutral-500">{availabilityLabel(event)}</p>
 													</div>
 												</div>
-												<div className="ml-auto flex items-center gap-2 max-md:ml-9 max-md:w-full">
+												<div className="ms-auto flex items-center gap-2 max-md:ms-9 max-md:w-full">
 													{event.enabled ? (
 														<>
 															<Button
@@ -326,25 +326,25 @@ export default function BookingsPage() {
 																<MoreHorizontal className="h-5 w-5" />
 															</button>
 															{menuId === event.id && (
-																<div className="absolute right-0 top-10 z-10 w-36 rounded-xl border border-neutral-200 bg-white p-1 shadow-lg">
+																<div className="absolute end-0 top-10 z-10 w-36 rounded-xl border border-neutral-200 bg-white p-1 shadow-lg">
 																	<button
 																		type="button"
 																		onClick={() => startEdit(event)}
-																		className="block w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-neutral-100"
+																		className="block w-full rounded-lg px-3 py-2 text-start text-sm hover:bg-neutral-100"
 																	>
 																		Edit
 																	</button>
 																	<button
 																		type="button"
 																		onClick={() => void setEnabled(event, !event.enabled)}
-																		className="block w-full rounded-lg px-3 py-2 text-left text-sm hover:bg-neutral-100"
+																		className="block w-full rounded-lg px-3 py-2 text-start text-sm hover:bg-neutral-100"
 																	>
 																		Turn {event.enabled ? "off" : "on"}
 																	</button>
 																	<button
 																		type="button"
 																		onClick={() => void remove(event)}
-																		className="block w-full rounded-lg px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50"
+																		className="block w-full rounded-lg px-3 py-2 text-start text-sm text-red-600 hover:bg-red-50"
 																	>
 																		Delete
 																	</button>

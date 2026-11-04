@@ -27,7 +27,7 @@ export function ContactDetailsTrigger({ mailboxId, address, name, label, classNa
 			<button
 				type="button"
 				onClick={() => setOpen(true)}
-				className={`${className ?? ""} rounded-sm text-left hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200`}
+				className={`${className ?? ""} rounded-sm text-start hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-200`}
 			>
 				{shownName}
 			</button>

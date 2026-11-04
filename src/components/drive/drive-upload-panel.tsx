@@ -51,7 +51,7 @@ function UploadRow({ entry, onCancel }: { entry: DriveUploadEntry; onCancel: (id
 							style={{ width: `${entry.percent}%` }}
 						/>
 					</div>
-					<span className="w-10 shrink-0 text-right text-xs tabular-nums text-neutral-600">
+					<span className="w-10 shrink-0 text-end text-xs tabular-nums text-neutral-600">
 						{entry.status === "queued" ? "-" : `${entry.percent}%`}
 					</span>
 				</div>
@@ -80,7 +80,7 @@ export function DriveUploadPanel({
 	return (
 		<section
 			aria-label="Uploads"
-			className="fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom))] right-4 z-[90] w-[min(360px,calc(100vw-2rem))] overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-lg md:bottom-4"
+			className="fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom))] end-4 z-[90] w-[min(360px,calc(100vw-2rem))] overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-lg md:bottom-4"
 		>
 			<header className="flex items-center justify-between gap-3 bg-neutral-50 px-4 py-2.5 text-sm font-medium text-neutral-800">
 				<span aria-live="polite">

@@ -28,7 +28,7 @@ export function MonthView({ date, today, events, onEdit, onAdd, onShowDay }: Mon
 						<section
 							key={key}
 							aria-label={formatUserDate(day, { dateStyle: "full" })}
-							className={`min-h-28 min-w-0 border-b border-r border-neutral-100 p-1.5 ${key.slice(0, 7) === month ? "bg-white" : "bg-neutral-50 text-neutral-400"}`}
+							className={`min-h-28 min-w-0 border-b border-e border-neutral-100 p-1.5 ${key.slice(0, 7) === month ? "bg-white" : "bg-neutral-50 text-neutral-400"}`}
 						>
 							<div className="mb-1 flex items-center justify-between">
 								<button
@@ -57,13 +57,13 @@ export function MonthView({ date, today, events, onEdit, onAdd, onShowDay }: Mon
 										onClick={() => onEdit(event)}
 										title={event.status === "tentative" ? `${event.title} (Tentative)` : event.title}
 										data-status={event.status === "tentative" ? "tentative" : undefined}
-										className={`block w-full truncate rounded px-1.5 py-1 text-left text-xs ${EVENT_COLOR_CLASSES[normalizeCalendarColor(event.color)]} ${event.status === "tentative" ? TENTATIVE_EVENT_CLASSES : ""}`}
+										className={`block w-full truncate rounded px-1.5 py-1 text-start text-xs ${EVENT_COLOR_CLASSES[normalizeCalendarColor(event.color)]} ${event.status === "tentative" ? TENTATIVE_EVENT_CLASSES : ""}`}
 									>
-										<span className="mr-1 opacity-75">
+										<span className="me-1 opacity-75">
 											{formatUserDate(new Date(event.startsAt), { hour: "numeric", minute: "2-digit" })}
 										</span>
 										{event.title}
-										{event.status === "tentative" && <span className="ml-1 text-[10px] italic">Tentative</span>}
+										{event.status === "tentative" && <span className="ms-1 text-[10px] italic">Tentative</span>}
 									</button>
 								))}
 								{daily.length > 3 && (

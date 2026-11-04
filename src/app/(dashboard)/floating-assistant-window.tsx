@@ -61,7 +61,7 @@ export function FloatingAssistant({
 					aria-expanded={open}
 					aria-controls={open ? "email-assistant-panel" : undefined}
 					className={clsx(
-						"fixed right-8 z-[44] flex h-12 items-center gap-2.5 rounded-full bg-blue-900 pl-4 pr-3 text-sm font-medium text-blue-50 shadow-lg shadow-blue-900/25 transition-colors hover:bg-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2",
+						"fixed right-8 z-[44] flex h-12 items-center gap-2.5 rounded-full bg-blue-900 ps-4 pe-3 text-sm font-medium text-blue-50 shadow-lg shadow-blue-900/25 transition-colors hover:bg-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2",
 						bubblePlacement === "above-reply" ? "bottom-[5.5rem]" : "bottom-6",
 					)}
 				>

@@ -112,7 +112,7 @@ export function InviteBlock({ suggestion, onChanged, menu, why }: BlockProps) {
 			</div>
 			<p data-invite-when className="mt-1 text-neutral-800">
 				{formatInviteWhen(payload, timeZone)}
-				{payload.repeats && <span className="ml-1 text-xs text-neutral-600">(repeats)</span>}
+				{payload.repeats && <span className="ms-1 text-xs text-neutral-600">(repeats)</span>}
 			</p>
 			{payload.organizer && <p className="text-xs text-neutral-600">Organizer: {payload.organizer}</p>}
 			{payload.method !== "CANCEL" && <Conflicts payload={payload} timeZone={timeZone} />}

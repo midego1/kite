@@ -15,7 +15,7 @@ export const RAIL_TOOLTIP_CLASS = "flex w-full justify-center";
  * the 40px square, the 16px pill ends at 10px).
  */
 export const RAIL_BADGE_CLASS =
-	"pointer-events-none absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-blue-600 px-1 text-[10px] font-semibold leading-none tabular-nums text-white";
+	"pointer-events-none absolute -end-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-blue-600 px-1 text-[10px] font-semibold leading-none tabular-nums text-white";
 
 export function railBadgeLabel(count: number): string {
 	return count > 99 ? "99+" : String(count);

@@ -88,7 +88,7 @@ export function ComposeAttachmentChip({ entry, draftId, onPreview, onRemove }: C
 				onClick={open}
 				aria-label={`${previewable ? "Preview" : "Download"} ${attachment.filename}, ${formatAttachmentSize(attachment.size)}`}
 				title={`${attachment.filename} · ${visual.label}`}
-				className="flex h-full min-w-0 flex-1 items-center gap-2 rounded-l-lg pl-1.5 pr-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+				className="flex h-full min-w-0 flex-1 items-center gap-2 rounded-s-lg ps-1.5 pe-1 text-start outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
 			>
 				{thumbnail && !thumbnailFailed ? (
 					<img
@@ -111,7 +111,7 @@ export function ComposeAttachmentChip({ entry, draftId, onPreview, onRemove }: C
 			<DropdownMenu.Root>
 				<DropdownMenu.Trigger
 					aria-label={`More actions for ${attachment.filename}`}
-					className="mr-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-neutral-500 outline-none hover:bg-neutral-200 hover:text-neutral-900 focus-visible:ring-2 focus-visible:ring-blue-600 data-[state=open]:bg-neutral-200"
+					className="me-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-neutral-500 outline-none hover:bg-neutral-200 hover:text-neutral-900 focus-visible:ring-2 focus-visible:ring-blue-600 data-[state=open]:bg-neutral-200"
 				>
 					<MoreVertical className="h-4 w-4" aria-hidden="true" />
 				</DropdownMenu.Trigger>

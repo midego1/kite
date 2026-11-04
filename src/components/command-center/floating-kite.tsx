@@ -7,7 +7,7 @@ import { KiteGlyph } from "@/components/kite-glyph";
  */
 export function FloatingKite() {
 	return (
-		<div aria-hidden="true" data-command-center-kite className="pointer-events-none absolute right-8 top-6 w-14">
+		<div aria-hidden="true" data-command-center-kite className="pointer-events-none absolute end-8 top-6 w-14">
 			<svg className="command-center-kite block h-auto w-full" viewBox="-20 0 136 170" fill="none">
 				<KiteGlyph fillId="command-center-fill" tailClassName="command-center-tail" />
 			</svg>

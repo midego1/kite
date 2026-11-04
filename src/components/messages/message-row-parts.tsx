@@ -76,7 +76,7 @@ export function MessageRowParty({
 				{party}
 			</span>
 			{threadCount > 1 && (
-				<span className={clsx("ml-1.5 text-neutral-500", countClassName)}>
+				<span className={clsx("ms-1.5 text-neutral-500", countClassName)}>
 					<span aria-hidden="true">[</span>
 					{threadCount}
 					<span aria-hidden="true">]</span>
@@ -137,7 +137,7 @@ export function MessageRowPreview({ preview, line }: { preview: string; line?: s
 	if (!line) return <>{preview}</>;
 	return (
 		<span data-line-summary title={preview}>
-			<Sparkles aria-label="AI summary" className="mr-1 inline h-3 w-3 align-[-1px] text-neutral-400" />
+			<Sparkles aria-label="AI summary" className="me-1 inline h-3 w-3 align-[-1px] text-neutral-400" />
 			{line}
 		</span>
 	);

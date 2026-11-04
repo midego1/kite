@@ -33,7 +33,7 @@ export function Heading({ children, level = 3 }: { children: ReactNode; level?: 
 
 export function Bullets({ items }: { items: string[] }) {
 	return (
-		<ul className="max-w-[68ch] list-disc space-y-1.5 pl-5 text-[15px] leading-7 text-neutral-700 marker:text-neutral-400">
+		<ul className="max-w-[68ch] list-disc space-y-1.5 ps-5 text-[15px] leading-7 text-neutral-700 marker:text-neutral-400">
 			{items.map((item) => (
 				<li key={item}>{item}</li>
 			))}
@@ -112,9 +112,9 @@ export function EmailTable({ label, cornerLabel, columns, rows, from }: EmailTab
 	// A wide table keeps its header row in view, and the empty corner too, so row labels never show through it.
 	const sticky =
 		from === "wide" ? "@2xl:sticky @2xl:top-0 @2xl:z-10 @2xl:border-b @2xl:border-neutral-200 @2xl:bg-white" : "";
-	const th = `py-2 pr-4 text-left text-xs font-medium ${sticky}`;
+	const th = `py-2 pe-4 text-start text-xs font-medium ${sticky}`;
 	return (
-		<table className={`${css.table} border-collapse text-left text-sm`} role="table" aria-label={label}>
+		<table className={`${css.table} border-collapse text-start text-sm`} role="table" aria-label={label}>
 			<thead className={css.head} role="rowgroup">
 				<tr role="row">
 					{cornerLabel ? (
@@ -139,7 +139,7 @@ export function EmailTable({ label, cornerLabel, columns, rows, from }: EmailTab
 			<tbody className={css.body} role="rowgroup">
 				{rows.map((row) => (
 					<tr key={row.key} role="row" className={`${css.row} border-t border-neutral-200 align-top`}>
-						<th scope="row" role="rowheader" className={`${css.rowHead} pr-4 text-left font-medium text-neutral-900`}>
+						<th scope="row" role="rowheader" className={`${css.rowHead} pe-4 text-start font-medium text-neutral-900`}>
 							{row.head}
 						</th>
 						{row.cells.map((cell, index) => (
@@ -147,7 +147,7 @@ export function EmailTable({ label, cornerLabel, columns, rows, from }: EmailTab
 								key={index}
 								role="cell"
 								data-label={columns[index].label}
-								className={`${css.cell} pr-4 leading-6 ${columns[index].big ? "text-lg" : ""} ${
+								className={`${css.cell} pe-4 leading-6 ${columns[index].big ? "text-lg" : ""} ${
 									columns[index].ink ? "text-neutral-900" : "text-neutral-600"
 								}`}
 							>

@@ -14,7 +14,7 @@ export function agentPanelStyle(docked: boolean | undefined) {
 				: "rounded-2xl border border-blue-200/70 shadow-xl shadow-blue-900/10",
 		),
 		header: clsx(
-			"flex shrink-0 items-center justify-between gap-1 border-b pl-3 pr-2",
+			"flex shrink-0 items-center justify-between gap-1 border-b ps-3 pe-2",
 			docked ? "h-14 border-neutral-200" : "h-16 border-blue-100 bg-gradient-to-r from-blue-50 to-blue-100/50",
 		),
 	};

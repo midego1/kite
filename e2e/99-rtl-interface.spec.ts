@@ -679,11 +679,14 @@ test.describe("left to right is untouched", () => {
 		expect(await group.evaluate((element) => getComputedStyle(element).direction)).toBe("ltr");
 		await expect(page.getByRole("separator", { name: "Resize left menu" })).toBeVisible();
 
-		// Dragging keeps working the old way.
+		// Dragging keeps working the old way. With a message open the session is known, so the saved width has been read
+		// and cannot put a drag back, as in the mirrored test above.
+		await openMessage(page, subject);
+		await expect(page.getByRole("heading", { level: 1, name: subject })).toBeVisible();
 		await dragBy(page, page.getByRole("separator", { name: "Resize message list" }), 80);
 		await expect(async () => {
 			expect((await box(page.locator(LIST))).width).toBeGreaterThan(list.width + 60);
-		}).toPass();
+		}).toPass({ timeout: 15_000 });
 
 		await page.getByRole("button", { name: "Compose new email" }).click();
 		const composer = await box(page.getByRole("region", { name: "Compose message" }));

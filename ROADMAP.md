@@ -204,7 +204,7 @@ Taken ahead of the proposed milestones 9–18 in the [complete-suite roadmap](do
 1. **Builtin modules (shipped in [#45](https://github.com/midego1/kite/pull/45))**
    - Calendar, Booking (needs Calendar), Email templates and Mail import become modules the owner can turn off for everyone or for some users, from Admin → Modules. Off means absent: no links, commands, tools, events or background work, and its pages and API answer 404. No data is deleted, mailbox export always works, and paused imports resume when Mail import is back on. See [Modules](docs/modules.md).
    - Core reaches modules only through a registry and one JSON call contract, and the assistant, automatic reading, MCP, API keys, JMAP, webhooks, search, For you, Activity, the command palette, the composer, the queues and cron read the registry instead of hard-coded lists. Same code path on Workers and the Node runtime.
-   - Test: unit tests for the registry, the call contract, the import rules and the guards; `e2e/27-modules.spec.ts` turns every module off and on.
+   - Test: unit tests for the registry, the call contract, the import rules and the guards; `e2e/27-modules-*.spec.ts` turn every module off and on.
 2. **Sandboxed apps inside your own Kite (later, separate spec)**
    - Signed bundles the owner installs, run in Dynamic Workers on Cloudflare or a workerd sidecar on Node and Docker, using the same capability descriptors and call contract as builtin modules, with owner-approved grants and network hosts.
    - An app directory, AI-suggested apps and paid listings follow once sandboxed apps exist.

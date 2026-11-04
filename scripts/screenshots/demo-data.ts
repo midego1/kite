@@ -150,13 +150,12 @@ export const RTL_MAIL = [
 /** Delivers the right-to-left demo mail once, so the shot finds it in the Inbox. */
 export async function seedRtlMail(): Promise<void> {
 	const api = await apiContext(STORAGE_STATE);
-	const found = await api.get(`/api/messages?${new URLSearchParams({ q: "dana@contoso.test", limit: "1" })}`);
-	const { messages: existing } = (await found.json()) as { messages: unknown[] };
-	if (existing.length === 0) {
-		for (const mail of RTL_MAIL) {
-			await postInbound(api, { ...mail, to: `"Support" <${SUPPORT_ADDRESS}>`, text: plainText(mail.html) });
-			await waitForMessage(api, mail.subject);
-		}
+	for (const mail of RTL_MAIL) {
+		const found = await api.get(`/api/messages?${new URLSearchParams({ q: mail.subject, limit: "20" })}`);
+		const { messages: existing } = (await found.json()) as { messages: { subject?: string }[] };
+		if (existing.some((message) => message.subject === mail.subject)) continue;
+		await postInbound(api, { ...mail, to: `"Support" <${SUPPORT_ADDRESS}>`, text: plainText(mail.html) });
+		await waitForMessage(api, mail.subject);
 	}
 	await api.dispose();
 }

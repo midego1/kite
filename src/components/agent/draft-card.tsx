@@ -141,7 +141,10 @@ export function AgentDraftActions({
 					{draft && <p className="mt-0.5 break-words text-neutral-500">To {draft.toAddr}</p>}
 				</div>
 			</div>
-			<div className="max-h-56 overflow-y-auto whitespace-pre-wrap break-words py-3 leading-relaxed text-neutral-700">
+			<div
+				dir="auto"
+				className="max-h-56 overflow-y-auto whitespace-pre-wrap break-words py-3 leading-relaxed text-neutral-700"
+			>
 				{draft
 					? draft.textBody || "Open the draft to review its content."
 					: card.kind === "error"

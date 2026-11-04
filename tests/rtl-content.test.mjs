@@ -71,4 +71,6 @@ test("a printed message reads right to left when its text does", () => {
 	const withHtml = buildPrintDocument({ title: "x", messages: [{ ...message, html: `<p>${ARABIC}</p>` }] });
 	assert.match(withHtml, /<div class="print-body" dir="auto"><p>/);
 	assert.doesNotMatch(withHtml, /padding-left:1\.5rem|border-left:2px/);
+	assert.match(withHtml, /\.print-attachments li\{margin-inline-start:18px\}/);
+	assert.doesNotMatch(withHtml, /\.print-attachments ul\{[^}]*padding-(left|inline-start):18px/);
 });

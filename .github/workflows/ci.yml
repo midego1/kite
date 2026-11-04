@@ -115,16 +115,12 @@ jobs:
     # Public repositories get standard runners for free; the job count is the only
     # knob, kept low enough that a pull request's jobs fit the account's concurrent-job limit.
     name: E2E (shard ${{ matrix.shard }} of 10)
-    # Measurement only: pull requests labelled boat-e2e run the shards on boat-large
-    # under the same actor rules and kill switch as Mission validation, to compare
-    # with about 500 s per job on ubuntu-latest. Without the label they stay on
-    # ubuntu-latest (ten shards would use ten of the day's 200 starts).
-    runs-on: ${{ (vars.BOAT_CI != 'off' && contains(fromJSON('["midego1"]'), github.actor) && github.triggering_actor == github.actor && github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'boat-e2e') && github.event.pull_request.user.login == github.actor) && 'boat-large' || 'ubuntu-latest' }}
+    runs-on: [self-hosted, magic]
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+        shard: [2, 3, 4]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -154,8 +150,7 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-shell-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
       # Headless runs only need the headless shell, and the runner image already has Chrome's system libraries.
-      - if: steps.playwright-browser.outputs.cache-hit != 'true'
-        run: npx playwright install --only-shell chromium
+      - run: npx playwright install --only-shell chromium
       - if: steps.playwright-browser.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:

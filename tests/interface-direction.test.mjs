@@ -16,6 +16,7 @@ async function load(entry, name) {
 		entryPoints: [join(root, entry)],
 		outfile: join(outDir, `${name}.mjs`),
 		bundle: true,
+		sourcemap: "inline",
 		platform: "node",
 		format: "esm",
 		target: "node22",

@@ -109,7 +109,7 @@ export const ForwardingGuide = forwardRef<
 						{note}
 					</p>
 				))}
-				<ol className="list-decimal space-y-1.5 pl-5 text-sm text-neutral-700">
+				<ol className="list-decimal space-y-1.5 ps-5 text-sm text-neutral-700">
 					{guide.steps.map((step) => (
 						<li key={step}>
 							{forwardingStepParts(step, address).map((part, index) =>
@@ -154,7 +154,7 @@ export const ForwardingGuide = forwardRef<
 			</div>
 			<div className="space-y-1.5">
 				<h3 className="text-xs font-semibold text-neutral-900">Check that it works</h3>
-				<ul className="list-disc space-y-1 pl-5 text-xs text-neutral-600">
+				<ul className="list-disc space-y-1 ps-5 text-xs text-neutral-600">
 					{FORWARDING_CHECKS.map((check) => (
 						<li key={check}>{check}</li>
 					))}

@@ -13,7 +13,7 @@ export function StartupSteps({ steps }: { steps: StartupStep[] }) {
 		<ol
 			data-startup-steps
 			aria-hidden="true"
-			className="mt-4 w-full space-y-1.5 text-left text-[13px] text-neutral-500"
+			className="mt-4 w-full space-y-1.5 text-start text-[13px] text-neutral-500"
 		>
 			{steps.map((step) => (
 				<li

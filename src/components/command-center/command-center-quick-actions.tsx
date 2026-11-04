@@ -16,7 +16,7 @@ function QuickActionTile({ action }: { action: QuickAction }) {
 			</span>
 			<span className="min-w-0 flex-1 truncate">{action.label}</span>
 			{action.shortcut && (
-				<kbd className="ml-auto rounded border border-neutral-200 bg-white px-1.5 py-0.5 font-mono text-[10px] text-neutral-500 shadow-2xs">
+				<kbd className="ms-auto rounded border border-neutral-200 bg-white px-1.5 py-0.5 font-mono text-[10px] text-neutral-500 shadow-2xs">
 					{action.shortcut}
 				</kbd>
 			)}
@@ -30,7 +30,7 @@ function QuickActionTile({ action }: { action: QuickAction }) {
 		<button
 			type="button"
 			onClick={action.onSelect}
-			className={cn("w-full text-left", COMMAND_CENTER_TILE_CLASS)}
+			className={cn("w-full text-start", COMMAND_CENTER_TILE_CLASS)}
 			data-quick-action={action.id}
 		>
 			{content}

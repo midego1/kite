@@ -31,10 +31,10 @@ export function TemplateMenu({ applyContent, openOverlay }: ComposerSlotContext 
 		<DropdownMenu.Sub>
 			<DropdownMenu.SubTrigger className={`${itemClass} justify-between data-[state=open]:bg-neutral-100`}>
 				<span className="flex items-center">
-					<FileText className="mr-2 h-4 w-4" />
+					<FileText className="me-2 h-4 w-4" />
 					Template
 				</span>
-				<ChevronRight className="ml-4 h-4 w-4 text-neutral-400" />
+				<ChevronRight className="ms-4 h-4 w-4 text-neutral-400 rtl:-scale-x-100" />
 			</DropdownMenu.SubTrigger>
 			<DropdownMenu.Portal>
 				<DropdownMenu.SubContent
@@ -77,7 +77,7 @@ export function TemplateMenu({ applyContent, openOverlay }: ComposerSlotContext 
 					</div>
 					<DropdownMenu.Separator className="my-1 h-px bg-neutral-100" />
 					<DropdownMenu.Item onSelect={openOverlay} className={`${itemClass} text-blue-600`}>
-						<Plus className="mr-2 h-4 w-4" />
+						<Plus className="me-2 h-4 w-4" />
 						New template
 					</DropdownMenu.Item>
 				</DropdownMenu.SubContent>

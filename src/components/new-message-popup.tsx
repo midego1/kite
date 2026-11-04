@@ -9,7 +9,7 @@ import type { NewMessagePopupProps } from "./new-message-popup-types";
 export function NewMessagePopup({ notification, onDismiss }: NewMessagePopupProps) {
 	const code = notification.oneTimeCode;
 	return (
-		<div className="fixed right-5 top-5 z-[100] w-[min(380px,calc(100vw-40px))] rounded-xl bg-white p-4 shadow-xl">
+		<div className="fixed end-5 top-5 z-[100] w-[min(380px,calc(100vw-40px))] rounded-xl bg-white p-4 shadow-xl">
 			<div className="flex items-start gap-3">
 				<div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-700">
 					<Mail className="h-5 w-5" />

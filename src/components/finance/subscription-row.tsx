@@ -110,7 +110,7 @@ export function SubscriptionRow({ item, today, locale, reason, onOpen, onEdit, o
 			<button
 				type="button"
 				onClick={() => onOpen(item.id)}
-				className="min-w-0 flex-1 basis-56 rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+				className="min-w-0 flex-1 basis-56 rounded-md text-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
 			>
 				<span className="flex min-w-0 flex-wrap items-baseline gap-x-2">
 					<span className="truncate font-medium text-neutral-900">{item.vendor}</span>

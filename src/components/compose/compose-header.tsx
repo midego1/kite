@@ -116,8 +116,8 @@ export function ComposeHeader(props: ComposeHeaderProps) {
 			)}
 		>
 			<span className={cn("flex min-w-0 items-center gap-2 truncate", !inline && "dark:text-neutral-900")}>
-				{icon === "reply" && <Reply className="h-3.5 w-3.5 text-neutral-300" />}
-				{icon === "forward" && <Forward className="h-3.5 w-3.5 text-neutral-300" />}
+				{icon === "reply" && <Reply className="h-3.5 w-3.5 text-neutral-300 rtl:-scale-x-100" />}
+				{icon === "forward" && <Forward className="h-3.5 w-3.5 text-neutral-300 rtl:-scale-x-100" />}
 				{title}
 			</span>
 			{inline && <InlineControls onPopOut={props.onPopOut} onClose={props.onClose} />}

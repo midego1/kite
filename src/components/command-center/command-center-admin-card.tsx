@@ -66,7 +66,7 @@ export function CommandCenterAdminCard({ primary }: { primary: boolean }) {
 						<p className={COMMAND_CENTER_ROW_CLASS} data-testid="command-center-all-clear">
 							<CheckCircle2 className={CHECK_CLASS} aria-hidden="true" />
 							<span className="min-w-0 flex-1 truncate">Nothing else needs your attention.</span>
-							<CommandCenterPill tone="ok" className="ml-auto">
+							<CommandCenterPill tone="ok" className="ms-auto">
 								All clear
 							</CommandCenterPill>
 						</p>

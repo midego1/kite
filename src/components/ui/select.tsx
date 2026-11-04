@@ -61,7 +61,7 @@ export const Select = React.forwardRef<HTMLButtonElement, SelectProps>(
 						aria-required={required || undefined}
 						data-value={formValue}
 						className={cn(
-							"flex w-full min-w-0 cursor-pointer items-center justify-between gap-1 rounded-md bg-transparent text-left focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50",
+							"flex w-full min-w-0 cursor-pointer items-center justify-between gap-1 rounded-md bg-transparent text-start focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50",
 							className,
 						)}
 						{...props}
@@ -105,9 +105,9 @@ export const Select = React.forwardRef<HTMLButtonElement, SelectProps>(
 												data-value={option.value}
 												textValue={option.text}
 												disabled={option.disabled}
-												className="relative flex w-full cursor-default select-none items-center rounded-md py-1.5 pl-2 pr-8 text-sm outline-none data-[disabled]:pointer-events-none data-[highlighted]:bg-neutral-100 data-[highlighted]:text-neutral-900 data-[disabled]:opacity-50"
+												className="relative flex w-full cursor-default select-none items-center rounded-md py-1.5 ps-2 pe-8 text-sm outline-none data-[disabled]:pointer-events-none data-[highlighted]:bg-neutral-100 data-[highlighted]:text-neutral-900 data-[disabled]:opacity-50"
 											>
-												<span className="absolute right-2 flex h-3.5 w-3.5 items-center justify-center">
+												<span className="absolute end-2 flex h-3.5 w-3.5 items-center justify-center">
 													<SelectPrimitive.ItemIndicator>
 														<Check className="h-4 w-4 text-blue-600" />
 													</SelectPrimitive.ItemIndicator>

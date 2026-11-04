@@ -89,7 +89,7 @@ export function DrivePreviewDialog({ target, onClose }: { target: PreviewTarget;
 					(event.currentTarget as HTMLElement | null)?.focus();
 				}}
 			>
-				<DialogTitle className="flex h-14 shrink-0 items-center gap-3 border-b border-neutral-200 pl-5 pr-14 text-base">
+				<DialogTitle className="flex h-14 shrink-0 items-center gap-3 border-b border-neutral-200 ps-5 pe-14 text-base">
 					<span className="min-w-0 flex-1 truncate font-medium">{target.name}</span>
 					<span className="shrink-0 text-xs font-normal text-neutral-500">{formatDriveSize(target.size)}</span>
 					{target.emailHref && (

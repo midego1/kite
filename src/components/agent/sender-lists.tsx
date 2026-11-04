@@ -48,7 +48,7 @@ function SenderListEditor({ mailboxId, list, senders, disabled, onChange }: Send
 			) : (
 				<ul aria-labelledby={headingId} className="divide-y divide-neutral-200 rounded-xl border border-neutral-200">
 					{senders.map((sender) => (
-						<li key={sender} className="flex items-center justify-between gap-2 py-1 pl-2 pr-1">
+						<li key={sender} className="flex items-center justify-between gap-2 py-1 ps-2 pe-1">
 							<span className="min-w-0 truncate">{sender}</span>
 							<Button
 								type="button"

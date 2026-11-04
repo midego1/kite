@@ -98,7 +98,7 @@ export function NavItem({ link, iconClassName, labelClassName, wrap }: Props) {
 					setMobileOpen(false);
 					openComposer();
 				}}
-				className={cn(!minimal && "ml-3", classes)}
+				className={cn(!minimal && "ms-3", classes)}
 				// "Compose" stays in the name, which is what the shortcut help, tests and screen reader users know.
 				aria-label={`Compose ${(link.label ?? "").toLowerCase()}`}
 				{...dropProps}
@@ -110,7 +110,7 @@ export function NavItem({ link, iconClassName, labelClassName, wrap }: Props) {
 				/>
 				{!minimal && <span>{link.label}</span>}
 				{!minimal && typeof link.count === "number" && link.count > 0 && (
-					<span className="ml-auto mr-1 text-xs font-medium tabular-nums text-neutral-500">
+					<span className="ms-auto me-1 text-xs font-medium tabular-nums text-neutral-500">
 						{link.count > 99 ? "99+" : link.count}
 					</span>
 				)}
@@ -156,7 +156,7 @@ export function NavItem({ link, iconClassName, labelClassName, wrap }: Props) {
 			onPointerDown={preload}
 			onFocus={preload}
 			aria-label={minimal ? link.label : undefined}
-			className={cn(!minimal && "ml-3 px-3", classes)}
+			className={cn(!minimal && "ms-3 px-3", classes)}
 			{...dropProps}
 		>
 			<Icon
@@ -181,7 +181,7 @@ export function NavItem({ link, iconClassName, labelClassName, wrap }: Props) {
 				<span
 					className={cn(
 						// Counts are right-aligned and muted, as in Zero's sidebar.
-						"ml-auto mr-0.5 text-xs font-medium tabular-nums text-neutral-500",
+						"ms-auto me-0.5 text-xs font-medium tabular-nums text-neutral-500",
 						wrap && "shrink-0 leading-5",
 					)}
 				>

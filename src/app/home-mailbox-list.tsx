@@ -43,12 +43,12 @@ function Row({
 				type="button"
 				onClick={() => onOpen(email.id)}
 				aria-current={selected ? "true" : undefined}
-				className={`flex w-full min-w-0 items-start gap-3 px-4 py-3 text-left hover:bg-neutral-100 ${FOCUS_RING} focus-visible:ring-inset`}
+				className={`flex w-full min-w-0 items-start gap-3 px-4 py-3 text-start hover:bg-neutral-100 ${FOCUS_RING} focus-visible:ring-inset`}
 			>
 				<span className="relative mt-0.5 h-9 w-9 shrink-0">
 					<PersonAvatar person={sender} icon={icon} size="md" />
 					{unread && (
-						<span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-blue-500 ring-2 ring-[var(--color-white)]" />
+						<span className="absolute bottom-0 end-0 h-2.5 w-2.5 rounded-full bg-blue-500 ring-2 ring-[var(--color-white)]" />
 					)}
 				</span>
 				<span className="min-w-0 flex-1">
@@ -92,7 +92,7 @@ export function HomeList({ state, emails, appName, icon, onOpen, dispatch, menuO
 			aria-label={title}
 			data-home-pane="list"
 			style={menuOnly ? { gridColumn: 1 } : undefined}
-			className={`${state.pane === "reader" ? "hidden split:flex" : "flex"} min-h-0 min-w-0 flex-col border-r border-neutral-200 bg-white`}
+			className={`${state.pane === "reader" ? "hidden split:flex" : "flex"} min-h-0 min-w-0 flex-col border-e border-neutral-200 bg-white`}
 		>
 			<div className="flex h-14 shrink-0 items-center gap-3 [@media(max-height:500px)]:h-11 border-b border-neutral-200 px-4 text-base font-semibold text-neutral-900">
 				<button

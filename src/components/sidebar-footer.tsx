@@ -104,7 +104,7 @@ export function SidebarFooter({ extra, notices }: { extra?: ReactNode; notices?:
 						type="button"
 						onClick={() => setChangelogOpen(true)}
 						title="What's new in Kite"
-						className="rounded text-left text-neutral-500 underline-offset-2 hover:underline hover:text-neutral-700"
+						className="rounded text-start text-neutral-500 underline-offset-2 hover:underline hover:text-neutral-700"
 					>
 						Updated {updatedLabel ?? "…"}
 					</button>

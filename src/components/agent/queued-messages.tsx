@@ -16,7 +16,7 @@ export function QueuedAgentMessages({ messages, running, onRemove, onEdit, onSte
 						key={item.id}
 						className="flex min-w-0 items-center gap-2 rounded-xl px-2 py-2 text-sm text-neutral-700 hover:bg-white/70"
 					>
-						<CornerDownRight size={15} className="shrink-0 text-neutral-400" aria-hidden="true" />
+						<CornerDownRight size={15} className="shrink-0 text-neutral-400 rtl:-scale-x-100" aria-hidden="true" />
 						{editingId === item.id ? (
 							<form
 								className="flex min-w-0 flex-1 items-center gap-2"

@@ -269,6 +269,7 @@ The app never checks for or pulls updates. New versions arrive by a push to the 
 ## Conventions
 
 - Tabs for indentation. `@/*` maps to `src/*`.
+- Layout is logical, so the interface can mirror for right-to-left languages: `ms-`/`me-`/`ps-`/`pe-`, `start-`/`end-`, `text-start`/`text-end`, `border-s`/`border-e`, `rounded-s`/`rounded-e` and the logical CSS properties, never `ml-`/`pr-`/`left-`/`text-left`/`border-l`. Directional icons (chevrons, arrows, reply, forward) carry `rtl:-scale-x-100`. `tests/logical-css.test.mjs` fails on a physical utility in `src/`; one that is physical on purpose (centring with `left-1/2`, a sheet side, a drag handle measured in JS, safe-area insets) goes in its `ALLOWED` list with the reason.
 - Types and pure helpers are split out of components and modules into sibling `*-types.d.ts` and `*-utils.ts` files (41 and 27 of them respectively). Follow this when adding anything non-trivial.
 - Server code reaches bindings through `getEnv()` / `getEnvAsync()` in `src/lib/cloudflare.ts`, then `getDb(env)` from `src/db`. Keep binding access centralized here.
 - API routes return `NextResponse.json({ error: "..." }, { status })` for failures; there is no shared error envelope helper.

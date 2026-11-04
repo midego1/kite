@@ -113,7 +113,7 @@ export function PageSearchInput() {
 			</div>
 			<div
 				className={cn(
-					"absolute left-0 top-full z-50 mt-1 max-h-[min(28rem,70dvh)] w-80 overflow-y-auto rounded-xl border border-neutral-200 bg-white py-1.5 shadow-lg",
+					"absolute start-0 top-full z-50 mt-1 max-h-[min(28rem,70dvh)] w-80 overflow-y-auto rounded-xl border border-neutral-200 bg-white py-1.5 shadow-lg",
 					!expanded && "hidden",
 				)}
 			>

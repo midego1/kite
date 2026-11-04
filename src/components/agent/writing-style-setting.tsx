@@ -123,7 +123,7 @@ export function WritingStyleSetting() {
 						{profile.description ? (
 							<figure className="space-y-1">
 								<figcaption className="text-xs text-neutral-500">This is what Kite tells the AI:</figcaption>
-								<blockquote className="border-l-2 border-blue-300 pl-2 text-xs text-neutral-700">
+								<blockquote className="border-s-2 border-blue-300 ps-2 text-xs text-neutral-700">
 									{profile.description}
 								</blockquote>
 							</figure>

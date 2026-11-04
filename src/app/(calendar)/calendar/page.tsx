@@ -559,7 +559,7 @@ export default function CalendarPage() {
 											onClick={() => setPickerMonth(addMonths(pickerMonth, -1))}
 											className="flex h-8 w-8 items-center justify-center rounded-lg text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
 										>
-											<ChevronLeft className="h-4 w-4" />
+											<ChevronLeft className="h-4 w-4 rtl:-scale-x-100" />
 										</button>
 										<button
 											type="button"
@@ -567,7 +567,7 @@ export default function CalendarPage() {
 											onClick={() => setPickerMonth(addMonths(pickerMonth, 1))}
 											className="flex h-8 w-8 items-center justify-center rounded-lg text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
 										>
-											<ChevronRight className="h-4 w-4" />
+											<ChevronRight className="h-4 w-4 rtl:-scale-x-100" />
 										</button>
 									</div>
 								</div>
@@ -628,7 +628,7 @@ export default function CalendarPage() {
 					onClick={() => setVisibleDate(navigateCalendar(visibleDate, view, -1))}
 					className="flex h-8 w-8 items-center justify-center rounded-lg text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
 				>
-					<ChevronLeft className="h-4 w-4" />
+					<ChevronLeft className="h-4 w-4 rtl:-scale-x-100" />
 				</button>
 				<button
 					type="button"
@@ -636,7 +636,7 @@ export default function CalendarPage() {
 					onClick={() => setVisibleDate(navigateCalendar(visibleDate, view, 1))}
 					className="flex h-8 w-8 items-center justify-center rounded-lg text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
 				>
-					<ChevronRight className="h-4 w-4" />
+					<ChevronRight className="h-4 w-4 rtl:-scale-x-100" />
 				</button>
 				<button
 					type="button"
@@ -677,7 +677,7 @@ export default function CalendarPage() {
 				<Button
 					disabled={pendingAction !== null}
 					onClick={() => openNewEvent()}
-					className="ml-1 max-md:ml-0 max-md:h-8 max-md:w-8 max-md:px-0"
+					className="ms-1 max-md:ms-0 max-md:h-8 max-md:w-8 max-md:px-0"
 				>
 					<Plus className="h-4 w-4" />
 					<span className="max-md:sr-only">New event</span>
@@ -714,7 +714,7 @@ export default function CalendarPage() {
 								{days.map((day) => (
 									<div
 										key={dateKey(day)}
-										className={`border-l border-neutral-100 px-3 py-2 text-xs ${dateKey(day) === dateKey(today) ? "text-blue-700" : "text-neutral-700"}`}
+										className={`border-s border-neutral-100 px-3 py-2 text-xs ${dateKey(day) === dateKey(today) ? "text-blue-700" : "text-neutral-700"}`}
 									>
 										{formatUserDate(day, { weekday: "short" })}
 										<span className="text-2xl block font-medium">{formatUserDate(day, { day: "numeric" })}</span>
@@ -732,7 +732,7 @@ export default function CalendarPage() {
 									{Array.from({ length: CALENDAR_END_HOUR - CALENDAR_START_HOUR }, (_, index) => (
 										<span
 											key={index}
-											className={`absolute right-3 text-xs text-neutral-700 ${index === 0 ? "" : "-translate-y-1/2"}`}
+											className={`absolute end-3 text-xs text-neutral-700 ${index === 0 ? "" : "-translate-y-1/2"}`}
 											style={{ top: index * CALENDAR_HOUR_HEIGHT }}
 										>
 											{index % 2 == 0 ? null : formatHour(CALENDAR_START_HOUR + index)}
@@ -742,7 +742,7 @@ export default function CalendarPage() {
 								{days.map((day) => (
 									<div
 										key={dateKey(day)}
-										className={"relative border-l border-neutral-100"}
+										className={"relative border-s border-neutral-100"}
 										onDragOver={(event) => {
 											if (!draggedEvent) return;
 											event.preventDefault();
@@ -801,10 +801,10 @@ export default function CalendarPage() {
 										/>
 										{dragPreview && previewEvent && previewPosition && dateKey(dragPreview.day) === dateKey(day) && (
 											<div
-												className={`pointer-events-none absolute left-1 right-1 z-20 rounded-lg border-2 border-dashed border-white ${new Date(previewEvent.endsAt).getTime() <= currentTime ? PAST_EVENT_COLOR_CLASSES[normalizeCalendarColor(previewEvent.color)] : EVENT_COLOR_CLASSES[normalizeCalendarColor(previewEvent.color)]}`}
+												className={`pointer-events-none absolute start-1 end-1 z-20 rounded-lg border-2 border-dashed border-white ${new Date(previewEvent.endsAt).getTime() <= currentTime ? PAST_EVENT_COLOR_CLASSES[normalizeCalendarColor(previewEvent.color)] : EVENT_COLOR_CLASSES[normalizeCalendarColor(previewEvent.color)]}`}
 												style={{ top: previewPosition.top, height: previewPosition.height }}
 											>
-												<span className="absolute left-1 top-0 z-10 whitespace-nowrap rounded bg-neutral-900 px-1.5 py-0.5 text-[10px] font-medium text-white">
+												<span className="absolute start-1 top-0 z-10 whitespace-nowrap rounded bg-neutral-900 px-1.5 py-0.5 text-[10px] font-medium text-white">
 													{formatEventRange(previewEvent)}
 												</span>
 												{previewPosition.height >= 50 && (
@@ -821,7 +821,7 @@ export default function CalendarPage() {
 												style={{ top: currentTimePosition(now) }}
 											>
 												<div className="h-1 w-full bg-blue-600" />
-												<div className="absolute -left-2.5 -top-2 h-5 w-5 rounded-full bg-blue-600" />
+												<div className="absolute -start-2.5 -top-2 h-5 w-5 rounded-full bg-blue-600" />
 											</div>
 										)}
 									</div>
@@ -881,7 +881,7 @@ export default function CalendarPage() {
 								>
 									<div className="grid gap-1 sm:grid-cols-[minmax(0,1fr)_1px_minmax(0,1fr)] sm:gap-2">
 										<label className="relative block min-w-0 text-sm">
-											<span className="pointer-events-none absolute left-2 top-1/2 z-10 -translate-y-1/2 font-medium text-neutral-500">
+											<span className="pointer-events-none absolute start-2 top-1/2 z-10 -translate-y-1/2 font-medium text-neutral-500">
 												From
 											</span>
 											<Input
@@ -890,12 +890,12 @@ export default function CalendarPage() {
 												onFocus={() => setDurationOptionsOpen(true)}
 												onChange={(event) => setStartsAt(event.target.value)}
 												aria-label="From date and time"
-												className={`${eventFieldClass} pl-14`}
+												className={`${eventFieldClass} ps-14`}
 											/>
 										</label>
 										<div aria-hidden="true" className="h-px w-full self-center bg-neutral-200 sm:h-6 sm:w-px" />
 										<label className="relative block min-w-0 text-sm">
-											<span className="pointer-events-none absolute left-2 top-1/2 z-10 -translate-y-1/2 font-medium text-neutral-500">
+											<span className="pointer-events-none absolute start-2 top-1/2 z-10 -translate-y-1/2 font-medium text-neutral-500">
 												To
 											</span>
 											<Input
@@ -904,7 +904,7 @@ export default function CalendarPage() {
 												onFocus={() => setDurationOptionsOpen(true)}
 												onChange={(event) => setEndsAt(event.target.value)}
 												aria-label="To date and time"
-												className={`${eventFieldClass} pl-14`}
+												className={`${eventFieldClass} ps-14`}
 											/>
 										</label>
 									</div>
@@ -944,7 +944,7 @@ export default function CalendarPage() {
 											value={repeat}
 											onChange={(event) => setRepeat(event.target.value as CalendarRepeat)}
 											aria-label="Repeat"
-											className="h-9 w-full appearance-none rounded-md border border-transparent bg-transparent pl-2 pr-8 text-sm text-neutral-700 outline-none hover:bg-neutral-50 focus:border-blue-600 focus:bg-white"
+											className="h-9 w-full appearance-none rounded-md border border-transparent bg-transparent ps-2 pe-8 text-sm text-neutral-700 outline-none hover:bg-neutral-50 focus:border-blue-600 focus:bg-white"
 										>
 											<option value="none">Does not repeat</option>
 											<option value="daily">Daily</option>
@@ -954,7 +954,7 @@ export default function CalendarPage() {
 										</select>
 										<ChevronDown
 											aria-hidden="true"
-											className="pointer-events-none absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-500"
+											className="pointer-events-none absolute end-2 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-500"
 										/>
 									</div>
 									{repeat === "weekdays" && (

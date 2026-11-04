@@ -31,22 +31,22 @@ function BreakdownTable({
 		<section className={cn(CARD_CLASS, "min-w-0 overflow-hidden")} aria-label={title}>
 			<h3 className="px-4 pb-3 pt-4 text-sm font-semibold text-neutral-900">{title}</h3>
 			<div className="overflow-x-auto">
-				<table className="w-full min-w-[600px] text-left text-sm">
+				<table className="w-full min-w-[600px] text-start text-sm">
 					<thead className={TABLE_HEAD_CLASS}>
 						<tr>
 							<th scope="col" className="px-4 py-2">
 								Name
 							</th>
-							<th scope="col" className="px-3 py-2 text-right">
+							<th scope="col" className="px-3 py-2 text-end">
 								Requests
 							</th>
-							<th scope="col" className="px-3 py-2 text-right">
+							<th scope="col" className="px-3 py-2 text-end">
 								Tokens
 							</th>
-							<th scope="col" className="px-3 py-2 text-right">
+							<th scope="col" className="px-3 py-2 text-end">
 								Cost
 							</th>
-							<th scope="col" className="px-4 py-2 text-right">
+							<th scope="col" className="px-4 py-2 text-end">
 								Share of {METRIC_LABELS[metric].toLowerCase()}
 							</th>
 						</tr>
@@ -59,16 +59,16 @@ function BreakdownTable({
 									<td className="min-w-40 max-w-72 px-4 py-2 text-neutral-900 [overflow-wrap:anywhere]">
 										{label(row)}
 									</td>
-									<td className="px-3 py-2 text-right tabular-nums">
+									<td className="px-3 py-2 text-end tabular-nums">
 										{formatTokenCount(row.requests)}
 										{row.failedRequests > 0 && (
 											<span className="block text-xs text-red-700">{formatTokenCount(row.failedRequests)} failed</span>
 										)}
 									</td>
-									<td className="px-3 py-2 text-right tabular-nums">
+									<td className="px-3 py-2 text-end tabular-nums">
 										{formatTokenCount(row.inputTokens + row.outputTokens)}
 									</td>
-									<td className="px-3 py-2 text-right tabular-nums">
+									<td className="px-3 py-2 text-end tabular-nums">
 										{formatEstimatedUsd(totalCostMicros(row))}
 										{row.estimatedRequests > 0 && (
 											<span className="block text-xs text-neutral-500">incl. estimate</span>
@@ -87,9 +87,7 @@ function BreakdownTable({
 													style={{ width: total ? `${(value / total) * 100}%` : 0 }}
 												/>
 											</span>
-											<span className="w-10 text-right tabular-nums text-neutral-700">
-												{formatPercent(value, total)}
-											</span>
+											<span className="w-10 text-end tabular-nums text-neutral-700">{formatPercent(value, total)}</span>
 										</div>
 									</td>
 								</tr>

@@ -92,7 +92,7 @@ function MailboxAccountRow({ mailbox, unread, avatarUrl, onSelect }: MailboxAcco
 		<button
 			type="button"
 			onClick={onSelect}
-			className="flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left transition-colors hover:bg-white"
+			className="flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-start transition-colors hover:bg-white"
 		>
 			<AccountAvatar
 				name={name}
@@ -144,7 +144,7 @@ function AccountMenuActions({
 				>
 					<ShieldCheck size={18} className="text-neutral-600" />
 					Admin
-					{adminActive && <Check className="ml-auto h-4 w-4 text-blue-600" />}
+					{adminActive && <Check className="ms-auto h-4 w-4 text-blue-600" />}
 				</Link>
 			)}
 			<Link
@@ -158,7 +158,7 @@ function AccountMenuActions({
 			<button
 				type="button"
 				onClick={onLogout}
-				className="flex w-full items-center gap-3 border-t border-neutral-100 px-5 py-4 text-left text-sm font-medium text-neutral-800 hover:bg-[#f2f6fc]"
+				className="flex w-full items-center gap-3 border-t border-neutral-100 px-5 py-4 text-start text-sm font-medium text-neutral-800 hover:bg-[#f2f6fc]"
 			>
 				<LogOut size={18} className="text-neutral-600" />
 				Sign out
@@ -196,7 +196,7 @@ function AccountTrigger({
 			onClick={onClick}
 			className={
 				row
-					? "flex w-full items-center gap-2 rounded-lg p-1 pr-2 text-left transition-colors hover:bg-neutral-200/60"
+					? "flex w-full items-center gap-2 rounded-lg p-1 pe-2 text-start transition-colors hover:bg-neutral-200/60"
 					: rail
 						? `${RAIL_ITEM_CLASS} transition-colors hover:bg-neutral-200/60`
 						: "rounded-full p-1 transition-colors hover:bg-neutral-200"
@@ -382,7 +382,7 @@ export function MailboxSelector({ initialUser, placement }: MailboxSelectorProps
 							? ({ "--menu-bottom": `${anchor.bottom}px`, "--menu-max": `${anchor.maxHeight}px` } as CSSProperties)
 							: undefined
 					}
-					className={`absolute right-0 top-14 z-90 data-[placement=sidebar]:fixed data-[placement=sidebar]:left-3 data-[placement=sidebar]:right-auto data-[placement=sidebar]:top-auto data-[placement=sidebar]:bottom-[var(--menu-bottom)] data-[placement=sidebar]:max-h-[var(--menu-max)] data-[placement=sidebar]:z-[200] w-[360px] overflow-hidden rounded-xl border border-neutral-200 bg-[#eef3fb] p-2 shadow-lg shadow-neutral-900/20 max-h-[82vh] overflow-y-auto`}
+					className={`absolute end-0 top-14 z-90 data-[placement=sidebar]:fixed data-[placement=sidebar]:start-3 data-[placement=sidebar]:end-auto data-[placement=sidebar]:top-auto data-[placement=sidebar]:bottom-[var(--menu-bottom)] data-[placement=sidebar]:max-h-[var(--menu-max)] data-[placement=sidebar]:z-[200] w-[360px] overflow-hidden rounded-xl border border-neutral-200 bg-[#eef3fb] p-2 shadow-lg shadow-neutral-900/20 max-h-[82vh] overflow-y-auto`}
 				>
 					<div className="rounded-lg bg-white px-5 py-5">
 						<div className="flex items-center gap-4">
@@ -473,7 +473,7 @@ export function MailboxSelector({ initialUser, placement }: MailboxSelectorProps
 									key={account.userId}
 									type="button"
 									onClick={() => void switchAccount(account.userId)}
-									className="flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left transition-colors hover:bg-white"
+									className="flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-start transition-colors hover:bg-white"
 								>
 									<AccountAvatar
 										name={account.name}

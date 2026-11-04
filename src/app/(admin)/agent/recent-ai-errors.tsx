@@ -85,7 +85,7 @@ export function RecentAiErrors() {
 								<div className="flex flex-wrap items-baseline gap-x-2">
 									<span className="font-medium text-neutral-900">{row.featureLabel}</span>
 									<code className="rounded bg-neutral-100 px-1.5 py-0.5 text-xs text-neutral-700">{row.code}</code>
-									<span className="ml-auto text-xs text-neutral-500">{new Date(row.at).toLocaleString()}</span>
+									<span className="ms-auto text-xs text-neutral-500">{new Date(row.at).toLocaleString()}</span>
 								</div>
 								<p className="text-neutral-700">{aiErrorMessage(row.code, { status: row.status })}</p>
 								<p className="break-all text-xs text-neutral-500">

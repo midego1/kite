@@ -472,7 +472,7 @@ export function MessageFolderPage({
 								className="px-5 pb-1 pt-3 text-sm text-neutral-500 first:pt-1"
 							>
 								{section.label}
-								{section.count !== null && <span className="ml-2">[{section.count}]</span>}
+								{section.count !== null && <span className="ms-2">[{section.count}]</span>}
 							</p>
 						),
 						...section.messages.map((message) => (

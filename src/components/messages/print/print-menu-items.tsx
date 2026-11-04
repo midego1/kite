@@ -5,7 +5,7 @@ import { downloadMessagesPdf, printMessages } from "./print-actions";
 import type { PrintMenuItemsProps } from "./print-menu-types";
 
 const ITEM_CLASS =
-	"flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-100";
+	"flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm text-neutral-700 hover:bg-neutral-100";
 
 /**
  * Print and Download PDF for a message menu; with `print.conversation` they cover every message of the thread.

@@ -19,7 +19,7 @@ import { getSelectionToolbarFolder } from "./utils";
 
 function ListPager({ pager, compact }: Pick<MessageListHeaderProps, "pager" | "compact">) {
 	return (
-		<div className={clsx("flex items-center gap-1 text-neutral-500", compact && "ml-auto")}>
+		<div className={clsx("flex items-center gap-1 text-neutral-500", compact && "ms-auto")}>
 			<span className="whitespace-nowrap px-1 text-xs text-neutral-500">
 				{pager.range.start} - {pager.range.end} of {pager.range.total}
 			</span>
@@ -31,12 +31,12 @@ function ListPager({ pager, compact }: Pick<MessageListHeaderProps, "pager" | "c
 					onClick={pager.previous}
 					aria-label="Previous page"
 				>
-					<ChevronLeft className="h-4 w-4" />
+					<ChevronLeft className="h-4 w-4 rtl:-scale-x-100" />
 				</Button>
 			</Tooltip>
 			<Tooltip label="Next page">
 				<Button variant="ghost" size="sm" disabled={!pager.canNext} onClick={pager.next} aria-label="Next page">
-					<ChevronRight className="h-4 w-4" />
+					<ChevronRight className="h-4 w-4 rtl:-scale-x-100" />
 				</Button>
 			</Tooltip>
 		</div>
@@ -92,7 +92,7 @@ function SidebarToggleButton({ listVisible }: { listVisible: boolean }) {
 				onClick={toggle}
 				className="h-8 w-8 shrink-0 p-0 text-neutral-500 hover:text-neutral-900 max-md:hidden"
 			>
-				<PanelLeft className="h-4 w-4" />
+				<PanelLeft className="h-4 w-4 rtl:-scale-x-100" />
 			</Button>
 		</Tooltip>
 	);
@@ -158,7 +158,7 @@ export function MessageListHeader({
 					</p>
 				)}
 				{!bulk && (
-					<div className="ml-auto flex shrink-0 items-center gap-1">
+					<div className="ms-auto flex shrink-0 items-center gap-1">
 						{emptyFolder && <EmptyFolderButton emptyFolder={emptyFolder} compact={compact} />}
 						{!compact && headerIcons.map((Icon, index) => <Icon key={index} className="h-4 w-4 text-neutral-500" />)}
 						<Tooltip label="Select messages">

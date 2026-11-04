@@ -61,7 +61,7 @@ export function ScheduleSendMenu({
 					type="button"
 					disabled={disabled}
 					aria-label="Schedule send options"
-					className="inline-flex h-8 items-center justify-center rounded-r-lg border-l border-blue-500 bg-blue-600 px-2 text-white transition-colors hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
+					className="inline-flex h-8 items-center justify-center rounded-e-lg border-s border-blue-500 bg-blue-600 px-2 text-white transition-colors hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50"
 				>
 					<ChevronDown className="h-4 w-4" />
 				</DropdownMenu.Trigger>
@@ -81,7 +81,7 @@ export function ScheduleSendMenu({
 									onSelect={() => choose(null)}
 									className="flex cursor-pointer items-center rounded-md px-3 py-2 outline-none hover:bg-neutral-100 focus:bg-neutral-100"
 								>
-									<X className="mr-2 h-4 w-4" />
+									<X className="me-2 h-4 w-4" />
 									Clear schedule
 								</DropdownMenu.Item>
 								<DropdownMenu.Separator className="my-1 h-px bg-neutral-100" />
@@ -94,7 +94,7 @@ export function ScheduleSendMenu({
 								className="cursor-pointer rounded-md px-3 py-2 outline-none hover:bg-neutral-100 focus:bg-neutral-100"
 							>
 								{option.label}
-								<span className="ml-2 text-xs text-neutral-500">
+								<span className="ms-2 text-xs text-neutral-500">
 									{option.value && formatScheduledSend(option.value)}
 								</span>
 							</DropdownMenu.Item>

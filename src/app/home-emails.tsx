@@ -423,7 +423,7 @@ function limitsEmail(): Email {
 		limitations[0],
 		limitations,
 		<>
-			<ol className="max-w-[68ch] list-decimal space-y-2 pl-6 text-[15px] leading-7 text-neutral-800 marker:text-neutral-500">
+			<ol className="max-w-[68ch] list-decimal space-y-2 ps-6 text-[15px] leading-7 text-neutral-800 marker:text-neutral-500">
 				{limitations.map((item) => (
 					<li key={item}>{item}</li>
 				))}

@@ -13,18 +13,18 @@ export function SnoozeMenuItem({ messageId, expanded, onExpandedChange, onSnooze
 		<div data-snooze-expanded={expanded}>
 			<button
 				type="button"
-				className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-100"
+				className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm text-neutral-700 hover:bg-neutral-100"
 				aria-expanded={expanded}
 				onClick={() => onExpandedChange(!expanded)}
 			>
 				<Clock className="h-4 w-4" />
 				Snooze
 				<ChevronDown
-					className={`ml-auto h-4 w-4 text-neutral-400 transition-transform ${expanded ? "rotate-180" : ""}`}
+					className={`ms-auto h-4 w-4 text-neutral-400 transition-transform ${expanded ? "rotate-180" : ""}`}
 				/>
 			</button>
 			{expanded && (
-				<div className="mb-1 ml-3 border-l border-neutral-100 pl-1">
+				<div className="mb-1 ms-3 border-s border-neutral-100 ps-1">
 					<SnoozePicker messageId={messageId} onSnoozed={onSnoozed} />
 				</div>
 			)}
@@ -60,10 +60,10 @@ export function SnoozePicker({ messageId, onSnoozed }: SnoozePickerProps) {
 					type="button"
 					disabled={snoozing}
 					onClick={() => void snooze(preset.value)}
-					className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-neutral-700 hover:bg-neutral-100 focus-visible:bg-neutral-100 focus-visible:outline-none disabled:text-neutral-400"
+					className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-start text-neutral-700 hover:bg-neutral-100 focus-visible:bg-neutral-100 focus-visible:outline-none disabled:text-neutral-400"
 				>
 					<span>{preset.label}</span>
-					<span className="ml-auto text-xs text-neutral-500">{formatSnoozePresetHint(preset.value)}</span>
+					<span className="ms-auto text-xs text-neutral-500">{formatSnoozePresetHint(preset.value)}</span>
 				</button>
 			))}
 			<form

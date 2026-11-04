@@ -164,7 +164,7 @@ export function ImportJobsPanel({ refreshKey }: { refreshKey: number }) {
 								<div className="min-w-0">
 									<p className="truncate text-sm font-medium text-neutral-900">
 										{job.label}
-										<span className="ml-2 text-xs font-normal text-neutral-500">
+										<span className="ms-2 text-xs font-normal text-neutral-500">
 											{job.scope === "account" ? job.host : job.folder} · {job.username}
 										</span>
 									</p>

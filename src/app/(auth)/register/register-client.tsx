@@ -228,7 +228,7 @@ export function RegisterClient() {
 				footer={
 					<Link href="/login" className="inline-flex items-center gap-2 hover:underline">
 						Sign in instead
-						<ArrowRight className="h-4 w-4" />
+						<ArrowRight className="h-4 w-4 rtl:-scale-x-100" />
 					</Link>
 				}
 			>
@@ -450,9 +450,9 @@ export function RegisterClient() {
 								placeholder="you"
 								autoComplete="username"
 								required
-								className="pr-34"
+								className="pe-34"
 							/>
-							<span className="max-w-36 truncate text-sm font-medium text-neutral-500 absolute top-2.5 right-5">
+							<span className="max-w-36 truncate text-sm font-medium text-neutral-500 absolute top-2.5 end-5">
 								@{accountDomain ?? "domain"}
 							</span>
 						</div>

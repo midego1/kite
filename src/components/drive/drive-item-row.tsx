@@ -137,13 +137,13 @@ export function DriveItemRow({
 				onChange={onToggle}
 				disabled={!selectable}
 				aria-label={`Select ${item.name}`}
-				className={clsx("ml-1", !selectable && "invisible")}
+				className={clsx("ms-1", !selectable && "invisible")}
 			/>
 			<button
 				type="button"
 				onClick={() => onAction("open")}
 				disabled={!!item.trashedAt}
-				className="flex min-w-0 items-center gap-3 py-3 text-left disabled:cursor-default"
+				className="flex min-w-0 items-center gap-3 py-3 text-start disabled:cursor-default"
 			>
 				<Icon
 					size={16}

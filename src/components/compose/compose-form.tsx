@@ -887,7 +887,7 @@ export function ComposeForm({
 									type="submit"
 									size="sm"
 									disabled={loading || loadingDraft || !fromAddr}
-									className="rounded-r-none px-4"
+									className="rounded-e-none px-4"
 								>
 									{loading
 										? "Preparing…"

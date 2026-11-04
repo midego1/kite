@@ -14,7 +14,7 @@ import type { HomePerson } from "./home-mailbox-types";
  * the clipboard, the rest acts in the mailbox.
  */
 
-const ITEM = `flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-100 ${FOCUS_RING}`;
+const ITEM = `flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm text-neutral-700 hover:bg-neutral-100 ${FOCUS_RING}`;
 
 type CardProps = {
 	person: HomePerson;

@@ -117,7 +117,7 @@ export function UsageChart({ daily, timeZone, metric, onMetricChange }: UsageCha
 				))}
 			</div>
 			<div ref={frame} className="relative mt-4 flex gap-2" onPointerLeave={() => setActive(null)}>
-				<div className="flex h-48 flex-col justify-between pb-5 text-right text-[11px] tabular-nums text-neutral-500">
+				<div className="flex h-48 flex-col justify-between pb-5 text-end text-[11px] tabular-nums text-neutral-500">
 					<span>{metric === "cost" ? formatEstimatedUsd(max) : formatCompact(max)}</span>
 					<span>0</span>
 				</div>
@@ -240,7 +240,7 @@ function Stat({ label, value, strong }: { label: string; value: string; strong?:
 	return (
 		<>
 			<dt>{label}</dt>
-			<dd className={cn("text-right", strong ? "font-semibold text-neutral-900" : "text-neutral-700")}>{value}</dd>
+			<dd className={cn("text-end", strong ? "font-semibold text-neutral-900" : "text-neutral-700")}>{value}</dd>
 		</>
 	);
 }

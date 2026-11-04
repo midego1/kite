@@ -89,7 +89,7 @@ function StoreRow({
 				<div className="min-w-48 flex-1">
 					<p className="font-medium text-neutral-900">
 						{store.name}
-						<span className={`ml-2 rounded-md px-2 py-0.5 text-xs font-medium ${badge.className}`}>{badge.label}</span>
+						<span className={`ms-2 rounded-md px-2 py-0.5 text-xs font-medium ${badge.className}`}>{badge.label}</span>
 					</p>
 					<p className="text-sm text-neutral-500">
 						{providerLabel(store.provider)}, bucket {store.bucket}
@@ -160,7 +160,7 @@ function StoresCard({
 					<div className="min-w-48 flex-1">
 						<p className="font-medium text-neutral-900">
 							Default: {defaultStore.name}
-							<span className="ml-2 rounded-md bg-green-600/10 px-2 py-0.5 text-xs font-medium text-green-800">
+							<span className="ms-2 rounded-md bg-green-600/10 px-2 py-0.5 text-xs font-medium text-green-800">
 								Built in
 							</span>
 						</p>

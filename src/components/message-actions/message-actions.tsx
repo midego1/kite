@@ -242,7 +242,7 @@ export function MessageActions({
 						disabled={disabled}
 						onClick={() => handleReply("reply")}
 					>
-						<Reply size={iconSize} />
+						<Reply size={iconSize} className="rtl:-scale-x-100" />
 					</Button>
 					<Button
 						variant="ghost"
@@ -276,7 +276,7 @@ export function MessageActions({
 							disabled={disabled}
 							onClick={() => handleReply("replyAll")}
 						>
-							<ReplyAll size={iconSize} />
+							<ReplyAll size={iconSize} className="rtl:-scale-x-100" />
 							Reply all
 						</Button>
 					)}
@@ -354,7 +354,7 @@ export function MessageActions({
 							<>
 								<button
 									type="button"
-									className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-100 disabled:text-neutral-400"
+									className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm text-neutral-700 hover:bg-neutral-100 disabled:text-neutral-400"
 									disabled={archiveDisabled}
 									onClick={() => void runAction("archive")}
 								>
@@ -364,32 +364,32 @@ export function MessageActions({
 								{canReplyAll && (
 									<button
 										type="button"
-										className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-100 disabled:text-neutral-400"
+										className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm text-neutral-700 hover:bg-neutral-100 disabled:text-neutral-400"
 										onClick={() => {
 											setMoreOpen(false);
 											void handleReply("replyAll");
 										}}
 									>
-										<ReplyAll className="h-4 w-4" />
+										<ReplyAll className="h-4 w-4 rtl:-scale-x-100" />
 										Reply all
 									</button>
 								)}
 								{canForward && (
 									<button
 										type="button"
-										className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-100 disabled:text-neutral-400"
+										className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm text-neutral-700 hover:bg-neutral-100 disabled:text-neutral-400"
 										onClick={() => {
 											setMoreOpen(false);
 											void handleForward();
 										}}
 									>
-										<Forward className="h-4 w-4" />
+										<Forward className="h-4 w-4 rtl:-scale-x-100" />
 										Forward
 									</button>
 								)}
 								<button
 									type="button"
-									className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-100 disabled:text-neutral-400"
+									className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm text-neutral-700 hover:bg-neutral-100 disabled:text-neutral-400"
 									onClick={() => void runAction(markAction)}
 								>
 									{read ? <Mail className="h-4 w-4" /> : <MailOpen className="h-4 w-4" />}
@@ -410,7 +410,7 @@ export function MessageActions({
 							<>
 								<button
 									type="button"
-									className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-100 disabled:cursor-not-allowed disabled:text-neutral-400"
+									className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm text-neutral-700 hover:bg-neutral-100 disabled:cursor-not-allowed disabled:text-neutral-400"
 									disabled={!unsubscribeUrl && status === "trash"}
 									onClick={() => void onUnsubscribe()}
 								>
@@ -419,7 +419,7 @@ export function MessageActions({
 								</button>
 								<button
 									type="button"
-									className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-100"
+									className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm text-neutral-700 hover:bg-neutral-100"
 									onClick={() => void onBlockContact()}
 								>
 									<Ban className="h-4 w-4" />
@@ -432,7 +432,7 @@ export function MessageActions({
 						{onSummarizeMessage && (
 							<button
 								type="button"
-								className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-100"
+								className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm text-neutral-700 hover:bg-neutral-100"
 								onClick={() => {
 									setMoreOpen(false);
 									onSummarizeMessage();
@@ -444,7 +444,7 @@ export function MessageActions({
 						)}
 						<button
 							type="button"
-							className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-100"
+							className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm text-neutral-700 hover:bg-neutral-100"
 							onClick={() => {
 								setMoreOpen(false);
 								setSourceOpen(true);
@@ -461,7 +461,7 @@ export function MessageActions({
 							<button
 								key={item.action}
 								type="button"
-								className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-100"
+								className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm text-neutral-700 hover:bg-neutral-100"
 								onClick={() => void runAction(item.action)}
 							>
 								{createElement(item.icon, { size: 16 })}

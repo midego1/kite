@@ -61,7 +61,7 @@ export function AlertsBanner() {
 					type="button"
 					aria-label="Dismiss"
 					title="Dismiss"
-					className={`-mr-1.5 -mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded ${WARNING_HOVER_FILL_CLASS}`}
+					className={`-me-1.5 -mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded ${WARNING_HOVER_FILL_CLASS}`}
 					onClick={() => {
 						storeDismissedSignature(browserStorage(), signature);
 						setDismissed(signature);

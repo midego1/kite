@@ -6,7 +6,7 @@ import { showMailFromLabel } from "./contact-card-utils";
 import type { ContactCardActionsProps, ContactCardHeaderProps } from "./contact-card-types";
 
 const itemClass =
-	"flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-100 focus-visible:bg-neutral-100 focus-visible:outline-none disabled:cursor-not-allowed disabled:text-neutral-400";
+	"flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm text-neutral-700 hover:bg-neutral-100 focus-visible:bg-neutral-100 focus-visible:outline-none disabled:cursor-not-allowed disabled:text-neutral-400";
 
 /** The top of the card: avatar, name with its You and Blocked badges, the address and Copy. */
 export function ContactCardHeader({

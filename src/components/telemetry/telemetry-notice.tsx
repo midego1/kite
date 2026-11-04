@@ -15,7 +15,7 @@ function HideButton({ label, onClick, disabled }: { label: string; onClick: () =
 			aria-label={label}
 			title={label}
 			disabled={disabled}
-			className="-mr-1.5 -mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded hover:bg-[#f59e0b]/15"
+			className="-me-1.5 -mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded hover:bg-[#f59e0b]/15"
 			onClick={onClick}
 		>
 			<X className="h-3.5 w-3.5" aria-hidden="true" />
@@ -43,7 +43,7 @@ function FieldsDisclosure() {
 				type="button"
 				aria-expanded={open}
 				aria-controls={listId}
-				className="mr-auto text-xs underline underline-offset-2 hover:opacity-80"
+				className="me-auto text-xs underline underline-offset-2 hover:opacity-80"
 				onClick={() => setOpen((value) => !value)}
 			>
 				Exactly what is sent

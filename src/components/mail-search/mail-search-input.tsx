@@ -66,7 +66,7 @@ export function MailSearchInput({ variant = "header" }: { variant?: "header" | "
 				hidden={panel}
 				aria-label="Search mail"
 				className={clsx(
-					"ml-auto flex h-10 w-10 shrink-0 items-center justify-center rounded-full hover:bg-neutral-200 md:hidden",
+					"ms-auto flex h-10 w-10 shrink-0 items-center justify-center rounded-full hover:bg-neutral-200 md:hidden",
 					query ? "bg-blue-100 text-blue-700" : "text-neutral-600",
 					expanded && "hidden",
 				)}

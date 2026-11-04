@@ -50,7 +50,7 @@ export function ScreenerBanner({
 	}
 
 	return (
-		<div className={alignWide ? "px-3 sm:px-6 sm:pl-16" : "px-3 sm:px-6 sm:pl-10"}>
+		<div className={alignWide ? "px-3 sm:px-6 sm:ps-16" : "px-3 sm:px-6 sm:ps-10"}>
 			<div
 				role="region"
 				aria-label="New sender"

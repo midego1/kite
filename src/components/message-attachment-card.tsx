@@ -28,7 +28,7 @@ export function MessageAttachmentCard({ attachment, messageId, mailboxId, onPrev
 				onClick={() => onPreview(attachment)}
 				title={`${attachment.filename} · ${visual.label}${flagged ? " · Flagged as risky" : ""}`}
 				data-attachment-risk={flagged ? risk.level : undefined}
-				className={`flex h-9 max-w-full items-center gap-2 rounded-lg bg-neutral-100 pl-2.5 text-left text-sm transition-colors hover:bg-neutral-200 ${hasMenu ? "pr-10" : "pr-3"}`}
+				className={`flex h-9 max-w-full items-center gap-2 rounded-lg bg-neutral-100 ps-2.5 text-start text-sm transition-colors hover:bg-neutral-200 ${hasMenu ? "pe-10" : "pe-3"}`}
 			>
 				{flagged ? (
 					<AlertTriangle

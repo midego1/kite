@@ -57,11 +57,11 @@ export function SuggestionBadge({ suggestions }: { suggestions?: SuggestionCount
 			aria-label={label}
 			title={label}
 			className={clsx(
-				"ml-2 inline-flex shrink-0 items-center gap-1 rounded-full border px-1.5 py-px align-middle text-[11px] font-medium leading-4",
+				"ms-2 inline-flex shrink-0 items-center gap-1 rounded-full border px-1.5 py-px align-middle text-[11px] font-medium leading-4",
 				chip.className,
 			)}
 		>
-			<Icon aria-hidden className="h-3 w-3" />
+			<Icon aria-hidden className={chip.icon === Reply ? "h-3 w-3 rtl:-scale-x-100" : "h-3 w-3"} />
 			<span aria-hidden>{chip.label}</span>
 			{badge.more > 0 && <span aria-hidden>+{badge.more}</span>}
 		</span>

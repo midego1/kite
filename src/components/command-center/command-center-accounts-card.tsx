@@ -47,12 +47,12 @@ export function CommandCenterAccountsCard({ accounts }: { accounts: AccountLine[
 								{line.action ? (
 									<Link
 										href={line.action.href}
-										className="ml-auto inline-flex h-7 shrink-0 items-center rounded-lg border border-neutral-200 bg-white px-2.5 text-xs font-medium text-neutral-900 transition-colors hover:bg-neutral-100"
+										className="ms-auto inline-flex h-7 shrink-0 items-center rounded-lg border border-neutral-200 bg-white px-2.5 text-xs font-medium text-neutral-900 transition-colors hover:bg-neutral-100"
 									>
 										{line.action.label}
 									</Link>
 								) : (
-									<CommandCenterPill tone={line.tone} className="ml-auto">
+									<CommandCenterPill tone={line.tone} className="ms-auto">
 										{line.detail}
 									</CommandCenterPill>
 								)}

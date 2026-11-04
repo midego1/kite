@@ -31,7 +31,7 @@ function ReminderMenu({ item, onChanged }: Pick<MenuProps, "item" | "onChanged">
 		<DropdownMenu.Sub>
 			<DropdownMenu.SubTrigger className={`${ITEM_CLASS} justify-between`}>
 				Reminder
-				<ChevronRight aria-hidden className="h-4 w-4 text-neutral-400" />
+				<ChevronRight aria-hidden className="h-4 w-4 text-neutral-400 rtl:-scale-x-100" />
 			</DropdownMenu.SubTrigger>
 			<DropdownMenu.Portal>
 				<DropdownMenu.SubContent sideOffset={4} className={CONTENT_CLASS} data-finance-reminder-menu>

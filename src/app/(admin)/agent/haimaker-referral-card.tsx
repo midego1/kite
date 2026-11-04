@@ -33,7 +33,7 @@ export function HaimakerReferralCard() {
 				</Button>
 				<Button type="button" size="sm" asChild>
 					<a href={REFERRAL_URL} target="_blank" rel="noreferrer">
-						<ExternalLink className="mr-2 h-4 w-4" />
+						<ExternalLink className="me-2 h-4 w-4" />
 						Sign up
 					</a>
 				</Button>

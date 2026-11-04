@@ -154,8 +154,11 @@ function splitVariants(token) {
 	return parts;
 }
 
-/** Where a block comment opens in `text`, skipping any `/*` inside a string on the line (an ARN, `accept="image/*"`). */
-function commentOpening(text) {
+/**
+ * Where a block comment opens in `text`, skipping any `/*` inside a string on the line (an ARN, `accept="image/*"`) or,
+ * in code, behind a `//` (in CSS a `//` is not a comment).
+ */
+function commentOpening(text, isCss) {
 	let quote = null;
 	for (let index = 0; index < text.length; index += 1) {
 		const character = text[index];
@@ -163,6 +166,7 @@ function commentOpening(text) {
 			if (character === "\\") index += 1;
 			else if (character === quote) quote = null;
 		} else if (character === '"' || character === "'" || character === "`") quote = character;
+		else if (character === "/" && text[index + 1] === "/" && !isCss) return -1;
 		else if (character === "/" && text[index + 1] === "*") return index;
 	}
 	return -1;
@@ -182,7 +186,7 @@ export function withoutComments(line, state, isCss) {
 			state.inBlock = false;
 			rest = rest.slice(close + 2);
 		}
-		const open = commentOpening(rest);
+		const open = commentOpening(rest, isCss);
 		if (open === -1) {
 			code += rest;
 			break;
@@ -337,6 +341,14 @@ test("a comment only hides what is inside it", () => {
 	assert.deepEqual(hits('const route = "/*"; className="ml-2"', false, inString), ["ml-2"]);
 	assert.deepEqual(hits("Resource: `arn:aws:s3:::${bucket}/*`,", false, inString), []);
 	assert.deepEqual(hits('className="mr-2"', false, inString), ["mr-2"]);
+	// Nor does one behind a `//`, in code; in CSS a `//` is not a comment, so there it does.
+	const inLineComment = { inBlock: false };
+	assert.deepEqual(hits("// see /* here", false, inLineComment), []);
+	assert.deepEqual(hits("const a = 1; // and /* here", false, inLineComment), []);
+	assert.deepEqual(hits('className="ml-2"', false, inLineComment), ["ml-2"]);
+	const inCss = { inBlock: false };
+	assert.deepEqual(hits("// /* note", true, inCss), []);
+	assert.equal(inCss.inBlock, true);
 	const state = { inBlock: false };
 	assert.deepEqual(hits("/** first line", false, state), []);
 	assert.deepEqual(hits(" * ml-2 in the block", false, state), []);

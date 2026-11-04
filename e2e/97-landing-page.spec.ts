@@ -94,8 +94,18 @@ test.describe("visitor", () => {
 		await expect(page.locator("article#welcome")).toBeVisible();
 		await expect(page.locator("article#welcome").getByText("Every feature is free.")).toBeVisible();
 		// Every other email is in the document, each with its own subject heading.
-		expect(await page.locator("article").count()).toBe(21);
-		for (const id of ["deploy", "cost", "compare", "before-and-now", "limits", "faq-cost", "feature-ai", "open"]) {
+		expect(await page.locator("article").count()).toBe(25);
+		for (const id of [
+			"deploy",
+			"cost",
+			"compare",
+			"before-and-now",
+			"limits",
+			"faq-cost",
+			"feature-ai",
+			"open",
+			"sample-invoice",
+		]) {
 			await expect(page.locator(`article#${id} :is(h1, h2)`).first()).toHaveCount(1);
 		}
 		expect(await page.locator("article#deploy").textContent()).toContain("docker compose up -d --build");
@@ -110,6 +120,8 @@ test.describe("visitor", () => {
 			["limits", "No published third-party security audit."],
 			["faq-move", "Use IMAP import"],
 			["open", "Discussions"],
+			["sample-launch-plan", "launch-plan.pdf"],
+			["sample-invoice", "fabrikam-invoice-2026-10.pdf"],
 		]) {
 			await expect(page.locator(`article#${id}`).getByText(text).first()).toBeVisible();
 		}
@@ -229,7 +241,8 @@ test.describe("visitor", () => {
 		}
 
 		// The folders count what is unread, and opening an email clears its dot.
-		await expect(sidebar(page).getByRole("button", { name: /^Inbox/ })).not.toContainText("1");
+		// Four example mails stay unread in the Inbox until they are opened.
+		await expect(sidebar(page).getByRole("button", { name: /^Inbox/ })).toContainText("4");
 	});
 
 	test("search looks through every email", async ({ page }) => {
@@ -545,6 +558,418 @@ test.describe("visitor", () => {
 		}
 	});
 
+	test("the comparison is a table with its columns side by side in a wide reader and stacked blocks in a narrow one", async ({
+		page,
+	}) => {
+		const state = () =>
+			openEmail(page).evaluate((article) => {
+				const table = article.querySelector("table")!;
+				const heads = [...table.querySelectorAll('th[scope="col"]')].map((cell) => cell.getBoundingClientRect());
+				const pane = article.closest(".home-scroll")!;
+				return {
+					display: getComputedStyle(table).display,
+					headLefts: heads.map((rect) => Math.round(rect.left)),
+					headVisible: heads.every((rect) => rect.width > 4),
+					overflow: pane.scrollWidth - pane.clientWidth,
+					paneWidth: pane.clientWidth,
+				};
+			});
+
+		// The pane's width decides, not the window's: the sidebar and the list take room, so 1280 px is still stacked.
+		for (const [width, wide] of [
+			[1920, true],
+			[1440, true],
+			[1280, false],
+			[884, false],
+			[390, false],
+		] as const) {
+			await page.setViewportSize({ width, height: 900 });
+			await visit(page, "/#compare");
+			const compare = await state();
+			expect(compare.display, `compare at ${width}`).toBe(wide ? "table" : "block");
+			expect(compare.overflow).toBeLessThanOrEqual(0);
+			if (wide) {
+				// Four columns beside each other, each with its own left edge, named by its header.
+				expect(new Set(compare.headLefts).size).toBe(4);
+				expect(compare.headVisible).toBe(true);
+				await expect(openEmail(page).getByRole("columnheader", { name: "Mailflare" })).toBeVisible();
+				await expect(openEmail(page).getByRole("columnheader", { name: "Email Routing alone" })).toBeVisible();
+				await expect(openEmail(page).getByRole("columnheader", { name: "Hosted inboxes" })).toBeVisible();
+			} else {
+				// Stacked: every cell names its column.
+				await expect(openEmail(page).locator('td[data-label="Mailflare"]').first()).toBeVisible();
+				await expect(openEmail(page).getByRole("columnheader", { name: "Mailflare" })).toBeAttached();
+			}
+			const scroll = await pageScroll(page);
+			expect(scroll.vertical).toBeLessThanOrEqual(0);
+			expect(scroll.horizontal).toBeLessThanOrEqual(0);
+
+			// The price table fits the same pane and is a table once it has 36rem.
+			await visit(page, "/#cost");
+			const cost = await state();
+			expect(cost.display, `cost at ${width}`).toBe(cost.paneWidth >= 576 + 48 ? "table" : "block");
+			expect(cost.overflow).toBeLessThanOrEqual(0);
+		}
+	});
+
+	test("a wide comparison keeps its header in view while the reader scrolls", async ({ page }) => {
+		await page.setViewportSize({ width: 1440, height: 700 });
+		await visit(page, "/#compare");
+		const header = openEmail(page).getByRole("columnheader", { name: "Kite" }).first();
+		const pane = reader(page).locator(".home-scroll");
+		await pane.evaluate((element) => element.scrollTo({ top: 400 }));
+		await page.waitForTimeout(150);
+		const paneTop = (await pane.boundingBox())!.y;
+		const headTop = (await header.boundingBox())!.y;
+		expect(Math.abs(headTop - paneTop)).toBeLessThan(40);
+		expect(await pane.evaluate((element) => element.scrollTop)).toBeGreaterThan(200);
+	});
+
+	test("example mails show the inbox in use, are marked as examples and act only on the page", async ({ page }) => {
+		await visit(page);
+		const inbox = page.getByRole("region", { name: "Inbox" });
+		// Below the feature emails and before Built in the open, each marked on its row.
+		const subjects = await inbox.getByRole("listitem").evaluateAll((rows) => rows.map((row) => row.textContent ?? ""));
+		const at = (text: string) => subjects.findIndex((row) => row.includes(text));
+		expect(at("Open APIs")).toBeLessThan(at("Re: Launch plan for the new inbox"));
+		expect(at("Your October invoice is ready")).toBeLessThan(at("Built in the open"));
+		expect(await inbox.getByText("Example", { exact: true }).count()).toBe(4);
+		await expect(inbox.getByText("New sender")).toHaveCount(1);
+		await expect(sidebar(page).getByRole("button", { name: /^Inbox/ })).toContainText("12");
+
+		// Reply drafted: the card, its wording, the draft in the composer, and nothing sent.
+		await inbox.getByRole("button", { name: /Re: Launch plan for the new inbox/ }).click();
+		const mail = openEmail(page);
+		await expect(mail).toHaveAttribute("id", "sample-launch-plan");
+		await expect(mail.getByText("An example mail: the people and addresses are invented")).toBeVisible();
+		await expect(mail.getByText("Reply drafted")).toBeVisible();
+		await expect(mail.getByText("Suggestion, nothing sent")).toBeVisible();
+		await expect(mail.getByText("launch-plan.pdf")).toBeVisible();
+		await expect(mail.getByText("rollout-checklist.csv")).toBeVisible();
+		await mail.getByRole("button", { name: "Review draft" }).click();
+		const composer = page.getByRole("dialog", { name: "New message" });
+		await expect(composer.getByLabel("To")).toHaveValue("sofia@northwind.test");
+		await expect(composer.getByLabel("Subject")).toHaveValue("Re: Launch plan for the new inbox");
+		await expect(composer.getByLabel("Message")).toHaveValue(/Thanks Sofia, both files are in\./);
+		await composer.getByRole("button", { name: "Send" }).click();
+		await expect(page.getByRole("status")).toContainText("Demo: nothing sent");
+		// The Reply button keeps the one Re: prefix the subject already has.
+		await reader(page).getByRole("button", { name: "Reply", exact: true }).click();
+		await expect(composer.getByLabel("Subject")).toHaveValue("Re: Launch plan for the new inbox");
+		await composer.getByRole("button", { name: "Close" }).click();
+		// The suggestion's draft text is indexed while the card is shown.
+		await page.getByLabel("Search mail").fill("DNS step");
+		await expect(page.getByRole("region", { name: "Search results" }).getByRole("listitem")).toHaveCount(1);
+		await page.getByLabel("Search mail").fill("");
+		await mail.getByRole("button", { name: "Dismiss" }).click();
+		await expect(mail.getByText("Reply drafted")).toHaveCount(0);
+		// Once dismissed, the suggestion's draft text no longer matches the search.
+		await page.getByLabel("Search mail").fill("DNS step");
+		await expect(page.getByRole("region", { name: "Search results" }).getByRole("listitem")).toHaveCount(0);
+		await page.getByLabel("Search mail").fill("");
+
+		// The contact card of an example sender shows an invented address.
+		await mail.getByRole("button", { name: "Sofia Marchetti", exact: true }).click();
+		await expect(
+			page.getByRole("dialog", { name: "Contact card for Sofia Marchetti" }).getByText("sofia@northwind.test"),
+		).toBeVisible();
+		await page.keyboard.press("Escape");
+
+		// New sender: the label on the row, the Screener bar in the email, and a local decision.
+		await inbox.getByRole("button", { name: /A question about a shared mailing/ }).click();
+		await expect(openEmail(page)).toHaveAttribute("id", "sample-api-question");
+		await openEmail(page).getByRole("button", { name: "Approve" }).click();
+		await expect(page.getByRole("status")).toContainText(
+			"Approved. Mail from Ava Lindqvist now arrives in your Inbox.",
+		);
+		await expect(inbox.getByText("New sender")).toHaveCount(0);
+		await expect(openEmail(page).getByRole("button", { name: "Deny" })).toHaveCount(0);
+
+		// Attachments, a deep link and search.
+		await visit(page, "/#sample-invoice");
+		await expect(openEmail(page).getByText("fabrikam-invoice-2026-10.pdf")).toBeVisible();
+		await page.getByLabel("Search mail").fill("fabrikam");
+		await expect(page.getByRole("region", { name: "Search results" }).getByRole("listitem")).toHaveCount(1);
+		// Dismissed above, the suggestion's draft text still does not match after the deep link.
+		await page.getByLabel("Search mail").fill("DNS step");
+		await expect(page.getByRole("region", { name: "Search results" }).getByRole("listitem")).toHaveCount(0);
+		await page.getByLabel("Search mail").fill("example");
+		expect(await page.getByRole("region", { name: "Search results" }).getByRole("listitem").count()).toBe(4);
+		await page.getByLabel("Search mail").fill("");
+
+		// j and k step through the examples in list order.
+		await visit(page, "/#feature-api");
+		await page.keyboard.press("j");
+		await expect(openEmail(page)).toHaveAttribute("id", "sample-launch-plan");
+		await page.keyboard.press("j");
+		await expect(openEmail(page)).toHaveAttribute("id", "sample-design-review");
+		await page.keyboard.press("j");
+		await page.keyboard.press("j");
+		await expect(openEmail(page)).toHaveAttribute("id", "sample-invoice");
+		await page.keyboard.press("j");
+		await expect(openEmail(page)).toHaveAttribute("id", "open");
+	});
+
+	test("two panes on an unfolded screen, one on a cover screen and a phone, in landscape too", async ({ browser }) => {
+		const shape = async (width: number, height: number, touch: boolean) => {
+			const context = await browser.newContext({
+				storageState: { cookies: [], origins: [] },
+				viewport: { width, height },
+				hasTouch: touch,
+				isMobile: touch && width < 900,
+			});
+			const page = await context.newPage();
+			await visit(page);
+			const panes = await page.evaluate(() => {
+				const shown = (selector: string) => {
+					const element = document.querySelector(selector);
+					return !!element && element.getBoundingClientRect().width > 0;
+				};
+				return {
+					posture: document.documentElement.dataset.foldPosture,
+					list: shown('[data-home-pane="list"]'),
+					reader: shown('[data-home-pane="reader"]'),
+				};
+			});
+			const scroll = await pageScroll(page);
+			await context.close();
+			return { ...panes, scroll };
+		};
+		// A cover screen and phones show one pane; the unfolded screens (touch, 701 to 1099 wide) show list and reader.
+		for (const [width, height] of [
+			[344, 882],
+			[390, 844],
+			[430, 932],
+			[673, 841],
+		]) {
+			const result = await shape(width, height, true);
+			expect(result.posture, `${width}`).toBe("folded");
+			expect(result.list).toBe(false);
+			expect(result.reader).toBe(true);
+			expect(result.scroll.vertical).toBeLessThanOrEqual(0);
+		}
+		for (const [width, height] of [
+			[768, 1024],
+			[884, 1000],
+			[884, 1104],
+			[1024, 768],
+			[1104, 884],
+		]) {
+			const result = await shape(width, height, true);
+			expect(result.posture, `${width}`).toBe(width < 1100 ? "unfolded" : "desktop");
+			expect(result.list, `list at ${width}`).toBe(true);
+			expect(result.reader, `reader at ${width}`).toBe(true);
+		}
+		// A phone held sideways is too low for two panes, but everything is reachable and the header stays slim.
+		for (const [width, height] of [
+			[844, 390],
+			[667, 375],
+		]) {
+			const result = await shape(width, height, true);
+			expect(result.posture).toBe("folded");
+			expect(result.list).toBe(false);
+			expect(result.scroll.vertical).toBeLessThanOrEqual(0);
+		}
+	});
+
+	test("an unfolded screen with a hinge keeps the list on the first screen and the reader on the second", async ({
+		browser,
+	}) => {
+		const context = await browser.newContext({
+			storageState: { cookies: [], origins: [] },
+			viewport: { width: 884, height: 1104 },
+			hasTouch: true,
+		});
+		// Chromium has no Viewport Segments here, so the two screens are reported the way a foldable browser would.
+		await context.addInitScript(() => {
+			const segments = [
+				{ left: 0, top: 0, width: 400, height: 1104 },
+				{ left: 484, top: 0, width: 400, height: 1104 },
+			];
+			Object.defineProperty(window, "viewport", {
+				value: { segments, addEventListener() {}, removeEventListener() {} },
+			});
+			const original = window.matchMedia.bind(window);
+			window.matchMedia = (query: string) => {
+				const list = original(query.includes("horizontal-viewport-segments") ? "(min-width: 0px)" : query);
+				if (!query.includes("horizontal-viewport-segments")) return list;
+				return new Proxy(list, {
+					get: (target, key) => {
+						if (key === "matches") return true;
+						if (key === "media") return query;
+						const value = Reflect.get(target, key, target);
+						return typeof value === "function" ? value.bind(target) : value;
+					},
+				});
+			};
+		});
+		const page = await context.newPage();
+		await visit(page);
+		const geometry = await page.evaluate(() => {
+			const box = (selector: string) => document.querySelector(selector)!.getBoundingClientRect();
+			return { list: box('[data-home-pane="list"]'), reader: box('[data-home-pane="reader"]') };
+		});
+		// Nothing sits in the hinge between 400 and 484 px.
+		expect(geometry.list.left).toBeGreaterThanOrEqual(0);
+		expect(geometry.list.right).toBeLessThanOrEqual(401);
+		expect(geometry.reader.left).toBeGreaterThanOrEqual(483);
+		expect(geometry.reader.right).toBeLessThanOrEqual(885);
+		// The folders stay in the menu, which opens over the first screen.
+		await expect(sidebar(page)).toBeHidden();
+		await page.getByRole("button", { name: "Open menu" }).click();
+		await expect(sidebar(page)).toBeVisible();
+		expect((await sidebar(page).boundingBox())!.x + (await sidebar(page).boundingBox())!.width).toBeLessThanOrEqual(
+			401,
+		);
+		await sidebar(page).getByRole("button", { name: /^Cost/ }).click();
+		await expect(openEmail(page)).toHaveAttribute("id", "cost");
+		// A toast sits in the second screen, not across the hinge.
+		await page.getByRole("button", { name: "Star", exact: true }).click();
+		await page.getByRole("button", { name: "Copy link" }).click();
+		const toast = (await page.getByRole("status").boundingBox())!;
+		expect(toast.x).toBeGreaterThanOrEqual(483);
+		expect(toast.x + toast.width).toBeLessThanOrEqual(885);
+		await context.close();
+	});
+
+	test("a saved single-pane choice is honoured, as in the app", async ({ browser }) => {
+		const context = await browser.newContext({
+			storageState: { cookies: [], origins: [] },
+			viewport: { width: 1440, height: 900 },
+		});
+		await context.addInitScript(() => localStorage.setItem("kite-fold-layout", "single"));
+		const page = await context.newPage();
+		await visit(page);
+		await expect(page.locator('[data-home-pane="list"]')).toBeHidden();
+		await expect(sidebar(page)).toBeHidden();
+		await page.getByRole("button", { name: "Back to list" }).click();
+		await expect(page.locator('[data-home-pane="list"]')).toBeVisible();
+
+		// The sidebar is an overlay at any width here, so Tab stays inside the menu instead of reaching the page behind it.
+		await page.getByRole("button", { name: "Open menu" }).click();
+		await expect(sidebar(page)).toBeVisible();
+		const stops = await sidebar(page).locator("button, a[href]").count();
+		for (let step = 0; step < stops + 3; step++) {
+			await page.keyboard.press("Tab");
+			expect(await page.evaluate(() => !!document.activeElement?.closest('aside[aria-label="Folders"]'))).toBe(true);
+		}
+		await page.keyboard.press("Escape");
+		await expect(sidebar(page)).toBeHidden();
+		await context.close();
+	});
+
+	test("every listed size fits: no sideways scrolling, no clipped header and a usable reader", async ({ browser }) => {
+		const sizes = [
+			[320, 568],
+			[344, 882],
+			[390, 844],
+			[430, 932],
+			[600, 960],
+			[673, 841],
+			[768, 1024],
+			[884, 1000],
+			[884, 1104],
+			[1024, 768],
+			[1104, 884],
+			[1180, 820],
+			[1280, 800],
+			[1366, 768],
+			[1440, 900],
+			[1920, 1080],
+			[2560, 1440],
+			[844, 390],
+			[667, 375],
+		];
+		for (const [width, height] of sizes) {
+			for (const zoom of [false, true]) {
+				if (zoom && ![320, 390, 884, 1440].includes(width)) continue;
+				const touch = width <= 1180;
+				const context = await browser.newContext({
+					storageState: { cookies: [], origins: [] },
+					viewport: { width, height },
+					hasTouch: touch,
+					isMobile: touch && width < 900,
+				});
+				const page = await context.newPage();
+				for (const id of ["welcome", "deploy", "cost", "compare", "sample-launch-plan"]) {
+					await visit(page, `/#${id}`);
+					if (zoom) await page.addStyleTag({ content: "html{font-size:200% !important}" });
+					const result = await page.evaluate(() => {
+						const open = document.querySelector('article[data-open="true"]')!;
+						const pane = open.closest(".home-scroll")!;
+						const list = document.querySelector('[data-home-pane="list"] .home-scroll');
+						const header = [...document.querySelectorAll("header a, header button")].filter(
+							(element) => element.getBoundingClientRect().width > 0,
+						);
+						const boxes = header.map((element) => element.getBoundingClientRect());
+						const clipped = boxes.some((box) => box.left < -1 || box.right > window.innerWidth + 1);
+						const overlap = boxes.some((a, i) =>
+							boxes.some(
+								(b, j) =>
+									j > i && a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1,
+							),
+						);
+						const table = open.querySelector("table");
+						return {
+							page: [
+								document.documentElement.scrollHeight - innerHeight,
+								document.documentElement.scrollWidth - innerWidth,
+							],
+							reader: pane.scrollWidth - pane.clientWidth,
+							list: list ? list.scrollWidth - list.clientWidth : 0,
+							clipped,
+							overlap,
+							table: table ? table.getBoundingClientRect().right - pane.getBoundingClientRect().right : -1,
+						};
+					});
+					const where = `${width}x${height}${zoom ? " at 200%" : ""} ${id}`;
+					expect(result.page[0], `page height ${where}`).toBeLessThanOrEqual(0);
+					expect(result.page[1], `page width ${where}`).toBeLessThanOrEqual(0);
+					expect(result.reader, `reader ${where}`).toBeLessThanOrEqual(0);
+					expect(result.list, `list ${where}`).toBeLessThanOrEqual(0);
+					expect(result.clipped, `header clipped ${where}`).toBe(false);
+					expect(result.overlap, `header overlap ${where}`).toBe(false);
+					expect(result.table, `table ${where}`).toBeLessThanOrEqual(1);
+				}
+				await context.close();
+			}
+		}
+	});
+
+	test("Deny removes the example from the Inbox, and the toast makes no claim about where its mail goes", async ({
+		page,
+	}) => {
+		await visit(page, "/#sample-api-question");
+		const inbox = page.getByRole("region", { name: "Inbox" });
+		const unreadBefore = await sidebar(page)
+			.getByRole("button", { name: /^Inbox/ })
+			.innerText();
+		await openEmail(page).getByRole("button", { name: "Deny" }).click();
+		await expect(page.getByRole("status")).toContainText("Denied. Ava Lindqvist can no longer reach your Inbox.");
+		await expect(page.getByRole("status")).not.toContainText(/Trash|Spam/);
+		// The row is gone from the list and from the count, the reader moves to its neighbour, and the focus is not lost.
+		await expect(inbox.getByRole("button", { name: /A question about a shared mailing/ })).toHaveCount(0);
+		await expect(openEmail(page)).toHaveAttribute("id", "sample-invoice");
+		expect(
+			await sidebar(page)
+				.getByRole("button", { name: /^Inbox/ })
+				.innerText(),
+		).not.toBe(unreadBefore);
+		await expect(page).toHaveURL(/#sample-invoice$/);
+		expect(await page.evaluate(() => document.activeElement === document.body)).toBe(false);
+		await page.getByLabel("Search mail").fill("shared mailing");
+		await expect(page.getByText('No mail matches "shared mailing".')).toBeVisible();
+	});
+
+	test("Dismiss and Approve keep the focus in the mailbox", async ({ page }) => {
+		await visit(page, "/#sample-launch-plan");
+		await openEmail(page).getByRole("button", { name: "Dismiss" }).click();
+		expect(await page.evaluate(() => document.activeElement === document.body)).toBe(false);
+		await visit(page, "/#sample-api-question");
+		await openEmail(page).getByRole("button", { name: "Approve" }).click();
+		expect(await page.evaluate(() => document.activeElement === document.body)).toBe(false);
+	});
+
 	test("the folder menu below lg takes the focus, holds it and gives it back", async ({ page }) => {
 		await page.setViewportSize({ width: 884, height: 1104 });
 		await visit(page);
@@ -607,6 +1032,34 @@ test.describe("visitor", () => {
 		await page.setViewportSize({ width: 1440, height: 900 });
 		await expect(reader(page)).toBeVisible();
 		await expect(sidebar(page).getByRole("button", { name: /^Limits/ })).not.toContainText("1");
+	});
+
+	test("a saved two-pane choice below the split floor still reads an email only once it is shown", async ({
+		browser,
+	}) => {
+		const context = await browser.newContext({
+			storageState: { cookies: [], origins: [] },
+			viewport: { width: 390, height: 844 },
+		});
+		await context.addInitScript(() => localStorage.setItem("kite-fold-layout", "two"));
+		const page = await context.newPage();
+		await visit(page);
+		// The override unfolds the posture, but at 390 px the split variant's width floor still shows one pane.
+		expect(await page.evaluate(() => document.documentElement.dataset.foldPosture)).toBe("unfolded");
+		await page.getByRole("button", { name: "Back to list" }).click();
+		await expect(reader(page)).toBeHidden();
+		await page.getByRole("button", { name: "Open menu" }).click();
+		await sidebar(page)
+			.getByRole("button", { name: /^Limits/ })
+			.click();
+		// The folder's first email stays unread while the reader is hidden, and is read once widening shows it.
+		await expect(reader(page)).toBeHidden();
+		await page.getByRole("button", { name: "Open menu" }).click();
+		await expect(sidebar(page).getByRole("button", { name: /^Limits/ })).toContainText("1");
+		await page.setViewportSize({ width: 1440, height: 900 });
+		await expect(reader(page)).toBeVisible();
+		await expect(sidebar(page).getByRole("button", { name: /^Limits/ })).not.toContainText("1");
+		await context.close();
 	});
 
 	test("the brand goes home from an open email, and the composer from the contact card returns to its chip", async ({

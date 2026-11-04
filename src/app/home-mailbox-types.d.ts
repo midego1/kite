@@ -18,9 +18,27 @@ export type HomeEmailMeta = {
 	preview: string;
 	/** Everything the email says, for the search box. */
 	text: string;
+	/** An invented example mail: its sender, and the cards the app would show on it. */
+	sample?: HomeSample;
 };
 
-export type HomePerson = { name: string; address: string; initial: string; own: boolean };
+export type HomePerson = {
+	name: string;
+	address: string;
+	initial: string;
+	own: boolean;
+	/** The product itself: its avatar is the brand icon, not an initial. */
+	brand?: boolean;
+	avatarClassName?: string;
+};
+
+export type HomeSample = {
+	sender: HomePerson;
+	/** A drafted reply the app suggests; nothing is sent. */
+	suggestion?: { title: string; text: string; action: string };
+	/** The sender is new: the Screener holds them until you decide. */
+	screening?: boolean;
+};
 
 export type HomeMailboxProps = {
 	appName: string;
@@ -45,7 +63,12 @@ export type HomeMailboxState = {
 	menuOpen: boolean;
 	/** Which pane a phone shows; wider screens show the list and the reader. */
 	pane: "list" | "reader";
-	composer: { to: string; subject: string } | null;
+	composer: { to: string; subject: string; body: string } | null;
+	/** Samples whose suggestion was dismissed, and whose new sender was approved or denied. */
+	dismissed: string[];
+	decided: string[];
+	/** Denied senders' example mails: they leave the Inbox. */
+	denied: string[];
 	/** The counter makes every toast a new value, so a repeated text still restarts the expiry timer. */
 	toast: { text: string; n: number } | null;
 	contactCard: { address: string; left: number } | null;
@@ -56,7 +79,7 @@ export type HomeMailboxAction =
 	| {
 			type: "view";
 			view: HomeViewId;
-			/** Below the md breakpoint the folder opens as a list, so its first email is not displayed. */
+			/** A one-pane shell (a folded posture or a viewport below the split floor) opens the folder as a list, so its first email is not displayed. */
 			phone?: boolean;
 	  }
 	| { type: "search"; text: string }
@@ -67,7 +90,9 @@ export type HomeMailboxAction =
 	| { type: "openContact"; address: string; left: number }
 	| { type: "closeContact" }
 	| { type: "markRead"; id: string }
-	| { type: "compose"; to: string; subject: string }
+	| { type: "compose"; to: string; subject: string; body?: string }
+	| { type: "dismissSuggestion"; id: string }
+	| { type: "decideSender"; id: string; approve: boolean }
 	| { type: "closeComposer" }
 	| { type: "send" }
 	| { type: "toast"; text: string }

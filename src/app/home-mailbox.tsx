@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, type MouseEvent } from "react";
+import { useFoldViewport } from "@/components/use-fold-posture";
+import { hingeGrid, homeHinge } from "./home-mailbox-fold";
 import { HomeList } from "./home-mailbox-list";
 import { HomeComposer, HomeToast } from "./home-mailbox-overlays";
 import { HomeReader } from "./home-mailbox-reader";
@@ -32,9 +34,9 @@ function isTyping(event: KeyboardEvent): boolean {
 	);
 }
 
-/** Below lg the menu is a layer over the page: Tab goes round inside it. */
-function trapTab(event: KeyboardEvent, root: HTMLElement | null) {
-	if (window.matchMedia("(min-width: 1024px)").matches) return;
+/** An overlay menu holds Tab: below lg always, and on a foldable at any width, where the menu only ever overlays. */
+function trapTab(event: KeyboardEvent, root: HTMLElement | null, overlay: boolean) {
+	if (!overlay && window.matchMedia("(min-width: 1024px)").matches) return;
 	const items = [...(root?.querySelectorAll<HTMLElement>('aside[aria-label="Folders"] :is(button, a[href])') ?? [])];
 	if (items.length === 0) return;
 	const active = document.activeElement as HTMLElement | null;
@@ -76,6 +78,7 @@ export function HomeMailbox({ appName, icon, emails, bodies, chrome, footer, hea
 	const contactOpener = useRef<HTMLElement | null>(null);
 	const composerOpener = useRef<HTMLElement | null>(null);
 	const stateRef = useRef(state);
+	const menuOverlayRef = useRef(false);
 	const wasMenuOpen = useRef(false);
 	const wasComposerOpen = useRef(false);
 
@@ -95,7 +98,13 @@ export function HomeMailbox({ appName, icon, emails, bodies, chrome, footer, hea
 	const people = useMemo<{ sender: HomePerson; me: HomePerson }>(() => {
 		const slug = appName.toLowerCase().replace(/[^a-z0-9]/g, "") || "kite";
 		return {
-			sender: { name: appName, address: `hello@${slug}.example`, initial: appName.charAt(0).toUpperCase(), own: false },
+			sender: {
+				name: appName,
+				address: `hello@${slug}.example`,
+				initial: appName.charAt(0).toUpperCase(),
+				own: false,
+				brand: true,
+			},
 			me: { name: "You", address: mailbox.address, initial: "Y", own: true },
 		};
 	}, [appName, mailbox.address]);
@@ -190,8 +199,13 @@ export function HomeMailbox({ appName, icon, emails, bodies, chrome, footer, hea
 		rawDispatch({ type: "openContact", address: person.address, left });
 	}, []);
 
+	const fold = useFoldViewport();
+	const hinge = homeHinge(fold);
+
 	useEffect(() => {
 		stateRef.current = state;
+		// The menu overlays instead of being a column on a foldable, on a folded layout of any width and below lg.
+		menuOverlayRef.current = !!hinge || fold.posture === "folded";
 	});
 
 	// Keys work from a fresh load, wherever the focus is, except in a field. After a move the focus follows the open
@@ -207,7 +221,7 @@ export function HomeMailbox({ appName, icon, emails, bodies, chrome, footer, hea
 					dispatch(action);
 				}
 			} else if (event.key === "Tab") {
-				if (current.menuOpen) trapTab(event, root);
+				if (current.menuOpen) trapTab(event, root, menuOverlayRef.current);
 			} else if ((event.key === "j" || event.key === "k") && !current.composer && !isTyping(event)) {
 				event.preventDefault();
 				dispatch({ type: "move", direction: event.key === "j" ? 1 : -1 });
@@ -234,18 +248,24 @@ export function HomeMailbox({ appName, icon, emails, bodies, chrome, footer, hea
 		wasMenuOpen.current = menuOpen;
 	}, [menuOpen]);
 
-	// An email counts as read once it is on screen, also when the window is widened to show it.
+	// An email counts as read once it is on screen: in the reader, or beside the list when the split shows it. A
+	// cover screen, a phone held sideways and a window below the split variant's width floor show one pane, even
+	// with a saved "Always two panes", so the posture alone is not enough; also when it is widened to show it.
+	const twoPanes = fold.posture !== "folded" && fold.splitWidth;
 	useEffect(() => {
-		const wide = window.matchMedia("(min-width: 768px)");
-		const mark = () => {
-			const current = stateRef.current;
-			if (current.openId && (wide.matches || current.pane === "reader"))
-				rawDispatch({ type: "markRead", id: current.openId });
-		};
-		mark();
-		wide.addEventListener("change", mark);
-		return () => wide.removeEventListener("change", mark);
-	}, [state.openId, state.pane]);
+		const current = stateRef.current;
+		if (current.openId && (twoPanes || current.pane === "reader")) {
+			rawDispatch({ type: "markRead", id: current.openId });
+		}
+	}, [state.openId, state.pane, twoPanes]);
+
+	// Dismiss, Approve and Deny remove their own control: the focus goes to the open email's row or article, not to body.
+	const decisions = state.dismissed.length + state.decided.length;
+	const decisionsSeen = useRef(0);
+	useEffect(() => {
+		if (decisions > decisionsSeen.current) settleFocus(rootRef.current);
+		decisionsSeen.current = decisions;
+	}, [decisions]);
 
 	// The skip link opens the open email for a phone too, where the list may be showing: the hash would not change.
 	const skipToMessage = (event: MouseEvent<HTMLAnchorElement>) => {
@@ -266,7 +286,7 @@ export function HomeMailbox({ appName, icon, emails, bodies, chrome, footer, hea
 		<div
 			ref={rootRef}
 			onClick={onClick}
-			className="home-page relative flex h-dvh flex-col overflow-hidden bg-white text-neutral-900"
+			className="home-page relative flex h-dvh flex-col overflow-clip bg-white pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] text-neutral-900"
 		>
 			{/* Targets the open email's article (each is focusable), so it skips the folders and the list, and the
 			    hash it sets always names an email, never a fragment the hash listener would read as Welcome. */}
@@ -284,10 +304,26 @@ export function HomeMailbox({ appName, icon, emails, bodies, chrome, footer, hea
 			<div className="shrink-0 border-b border-neutral-200 bg-white">{chrome}</div>
 			<main
 				id="main"
-				className="relative grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[minmax(280px,340px)_minmax(0,1fr)] lg:grid-cols-[232px_minmax(300px,360px)_minmax(0,1fr)]"
+				style={hinge ? hingeGrid(hinge) : undefined}
+				className="relative grid min-h-0 flex-1 grid-cols-1 split:grid-cols-[minmax(280px,340px)_minmax(0,1fr)] split:lg:grid-cols-[232px_minmax(300px,360px)_minmax(0,1fr)]"
 			>
-				<HomeSidebar state={state} emails={emails} dispatch={dispatch} mailbox={mailbox} footer={footer} />
-				<HomeList state={state} emails={emails} appName={appName} icon={icon} onOpen={openEmail} dispatch={dispatch} />
+				<HomeSidebar
+					state={state}
+					emails={emails}
+					dispatch={dispatch}
+					mailbox={mailbox}
+					footer={footer}
+					menuOnly={!!hinge}
+				/>
+				<HomeList
+					state={state}
+					emails={emails}
+					appName={appName}
+					icon={icon}
+					onOpen={openEmail}
+					dispatch={dispatch}
+					menuOnly={!!hinge}
+				/>
 				<HomeReader
 					ref={readerRef}
 					state={state}
@@ -299,13 +335,15 @@ export function HomeMailbox({ appName, icon, emails, bodies, chrome, footer, hea
 					dispatch={dispatch}
 					onCopyLink={(id) => void copyLink(id)}
 					onContact={openContact}
+					secondScreen={!!hinge}
 				/>
-				<HomeToast state={state} dispatch={dispatch} />
+				<HomeToast state={state} dispatch={dispatch} secondScreen={!!hinge} />
 				{/* Remount for a new target: the To and Subject inputs are uncontrolled (defaultValue). */}
 				<HomeComposer
-					key={state.composer ? `${state.composer.to}\n${state.composer.subject}` : "closed"}
+					key={state.composer ? `${state.composer.to}\n${state.composer.subject}\n${state.composer.body}` : "closed"}
 					state={state}
 					dispatch={dispatch}
+					secondScreen={!!hinge}
 				/>
 			</main>
 		</div>

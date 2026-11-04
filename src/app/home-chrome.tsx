@@ -16,7 +16,7 @@ function GitHubMark() {
 /** The bar above the mailbox: the brand on the left, the calls to action always in view on the right. */
 export function HomeChrome({ appName, icon }: { appName: string; icon: string }) {
 	return (
-		<header className="flex min-h-14 flex-wrap items-center justify-between gap-x-2 px-3 py-2 sm:px-4">
+		<header className="flex min-h-14 [@media(max-height:500px)]:min-h-11 flex-wrap items-center justify-between gap-x-2 px-3 py-2 sm:px-4">
 			<HomeBrandLink label={`${appName} home`}>
 				<img src={icon} height={28} width={28} alt="" />
 				<span className="hidden truncate text-lg font-bold tracking-tight text-neutral-900 min-[420px]:inline">

@@ -823,6 +823,7 @@
 	"97-landing-page.spec.ts › live demo › the Screener approves and denies new senders and the counts follow": 1800,
 	"97-landing-page.spec.ts › live demo › works from the keyboard with visible focus, and the dialogs take and give back the focus": 1700,
 	"97-landing-page.spec.ts › signed in › keeps the page and offers the dashboard": 2700,
+	"97-landing-page.spec.ts › visitor › a saved two-pane choice below the split floor still reads an email only once it is shown": 1900,
 	"97-landing-page.spec.ts › visitor › fits a phone without horizontal overflow": 500,
 	"97-landing-page.spec.ts › visitor › follows the dark theme with readable text": 1700,
 	"97-landing-page.spec.ts › visitor › shows the hero, the ways in, the product preview and every section": 1400,

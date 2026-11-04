@@ -7,6 +7,8 @@ const FOLD_POSTURE_ATTRIBUTE = "fold-posture";
 /** A cover screen is narrow enough for one pane; at about 700 px a small tablet or an unfolded foldable starts. */
 const FOLDED_MAX_WIDTH = 700;
 export const FOLDED_VIEWPORT_QUERY = `(max-width: ${FOLDED_MAX_WIDTH}px)`;
+/** The home page's split variant floor (globals.css): below it even a saved "Always two panes" shows one pane. */
+export const TWO_PANE_VIEWPORT_QUERY = `(min-width: ${FOLDED_MAX_WIDTH + 1}px)`;
 /** Tailwind's `md` breakpoint, where the app has always switched from its phone shell to the sidebar. */
 const PHONE_SHELL_MAX_WIDTH = 767;
 export const PHONE_SHELL_VIEWPORT_QUERY = `(max-width: ${PHONE_SHELL_MAX_WIDTH}px)`;
@@ -50,6 +52,8 @@ export interface FoldViewport {
 	override: FoldLayoutPreference;
 	/** At least the desktop width, where the reading-pane preference applies on a desktop. */
 	wide: boolean;
+	/** At least the two-pane floor (TWO_PANE_VIEWPORT_QUERY), so a split the posture asks for really shows. */
+	splitWidth: boolean;
 	coarsePointer: boolean;
 	segments: FoldSegment[];
 	hinge: FoldHinge | null;

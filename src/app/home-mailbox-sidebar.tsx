@@ -11,6 +11,7 @@ import {
 	X,
 	type LucideIcon,
 } from "lucide-react";
+import { TWO_PANE_VIEWPORT_QUERY } from "@/components/fold-posture-utils";
 import { FOLDERS, unreadCount } from "./home-mailbox-state-utils";
 import type {
 	HomeEmailMeta,
@@ -39,6 +40,8 @@ type SidebarProps = {
 	dispatch: (action: HomeMailboxAction) => void;
 	mailbox: { name: string; address: string };
 	footer: ReactNode;
+	/** Always a menu over the list, never a column: a foldable's first screen holds the list. */
+	menuOnly?: boolean;
 };
 
 function Item({
@@ -55,7 +58,17 @@ function Item({
 		<li>
 			<button
 				type="button"
-				onClick={() => dispatch({ type: "view", view, phone: !window.matchMedia("(min-width: 768px)").matches })}
+				onClick={() =>
+					// One pane shows the folder's list, not its first email: a folded shell, or one narrower than the
+					// split variant's floor even with a saved "Always two panes".
+					dispatch({
+						type: "view",
+						view,
+						phone:
+							document.documentElement.dataset.foldPosture === "folded" ||
+							!window.matchMedia(TWO_PANE_VIEWPORT_QUERY).matches,
+					})
+				}
 				aria-current={active ? "page" : undefined}
 				className={`flex h-9 w-full items-center justify-between rounded-lg px-3 text-sm ${FOCUS_RING} ${
 					active ? "bg-neutral-100 font-medium text-neutral-900" : "text-neutral-600 hover:bg-neutral-100"
@@ -72,7 +85,8 @@ function Item({
 }
 
 /** The folders are the site's navigation. Below lg the sidebar is a menu over the list, as in the app. */
-export function HomeSidebar({ state, emails, dispatch, mailbox, footer }: SidebarProps) {
+export function HomeSidebar({ state, emails, dispatch, mailbox, footer, menuOnly }: SidebarProps) {
+	const column = menuOnly ? "" : "split:lg:";
 	const rest = FOLDERS.filter((folder) => folder.id !== "inbox");
 	return (
 		<>
@@ -83,7 +97,7 @@ export function HomeSidebar({ state, emails, dispatch, mailbox, footer }: Sideba
 					tabIndex={-1}
 					aria-hidden="true"
 					onClick={() => dispatch({ type: "closeMenu" })}
-					className="absolute inset-0 z-20 bg-black/30 lg:hidden"
+					className={`absolute inset-0 z-20 bg-black/30 ${column ? "split:lg:hidden" : ""}`}
 				/>
 			)}
 			<aside
@@ -91,8 +105,10 @@ export function HomeSidebar({ state, emails, dispatch, mailbox, footer }: Sideba
 				data-home-pane="folders"
 				className={`${
 					state.menuOpen
-						? "absolute inset-y-0 left-0 z-30 flex w-64 shadow-2xl lg:static lg:w-auto lg:shadow-none"
-						: "hidden lg:flex"
+						? `absolute inset-y-0 left-0 z-30 flex w-64 max-w-[85%] shadow-2xl ${column ? "split:lg:static split:lg:w-auto split:lg:max-w-none split:lg:shadow-none" : ""}`
+						: column
+							? "hidden split:lg:flex"
+							: "hidden"
 				} home-scroll min-h-0 min-w-0 flex-col gap-1 overflow-y-auto border-r border-neutral-200 bg-[#f6f8fc] px-3 py-4`}
 			>
 				<div className="mb-1 flex items-start justify-between gap-2 px-1">
@@ -104,7 +120,7 @@ export function HomeSidebar({ state, emails, dispatch, mailbox, footer }: Sideba
 						type="button"
 						aria-label="Close menu"
 						onClick={() => dispatch({ type: "closeMenu" })}
-						className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-neutral-600 lg:hidden ${FOCUS_RING}`}
+						className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-neutral-600 ${column ? "split:lg:hidden" : ""} ${FOCUS_RING}`}
 					>
 						<X className="h-4 w-4" aria-hidden="true" />
 					</button>

@@ -142,3 +142,44 @@ test("a Latin message keeps its left to right layout, even with a stretch of Ara
 		"2px",
 	);
 });
+
+test("a direction the sender declares on html or body wins over the first letter, and a Gmail-style quote has one bar", async ({
+	page,
+}) => {
+	const token = uniqueToken("rtl-root");
+	const english = `English template ${token}`;
+	await deliverInbound(api, {
+		from: `"Shop" <shop-${token}@outside.test>`,
+		to: SUPPORT_ADDRESS,
+		subject: english,
+		text: "Dear customer",
+		html: `<html dir="ltr"><body><p>مرحبا محمد, your order has shipped.</p></body></html>`,
+	});
+	const arabic = `نشرة ${token}`;
+	await deliverInbound(api, {
+		from: `"Kite" <news-${token}@outside.test>`,
+		to: SUPPORT_ADDRESS,
+		subject: arabic,
+		text: "Kite",
+		html: `<html dir="ltr"><body dir="RTL"><p>Kite Weekly: أخبار هذا الأسبوع</p><div class="gmail_quote"><blockquote class="gmail_quote" style="margin:0 0 0 .8ex;border-left:1px #ccc solid;padding-left:1ex">اقتباس</blockquote></div></body></html>`,
+	});
+
+	await page.goto("/inbox");
+	await openMessage(page, english);
+	let frame = page.frameLocator('iframe[title="Message body"]');
+	await expect(frame.getByText("your order has shipped")).toBeVisible();
+	// The sender said left to right, though the first strong letter is Arabic.
+	expect(await direction(frame.getByText("your order has shipped"))).toBe("ltr");
+
+	await openMessage(page, arabic);
+	frame = page.frameLocator('iframe[title="Message body"]');
+	await expect(frame.getByText("Kite Weekly")).toBeVisible();
+	// The body said right to left (body wins over html), though the first strong letter is Latin.
+	expect(await direction(frame.getByText("Kite Weekly"))).toBe("rtl");
+	// Gmail's inline border-left never reaches the frame (the reader's sanitizer drops border longhands), so the one
+	// bar is ours, on the reading start side: the right.
+	const quote = frame.locator("blockquote").first();
+	await expect(quote).toBeAttached();
+	expect(await quote.evaluate((element) => getComputedStyle(element).borderRightWidth)).toBe("2px");
+	expect(await quote.evaluate((element) => getComputedStyle(element).borderLeftWidth)).toBe("0px");
+});

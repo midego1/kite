@@ -16,6 +16,7 @@ await build({
 		contents: `
 			export { createEmailHtmlSanitizer } from "./src/app/(dashboard)/inbox/[messageId]/email-html-sanitizer-utils.ts";
 			export { sanitizeStoredEmailHtml } from "./src/lib/email/stored-html-utils.ts";
+			export { rootDirection } from "./src/lib/email/root-direction-utils.ts";
 			export { parseCssColour, isNearBlackNeutral, isUnreadableOnDark, paintsBackground } from "./src/components/messages/email-colour-utils.ts";
 		`,
 		resolveDir: root,
@@ -35,6 +36,7 @@ await build({
 const {
 	createEmailHtmlSanitizer,
 	sanitizeStoredEmailHtml,
+	rootDirection,
 	parseCssColour,
 	isNearBlackNeutral,
 	isUnreadableOnDark,
@@ -387,4 +389,57 @@ test("faint backgrounds and currentcolor do not make a mail count as designed", 
 	}
 	assert.equal(paintsBackground("currentcolor"), false);
 	assert.equal(paintsBackground("rgba(0,0,0,.05)"), false);
+});
+
+const ROOT_CASES = [
+	['<html dir="ltr"><body><div>x</div></body></html>', '<div dir="ltr"><div>x</div></div>'],
+	['<html dir="ltr"><body dir="rtl"><div>x</div></body></html>', '<div dir="rtl"><div>x</div></div>'],
+	['<html dir="rtl"><body dir="ltr"><div>x</div></body></html>', '<div dir="ltr"><div>x</div></div>'],
+	['<html dir="RTL"><body><div>x</div></body></html>', '<div dir="rtl"><div>x</div></div>'],
+	['<body DIR="Auto"><div>x</div></body>', '<div dir="auto"><div>x</div></div>'],
+	// An unusable body value does not hide the html element's declared one.
+	['<html dir="rtl"><body dir="sideways"><div>x</div></body></html>', '<div dir="rtl"><div>x</div></div>'],
+];
+const ROOT_REJECTED = [
+	'<html dir=" rtl"><body><div>x</div></body></html>',
+	'<html dir="rtl "><body><div>x</div></body></html>',
+	'<html dir="rtl; x"><body><div>x</div></body></html>',
+	'<html dir="inherit"><body dir=""><div>x</div></body></html>',
+	"<html dir='\"><script>x()</script>'><body><div>x</div></body></html>",
+	'<html lang="ar" class="y" style="color:red" onload="x()"><body bgcolor="red" onload="x()"><div>x</div></body></html>',
+	"<div>x</div>",
+];
+
+test("the direction declared on <html> or <body> survives storing, in one wrapper and nothing else", () => {
+	for (const [html, expected] of ROOT_CASES) assert.equal(sanitizeStoredEmailHtml(html), expected, html);
+	for (const html of ROOT_REJECTED) assert.equal(sanitizeStoredEmailHtml(html), "<div>x</div>", html);
+});
+
+test("the direction declared on <html> or <body> survives the reader's sanitizer, in one wrapper and nothing else", () => {
+	for (const [html, expected] of ROOT_CASES) assert.equal(sanitizeEmailHtml(html), expected, html);
+	for (const html of ROOT_REJECTED) assert.equal(sanitizeEmailHtml(html), "<div>x</div>", html);
+	// Mail the composer sanitizes for sending is left as it was.
+	assert.equal(
+		sanitizeEmailHtml('<html dir="rtl"><body dir="rtl"><div>x</div></body></html>', { forOutgoing: true }),
+		"<div>x</div>",
+	);
+	// Sanitizing what was already stored adds no second wrapper, and a dir on an inner element is kept.
+	const stored = sanitizeStoredEmailHtml('<html><body dir="rtl"><div dir="ltr">x</div></body></html>');
+	assert.equal(stored, '<div dir="rtl"><div dir="ltr">x</div></div>');
+	assert.equal(sanitizeEmailHtml(stored), stored);
+	// The security properties stay: nothing else from the root tags, no script.
+	assert.doesNotMatch(
+		sanitizeEmailHtml(
+			'<html dir="rtl" onload="x()"><body dir="rtl" onclick="x()"><script>x()</script><p>x</p></body></html>',
+		),
+		/script|onload|onclick/,
+	);
+});
+
+test("rootDirection takes only the exact values, the body's before the html element's", () => {
+	assert.equal(rootDirection("RTL", "ltr"), "rtl");
+	assert.equal(rootDirection(undefined, "Auto"), "auto");
+	assert.equal(rootDirection("", "ltr"), "ltr");
+	assert.equal(rootDirection(" rtl", null), null);
+	assert.equal(rootDirection("x", "y"), null);
 });

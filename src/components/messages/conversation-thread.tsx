@@ -282,7 +282,7 @@ export function ConversationMessageCard({
 									dir="auto"
 									className={clsx(
 										!locallyRead ? "font-semibold" : "text-neutral-500",
-										"reading-font block truncate text-[13px]",
+										"reading-font block truncate text-start text-[13px]",
 									)}
 								>
 									{message.snippet || "No preview"}

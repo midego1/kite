@@ -8,6 +8,7 @@ import {
 	paintsBackground,
 } from "@/components/messages/email-colour-utils";
 import { linkifyTextNodes } from "@/lib/email/linkify-dom-utils";
+import { rootDirection, withRootDirection } from "@/lib/email/root-direction-utils";
 import { remoteImageProxyUrl } from "@/lib/remote-images/proxy-url-utils";
 import type { EmailColourFacts } from "@/components/messages/email-html-frame-types";
 import type { EmailHtmlSanitizer, SanitizeEmailHtmlOptions } from "./email-html-sanitizer-types";
@@ -309,6 +310,10 @@ export function createEmailHtmlSanitizer(root: SanitizerWindow): EmailHtmlSaniti
 		// A leading <frameset> replaces the body, so there is no body to return.
 		const body = purifier.sanitize(html, PURIFY_CONFIG) as Element | null;
 		if (!body) return "";
+		// DOMPurify keeps the parsed body element, so what the mail declared on <body> and <html> is still readable here.
+		const direction = options.forOutgoing
+			? null
+			: rootDirection(body.getAttribute("dir"), body.ownerDocument?.documentElement?.getAttribute("dir"));
 		styleQuoteIntroductions(body);
 		for (const element of Array.from(body.querySelectorAll("*"))) {
 			finishElement(element, root.location.origin, options);
@@ -316,6 +321,6 @@ export function createEmailHtmlSanitizer(root: SanitizerWindow): EmailHtmlSaniti
 		// Last, so the loop above never sees the new anchors: the linkifier only emits http, https
 		// and mailto links, and leaves text inside existing links and code alone.
 		if (options.linkify && !options.forOutgoing) linkifyTextNodes(body, LINKIFIED_ANCHOR_ATTRIBUTES);
-		return body.innerHTML;
+		return withRootDirection(body.innerHTML, direction);
 	};
 }

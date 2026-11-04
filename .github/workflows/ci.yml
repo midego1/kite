@@ -153,8 +153,7 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-shell-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
       # Headless runs only need the headless shell, and the runner image already has Chrome's system libraries.
-      - if: steps.playwright-browser.outputs.cache-hit != 'true'
-        run: npx playwright install --only-shell chromium
+      - run: npx playwright install --only-shell chromium
       - if: steps.playwright-browser.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:

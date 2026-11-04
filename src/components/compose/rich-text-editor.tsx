@@ -8,6 +8,9 @@ import {
 	Link2,
 	List,
 	ListOrdered,
+	Pilcrow,
+	PilcrowLeft,
+	PilcrowRight,
 	Quote,
 	RemoveFormatting,
 	Strikethrough,
@@ -16,6 +19,16 @@ import {
 import { Tooltip } from "@/components/ui/tooltip";
 import { autolinkBeforeCaret, linkHtml } from "@/lib/email/linkify-dom-utils";
 import { cn } from "@/lib/utils";
+import {
+	applyAutoDirection,
+	isInLooseRtlRun,
+	nextParagraphDirection,
+	paragraphDirection,
+	paragraphsInRange,
+	setParagraphDirection,
+	wrapLooseRuns,
+} from "./rich-text-direction-utils";
+import type { ParagraphDirection } from "./rich-text-direction-utils";
 import type { RichTextEditorProps, ToolbarCommand } from "./rich-text-editor-types";
 
 const COMMANDS: ToolbarCommand[] = [
@@ -27,6 +40,20 @@ const COMMANDS: ToolbarCommand[] = [
 	{ command: "insertOrderedList", label: "Numbered list", icon: ListOrdered },
 	{ command: "formatBlock", label: "Quote", icon: Quote, value: "blockquote" },
 ];
+
+const DIRECTIONS: Record<ParagraphDirection, { name: string; icon: ToolbarCommand["icon"] }> = {
+	auto: { name: "automatic", icon: Pilcrow },
+	rtl: { name: "right to left", icon: PilcrowLeft },
+	ltr: { name: "left to right", icon: PilcrowRight },
+};
+
+/** The paragraph the caret is in: the first one a selection touches. */
+function currentParagraphDirection(root: HTMLElement): ParagraphDirection {
+	const selection = window.getSelection();
+	if (!selection || selection.rangeCount === 0) return "auto";
+	const [first] = paragraphsInRange(root, selection.getRangeAt(0));
+	return first ? paragraphDirection(first) : "auto";
+}
 
 /**
  * A small HTML editor built on contentEditable. It stays deliberately light:
@@ -47,6 +74,7 @@ export function RichTextEditor({
 }: RichTextEditorProps) {
 	const editorRef = useRef<HTMLDivElement | null>(null);
 	const [active, setActive] = useState<Record<string, boolean>>({});
+	const [direction, setDirection] = useState<ParagraphDirection>("auto");
 	const [linkOpen, setLinkOpen] = useState(false);
 	const [linkUrl, setLinkUrl] = useState("");
 	const [showQuoted, setShowQuoted] = useState(false);
@@ -55,7 +83,12 @@ export function RichTextEditor({
 	// Keep the DOM in step with the value without resetting the caret on every keystroke.
 	useEffect(() => {
 		const element = editorRef.current;
-		if (element && element.innerHTML !== value) element.innerHTML = value;
+		if (element && element.innerHTML !== value) {
+			element.innerHTML = value;
+			// Text that arrives from a template, a draft or the assistant flows from the right straight away too.
+			wrapLooseRuns(element);
+			applyAutoDirection(element);
+		}
 	}, [value]);
 
 	useEffect(() => {
@@ -71,13 +104,37 @@ export function RichTextEditor({
 				}
 			}
 			setActive(next);
+			setDirection(currentParagraphDirection(element));
 		}
 		document.addEventListener("selectionchange", refresh);
 		return () => document.removeEventListener("selectionchange", refresh);
 	}, []);
 
+	// A paragraph that starts right to left gets `dir="auto"` as soon as it is typed, so it flows from the right and
+	// is sent that way. Only attributes change, so the caret and the undo history stay where they are.
 	function emit() {
-		onChange(editorRef.current?.innerHTML ?? "");
+		const element = editorRef.current;
+		if (element) applyAutoDirection(element);
+		onChange(element?.innerHTML ?? "");
+	}
+
+	function cycleDirection() {
+		const element = editorRef.current;
+		if (!element) return;
+		element.focus();
+		const selection = window.getSelection();
+		if (!selection || selection.rangeCount === 0 || !element.contains(selection.anchorNode)) return;
+		// The first line typed into an empty editor is loose text; a paragraph is needed to carry a direction.
+		if (paragraphsInRange(element, selection.getRangeAt(0)).length === 0)
+			document.execCommand("formatBlock", false, "div");
+		const range = selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
+		const paragraphs = range ? paragraphsInRange(element, range) : [];
+		const [first] = paragraphs;
+		if (!first) return;
+		const next = nextParagraphDirection(paragraphDirection(first));
+		for (const paragraph of paragraphs) setParagraphDirection(paragraph, next);
+		setDirection(next);
+		emit();
 	}
 
 	function run(command: string, commandValue?: string) {
@@ -132,8 +189,12 @@ export function RichTextEditor({
 
 	// The space the author just typed ends a web or email address: link it, keeping the caret after the space.
 	function onInput(event: FormEvent<HTMLDivElement>) {
-		const { inputType, data } = event.nativeEvent as InputEvent;
+		const { inputType, data, isComposing } = event.nativeEvent as InputEvent;
 		if (inputType === "insertText" && (data === " " || data === " ")) autolinkBeforeCaret(event.currentTarget);
+		// The first line typed into an empty editor has no paragraph around it; give it one as soon as it reads right to left.
+		if (!isComposing && isInLooseRtlRun(event.currentTarget, window.getSelection()?.anchorNode ?? null)) {
+			document.execCommand("formatBlock", false, "div");
+		}
 		emit();
 	}
 
@@ -144,6 +205,9 @@ export function RichTextEditor({
 			openLink();
 		}
 	}
+
+	const DirectionIcon = DIRECTIONS[direction].icon;
+	const directionLabel = `Paragraph direction: ${DIRECTIONS[direction].name}. Switch to ${DIRECTIONS[nextParagraphDirection(direction)].name}`;
 
 	return (
 		<div className={cn("flex min-h-0 flex-1 flex-col", className)}>
@@ -162,7 +226,7 @@ export function RichTextEditor({
 					onPaste={onPaste}
 					onKeyDown={onKeyDown}
 					className={cn(
-						"email-body reading-text max-w-none grow shrink-0 px-4 py-3 text-sm text-neutral-900 outline-none",
+						"email-body composer-body reading-text max-w-none grow shrink-0 px-4 py-3 text-sm text-neutral-900 outline-none",
 						"min-h-32 empty:before:pointer-events-none empty:before:text-neutral-500 empty:before:content-[attr(data-placeholder)]",
 						disabled && "cursor-not-allowed opacity-60",
 					)}
@@ -209,6 +273,19 @@ export function RichTextEditor({
 						</button>
 					</Tooltip>
 				))}
+				<Tooltip label={directionLabel}>
+					<button
+						type="button"
+						disabled={disabled}
+						onMouseDown={(event) => event.preventDefault()}
+						onClick={cycleDirection}
+						className="rounded-md p-1.5 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
+					>
+						<DirectionIcon className="h-4 w-4" aria-hidden="true" />
+						{/* The name is the button's content, not an aria-label: a label lookup for "To" would find it. */}
+						<span className="sr-only">{directionLabel}</span>
+					</button>
+				</Tooltip>
 				<Tooltip label="Insert link (⌘K)">
 					<button
 						type="button"

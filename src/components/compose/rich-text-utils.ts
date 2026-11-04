@@ -5,6 +5,7 @@
  */
 
 import { sanitizeEmailHtml } from "@/app/(dashboard)/inbox/[messageId]/email-html-sanitizer";
+import { withAutoDirection } from "./rich-text-direction-utils";
 
 export const QUOTE_ATTRIBUTE = "data-kite-quote";
 const QUOTE_OPEN = `<div class="kite-quote" ${QUOTE_ATTRIBUTE}="1">`;
@@ -24,9 +25,12 @@ export function textToHtml(text: string | null | undefined): string {
 	return `<div>${escapeHtml(value).replace(/\n/g, "<br>")}</div>`;
 }
 
-/** Wrap quoted or forwarded content so the composer and reader can fold it. */
+/**
+ * Wrap quoted or forwarded content so the composer and reader can fold it. The original keeps its own direction: an
+ * Arabic message quoted under an English reply (or the other way round) stays as it was written.
+ */
 export function wrapQuotedHtml(inner: string): string {
-	return `${QUOTE_OPEN}${inner}</div>`;
+	return `${QUOTE_OPEN}${withAutoDirection(inner)}</div>`;
 }
 
 function findQuoteOpen(value: string): { index: number; open: string } | null {
@@ -62,8 +66,10 @@ export function splitStoredDraftHtml(
 	};
 }
 
+/** The draft or message HTML: what was written, with its directions in place, then the folded quote. */
 export function joinQuotedHtml(body: string, quoted: string | null): string {
-	return quoted ? `${body}${wrapQuotedHtml(quoted)}` : body;
+	const written = withAutoDirection(body);
+	return quoted ? `${written}${wrapQuotedHtml(quoted)}` : written;
 }
 
 /** True when the HTML carries something other than empty blocks and whitespace. */
@@ -80,14 +86,19 @@ export function signatureToHtml(signature: string | null | undefined): string {
 	const value = signature?.trim() ?? "";
 	if (!value) return "";
 	if (isHtmlSignature(value) && typeof DOMParser !== "undefined") {
-		return sanitizeEmailHtml(value, { forOutgoing: true }) ?? "";
+		// Directions inside it are set as the editor sets them, so the block still matches when the signature is swapped.
+		return withAutoDirection(sanitizeEmailHtml(value, { forOutgoing: true }) ?? "", { wrapLooseText: false });
 	}
 	return textToHtml(value).replace(/^<div>|<\/div>$/g, "");
 }
 
-function signatureBlock(signature: string | null | undefined, attribute = SIGNATURE_ATTRIBUTE): string {
+// The editor puts `dir` on the block of a right-to-left signature, and the direction button can change it.
+const SIGNATURE_DIRECTIONS = ["", ' dir="auto"', ' dir="rtl"', ' dir="ltr"'];
+
+/** The signature block as the editor may hold it: first as inserted, then with each direction the editor can give it. */
+function signatureBlocks(signature: string | null | undefined, attribute = SIGNATURE_ATTRIBUTE): string[] {
 	const html = signatureToHtml(signature);
-	return html ? `<div ${attribute}="1"><br><br>${html}</div>` : "";
+	return html ? SIGNATURE_DIRECTIONS.map((direction) => `<div ${attribute}="1"${direction}><br><br>${html}</div>`) : [];
 }
 
 /**
@@ -99,14 +110,15 @@ export function applyMailboxSignatureHtml(
 	previousSignature: string | null | undefined,
 	nextSignature: string | null | undefined,
 ): string {
-	const nextBlock = signatureBlock(nextSignature);
-	for (const previousBlock of [
-		signatureBlock(previousSignature),
-		signatureBlock(previousSignature, LEGACY_SIGNATURE_ATTRIBUTE),
-	]) {
-		if (previousBlock && html.includes(previousBlock)) return html.replace(previousBlock, nextBlock);
+	const nextBlocks = signatureBlocks(nextSignature);
+	const [nextBlock = ""] = nextBlocks;
+	for (const attribute of [SIGNATURE_ATTRIBUTE, LEGACY_SIGNATURE_ATTRIBUTE]) {
+		const previousBlocks = signatureBlocks(previousSignature, attribute);
+		// The new signature keeps the direction the old one was given.
+		const index = previousBlocks.findIndex((block) => html.includes(block));
+		if (index >= 0) return html.replace(previousBlocks[index] as string, nextBlocks[index] ?? nextBlock);
 	}
-	if (!nextBlock || html.includes(nextBlock)) return html;
+	if (!nextBlock || nextBlocks.some((block) => html.includes(block))) return html;
 	return `${html.trim() ? html : "<div><br></div>"}${nextBlock}`;
 }
 

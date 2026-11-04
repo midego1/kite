@@ -35,6 +35,7 @@ import { useSendingSettings } from "./use-sending-settings";
 import { heldSend } from "./undo-send-utils";
 import type { PendingUndoSend, PendingUndoSnapshot, SentAnswer } from "./undo-send-types";
 import { RecipientInput } from "./recipient-input";
+import { SubjectField } from "./subject-field";
 import { linkifyOutgoingHtml } from "@/lib/email/linkify-dom-utils";
 import { RichTextEditor } from "./rich-text-editor";
 import { ScheduleSendMenu } from "./schedule-send-menu";
@@ -863,18 +864,7 @@ export function ComposeForm({
 						/>
 					)}
 					<div className={cn("border-b border-neutral-100 px-4 py-1", mode === "inline" && "hidden")}>
-						<Label htmlFor={`${mode}-subject`} className="sr-only">
-							Subject
-						</Label>
-						<Input
-							id={`${mode}-subject`}
-							value={subject}
-							onChange={(event) => setSubject(event.target.value)}
-							placeholder="Subject"
-							required
-							disabled={loadingDraft}
-							className="reading-font h-8 border-0 px-0 py-1 shadow-none focus-visible:ring-0"
-						/>
+						<SubjectField id={`${mode}-subject`} value={subject} onChange={setSubject} disabled={loadingDraft} />
 					</div>
 					<Label htmlFor={`${mode}-text`} className="sr-only">
 						Body

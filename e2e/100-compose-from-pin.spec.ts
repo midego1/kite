@@ -1,7 +1,7 @@
 import { expect, test, type APIRequestContext, type Browser, type Page } from "@playwright/test";
 import { createSharedMailbox, createSignedInAccount, okJson, selectMailbox, shareMailbox } from "./support/auto-read";
 import { DOMAIN, STORAGE_STATE } from "./support/constants";
-import { apiContext, setSendingSettings, uniqueToken } from "./support/helpers";
+import { apiContext, deliverInbound, setSendingSettings, uniqueToken } from "./support/helpers";
 import { chooseOption, expectSelectValue } from "./support/select";
 
 // A reopened draft goes back to its own mailbox once, when it loads. After that the From the user picks stays, the
@@ -144,6 +144,111 @@ test.describe("composer From and signature of a reopened draft", () => {
 			await expect(editor(reader.page)).not.toContainText(SHARED_SIGNATURE);
 		} finally {
 			await reader.context.close();
+			await account.api.dispose();
+		}
+	});
+
+	test("changing the mailbox in the sidebar does not move a reply that was popped out", async ({ browser }) => {
+		const setup = await setUp(api, OWN_SIGNATURE);
+		const { account, sharedId } = setup;
+		const subject = `Pinned reply ${uniqueToken("")}`;
+		await deliverInbound(account.api, {
+			from: `"Pin Sender" <pin@outside.test>`,
+			to: `${setup.username}@${DOMAIN}`,
+			subject,
+			text: "Please answer.",
+		});
+		const { context, page } = await openAs(browser, account, account.mailboxId);
+		try {
+			await page.goto("/inbox");
+			await page.getByRole("main").getByText(subject, { exact: true }).first().click();
+			await expect(page.getByRole("heading", { level: 1, name: subject })).toBeVisible();
+			await page.getByRole("button", { name: /^Reply to Pin Sender/ }).click();
+			await page.getByRole("button", { name: "Pop out composer" }).click();
+			const popup = page.getByRole("region", { name: "Compose message" });
+			await expect(popup.getByRole("button", { name: "Minimize composer" })).toBeVisible();
+			await expect(popup.getByRole("textbox", { name: "Message body" })).toContainText(OWN_SIGNATURE);
+			await expectSelectValue(popup.getByRole("combobox", { name: "From" }), setup.own);
+			await popup.getByRole("textbox", { name: "Message body" }).pressSequentially("Reply text");
+
+			// The sidebar moves to the shared mailbox; the open reply stays in its own.
+			await page.getByRole("button", { name: "Open account menu" }).click();
+			await page.getByRole("button", { name: /^Inboxes \(\d+\)/ }).click();
+			await page.getByRole("button", { name: new RegExp(`^${setup.sharedName} Shared inbox`) }).click();
+			await expect(page).toHaveURL(/\/inbox$/);
+			await expect(page.getByRole("button", { name: "Open account menu" })).toContainText(setup.sharedName);
+			await expect(popup.getByRole("button", { name: "Minimize composer" })).toBeVisible();
+			await expectSelectValue(popup.getByRole("combobox", { name: "From" }), setup.own);
+			await expect(popup.getByRole("textbox", { name: "Message body" })).toContainText(OWN_SIGNATURE);
+			await expect(popup.getByRole("textbox", { name: "Message body" })).not.toContainText(SHARED_SIGNATURE);
+
+			const sendRequest = page.waitForRequest((request) => new URL(request.url()).pathname === "/api/send");
+			await popup.getByRole("button", { name: "Send", exact: true }).click();
+			const body = (await sendRequest).postData() ?? "";
+			expect(body).toContain(account.mailboxId);
+			expect(body).not.toContain(sharedId);
+			expect(body).toContain("inReplyTo");
+			expect(body).toContain(`${setup.username}@${DOMAIN}`);
+		} finally {
+			await context.close();
+			await account.api.dispose();
+		}
+	});
+
+	test("an assistant draft cannot be moved to another mailbox from the From menu", async ({ browser }) => {
+		const setup = await setUp(api, OWN_SIGNATURE);
+		const { account } = setup;
+		const created = await account.api.post("/api/agent/mcp-keys", {
+			data: { name: "From pin", mailboxIds: [account.mailboxId], scopes: ["mcp:read", "mcp:draft"] },
+		});
+		const { key } = await okJson<{ key: string }>(created);
+		const drafted = await account.api.post("/mcp", {
+			headers: {
+				Authorization: `Bearer ${key}`,
+				Accept: "application/json, text/event-stream",
+				"MCP-Protocol-Version": "2025-06-18",
+				Origin: "",
+			},
+			data: {
+				jsonrpc: "2.0",
+				id: 1,
+				method: "tools/call",
+				params: {
+					name: "draft_email",
+					arguments: {
+						mailboxId: account.mailboxId,
+						to: RECIPIENT,
+						subject: `Assistant ${uniqueToken("")}`,
+						body: "Hi.",
+					},
+				},
+			},
+		});
+		expect(drafted.status(), await drafted.text()).toBe(200);
+		const text = await drafted.text();
+		const line = text.split("\n").find((item) => item.startsWith("data:")) ?? text;
+		const payload = JSON.parse(line.replace(/^data:/, "")) as { result: { content: { text: string }[] } };
+		const { draftId } = JSON.parse(payload.result.content[0]!.text) as { draftId: string };
+		const { context, page } = await openAs(browser, account, account.mailboxId);
+		try {
+			await page.goto(`/drafts/${draftId}`);
+			await expect(page.getByLabel("Subject")).toHaveValue(/^Assistant /);
+			await expectSelectValue(fromSelect(page), setup.own);
+			await fromSelect(page).click();
+			const listbox = page.getByRole("listbox");
+			await expect(listbox).toBeVisible();
+			await expect(listbox.locator(`[role="option"][data-value="${setup.shared}"]`)).toHaveAttribute(
+				"aria-disabled",
+				"true",
+			);
+			await expect(listbox.locator(`[role="option"][data-value="${setup.own}"]`)).not.toHaveAttribute(
+				"aria-disabled",
+				"true",
+			);
+			await page.keyboard.press("Escape");
+			await expectSelectValue(fromSelect(page), setup.own);
+		} finally {
+			await context.close();
 			await account.api.dispose();
 		}
 	});

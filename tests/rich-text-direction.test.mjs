@@ -209,6 +209,20 @@ test("the direction button on the block of a plain signature and on its lines st
 	}
 });
 
+test("switching to a mailbox with no signature removes a block-level signature whose lines were given a direction", () => {
+	const signature = `<div>${ARABIC}</div><div>Sam</div>`;
+	const fresh = h.applyMailboxSignatureHtml("<div>Body</div>", "", signature);
+	for (const direction of ["rtl", "ltr", "auto"]) {
+		const edited = fresh.replace("<div>Sam</div>", `<div dir="${direction}">Sam</div>`);
+		for (const next of ["", null, undefined]) {
+			const swapped = h.applyMailboxSignatureHtml(edited, signature, next);
+			assert.equal(swapped, "<div>Body</div>", swapped);
+		}
+	}
+	// With no signature before or after, nothing is added or removed.
+	assert.equal(h.applyMailboxSignatureHtml("<div>Body</div>", "", ""), "<div>Body</div>");
+});
+
 test("a replacement signature is inserted as written, whatever characters it holds", () => {
 	const fresh = h.applyMailboxSignatureHtml("<div>Body</div>", "", "Old");
 	assert.match(h.applyMailboxSignatureHtml(fresh, "Old", "Cost $& $1 $$"), /Cost \$&amp; \$1 \$\$<\/div>$/);

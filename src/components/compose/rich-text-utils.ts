@@ -182,7 +182,7 @@ export function applyMailboxSignatureHtml(
 		const index = previousBlocks.findLastIndex((block) => html.includes(block));
 		if (index >= 0) return html.replace(previousBlocks[index] as string, () => nextBlocks[index] ?? nextBlock);
 	}
-	if (!nextBlock || nextBlocks.some((block) => html.includes(block))) return html;
+	if (nextBlocks.some((block) => html.includes(block))) return html;
 	// Any other `dir` on its elements: the direction button changed the lines inside.
 	for (const attribute of [SIGNATURE_ATTRIBUTE, LEGACY_SIGNATURE_ATTRIBUTE]) {
 		for (const block of signatureBlocks(previousSignature, attribute)) {
@@ -193,7 +193,7 @@ export function applyMailboxSignatureHtml(
 			return html.slice(0, found.index) + next + html.slice(found.index + found[0].length);
 		}
 	}
-	if (nextBlocks.some((block) => directionTolerantPattern(block).test(html))) return html;
+	if (!nextBlock || nextBlocks.some((block) => directionTolerantPattern(block).test(html))) return html;
 	return `${html.trim() ? html : "<div><br></div>"}${nextBlock}`;
 }
 

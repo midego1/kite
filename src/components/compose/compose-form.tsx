@@ -63,6 +63,7 @@ import { PAST_SCHEDULE_MESSAGE, isPastScheduledSend } from "@/lib/email/undo-sen
 import type { ComposeAttachment, ComposeDraftSnapshot, ComposeStoredAttachment, ComposeThreading } from "./types";
 import type { ComposeAttachmentPolicy } from "./attachment-policy-types";
 import type { InlineComposerActions } from "./inline-composer-types";
+import { responseError } from "./response-error-utils";
 import { useInlineSendLifecycle } from "./use-inline-send-lifecycle";
 
 export function ComposeForm({
@@ -143,6 +144,9 @@ export function ComposeForm({
 		[selectedMailbox],
 	);
 	const senderOptions = useMemo(() => senderOptionsFor(mailboxes), [mailboxes]);
+	// An assistant draft stays in its mailbox: the server refuses to move it.
+	const isOtherMailbox = (option: { mailbox: { id: string } }) =>
+		agentRevision !== null && option.mailbox.id !== selectedMailbox?.id;
 	// A loaded draft's From wins once, as soon as its address is among the available ones; after that the user's choice stays.
 	const loadedDraftFromChanged = useKeyChanged(loadedDraftFrom);
 	const senderAddressesChanged = useKeyChanged(senderAddresses);
@@ -367,7 +371,7 @@ export function ComposeForm({
 						scheduledAt: scheduledAt?.toISOString() ?? null,
 					}),
 				});
-				if (!updated.ok) throw new Error("Could not save the draft for review");
+				if (!updated.ok) throw new Error(await responseError(updated, "Could not save the draft for review"));
 				const current = await fetchDraft(draftId);
 				if (!current.agent) throw new Error("AI draft metadata is missing");
 				setAgentRevision(current.agent.revision);
@@ -653,7 +657,7 @@ export function ComposeForm({
 
 	function selectSender(value: string) {
 		const option = senderOptions.find((item) => `${item.mailbox.id}|${item.address}` === value);
-		if (!option || option.disabled) return;
+		if (!option || option.disabled || isOtherMailbox(option)) return;
 		setSelectedFrom(option.address);
 		if (selectedMailbox?.id !== option.mailbox.id) setSelectedMailbox(option.mailbox);
 	}
@@ -818,7 +822,7 @@ export function ComposeForm({
 								<option
 									key={`${option.mailbox.id}|${option.address}`}
 									value={`${option.mailbox.id}|${option.address}`}
-									disabled={option.disabled}
+									disabled={option.disabled || isOtherMailbox(option)}
 									title={option.identity?.hint ?? undefined}
 								>
 									{senderOptionLabel(option)}

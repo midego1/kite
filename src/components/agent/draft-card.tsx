@@ -135,7 +135,9 @@ export function AgentDraftActions({
 			<div className="flex items-start gap-2 border-b border-neutral-100 pb-2">
 				<Mail size={16} className="mt-0.5 shrink-0 text-blue-800" aria-hidden="true" />
 				<div className="min-w-0">
-					<p className="font-semibold text-neutral-900">{draft?.subject || "Reply draft"}</p>
+					<p dir="auto" className="font-semibold text-neutral-900">
+						{draft?.subject || "Reply draft"}
+					</p>
 					{draft && <p className="mt-0.5 break-words text-neutral-500">To {draft.toAddr}</p>}
 				</div>
 			</div>
@@ -179,7 +181,11 @@ function FinishedDraftCard({ state }: { state: FinishedDraftState }) {
 					<p className="font-semibold text-neutral-900">
 						{draftStateHeading(state, (iso) => formatUserDate(iso, { dateStyle: "medium", timeStyle: "short" }))}
 					</p>
-					{state.subject && <p className="mt-0.5 break-words text-neutral-700">{state.subject}</p>}
+					{state.subject && (
+						<p dir="auto" className="mt-0.5 break-words text-neutral-700">
+							{state.subject}
+						</p>
+					)}
 					{state.to && <p className="mt-0.5 break-words text-neutral-500">To {state.to}</p>}
 					{state.state === "sent" && state.messageId && (
 						<Link

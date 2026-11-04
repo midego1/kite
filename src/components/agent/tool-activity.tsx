@@ -45,8 +45,17 @@ function AgentToolResult({ result, detail }: { result: Record<string, unknown>; 
 					{emails.map((email) => (
 						<li key={email.id} className="break-words">
 							<AgentEmailLink email={email} className="font-medium text-blue-700 hover:underline" />
-							{email.from && <span className="text-neutral-500"> · {email.from}</span>}
-							{email.snippet && <p className="line-clamp-2 text-neutral-500">{email.snippet}</p>}
+							{email.from && (
+								<span className="text-neutral-500">
+									{" "}
+									· <bdi>{email.from}</bdi>
+								</span>
+							)}
+							{email.snippet && (
+								<p dir="auto" className="line-clamp-2 text-neutral-500">
+									{email.snippet}
+								</p>
+							)}
 						</li>
 					))}
 				</ul>

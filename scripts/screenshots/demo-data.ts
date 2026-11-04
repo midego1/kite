@@ -133,6 +133,34 @@ async function seedCalendar(api: APIRequestContext): Promise<void> {
 	}
 }
 
+/** Invented right-to-left mail (Arabic and Hebrew) for the changelog's RTL screenshot; not part of the shared demo set. */
+export const RTL_MAIL = [
+	{
+		from: `"ليلى حداد" <layla@fabrikam.test>`,
+		subject: "ملاحظات حول خطة الإطلاق",
+		html: `<p>مرحباً،</p><p>شكراً على الاجتماع أمس. هذه ملاحظاتي على خطة الإطلاق:</p><ul><li>يبدأ الإصدار التجريبي يوم الاثنين.</li><li>نحتاج إلى جولة قصيرة تشرح Kite للمستخدمين الجدد.</li><li>سأرسل التقرير الكامل غداً.</li></ul><p>مع تحياتي،<br>ليلى</p>`,
+	},
+	{
+		from: `"דנה לוי" <dana@contoso.test>`,
+		subject: "סיכום פגישת התכנון",
+		html: `<p>שלום,</p><p>תודה על הפגישה אתמול. הסיכום והצעדים הבאים מצורפים כאן, ונשמח לשמוע אם משהו חסר.</p><p>דנה</p>`,
+	},
+];
+
+/** Delivers the right-to-left demo mail once, so the shot finds it in the Inbox. */
+export async function seedRtlMail(): Promise<void> {
+	const api = await apiContext(STORAGE_STATE);
+	const found = await api.get(`/api/messages?${new URLSearchParams({ q: "dana@contoso.test", limit: "1" })}`);
+	const { messages: existing } = (await found.json()) as { messages: unknown[] };
+	if (existing.length === 0) {
+		for (const mail of RTL_MAIL) {
+			await postInbound(api, { ...mail, to: `"Support" <${SUPPORT_ADDRESS}>`, text: plainText(mail.html) });
+			await waitForMessage(api, mail.subject);
+		}
+	}
+	await api.dispose();
+}
+
 /** Posts the demo mail, shared mailboxes and calendar events into the isolated e2e server. */
 export async function seedDemoData(): Promise<void> {
 	const api = await apiContext(STORAGE_STATE);

@@ -165,7 +165,7 @@ test("the reader frame replaces the mail's fonts only when asked, keeping code m
 	assert.match(styled, /<link rel="stylesheet" href="\/fonts\/opendyslexic\/opendyslexic.css">/);
 	assert.match(styled, /body \*\{font-family:"OpenDyslexic",sans-serif!important/);
 	assert.match(styled, /pre,code[^}]*monospace!important/);
-	assert.ok(styled.indexOf("<link") < styled.indexOf("<body>"), "the font is linked in the head");
+	assert.ok(styled.indexOf("<link") < styled.indexOf('<body dir="auto">'), "the font is linked in the head");
 	// The frame never edits the sanitized markup; inline font families are the sanitizer's job (dropFontFamily).
 	assert.ok(styled.includes(html), styled);
 });

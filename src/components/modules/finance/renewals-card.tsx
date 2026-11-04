@@ -60,8 +60,12 @@ export function RenewalsCard(_context: ReadingPaneSlotContext) {
 								<span className={`w-16 shrink-0 whitespace-nowrap ${line.urgent ? URGENT_CLASS : "text-neutral-500"}`}>
 									{line.when}
 								</span>
-								<span className="min-w-0 flex-1 truncate text-neutral-900">{line.what}</span>
-								<span className={`max-w-[40%] truncate ${COMMAND_CENTER_DETAIL_CLASS}`}>{line.meta}</span>
+								<span dir="auto" className="min-w-0 flex-1 truncate text-neutral-900">
+									{line.what}
+								</span>
+								<span dir="auto" className={`max-w-[40%] truncate ${COMMAND_CENTER_DETAIL_CLASS}`}>
+									{line.meta}
+								</span>
 							</Link>
 						</li>
 					))}

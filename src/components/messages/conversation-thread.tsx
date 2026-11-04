@@ -270,7 +270,7 @@ export function ConversationMessageCard({
 										locallyRead || outbound ? "text-neutral-900" : "font-semibold text-neutral-900",
 									)}
 								>
-									{sender}
+									<span dir="auto">{sender}</span>
 									{expanded && <span className="text-xs ml-1 opacity-50 font-normal">&lt;{senderEmail}&gt;</span>}
 								</span>
 								{expanded && recipients && (
@@ -279,6 +279,7 @@ export function ConversationMessageCard({
 							</div>
 							{!expanded && (
 								<span
+									dir="auto"
 									className={clsx(
 										!locallyRead ? "font-semibold" : "text-neutral-500",
 										"reading-font block truncate text-[13px]",
@@ -323,7 +324,7 @@ export function ConversationMessageCard({
 							quotedColours={body.quotedColours}
 							className="email-body max-w-none"
 							fallback={
-								<pre className="reading-text whitespace-pre-wrap font-sans text-sm text-neutral-900">
+								<pre dir="auto" className="reading-text whitespace-pre-wrap font-sans text-sm text-neutral-900">
 									<LinkifiedText text={body.display.latestContent} />
 								</pre>
 							}

@@ -185,9 +185,9 @@ test("the print document escapes everything but the sanitized body and allows no
 		/<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self' data: blob:; style-src 'unsafe-inline'">/,
 	);
 	assert.match(html, /<title>Quarterly &lt;report&gt;<\/title>/);
-	assert.match(html, /<h1 class="print-title">Quarterly &lt;report&gt;<\/h1>/);
-	assert.match(html, /<th scope="row">From<\/th><td>Ann &lt;ann@example.com&gt;<\/td>/);
-	assert.match(html, /<li>report\.pdf <span class="print-attachment-size">\(2 KB\)<\/span><\/li>/);
+	assert.match(html, /<h1 class="print-title" dir="auto">Quarterly &lt;report&gt;<\/h1>/);
+	assert.match(html, /<th scope="row">From<\/th><td dir="auto">Ann &lt;ann@example.com&gt;<\/td>/);
+	assert.match(html, /<li dir="auto">report\.pdf <span class="print-attachment-size">\(2 KB\)<\/span><\/li>/);
 	assert.match(html, /<p>Hello <b>there<\/b><\/p>/);
 	assert.match(html, /color-scheme:light/);
 	assert.doesNotMatch(html, /class="print-count"/);
@@ -204,10 +204,13 @@ test("a conversation document numbers its messages and names a changed subject",
 	const second = { ...first, id: "2", subject: "Re: Plans", text: "second" };
 	const html = buildPrintDocument({ title: "Plans", messages: [first, second] });
 	assert.match(html, /2 messages in this conversation/);
-	assert.match(html, /<pre class="print-text">&lt;b&gt;not bold&lt;\/b&gt;<\/pre>/);
-	assert.match(html, /<h2 class="print-message-subject">Re: Plans<\/h2>/);
+	assert.match(html, /<pre class="print-text" dir="auto">&lt;b&gt;not bold&lt;\/b&gt;<\/pre>/);
+	assert.match(html, /<h2 class="print-message-subject" dir="auto">Re: Plans<\/h2>/);
 	assert.equal((html.match(/print-message-subject/g) ?? []).length - 1, 1);
-	assert.match(buildPrintDocument({ title: " ", messages: [] }), /<h1 class="print-title">\(no subject\)<\/h1>/);
+	assert.match(
+		buildPrintDocument({ title: " ", messages: [] }),
+		/<h1 class="print-title" dir="auto">\(no subject\)<\/h1>/,
+	);
 });
 
 test("HTML bodies become paragraphs with lists, headings and quote depth", () => {

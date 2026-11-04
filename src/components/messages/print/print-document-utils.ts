@@ -123,15 +123,15 @@ const PRINT_STYLES = [
 	".print-headers td{padding:1px 0}",
 	".print-attachments{margin:0 0 12px;padding:8px 12px;border:1px solid #e5e5e5;border-radius:6px;font-size:13px;break-inside:avoid}",
 	".print-attachments p{margin:0 0 2px;color:#525252;font-weight:600}",
-	".print-attachments ul{margin:0;padding-left:18px}",
+	".print-attachments ul{margin:0;padding-inline-start:18px}",
 	".print-attachment-size{color:#525252}",
 	".print-body{border-top:1px solid #e5e5e5;padding-top:12px}",
 	".print-body img{max-width:100%;height:auto;break-inside:avoid}",
 	".print-body table{max-width:100%}",
 	".print-body tr{break-inside:avoid}",
-	".print-body ul{list-style:disc;padding-left:1.5rem;margin:.25rem 0}",
-	".print-body ol{list-style:decimal;padding-left:1.5rem;margin:.25rem 0}",
-	".print-body blockquote{border-left:2px solid #d4d4d4;margin:.25rem 0;padding-left:.75rem;color:#525252}",
+	".print-body ul{list-style:disc;padding-inline-start:1.5rem;margin:.25rem 0}",
+	".print-body ol{list-style:decimal;padding-inline-start:1.5rem;margin:.25rem 0}",
+	".print-body blockquote{border-inline-start:2px solid #d4d4d4;margin:.25rem 0;padding-inline-start:.75rem;color:#525252}",
 	".print-body p{margin:0 0 .5rem}",
 	".print-body a{color:#2563eb}",
 	".print-text{margin:0;white-space:pre-wrap;font:inherit}",
@@ -145,7 +145,7 @@ const PRINT_CSP = "default-src 'none'; img-src 'self' data: blob:; style-src 'un
 function renderHeaders(rows: PrintHeaderRow[]): string {
 	if (!rows.length) return "";
 	const body = rows
-		.map((row) => `<tr><th scope="row">${escapeHtml(row.label)}</th><td>${escapeHtml(row.value)}</td></tr>`)
+		.map((row) => `<tr><th scope="row">${escapeHtml(row.label)}</th><td dir="auto">${escapeHtml(row.value)}</td></tr>`)
 		.join("");
 	return `<table class="print-headers"><tbody>${body}</tbody></table>`;
 }
@@ -155,7 +155,7 @@ function renderAttachments(message: PrintMessage): string {
 	const items = message.attachments
 		.map(
 			(attachment) =>
-				`<li>${escapeHtml(attachment.filename)} <span class="print-attachment-size">(${escapeHtml(attachment.size)})</span></li>`,
+				`<li dir="auto">${escapeHtml(attachment.filename)} <span class="print-attachment-size">(${escapeHtml(attachment.size)})</span></li>`,
 		)
 		.join("");
 	return `<div class="print-attachments"><p>Attachments (${message.attachments.length})</p><ul>${items}</ul></div>`;
@@ -165,11 +165,11 @@ function renderMessage(message: PrintMessage, title: string): string {
 	// In a conversation a message whose subject differs from the first one's (a renamed thread) names it.
 	const subject =
 		message.subject && message.subject !== title
-			? `<h2 class="print-message-subject">${escapeHtml(message.subject)}</h2>`
+			? `<h2 class="print-message-subject" dir="auto">${escapeHtml(message.subject)}</h2>`
 			: "";
 	// `html` comes from the reader's sanitizer only; everything else is text and escaped here.
-	const body = message.html ?? `<pre class="print-text">${escapeHtml(message.text)}</pre>`;
-	return `<article class="print-message">${subject}${renderHeaders(message.headers)}${renderAttachments(message)}<div class="print-body">${body}</div></article>`;
+	const body = message.html ?? `<pre class="print-text" dir="auto">${escapeHtml(message.text)}</pre>`;
+	return `<article class="print-message">${subject}${renderHeaders(message.headers)}${renderAttachments(message)}<div class="print-body" dir="auto">${body}</div></article>`;
 }
 
 /**
@@ -188,7 +188,7 @@ export function buildPrintDocument({ title, messages }: PrintDocumentInput): str
 		`<title>${escapeHtml(heading)}</title>`,
 		`<style>${PRINT_STYLES}</style>`,
 		"</head><body>",
-		`<h1 class="print-title">${escapeHtml(heading)}</h1>`,
+		`<h1 class="print-title" dir="auto">${escapeHtml(heading)}</h1>`,
 		count,
 		messages.map((message) => renderMessage(message, heading)).join(""),
 		"</body></html>",

@@ -106,7 +106,7 @@ export function InviteBlock({ suggestion, onChanged, menu, why }: BlockProps) {
 			<div className="flex items-start justify-between gap-2">
 				<p className="flex items-center gap-2 font-medium text-neutral-900">
 					<CalendarDays aria-hidden className="h-4 w-4 shrink-0 text-blue-700" />
-					{suggestion.title}
+					<span dir="auto">{suggestion.title}</span>
 				</p>
 				{menu}
 			</div>
@@ -171,7 +171,7 @@ export function AnsweredInviteBlock({ suggestion, onChanged }: Pick<BlockProps, 
 		<div data-suggestion-block="calendar_answered" data-suggestion-id={suggestion.id} className="mt-3 first:mt-0">
 			<p className="flex items-center gap-2 font-medium text-neutral-900">
 				<CalendarDays aria-hidden className="h-4 w-4 shrink-0 text-blue-700" />
-				{suggestion.title}
+				<span dir="auto">{suggestion.title}</span>
 			</p>
 			<p data-invite-answer className="mt-1 text-neutral-700">
 				{answeredText(state, payload)}

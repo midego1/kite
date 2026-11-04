@@ -89,7 +89,7 @@ export function SendReview({
 						</>
 					)}
 					<dt className="text-neutral-500">Subject</dt>
-					<dd>{snapshot.subject}</dd>
+					<dd dir="auto">{snapshot.subject}</dd>
 					{snapshot.scheduledAt && (
 						<>
 							<dt className="text-neutral-500">Send at</dt>

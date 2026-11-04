@@ -6,12 +6,12 @@ export function AgentEmailLink({ email, className }: AgentEmailLinkProps) {
 	const draftId = agentDraftIdForEmail(email);
 	if (draftId)
 		return (
-			<Link className={className} href={`/drafts/${encodeURIComponent(draftId)}`}>
+			<Link dir="auto" className={className} href={`/drafts/${encodeURIComponent(draftId)}`}>
 				{email.subject || "(No subject)"}
 			</Link>
 		);
 	return (
-		<Link className={className} href={agentEmailHref(email)}>
+		<Link dir="auto" className={className} href={agentEmailHref(email)}>
 			{email.subject || "(No subject)"}
 		</Link>
 	);

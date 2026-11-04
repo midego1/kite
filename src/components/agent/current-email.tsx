@@ -51,7 +51,9 @@ export function CurrentEmailChip({ email }: { email: ReturnType<typeof useCurren
 		<div className="mx-auto flex w-full max-w-3xl px-4 pb-1">
 			<span className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-blue-100 bg-blue-50 py-1 pl-3 pr-1 text-xs text-blue-800">
 				<FileText size={12} className="shrink-0" aria-hidden="true" />
-				<span className="truncate">Current email: {email.subject || "(No subject)"}</span>
+				<span className="truncate">
+					Current email: <bdi>{email.subject || "(No subject)"}</bdi>
+				</span>
 				<button
 					type="button"
 					onClick={email.dismiss}

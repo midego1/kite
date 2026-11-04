@@ -19,6 +19,7 @@ import {
 	metricValue,
 	totalCostMicros,
 } from "./utils";
+import { logicalArrowKey } from "@/components/interface-direction-utils";
 
 const TOOLTIP_WIDTH = 288;
 
@@ -89,7 +90,7 @@ export function UsageChart({ daily, timeZone, metric, onMetricChange }: UsageCha
 			ArrowLeft: index - 1,
 			Home: 0,
 			End: daily.length - 1,
-		}[event.key];
+		}[logicalArrowKey(event.key)];
 		if (target === undefined) return;
 		event.preventDefault();
 		focusBar(target);

@@ -8,7 +8,7 @@ import { assertNothingSkipped } from "@/lib/messages/permanent-delete-utils";
 import { markMessagesReadInCaches } from "@/hooks/utils";
 import { getEmailAddress, normalizeEmailAddress, splitEmailAddressList } from "@/lib/email/address";
 import { getLatestEmailContent } from "@/lib/email/reply-content-utils";
-import { formatUserDate } from "@/lib/time/utils";
+import { formatUserDateText } from "@/lib/time/utils";
 import { sanitizeEmailHtml } from "@/app/(dashboard)/inbox/[messageId]/email-html-sanitizer";
 import { escapeHtml, htmlToPlainText, textToHtml, wrapQuotedHtml } from "@/components/compose/rich-text-utils";
 import type {
@@ -156,7 +156,7 @@ export function buildReplyQuoteHtml(
 	const original = bodyHtml ? sanitizeEmailHtml(bodyHtml) : textToHtml(bodyText);
 	if (!original) return null;
 	const when = sentAt
-		? formatUserDate(sentAt, {
+		? formatUserDateText(sentAt, {
 				weekday: "short",
 				month: "short",
 				day: "numeric",
@@ -241,7 +241,7 @@ export function buildForwardHtml(
 ) {
 	const lines = [
 		`From: ${message.fromAddr}`,
-		`Date: ${formatUserDate(message.createdAt, { weekday: "short", month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" })}`,
+		`Date: ${formatUserDateText(message.createdAt, { weekday: "short", month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" })}`,
 		`Subject: ${message.subject ?? "(no subject)"}`,
 		`To: ${message.toAddr}`,
 	];

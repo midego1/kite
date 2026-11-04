@@ -21,6 +21,10 @@ desktop layout). The rules live in `src/components/fold-posture-utils.ts` (pure 
 There was no handling for the CSS Viewport Segments API, `screen-spanning`, hinges, or a live fold/unfold
 change.
 
+## Right to left
+
+In a right-to-left interface (the Direction setting in the account menu) the split mirrors with the rest of the app: the list sits on the second screen and the reader on the first, so reading still starts on the side the sidebar is on. The hinge logic is unchanged: the list may not cross it (`foldHingeListWidth`) and, with the list hidden, the reader keeps to its own screen (`foldHingeStyle`). Viewport Segments stay physical, so the padding does too; the panel group is physically reversed (`src/components/ui/resizable.tsx`). The posture itself does not depend on the direction. `e2e/99-rtl-interface.spec.ts` covers it.
+
 ## Posture detection
 
 `resolveBaseFoldPosture` uses the width first, then the signals a foldable or a tablet gives:

@@ -10,6 +10,7 @@ import {
 	parseUserDateTimeLocal,
 	zonedDateFields,
 } from "@/lib/time/utils";
+import { isolateDirection } from "@/lib/bidi-utils";
 
 export const CALENDAR_START_HOUR = 0;
 export const CALENDAR_END_HOUR = 24;
@@ -273,7 +274,7 @@ export function currentTimePosition(value: Date): number {
 }
 
 export function formatHour(hour: number): string {
-	return new Date(2026, 0, 1, hour).toLocaleTimeString(undefined, { hour: "numeric" });
+	return isolateDirection(new Date(2026, 0, 1, hour).toLocaleTimeString(undefined, { hour: "numeric" }));
 }
 
 export function formatEventTime(value: Date): string {
@@ -284,7 +285,7 @@ export function formatEventTime(value: Date): string {
 export function formatEventRange(event: CalendarEvent): string {
 	const start = new Date(event.startsAt);
 	const end = new Date(event.endsAt);
-	return `${formatEventTime(start)} – ${formatEventTime(end)}`;
+	return isolateDirection(`${formatEventTime(start)} – ${formatEventTime(end)}`);
 }
 
 export function groupUpcomingEvents(events: CalendarEvent[], today: Date): EventGroup[] {

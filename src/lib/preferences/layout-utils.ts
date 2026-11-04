@@ -10,6 +10,7 @@ const DENSITIES = new Set(["default", "comfortable", "compact"]);
 const FONTS = new Set(["auto", "manrope", "geist", "inter", "system", "opendyslexic"]);
 const EMAIL_FONTS = new Set(["original", "reader"]);
 const FONT_SCOPES = new Set(["text", "everywhere"]);
+const INTERFACE_DIRECTIONS = new Set(["auto", "ltr", "rtl"]);
 
 function size(value: unknown, limits: { min: number; max: number }): number | undefined {
 	if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
@@ -34,6 +35,8 @@ function parseLayoutPreferences(value: unknown): LayoutPreferences {
 		layout.emailFont = input.emailFont as LayoutPreferences["emailFont"];
 	if (typeof input.fontScope === "string" && FONT_SCOPES.has(input.fontScope))
 		layout.fontScope = input.fontScope as LayoutPreferences["fontScope"];
+	if (typeof input.interfaceDirection === "string" && INTERFACE_DIRECTIONS.has(input.interfaceDirection))
+		layout.interfaceDirection = input.interfaceDirection as LayoutPreferences["interfaceDirection"];
 	const listWidth = size(input.listWidth, LIST_WIDTH_LIMITS);
 	if (listWidth !== undefined) layout.listWidth = listWidth;
 	const listHeight = size(input.listHeight, LIST_HEIGHT_LIMITS);

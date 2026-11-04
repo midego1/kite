@@ -4,6 +4,7 @@ import { formatUserDate } from "@/lib/time/utils";
 import type { BackupHealth } from "@/lib/backups/health-types";
 import type { RestoreSummary } from "@/lib/backups/restore-job-types";
 import type { BackupItem, BackupsResponse, BackupSettings } from "./types";
+import { isolateDirection } from "@/lib/bidi-utils";
 
 export const WEEKDAYS = [
 	{ value: 0, label: "Sunday" },
@@ -166,9 +167,9 @@ export function formatBackupDate(value: string | null): string {
 
 export function formatBackupSize(value: number | null): string {
 	if (value === null) return "-";
-	if (value < 1024) return `${value} B`;
-	if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
-	return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+	if (value < 1024) return isolateDirection(`${value} B`);
+	if (value < 1024 * 1024) return isolateDirection(`${(value / 1024).toFixed(1)} KB`);
+	return isolateDirection(`${(value / (1024 * 1024)).toFixed(1)} MB`);
 }
 
 export function getStatusClass(status: BackupItem["status"]): string {

@@ -2,13 +2,13 @@ import type { ToasterProps } from "react-hot-toast";
 
 /**
  * Every transient notice (react-hot-toast, the send and undo-send bars, the composer's result toast) sits in the
- * bottom-right corner, lifted above the reader's reply box and the floating assistant button. `--kite-toast-bottom`,
+ * bottom corner at the end of the line (right, or left in a right-to-left interface), lifted above the reader's reply box and the floating assistant button. `--kite-toast-bottom`,
  * `--kite-toast-top` and `--kite-toast-inset` are set in globals.css (phones get a smaller inset and the safe area),
  * and move while a composer is open (`useComposerZone`): beside the docked composer, below the expanded one, at the
  * top of a narrow screen, so a notice never covers the composer's footer or controls.
  */
 export const TOAST_CORNER_CLASS =
-	"fixed bottom-[var(--kite-toast-bottom)] top-[var(--kite-toast-top)] right-[var(--kite-toast-inset)] max-w-[calc(100vw-var(--kite-toast-inset)-var(--kite-toast-edge))]";
+	"fixed bottom-[var(--kite-toast-bottom)] top-[var(--kite-toast-top)] end-[var(--kite-toast-inset)] max-w-[calc(100vw-var(--kite-toast-inset)-var(--kite-toast-edge))]";
 
 /** The card every toast wears. The palette classes are remapped by each look and in dark mode, so it follows the theme. */
 export const TOAST_SURFACE_CLASS =
@@ -18,7 +18,11 @@ export const TOAST_SURFACE_CLASS =
 export const TOAST_ACTION_CLASS =
 	"shrink-0 rounded-md bg-blue-600 px-3 py-1 text-sm font-semibold text-white hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600";
 
-/** react-hot-toast styles toasts inline (white card, #363636 text), so the theme variables are applied here instead. */
+/**
+ * react-hot-toast styles toasts inline (white card, #363636 text), so the theme variables are applied here instead.
+ * Its `-right` positions are `justify-content: flex-end`, which is the left side under `dir="rtl"`, so with the
+ * logical insets below the toasts mirror without knowing the direction.
+ */
 export function toasterProps(atTop: boolean): ToasterProps {
 	return { ...TOASTER_PROPS, position: atTop ? "top-right" : "bottom-right" };
 }
@@ -28,8 +32,11 @@ const TOASTER_PROPS: ToasterProps = {
 	containerStyle: {
 		top: "var(--kite-toast-top)",
 		bottom: "var(--kite-toast-bottom)",
-		left: "var(--kite-toast-edge)",
-		right: "var(--kite-toast-inset)",
+		// Clears the library's own physical defaults, which would otherwise pin both sides.
+		left: undefined,
+		right: undefined,
+		insetInlineStart: "var(--kite-toast-edge)",
+		insetInlineEnd: "var(--kite-toast-inset)",
 	},
 	toastOptions: {
 		style: {

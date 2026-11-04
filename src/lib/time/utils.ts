@@ -1,4 +1,5 @@
 import type { ZonedDay } from "./types";
+import { isolateDirection } from "@/lib/bidi-utils";
 
 const fieldFormatters = new Map<string, Intl.DateTimeFormat>();
 
@@ -59,8 +60,13 @@ export function getRequestTimeZone(request: Request, preferredTimeZone?: string 
 	);
 }
 
-export function formatUserDate(value: Date | string, options: Intl.DateTimeFormatOptions): string {
+/** The text that goes into mail: the same format, without the marks `formatUserDate` adds for the screen. */
+export function formatUserDateText(value: Date | string, options: Intl.DateTimeFormatOptions): string {
 	return new Intl.DateTimeFormat(undefined, { ...options, timeZone: getUserTimeZone() }).format(new Date(value));
+}
+
+export function formatUserDate(value: Date | string, options: Intl.DateTimeFormatOptions): string {
+	return isolateDirection(formatUserDateText(value, options));
 }
 
 export function formatUserDateTimeLocal(value: Date): string {

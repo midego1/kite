@@ -10,7 +10,7 @@ import { useSidebar } from "./sidebar-state";
 const menuButton = () => document.querySelector<HTMLElement>("[data-mobile-menu]");
 
 /**
- * The sidebar column; on phones a Sheet that slides in from the left. The sheet stays in place in the DOM
+ * The sidebar column; on phones a Sheet that slides in from the start of the line. The sheet stays in place in the DOM
  * (no portal), so the sidebar keeps its position in the page's reading order.
  */
 export function SidebarAside({ children, className }: { children: ReactNode; className?: string }) {
@@ -22,7 +22,7 @@ export function SidebarAside({ children, className }: { children: ReactNode; cla
 				<SheetContent
 					portal={false}
 					returnFocusTo={menuButton}
-					side="left"
+					side="start"
 					closeLabel="Close menu"
 					aria-describedby={undefined}
 					className="bg-[#f6f8fc]"

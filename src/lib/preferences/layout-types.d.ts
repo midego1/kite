@@ -6,6 +6,8 @@ export type LayoutFont = "auto" | "manrope" | "geist" | "inter" | "system" | "op
 export type LayoutEmailFont = "original" | "reader";
 /** Where a dyslexia-friendly font applies: reading text only, or the whole interface (`FONT_SCOPE_PREFERENCE`). */
 export type LayoutFontScope = "text" | "everywhere";
+/** Which way the interface reads: `auto` follows the browser language (`interface-direction-utils.ts`). */
+export type LayoutInterfaceDirection = "auto" | "ltr" | "rtl";
 
 /** The layout choices that follow the account; a key that is absent was never chosen. */
 export interface LayoutPreferences {
@@ -19,6 +21,7 @@ export interface LayoutPreferences {
 	font?: LayoutFont;
 	emailFont?: LayoutEmailFont;
 	fontScope?: LayoutFontScope;
+	interfaceDirection?: LayoutInterfaceDirection;
 }
 
 /** What `GET` and `PATCH /api/settings/layout` answer. */

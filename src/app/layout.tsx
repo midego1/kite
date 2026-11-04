@@ -7,6 +7,7 @@ import { sidebarBootstrapScript } from "@/components/sidebar-state-utils";
 import { themeBootstrapScript } from "@/components/theme-utils";
 import { appearanceBootstrapScript } from "@/components/appearance-preferences";
 import { foldPostureBootstrapScript } from "@/components/fold-posture-utils";
+import { interfaceDirectionBootstrapScript } from "@/components/interface-direction-utils";
 import { assetRecoveryScript } from "@/components/asset-recovery-utils";
 import { bootTraceScript } from "@/components/boot-trace-utils";
 import { reloadReturnBootstrapScript } from "@/components/reload-return-utils";
@@ -85,6 +86,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
 				/>
 				<script nonce={nonce} dangerouslySetInnerHTML={{ __html: legacyStorageMigrationScript }} />
 				<script nonce={nonce} dangerouslySetInnerHTML={{ __html: sidebarBootstrapScript }} />
+				<script nonce={nonce} dangerouslySetInnerHTML={{ __html: interfaceDirectionBootstrapScript }} />
 				<script nonce={nonce} dangerouslySetInnerHTML={{ __html: themeBootstrapScript }} />
 				{/* After the theme, so the kite's return (reload-return-utils.ts) paints in the right colours from the first frame. */}
 				<script nonce={nonce} dangerouslySetInnerHTML={{ __html: reloadReturnBootstrapScript }} />

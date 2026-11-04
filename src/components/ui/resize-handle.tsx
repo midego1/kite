@@ -2,8 +2,10 @@
 
 import { useRef } from "react";
 import type { PointerEvent } from "react";
+import { toInlineDelta } from "@/components/interface-direction-utils";
 import type { ResizeHandleProps } from "./resize-handle-types";
 
+/** `onResize` gets the distance from the drag's start: downward, or along the reading direction for a vertical handle. */
 export function ResizeHandle({
 	label,
 	orientation = "vertical",
@@ -24,7 +26,7 @@ export function ResizeHandle({
 
 	function handlePointerMove(event: PointerEvent<HTMLDivElement>) {
 		if (start.current === null) return;
-		onResize((horizontal ? event.clientY : event.clientX) - start.current);
+		onResize(horizontal ? event.clientY - start.current : toInlineDelta(event.clientX - start.current));
 	}
 
 	function handlePointerEnd() {
@@ -41,7 +43,7 @@ export function ResizeHandle({
 			className={
 				horizontal
 					? "absolute inset-x-0 bottom-0 z-20 h-2 translate-y-1/2 cursor-row-resize touch-none"
-					: "absolute inset-y-0 right-0 z-20 w-2 translate-x-1/2 cursor-col-resize touch-none"
+					: "absolute inset-y-0 end-0 z-20 w-2 translate-x-1/2 cursor-col-resize touch-none rtl:-translate-x-1/2"
 			}
 			onPointerDown={handlePointerDown}
 			onPointerMove={handlePointerMove}

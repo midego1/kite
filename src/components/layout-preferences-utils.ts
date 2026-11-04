@@ -1,6 +1,7 @@
 import type { LayoutPreferences } from "@/lib/preferences/layout-types";
 import { EMAIL_FONT_PREFERENCE, FONT_PREFERENCE, FONT_SCOPE_PREFERENCE } from "./appearance-preferences";
 import { columnWidthStorageKeys } from "./column-width-preferences";
+import { INTERFACE_DIRECTION_STORAGE_KEY } from "./interface-direction-utils";
 import { CONVERSATION_VIEW_STORAGE_KEY } from "./messages/conversation-view-utils";
 import { MESSAGE_DENSITY_STORAGE_KEY, READING_PANE_STORAGE_KEY } from "./messages/reading-layout-utils";
 
@@ -21,6 +22,7 @@ export function layoutStorageEntries(layout: LayoutPreferences, userId: string):
 	if (layout.font) entries.push([FONT_PREFERENCE.storageKey, layout.font]);
 	if (layout.emailFont) entries.push([EMAIL_FONT_PREFERENCE.storageKey, layout.emailFont]);
 	if (layout.fontScope) entries.push([FONT_SCOPE_PREFERENCE.storageKey, layout.fontScope]);
+	if (layout.interfaceDirection) entries.push([INTERFACE_DIRECTION_STORAGE_KEY, layout.interfaceDirection]);
 	if (layout.listWidth !== undefined)
 		for (const key of columnWidthStorageKeys("message-list", userId)) entries.push([key, String(layout.listWidth)]);
 	if (layout.listHeight !== undefined)

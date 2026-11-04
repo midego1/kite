@@ -1,5 +1,6 @@
 import { useLayoutEffect, useState, type CSSProperties } from "react";
 import { resolveFoldReadingPane, type FoldHinge } from "@/components/fold-posture-utils";
+import { useInterfaceDirection } from "@/components/interface-direction-provider";
 import { useFoldViewport } from "@/components/use-fold-posture";
 import { LIST_HEIGHT_LIMITS, LIST_WIDTH_LIMITS } from "@/lib/preferences/layout-utils";
 import { useReadingPaneMode } from "./use-reading-layout";
@@ -7,6 +8,8 @@ import { useReadingPaneMode } from "./use-reading-layout";
 // What the list may be and what the reader keeps, in pixels: width beside the reader, height above it.
 export const LIST_WIDTH = { fallback: 360, ...LIST_WIDTH_LIMITS, reserved: 280 };
 export const LIST_HEIGHT = { fallback: 320, ...LIST_HEIGHT_LIMITS, reserved: 200 };
+/** The horizontal edges of the panel group in viewport coordinates, and the width of that viewport. */
+export type GroupEdges = { left: number; right: number; viewportWidth: number };
 /** The hairline handle between the panels and its 4px margin on each side. */
 const HANDLE_WIDTH = 9;
 /** Two panes need this much room; below it the list and reader would overlap or clip. */
@@ -24,7 +27,8 @@ export function useFoldSplit() {
 	const fold = useFoldViewport();
 	const [measured, setMeasured] = useState<HTMLElement | null>(null);
 	const [fits, setFits] = useState(true);
-	const [groupLeft, setGroupLeft] = useState<number | null>(null);
+	const [groupEdges, setGroupEdges] = useState<GroupEdges | null>(null);
+	const rtl = useInterfaceDirection() === "rtl";
 	const wanted = resolveFoldReadingPane(preferredMode, fold.posture, fold.wide, fold.override);
 	// Only an unfolded screen falls back: a desktop keeps its split however much a docked assistant narrows it.
 	// Stacked panes need height, not width, so only a side-by-side split has to fit.
@@ -34,7 +38,7 @@ export function useFoldSplit() {
 	// Stacked panes span both screens and are left alone.
 	const hinge =
 		mode === "right" && fold.posture === "unfolded" && fold.hinge?.orientation === "vertical" ? fold.hinge : null;
-	const followsLeft = hinge !== null;
+	const followsEdges = hinge !== null;
 
 	useLayoutEffect(() => {
 		if (!measured) return;
@@ -42,10 +46,10 @@ export function useFoldSplit() {
 			const box = measured.getBoundingClientRect();
 			// A width of 0 is a panel that is not laid out (a full-size assistant), not a screen that is too small.
 			if (box.width > 0) setFits(box.width >= SPLIT_MIN_WIDTH);
-			if (followsLeft) setGroupLeft(box.left);
+			if (followsEdges) setGroupEdges({ left: box.left, right: box.right, viewportWidth: window.innerWidth });
 		};
 		measure();
-		// The width changes whenever the left edge can move too: a sidebar drag, a window resize, the assistant.
+		// The width changes whenever an edge can move too: a sidebar drag, a window resize, the assistant.
 		const observer = new ResizeObserver(measure);
 		observer.observe(measured);
 		window.addEventListener("resize", measure);
@@ -53,11 +57,9 @@ export function useFoldSplit() {
 			observer.disconnect();
 			window.removeEventListener("resize", measure);
 		};
-	}, [measured, followsLeft]);
+	}, [measured, followsEdges]);
 
-	// hinge.first is in viewport coordinates, but a panel's size is measured inside the group, whose left edge
-	// the sidebar pushes right; the list gets only what is left of the first screen, so it cannot cross the hinge.
-	const hingeListWidth = hinge && groupLeft !== null ? Math.max(0, hinge.first.width - groupLeft) : null;
+	const hingeListWidth = hinge && groupEdges ? foldHingeListWidth(hinge, groupEdges, rtl) : null;
 
 	return {
 		mode,
@@ -65,10 +67,23 @@ export function useFoldSplit() {
 		split,
 		below: mode === "below",
 		hinge,
-		groupLeft,
+		groupEdges,
+		rtl,
 		setMeasured,
 		hingeListWidth,
 	};
+}
+
+/**
+ * The list keeps to the screen the reading direction starts on: the first (left) one, or the second when mirrored,
+ * with the reader on the other. Segments are viewport coordinates and a panel's size is measured inside the group,
+ * whose edge the sidebar pushes inward, so the list gets only what is left of its screen and cannot cross the hinge.
+ */
+function foldHingeListWidth(hinge: FoldHinge, group: GroupEdges, rtl: boolean): number {
+	if (!rtl) return Math.max(0, hinge.first.width - group.left);
+	// The group is padded by what lies past the second screen (`--kite-fold-right`), and the list starts at that padding.
+	const rightPadding = Math.max(0, group.viewportWidth - (hinge.second.left + hinge.second.width));
+	return Math.max(0, group.right - rightPadding - hinge.second.left);
 }
 
 /** The list's size limits, capped to the space before a hinge when there is one. */
@@ -78,25 +93,30 @@ export function foldListBounds(limits: { min: number; max: number }, hingeListWi
 }
 
 /**
- * Where the group's panels sit around a vertical hinge: padding puts the list on the first screen and the reader
- * on the second, and the gaps on both sides of the handle add up to the hinge. `env(viewport-segment-*)` wins
- * where the browser reports Viewport Segments; the measured geometry is the fallback. With the list hidden the
- * reader still starts on the second screen instead of spreading over the hinge.
+ * Where the group's panels sit around a vertical hinge: padding puts each panel on its own screen, and the gaps on
+ * both sides of the handle add up to the hinge. `env(viewport-segment-*)` wins where the browser reports Viewport
+ * Segments; the measured geometry is the fallback. With the list hidden the reader still keeps to its own screen
+ * instead of spreading over the hinge. A mirrored group is physically reversed (`ui/resizable.tsx`), so the padding
+ * stays physical: the list's empty place is on the right, and the reader keeps to the first screen.
  */
 export function foldHingeStyle(
 	hinge: FoldHinge | null,
-	groupLeft: number | null,
+	group: GroupEdges | null,
 	listVisible: boolean,
+	rtl = false,
 ): CSSProperties | undefined {
 	if (!hinge) return undefined;
 	const hingeGap = `max(${hinge.gap}px, calc(env(viewport-segment-left 1 0, 0px) - env(viewport-segment-right 0 0, 0px)))`;
+	const firstRight = `env(viewport-segment-right 0 0, ${hinge.first.left + hinge.first.width}px)`;
 	const secondLeft = `env(viewport-segment-left 1 0, ${hinge.second.left}px)`;
-	const left = listVisible
-		? `env(viewport-segment-left 0 0, ${hinge.first.left}px)`
-		: `max(0px, calc(${secondLeft} - ${groupLeft ?? 0}px - 2 * var(--kite-fold-gap) - ${HANDLE_WIDTH}px))`;
+	const screenLeft = `env(viewport-segment-left 0 0, ${hinge.first.left}px)`;
+	const screenRight = `calc(100vw - env(viewport-segment-right 1 0, ${hinge.second.left + hinge.second.width}px))`;
+	const pastHandle = `2 * var(--kite-fold-gap) - ${HANDLE_WIDTH}px`;
+	const listHiddenLeft = `max(0px, calc(${secondLeft} - ${group?.left ?? 0}px - ${pastHandle}))`;
+	const listHiddenRight = `max(0px, calc(${group?.right ?? hinge.second.left + hinge.second.width}px - ${firstRight} - ${pastHandle}))`;
 	return {
 		"--kite-fold-gap": `max(0px, calc((${hingeGap} - ${HANDLE_WIDTH}px) / 2))`,
-		"--kite-fold-left": left,
-		"--kite-fold-right": `calc(100vw - env(viewport-segment-right 1 0, ${hinge.second.left + hinge.second.width}px))`,
+		"--kite-fold-left": listVisible || rtl ? screenLeft : listHiddenLeft,
+		"--kite-fold-right": listVisible || !rtl ? screenRight : listHiddenRight,
 	} as CSSProperties;
 }

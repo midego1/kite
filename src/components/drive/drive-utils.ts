@@ -1,5 +1,6 @@
 import type { DriveItemDto } from "@/lib/drive/types";
 import { needsRiskReview } from "@/lib/email/attachment-risk";
+import { isolateDirection } from "@/lib/bidi-utils";
 import type { DriveListingView, DrivePreviewKind, DriveSortKey } from "./drive-types";
 
 /** Asks the open listing and the usage bar to reload, after a change made elsewhere on the page. */
@@ -175,7 +176,7 @@ const dateFormat = new Intl.DateTimeFormat(undefined, { year: "numeric", month: 
 
 export function formatDriveDate(iso: string): string {
 	const date = new Date(iso);
-	return Number.isNaN(date.getTime()) ? "" : dateFormat.format(date);
+	return Number.isNaN(date.getTime()) ? "" : isolateDirection(dateFormat.format(date));
 }
 
 export type DriveRowAction =

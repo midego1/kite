@@ -5,6 +5,7 @@ import { ChevronLeft, ChevronRight, Maximize2, Minimize2 } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { useStoredState } from "@/hooks/use-stored-state";
 import type { ChangelogImage } from "@/lib/changelog/types";
+import { logicalArrowKey } from "@/components/interface-direction-utils";
 
 /** The "Show images" choice of the release notes, kept in this browser. On unless someone turned it off. */
 const CHANGELOG_IMAGES_STORAGE_KEY = "kite-changelog-images";
@@ -83,8 +84,9 @@ export function ChangelogLightbox({
 		onIndexChange((index + delta + images.length) % images.length);
 	};
 	const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-		if (event.key === "ArrowLeft") step(-1);
-		else if (event.key === "ArrowRight") step(1);
+		const key = logicalArrowKey(event.key);
+		if (key === "ArrowLeft") step(-1);
+		else if (key === "ArrowRight") step(1);
 		else return;
 		event.preventDefault();
 	};

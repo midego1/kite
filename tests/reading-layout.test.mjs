@@ -63,9 +63,9 @@ test("stacked rows show the snippet line only in comfortable density, as Zero's 
 
 test("every option list matches its type guard", () => {
 	assert.deepEqual(
-		helpers.READING_PANE_OPTIONS.map((option) => option.value),
+		helpers.readingPaneOptions(false).map((option) => option.value),
 		["none", "right", "below"],
 	);
-	assert.ok(helpers.READING_PANE_OPTIONS.every((option) => helpers.isReadingPaneMode(option.value)));
+	assert.ok(helpers.readingPaneOptions(false).every((option) => helpers.isReadingPaneMode(option.value)));
 	assert.ok(helpers.MESSAGE_DENSITY_OPTIONS.every((option) => helpers.isMessageListDensity(option.value)));
 });

@@ -3,12 +3,14 @@
 // Ported from the shadcn/ui new-york Tooltip (MIT, see NOTICE), restyled with Kite's palette. The
 // `label` API is Kite's: one call wraps its trigger, and `null` renders the children alone. Providers
 // (`src/components/providers.tsx`) mounts the one TooltipProvider every Tooltip needs.
+import { useDirection } from "@radix-ui/react-direction";
 import * as TooltipPrimitive from "@radix-ui/react-tooltip";
 import { cn } from "@/lib/utils";
 import type { TooltipProps } from "./tooltip-types";
 import { tooltipSide } from "./tooltip-utils";
 
 export function Tooltip({ label, children, className, placement = "auto" }: TooltipProps) {
+	const direction = useDirection();
 	if (!label) return children;
 
 	return (
@@ -18,7 +20,7 @@ export function Tooltip({ label, children, className, placement = "auto" }: Tool
 			</TooltipPrimitive.Trigger>
 			<TooltipPrimitive.Portal>
 				<TooltipPrimitive.Content
-					side={tooltipSide(placement)}
+					side={tooltipSide(placement, direction)}
 					sideOffset={8}
 					collisionPadding={8}
 					className="pointer-events-none z-[100] max-w-[min(20rem,calc(100vw-1rem))] rounded-md bg-neutral-900 px-2 py-1 text-center text-xs font-medium text-white shadow-lg"

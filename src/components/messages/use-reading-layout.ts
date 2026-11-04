@@ -1,6 +1,12 @@
 import { useCallback, useLayoutEffect, useState } from "react";
+import {
+	DEFAULT_INTERFACE_DIRECTION,
+	INTERFACE_DIRECTION_CHOSEN_EVENT,
+	INTERFACE_DIRECTION_STORAGE_KEY,
+	parseInterfaceDirection,
+} from "@/components/interface-direction-utils";
 import { queueLayoutSave } from "@/components/layout-preferences-client";
-import type { LayoutPreferences } from "@/lib/preferences/layout-types";
+import type { LayoutInterfaceDirection, LayoutPreferences } from "@/lib/preferences/layout-types";
 import type { MessageListDensity, ReadingPaneMode } from "./reading-layout-types";
 import {
 	DEFAULT_MESSAGE_DENSITY,
@@ -35,6 +41,10 @@ export function readReadingPaneMode(): ReadingPaneMode {
 
 export function readMessageListDensity(): MessageListDensity {
 	return parseMessageListDensity(readItem(MESSAGE_DENSITY_STORAGE_KEY));
+}
+
+export function readInterfaceDirection(): LayoutInterfaceDirection {
+	return parseInterfaceDirection(readItem(INTERFACE_DIRECTION_STORAGE_KEY));
 }
 
 function useStoredPreference<T extends string>(
@@ -72,6 +82,9 @@ function useStoredPreference<T extends string>(
 
 const readingPaneLayout = (readingPane: ReadingPaneMode): LayoutPreferences => ({ readingPane });
 const densityLayout = (density: MessageListDensity): LayoutPreferences => ({ density });
+const interfaceDirectionLayout = (interfaceDirection: LayoutInterfaceDirection): LayoutPreferences => ({
+	interfaceDirection,
+});
 
 /**
  * Where open emails appear, remembered in the browser and saved to the account; every open list follows a
@@ -93,4 +106,25 @@ export function useMessageListDensity(): [MessageListDensity, (next: MessageList
 		MESSAGE_DENSITY_STORAGE_KEY,
 		densityLayout,
 	);
+}
+
+/** Automatic, left to right or right to left; `InterfaceDirectionProvider` turns the choice into `<html dir>`. */
+export function useInterfaceDirectionPreference(): [
+	LayoutInterfaceDirection,
+	(next: LayoutInterfaceDirection) => void,
+] {
+	const [value, update] = useStoredPreference(
+		DEFAULT_INTERFACE_DIRECTION,
+		readInterfaceDirection,
+		INTERFACE_DIRECTION_STORAGE_KEY,
+		interfaceDirectionLayout,
+	);
+	const choose = useCallback(
+		(next: LayoutInterfaceDirection) => {
+			update(next);
+			window.dispatchEvent(new Event(INTERFACE_DIRECTION_CHOSEN_EVENT));
+		},
+		[update],
+	);
+	return [value, choose];
 }

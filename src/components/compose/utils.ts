@@ -1,5 +1,6 @@
 import { authFetch } from "@/lib/auth/client";
 import type { ComposeAttachment, ComposeDraft, ComposeThreading, DraftResponse } from "./types";
+import { isolateDirection } from "@/lib/bidi-utils";
 
 export async function fetchDraft(draftId: string): Promise<ComposeDraft> {
 	const res = await authFetch(`/api/drafts/${draftId}`);
@@ -51,9 +52,9 @@ export function buildSendFormData(input: {
 }
 
 export function formatAttachmentSize(size: number): string {
-	if (size < 1024) return `${size} B`;
-	if (size < 1024 * 1024) return `${Math.ceil(size / 1024)} KB`;
-	return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+	if (size < 1024) return isolateDirection(`${size} B`);
+	if (size < 1024 * 1024) return isolateDirection(`${Math.ceil(size / 1024)} KB`);
+	return isolateDirection(`${(size / (1024 * 1024)).toFixed(1)} MB`);
 }
 
 export function applyMailboxSignature(

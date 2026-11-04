@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRef, type KeyboardEvent } from "react";
 import { cn } from "@/lib/utils";
+import { logicalArrowKey } from "@/components/interface-direction-utils";
 
 /**
  * A row of mutually exclusive buttons that behaves as a radio group: arrow keys move and choose. Used for the
@@ -25,7 +26,7 @@ export function SegmentedControl<T extends string | number>({
 }) {
 	const refs = useRef<(HTMLButtonElement | null)[]>([]);
 	const move = (event: KeyboardEvent, index: number) => {
-		const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key];
+		const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[logicalArrowKey(event.key)];
 		if (!step) return;
 		event.preventDefault();
 		const next = (index + step + options.length) % options.length;

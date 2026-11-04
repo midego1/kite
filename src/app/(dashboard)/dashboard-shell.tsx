@@ -62,7 +62,7 @@ type DockedAssistantProps = {
 	onClose: () => void;
 };
 
-/** The assistant beside the page: a column at the right that resizes, or the whole width when it is full size. */
+/** The assistant beside the page: a column at the end of the line that resizes, or the whole width when it is full size. */
 function DockedAssistant({
 	visible,
 	fullSize,
@@ -90,7 +90,7 @@ function DockedAssistant({
 			inert={!visible}
 		>
 			{visible && !fullSize && (
-				<div className="absolute inset-y-0 left-1 hidden w-0 md:block">
+				<div className="absolute inset-y-0 start-1 hidden w-0 md:block">
 					<ResizeHandle
 						label="Resize assistant"
 						onResizeStart={onResizeStart}

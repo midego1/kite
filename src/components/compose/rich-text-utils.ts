@@ -5,6 +5,9 @@
  */
 
 import { sanitizeEmailHtml } from "@/app/(dashboard)/inbox/[messageId]/email-html-sanitizer";
+import { firstStrongDirection, hasRtlCharacters, withAutoDirection } from "./rich-text-direction-utils";
+
+export { resolveAutoDirections } from "./rich-text-direction-utils";
 
 export const QUOTE_ATTRIBUTE = "data-kite-quote";
 const QUOTE_OPEN = `<div class="kite-quote" ${QUOTE_ATTRIBUTE}="1">`;
@@ -24,9 +27,30 @@ export function textToHtml(text: string | null | undefined): string {
 	return `<div>${escapeHtml(value).replace(/\n/g, "<br>")}</div>`;
 }
 
-/** Wrap quoted or forwarded content so the composer and reader can fold it. */
+/**
+ * Plain text as HTML for a message that is sent without the composer opening (an assistant's draft). Left-to-right text
+ * is exactly `textToHtml`; text with right-to-left letters gets one paragraph per line, each with the `rtl` or `ltr` its
+ * own first letter decides, since nothing here can resolve `auto` later.
+ */
+export function textToDirectedHtml(text: string | null | undefined): string {
+	const value = (text ?? "").replace(/\r\n?/g, "\n");
+	if (!hasRtlCharacters(value)) return textToHtml(value);
+	return value
+		.split("\n")
+		.map((line) => {
+			const direction = firstStrongDirection(line);
+			return `<div${direction ? ` dir="${direction}"` : ""}>${line ? escapeHtml(line) : "<br>"}</div>`;
+		})
+		.join("");
+}
+
+/**
+ * Wrap quoted or forwarded content so the composer and reader can fold it. The original keeps its own direction: an
+ * Arabic message quoted under an English reply (or the other way round) stays as it was written, and only its
+ * right-to-left paragraphs get a `dir`, so what the sender set on a wrapping block keeps applying to the rest.
+ */
 export function wrapQuotedHtml(inner: string): string {
-	return `${QUOTE_OPEN}${inner}</div>`;
+	return `${QUOTE_OPEN}${withAutoDirection(inner, { quote: true })}</div>`;
 }
 
 function findQuoteOpen(value: string): { index: number; open: string } | null {
@@ -62,8 +86,10 @@ export function splitStoredDraftHtml(
 	};
 }
 
+/** The draft or message HTML: what was written, with its directions in place, then the folded quote. */
 export function joinQuotedHtml(body: string, quoted: string | null): string {
-	return quoted ? `${body}${wrapQuotedHtml(quoted)}` : body;
+	const written = withAutoDirection(body);
+	return quoted ? `${written}${wrapQuotedHtml(quoted)}` : written;
 }
 
 /** True when the HTML carries something other than empty blocks and whitespace. */
@@ -85,9 +111,26 @@ export function signatureToHtml(signature: string | null | undefined): string {
 	return textToHtml(value).replace(/^<div>|<\/div>$/g, "");
 }
 
-function signatureBlock(signature: string | null | undefined, attribute = SIGNATURE_ATTRIBUTE): string {
+// The editor puts `dir` on the block of a right-to-left signature, and the direction button can change it.
+const SIGNATURE_DIRECTIONS = ["auto", "rtl", "ltr"];
+
+/**
+ * The signature block as inserted, then as the editor may hold it: with the `dir` it gives the paragraphs inside, and
+ * with each direction on the block itself (the editor puts one on a right-to-left line of loose text, the direction
+ * button can change it) and the `dir` it then gives the paragraphs inside, worked out the way the editor works it out.
+ */
+function signatureBlocks(signature: string | null | undefined, attribute = SIGNATURE_ATTRIBUTE): string[] {
 	const html = signatureToHtml(signature);
-	return html ? `<div ${attribute}="1"><br><br>${html}</div>` : "";
+	if (!html) return [];
+	const block = (direction = "") => `<div ${attribute}="1"${direction}><br><br>${html}</div>`;
+	// Block-level lines (`<div>مرحبا</div>`, a paragraph, a list) get their `dir` inside the block, none on it.
+	return [
+		block(),
+		withAutoDirection(block(), { wrapLooseText: false }),
+		...SIGNATURE_DIRECTIONS.map((direction) =>
+			withAutoDirection(block(` dir="${direction}"`), { wrapLooseText: false }),
+		),
+	];
 }
 
 /**
@@ -99,14 +142,16 @@ export function applyMailboxSignatureHtml(
 	previousSignature: string | null | undefined,
 	nextSignature: string | null | undefined,
 ): string {
-	const nextBlock = signatureBlock(nextSignature);
-	for (const previousBlock of [
-		signatureBlock(previousSignature),
-		signatureBlock(previousSignature, LEGACY_SIGNATURE_ATTRIBUTE),
-	]) {
-		if (previousBlock && html.includes(previousBlock)) return html.replace(previousBlock, nextBlock);
+	const nextBlocks = signatureBlocks(nextSignature);
+	const [nextBlock = ""] = nextBlocks;
+	for (const attribute of [SIGNATURE_ATTRIBUTE, LEGACY_SIGNATURE_ATTRIBUTE]) {
+		const previousBlocks = signatureBlocks(previousSignature, attribute);
+		// The new signature keeps the direction the old one was given.
+		// The last that matches: where two forms are the same text, the one with the direction on the block is the one meant.
+		const index = previousBlocks.findLastIndex((block) => html.includes(block));
+		if (index >= 0) return html.replace(previousBlocks[index] as string, nextBlocks[index] ?? nextBlock);
 	}
-	if (!nextBlock || html.includes(nextBlock)) return html;
+	if (!nextBlock || nextBlocks.some((block) => html.includes(block))) return html;
 	return `${html.trim() ? html : "<div><br></div>"}${nextBlock}`;
 }
 

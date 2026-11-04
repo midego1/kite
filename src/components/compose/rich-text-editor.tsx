@@ -8,6 +8,9 @@ import {
 	Link2,
 	List,
 	ListOrdered,
+	Pilcrow,
+	PilcrowLeft,
+	PilcrowRight,
 	Quote,
 	RemoveFormatting,
 	Strikethrough,
@@ -16,6 +19,17 @@ import {
 import { Tooltip } from "@/components/ui/tooltip";
 import { autolinkBeforeCaret, linkHtml } from "@/lib/email/linkify-dom-utils";
 import { cn } from "@/lib/utils";
+import {
+	applyAutoDirection,
+	hasLooseContentInRange,
+	findLooseRun,
+	nextParagraphDirection,
+	paragraphDirection,
+	paragraphsInRange,
+	setParagraphDirection,
+	wrapLooseRuns,
+} from "./rich-text-direction-utils";
+import type { ParagraphDirection } from "./rich-text-direction-utils";
 import type { RichTextEditorProps, ToolbarCommand } from "./rich-text-editor-types";
 
 const COMMANDS: ToolbarCommand[] = [
@@ -27,6 +41,48 @@ const COMMANDS: ToolbarCommand[] = [
 	{ command: "insertOrderedList", label: "Numbered list", icon: ListOrdered },
 	{ command: "formatBlock", label: "Quote", icon: Quote, value: "blockquote" },
 ];
+
+const DIRECTIONS: Record<ParagraphDirection, { name: string; icon: ToolbarCommand["icon"] }> = {
+	auto: { name: "automatic", icon: Pilcrow },
+	rtl: { name: "right to left", icon: PilcrowLeft },
+	ltr: { name: "left to right", icon: PilcrowRight },
+};
+
+/** How many characters of the editor's text come before a selection point. */
+function characterOffset(root: HTMLElement, node: Node | null, offset: number): number {
+	if (!node || !root.contains(node)) return 0;
+	const range = document.createRange();
+	range.selectNodeContents(root);
+	range.setEnd(node, offset);
+	return range.toString().length;
+}
+
+/** The point itself when its node is still in the editor and still long enough. */
+function pointKept(root: HTMLElement, node: Node | null, offset: number): { node: Node; offset: number } | null {
+	const length = node?.nodeType === Node.TEXT_NODE ? (node.textContent?.length ?? 0) : (node?.childNodes.length ?? 0);
+	return node?.isConnected && root.contains(node) && offset <= length ? { node, offset } : null;
+}
+
+/** The text position that many characters into the editor; the end of the text when it is past it. */
+function pointAtCharacter(root: HTMLElement, characters: number): { node: Node; offset: number } | null {
+	const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+	let seen = 0;
+	let last: Text | null = null;
+	for (let node = walker.nextNode() as Text | null; node; node = walker.nextNode() as Text | null) {
+		if (characters < seen + node.length) return { node, offset: characters - seen };
+		seen += node.length;
+		last = node;
+	}
+	return last ? { node: last, offset: last.length } : null;
+}
+
+/** The paragraph the caret is in: the first one a selection touches. */
+function currentParagraphDirection(root: HTMLElement): ParagraphDirection {
+	const selection = window.getSelection();
+	if (!selection || selection.rangeCount === 0) return "auto";
+	const [first] = paragraphsInRange(root, selection.getRangeAt(0));
+	return first ? paragraphDirection(first) : "auto";
+}
 
 /**
  * A small HTML editor built on contentEditable. It stays deliberately light:
@@ -47,6 +103,7 @@ export function RichTextEditor({
 }: RichTextEditorProps) {
 	const editorRef = useRef<HTMLDivElement | null>(null);
 	const [active, setActive] = useState<Record<string, boolean>>({});
+	const [direction, setDirection] = useState<ParagraphDirection>("auto");
 	const [linkOpen, setLinkOpen] = useState(false);
 	const [linkUrl, setLinkUrl] = useState("");
 	const [showQuoted, setShowQuoted] = useState(false);
@@ -55,7 +112,12 @@ export function RichTextEditor({
 	// Keep the DOM in step with the value without resetting the caret on every keystroke.
 	useEffect(() => {
 		const element = editorRef.current;
-		if (element && element.innerHTML !== value) element.innerHTML = value;
+		if (element && element.innerHTML !== value) {
+			element.innerHTML = value;
+			// Text that arrives from a template, a draft or the assistant flows from the right straight away too.
+			wrapLooseRuns(element);
+			applyAutoDirection(element);
+		}
 	}, [value]);
 
 	useEffect(() => {
@@ -71,13 +133,38 @@ export function RichTextEditor({
 				}
 			}
 			setActive(next);
+			setDirection(currentParagraphDirection(element));
 		}
 		document.addEventListener("selectionchange", refresh);
 		return () => document.removeEventListener("selectionchange", refresh);
 	}, []);
 
+	// A paragraph that starts right to left gets `dir="auto"` as soon as it is typed, so it flows from the right and
+	// is sent that way. Only attributes change, so the caret and the undo history stay where they are.
 	function emit() {
-		onChange(editorRef.current?.innerHTML ?? "");
+		const element = editorRef.current;
+		if (element) applyAutoDirection(element);
+		onChange(element?.innerHTML ?? "");
+	}
+
+	function cycleDirection() {
+		const element = editorRef.current;
+		if (!element) return;
+		element.focus();
+		const selection = window.getSelection();
+		if (!selection || selection.rangeCount === 0 || !element.contains(selection.anchorNode)) return;
+		// The first line typed into an empty editor is loose text; a paragraph is needed to carry a direction.
+		const touched = selection.getRangeAt(0);
+		if (hasLooseContentInRange(element, touched)) wrapLooseText(element, { onlyRtl: false });
+		else if (paragraphsInRange(element, touched).length === 0) document.execCommand("formatBlock", false, "div");
+		const range = selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
+		const paragraphs = range ? paragraphsInRange(element, range) : [];
+		const [first] = paragraphs;
+		if (!first) return;
+		const next = nextParagraphDirection(paragraphDirection(first));
+		for (const paragraph of paragraphs) setParagraphDirection(paragraph, next);
+		setDirection(next);
+		emit();
 	}
 
 	function run(command: string, commandValue?: string) {
@@ -128,12 +215,46 @@ export function RichTextEditor({
 		event.preventDefault();
 		const text = event.clipboardData.getData("text/plain");
 		document.execCommand("insertText", false, text);
+		// The insert's own input event ran inside this command, where a second command is refused: wrap the line now.
+		if (wrapLooseText(event.currentTarget, { onlyRtl: true })) emit();
+	}
+
+	/**
+	 * The first line typed or pasted into an empty editor has no paragraph around it, so it cannot carry a direction. Each
+	 * run of loose text is given one with `formatBlock` (which keeps the undo history), one run at a time, with the
+	 * caret put at its start so that nothing else the selection holds is turned into a plain div; then the selection is
+	 * put back. With `onlyRtl`, only text that reads right to left is wrapped. Returns true when something was wrapped.
+	 */
+	function wrapLooseText(element: HTMLElement, { onlyRtl }: { onlyRtl: boolean }): boolean {
+		const selection = window.getSelection();
+		let run = findLooseRun(element, { onlyRtl });
+		if (!selection || !run) return false;
+		const before = [selection.anchorNode, selection.anchorOffset, selection.focusNode, selection.focusOffset] as const;
+		const anchorAt = characterOffset(element, before[0], before[1]);
+		const focusAt = characterOffset(element, before[2], before[3]);
+		let wrapped = false;
+		// A few runs at most; a refused command leaves the run where it is, so stop rather than ask again.
+		for (let attempts = 0; run && attempts < 10; attempts += 1) {
+			selection.collapse(run, 0);
+			if (!document.execCommand("formatBlock", false, "div")) break;
+			wrapped = true;
+			run = findLooseRun(element, { onlyRtl });
+		}
+		// The command may have replaced the text nodes the selection sat in: put it back by character position.
+		// A node that is still there keeps its place, so a caret at the end of one line does not move to the next.
+		const anchor = pointKept(element, before[0], before[1]) ?? pointAtCharacter(element, anchorAt);
+		const focus = pointKept(element, before[2], before[3]) ?? pointAtCharacter(element, focusAt);
+		if (anchor && focus) selection.setBaseAndExtent(anchor.node, anchor.offset, focus.node, focus.offset);
+		return wrapped;
 	}
 
 	// The space the author just typed ends a web or email address: link it, keeping the caret after the space.
 	function onInput(event: FormEvent<HTMLDivElement>) {
-		const { inputType, data } = event.nativeEvent as InputEvent;
+		const { inputType = "", data, isComposing } = event.nativeEvent as InputEvent;
 		if (inputType === "insertText" && (data === " " || data === " ")) autolinkBeforeCaret(event.currentTarget);
+		// Not while an input method is composing, and not for undo or redo: undoing the wrap would otherwise wrap again,
+		// clear the redo history and keep Ctrl+Z from ever reaching the typed text.
+		if (!isComposing && !inputType.startsWith("history")) wrapLooseText(event.currentTarget, { onlyRtl: true });
 		emit();
 	}
 
@@ -144,6 +265,9 @@ export function RichTextEditor({
 			openLink();
 		}
 	}
+
+	const DirectionIcon = DIRECTIONS[direction].icon;
+	const directionLabel = `Paragraph direction: ${DIRECTIONS[direction].name}. Switch to ${DIRECTIONS[nextParagraphDirection(direction)].name}`;
 
 	return (
 		<div className={cn("flex min-h-0 flex-1 flex-col", className)}>
@@ -162,7 +286,7 @@ export function RichTextEditor({
 					onPaste={onPaste}
 					onKeyDown={onKeyDown}
 					className={cn(
-						"email-body reading-text max-w-none grow shrink-0 px-4 py-3 text-sm text-neutral-900 outline-none",
+						"email-body composer-body reading-text max-w-none grow shrink-0 px-4 py-3 text-sm text-neutral-900 outline-none",
 						"min-h-32 empty:before:pointer-events-none empty:before:text-neutral-500 empty:before:content-[attr(data-placeholder)]",
 						disabled && "cursor-not-allowed opacity-60",
 					)}
@@ -209,6 +333,19 @@ export function RichTextEditor({
 						</button>
 					</Tooltip>
 				))}
+				<Tooltip label={directionLabel}>
+					<button
+						type="button"
+						disabled={disabled}
+						onMouseDown={(event) => event.preventDefault()}
+						onClick={cycleDirection}
+						className="rounded-md p-1.5 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
+					>
+						<DirectionIcon className="h-4 w-4" aria-hidden="true" />
+						{/* The name is the button's content, not an aria-label: a label lookup for "To" would find it. */}
+						<span className="sr-only">{directionLabel}</span>
+					</button>
+				</Tooltip>
 				<Tooltip label="Insert link (⌘K)">
 					<button
 						type="button"

@@ -35,6 +35,7 @@ import { useSendingSettings } from "./use-sending-settings";
 import { heldSend } from "./undo-send-utils";
 import type { PendingUndoSend, PendingUndoSnapshot, SentAnswer } from "./undo-send-types";
 import { RecipientInput } from "./recipient-input";
+import { SubjectField } from "./subject-field";
 import { linkifyOutgoingHtml } from "@/lib/email/linkify-dom-utils";
 import { RichTextEditor } from "./rich-text-editor";
 import { ScheduleSendMenu } from "./schedule-send-menu";
@@ -44,6 +45,7 @@ import {
 	hasMeaningfulHtml,
 	htmlToPlainText,
 	joinQuotedHtml,
+	resolveAutoDirections,
 	splitStoredDraftHtml,
 } from "./rich-text-utils";
 import { headerToRecipients, isValidRecipient, recipientsToHeader } from "./recipient-utils";
@@ -282,7 +284,9 @@ export function ComposeForm({
 	useEffect(() => {
 		if (loadingDraft) return;
 		const nextSignature = selectedMailbox?.signature ?? "";
-		setHtml((current) => applyMailboxSignatureHtml(current, previousSignature.current, nextSignature));
+		// Read now: React may run the updater after the line below, when the ref already holds the new signature.
+		const previous = previousSignature.current;
+		setHtml((current) => applyMailboxSignatureHtml(current, previous, nextSignature));
 		previousSignature.current = nextSignature;
 	}, [loadingDraft, selectedMailbox?.id, selectedMailbox?.signature]);
 
@@ -323,7 +327,8 @@ export function ComposeForm({
 		const currentDraftId = draftSaves.draftId;
 		const unsent = withoutAttachmentIds(attachments, storedUploads);
 		// Only what the author wrote is linked, never the quoted or forwarded original.
-		const fullHtml = joinQuotedHtml(linkifyOutgoingHtml(html), quotedHtml);
+		// `auto` becomes the direction it resolves to, for mail clients that do not read it; the draft and the preview keep `auto`.
+		const fullHtml = resolveAutoDirections(joinQuotedHtml(linkifyOutgoingHtml(html), quotedHtml));
 		if (draftId && agentRevision !== null) {
 			try {
 				if (attachments.length > 0) {
@@ -863,18 +868,7 @@ export function ComposeForm({
 						/>
 					)}
 					<div className={cn("border-b border-neutral-100 px-4 py-1", mode === "inline" && "hidden")}>
-						<Label htmlFor={`${mode}-subject`} className="sr-only">
-							Subject
-						</Label>
-						<Input
-							id={`${mode}-subject`}
-							value={subject}
-							onChange={(event) => setSubject(event.target.value)}
-							placeholder="Subject"
-							required
-							disabled={loadingDraft}
-							className="reading-font h-8 border-0 px-0 py-1 shadow-none focus-visible:ring-0"
-						/>
+						<SubjectField id={`${mode}-subject`} value={subject} onChange={setSubject} disabled={loadingDraft} />
 					</div>
 					<Label htmlFor={`${mode}-text`} className="sr-only">
 						Body

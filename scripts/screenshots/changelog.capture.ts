@@ -168,6 +168,28 @@ const SHOTS: Shot[] = [
 	},
 	...(["light", "dark"] as const).map(
 		(theme): Shot => ({
+			name: `2026-11-04-rtl-composer-${theme}`,
+			theme,
+			viewport: { width: 1280, height: 800 },
+			open: async (page) => {
+				await page.goto("/inbox");
+				await page.getByRole("button", { name: "Compose" }).click();
+				const to = page.getByLabel("To", { exact: true });
+				await to.fill("lena@contoso.test");
+				await to.press("Enter");
+				await page.getByLabel("Subject").fill("ملاحظات مراجعة التصميم");
+				const body = page.getByRole("textbox", { name: "Message body" });
+				await body.click();
+				await body.pressSequentially("شكرًا ليلى على الملاحظات، سأرسل النسخة الجديدة غدًا.");
+				await page.keyboard.press("Enter");
+				await body.pressSequentially("Thanks Lena, the new version follows tomorrow.");
+				await expect(body.locator("> div")).toHaveCount(2);
+				return page.locator("form").filter({ has: page.getByRole("button", { name: "Close composer" }) });
+			},
+		}),
+	),
+	...(["light", "dark"] as const).map(
+		(theme): Shot => ({
 			name: `2026-11-04-rtl-message-${theme}`,
 			theme,
 			viewport: { width: 1280, height: 800 },

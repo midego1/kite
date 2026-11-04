@@ -1152,6 +1152,18 @@ html:has(#kite-boot-failure) .loader-frozen {
 .email-body p {
 	margin: 0 0 0.5rem;
 }
+/* The composer's own text: lists and quotes put their padding and rule on the side the paragraph starts from, so one
+   written right to left (`dir` auto or rtl) keeps its markers and bar inside the box. Left to right looks as before. */
+.composer-body :is(ul, ol) {
+	padding-left: 0;
+	padding-inline-start: 1.5rem;
+}
+.composer-body blockquote {
+	border-left: 0;
+	border-inline-start: 2px solid #d4d4d4;
+	padding-left: 0;
+	padding-inline-start: 0.75rem;
+}
 .email-quote-toggle {
 	margin-top: 1.4em;
 }

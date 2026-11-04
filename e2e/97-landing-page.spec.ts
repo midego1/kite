@@ -575,7 +575,7 @@ test.describe("visitor", () => {
 				};
 			});
 
-		// The pane's width decides, not the window's: the sidebar and the list take room, so 1366 px is still stacked.
+		// The pane's width decides, not the window's: the sidebar and the list take room, so 1280 px is still stacked.
 		for (const [width, wide] of [
 			[1920, true],
 			[1440, true],
@@ -823,6 +823,12 @@ test.describe("visitor", () => {
 		);
 		await sidebar(page).getByRole("button", { name: /^Cost/ }).click();
 		await expect(openEmail(page)).toHaveAttribute("id", "cost");
+		// A toast sits in the second screen, not across the hinge.
+		await page.getByRole("button", { name: "Star", exact: true }).click();
+		await page.getByRole("button", { name: "Copy link" }).click();
+		const toast = (await page.getByRole("status").boundingBox())!;
+		expect(toast.x).toBeGreaterThanOrEqual(483);
+		expect(toast.x + toast.width).toBeLessThanOrEqual(885);
 		await context.close();
 	});
 
@@ -838,6 +844,17 @@ test.describe("visitor", () => {
 		await expect(sidebar(page)).toBeHidden();
 		await page.getByRole("button", { name: "Back to list" }).click();
 		await expect(page.locator('[data-home-pane="list"]')).toBeVisible();
+
+		// The sidebar is an overlay at any width here, so Tab stays inside the menu instead of reaching the page behind it.
+		await page.getByRole("button", { name: "Open menu" }).click();
+		await expect(sidebar(page)).toBeVisible();
+		const stops = await sidebar(page).locator("button, a[href]").count();
+		for (let step = 0; step < stops + 3; step++) {
+			await page.keyboard.press("Tab");
+			expect(await page.evaluate(() => !!document.activeElement?.closest('aside[aria-label="Folders"]'))).toBe(true);
+		}
+		await page.keyboard.press("Escape");
+		await expect(sidebar(page)).toBeHidden();
 		await context.close();
 	});
 
@@ -917,6 +934,40 @@ test.describe("visitor", () => {
 				await context.close();
 			}
 		}
+	});
+
+	test("Deny removes the example from the Inbox, and the toast makes no claim about where its mail goes", async ({
+		page,
+	}) => {
+		await visit(page, "/#sample-api-question");
+		const inbox = page.getByRole("region", { name: "Inbox" });
+		const unreadBefore = await sidebar(page)
+			.getByRole("button", { name: /^Inbox/ })
+			.innerText();
+		await openEmail(page).getByRole("button", { name: "Deny" }).click();
+		await expect(page.getByRole("status")).toContainText("Denied. Ava Lindqvist can no longer reach your Inbox.");
+		await expect(page.getByRole("status")).not.toContainText(/Trash|Spam/);
+		// The row is gone from the list and from the count, the reader moves to its neighbour, and the focus is not lost.
+		await expect(inbox.getByRole("button", { name: /A question about a shared mailing/ })).toHaveCount(0);
+		await expect(openEmail(page)).toHaveAttribute("id", "sample-invoice");
+		expect(
+			await sidebar(page)
+				.getByRole("button", { name: /^Inbox/ })
+				.innerText(),
+		).not.toBe(unreadBefore);
+		await expect(page).toHaveURL(/#sample-invoice$/);
+		expect(await page.evaluate(() => document.activeElement === document.body)).toBe(false);
+		await page.getByLabel("Search mail").fill("shared mailing");
+		await expect(page.getByText('No mail matches "shared mailing".')).toBeVisible();
+	});
+
+	test("Dismiss and Approve keep the focus in the mailbox", async ({ page }) => {
+		await visit(page, "/#sample-launch-plan");
+		await openEmail(page).getByRole("button", { name: "Dismiss" }).click();
+		expect(await page.evaluate(() => document.activeElement === document.body)).toBe(false);
+		await visit(page, "/#sample-api-question");
+		await openEmail(page).getByRole("button", { name: "Approve" }).click();
+		expect(await page.evaluate(() => document.activeElement === document.body)).toBe(false);
 	});
 
 	test("the folder menu below lg takes the focus, holds it and gives it back", async ({ page }) => {

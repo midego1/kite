@@ -109,7 +109,10 @@ const STACK = {
  */
 export function EmailTable({ label, cornerLabel, columns, rows, from }: EmailTableProps) {
 	const css = STACK[from];
-	const th = `py-2 pr-4 text-left text-xs font-medium ${from === "wide" ? "@2xl:sticky @2xl:top-0 @2xl:z-10 @2xl:border-b @2xl:border-neutral-200 @2xl:bg-white" : ""}`;
+	// A wide table keeps its header row in view, and the empty corner too, so row labels never show through it.
+	const sticky =
+		from === "wide" ? "@2xl:sticky @2xl:top-0 @2xl:z-10 @2xl:border-b @2xl:border-neutral-200 @2xl:bg-white" : "";
+	const th = `py-2 pr-4 text-left text-xs font-medium ${sticky}`;
 	return (
 		<table className={`${css.table} border-collapse text-left text-sm`} role="table" aria-label={label}>
 			<thead className={css.head} role="rowgroup">
@@ -119,7 +122,7 @@ export function EmailTable({ label, cornerLabel, columns, rows, from }: EmailTab
 							{cornerLabel}
 						</th>
 					) : (
-						<td role="cell" />
+						<td role="cell" className={sticky} />
 					)}
 					{columns.map((column, index) => (
 						<th

@@ -10,7 +10,7 @@ import type { FoldHinge, FoldViewport } from "@/components/fold-posture-utils";
 
 /** The hinge to lay out around, when the posture is unfolded and the screens sit side by side. */
 export function homeHinge(fold: FoldViewport): FoldHinge | null {
-	return fold.posture === "unfolded" && fold.hinge?.orientation === "vertical" ? fold.hinge : null;
+	return fold.posture === "unfolded" && fold.splitWidth && fold.hinge?.orientation === "vertical" ? fold.hinge : null;
 }
 
 /** Columns of the first screen, the hinge and the second screen. */

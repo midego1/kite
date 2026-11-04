@@ -51,16 +51,19 @@ function matches(email: HomeEmailMeta, query: string, dismissed: boolean): boole
 
 /** The rows of a view; a search looks through every folder. */
 export function listEmails(state: HomeMailboxState, emails: HomeEmailMeta[]): HomeEmailMeta[] {
+	const shown = emails.filter((email) => !state.denied.includes(email.id));
 	if (state.search.trim())
-		return emails.filter((email) => matches(email, state.search, state.dismissed.includes(email.id)));
-	if (state.view === "starred") return emails.filter((email) => state.starred.includes(email.id));
-	return emails.filter((email) => email.folder === state.view);
+		return shown.filter((email) => matches(email, state.search, state.dismissed.includes(email.id)));
+	if (state.view === "starred") return shown.filter((email) => state.starred.includes(email.id));
+	return shown.filter((email) => email.folder === state.view);
 }
 
 export function unreadCount(state: HomeMailboxState, emails: HomeEmailMeta[], view: HomeViewId): number {
 	return emails.filter(
 		(email) =>
-			!state.read.includes(email.id) && (view === "starred" ? state.starred.includes(email.id) : email.folder === view),
+			!state.read.includes(email.id) &&
+			!state.denied.includes(email.id) &&
+			(view === "starred" ? state.starred.includes(email.id) : email.folder === view),
 	).length;
 }
 
@@ -77,6 +80,7 @@ export function createMailboxState(): HomeMailboxState {
 		composer: null,
 		dismissed: [],
 		decided: [],
+		denied: [],
 		toast: null,
 		contactCard: null,
 	};
@@ -154,10 +158,19 @@ const HANDLERS: { [T in HomeMailboxAction["type"]]: Handler<T> } = {
 	}),
 	decideSender: (state, action, emails) => {
 		const name = emails.find((email) => email.id === action.id)?.sample?.sender.name ?? "this sender";
+		// No claim about where denied mail goes: the Screener's own page says that. The example just leaves the Inbox.
 		const text = action.approve
 			? `Approved. Mail from ${name} now arrives in your Inbox.`
-			: `Denied. Mail from ${name} goes to Trash.`;
-		return { ...state, decided: [...state.decided, action.id], toast: { text, n: (state.toast?.n ?? 0) + 1 } };
+			: `Denied. ${name} can no longer reach your Inbox.`;
+		const decided = { ...state, decided: [...state.decided, action.id], toast: { text, n: (state.toast?.n ?? 0) + 1 } };
+		if (action.approve) return decided;
+		// A denied example leaves the list; the reader moves to its neighbour, and a phone goes back to the list.
+		const rows = listEmails(state, emails);
+		const at = rows.findIndex((email) => email.id === action.id);
+		const next = rows[at + 1] ?? rows[at - 1];
+		const denied = { ...decided, denied: [...state.denied, action.id] };
+		if (state.openId !== action.id) return denied;
+		return { ...denied, openId: next?.id ?? null, pane: "list" };
 	},
 	send: (state) => ({ ...state, composer: null, toast: { text: "Demo: nothing sent", n: (state.toast?.n ?? 0) + 1 } }),
 	toast: (state, action) => ({ ...state, toast: { text: action.text, n: (state.toast?.n ?? 0) + 1 } }),

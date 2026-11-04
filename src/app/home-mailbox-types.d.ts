@@ -67,6 +67,8 @@ export type HomeMailboxState = {
 	/** Samples whose suggestion was dismissed, and whose new sender was approved or denied. */
 	dismissed: string[];
 	decided: string[];
+	/** Denied senders' example mails: they leave the Inbox. */
+	denied: string[];
 	/** The counter makes every toast a new value, so a repeated text still restarts the expiry timer. */
 	toast: { text: string; n: number } | null;
 	contactCard: { address: string; left: number } | null;

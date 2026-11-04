@@ -6,14 +6,18 @@ import type { HomeMailboxAction, HomeMailboxState } from "./home-mailbox-types";
 export function HomeToast({
 	state,
 	dispatch,
+	secondScreen,
 }: {
 	state: HomeMailboxState;
 	dispatch: (action: HomeMailboxAction) => void;
+	/** On a foldable the toast sits in the second screen, like the composer, not across the hinge. */
+	secondScreen?: boolean;
 }) {
 	if (!state.toast) return null;
 	return (
 		<div
 			role="status"
+			style={secondScreen ? { gridColumn: 3 } : undefined}
 			className="absolute bottom-[max(1rem,env(safe-area-inset-bottom))] left-1/2 z-40 flex max-w-[calc(100%-2rem)] -translate-x-1/2 items-center gap-3 rounded-lg bg-neutral-900 px-4 py-2.5 text-sm text-white shadow-lg"
 		>
 			<span className="min-w-0">{state.toast.text}</span>

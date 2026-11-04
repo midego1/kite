@@ -204,7 +204,8 @@ export function HomeMailbox({ appName, icon, emails, bodies, chrome, footer, hea
 
 	useEffect(() => {
 		stateRef.current = state;
-		menuOverlayRef.current = !!hinge;
+		// The menu overlays instead of being a column on a foldable, on a folded layout of any width and below lg.
+		menuOverlayRef.current = !!hinge || fold.posture === "folded";
 	});
 
 	// Keys work from a fresh load, wherever the focus is, except in a field. After a move the focus follows the open
@@ -257,6 +258,14 @@ export function HomeMailbox({ appName, icon, emails, bodies, chrome, footer, hea
 			rawDispatch({ type: "markRead", id: current.openId });
 		}
 	}, [state.openId, state.pane, twoPanes]);
+
+	// Dismiss, Approve and Deny remove their own control: the focus goes to the open email's row or article, not to body.
+	const decisions = state.dismissed.length + state.decided.length;
+	const decisionsSeen = useRef(0);
+	useEffect(() => {
+		if (decisions > decisionsSeen.current) settleFocus(rootRef.current);
+		decisionsSeen.current = decisions;
+	}, [decisions]);
 
 	// The skip link opens the open email for a phone too, where the list may be showing: the hash would not change.
 	const skipToMessage = (event: MouseEvent<HTMLAnchorElement>) => {
@@ -328,7 +337,7 @@ export function HomeMailbox({ appName, icon, emails, bodies, chrome, footer, hea
 					onContact={openContact}
 					secondScreen={!!hinge}
 				/>
-				<HomeToast state={state} dispatch={dispatch} />
+				<HomeToast state={state} dispatch={dispatch} secondScreen={!!hinge} />
 				{/* Remount for a new target: the To and Subject inputs are uncontrolled (defaultValue). */}
 				<HomeComposer
 					key={state.composer ? `${state.composer.to}\n${state.composer.subject}\n${state.composer.body}` : "closed"}

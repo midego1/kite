@@ -209,12 +209,13 @@ test("Money Watch off then on removes and restores every finance surface: nav, p
 	await withSurfaceRig(async (rig) => {
 		const vendor = `Surfaceflix${uniqueToken("").slice(-4)}`;
 		const key = await createMcpKey(rig.api, "E2E finance surfaces", ["mcp:read", "mcp:finance-read"], [rig.mailboxId]);
-		const created = await rig.api.post("/api/finance/subscriptions", {
-			data: { vendor, amountMinor: 999, currency: "USD", cycle: "monthly", reminderDays: 0, calendarReminder: false },
-		});
-		expect(created.status(), await created.text()).toBe(200);
-		const subscriptionId = ((await created.json()) as { subscription: { id: string } }).subscription.id;
+		let subscriptionId = "";
 		try {
+			const created = await rig.api.post("/api/finance/subscriptions", {
+				data: { vendor, amountMinor: 999, currency: "USD", cycle: "monthly", reminderDays: 0, calendarReminder: false },
+			});
+			expect(created.status(), await created.text()).toBe(200);
+			subscriptionId = ((await created.json()) as { subscription: { id: string } }).subscription.id;
 			await offThenOn(rig.api, "finance", async (on) => {
 				await page.goto("/inbox");
 				const sidebar = page.getByRole("navigation").first();
@@ -243,7 +244,7 @@ test("Money Watch off then on removes and restores every finance surface: nav, p
 				);
 			});
 		} finally {
-			await rig.api.delete(`/api/finance/subscriptions/${subscriptionId}`);
+			if (subscriptionId) await rig.api.delete(`/api/finance/subscriptions/${subscriptionId}`);
 			await deleteKeys(rig.api, { mcp: [key.id] });
 		}
 	});

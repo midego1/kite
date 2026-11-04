@@ -478,7 +478,8 @@ test.describe("a mirrored interface", () => {
 	test("English sentences keep their full stop, placeholders their brackets and code its order", async ({ page }) => {
 		await page.goto("/settings/account");
 		await expect(page.getByRole("heading", { name: "My account" })).toBeVisible();
-		const results = await page.getByRole("main").evaluate((main: HTMLElement) => {
+		const results = await page.evaluate(() => {
+			const main = document.querySelector<HTMLElement>("main")!;
 			const host = document.createElement("div");
 			host.innerHTML = `
 				<div data-case="plain div">Hello there.</div>
@@ -489,7 +490,7 @@ test.describe("a mirrored interface", () => {
 				<kbd data-kbd>⌘K</kbd>
 				<ol class="list-decimal ps-5"><li data-marker>Step one.</li></ol>
 			`;
-			main.prepend(host);
+			main.insertBefore(host, main.firstChild);
 			const charBox = (element: Element, index: number) => {
 				const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
 				let node = walker.nextNode();

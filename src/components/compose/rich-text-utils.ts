@@ -5,7 +5,9 @@
  */
 
 import { sanitizeEmailHtml } from "@/app/(dashboard)/inbox/[messageId]/email-html-sanitizer";
-import { withAutoDirection } from "./rich-text-direction-utils";
+import { firstStrongDirection, hasRtlCharacters, withAutoDirection } from "./rich-text-direction-utils";
+
+export { resolveAutoDirections } from "./rich-text-direction-utils";
 
 export const QUOTE_ATTRIBUTE = "data-kite-quote";
 const QUOTE_OPEN = `<div class="kite-quote" ${QUOTE_ATTRIBUTE}="1">`;
@@ -26,11 +28,29 @@ export function textToHtml(text: string | null | undefined): string {
 }
 
 /**
+ * Plain text as HTML for a message that is sent without the composer opening (an assistant's draft). Left-to-right text
+ * is exactly `textToHtml`; text with right-to-left letters gets one paragraph per line, each with the `rtl` or `ltr` its
+ * own first letter decides, since nothing here can resolve `auto` later.
+ */
+export function textToDirectedHtml(text: string | null | undefined): string {
+	const value = (text ?? "").replace(/\r\n?/g, "\n");
+	if (!hasRtlCharacters(value)) return textToHtml(value);
+	return value
+		.split("\n")
+		.map((line) => {
+			const direction = firstStrongDirection(line);
+			return `<div${direction ? ` dir="${direction}"` : ""}>${line ? escapeHtml(line) : "<br>"}</div>`;
+		})
+		.join("");
+}
+
+/**
  * Wrap quoted or forwarded content so the composer and reader can fold it. The original keeps its own direction: an
- * Arabic message quoted under an English reply (or the other way round) stays as it was written.
+ * Arabic message quoted under an English reply (or the other way round) stays as it was written, and only its
+ * right-to-left paragraphs get a `dir`, so what the sender set on a wrapping block keeps applying to the rest.
  */
 export function wrapQuotedHtml(inner: string): string {
-	return `${QUOTE_OPEN}${withAutoDirection(inner)}</div>`;
+	return `${QUOTE_OPEN}${withAutoDirection(inner, { quote: true })}</div>`;
 }
 
 function findQuoteOpen(value: string): { index: number; open: string } | null {
@@ -86,19 +106,28 @@ export function signatureToHtml(signature: string | null | undefined): string {
 	const value = signature?.trim() ?? "";
 	if (!value) return "";
 	if (isHtmlSignature(value) && typeof DOMParser !== "undefined") {
-		// Directions inside it are set as the editor sets them, so the block still matches when the signature is swapped.
-		return withAutoDirection(sanitizeEmailHtml(value, { forOutgoing: true }) ?? "", { wrapLooseText: false });
+		return sanitizeEmailHtml(value, { forOutgoing: true }) ?? "";
 	}
 	return textToHtml(value).replace(/^<div>|<\/div>$/g, "");
 }
 
 // The editor puts `dir` on the block of a right-to-left signature, and the direction button can change it.
-const SIGNATURE_DIRECTIONS = ["", ' dir="auto"', ' dir="rtl"', ' dir="ltr"'];
+const SIGNATURE_DIRECTIONS = ["auto", "rtl", "ltr"];
 
-/** The signature block as the editor may hold it: first as inserted, then with each direction the editor can give it. */
+/**
+ * The signature block as inserted, then as the editor may hold it: with each direction on the block, and the `dir` the
+ * editor gives paragraphs inside it (an English line in an Arabic signature) worked out the same way it does.
+ */
 function signatureBlocks(signature: string | null | undefined, attribute = SIGNATURE_ATTRIBUTE): string[] {
 	const html = signatureToHtml(signature);
-	return html ? SIGNATURE_DIRECTIONS.map((direction) => `<div ${attribute}="1"${direction}><br><br>${html}</div>`) : [];
+	if (!html) return [];
+	const block = (direction = "") => `<div ${attribute}="1"${direction}><br><br>${html}</div>`;
+	return [
+		block(),
+		...SIGNATURE_DIRECTIONS.map((direction) =>
+			withAutoDirection(block(` dir="${direction}"`), { wrapLooseText: false }),
+		),
+	];
 }
 
 /**

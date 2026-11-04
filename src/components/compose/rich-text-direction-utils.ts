@@ -54,26 +54,69 @@ function ownText(element: Element): string {
 	return text;
 }
 
+/** What the browser reads for `dir="auto"`: all text below the element except subtrees that have a `dir` of their own. */
+function autoText(element: Element): string {
+	let text = "";
+	for (const child of Array.from(element.childNodes)) {
+		if (child.nodeType === Node.TEXT_NODE) text += child.textContent ?? "";
+		else if (child.nodeType === Node.ELEMENT_NODE && !(child as Element).hasAttribute("dir"))
+			text += autoText(child as Element);
+	}
+	return text;
+}
+
+function resolvedDirection(element: Element): "rtl" | "ltr" {
+	const value = element.getAttribute("dir")?.toLowerCase();
+	if (value === "rtl" || value === "ltr") return value;
+	return firstStrongDirection(autoText(element)) ?? "ltr";
+}
+
+/** True when the nearest ancestor with a `dir` (below the root) reads right to left, so a child would inherit that. */
+function inheritsRtl(element: Element, root: Element): boolean {
+	const ancestor = element.parentElement?.closest("[dir]");
+	return !!ancestor && ancestor !== root && root.contains(ancestor) && resolvedDirection(ancestor) === "rtl";
+}
+
+/**
+ * A list is given the direction its first item reads in, as `rtl` or `ltr` outright: `auto` would see nothing to
+ * resolve, because the items carry a `dir` of their own and an element's `auto` skips descendants that have one. It is
+ * recomputed every time, so a list whose Arabic is replaced by English goes back to left to right.
+ */
+function syncListDirection(list: Element, root: Element): number {
+	const first = Array.from(list.children).find((child) => child.tagName.toLowerCase() === "li");
+	const explicit = first ? paragraphDirection(first) : "auto";
+	const text = firstStrongDirection(list.textContent ?? "");
+	const desired = explicit !== "auto" ? explicit : text;
+	if (!desired) return 0;
+	const wanted = desired === "rtl" || explicit !== "auto" || inheritsRtl(list, root) ? desired : null;
+	if (list.getAttribute("dir") === wanted) return 0;
+	if (wanted) list.setAttribute("dir", wanted);
+	else list.removeAttribute("dir");
+	return 1;
+}
+
 /**
  * Gives each paragraph that needs it `dir="auto"`, in place, and returns how many it changed. A paragraph needs it when
- * it starts with a right-to-left letter, or when it starts with a left-to-right one inside a block that has a direction
- * (an English item in an Arabic list would otherwise inherit right to left). A list takes `rtl` or `ltr` outright. Paragraphs that already have a `dir` keep it.
+ * it starts with a right-to-left letter, or when it starts with a left-to-right one inside a block that reads right to
+ * left (an English item in an Arabic list would otherwise inherit that). Paragraphs that already have a `dir` keep it,
+ * lists follow their first item. With `quote`, which is for mail someone else wrote, only right-to-left paragraphs with
+ * no other block inside get a `dir`: nothing else of the original's direction is touched.
  */
-export function applyAutoDirection(root: Element): number {
-	if (!hasRtlCharacters(root.textContent ?? "")) return 0;
+export function applyAutoDirection(root: Element, { quote = false }: { quote?: boolean } = {}): number {
+	if (!hasRtlCharacters(root.textContent ?? "") && !root.querySelector("[dir]")) return 0;
 	let changed = 0;
 	// Document order, so a list that has just received its direction is seen by the items inside it.
 	for (const element of Array.from(root.querySelectorAll(PARAGRAPH_SELECTOR))) {
+		if (LIST_TAGS.has(element.tagName.toLowerCase())) {
+			if (!quote) changed += syncListDirection(element, root);
+			continue;
+		}
 		if (element.hasAttribute("dir")) continue;
+		if (quote && element.querySelector(PARAGRAPH_SELECTOR)) continue;
 		const strong = firstStrongDirection(ownText(element));
 		if (!strong) continue;
-		// The root's own `dir` (the editor sets `dir="auto"` on it) is not an inherited direction a paragraph must undo.
-		const inherited = element.parentElement?.closest("[dir]");
-		if (strong === "rtl" || (inherited && inherited !== root && root.contains(inherited))) {
-			// A list is given the direction its text starts with: `auto` would see nothing to resolve, because the items
-			// carry a `dir` of their own and an element's `auto` skips descendants that have one.
-			const list = LIST_TAGS.has(element.tagName.toLowerCase());
-			element.setAttribute("dir", list ? strong : "auto");
+		if (strong === "rtl" || (!quote && inheritsRtl(element, root))) {
+			element.setAttribute("dir", "auto");
 			changed += 1;
 		}
 	}
@@ -110,13 +153,48 @@ export function wrapLooseRuns(root: Element): number {
 /**
  * Composed HTML with the right directions in it, for drafts and for what is sent. Returns the very same string
  * when nothing is right to left, or every right-to-left paragraph already has its direction. `wrapLooseText` puts
- * loose text that starts right to left in a paragraph so it can carry `dir`.
+ * loose text that starts right to left in a paragraph so it can carry `dir`; `quote` is for someone else's mail
+ * (see `applyAutoDirection`).
  */
-export function withAutoDirection(html: string, { wrapLooseText = true }: { wrapLooseText?: boolean } = {}): string {
-	if (!html || typeof DOMParser === "undefined" || !hasRtlCharacters(html)) return html;
+export function withAutoDirection(
+	html: string,
+	{ wrapLooseText = true, quote = false }: { wrapLooseText?: boolean; quote?: boolean } = {},
+): string {
+	if (!html || typeof DOMParser === "undefined" || !(hasRtlCharacters(html) || /\bdir\s*=/i.test(html))) return html;
 	const body = new DOMParser().parseFromString(`<body>${html}</body>`, "text/html").body;
-	const changed = (wrapLooseText ? wrapLooseRuns(body) : 0) + applyAutoDirection(body);
+	const changed = (wrapLooseText ? wrapLooseRuns(body) : 0) + applyAutoDirection(body, { quote });
 	return changed > 0 ? body.innerHTML : html;
+}
+
+/**
+ * What goes out: every `dir="auto"` becomes the `rtl` or `ltr` the browser would have resolved it to, or goes when the
+ * text has no letter to decide by. Not every mail client understands `auto`; drafts and the preview keep it, so the
+ * paragraph still follows what is typed until the message is sent.
+ */
+export function resolveAutoDirections(html: string): string {
+	if (!html || typeof DOMParser === "undefined" || !/\bdir\s*=\s*["']?auto/i.test(html)) return html;
+	const body = new DOMParser().parseFromString(`<body>${html}</body>`, "text/html").body;
+	const autos = Array.from(body.querySelectorAll("[dir]")).filter(
+		(element) => element.getAttribute("dir")?.toLowerCase() === "auto",
+	);
+	if (autos.length === 0) return html;
+	// Decided first: an element's `auto` ignores descendants that have a `dir`, whatever its value.
+	const decided = autos.map((element) => [element, firstStrongDirection(autoText(element))] as const);
+	for (const [element, direction] of decided) {
+		if (direction) element.setAttribute("dir", direction);
+		else element.removeAttribute("dir");
+	}
+	return body.innerHTML;
+}
+
+/** True when a non-empty range stops at the very start of the block: a triple-click ends at offset 0 of the next one. */
+function endsAtStartOf(element: Element, range: Range): boolean {
+	if (range.collapsed || !element.contains(range.endContainer) || element.contains(range.startContainer)) return false;
+	const head = element.ownerDocument.createRange();
+	head.setStart(element, 0);
+	head.setEnd(range.endContainer, range.endOffset);
+	const content = head.cloneContents();
+	return (content.textContent ?? "") === "" && !content.querySelector("br,img");
 }
 
 /** The paragraph blocks (no other block inside) that the range touches, the targets of the direction button. */
@@ -125,9 +203,16 @@ export function paragraphsInRange(root: Element, range: Range): HTMLElement[] {
 	for (const element of Array.from(root.querySelectorAll<HTMLElement>(PARAGRAPH_SELECTOR))) {
 		if (LIST_TAGS.has(element.tagName.toLowerCase())) continue;
 		if (element.querySelector(PARAGRAPH_SELECTOR)) continue;
-		if (range.intersectsNode(element)) found.push(element);
+		if (range.intersectsNode(element) && !endsAtStartOf(element, range)) found.push(element);
 	}
 	return found;
+}
+
+/** True when text sits directly in the root, with no paragraph around it, inside the range: the loose first line. */
+export function hasLooseContentInRange(root: Element, range: Range): boolean {
+	return Array.from(root.childNodes).some(
+		(child) => !isBlock(child) && (child.textContent ?? "").trim() !== "" && range.intersectsNode(child),
+	);
 }
 
 /** What a paragraph says about its own direction: no `dir` and `dir="auto"` both follow the text. */

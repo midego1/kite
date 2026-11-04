@@ -38,6 +38,7 @@ const h = await import(pathToFileURL(join(outDir, "entry.mjs")).href);
 
 const ARABIC = "مرحبا بالعالم";
 const HEBREW = "שלום עולם";
+const ENGLISH = "Hello world";
 
 function element(html) {
 	const host = document.createElement("div");
@@ -245,4 +246,146 @@ test("many right-to-left paragraphs are handled in linear time", () => {
 	const small = Math.min(time(2000), time(2000));
 	const large = Math.min(time(8000), time(8000));
 	assert.ok(large < small * 8, `${large}ms for 8000 paragraphs against ${small}ms for 2000`);
+});
+
+test("what is sent has auto resolved to rtl or ltr, and the draft keeps auto", () => {
+	const draft = `<div dir="auto">${ARABIC}</div><div dir="auto">${ENGLISH}</div><div dir="auto">12 :)</div><div>plain</div>`;
+	assert.equal(
+		h.resolveAutoDirections(draft),
+		`<div dir="rtl">${ARABIC}</div><div dir="ltr">${ENGLISH}</div><div>12 :)</div><div>plain</div>`,
+	);
+	// An element's auto ignores a descendant that has a dir of its own.
+	assert.equal(
+		h.resolveAutoDirections(`<div dir="auto"><div dir="rtl">${ARABIC}</div>${ENGLISH}</div>`),
+		`<div dir="ltr"><div dir="rtl">${ARABIC}</div>${ENGLISH}</div>`,
+	);
+	assert.equal(
+		h.resolveAutoDirections(`<blockquote dir="auto"><div>${HEBREW}</div></blockquote>`),
+		`<blockquote dir="rtl"><div>${HEBREW}</div></blockquote>`,
+	);
+	// Explicit directions stay; with no auto the very same string comes back.
+	for (const html of [`<div dir="ltr">${ARABIC}</div>`, "<div>Hello</div>", "", `<div dir="rtl">${ARABIC}</div>`]) {
+		assert.equal(h.resolveAutoDirections(html), html);
+	}
+	// The text part is built from the resolved HTML and reads the same.
+	const resolved = h.resolveAutoDirections(draft);
+	assert.equal(h.htmlToPlainText(resolved), h.htmlToPlainText(draft));
+	// Through the quote too: the original's paragraphs are resolved with the rest.
+	const full = h.joinQuotedHtml(`<div>${ENGLISH}</div>`, `<div>${ARABIC}</div>`);
+	assert.match(h.resolveAutoDirections(full), new RegExp(`<div dir="rtl">${ARABIC}</div>`));
+});
+
+test("a quoted original keeps the direction its sender gave it", () => {
+	const original = `<div dir="rtl"><div>English line</div><div>${ARABIC}</div></div>`;
+	assert.equal(
+		h.wrapQuotedHtml(original),
+		`<div class="kite-quote" data-kite-quote="1"><div dir="rtl"><div>English line</div><div dir="auto">${ARABIC}</div></div></div>`,
+	);
+	// Lists and blocks that hold other blocks are left as written, and so is left-to-right mail.
+	const list = `<ul><li>${ARABIC}</li><li>English</li></ul>`;
+	assert.equal(
+		h.wrapQuotedHtml(list),
+		`<div class="kite-quote" data-kite-quote="1"><ul><li dir="auto">${ARABIC}</li><li>English</li></ul></div>`,
+	);
+	const nested = `<div>${ARABIC}<div>English</div></div>`;
+	assert.equal(h.wrapQuotedHtml(nested), `<div class="kite-quote" data-kite-quote="1">${nested}</div>`);
+	const english = `<div dir="ltr"><div>Hello</div></div>`;
+	assert.equal(h.wrapQuotedHtml(english), `<div class="kite-quote" data-kite-quote="1">${english}</div>`);
+});
+
+test("a list follows its first item, and goes back when the Arabic is replaced", () => {
+	const editor = element(`<ul><li>${ARABIC}</li><li>English item</li></ul>`);
+	h.applyAutoDirection(editor);
+	assert.equal(editor.querySelector("ul").getAttribute("dir"), "rtl");
+	// The Arabic is replaced by English: the list reads left to right again and drops its dir.
+	editor.querySelector("li").textContent = "Now English";
+	editor.querySelector("li").removeAttribute("dir");
+	h.applyAutoDirection(editor);
+	assert.equal(editor.querySelector("ul").hasAttribute("dir"), false);
+	// Switching the first item's direction with the button moves the list with it.
+	h.setParagraphDirection(editor.querySelector("li"), "rtl");
+	h.applyAutoDirection(editor);
+	assert.equal(editor.querySelector("ul").getAttribute("dir"), "rtl");
+	h.setParagraphDirection(editor.querySelector("li"), "ltr");
+	h.applyAutoDirection(editor);
+	assert.equal(editor.querySelector("ul").getAttribute("dir"), "ltr");
+});
+
+test("an HTML signature with an inner block is found again whichever direction the editor gave it", () => {
+	const signature = `${ARABIC}<div>Sam</div>`;
+	const fresh = h.applyMailboxSignatureHtml("", "", signature);
+	const editor = element(fresh);
+	h.applyAutoDirection(editor);
+	// The editor put a dir on the block and on the English line inside it; the swap has to recognise that.
+	assert.match(editor.innerHTML, /data-kite-signature="1" dir="auto"/);
+	const swapped = h.applyMailboxSignatureHtml(editor.innerHTML, signature, "Alex");
+	assert.equal(swapped.includes(ARABIC), false);
+	assert.equal(swapped.match(/data-kite-signature/g).length, 1);
+	// The same signature again changes nothing, and an English one in a block the button set to ltr is found too.
+	assert.equal(h.applyMailboxSignatureHtml(editor.innerHTML, signature, signature), editor.innerHTML);
+	const english = h.applyMailboxSignatureHtml("", "", "<p>Alex</p><div>Sam</div>");
+	const flipped = element(english);
+	h.setParagraphDirection(flipped.querySelector("[data-kite-signature]"), "ltr");
+	h.applyAutoDirection(flipped);
+	assert.equal(h.applyMailboxSignatureHtml(flipped.innerHTML, "<p>Alex</p><div>Sam</div>", "").includes("Alex"), false);
+});
+
+test("the direction button reaches the loose first line, and not the block a triple-click ends in", () => {
+	document.body.replaceChildren();
+	const editor = element(`Hello<div>World</div><div>Third</div>`);
+	document.body.appendChild(editor);
+	const range = document.createRange();
+	range.selectNodeContents(editor);
+	assert.equal(h.hasLooseContentInRange(editor, range), true);
+	assert.deepEqual(
+		h.paragraphsInRange(editor, range).map((node) => node.textContent),
+		["World", "Third"],
+	);
+	// A caret in the loose line is "loose content"; in a block it is not.
+	const caret = document.createRange();
+	caret.setStart(editor.firstChild, 2);
+	assert.equal(h.hasLooseContentInRange(editor, caret), true);
+	caret.setStart(editor.querySelector("div").firstChild, 2);
+	caret.collapse(true);
+	assert.equal(h.hasLooseContentInRange(editor, caret), false);
+	assert.deepEqual(
+		h.paragraphsInRange(editor, caret).map((node) => node.textContent),
+		["World"],
+	);
+	// Triple-click on "World": the selection ends at offset 0 of the next block, which must not flip.
+	const triple = document.createRange();
+	triple.setStart(editor.querySelector("div").firstChild, 0);
+	triple.setEnd(editor.querySelectorAll("div")[1], 0);
+	assert.deepEqual(
+		h.paragraphsInRange(editor, triple).map((node) => node.textContent),
+		["World"],
+	);
+	const tripleInText = document.createRange();
+	tripleInText.setStart(editor.querySelector("div").firstChild, 0);
+	tripleInText.setEnd(editor.querySelectorAll("div")[1].firstChild, 0);
+	assert.deepEqual(
+		h.paragraphsInRange(editor, tripleInText).map((node) => node.textContent),
+		["World"],
+	);
+	// A selection that really enters the next block still counts it, and a caret at offset 0 selects its own block.
+	const into = document.createRange();
+	into.setStart(editor.querySelector("div").firstChild, 0);
+	into.setEnd(editor.querySelectorAll("div")[1].firstChild, 2);
+	assert.equal(h.paragraphsInRange(editor, into).length, 2);
+	const atStart = document.createRange();
+	atStart.setStart(editor.querySelectorAll("div")[1].firstChild, 0);
+	atStart.collapse(true);
+	assert.deepEqual(
+		h.paragraphsInRange(editor, atStart).map((node) => node.textContent),
+		["Third"],
+	);
+});
+
+test("an assistant's draft text carries its directions without the composer", () => {
+	assert.equal(h.textToDirectedHtml("Hello\nWorld"), h.textToHtml("Hello\nWorld"));
+	assert.equal(h.textToDirectedHtml(""), "");
+	assert.equal(
+		h.textToDirectedHtml(`${ARABIC}\n\nHello <b>\n${HEBREW}`),
+		`<div dir="rtl">${ARABIC}</div><div><br></div><div dir="ltr">Hello &lt;b&gt;</div><div dir="rtl">${HEBREW}</div>`,
+	);
 });

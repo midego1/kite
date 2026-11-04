@@ -45,6 +45,7 @@ import {
 	hasMeaningfulHtml,
 	htmlToPlainText,
 	joinQuotedHtml,
+	resolveAutoDirections,
 	splitStoredDraftHtml,
 } from "./rich-text-utils";
 import { headerToRecipients, isValidRecipient, recipientsToHeader } from "./recipient-utils";
@@ -324,7 +325,8 @@ export function ComposeForm({
 		const currentDraftId = draftSaves.draftId;
 		const unsent = withoutAttachmentIds(attachments, storedUploads);
 		// Only what the author wrote is linked, never the quoted or forwarded original.
-		const fullHtml = joinQuotedHtml(linkifyOutgoingHtml(html), quotedHtml);
+		// `auto` becomes the direction it resolves to, for mail clients that do not read it; the draft and the preview keep `auto`.
+		const fullHtml = resolveAutoDirections(joinQuotedHtml(linkifyOutgoingHtml(html), quotedHtml));
 		if (draftId && agentRevision !== null) {
 			try {
 				if (attachments.length > 0) {

@@ -21,6 +21,7 @@ import { autolinkBeforeCaret, linkHtml } from "@/lib/email/linkify-dom-utils";
 import { cn } from "@/lib/utils";
 import {
 	applyAutoDirection,
+	hasLooseContentInRange,
 	isInLooseRtlRun,
 	nextParagraphDirection,
 	paragraphDirection,
@@ -125,7 +126,8 @@ export function RichTextEditor({
 		const selection = window.getSelection();
 		if (!selection || selection.rangeCount === 0 || !element.contains(selection.anchorNode)) return;
 		// The first line typed into an empty editor is loose text; a paragraph is needed to carry a direction.
-		if (paragraphsInRange(element, selection.getRangeAt(0)).length === 0)
+		const touched = selection.getRangeAt(0);
+		if (hasLooseContentInRange(element, touched) || paragraphsInRange(element, touched).length === 0)
 			document.execCommand("formatBlock", false, "div");
 		const range = selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
 		const paragraphs = range ? paragraphsInRange(element, range) : [];
@@ -185,16 +187,23 @@ export function RichTextEditor({
 		event.preventDefault();
 		const text = event.clipboardData.getData("text/plain");
 		document.execCommand("insertText", false, text);
+		// The insert's own input event ran inside this command, where a second command is refused: wrap the line now.
+		if (wrapLooseLine(event.currentTarget)) emit();
+	}
+
+	/** The first line typed or pasted into an empty editor has no paragraph around it; give it one once it reads right to left. */
+	function wrapLooseLine(element: HTMLElement): boolean {
+		if (!isInLooseRtlRun(element, window.getSelection()?.anchorNode ?? null)) return false;
+		return document.execCommand("formatBlock", false, "div");
 	}
 
 	// The space the author just typed ends a web or email address: link it, keeping the caret after the space.
 	function onInput(event: FormEvent<HTMLDivElement>) {
-		const { inputType, data, isComposing } = event.nativeEvent as InputEvent;
+		const { inputType = "", data, isComposing } = event.nativeEvent as InputEvent;
 		if (inputType === "insertText" && (data === " " || data === " ")) autolinkBeforeCaret(event.currentTarget);
-		// The first line typed into an empty editor has no paragraph around it; give it one as soon as it reads right to left.
-		if (!isComposing && isInLooseRtlRun(event.currentTarget, window.getSelection()?.anchorNode ?? null)) {
-			document.execCommand("formatBlock", false, "div");
-		}
+		// Not while an input method is composing, and not for undo or redo: undoing the wrap would otherwise wrap again,
+		// clear the redo history and keep Ctrl+Z from ever reaching the typed text.
+		if (!isComposing && !inputType.startsWith("history")) wrapLooseLine(event.currentTarget);
 		emit();
 	}
 

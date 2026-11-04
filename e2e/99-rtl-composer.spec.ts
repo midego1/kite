@@ -162,9 +162,12 @@ test.describe("right-to-left composer", () => {
 		await openComposer(page, subject);
 		await typeThreeParagraphs(page);
 
-		// Switch the middle paragraph to right to left on purpose: an explicit choice is sent as it was made.
-		await editor(page).locator("> div").nth(1).click();
-		await page.getByRole("button", { name: /^Paragraph direction/ }).click();
+		// The Hebrew paragraph is switched to left to right on purpose: an explicit choice is sent as it was made.
+		const button = page.getByRole("button", { name: /^Paragraph direction/ });
+		await editor(page).locator("> div").nth(2).click();
+		await button.click();
+		await button.click();
+		await expect(editor(page).locator("> div").nth(2)).toHaveAttribute("dir", "ltr");
 
 		const sent = page.waitForResponse(
 			(response) => response.url().endsWith("/api/send") && response.request().method() === "POST",
@@ -178,9 +181,11 @@ test.describe("right-to-left composer", () => {
 		const detail = (await (await api.get(`/api/messages/${message.id}`)).json()) as {
 			body: { htmlBody: string; textBody: string };
 		};
-		expect(detail.body.htmlBody).toContain(`<div dir="auto">${ARABIC}</div>`);
-		expect(detail.body.htmlBody).toContain(`<div dir="rtl">${ENGLISH}</div>`);
-		expect(detail.body.htmlBody).toContain(`<div dir="auto">${HEBREW}</div>`);
+		// What goes out has `auto` resolved: mail clients that ignore it still get the direction of each paragraph.
+		expect(detail.body.htmlBody).toContain(`<div dir="rtl">${ARABIC}</div>`);
+		expect(detail.body.htmlBody).toContain(`<div dir="ltr">${ENGLISH}</div>`);
+		expect(detail.body.htmlBody).toContain(`<div dir="ltr">${HEBREW}</div>`);
+		expect(detail.body.htmlBody).not.toContain('dir="auto"');
 		expect(
 			detail.body.textBody
 				.split(/\n+/)
@@ -198,7 +203,7 @@ test.describe("right-to-left composer", () => {
 		await expect(page.getByText("Message sent")).toBeVisible();
 		const message = await waitForMessage(api, token, { status: "sent" });
 		const detail = (await (await api.get(`/api/messages/${message.id}`)).json()) as { body: { htmlBody: string } };
-		expect(detail.body.htmlBody).toContain(`<div dir="auto">${ARABIC}</div>`);
+		expect(detail.body.htmlBody).toContain(`<div dir="rtl">${ARABIC}</div>`);
 	});
 
 	test("a saved draft opens with the same directions", async ({ page }) => {
@@ -220,6 +225,13 @@ test.describe("right-to-left composer", () => {
 				return draft?.htmlBody ?? "";
 			})
 			.toContain(`<div dir="rtl">${ENGLISH}</div>`);
+		// A draft keeps `auto`, so a paragraph still follows what is typed in it until the message is sent.
+		const saved = (await (await api.get("/api/drafts")).json()) as {
+			drafts: { subject: string | null; htmlBody: string | null }[];
+		};
+		expect(saved.drafts.find((item) => item.subject?.includes(token))?.htmlBody).toContain(
+			`<div dir="auto">${ARABIC}</div>`,
+		);
 
 		await page.goto(`/drafts/${draftId}`);
 		const paragraphs = editor(page).locator("> div");
@@ -235,6 +247,92 @@ test.describe("right-to-left composer", () => {
 		// Reopening and sending without a single edit sends the same HTML as the draft held.
 		await page.getByRole("button", { name: "Delete draft" }).click();
 		await expect(page.getByRole("button", { name: "Close composer" })).toHaveCount(0);
+	});
+
+	test("undo and redo of the first line work, for typed and for pasted Arabic", async ({ page }) => {
+		await openComposer(page, `Undo ${uniqueToken()}`);
+		const body = editor(page);
+		const paragraphs = body.locator("> div");
+
+		// Every typed character is its own undo step, so this takes about as many presses as there are characters.
+		async function undoUntilEmpty() {
+			for (let presses = 0; presses < 40; presses += 1) {
+				if ((await body.innerText()).trim() === "") return;
+				await page.keyboard.press("Control+Z");
+			}
+			expect((await body.innerText()).trim()).toBe("");
+		}
+
+		// Typed: the first line is wrapped at once, and Ctrl+Z still goes all the way back to an empty editor.
+		await body.click();
+		await body.pressSequentially(ARABIC);
+		await expect(paragraphs).toHaveCount(1);
+		await undoUntilEmpty();
+		// Redo brings the text back, in a paragraph that reads right to left.
+		await page.keyboard.press("Control+Shift+Z");
+		await expect(body).not.toHaveText("");
+		// The next character typed after a redo is wrapped like the first one was.
+		await page.keyboard.type("ر");
+		await expect(paragraphs).toHaveCount(1);
+		await expect(paragraphs.first()).toHaveAttribute("dir", "auto");
+		await undoUntilEmpty();
+
+		// Pasted: the same, and undoing the paste empties the editor again.
+		await body.click();
+		await body.evaluate((element, text) => {
+			const clipboardData = new DataTransfer();
+			clipboardData.setData("text/plain", text);
+			element.dispatchEvent(new ClipboardEvent("paste", { clipboardData, bubbles: true, cancelable: true }));
+		}, ARABIC);
+		await expect(paragraphs).toHaveCount(1);
+		await expect(paragraphs.first()).toHaveAttribute("dir", "auto");
+		expect(await direction(paragraphs.first())).toBe("rtl");
+		await undoUntilEmpty();
+	});
+
+	test("the first line is not wrapped while an input method is composing, only once it has ended", async ({ page }) => {
+		await openComposer(page, `Composing ${uniqueToken()}`);
+		const body = editor(page);
+		await body.click();
+		const session = await page.context().newCDPSession(page);
+		await session.send("Input.imeSetComposition", { text: "مر", selectionStart: 2, selectionEnd: 2 });
+		await expect(body).toContainText("مر");
+		// Still loose text: wrapping now would break the composition.
+		expect(await body.evaluate((element) => element.querySelectorAll("div").length)).toBe(0);
+		await session.send("Input.insertText", { text: "مرحبا" });
+		await page.keyboard.type(" بالعالم");
+		await expect(body.locator("> div")).toHaveCount(1);
+		await expect(body.locator("> div")).toHaveAttribute("dir", "auto");
+		await expect(body).toContainText("مرحبا بالعالم");
+	});
+
+	test("the button changes the loose first line with the rest, and a triple-click only its own paragraph", async ({
+		page,
+	}) => {
+		await openComposer(page, `Targets ${uniqueToken()}`);
+		const body = editor(page);
+		await body.click();
+		await body.pressSequentially("Hello");
+		await page.keyboard.press("Enter");
+		await body.pressSequentially("World");
+		await page.keyboard.press("Enter");
+		await body.pressSequentially("Third");
+		const button = page.getByRole("button", { name: /^Paragraph direction/ });
+
+		// A triple-click on the middle line ends at the start of the next block, which must not change.
+		await body.getByText("World").click({ clickCount: 3 });
+		await button.click();
+		const paragraphs = body.locator("> div");
+		await expect(paragraphs.filter({ hasText: "World" })).toHaveAttribute("dir", "rtl");
+		await expect(paragraphs.filter({ hasText: "Third" })).not.toHaveAttribute("dir", /.*/);
+
+		// Select all: the first line, which has no block of its own yet, takes part too.
+		await body.click();
+		await page.keyboard.press("Control+A");
+		await button.click();
+		await expect(paragraphs.filter({ hasText: "Hello" })).toHaveAttribute("dir", "rtl");
+		await expect(paragraphs.filter({ hasText: "Third" })).toHaveAttribute("dir", "rtl");
+		expect(await direction(paragraphs.filter({ hasText: "Hello" }))).toBe("rtl");
 	});
 
 	test("a right-to-left list keeps its markers inside the box", async ({ page }) => {
@@ -254,6 +352,14 @@ test.describe("right-to-left composer", () => {
 		expect(padding).toEqual({ left: "0px", right: "24px" });
 		// The English item next to the Arabic one is drawn left to right.
 		expect(await direction(list.locator("li").nth(1))).toBe("ltr");
+
+		// The Arabic of the first item is replaced by English: the list reads left to right again.
+		await list.locator("li").first().click();
+		await page.keyboard.press("Home");
+		await page.keyboard.press("Shift+End");
+		await page.keyboard.type("Now English");
+		await expect(list).not.toHaveAttribute("dir", /.*/);
+		expect(await direction(list)).toBe("ltr");
 	});
 
 	test("an Arabic signature reads right to left, and typing above it, the caret and undo still work", async ({
@@ -329,8 +435,40 @@ test.describe("right-to-left composer", () => {
 
 		const reply = await waitForMessage(api, token, { status: "sent" });
 		const detail = (await (await api.get(`/api/messages/${reply.id}`)).json()) as { body: { htmlBody: string } };
-		expect(detail.body.htmlBody).toContain(`<div dir="auto">${ARABIC}`);
+		expect(detail.body.htmlBody).toContain(`<div dir="rtl">${ARABIC}`);
 		// The reply itself is English and carries no direction.
 		expect(detail.body.htmlBody).toMatch(new RegExp(`^(?:<div>)?${ENGLISH}`));
+	});
+
+	test("a quoted mail keeps the direction its sender gave it", async ({ page }) => {
+		const token = uniqueToken();
+		const subject = `${token} wrapped`;
+		await deliverInbound(api, {
+			from: `"Layla" <layla@outside.test>`,
+			to: SUPPORT_ADDRESS,
+			subject,
+			html: `<div dir="rtl"><div>English line</div><div>${ARABIC}</div></div>`,
+		});
+		await page.goto("/inbox");
+		await openMessage(page, subject);
+		await page
+			.getByRole("button", { name: /^Reply/ })
+			.first()
+			.click();
+		const showQuoted = page.getByRole("button", { name: "Show quoted text" });
+		await expect(showQuoted).toBeVisible();
+		await showQuoted.click();
+		const quoted = page.locator(".email-body").filter({ hasText: "English line" }).last();
+		// The English line stays in the sender's right-to-left block, as the original reads.
+		expect(await direction(quoted.getByText("English line"))).toBe("rtl");
+		await editor(page).click();
+		await editor(page).pressSequentially(ENGLISH);
+		await page.getByRole("button", { name: "Send", exact: true }).click();
+		await expect(page.getByText("Message sent")).toBeVisible();
+		const reply = await waitForMessage(api, token, { status: "sent" });
+		const detail = (await (await api.get(`/api/messages/${reply.id}`)).json()) as { body: { htmlBody: string } };
+		expect(detail.body.htmlBody).toContain("<div>English line</div>");
+		expect(detail.body.htmlBody).toContain(`<div dir="rtl">${ARABIC}`);
+		expect(detail.body.htmlBody).not.toContain('dir="auto"');
 	});
 });

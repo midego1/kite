@@ -117,7 +117,7 @@ jobs:
     name: E2E (shard ${{ matrix.shard }} of 10)
     # Measurement only: pull requests labelled boat-e2e run the shards on boat-large
     # under the same actor rules and kill switch as Mission validation, to compare
-    # with about 720 s per shard on ubuntu-latest. Without the label they stay on
+    # with about 500 s per job on ubuntu-latest. Without the label they stay on
     # ubuntu-latest (ten shards would use ten of the day's 200 starts).
     runs-on: ${{ (vars.BOAT_CI != 'off' && contains(fromJSON('["midego1"]'), github.actor) && github.triggering_actor == github.actor && github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'boat-e2e') && github.event.pull_request.user.login == github.actor) && 'boat-large' || 'ubuntu-latest' }}
     timeout-minutes: 15

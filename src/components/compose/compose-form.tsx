@@ -63,6 +63,7 @@ import { PAST_SCHEDULE_MESSAGE, isPastScheduledSend } from "@/lib/email/undo-sen
 import type { ComposeAttachment, ComposeDraftSnapshot, ComposeStoredAttachment, ComposeThreading } from "./types";
 import type { ComposeAttachmentPolicy } from "./attachment-policy-types";
 import type { InlineComposerActions } from "./inline-composer-types";
+import { responseError } from "./response-error-utils";
 import { useInlineSendLifecycle } from "./use-inline-send-lifecycle";
 
 export function ComposeForm({
@@ -110,12 +111,21 @@ export function ComposeForm({
 	const [toast, setToast] = useState<ComposeToastState>(null);
 	const [loading, setLoading] = useState(false);
 	const [loadedDraftId, setLoadedDraftId] = useState<string | null>(null);
-	const loadingDraft = !!draftIdToLoad && loadedDraftId !== draftIdToLoad;
+	// The mailbox a loaded draft was written in, until it has been selected: once, not whenever the user switches From.
+	const [loadedDraftMailboxId, setLoadedDraftMailboxId] = useState<string | null>(null);
+	// The draft counts as loading until its mailbox is selected, so the signature swap never sees the mailbox
+	// that happened to be selected when the draft opened (it would add that signature next to the draft's own).
+	const draftMailboxPending =
+		!!loadedDraftMailboxId &&
+		selectedMailbox?.id !== loadedDraftMailboxId &&
+		mailboxes.some((mailbox) => mailbox.id === loadedDraftMailboxId);
+	const loadingDraft = (!!draftIdToLoad && loadedDraftId !== draftIdToLoad) || draftMailboxPending;
+	// Pinned once per loaded draft: let go as soon as its mailbox is selected, so a different From sticks.
+	if (loadedDraftMailboxId && selectedMailbox?.id === loadedDraftMailboxId) setLoadedDraftMailboxId(null);
 	const formRef = useDraftBodyFocus(draftIdToLoad, loadingDraft);
 	const [deletingDraft, setDeletingDraft] = useState(false);
 	const [scheduledAt, setScheduledAt] = useState<Date | null>(null);
 	const [scheduleInvalid, setScheduleInvalid] = useState(false);
-	const [loadedDraftMailboxId, setLoadedDraftMailboxId] = useState<string | null>(null);
 	const [loadedDraftFrom, setLoadedDraftFrom] = useState<string | null>(null);
 	const [chosenFrom, setSelectedFrom] = useState("");
 	const { settings: sendingSettings } = useSendingSettings();
@@ -134,16 +144,19 @@ export function ComposeForm({
 		[selectedMailbox],
 	);
 	const senderOptions = useMemo(() => senderOptionsFor(mailboxes), [mailboxes]);
-	// A loaded draft's From wins whenever it or the available addresses change.
+	// An assistant draft stays in its mailbox: the server refuses to move it.
+	const isOtherMailbox = (option: { mailbox: { id: string } }) =>
+		agentRevision !== null && option.mailbox.id !== selectedMailbox?.id;
+	// A loaded draft's From wins once, as soon as its address is among the available ones; after that the user's choice stays.
 	const loadedDraftFromChanged = useKeyChanged(loadedDraftFrom);
 	const senderAddressesChanged = useKeyChanged(senderAddresses);
 	if (
 		(loadedDraftFromChanged || senderAddressesChanged) &&
 		loadedDraftFrom &&
-		senderAddresses.includes(loadedDraftFrom) &&
-		chosenFrom !== loadedDraftFrom
+		senderAddresses.includes(loadedDraftFrom)
 	) {
 		setSelectedFrom(loadedDraftFrom);
+		setLoadedDraftFrom(null);
 	}
 	const selectedFrom = pickFromAddress(senderAddresses, [chosenFrom, defaultFrom]);
 	const kiteComposer = { html, setHtml, subject, to, threading, onInserted: () => setAiAssisted(true) };
@@ -358,7 +371,7 @@ export function ComposeForm({
 						scheduledAt: scheduledAt?.toISOString() ?? null,
 					}),
 				});
-				if (!updated.ok) throw new Error("Could not save the draft for review");
+				if (!updated.ok) throw new Error(await responseError(updated, "Could not save the draft for review"));
 				const current = await fetchDraft(draftId);
 				if (!current.agent) throw new Error("AI draft metadata is missing");
 				setAgentRevision(current.agent.revision);
@@ -644,7 +657,7 @@ export function ComposeForm({
 
 	function selectSender(value: string) {
 		const option = senderOptions.find((item) => `${item.mailbox.id}|${item.address}` === value);
-		if (!option || option.disabled) return;
+		if (!option || option.disabled || isOtherMailbox(option)) return;
 		setSelectedFrom(option.address);
 		if (selectedMailbox?.id !== option.mailbox.id) setSelectedMailbox(option.mailbox);
 	}
@@ -809,7 +822,7 @@ export function ComposeForm({
 								<option
 									key={`${option.mailbox.id}|${option.address}`}
 									value={`${option.mailbox.id}|${option.address}`}
-									disabled={option.disabled}
+									disabled={option.disabled || isOtherMailbox(option)}
 									title={option.identity?.hint ?? undefined}
 								>
 									{senderOptionLabel(option)}
@@ -938,7 +951,7 @@ export function ComposeForm({
 										<Paperclip className="h-4 w-4" />
 									</button>
 								</Tooltip>
-								<WriteWithKite editorId={`${mode}-text`} composer={kiteComposer} />
+								<WriteWithKite editorId={`${mode}-text`} mailboxId={selectedMailbox?.id} composer={kiteComposer} />
 								<span className="flex-1" />
 								<Tooltip label="Delete draft">
 									<button

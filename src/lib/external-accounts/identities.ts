@@ -1,6 +1,7 @@
 import { and, eq, type SQL } from "drizzle-orm";
 import { getDb } from "@/db";
 import { externalAccounts } from "@/db/schema/external-accounts";
+import { SenderRefusedError } from "@/lib/email/sender-errors";
 import { connectRefusal } from "./access";
 import { externalAccountTablesReady } from "./errors";
 import { listsIdentity, SEND_BLOCK_TEXT, sameAddress, sendBlock } from "./identity-utils";
@@ -117,8 +118,8 @@ export async function isOwnConnectedAddress(env: IdentityEnv, userId: string, ad
 	return [...identities.values()].some((list) => list.some((identity) => identity.address === wanted));
 }
 
-/** A From that is a connected address of the sender but cannot be used now, with the reason. */
-class SendIdentityRefusedError extends Error {
+/** A From that is a connected address of the sender but cannot be used now, with the reason. @public Exercised by the unit tests. */
+export class SendIdentityRefusedError extends SenderRefusedError {
 	constructor(readonly block: SendBlock) {
 		super(`You cannot send from this address right now. ${SEND_BLOCK_TEXT[block]}`);
 		this.name = "SendIdentityRefusedError";

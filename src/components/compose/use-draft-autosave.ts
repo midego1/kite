@@ -131,7 +131,11 @@ async function saveDraftSnapshot(
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify(next.payload),
 	});
-	const data = (await res.json().catch(() => ({}))) as { draft?: { id: string } };
+	const data = (await res.json().catch(() => ({}))) as { draft?: { id: string }; error?: string };
+	// The server refuses some saves for good (409, 403): say so, or what is typed next would be lost without a word.
+	if (res.status === 409 || res.status === 403) {
+		setters.reportError({ type: "error", message: data.error ?? "Could not save the draft" });
+	}
 	const savedId = res.ok ? (data.draft?.id ?? null) : null;
 	if (savedId && next.storeAttachments && !stale())
 		await storeDraftAttachments(savedId, next.attachments, uploads, setters);

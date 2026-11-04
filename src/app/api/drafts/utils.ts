@@ -1,11 +1,15 @@
 import { NextResponse } from "next/server";
 import { getAuthorizedSenderAddress } from "@/lib/email/sender";
+import { SenderRefusedError } from "@/lib/email/sender-errors";
+import { createLogger } from "@/lib/logger.mjs";
 import { RequestBodyTooLargeError } from "@/lib/http/errors";
 import { readJsonBody } from "@/lib/http/request";
 import type { DraftSendableFields } from "@/lib/agent/approvals/snapshot-utils";
 import type { DraftPayload } from "./types";
 
 /** The draft's From; `connectedAccounts` lets the composer's own drafts use the user's connected addresses. */
+const log = createLogger("drafts");
+
 export async function getDraftSender(
 	env: CloudflareEnv,
 	userId: string,
@@ -20,7 +24,10 @@ export async function getDraftSender(
 			connectedAccounts: options.connectedAccounts,
 		});
 	} catch (error) {
-		return { error: error instanceof Error ? error.message : "Mailbox is not authorized" };
+		// Only a refusal written for the sender reaches the screen; anything else (a database error) is logged, not shown.
+		if (error instanceof SenderRefusedError) return { error: error.message };
+		log.error("draft.sender_check_failed", { error });
+		return { error: "Could not check the sender; try again" };
 	}
 }
 

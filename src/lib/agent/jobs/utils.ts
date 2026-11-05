@@ -252,6 +252,7 @@ export async function processAgentDraftJob(env: CloudflareEnv, jobId: string) {
 			thread: await loadDraftThread(env, job.mailboxId, source),
 		});
 		if (!(await getAgentEnabled(env))) return void (await skip("Assistant disabled during generation"));
+		if (await mailboxAiOff(env, job.mailboxId)) return void (await skip(MAILBOX_AI_OFF_REASON));
 		const [currentSettings] = await db
 			.select({ autoDraftEnabled: mailboxAgentSettings.autoDraftEnabled })
 			.from(mailboxAgentSettings)

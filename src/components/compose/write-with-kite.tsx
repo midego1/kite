@@ -6,6 +6,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { authFetch } from "@/lib/auth/client";
 import type { WriteWithKiteComposer, WriteWithKiteSelection } from "./write-with-kite-types";
 import { MAILBOX_AI_OFF_REASON, MAILBOX_AI_OFF_TEXT } from "@/lib/agent/mailbox-ai-utils";
+import { MAILBOXES_CHANGED_EVENT } from "@/components/mailbox-provider-utils";
 
 // The panel, its requests and HTML handling load only when the button is used.
 const WriteWithKitePanel = lazy(() => import("./write-with-kite-panel"));
@@ -57,6 +58,14 @@ export function WriteWithKite({
 	const available = !!mailboxId && checked?.mailboxId === mailboxId && checked.available;
 	const aiOff = !!mailboxId && checked?.mailboxId === mailboxId && !!checked.aiOff;
 
+	// Checked again when the mailbox list changes, which is how "No AI for this mailbox" announces itself.
+	const [listVersion, setListVersion] = useState(0);
+	useEffect(() => {
+		const bump = () => setListVersion((value) => value + 1);
+		window.addEventListener(MAILBOXES_CHANGED_EVENT, bump);
+		return () => window.removeEventListener(MAILBOXES_CHANGED_EVENT, bump);
+	}, []);
+
 	useEffect(() => {
 		let active = true;
 		if (!mailboxId) return;
@@ -74,7 +83,7 @@ export function WriteWithKite({
 		return () => {
 			active = false;
 		};
-	}, [mailboxId]);
+	}, [mailboxId, listVersion]);
 
 	function openPanel() {
 		const editor = document.getElementById(editorId);

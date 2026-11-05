@@ -23,7 +23,7 @@ import { AGENT_STEP_LIMIT_FALLBACK, agentStepSettings, clampAgentMaxSteps } from
 import { serializeAgentToolOutput } from "./tool-history-utils";
 import { withCurrentEmailContext } from "./current-email-utils";
 import { ownMessage } from "./tool-messages";
-import { mailboxAiOff } from "./mailbox-ai";
+import { aiOffSince, mailboxAiOff } from "./mailbox-ai";
 
 export async function getAgentConversation(context: AgentToolContext, conversationId: string) {
 	const db = getDb(context.env);
@@ -163,9 +163,12 @@ export async function createAgentChatStream(
 	await db
 		.insert(agentChatMessages)
 		.values({ id: newId("chat"), conversationId: conversation.id, role: "user", content: text });
+	// Earlier answers may quote a mailbox whose AI has been turned off since; they stay on screen but are not sent again.
+	const since = await aiOffSince(context.env);
 	const prompt = history
 		.reverse()
 		.filter((row) => row.role === "user" || row.role === "assistant")
+		.filter((row) => !since || row.createdAt > since)
 		.map((row) => ({ role: row.role as "user" | "assistant", content: row.content }));
 	prompt.push({ role: "user", content: withCurrentEmailContext(text, currentEmailId) });
 	const { tools, fragments } = await buildChatTools(context);

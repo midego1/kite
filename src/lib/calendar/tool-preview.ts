@@ -4,6 +4,8 @@ import { calendarEvents } from "@/db/schema";
 import { normalizeTimeZone } from "@/lib/time/utils";
 import { calendarToolSchemas } from "./tool-schemas";
 import { previewDeletions, previewUpdates } from "./tool-preview-utils";
+import { visibleEvents } from "./tools";
+import type { CalendarToolContext } from "./tool-types";
 
 export type CalendarPreviewTool = "update_events" | "delete_events";
 
@@ -16,6 +18,7 @@ export async function previewCalendarToolChange(
 	viewer: { userId: string; timeZone: string },
 	tool: CalendarPreviewTool,
 	rawInput: unknown,
+	aiHidden?: CalendarToolContext["aiHidden"],
 ) {
 	const timeZone = normalizeTimeZone(viewer.timeZone);
 	const updates = tool === "update_events" ? calendarToolSchemas.update_events.parse(rawInput).updates : null;
@@ -27,6 +30,8 @@ export async function previewCalendarToolChange(
 	const rows = await getDb(env)
 		.select({
 			id: calendarEvents.id,
+			mailboxId: calendarEvents.mailboxId,
+			sourceMessageId: calendarEvents.sourceMessageId,
 			title: calendarEvents.title,
 			startsAt: calendarEvents.startsAt,
 			repeat: calendarEvents.repeat,
@@ -34,7 +39,8 @@ export async function previewCalendarToolChange(
 		})
 		.from(calendarEvents)
 		.where(and(eq(calendarEvents.userId, viewer.userId), inArray(calendarEvents.id, ids)));
-	const events = new Map(rows.map((row) => [row.id, row]));
+	// The approval card's titles go back to the assistant: an event it may not see is not found.
+	const events = new Map((await visibleEvents(aiHidden, rows)).map((row) => [row.id, row]));
 	if (ids.some((id) => !events.has(id))) throw new Error("Event not found");
 	return {
 		items: updates ? previewUpdates(updates, events, timeZone) : previewDeletions(ids, events, timeZone),

@@ -34,6 +34,10 @@ const MODULES = [
 	["loadRowLines", "src/lib/agent/summaries/lines.ts"],
 	["listSuggestions", "src/lib/agent/auto-read/suggestion-api.ts"],
 	["createDb", "src/db/index.ts"],
+	["aiHiddenSources", "src/lib/agent/mailbox-ai.ts"],
+	["listSubscriptionsTool", "src/lib/finance/tools.ts"],
+	["runCalendarTool", "src/lib/calendar/tools.ts"],
+	["moduleHost", "src/lib/modules/host.ts"],
 ];
 const bundleDirectory = makeBundleDirectory("kite-mailbox-ai-off-");
 after(() => rmSync(bundleDirectory, { recursive: true, force: true }));
@@ -80,6 +84,10 @@ const {
 	loadRowLines,
 	listSuggestions,
 	createDb,
+	aiHiddenSources,
+	listSubscriptionsTool,
+	runCalendarTool,
+	moduleHost,
 } = await import(pathToFileURL(join(bundleDirectory, "entry.mjs")).href);
 
 const scratch = makeBundleDirectory("kite-mailbox-ai-off-dirs-");
@@ -177,8 +185,8 @@ async function harness(t, { migrations = migrationsDir } = {}) {
 		});
 	const setAi = (mailboxId, aiDisabled, as = "owner") =>
 		putMailboxAi(request("/api/agent/settings/ai", { method: "PUT", as, body: { mailboxId, aiDisabled } }));
-	const chat = (mailboxId, text = "What is in my inbox?") =>
-		postAgentChat(request("/api/agent/chat", { method: "POST", body: { mailboxId, text } }));
+	const chat = (mailboxId, text = "What is in my inbox?", conversationId = undefined) =>
+		postAgentChat(request("/api/agent/chat", { method: "POST", body: { mailboxId, text, conversationId } }));
 	const leaked = () => requests.filter((raw) => raw.includes(MARKER));
 	return { database, env, requests, leaked, request, setAi, chat };
 }
@@ -389,4 +397,151 @@ test("the assistant settings report the switch, and turning it off again restore
 	const answered = await chat("mailbox-off");
 	assert.equal(answered.status, 200);
 	await drain(answered);
+});
+
+const chatContext = (trigger = "chat") => ({
+	viewer: { userId: "user-1", role: "admin", isPrimaryAdmin: true },
+	requestId: "test",
+	locale: "en",
+	timeZone: "UTC",
+	grants: [],
+	mailboxIds: ["mailbox-on"],
+	trigger,
+});
+
+test("a record is hidden when it was read from, or changed in, a mailbox with AI off; a lost id hides it", async (t) => {
+	const { database, env, setAi } = await harness(t);
+	await setAi("mailbox-off", true);
+	database.db.exec(`INSERT INTO agent_actions (id, mailbox_id, initiator, action, status, after, created_at, updated_at)
+		VALUES ('act-1', 'mailbox-off', 'user', 'finance.track_subscription', 'applied', '{"ref":{"kind":"finance:subscription","id":"sub-x"}}', 1, 1)`);
+	assert.deepEqual(
+		await aiHiddenSources(env, [
+			{ mailboxIds: ["mailbox-on"], messageIds: ["email-on"] },
+			{ mailboxIds: [null], messageIds: ["email-off"] },
+			{ mailboxIds: ["mailbox-off"] },
+			{ mailboxIds: ["mailbox-on"], refs: [{ kind: "finance:subscription", id: "sub-x" }] },
+			{ messageIds: ["missing-message"] },
+			{ mailboxIds: [""] },
+			{},
+		]),
+		[false, true, true, true, true, true, false],
+	);
+	await assert.rejects(aiOffMailboxIds(env, ["mailbox-on", ""]), /mailbox id is missing/);
+	// Only the chat asks: MCP and the API serve the key's own client.
+	assert.deepEqual(await moduleHost.mail.aiHidden(chatContext("mcp"), [{ mailboxIds: ["mailbox-off"] }]), [false]);
+	assert.deepEqual(await moduleHost.mail.aiHidden(chatContext(), [{ mailboxIds: ["mailbox-off"] }]), [true]);
+});
+
+test("Money Watch in the chat leaves out every subscription with anything from the mailbox, documents included", async (t) => {
+	const { database, setAi } = await harness(t);
+	await setAi("mailbox-off", true);
+	database.db.exec(`
+		INSERT INTO finance_subscriptions (id, user_id, mailbox_id, vendor, vendor_key, amount_minor, currency, cycle, source_message_id, last_message_id, created_at, updated_at) VALUES
+			('sub-on', 'user-1', 'mailbox-on', 'Streamly', 'streamly', 999, 'EUR', 'monthly', 'email-on', NULL, 1, 1),
+			('sub-off', 'user-1', 'mailbox-off', 'Offvendor ${MARKER}', 'offvendor', 500, 'EUR', 'monthly', 'email-off', NULL, 1, 1),
+			('sub-mixed-doc', 'user-1', 'mailbox-on', 'Mixdoc', 'mixdoc', 100, 'EUR', 'monthly', 'email-on', NULL, 1, 1),
+			('sub-mixed-last', 'user-1', 'mailbox-on', 'Mixlast', 'mixlast', 100, 'EUR', 'monthly', 'email-on', 'email-off', 1, 1),
+			('sub-mixed-action', 'user-1', 'mailbox-on', 'Mixact', 'mixact', 100, 'EUR', 'monthly', NULL, NULL, 1, 1),
+			('sub-manual', 'user-1', NULL, 'Gym', 'gym', 3000, 'EUR', 'monthly', NULL, NULL, 1, 1);
+		INSERT INTO finance_charges (id, subscription_id, user_id, message_id, doc_type, amount_minor, currency, document_at, created_at) VALUES
+			('doc-on', 'sub-on', 'user-1', 'email-on', 'invoice', 999, 'EUR', 1, 1),
+			('doc-off', 'sub-mixed-doc', 'user-1', 'email-off', 'invoice', 4242, 'EUR', 1, 1);
+		INSERT INTO agent_actions (id, mailbox_id, initiator, action, status, after, created_at, updated_at)
+		VALUES ('act-1', 'mailbox-off', 'user', 'finance.track_subscription', 'applied', '{"ref":{"kind":"finance:subscription","id":"sub-mixed-action"}}', 1, 1);
+	`);
+	const chat = await listSubscriptionsTool({ status: "all" }, chatContext());
+	assert.deepEqual(chat.subscriptions.map((row) => row.ref.id).sort(), ["sub-manual", "sub-on"]);
+	assert.ok(!JSON.stringify(chat).includes(MARKER));
+	assert.ok(!JSON.stringify(chat).includes("4242"));
+	const mcp = await listSubscriptionsTool({ status: "all" }, chatContext("mcp"));
+	assert.equal(mcp.subscriptions.length, 6);
+});
+
+test("Calendar in the chat leaves out events from the mailbox's invites; free time still counts them", async (t) => {
+	const { database, env, setAi } = await harness(t);
+	await setAi("mailbox-off", true);
+	const start = Date.now() + 86_400_000;
+	const at = (offsetHours) => Math.floor((start + offsetHours * 3_600_000) / 1000);
+	database.db.exec(`
+		INSERT INTO calendar_events (id, user_id, mailbox_id, source_message_id, title, description, location, attendees, starts_at, ends_at, created_at, updated_at) VALUES
+			('evt-off', 'user-1', NULL, 'email-off', 'Board ${MARKER}', 'Agenda ${MARKER}', 'Room', '[]', ${at(1)}, ${at(2)}, 1, 1),
+			('evt-mailbox', 'user-1', 'mailbox-off', NULL, 'Mailbox ${MARKER}', '', '', '[]', ${at(3)}, ${at(4)}, 1, 1),
+			('evt-own', 'user-1', NULL, NULL, 'Dentist', '', '', '[]', ${at(5)}, ${at(6)}, 1, 1);
+	`);
+	const [user] = database.db.prepare("SELECT * FROM users WHERE id = 'user-1'").all();
+	const context = {
+		env,
+		user: { ...owner, ...user, timeZone: "UTC" },
+		timeZone: "UTC",
+		aiHidden: (sources) => moduleHost.mail.aiHidden(chatContext(), sources),
+	};
+	const range = { start: new Date(start).toISOString(), end: new Date(start + 7 * 3_600_000).toISOString() };
+	const schedule = await runCalendarTool(context, "get_schedule", range);
+	assert.deepEqual(
+		schedule.events.map((event) => event.id),
+		["evt-own"],
+	);
+	const searched = await runCalendarTool(context, "search_events", { ...range, query: "NOAI", limit: 10 });
+	assert.deepEqual(searched.events, []);
+	await assert.rejects(runCalendarTool(context, "get_event", { eventId: "evt-off" }), /Event not found/);
+	await assert.rejects(runCalendarTool(context, "delete_events", { eventIds: ["evt-off"] }), /Event not found/);
+	const free = await runCalendarTool(context, "find_free_time", { ...range, durationMinutes: 60, limit: 10 });
+	assert.ok(!JSON.stringify(free).includes(MARKER));
+	assert.ok(
+		free.slots.every((slot) => Date.parse(slot.endsAt) <= at(1) * 1000 || Date.parse(slot.startsAt) >= at(2) * 1000),
+	);
+	// The calendar page and MCP are unchanged.
+	const page = await runCalendarTool({ ...context, aiHidden: undefined }, "get_schedule", range);
+	assert.equal(page.events.length, 3);
+});
+
+test("earlier chat messages from before the switch are not sent again, and the chat in another mailbox goes on", async (t) => {
+	const { database, chat, setAi, requests } = await harness(t);
+	const first = await chat("mailbox-on", "Hello");
+	const conversationId = first.headers.get("X-Conversation-Id");
+	await drain(first);
+	// An earlier answer that quoted the other mailbox, from before AI was turned off there.
+	database.db.exec(`INSERT INTO agent_chat_messages (id, conversation_id, role, content, created_at)
+		VALUES ('old-answer', '${conversationId}', 'assistant', 'Earlier: ${MARKER}', ${now() - 60})`);
+	await setAi("mailbox-off", true);
+	requests.length = 0;
+	const answered = await chat("mailbox-on", "And now?", conversationId);
+	assert.equal(answered.status, 200);
+	await drain(answered);
+	assert.equal(requests.length, 1);
+	assert.ok(!requests[0].includes(MARKER));
+	assert.ok(requests[0].includes("And now?"));
+});
+
+test("turning AI back on clears anything a racing request wrote while it was off", async (t) => {
+	const { database, setAi } = await harness(t);
+	await setAi("mailbox-off", true);
+	const at = now();
+	database.db.exec(`
+		INSERT INTO ai_summaries (id, mailbox_id, kind, thread_key, message_id, text, coverage_digest, source, created_at, updated_at)
+		VALUES ('raced', 'mailbox-off', 'line', 'thread-off', 'email-off', 'Raced ${MARKER}', 'x', 'line_job', ${at}, ${at});
+		INSERT INTO agent_suggestions (id, mailbox_id, message_id, reviewer_user_id, kind, title, created_at)
+		VALUES ('raced-sugg', 'mailbox-off', 'email-off', 'user-1', 'summary', 'Raced', ${at});
+	`);
+	await setAi("mailbox-off", false);
+	assert.equal(database.db.prepare("SELECT count(*) AS n FROM ai_summaries").get().n, 0);
+	assert.equal(
+		database.db.prepare("SELECT status FROM agent_suggestions WHERE id = 'raced-sugg'").get().status,
+		"expired",
+	);
+	assert.equal(
+		database.db.prepare("SELECT count(*) AS n FROM audit_logs WHERE action = 'agent.mailbox_ai'").get().n,
+		2,
+	);
+});
+
+test("a model selected before the switch refuses its next call (a fallback, repair or later step)", async (t) => {
+	const { env, setAi, requests } = await harness(t);
+	const selection = await getAgentModel(env, { mailboxId: "mailbox-off" });
+	await setAi("mailbox-off", true);
+	await assert.rejects(
+		selection.model.doGenerate({ prompt: [{ role: "user", content: [{ type: "text", text: MARKER }] }] }),
+		{ name: "MailboxAiOffError" },
+	);
+	assert.equal(requests.length, 0);
 });

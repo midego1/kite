@@ -852,7 +852,7 @@ export function AgentPanel({ open, fullSize, docked, onClose, onToggleFullSize }
 				</>
 			)}
 			{view === "settings" && (
-				<AssistantSettingsTabs settings={settings} onAiChange={refresh}>
+				<AssistantSettingsTabs settings={settings} mailboxId={mailboxId} onAiChange={refresh}>
 					<AgentStepLimitSetting />
 					<PersonalInstructionsSetting />
 					<p className="font-medium text-neutral-800">Mailbox settings</p>

@@ -20,6 +20,48 @@ function dates(start: string, end: string) {
 	return { from, to };
 }
 
+type EventSourceRow = { id: string; mailboxId: string | null; sourceMessageId: string | null };
+
+/**
+ * The events the caller may see. In the chat an event read from a mailbox with AI off (an accepted invite keeps the
+ * mail's title, description, location and attendees) or changed by an action taken in one is left out.
+ */
+export async function visibleEvents<T extends EventSourceRow>(
+	aiHidden: CalendarToolContext["aiHidden"],
+	rows: T[],
+): Promise<T[]> {
+	if (!aiHidden || rows.length === 0) return rows;
+	const hidden = await aiHidden(
+		rows.map((row) => ({
+			mailboxIds: [row.mailboxId],
+			messageIds: [row.sourceMessageId],
+			refs: [{ kind: "calendar:event" as const, id: row.id }],
+		})),
+	);
+	return rows.filter((_, index) => !hidden[index]);
+}
+
+/** The viewer's series by id, in order; "Event not found" when one is missing or the caller may not see it. */
+async function ownSeries(context: CalendarToolContext, ids: string[]) {
+	const db = getDb(context.env);
+	const existing = await Promise.all(
+		ids.map(
+			async (eventId) =>
+				(
+					await db
+						.select()
+						.from(calendarEvents)
+						.where(and(eq(calendarEvents.id, eventId), eq(calendarEvents.userId, context.user.id)))
+						.limit(1)
+				)[0],
+		),
+	);
+	const found = existing.filter((row) => row !== undefined);
+	if (found.length < ids.length || (await visibleEvents(context.aiHidden, found)).length < found.length)
+		throw new Error("Event not found");
+	return found;
+}
+
 async function eventsInRange(context: CalendarToolContext, from: Date, to: Date) {
 	return getDb(context.env)
 		.select()
@@ -53,7 +95,10 @@ export async function runCalendarTool(
 		};
 	if (name === "get_schedule" || name === "search_events" || name === "find_free_time") {
 		const { from, to } = dates(input.start as string, input.end as string);
-		const events = expandToolEvents(await eventsInRange(context, from, to), from, to);
+		const rows = await eventsInRange(context, from, to);
+		// Free time needs every busy block (it answers times only); the listings leave hidden events out.
+		const shown = name === "find_free_time" ? rows : await visibleEvents(context.aiHidden, rows);
+		const events = expandToolEvents(shown, from, to);
 		if (name === "get_schedule") return { events, truncated: events.length >= 500 };
 		if (name === "search_events") {
 			const query = (input.query as string).toLocaleLowerCase();
@@ -89,7 +134,7 @@ export async function runCalendarTool(
 				),
 			)
 			.limit(1);
-		if (!event) throw new Error("Event not found");
+		if (!event || !(await visibleEvents(context.aiHidden, [event])).length) throw new Error("Event not found");
 		if (!occurrence) return { event };
 		const found = expandToolEvents([event], occurrence.startsAt, new Date(occurrence.startsAt.getTime() + 1)).find(
 			(item) => item.id === input.eventId,
@@ -128,19 +173,7 @@ export async function runCalendarTool(
 		const ids = updates.map((item) => item.eventId);
 		if (new Set(ids).size !== ids.length || ids.some((value) => parseCalendarOccurrenceId(value)))
 			throw new Error("Use unique series IDs for updates");
-		const existing = await Promise.all(
-			ids.map(
-				async (eventId) =>
-					(
-						await db
-							.select()
-							.from(calendarEvents)
-							.where(and(eq(calendarEvents.id, eventId), eq(calendarEvents.userId, context.user.id)))
-							.limit(1)
-					)[0],
-			),
-		);
-		if (existing.some((row) => !row)) throw new Error("Event not found");
+		const existing = await ownSeries(context, ids);
 		for (const [index, item] of updates.entries()) {
 			const row = existing[index]!;
 			if (
@@ -186,19 +219,7 @@ export async function runCalendarTool(
 	const ids = input.eventIds as string[];
 	if (new Set(ids).size !== ids.length || ids.some((value) => parseCalendarOccurrenceId(value)))
 		throw new Error("Use unique series IDs for deletion");
-	const existing = await Promise.all(
-		ids.map(
-			async (eventId) =>
-				(
-					await db
-						.select()
-						.from(calendarEvents)
-						.where(and(eq(calendarEvents.id, eventId), eq(calendarEvents.userId, context.user.id)))
-						.limit(1)
-				)[0],
-		),
-	);
-	if (existing.some((row) => !row)) throw new Error("Event not found");
+	const existing = await ownSeries(context, ids);
 	for (const eventId of ids)
 		await db
 			.delete(calendarEvents)

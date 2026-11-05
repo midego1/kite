@@ -29,14 +29,16 @@ export async function GET(request: Request) {
 	if (auth.error) return auth.error;
 	const mailboxId = new URL(request.url).searchParams.get("mailboxId");
 	if (!mailboxId) return Response.json({ error: "Mailbox required" }, { status: 400 });
-	const refusal =
-		(await interactiveRefusal(env)) ?? ((await getAgentProviderPublicConfig(env)).configured ? null : "not_configured");
-	const access = refusal ? null : await getMailboxAccessLevel(getDb(env), auth.user, mailboxId);
-	// "No AI for this mailbox" only after access, so it says nothing about a mailbox the user cannot send from.
+	const access = await getMailboxAccessLevel(getDb(env), auth.user, mailboxId);
+	const sendable = !!access?.canSendOnBehalf;
+	// "No AI for this mailbox" first, so the composer explains it whatever the provider state, but only after access,
+	// so it says nothing about a mailbox the user cannot send from.
+	const aiOff = sendable && (await mailboxAiOff(env, mailboxId));
 	const reason =
-		refusal ??
-		(access?.canSendOnBehalf ? null : "no_send_access") ??
-		((await mailboxAiOff(env, mailboxId)) ? "mailbox_ai_off" : null);
+		(aiOff ? "mailbox_ai_off" : null) ??
+		(await interactiveRefusal(env)) ??
+		((await getAgentProviderPublicConfig(env)).configured ? null : "not_configured") ??
+		(sendable ? null : "no_send_access");
 	return Response.json(reason ? { available: false, reason } : { available: true }, {
 		headers: { "Cache-Control": "no-store" },
 	});

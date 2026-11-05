@@ -19,6 +19,8 @@ import { senderAddressOf } from "@/lib/agent/auto-read/facts-utils";
 import { loadCalendarInvite } from "@/lib/agent/auto-read/invite";
 import { answerInvite } from "@/lib/agent/auto-read/invite-actions";
 import type { CapabilityHandler, JsonValue } from "../module-types";
+import { moduleHost } from "../host";
+import type { HostAiSource } from "../host-types";
 import { resolveCalendarRefs } from "@/lib/calendar/refs";
 import { removeReminder, upsertReminder, type UpsertReminderInput } from "@/lib/calendar/reminders";
 
@@ -68,7 +70,8 @@ function toolHandler(name: CalendarToolName): CapabilityHandler {
 		const env = getEnv();
 		const [user] = await getDb(env).select().from(users).where(eq(users.id, ctx.viewer.userId)).limit(1);
 		if (!user) throw new Error("Viewer not found");
-		const output = await runCalendarTool({ env, user, timeZone: ctx.timeZone }, name, input);
+		const aiHidden = (sources: readonly HostAiSource[]) => moduleHost.mail.aiHidden(ctx, sources);
+		const output = await runCalendarTool({ env, user, timeZone: ctx.timeZone, aiHidden }, name, input);
 		return withCalendarToolRefs(name, toJsonOutput(output));
 	};
 }
@@ -76,7 +79,13 @@ function toolHandler(name: CalendarToolName): CapabilityHandler {
 const previewHandler: CapabilityHandler = async (input, ctx) => {
 	if (!ctx.viewer) throw new Error("Calendar tools need a viewer");
 	const { tool, input: toolInput } = input as { tool: CalendarPreviewTool; input: JsonValue };
-	return previewCalendarToolChange(getEnv(), { userId: ctx.viewer.userId, timeZone: ctx.timeZone }, tool, toolInput);
+	return previewCalendarToolChange(
+		getEnv(),
+		{ userId: ctx.viewer.userId, timeZone: ctx.timeZone },
+		tool,
+		toolInput,
+		(sources) => moduleHost.mail.aiHidden(ctx, sources),
+	);
 };
 
 const searchHandler: CapabilityHandler = async (input, ctx) => {

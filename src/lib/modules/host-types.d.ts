@@ -144,6 +144,13 @@ export type HostAgentServices = {
  * The plain-function facade modules use to reach core services. Every function takes the JSON call
  * context and JSON arguments and returns JSON, so the same shape can later be an RPC surface.
  */
+/** Where a record came from: the mailboxes and messages it was read from, and its own ref. `null` means none. */
+export type HostAiSource = {
+	mailboxIds?: readonly (string | null | undefined)[];
+	messageIds?: readonly (string | null | undefined)[];
+	refs?: readonly RecordRef[];
+};
+
 export type ModuleHost = {
 	emitWebhook(ctx: CapabilityCallContext, moduleId: ModuleId, event: string, payload: JsonValue): Promise<void>;
 	invoke(ctx: CapabilityCallContext, moduleId: ModuleId, name: string, input: JsonValue): Promise<CapabilityResult>;
@@ -183,6 +190,12 @@ export type ModuleHost = {
 			options: { maxBytes: number },
 		): Promise<HostAttachmentContent | null>;
 		send(ctx: CapabilityCallContext, draft: HostDraft): Promise<{ messageId: string }>;
+		/**
+		 * "No AI for this mailbox", for a chat call (any other trigger gets all false): per source, whether the record
+		 * must be left out of what the assistant sees, because it was read from a mailbox with AI off or changed by an
+		 * action taken in one. Checked when called; a lost id hides the record.
+		 */
+		aiHidden(ctx: CapabilityCallContext, sources: readonly HostAiSource[]): Promise<boolean[]>;
 		importMessages(
 			ctx: CapabilityCallContext,
 			request: { userId: string; mailboxId: string; destination: string; messages: HostImportMessage[] },

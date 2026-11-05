@@ -19,10 +19,13 @@ type TabId = (typeof TABS)[number]["id"];
  */
 export function AssistantSettingsTabs({
 	settings,
+	mailboxId: currentMailboxId,
 	onAiChange,
 	children,
 }: {
 	settings: { mailboxId: string } | null;
+	/** The mailbox the panel is on now; the switch is bound to it, never to a late settings response's mailbox. */
+	mailboxId?: string;
 	/** After No AI for this mailbox changed, so the chat can follow it. */
 	onAiChange?: () => void;
 	children: ReactNode;
@@ -44,7 +47,9 @@ export function AssistantSettingsTabs({
 				))}
 			</TabsList>
 			<TabsContent value="settings" forceMount hidden={active !== "settings"} className="space-y-4">
-				{mailboxId && <MailboxAiSetting key={mailboxId} mailboxId={mailboxId} onChange={onAiChange} />}
+				{mailboxId && currentMailboxId && (
+					<MailboxAiSetting key={currentMailboxId} mailboxId={currentMailboxId} onChange={onAiChange} />
+				)}
 				{children}
 			</TabsContent>
 			{mailboxId && (

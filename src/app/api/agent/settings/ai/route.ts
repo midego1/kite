@@ -6,6 +6,9 @@ import { hasValidSessionMutationOrigin } from "@/lib/auth/origin";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { setMailboxAiDisabled } from "@/lib/agent/mailbox-ai-settings";
 import { readJsonBody } from "@/lib/http/request";
+import { createLogger } from "@/lib/logger.mjs";
+
+const logger = createLogger("agent");
 
 const schema = z.object({ mailboxId: z.string().min(1).max(160), aiDisabled: z.boolean() });
 
@@ -23,7 +26,14 @@ export async function PUT(request: Request) {
 	if (!parsed.success) return Response.json({ error: "Invalid request" }, { status: 400 });
 	const access = await getMailboxAccessLevel(getDb(env), user, parsed.data.mailboxId);
 	if (!access?.canManage) return Response.json({ error: "Mailbox not found or permission denied" }, { status: 403 });
-	if ((await setMailboxAiDisabled(env, user, access, parsed.data.aiDisabled)) === "migration_pending")
+	let outcome: Awaited<ReturnType<typeof setMailboxAiDisabled>>;
+	try {
+		outcome = await setMailboxAiDisabled(env, user, access, parsed.data.aiDisabled);
+	} catch (error) {
+		logger.error("agent.mailbox_ai_save_failed", { error: error instanceof Error ? error.name : "unknown" });
+		return Response.json({ error: "Could not save this setting. Try again." }, { status: 500 });
+	}
+	if (outcome === "migration_pending")
 		return Response.json(
 			{ error: "Apply the pending database update to change this setting", code: "MIGRATION_PENDING" },
 			{ status: 409 },

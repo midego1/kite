@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { getDb } from "@/db";
 import { mailboxAgentSettings } from "@/db/schema";
 import { agentSuggestions } from "@/db/schema/agent-auto-read";
@@ -10,7 +10,6 @@ import { isNoSuchTableError } from "@/lib/modules/state-utils";
 import { skipPendingMailboxJobs } from "./auto-read/install-settings";
 import { ensureMailboxAgentSettingsRow } from "./auto-read/mailbox-settings";
 import { notifySuggestionsQuietly } from "./auto-read/suggestion-events";
-import { mailboxAiOff } from "./mailbox-ai";
 import { MAILBOX_AI_OFF_REASON } from "./mailbox-ai-utils";
 
 /** The audit action of turning "No AI for this mailbox" on or off. */
@@ -62,8 +61,11 @@ async function clearMailboxAi(env: CloudflareEnv, mailboxId: string): Promise<vo
 }
 
 /**
- * Stores the switch for a mailbox the caller manages (the route checks `canManage`) and writes the audit row when it
- * changes. Answers `migration_pending` before 0091 and changes nothing then.
+ * Stores the switch for a mailbox the caller manages (the route checks `canManage`). Only a save that changes the
+ * stored value writes the audit row (decided by the update itself, so two saves at once audit once), and it is
+ * written before the cleanup. The cleanup runs both ways: turning AI off removes what AI made, and turning it back on
+ * removes anything a request that raced the switch wrote while it was off. Answers `migration_pending` before 0091
+ * and changes nothing then.
  */
 export async function setMailboxAiDisabled(
 	env: CloudflareEnv,
@@ -74,19 +76,19 @@ export async function setMailboxAiDisabled(
 	if (!(await mailboxAiSwitchAvailable(env))) return "migration_pending";
 	const mailboxId = access.mailbox.id;
 	const db = getDb(env);
-	const before = await mailboxAiOff(env, mailboxId);
 	await ensureMailboxAgentSettingsRow(db, access);
-	await db
+	const changed = await db
 		.update(mailboxAgentSettings)
 		.set({ aiDisabled: disabled, updatedAt: new Date() })
-		.where(eq(mailboxAgentSettings.mailboxId, mailboxId));
-	if (disabled) await clearMailboxAi(env, mailboxId);
-	if (before !== disabled)
+		.where(and(eq(mailboxAgentSettings.mailboxId, mailboxId), ne(mailboxAgentSettings.aiDisabled, disabled)))
+		.returning({ mailboxId: mailboxAgentSettings.mailboxId });
+	if (changed.length > 0)
 		await createAuditLog(env, {
 			actorUserId: user.id,
 			mailboxId,
 			action: MAILBOX_AI_AUDIT_ACTION,
 			metadata: { aiDisabled: disabled },
 		});
+	if (disabled || changed.length > 0) await clearMailboxAi(env, mailboxId);
 	return "saved";
 }

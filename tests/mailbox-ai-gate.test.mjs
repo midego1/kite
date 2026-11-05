@@ -14,7 +14,7 @@ const MODEL_FILE = "src/lib/agent/model.ts";
 
 function sourceFiles(path) {
 	const absolute = join(root, path);
-	if (!statSync(absolute).isDirectory()) return /\.(ts|tsx|mjs)$/.test(path) ? [path] : [];
+	if (!statSync(absolute).isDirectory()) return /\.(ts|tsx|mts|cts|js|mjs|cjs)$/.test(path) ? [path] : [];
 	return readdirSync(absolute).flatMap((name) => sourceFiles(join(path, name)));
 }
 
@@ -42,24 +42,80 @@ const MODEL_CALL_SITES = {
 	],
 };
 
+/** The files that may import the AI SDK (`ai`, `ai/...`): types, usage accounting and the gated call sites. */
+const AI_SDK_IMPORTERS = [
+	"src/lib/agent/ai-errors.ts",
+	"src/lib/agent/auto-read/model-call-utils.ts",
+	"src/lib/agent/auto-read/spend-types.d.ts",
+	"src/lib/agent/auto-read/spend-utils.ts",
+	"src/lib/agent/auto-read/spend.ts",
+	"src/lib/agent/auto-read/triage-model.ts",
+	"src/lib/agent/chat-spend.ts",
+	"src/lib/agent/chat-tools.ts",
+	"src/lib/agent/chat.ts",
+	"src/lib/agent/compose.ts",
+	"src/lib/agent/jobs/draft-generation.ts",
+	"src/lib/agent/jobs/utils.ts",
+	MODEL_FILE,
+	"src/lib/agent/pricing.ts",
+	"src/lib/agent/summaries/line-job.ts",
+	"src/lib/agent/summaries/service.ts",
+	"src/lib/ai/usage-types.d.ts",
+];
+
+/** `from "x"`, `import("x")`, `require("x")` and `export ... from "x"`, whatever the binding is called. */
+const imports = (source) =>
+	[...source.matchAll(/(?:\bfrom|\bimport|\brequire)\s*\(?\s*["'`]([^"'`]+)["'`]/g)].map((match) => match[1]);
+
 test("only the model selection makes a provider client", () => {
-	const constructors =
-		/from "(@ai-sdk\/(?!provider")[^"]+|workers-ai-provider)"|\b(createOpenAICompatible|createAnthropic|createWorkersAI|createOpenAI)\(/;
-	const offenders = files.filter((file) => file !== MODEL_FILE && constructors.test(read(file)));
+	const providerPackage = (name) =>
+		(name.startsWith("@ai-sdk/") && name !== "@ai-sdk/provider") || name.startsWith("workers-ai-provider");
+	const constructors = /\b(createOpenAICompatible|createAnthropic|createWorkersAI|createOpenAI|createGateway)\(/;
+	const offenders = files.filter(
+		(file) => file !== MODEL_FILE && (imports(read(file)).some(providerPackage) || constructors.test(read(file))),
+	);
 	assert.deepEqual(offenders, [], "make provider clients only in getAgentModel");
-	// The Workers AI binding is only ever wrapped there, never run directly.
+	// A provider's raw call methods are only ever wrapped there.
 	assert.deepEqual(
-		files.filter((file) => /\.AI\.run\(/.test(read(file))),
+		files.filter((file) => file !== MODEL_FILE && /\b(doGenerate|doStream)\b/.test(read(file))),
 		[],
 	);
 });
 
-test("getAgentModel checks the mailbox's switch before anything else and needs a mailbox", () => {
+test("only the listed files import the AI SDK, under any name", () => {
+	const importers = files.filter((file) => imports(read(file)).some((name) => name === "ai" || name.startsWith("ai/")));
+	assert.deepEqual(importers.sort(), [...AI_SDK_IMPORTERS].sort(), "a new AI SDK importer: review it and list it here");
+});
+
+test("the Workers AI binding is only checked for presence outside the model selection", () => {
+	const use = /\.AI\b|\[\s*["'`]AI["'`]\s*\]|\{[^}]*\bAI\b[^}]*\}\s*=\s*env\b/;
+	const presence = /!!?env\.AI\b(?!\.)|if \(env\.AI\)/;
+	const offenders = files.flatMap((file) =>
+		file === MODEL_FILE
+			? []
+			: read(file)
+					.split("\n")
+					.map((line, index) => ({ line, at: `${file}:${index + 1}` }))
+					.filter(({ line }) => use.test(line) && !presence.test(line))
+					.map(({ at }) => at),
+	);
+	assert.deepEqual(offenders, []);
+});
+
+test("getAgentModel checks the mailbox's switch before anything else, and every model it returns checks it again", () => {
 	const source = read(MODEL_FILE);
 	const body = source.slice(source.indexOf("export async function getAgentModel("));
 	assert.match(body, /^export async function getAgentModel\(env: CloudflareEnv, request: AgentModelRequest\) \{/);
-	assert.match(body.split("\n")[1], /^\tawait assertMailboxAiAllowed\(env, request\.mailboxId\);$/);
+	const [, first, second] = body.split("\n");
+	assert.equal(first, "\tconst { mailboxId, modelId: requestedModel } = request;");
+	assert.equal(second, "\tawait assertMailboxAiAllowed(env, mailboxId);");
 	assert.match(source, /export type AgentModelRequest = \{ mailboxId: string;/);
+	// Every provider model is returned wrapped, so each call it makes (fallbacks, repairs, chat steps) checks again.
+	const returned = [...body.matchAll(/\bmodel: ([a-zA-Z]+)\(/g)].map((match) => match[1]);
+	assert.ok(returned.length >= 3);
+	assert.deepEqual([...new Set(returned)], ["gated"]);
+	const gated = source.slice(source.indexOf("function gated("), source.indexOf("export async function getAgentModel("));
+	assert.equal(gated.match(/await assertMailboxAiAllowed\(env, mailboxId\);/g)?.length, 2);
 });
 
 test("every model call gets its model through the gate", () => {

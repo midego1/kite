@@ -1,4 +1,5 @@
 import { authFetch } from "@/lib/auth/client";
+import type { ConfirmOptions } from "@/components/ui/confirm-dialog-types";
 import type { AgentSettingsResponse } from "./types";
 
 /** What the switch needs: its value, whether it can be saved yet (migration 0091) and whether this user may. */
@@ -18,4 +19,14 @@ export async function mailboxAiSaveError(response: Response): Promise<string> {
 	return response.status === 403
 		? "Only people who manage this mailbox can change this."
 		: "Could not save. Try again.";
+}
+
+/** The question before turning AI off for a mailbox: it deletes what AI made there, which cannot be undone. */
+export function mailboxAiConfirmation(address: string): ConfirmOptions {
+	return {
+		title: `Turn off AI for ${address}?`,
+		description:
+			"Kite will send nothing from this mailbox to an AI provider, for everyone who can open it. Its summaries and one-line summaries are deleted, open suggestions are closed and queued AI work stops. You can turn AI back on later; deleted summaries do not come back.",
+		confirmLabel: "Turn off AI",
+	};
 }

@@ -329,9 +329,12 @@ const SHOTS: Shot[] = [
 			if ((await toggle.getAttribute("aria-label")) === "Open email assistant") await toggle.click({ timeout: 45_000 });
 			const panel = page.locator("#email-assistant-panel");
 			await panel.getByRole("button", { name: "Assistant settings" }).click();
-			const toggleAi = panel.getByRole("switch", { name: "No AI for this mailbox" });
+			const toggleAi = panel.getByRole("switch", { name: /^No AI for / });
 			await expect(toggleAi).toBeEnabled();
-			if ((await toggleAi.getAttribute("aria-checked")) !== "true") await toggleAi.click();
+			if ((await toggleAi.getAttribute("aria-checked")) !== "true") {
+				await toggleAi.click();
+				await page.getByRole("button", { name: "Turn off AI" }).click();
+			}
 			await expect(toggleAi).toBeChecked();
 			return panel.getByTestId("mailbox-ai-setting");
 		},

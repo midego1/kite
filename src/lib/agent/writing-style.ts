@@ -361,6 +361,8 @@ export async function processStyleBackfill(env: CloudflareEnv, message: StyleBac
 		const measured = page
 			.map((row) => measureMessage(ownText(row.htmlBody, row.textBody)))
 			.filter((value): value is StyleMeasurement => value !== null);
+		// AI was turned off for the mailbox while the page loaded: nothing from it is learnt.
+		if (await mailboxAiOff(db, mailboxId)) return void (await releaseBackfill(db, userId, mailboxId));
 		// The row is gone, or its samples could not be saved after the compare-and-set retries: stop and release.
 		if (!(await updateStyleProfile(db, userId, mailboxId, measured)))
 			return void (await releaseBackfill(db, userId, mailboxId));

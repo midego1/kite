@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, ne, or } from "drizzle-orm";
 import { getDb } from "@/db";
 import { messages } from "@/db/schema";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
@@ -47,10 +47,17 @@ export async function requireAccess(context: AgentToolContext, write = false, ma
 async function refuseAiOffMessage(context: AgentToolContext, messageId: string): Promise<void> {
 	if (context.origin !== "chat") return;
 	const db = getDb(context.env);
+	// The same rows `ownMessage` would show: never the Screener's held mail or another user's draft.
 	const [row] = await db
 		.select({ mailboxId: messages.mailboxId })
 		.from(messages)
-		.where(eq(messages.id, messageId))
+		.where(
+			and(
+				eq(messages.id, messageId),
+				ne(messages.status, SCREENING_STATUS),
+				or(ne(messages.status, "draft"), eq(messages.userId, context.user.id)),
+			),
+		)
 		.limit(1);
 	if (!row?.mailboxId || row.mailboxId === context.mailboxId) return;
 	if (!(await getMailboxAccessLevel(db, context.user, row.mailboxId))?.canRead) return;

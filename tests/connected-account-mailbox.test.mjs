@@ -16,7 +16,7 @@ const { suggestMailboxLocalPart, mailboxLocalPartProblem, canOfferNewMailbox, su
 );
 
 test("the suggested name is the part before the @ and the provider", () => {
-	assert.equal(suggestMailboxLocalPart("mdgooijer@gmail.com"), "mdgooijer-gmail");
+	assert.equal(suggestMailboxLocalPart("jane@example.com"), "jane-example");
 	assert.equal(suggestMailboxLocalPart("  Jane.Doe@Outlook.com "), "jane.doe-outlook");
 	assert.equal(suggestMailboxLocalPart("first+tag@fastmail.com"), "first-tag-fastmail");
 	assert.equal(suggestMailboxLocalPart("émile@icloud.com"), "emile-icloud");
@@ -28,8 +28,8 @@ test("the suggested name is the part before the @ and the provider", () => {
 });
 
 test("a taken suggestion gets a number, and a long one is shortened to a valid name", () => {
-	const taken = new Set(["mdgooijer-gmail", "mdgooijer-gmail-2"]);
-	assert.equal(suggestMailboxLocalPart("mdgooijer@gmail.com", taken), "mdgooijer-gmail-3");
+	const taken = new Set(["jane-example", "jane-example-2"]);
+	assert.equal(suggestMailboxLocalPart("jane@example.com", taken), "jane-example-3");
 	const long = suggestMailboxLocalPart(`${"a".repeat(80)}@gmail.com`);
 	assert.ok(long.length <= 64);
 	assert.equal(mailboxLocalPartProblem(long, new Set()), null);
@@ -37,7 +37,7 @@ test("a taken suggestion gets a number, and a long one is shortened to a valid n
 
 test("a typed name is checked before anything is created", () => {
 	const taken = new Set(["support"]);
-	assert.equal(mailboxLocalPartProblem("mdgooijer-gmail", taken), null);
+	assert.equal(mailboxLocalPartProblem("jane-example", taken), null);
 	assert.equal(mailboxLocalPartProblem("  Mixed.Case_ok  ", taken), null);
 	assert.match(mailboxLocalPartProblem("", taken), /Enter a name/);
 	assert.match(mailboxLocalPartProblem("support", taken), /already a mailbox/);

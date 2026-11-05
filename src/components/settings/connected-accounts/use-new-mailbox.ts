@@ -37,7 +37,8 @@ export function useNewMailbox(input: {
 		enabled: !input.editing && canManageOwnMailboxes(me?.user),
 		refetchOnWindowFocus: false,
 	});
-	const offered = !input.editing && canOfferNewMailbox(me?.user, domains);
+	// While a created mailbox is kept (connecting failed) a second one is never offered: it would be made and forgotten.
+	const offered = !input.editing && !created && canOfferNewMailbox(me?.user, domains);
 	const creating = offered && input.mailboxId === NEW_MAILBOX_VALUE;
 	const domainId = domains.some((domain) => domain.id === typed.domainId) ? typed.domainId : (domains[0]?.id ?? "");
 	const taken = new Set(input.mailboxes.filter((entry) => entry.domainId === domainId).map((entry) => entry.localPart));
@@ -53,9 +54,12 @@ export function useNewMailbox(input: {
 		problem,
 		created,
 		change: (change: Partial<NewMailboxState>) => setTyped({ localPart, domainId, edited: typed.edited, ...change }),
-		/** Creates the mailbox when "New mailbox" is chosen; the one an earlier try made otherwise. Throws when creating fails. */
+		/**
+		 * Creates the mailbox when "New mailbox" is chosen; the one an earlier try made only while it is still the chosen
+		 * mailbox, otherwise null (the person picked another). Throws when creating fails.
+		 */
 		async ensure(): Promise<CreatedMailbox | null> {
-			if (!creating) return created;
+			if (!creating) return created && created.id === input.mailboxId ? created : null;
 			const mailbox = await createAccountMailbox({ domainId, localPart });
 			setCreated(mailbox);
 			return mailbox;

@@ -12,6 +12,7 @@ import { updateMailboxSchema } from "@/lib/validators";
 import type { MailboxRouteParams } from "./types";
 import { getMailboxUpdateValues, selectMailboxForUser } from "./utils";
 import { deleteMailboxWithContents } from "@/lib/mailboxes/delete";
+import { mailboxInUse, mailboxInUseMessage } from "@/lib/mailboxes/unused";
 
 export async function GET(request: Request, { params }: MailboxRouteParams) {
 	const { id } = await params;
@@ -130,6 +131,12 @@ export async function DELETE(request: Request, { params }: MailboxRouteParams) {
 		allowed = mailbox.userId === user.id || owner?.createdByUserId === user.id;
 	}
 	if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+	// `?onlyIfUnused=1`: for cleanup of a mailbox somebody just created, which must never take mail or an account with it.
+	if (new URL(request.url).searchParams.get("onlyIfUnused") === "1") {
+		const inUse = await mailboxInUse(db, id);
+		if (inUse) return NextResponse.json({ error: mailboxInUseMessage(inUse), code: "MAILBOX_IN_USE" }, { status: 409 });
+	}
 
 	try {
 		await removeMailboxDomainRouting(env, db, {

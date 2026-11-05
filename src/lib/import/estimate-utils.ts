@@ -4,15 +4,18 @@ import { type DatabaseUseLevel, databaseUseLevel } from "@/lib/db/size-utils";
 const DEFAULT_DATABASE_BYTES_PER_MESSAGE = 40_000;
 /** An install needs this many messages before its own average is trusted. */
 const MIN_MESSAGES_FOR_AVERAGE = 1000;
+/** What a message adds to D1 at least, however small: its row, headers, snippet and full-text index entries. */
+const MIN_DATABASE_BYTES_PER_MESSAGE = 2048;
 /** The most D1 one imported message is assumed to add. */
 const MAX_DATABASE_BYTES_PER_MESSAGE = 128 * 1024;
 /** The same, once HTML bodies over 16 KB are kept in the mail store instead of D1. */
 const MAX_DATABASE_BYTES_PER_MESSAGE_OFFLOADED = 24 * 1024;
 /**
- * Mail store bytes per byte of source mail: the raw message is written once (`imports/<id>.eml`) and its verified
- * attachments are 'raw' rows pointing into it, with no decoded copy (`docs/specs/attachments-once.md`).
- * A body offloaded to the mail store (HTML over 16 KB, when body offload is on) adds its decoded HTML as one more object.
- * That share depends on the mail and nothing here measures it, so it is left out.
+ * Mail store bytes per byte of source mail, as a lower bound: the raw message is written once (`imports/<id>.eml`) and its
+ * verified attachments are 'raw' rows pointing into it, with no decoded copy (`docs/specs/attachments-once.md`). Two
+ * things add to it and are not counted, because they depend on the mail and nothing here measures them: an attachment the
+ * MIME index cannot verify (quoted-printable, uuencode, bytes that do not match a raw part) is stored decoded as before, and
+ * a body offloaded to the mail store (HTML over 16 KB, when body offload is on) adds its decoded HTML as one more object.
  * @public Exercised by the unit tests.
  */
 export const MAIL_STORE_FACTOR = 1;
@@ -66,8 +69,9 @@ export function estimateImport(input: ImportEstimateInput): ImportEstimate {
 	const rawBytes = input.rawBytes !== null && input.rawBytes >= 0 ? Math.floor(input.rawBytes) : null;
 	const cap = input.bodyOffload ? MAX_DATABASE_BYTES_PER_MESSAGE_OFFLOADED : MAX_DATABASE_BYTES_PER_MESSAGE;
 	let perMessage = Math.min(averageDatabaseBytesPerMessage(input.usedBytes, input.installMessageCount), cap);
-	// A message cannot add more than it weighs; the totals give the average weight.
-	if (messages && rawBytes !== null) perMessage = Math.min(perMessage, rawBytes / messages);
+	// A message cannot add more than it weighs, but never less than its row costs; the totals give the average weight.
+	if (messages && rawBytes !== null)
+		perMessage = Math.min(perMessage, Math.max(rawBytes / messages, MIN_DATABASE_BYTES_PER_MESSAGE));
 	const databaseAddBytes = messages ? Math.round(messages * perMessage) : 0;
 	const projectedBytes = input.usedBytes + databaseAddBytes;
 	const currentLevel = databaseUseLevel(input.usedBytes, input.limitBytes);

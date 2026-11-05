@@ -74,7 +74,7 @@ test("without STATUS=SIZE the folders are measured in the background, shown as t
 		// Only sizes were asked for: no message body was fetched to measure.
 		const fetches = fake.commands
 			.map((entry: { line: string }) => entry.line)
-			.filter((line: string) => /UID FETCH/i.test(line));
+			.filter((line: string) => /\bFETCH\b/i.test(line));
 		expect(fetches.length).toBeGreaterThanOrEqual(2);
 		expect(fetches.every((line: string) => /RFC822\.SIZE/.test(line) && !/BODY/i.test(line))).toBe(true);
 	} finally {
@@ -98,15 +98,16 @@ test("a server with STATUS=SIZE gives the sizes at once and nothing is measured"
 		await expect(totals.locator('[data-total="messages"]')).toContainText("8");
 		await expect(totals.locator('[data-total="source"]')).not.toContainText("Not known");
 		await expect(totals).not.toContainText("Still measuring");
-		expect(fake.commands.some((entry: { line: string }) => /UID FETCH/i.test(entry.line))).toBe(false);
+		expect(fake.commands.some((entry: { line: string }) => /\bFETCH\b/i.test(entry.line))).toBe(false);
 	} finally {
 		await fake.close();
 	}
 });
 
-test("a folder the server cannot be measured for is left out of the size, and the import is not blocked", async ({
+test("a folder whose measuring fails keeps the size unknown, says so, and the import is not blocked", async ({
 	page,
 }) => {
+	test.setTimeout(90_000);
 	const fake = await startFakeImap({
 		authPlain: true,
 		examineRefusals: { INBOX: "NO [UNAVAILABLE] try again later" },
@@ -115,12 +116,51 @@ test("a folder the server cannot be measured for is left out of the size, and th
 	try {
 		const table = await showFolders(page, fake.port);
 		const inbox = table.locator("tbody tr").nth(0);
-		await expect(inbox.locator("[data-size]")).toHaveAttribute("data-size", "unknown");
+		// Two retries a moment apart, then the folder is marked failed.
+		await expect(inbox.locator("[data-size]")).toHaveAttribute("data-size", "unknown", { timeout: 30_000 });
 		const totals = page.getByTestId("import-size-total");
-		await expect(totals).toContainText("could not say how big 1 folder is");
+		await expect(totals).toContainText("did not work just now");
+		await expect(totals).toContainText("size stays unknown");
 		await expect(totals.locator('[data-total="source"]')).toContainText("Not known yet");
 		await expect(totals.locator('[data-total="messages"]')).toContainText("5");
 		await expect(page.getByRole("button", { name: "Import account" })).toBeEnabled();
+	} finally {
+		await fake.close();
+	}
+});
+
+test("a server that sends no sizes leaves the size unknown instead of showing 0 B", async ({ page }) => {
+	const fake = await startFakeImap({
+		authPlain: true,
+		folders: { INBOX: Array.from({ length: 6 }, (_, index) => ({ raw: sampleMessage(index + 1), size: null })) },
+	});
+	try {
+		const table = await showFolders(page, fake.port);
+		await expect(table.locator("tbody tr").nth(0).locator("[data-size]")).toHaveAttribute("data-size", "unknown");
+		const totals = page.getByTestId("import-size-total");
+		await expect(totals).toContainText("did not say how big 1 folder is");
+		await expect(totals.locator('[data-total="source"]')).toContainText("Not known yet");
+		await expect(totals).not.toContainText("0 B");
+	} finally {
+		await fake.close();
+	}
+});
+
+test("a folder with few messages and a huge UIDNEXT is measured in one request", async ({ page }) => {
+	const fake = await startFakeImap({
+		authPlain: true,
+		folders: {
+			INBOX: [
+				{ raw: sampleMessage(1), size: 1000, uid: 5_000_000 },
+				{ raw: sampleMessage(2), size: 2000, uid: 9_000_000 },
+			],
+		},
+	});
+	try {
+		const table = await showFolders(page, fake.port);
+		await expect(table.locator("tbody tr").nth(0).locator("[data-size]")).toHaveAttribute("data-size", "exact");
+		await expect(table).toContainText("3 KB");
+		expect(fake.commands.filter((entry: { line: string }) => /\bFETCH\b/i.test(entry.line))).toHaveLength(1);
 	} finally {
 		await fake.close();
 	}

@@ -13,6 +13,7 @@ import type { ExternalAccountView } from "@/lib/external-accounts/types";
 import type { AccountFormState, PresetOption } from "./connected-accounts-types";
 import { forwardingProviderFor, type ForwardingProviderId } from "./forwarding-guide-utils";
 import { MailboxField, MailboxLeftBehind } from "./account-mailbox-field";
+import { NEW_MAILBOX_VALUE } from "./new-mailbox-utils";
 import { useNewMailbox } from "./use-new-mailbox";
 import {
 	accountForm,
@@ -48,26 +49,39 @@ export function AccountFormDialog({
 	presets: PresetOption[];
 	/** Closes the dialog and opens the forwarding guide at this provider (where connecting is not possible). */
 	onForwardInstead?: (provider: ForwardingProviderId) => void;
-	onSaved: (account: ExternalAccountView, connected: boolean) => void;
+	/** `unusedMailbox`: the address of a mailbox Kite created for this try that the account was not connected to. */
+	onSaved: (account: ExternalAccountView, connected: boolean, unusedMailbox?: string) => void;
 	/** The dialog closed with a mailbox it created but no account connected to it (the address of that mailbox). */
 	onMailboxLeftBehind?: (address: string) => void;
 }) {
-	const { mailboxes, selectedMailbox } = useSelectedMailbox();
+	const { mailboxes, selectedMailbox, isLoading } = useSelectedMailbox();
 	const managed = mailboxes.filter((mailbox) => (mailbox.permission ?? "full_access") === "full_access");
 	const [draft, setForm] = useState<AccountFormState>(() =>
 		account ? accountForm(account) : emptyAccountForm(selectedMailbox?.id ?? managed[0]?.id ?? ""),
 	);
 	// The mailboxes may arrive after the dialog opened; until one is chosen, the first one the user manages is used.
-	const form = draft.mailboxId ? draft : { ...draft, mailboxId: managed[0]?.id ?? "" };
+	const chosenId = draft.mailboxId || managed[0]?.id || "";
 	const [saving, setSaving] = useState<"mailbox" | "account" | "delete" | null>(null);
 	const [error, setError] = useState<string | null>(null);
+	// With no mailbox to choose from (a new account of someone who may create mailboxes) the new mailbox is the choice.
+	const fresh = useNewMailbox({
+		editing: !!account,
+		address: draft.address,
+		mailboxId: chosenId || (isLoading ? "" : NEW_MAILBOX_VALUE),
+		mailboxes,
+	});
+	const form =
+		chosenId || !fresh.offered || isLoading
+			? { ...draft, mailboxId: chosenId }
+			: { ...draft, mailboxId: NEW_MAILBOX_VALUE };
 	const preset = presets.find((entry) => entry.id === form.preset);
 	const editing = !!account;
-	const fresh = useNewMailbox({ editing, address: form.address, mailboxId: form.mailboxId, mailboxes });
 	const { created } = fresh;
 	const mailbox = managed.find((entry) => entry.id === form.mailboxId);
 
 	function close(open: boolean) {
+		// Escape and the close button must not end a request that is creating a mailbox or connecting to it.
+		if (!open && saving !== null) return;
 		if (!open && created) onMailboxLeftBehind?.(created.address);
 		onOpenChange(open);
 	}
@@ -99,8 +113,10 @@ export function AccountFormDialog({
 		setSaving("account");
 		try {
 			const saved = account ? await updateAccount(account.id, connecting) : await connectAccount(connecting);
+			// A mailbox made earlier by this dialog that the person then left for another one stays; say so.
+			const unused = created && created.id !== connecting.mailboxId ? created.address : undefined;
 			fresh.clear();
-			onSaved(saved, !account);
+			onSaved(saved, !account, unused);
 		} catch (submitError) {
 			setError(submitError instanceof Error ? submitError.message : "Could not save the account");
 		} finally {

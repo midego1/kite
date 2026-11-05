@@ -25,5 +25,12 @@ export function useAccountMailbox(accountParam: string, accounts: ImportSourceAc
 		if (select(accountParam)) followed.current = accountParam;
 		// eslint-disable-next-line react-hooks/exhaustive-deps -- `select` is rebuilt every render from these.
 	}, [accountParam, accounts, mailboxes, selectedId]);
-	return { mailboxes, intoAccountMailbox: (accountId: string) => void select(accountId) };
+	return {
+		mailboxes,
+		intoAccountMailbox: (accountId: string) => {
+			// Picking an account replaces the one named in the link, which must not move the mailbox later.
+			followed.current = accountParam;
+			select(accountId);
+		},
+	};
 }

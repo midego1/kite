@@ -1,4 +1,3 @@
-import type { ImapSession } from "@/lib/imap/session";
 import { openImportSession } from "./imap";
 import type { ImapImportInput } from "./imap-types";
 import {
@@ -12,18 +11,14 @@ import {
 type ImapAccount = Pick<ImapImportInput, "host" | "port" | "secure" | "username" | "password">;
 type SizeEnv = Parameters<typeof openImportSession>[0];
 
-/** The folder's `UIDNEXT` from EXAMINE, else from STATUS; null when the server names none (sizes cannot be walked). */
-async function folderUidNext(session: ImapSession, folder: string): Promise<number | null> {
-	const examined = await session.examine(folder);
-	if (examined.uidNext !== null) return examined.uidNext;
-	return (await session.status(folder))?.uidNext ?? null;
-}
-
 /**
- * One bounded step of measuring a folder's size without STATUS=SIZE (RFC 8438): `UID FETCH n:m (UID RFC822.SIZE)` over
- * UID windows from the newest down, until the step has seen `stepMessages` messages or run `maxMs`. The caller
+ * One bounded step of measuring a folder's size without STATUS=SIZE (RFC 8438): `FETCH n:m (UID RFC822.SIZE)` over
+ * windows of sequence numbers from the newest down, until the step has seen `stepMessages` messages or run `maxMs`.
+ * Sequence numbers are dense, so a folder takes about one step per 10,000 messages however sparse its UIDs are. The caller
  * repeats with `nextCursor` until it is null and adds the steps up, so no request holds more than one step in memory
- * (about 10,000 answer lines) and nothing is stored between steps. Null when the server names no `UIDNEXT`.
+ * (about 10,000 answer lines) and nothing is stored between steps. A message deleted between steps can shift the
+ * numbers by one, so the sum is a preview. Null when the server does not say how many messages the folder holds.
+ * An aborted request (`signal`, the page moved on) closes the session at once.
  */
 export async function measureFolderStep(
 	env: SizeEnv,
@@ -32,31 +27,38 @@ export async function measureFolderStep(
 	cursor: number | null,
 	limits: SizeStepLimits = DEFAULT_SIZE_STEP_LIMITS,
 	now: () => number = Date.now,
+	signal?: AbortSignal,
 ): Promise<FolderSizeStep | null> {
+	signal?.throwIfAborted();
 	const session = await openImportSession(env, account);
+	const stop = () => void session.close().catch(() => undefined);
+	signal?.addEventListener("abort", stop, { once: true });
 	try {
-		const uidNext = await folderUidNext(session, folder);
-		if (uidNext === null) return null;
+		const examined = await session.examine(folder);
+		const exists = examined.exists ?? (await session.status(folder))?.messages ?? null;
+		if (exists === null) return null;
 		const startedAt = now();
 		let next = cursor;
 		let messages = 0;
 		let bytes = 0;
+		let unsized = 0;
 		for (let windows = 0; windows < limits.maxWindows; windows += 1) {
-			const window = nextSizeWindow(next, uidNext, limits.windowUids);
+			signal?.throwIfAborted();
+			const window = nextSizeWindow(next, exists, limits.windowMessages);
 			if (!window) {
 				next = null;
 				break;
 			}
-			const answered = await session.fetchSizes(window.from, window.to);
-			// A server answers `n:m` with the UIDs inside it, but a stray unsolicited line must not be counted.
-			const sum = sumSizes(answered.filter((entry) => entry.uid >= window.from && entry.uid <= window.to));
+			const sum = sumSizes(await session.fetchSizes(window.from, window.to));
 			messages += sum.messages;
 			bytes += sum.bytes;
+			unsized += sum.unsized;
 			next = window.from > 1 ? window.from - 1 : null;
 			if (next === null || messages >= limits.stepMessages || now() - startedAt >= limits.maxMs) break;
 		}
-		return { messages, bytes, nextCursor: next, uidNext };
+		return { messages, bytes, unsized, nextCursor: next, exists, uidValidity: examined.uidValidity };
 	} finally {
-		await session.close();
+		signal?.removeEventListener("abort", stop);
+		await session.close().catch(() => undefined);
 	}
 }

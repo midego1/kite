@@ -316,3 +316,9 @@ test("the totals list messages, the source size, mail storage and the database, 
 	const noDatabase = rows("exact", { messages: 48_000, rawBytes: 6.1 * GB }, null);
 	assert.deepEqual(Object.keys(noDatabase), ["messages", "source"]);
 });
+
+test("a tiny message still costs its row and index entries, about 2 KB, whatever it weighs", () => {
+	const tiny = estimate.estimateImport({ ...base, messages: 1000, rawBytes: 300_000 });
+	assert.equal(tiny.databaseBytesPerMessage, 2048);
+	assert.equal(tiny.databaseAddBytes, 2_048_000);
+});

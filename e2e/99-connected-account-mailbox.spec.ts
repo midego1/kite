@@ -1,7 +1,8 @@
 import { expect, test, type APIRequestContext, type Browser, type Page } from "@playwright/test";
 import { AUTO_READ_ACCOUNT_PASSWORD, createSignedInAccount } from "./support/auto-read";
 import { STORAGE_STATE } from "./support/constants";
-import { apiContext, uniqueToken, waitForMessage } from "./support/helpers";
+import { apiContext, deliverInbound, uniqueToken, waitForMessage } from "./support/helpers";
+import { turnScreenerOff } from "./support/screener";
 import { chooseOption, expectSelectValue, readOptions } from "./support/select";
 import { sampleMessage, startFakeImap } from "../tests/support/fake-imap.mjs";
 
@@ -86,10 +87,15 @@ test("a mailbox of its own is suggested, created, connected and the import start
 		await chooseOption(page.locator("#import-source"), { label: "IMAP" });
 		await expectSelectValue(page.locator("#imap-account"), accounts.accounts[0].id);
 		await expect(page.locator("#imap-account")).toBeVisible();
-		await expect(page.getByText(`imported into ${token}-own@example.com`)).toBeVisible();
+		await expect(page.getByTestId("import-target")).toContainText(`${token}-own@example.com`);
 		await page.getByRole("button", { name: "Show folders" }).click();
 		await page.getByRole("button", { name: "Import account" }).click();
 		await waitForMessage(user.api, `${token} first`, { mailboxId: created!.id });
+
+		// With an account connected, the mailbox is in use: the server refuses to remove it and says why.
+		const refused = await user.api.delete(`/api/mailboxes/${created!.id}?onlyIfUnused=1`);
+		expect(refused.status()).toBe(409);
+		expect(((await refused.json()) as { code: string }).code).toBe("MAILBOX_IN_USE");
 
 		// Edit still moves the account's future mail to another mailbox.
 		await page.goto("/settings/connected-accounts");
@@ -195,6 +201,106 @@ test("a taken name is refused before anything is created, and people who may not
 	} finally {
 		await manager.context.close();
 		await plain.context.close();
+		await fake.close();
+	}
+});
+
+test("after a failed connect another mailbox can be chosen, and the one Kite made is not used", async ({ browser }) => {
+	test.setTimeout(150_000);
+	const token = uniqueToken("ms");
+	const address = `${token}@example.test`;
+	const fake = await startFakeImap({ authPlain: true, users: { [address]: APP_PASSWORD } });
+	const { user, context, page } = await mailboxManager(browser, `ms${token.slice(-8)}`, true);
+	try {
+		const dialog = await openConnectDialog(page, address, fake.port, "wrong-password");
+		await chooseOption(dialog.locator("#external-mailbox"), { label: "New mailbox for this account…" });
+		await dialog.getByLabel("Mailbox name").fill(`${token}-spare`);
+		await dialog.getByRole("button", { name: "Connect" }).click();
+		await expect(dialog.getByTestId("mailbox-left-behind")).toContainText(`${token}-spare@example.com`);
+
+		// A second "new mailbox" is not offered while the first is kept: it would be made and forgotten.
+		const options = await readOptions(dialog.locator("#external-mailbox"));
+		expect(options.map((option) => option.label)).not.toContain("New mailbox for this account…");
+		const own = (await mailboxesOf(user.api)).find((mailbox) => mailbox.localPart === `ms${token.slice(-8)}`);
+		expect(own).toBeDefined();
+		await chooseOption(dialog.locator("#external-mailbox"), own!.id);
+		await dialog.getByLabel("Password or app password").fill(APP_PASSWORD);
+		await dialog.getByRole("button", { name: "Connect" }).click();
+		await expect(dialog).toBeHidden();
+
+		// The account goes where the person chose, not to the mailbox Kite made; the page says that one is unused.
+		const accounts = (await (await user.api.get("/api/external-accounts")).json()) as {
+			accounts: { mailboxId: string }[];
+		};
+		expect(accounts.accounts[0].mailboxId).toBe(own!.id);
+		await expect(page.getByRole("status").filter({ hasText: `Connected ${address}.` })).toContainText(
+			`Kite had created the mailbox ${token}-spare@example.com`,
+		);
+		expect((await mailboxesOf(user.api)).some((mailbox) => mailbox.localPart === `${token}-spare`)).toBe(true);
+	} finally {
+		await context.close();
+		await fake.close();
+	}
+});
+
+test("Delete refuses a mailbox that has received mail since it was created", async ({ browser }) => {
+	test.setTimeout(150_000);
+	const token = uniqueToken("md");
+	const address = `${token}@example.test`;
+	const fake = await startFakeImap({ authPlain: true, users: { [address]: APP_PASSWORD } });
+	const { user, context, page } = await mailboxManager(browser, `md${token.slice(-8)}`, true);
+	try {
+		const dialog = await openConnectDialog(page, address, fake.port, "wrong-password");
+		await chooseOption(dialog.locator("#external-mailbox"), { label: "New mailbox for this account…" });
+		await dialog.getByLabel("Mailbox name").fill(`${token}-busy`);
+		await dialog.getByRole("button", { name: "Connect" }).click();
+		const notice = dialog.getByTestId("mailbox-left-behind");
+		await expect(notice).toContainText(`${token}-busy@example.com`);
+
+		// Mail arrives while the dialog is open.
+		const created = (await mailboxesOf(user.api)).find((mailbox) => mailbox.localPart === `${token}-busy`);
+		expect(created).toBeDefined();
+		await turnScreenerOff(user.api, created!.id);
+		await deliverInbound(user.api, {
+			from: "someone@example.org",
+			to: `${token}-busy@example.com`,
+			subject: `${token} arrived`,
+			text: "hello",
+		});
+
+		await dialog.getByRole("button", { name: `Delete ${token}-busy@example.com` }).click();
+		await expect(dialog.getByRole("alert")).toContainText("mail has arrived in it");
+		await expect(notice).toBeVisible();
+		expect((await mailboxesOf(user.api)).some((mailbox) => mailbox.id === created!.id)).toBe(true);
+		await waitForMessage(user.api, `${token} arrived`, { mailboxId: created!.id });
+	} finally {
+		await context.close();
+		await fake.close();
+	}
+});
+
+test("with no mailbox to choose from, a person who may create one starts on the new mailbox", async ({ browser }) => {
+	test.setTimeout(120_000);
+	const token = uniqueToken("mn");
+	const address = `${token}@example.test`;
+	const fake = await startFakeImap({ authPlain: true, users: { [address]: APP_PASSWORD } });
+	const { context, page } = await mailboxManager(browser, `mn${token.slice(-8)}`, true);
+	try {
+		// The mailbox list is empty for this page, as for a new install before its first mailbox.
+		await page.route(
+			(url) => url.pathname === "/api/mailboxes",
+			(route) =>
+				route.request().method() === "GET"
+					? route.fulfill({ json: { mailboxes: [], canCreateShared: false } })
+					: route.continue(),
+		);
+		const dialog = await openConnectDialog(page, address, fake.port, APP_PASSWORD);
+		await expect(dialog.locator("#external-mailbox")).toContainText("New mailbox for this account…");
+		await expect(dialog.getByLabel("Mailbox name")).toHaveValue(`${token}-example`);
+		await dialog.getByRole("button", { name: "Connect" }).click();
+		await expect(dialog).toBeHidden();
+	} finally {
+		await context.close();
 		await fake.close();
 	}
 });

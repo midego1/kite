@@ -117,17 +117,22 @@ export type AccountPlanFolder = {
 	bytes: number | null;
 };
 
-/** Where measuring one folder's size stands (`POST /api/import/account/sizes`, for servers without STATUS=SIZE). */
+/**
+ * Where measuring one folder's size stands (`POST /api/import/account/sizes`, for servers without STATUS=SIZE).
+ * `unavailable`: the server cannot be measured this way (or sent no sizes); `failed`: a step did not work just now
+ * and measuring that folder is tried again when it is ticked again or the folders are read again.
+ */
 export type FolderSizeState = {
-	status: "measuring" | "done" | "unavailable";
-	/** Messages and bytes counted so far; the totals once `done`. */
+	status: "measuring" | "done" | "unavailable" | "failed";
+	/** Messages and bytes counted so far; the totals once `done`. `unsized` of the messages came with no size. */
 	messages: number;
 	bytes: number;
-	/** Share (0 to 1) of the folder's UID range covered. */
+	unsized: number;
+	/** Share (0 to 1) of the folder covered. */
 	progress: number;
 };
 
-/** The size of one table row as shown: from STATUS, measured, still being measured (an estimate) or not known. */
+/** The size of one table row as shown: from STATUS, measured, an estimate (still measuring, or some sizes missing) or not known. */
 export type PlannedFolderSize =
 	| { kind: "exact"; bytes: number }
 	| { kind: "estimated"; bytes: number; progress: number }
@@ -143,8 +148,10 @@ export type PlannedTotals = {
 	sizeKind: "exact" | "estimated" | "unknown";
 	/** Ticked folders still being measured. */
 	measuring: number;
-	/** Ticked folders the server could not measure. */
+	/** Ticked folders the server cannot measure. */
 	unavailable: number;
+	/** Ticked folders whose measuring did not work just now. */
+	failed: number;
 };
 
 export type AccountPlan = { gmail: boolean; folders: AccountPlanFolder[] };

@@ -83,11 +83,11 @@ const SHOTS: Shot[] = [
 			await page.goto("/settings/connected-accounts");
 			await page.getByRole("button", { name: "Connect account" }).click();
 			const dialog = page.getByRole("dialog", { name: "Connect an account" });
-			await dialog.getByLabel("Email address").fill("jane.demo@gmail.com");
+			await dialog.getByLabel("Email address").fill("jane.demo@example.test");
 			await dialog.getByLabel("Email address").blur();
 			await dialog.locator("#external-mailbox").click();
 			await page.getByRole("option", { name: "New mailbox for this account…" }).click();
-			await expect(dialog.getByLabel("Mailbox name")).toHaveValue("jane.demo-gmail");
+			await expect(dialog.getByLabel("Mailbox name")).toHaveValue("jane.demo-example");
 			return dialog;
 		},
 	},

@@ -100,10 +100,14 @@ export function ConnectedAccountsSettings() {
 						});
 						void refresh();
 					}}
-					onSaved={(account, connected) => {
+					onSaved={(account, connected, unusedMailbox) => {
 						setEditing(null);
 						setNotice({
-							text: connected ? `Connected ${account.address}.` : `Saved ${account.address}.`,
+							text:
+								(connected ? `Connected ${account.address}.` : `Saved ${account.address}.`) +
+								(unusedMailbox
+									? ` Kite had created the mailbox ${unusedMailbox} for this try; it is not used, and you can delete it in Settings → Mailboxes.`
+									: ""),
 							accountId: connected ? account.id : undefined,
 						});
 						void refresh();

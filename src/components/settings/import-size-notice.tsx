@@ -49,31 +49,35 @@ export function ImportSizeNotice({
 	onRequiresConfirmation,
 }: Props) {
 	const [estimate, setEstimate] = useState<ImportEstimate | null>(null);
-	const knownBytes = sizeKind === "unknown" ? null : rawBytes;
+	// The same basis as the start check, which only gets exact sizes: an estimate would show less than the server decides.
+	const basisBytes = sizeKind === "exact" ? rawBytes : null;
+	const shownBytes = sizeKind === "unknown" ? null : rawBytes;
 
 	useEffect(() => {
 		let active = true;
 		const timer = window.setTimeout(() => {
-			fetchImportEstimate(messages, knownBytes)
+			fetchImportEstimate(messages, basisBytes)
 				.then((next) => {
 					if (!active) return;
 					setEstimate(next);
 					onRequiresConfirmation(!!next?.requiresConfirmation);
 				})
 				.catch(() => {
-					if (active) onRequiresConfirmation(false);
+					if (!active) return;
+					setEstimate(null);
+					onRequiresConfirmation(false);
 				});
 		}, 300);
 		return () => {
 			active = false;
 			window.clearTimeout(timer);
 		};
-	}, [messages, knownBytes, onRequiresConfirmation]);
+	}, [messages, basisBytes, onRequiresConfirmation]);
 
 	const level = estimate?.projectedLevel ?? "ok";
 	if (!showTotals && (!estimate || level === "ok")) return null;
 	const critical = level === "critical";
-	const rows = importTotalRows({ messages, rawBytes: knownBytes }, estimate, formatDatabaseBytes, sizeKind);
+	const rows = importTotalRows({ messages, rawBytes: shownBytes }, estimate, formatDatabaseBytes, sizeKind);
 	return (
 		<div
 			role={critical ? "alert" : "status"}

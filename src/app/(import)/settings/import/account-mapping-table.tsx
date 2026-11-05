@@ -4,7 +4,8 @@ import { CARD_CLASS, TABLE_HEAD_CLASS } from "@/components/ui/page-utils";
 import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import type { AccountPlan, AccountPlanFolder, FolderSizeState, ImportFolderSummary } from "./types";
-import { formatPlannedBytes, plannedFolderSize, systemDestinations } from "./utils";
+import { formatPlannedBytes, plannedFolderSize } from "./size-utils";
+import { systemDestinations } from "./utils";
 
 type Props = {
 	plan: AccountPlan;
@@ -103,21 +104,32 @@ export function AccountMappingTable({ plan, kiteFolders, sizes, onChange }: Prop
 function FolderSizeCell({ folder, state }: { folder: AccountPlanFolder; state: FolderSizeState | undefined }) {
 	const size = plannedFolderSize(folder, state);
 	if (size.kind === "exact") return <span data-size="exact">{formatPlannedBytes(size.bytes)}</span>;
-	if (size.kind === "unknown")
+	if (size.kind === "unknown") {
+		const why =
+			state?.status === "failed"
+				? "Measuring did not work just now"
+				: state?.status === "unavailable" || state?.status === "done"
+					? "This server did not say"
+					: "Not measured yet";
 		return (
-			<span data-size="unknown" title={state?.status === "unavailable" ? "This server cannot say" : "Not measured yet"}>
+			<span data-size="unknown" title={why}>
 				—
 			</span>
 		);
-	const percent = `${Math.round(size.progress * 100)}%`;
+	}
+	const done = size.kind === "estimated" && size.progress >= 1;
 	return (
 		<span
 			data-size={size.kind}
-			title="Estimated from the part measured so far; Kite keeps measuring while you choose."
+			title={
+				done
+					? "Some messages came without a size, so this is scaled from the others."
+					: "Estimated from the part measured so far; Kite keeps measuring while you choose."
+			}
 			className="text-neutral-500"
 		>
-			{size.kind === "estimated" ? `≈ ${formatPlannedBytes(size.bytes)} · ` : ""}
-			measuring {percent}
+			{size.kind === "estimated" ? `≈ ${formatPlannedBytes(size.bytes)}` : ""}
+			{!done && `${size.kind === "estimated" ? " · " : ""}measuring ${Math.round(size.progress * 100)}%`}
 		</span>
 	);
 }

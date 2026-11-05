@@ -35,7 +35,7 @@ function cleanPart(value: string): string {
 
 /**
  * The mailbox name offered for a connected address: the part before the `@` and the provider's name, so
- * `mdgooijer@gmail.com` becomes `mdgooijer-gmail`. A name that is taken on the domain gets `-2`, `-3`, … .
+ * `jane@example.com` becomes `jane-example`. A name that is taken on the domain gets `-2`, `-3`, … .
  */
 export function suggestMailboxLocalPart(address: string, taken: ReadonlySet<string> = new Set()): string {
 	const [local = "", host = ""] = address.trim().split("@");
@@ -94,9 +94,9 @@ export async function createAccountMailbox(input: {
 	return { id: data.id, address: data.address };
 }
 
-/** Deletes a mailbox the dialog created (empty, so nothing is lost). */
+/** Deletes a mailbox the dialog created, and only while it is unused: the server refuses once mail or an account is in it. */
 export async function deleteAccountMailbox(id: string): Promise<void> {
-	const response = await authFetch(`/api/mailboxes/${encodeURIComponent(id)}`, { method: "DELETE" });
+	const response = await authFetch(`/api/mailboxes/${encodeURIComponent(id)}?onlyIfUnused=1`, { method: "DELETE" });
 	if (!response.ok) {
 		const data = (await response.json().catch(() => ({}))) as { error?: unknown };
 		throw new Error(typeof data.error === "string" ? data.error : "Could not delete the mailbox");

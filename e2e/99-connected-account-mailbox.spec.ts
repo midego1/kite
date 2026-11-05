@@ -224,3 +224,35 @@ test("a retry connects to the mailbox chosen after a failed connection", async (
 		await fake.close();
 	}
 });
+
+test("failed-connection cleanup keeps a mailbox that has received a message", async ({ browser }) => {
+	const token = uniqueToken("keep");
+	const address = `${token}@example.test`;
+	const fake = await startFakeImap({ authPlain: true, users: { [address]: APP_PASSWORD } });
+	const { user, context, page } = await mailboxManager(browser, `kp${token.slice(-8)}`, true);
+	try {
+		const dialog = await openConnectDialog(page, address, fake.port, "wrong-password");
+		await chooseOption(dialog.locator("#external-mailbox"), { label: "New mailbox for this account…" });
+		await dialog.getByLabel("Mailbox name").fill(token);
+		await dialog.getByRole("button", { name: "Connect" }).click();
+		await expect(dialog.getByTestId("mailbox-left-behind")).toBeVisible();
+		const created = (await mailboxesOf(user.api)).find((mailbox) => mailbox.localPart === token)!;
+		const response = await user.api.post("/api/drafts", {
+			data: {
+				from: `${token}@example.com`,
+				mailboxId: created.id,
+				to: "reader@outside.test",
+				subject: "Keep this mail",
+				text: "Synthetic test mail",
+			},
+		});
+		expect(response.ok()).toBe(true);
+		await dialog.getByRole("button", { name: `Delete ${token}@example.com` }).click();
+		await expect(dialog.getByRole("alert")).toContainText("This mailbox has mail or a connected account");
+		await expect(dialog.getByTestId("mailbox-left-behind")).toBeVisible();
+		expect((await mailboxesOf(user.api)).some((mailbox) => mailbox.id === created.id)).toBe(true);
+	} finally {
+		await context.close();
+		await fake.close();
+	}
+});

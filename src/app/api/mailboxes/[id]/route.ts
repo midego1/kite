@@ -11,7 +11,7 @@ import { syncPersonalIdentity } from "@/lib/profile/sync";
 import { updateMailboxSchema } from "@/lib/validators";
 import type { MailboxRouteParams } from "./types";
 import { getMailboxUpdateValues, selectMailboxForUser } from "./utils";
-import { deleteMailboxWithContents } from "@/lib/mailboxes/delete";
+import { deleteEmptyMailbox, deleteMailboxWithContents } from "@/lib/mailboxes/delete";
 
 export async function GET(request: Request, { params }: MailboxRouteParams) {
 	const { id } = await params;
@@ -131,6 +131,17 @@ export async function DELETE(request: Request, { params }: MailboxRouteParams) {
 	}
 	if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
+	const emptyOnly = new URL(request.url).searchParams.get("onlyIfEmpty") === "1";
+	if (emptyOnly && !(await deleteEmptyMailbox(env, id))) {
+		return NextResponse.json(
+			{
+				error: "This mailbox has mail or a connected account. Keep it, or remove it from Mailboxes settings.",
+				code: "MAILBOX_NOT_EMPTY",
+			},
+			{ status: 409 },
+		);
+	}
+
 	try {
 		await removeMailboxDomainRouting(env, db, {
 			id: mailbox.id,
@@ -143,6 +154,6 @@ export async function DELETE(request: Request, { params }: MailboxRouteParams) {
 		return NextResponse.json({ error: message }, { status: 502 });
 	}
 
-	const result = await deleteMailboxWithContents(env, id);
+	const result = emptyOnly ? { completed: true, deletedMessages: 0 } : await deleteMailboxWithContents(env, id);
 	return NextResponse.json({ ok: true, ...result });
 }

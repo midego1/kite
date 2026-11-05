@@ -94,9 +94,9 @@ export async function createAccountMailbox(input: {
 	return { id: data.id, address: data.address };
 }
 
-/** Deletes a mailbox the dialog created (empty, so nothing is lost). */
+/** Deletes a mailbox the dialog created only while the server can still prove it is empty and unconnected. */
 export async function deleteAccountMailbox(id: string): Promise<void> {
-	const response = await authFetch(`/api/mailboxes/${encodeURIComponent(id)}`, { method: "DELETE" });
+	const response = await authFetch(`/api/mailboxes/${encodeURIComponent(id)}?onlyIfEmpty=1`, { method: "DELETE" });
 	if (!response.ok) {
 		const data = (await response.json().catch(() => ({}))) as { error?: unknown };
 		throw new Error(typeof data.error === "string" ? data.error : "Could not delete the mailbox");

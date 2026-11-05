@@ -973,5 +973,6 @@
 	"99-undo-bar-placement.spec.ts › the undo-send bar › with another composer open, phone › minimized": 5000,
 	"99-import-sizes.spec.ts › a selected folder with an unknown count is still measured": 2700,
 	"99-connected-account-mailbox.spec.ts › a retry connects to the mailbox chosen after a failed connection": 4100,
-	"99-import-sizes.spec.ts › a failed estimate refresh clears the previous warning": 3500
+	"99-import-sizes.spec.ts › a failed estimate refresh clears the previous warning": 3500,
+	"99-connected-account-mailbox.spec.ts › failed-connection cleanup keeps a mailbox that has received a message": 5100
 }

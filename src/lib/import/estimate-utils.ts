@@ -11,8 +11,9 @@ const MAX_DATABASE_BYTES_PER_MESSAGE_OFFLOADED = 24 * 1024;
 /**
  * Mail store bytes per byte of source mail: the raw message is written once (`imports/<id>.eml`) and its verified
  * attachments are 'raw' rows pointing into it, with no decoded copy (`docs/specs/attachments-once.md`).
+ * Attachments the MIME index cannot verify still need separate decoded objects, even with the raw index on.
  * A body offloaded to the mail store (HTML over 16 KB, when body offload is on) adds its decoded HTML as one more object.
- * That share depends on the mail and nothing here measures it, so it is left out.
+ * Those extra copies depend on the mail and nothing here measures them, so both are left out.
  * @public Exercised by the unit tests.
  */
 export const MAIL_STORE_FACTOR = 1;

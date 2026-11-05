@@ -85,7 +85,7 @@ function accountRequestBody(form: AccountFormState) {
 	};
 }
 
-export async function connectAccount(form: AccountFormState): Promise<ExternalAccountView> {
+async function connectAccount(form: AccountFormState): Promise<ExternalAccountView> {
 	const response = await authFetch("/api/external-accounts", {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
@@ -94,7 +94,7 @@ export async function connectAccount(form: AccountFormState): Promise<ExternalAc
 	return (await readJson<{ account: ExternalAccountView }>(response, "Could not connect the account")).account;
 }
 
-export async function updateAccount(id: string, form: AccountFormState): Promise<ExternalAccountView> {
+async function updateAccount(id: string, form: AccountFormState): Promise<ExternalAccountView> {
 	const response = await authFetch(`/api/external-accounts/${encodeURIComponent(id)}`, {
 		method: "PATCH",
 		headers: { "Content-Type": "application/json" },

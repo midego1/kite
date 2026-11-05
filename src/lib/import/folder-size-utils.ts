@@ -7,7 +7,13 @@ const SIZE_STEP_MAX_WINDOWS = 50;
 /** A step starts no further window after this long. */
 const SIZE_STEP_MAX_MS = 10_000;
 
-export type SizeStepLimits = { windowUids: number; stepMessages: number; maxWindows: number; maxMs: number };
+export type SizeStepLimits = {
+	windowUids: number;
+	stepMessages: number;
+	maxWindows: number;
+	maxMs: number;
+	maxFolderUids?: number;
+};
 
 export const DEFAULT_SIZE_STEP_LIMITS: SizeStepLimits = {
 	windowUids: SIZE_WINDOW_UIDS,

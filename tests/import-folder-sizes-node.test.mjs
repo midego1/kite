@@ -161,6 +161,17 @@ test("a missing folder fails the step, which the page shows as unavailable", asy
 	await assert.rejects(measureFolderStep(env, account, "Nope", null));
 });
 
+test("the total UID walk is bounded across requests, not only within each step", async (t) => {
+	const { server, env } = await fake(t, {
+		folders: { INBOX: Array.from({ length: 25 }, (_, index) => ({ raw: sampleMessage(index + 1), size: 100 })) },
+	});
+	const limits = { ...SMALL, maxWindows: 1, maxFolderUids: 10 };
+	const first = await measureFolderStep(env, account, "INBOX", null, limits);
+	assert.equal(first.nextCursor, 15);
+	assert.equal(await measureFolderStep(env, account, "INBOX", first.nextCursor, limits), null);
+	assert.equal(server.commands.filter((entry) => /UID FETCH/i.test(entry.line)).length, 1);
+});
+
 test("STATUS=SIZE servers give the size in the plan, so nothing is measured for them", async (t) => {
 	const { env } = await fake(t, {
 		statusSize: true,

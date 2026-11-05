@@ -916,6 +916,8 @@
 	"99-command-palette.spec.ts › on a phone the palette fills the screen with the categories as a chip row": 3000,
 	"99-command-palette.spec.ts › the arrow keys move the highlight from the box and from the list, Enter opens the highlighted page": 4400,
 	"99-command-palette.spec.ts › the clear button empties the search and the close button closes; nothing matching says so": 4800,
+	"99-connected-account-mailbox.spec.ts › a retry connects to the mailbox chosen after a failed connection": 4100,
+	"99-connected-account-mailbox.spec.ts › failed-connection cleanup keeps a mailbox that has received a message": 5100,
 	"99-folder-manage.spec.ts › a read-only sharer and an outsider cannot rename or delete a shared mailbox's folder": 2400,
 	"99-folder-manage.spec.ts › a session mutation from a foreign origin is refused": 200,
 	"99-folder-manage.spec.ts › an empty folder is deleted without choosing where messages go, and another page stays open": 3500,
@@ -923,6 +925,10 @@
 	"99-folder-manage.spec.ts › deleting a folder from the sidebar moves its messages to Archive, turns its rule off and leaves the folder page": 11600,
 	"99-folder-manage.spec.ts › renaming from the context menu updates the sidebar and the folder title; a taken name is refused": 3900,
 	"99-folder-manage.spec.ts › the API renames and recolours, refuses a duplicate name and a bad request, and keeps the mail when asked to": 3200,
+	"99-import-sizes.spec.ts › a changed UIDVALIDITY discards earlier folder size totals": 5600,
+	"99-import-sizes.spec.ts › a failed estimate refresh clears the previous warning": 3500,
+	"99-import-sizes.spec.ts › a selected folder with an unknown count is still measured": 2700,
+	"99-import-sizes.spec.ts › partial source sizes do not lower the confirmation warning used when starting an import": 2900,
 	"99-message-list-panel.spec.ts › a long inbox scrolls inside the list panel instead of growing the page": 11500,
 	"99-print-pdf.spec.ts › Download PDF saves a PDF named after the subject": 5900,
 	"99-print-pdf.spec.ts › Print conversation prints every message of the thread, oldest first": 9900,
@@ -970,11 +976,5 @@
 	"99-undo-bar-placement.spec.ts › the undo-send bar › with another composer open, phone › compose page": 3600,
 	"99-undo-bar-placement.spec.ts › the undo-send bar › with another composer open, phone › docked": 5300,
 	"99-undo-bar-placement.spec.ts › the undo-send bar › with another composer open, phone › expanded": 5100,
-	"99-undo-bar-placement.spec.ts › the undo-send bar › with another composer open, phone › minimized": 5000,
-	"99-import-sizes.spec.ts › a selected folder with an unknown count is still measured": 2700,
-	"99-connected-account-mailbox.spec.ts › a retry connects to the mailbox chosen after a failed connection": 4100,
-	"99-import-sizes.spec.ts › a failed estimate refresh clears the previous warning": 3500,
-	"99-connected-account-mailbox.spec.ts › failed-connection cleanup keeps a mailbox that has received a message": 5100,
-	"99-import-sizes.spec.ts › partial source sizes do not lower the confirmation warning used when starting an import": 2900,
-	"99-import-sizes.spec.ts › a changed UIDVALIDITY discards earlier folder size totals": 5600
+	"99-undo-bar-placement.spec.ts › the undo-send bar › with another composer open, phone › minimized": 5000
 }

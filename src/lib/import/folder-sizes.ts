@@ -11,6 +11,8 @@ import {
 
 type ImapAccount = Pick<ImapImportInput, "host" | "port" | "secure" | "username" | "password">;
 type SizeEnv = Parameters<typeof openImportSession>[0];
+/** Bound the entire walk, including separate requests, when years of expunged UIDs leave a sparse folder. */
+const MAX_FOLDER_UIDS = 1_000_000;
 
 /** The folder's UID namespace and next UID, falling back to STATUS when EXAMINE omits them. */
 async function folderState(session: ImapSession, folder: string) {
@@ -53,6 +55,7 @@ export async function measureFolderStep(
 				next = null;
 				break;
 			}
+			if (uidNext - window.from > (limits.maxFolderUids ?? MAX_FOLDER_UIDS)) return null;
 			const answered = await session.fetchSizes(window.from, window.to);
 			signal?.throwIfAborted();
 			// A server answers `n:m` with the UIDs inside it, but a stray unsolicited line must not be counted.

@@ -198,3 +198,26 @@ test("a taken name is refused before anything is created, and people who may not
 		await fake.close();
 	}
 });
+
+test("a retry connects to the mailbox chosen after a failed connection", async ({ browser }) => {
+	const token = uniqueToken("retry");
+	const address = `${token}@example.test`;
+	const fake = await startFakeImap({ authPlain: true, users: { [address]: APP_PASSWORD } });
+	const { user, context, page } = await mailboxManager(browser, `rt${token.slice(-8)}`, true);
+	try {
+		const original = (await mailboxesOf(user.api))[0];
+		const dialog = await openConnectDialog(page, address, fake.port, "wrong-password");
+		await chooseOption(dialog.locator("#external-mailbox"), { label: "New mailbox for this account…" });
+		await dialog.getByRole("button", { name: "Connect" }).click();
+		await expect(dialog.getByTestId("mailbox-left-behind")).toBeVisible();
+		await chooseOption(dialog.locator("#external-mailbox"), original.id);
+		await dialog.getByLabel("Password or app password").fill(APP_PASSWORD);
+		await dialog.getByRole("button", { name: "Connect" }).click();
+		await expect(dialog).toBeHidden();
+		const { accounts } = await (await user.api.get("/api/external-accounts")).json();
+		expect(accounts[0].mailboxId).toBe(original.id);
+	} finally {
+		await context.close();
+		await fake.close();
+	}
+});

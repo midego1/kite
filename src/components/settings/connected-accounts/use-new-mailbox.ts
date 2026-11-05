@@ -53,9 +53,9 @@ export function useNewMailbox(input: {
 		problem,
 		created,
 		change: (change: Partial<NewMailboxState>) => setTyped({ localPart, domainId, edited: typed.edited, ...change }),
-		/** Creates the mailbox when "New mailbox" is chosen; the one an earlier try made otherwise. Throws when creating fails. */
+		/** Creates a mailbox only when "New mailbox" is chosen; otherwise the form's current choice is used. */
 		async ensure(): Promise<CreatedMailbox | null> {
-			if (!creating) return created;
+			if (!creating) return null;
 			const mailbox = await createAccountMailbox({ domainId, localPart });
 			setCreated(mailbox);
 			return mailbox;

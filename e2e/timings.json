@@ -971,5 +971,6 @@
 	"99-undo-bar-placement.spec.ts › the undo-send bar › with another composer open, phone › docked": 5300,
 	"99-undo-bar-placement.spec.ts › the undo-send bar › with another composer open, phone › expanded": 5100,
 	"99-undo-bar-placement.spec.ts › the undo-send bar › with another composer open, phone › minimized": 5000,
-	"99-import-sizes.spec.ts › a selected folder with an unknown count is still measured": 2700
+	"99-import-sizes.spec.ts › a selected folder with an unknown count is still measured": 2700,
+	"99-connected-account-mailbox.spec.ts › a retry connects to the mailbox chosen after a failed connection": 4100
 }

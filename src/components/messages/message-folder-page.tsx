@@ -18,8 +18,8 @@ import { useRegisterUpdateList } from "@/components/update-notice-store";
 import { useClearSelection } from "./use-clear-selection";
 import { useOpenRowBridge } from "./use-open-row-bridge";
 import { MessageListHeader } from "./message-list-header";
-import { buildListPager } from "./message-list-pager-utils";
-import { ListPagerRow, ListSectionLabel, StickyPager } from "./message-list-pager";
+import { buildListPager, isPagerShown } from "./message-list-pager-utils";
+import { ListSectionLabel, PagerSlot } from "./message-list-pager";
 import { MessageListRow } from "./message-list-row";
 import {
 	applySelection,
@@ -400,9 +400,7 @@ export function MessageFolderPage({
 		setOffset,
 		setPageCursors,
 	});
-	// The bulk toolbar replaces the header there and a page change drops the selection, so the pager waits (as it did).
-	const bulk = selectedIds.length > 0 && !compact;
-	const paged = (pager.canPrevious || pager.canNext) && !bulk;
+	const paged = isPagerShown(pager, selectedIds.length > 0 && !compact);
 
 	return (
 		<div className="flex h-full min-h-0 flex-1 flex-col" data-selection-scope="">
@@ -476,8 +474,7 @@ export function MessageFolderPage({
 					)}
 				>
 					<UpdateNoticeRow compact={(compact || isMobile) && config.folder !== "drafts"} density={density} />
-					{paged && !sections[0]?.label && <ListPagerRow pager={pager} />}
-					{paged && sections[0]?.label && <StickyPager pager={pager} />}
+					{paged && <PagerSlot pager={pager} labelled={!!sections[0]?.label} />}
 					{sections.map((section, index) => [
 						<ListSectionLabel key={`section-${section.key}`} section={section} withPager={index === 0 && paged} />,
 						...section.messages.map((message) => (

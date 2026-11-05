@@ -30,3 +30,8 @@ export function buildListPager(input: ListPagerInput): MessageListPagerState {
 		},
 	};
 }
+
+/** More than one page, and not while the bulk toolbar replaces the header (a page change drops that selection). */
+export function isPagerShown(pager: MessageListPagerState, bulk: boolean): boolean {
+	return (pager.canPrevious || pager.canNext) && !bulk;
+}

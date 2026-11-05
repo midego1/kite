@@ -48,7 +48,7 @@ function ListPager({ pager }: { pager: MessageListPagerState }) {
 const PAGER_BOX = "flex items-center bg-white px-5 text-sm text-neutral-500";
 
 /** No section label to share a row with: a slim row that stays at the top while the list scrolls. */
-export function ListPagerRow({ pager }: { pager: MessageListPagerState }) {
+function ListPagerRow({ pager }: { pager: MessageListPagerState }) {
 	return (
 		<div role="listitem" className={clsx(PAGER_BOX, "sticky top-0 z-20 h-8 justify-end")}>
 			<ListPager pager={pager} />
@@ -81,7 +81,7 @@ export function ListSectionLabel({ section, withPager }: { section: ListSection;
  * The pager of a list with a section label: a zero-height sticky anchor just above the first label whose pager
  * sits over the label row's end, then stays at the top while the list scrolls (only the pager sticks, not the label).
  */
-export function StickyPager({ pager }: { pager: MessageListPagerState }) {
+function StickyPager({ pager }: { pager: MessageListPagerState }) {
 	return (
 		<div role="listitem" className="sticky top-0 z-20 h-0">
 			<div className={clsx(PAGER_BOX, "absolute end-0 top-0 h-8 justify-end")}>
@@ -89,4 +89,9 @@ export function StickyPager({ pager }: { pager: MessageListPagerState }) {
 			</div>
 		</div>
 	);
+}
+
+/** The list's pager: floating over the first label's row when there is one, else a slim row of its own. */
+export function PagerSlot({ pager, labelled }: { pager: MessageListPagerState; labelled: boolean }) {
+	return labelled ? <StickyPager pager={pager} /> : <ListPagerRow pager={pager} />;
 }

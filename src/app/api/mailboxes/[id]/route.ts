@@ -11,7 +11,8 @@ import { syncPersonalIdentity } from "@/lib/profile/sync";
 import { updateMailboxSchema } from "@/lib/validators";
 import type { MailboxRouteParams } from "./types";
 import { getMailboxUpdateValues, selectMailboxForUser } from "./utils";
-import { deleteMailboxWithContents } from "@/lib/mailboxes/delete";
+import { deleteEmptyMailbox, deleteMailboxWithContents } from "@/lib/mailboxes/delete";
+import { mailboxInUse, mailboxInUseMessage } from "@/lib/mailboxes/unused";
 
 export async function GET(request: Request, { params }: MailboxRouteParams) {
 	const { id } = await params;
@@ -131,6 +132,14 @@ export async function DELETE(request: Request, { params }: MailboxRouteParams) {
 	}
 	if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
+	// `?onlyIfUnused=1`: for cleanup of a mailbox somebody just created, which must never take mail or an account with it.
+	// The delete itself checks in one statement, so mail that arrives at this moment is not purged either.
+	const onlyIfUnused = new URL(request.url).searchParams.get("onlyIfUnused") === "1";
+	if (onlyIfUnused && !(await deleteEmptyMailbox(env, id))) {
+		const inUse = (await mailboxInUse(db, id)) ?? "messages";
+		return NextResponse.json({ error: mailboxInUseMessage(inUse), code: "MAILBOX_IN_USE" }, { status: 409 });
+	}
+
 	try {
 		await removeMailboxDomainRouting(env, db, {
 			id: mailbox.id,
@@ -143,6 +152,7 @@ export async function DELETE(request: Request, { params }: MailboxRouteParams) {
 		return NextResponse.json({ error: message }, { status: 502 });
 	}
 
+	if (onlyIfUnused) return NextResponse.json({ ok: true });
 	const result = await deleteMailboxWithContents(env, id);
 	return NextResponse.json({ ok: true, ...result });
 }

@@ -4,12 +4,27 @@ import { type DatabaseUseLevel, databaseUseLevel } from "@/lib/db/size-utils";
 const DEFAULT_DATABASE_BYTES_PER_MESSAGE = 40_000;
 /** An install needs this many messages before its own average is trusted. */
 const MIN_MESSAGES_FOR_AVERAGE = 1000;
+/** What a message adds to D1 at least, however small: its row, headers, snippet and full-text index entries. */
+const MIN_DATABASE_BYTES_PER_MESSAGE = 2048;
 /** The most D1 one imported message is assumed to add. */
 const MAX_DATABASE_BYTES_PER_MESSAGE = 128 * 1024;
 /** The same, once HTML bodies over 16 KB are kept in the mail store instead of D1. */
 const MAX_DATABASE_BYTES_PER_MESSAGE_OFFLOADED = 24 * 1024;
-/** Raw MIME plus the decoded attachment copy (1.0 once attachments are stored once). */
-const MAIL_STORE_FACTOR = 1.75;
+/**
+ * Mail store bytes per byte of source mail, as a lower bound: the raw message is written once (`imports/<id>.eml`) and its
+ * verified attachments are 'raw' rows pointing into it, with no decoded copy (`docs/specs/attachments-once.md`). Two
+ * things add to it and are not counted, because they depend on the mail and nothing here measures them: an attachment the
+ * MIME index cannot verify (quoted-printable, uuencode, bytes that do not match a raw part) is stored decoded as before, and
+ * a body offloaded to the mail store (HTML over 16 KB, when body offload is on) adds its decoded HTML as one more object.
+ * @public Exercised by the unit tests.
+ */
+export const MAIL_STORE_FACTOR = 1;
+/**
+ * The same with `ATTACHMENT_RAW_INDEX=off`: every attachment is stored again, decoded. The spec measured 1.51 GB per GB
+ * of mail, assuming attachments are 70% of the raw bytes and base64 decodes to 0.731 of its size.
+ * @public Exercised by the unit tests.
+ */
+export const MAIL_STORE_FACTOR_WITHOUT_RAW_INDEX = 1.51;
 
 export type ImportEstimateInput = {
 	/** Messages the import will read; null while the source cannot say. */
@@ -21,6 +36,8 @@ export type ImportEstimateInput = {
 	/** `count(messages)` of the install, for its own average. */
 	installMessageCount: number;
 	bodyOffload?: boolean;
+	/** `ATTACHMENT_RAW_INDEX` is on (the default): attachments live inside the raw message and are not stored again. */
+	rawIndex?: boolean;
 };
 
 export type ImportEstimate = {
@@ -52,8 +69,9 @@ export function estimateImport(input: ImportEstimateInput): ImportEstimate {
 	const rawBytes = input.rawBytes !== null && input.rawBytes >= 0 ? Math.floor(input.rawBytes) : null;
 	const cap = input.bodyOffload ? MAX_DATABASE_BYTES_PER_MESSAGE_OFFLOADED : MAX_DATABASE_BYTES_PER_MESSAGE;
 	let perMessage = Math.min(averageDatabaseBytesPerMessage(input.usedBytes, input.installMessageCount), cap);
-	// A message cannot add more than it weighs; the totals give the average weight.
-	if (messages && rawBytes !== null) perMessage = Math.min(perMessage, rawBytes / messages);
+	// A message cannot add more than it weighs, but never less than its row costs; the totals give the average weight.
+	if (messages && rawBytes !== null)
+		perMessage = Math.min(perMessage, Math.max(rawBytes / messages, MIN_DATABASE_BYTES_PER_MESSAGE));
 	const databaseAddBytes = messages ? Math.round(messages * perMessage) : 0;
 	const projectedBytes = input.usedBytes + databaseAddBytes;
 	const currentLevel = databaseUseLevel(input.usedBytes, input.limitBytes);
@@ -61,7 +79,10 @@ export function estimateImport(input: ImportEstimateInput): ImportEstimate {
 	return {
 		messages,
 		rawBytes,
-		mailStoreBytes: rawBytes === null ? null : Math.round(rawBytes * MAIL_STORE_FACTOR),
+		mailStoreBytes:
+			rawBytes === null
+				? null
+				: Math.round(rawBytes * (input.rawIndex === false ? MAIL_STORE_FACTOR_WITHOUT_RAW_INDEX : MAIL_STORE_FACTOR)),
 		databaseBytesPerMessage: Math.round(perMessage),
 		databaseAddBytes,
 		usedBytes: input.usedBytes,
@@ -87,4 +108,48 @@ export function describeImportEstimate(
 		summary: `About ${count}${mail}. Adds about ${format(estimate.databaseAddBytes)} to the database (now ${now})${store}.`,
 		level: estimate.projectedLevel,
 	};
+}
+
+/** How well the source's size is known: summed from the server's own totals, extrapolated from part of it, or not at all. */
+export type SourceSizeKind = "exact" | "estimated" | "unknown";
+
+export type ImportTotalRow = { key: "messages" | "source" | "mail-store" | "database"; label: string; value: string };
+
+/**
+ * The always-visible totals of an import: messages, source size, and what the import adds to the mail store and to the
+ * database. A size that is only an estimate says so; sums are upper bounds either way, because mail that is already in
+ * Kite or sits in several folders is copied once (the page says that next to the rows). `estimate` is null while the
+ * server could not read the database size: the mail store and database rows then wait.
+ */
+export function importTotalRows(
+	totals: { messages: number | null; rawBytes: number | null },
+	estimate: ImportEstimate | null,
+	format: (bytes: number) => string,
+	sourceSize: SourceSizeKind,
+): ImportTotalRow[] {
+	const about = sourceSize === "exact" ? "" : "about ";
+	const known = totals.rawBytes !== null && sourceSize !== "unknown";
+	const rows: ImportTotalRow[] = [];
+	if (totals.messages !== null)
+		rows.push({ key: "messages", label: "Messages", value: totals.messages.toLocaleString("en-US") });
+	rows.push({
+		key: "source",
+		label: "Size at the source",
+		value: known
+			? `${about}${format(totals.rawBytes!)}${sourceSize === "estimated" ? " (estimate)" : ""}`
+			: "Not known yet",
+	});
+	if (estimate?.mailStoreBytes != null && known)
+		rows.push({
+			key: "mail-store",
+			label: "Adds to mail storage",
+			value: `${about}${format(estimate.mailStoreBytes)}`,
+		});
+	if (estimate?.messages)
+		rows.push({
+			key: "database",
+			label: "Adds to the database",
+			value: `about ${format(estimate.databaseAddBytes)} (now ${format(estimate.usedBytes)}${estimate.limitBytes ? ` of ${format(estimate.limitBytes)}` : ""})`,
+		});
+	return rows;
 }

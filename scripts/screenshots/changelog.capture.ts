@@ -4,6 +4,7 @@ import { expect, test, type Browser, type Locator, type Page } from "@playwright
 import sharp from "sharp";
 import { STORAGE_STATE } from "../../e2e/support/constants";
 import { RTL_MAIL, seedDemoData, seedPagedMail, seedRtlMail, THREAD } from "./demo-data";
+import { sampleMessage, startFakeImap } from "../../tests/support/fake-imap.mjs";
 
 // Screenshots for the changelog (docs/releasing.md#screenshots-in-the-changelog), taken against the isolated,
 // seeded e2e server, so only invented demo data appears. They land in public/changelog/<name>.webp, ready for a
@@ -26,7 +27,71 @@ type Shot = {
 	open: (page: Page) => Promise<Locator | Page>;
 };
 
+/** Demo mail source for the import screenshot: a fake IMAP server on 127.0.0.1 with invented folders and sizes. */
+let demoImap: Awaited<ReturnType<typeof startFakeImap>> | null = null;
+const demoFolder = (count: number, bytes: number, label: string) =>
+	Array.from({ length: count }, (_, index) => ({ raw: sampleMessage(index + 1, { subject: `${label} ${index + 1}` }), size: bytes }));
+
 const SHOTS: Shot[] = [
+	{
+		// Settings → Import → IMAP → Whole account: each folder's size and the totals the import adds.
+		name: "2026-11-05-import-sizes-light",
+		theme: "light",
+		viewport: { width: 1500, height: 1000 },
+		open: async (page) => {
+			demoImap ??= await startFakeImap({
+				authPlain: true,
+				folders: {
+					INBOX: demoFolder(480, 38_000, "Inbox"),
+					Sent: demoFolder(120, 21_000, "Sent"),
+					"Projects/Receipts": demoFolder(64, 52_000, "Receipt"),
+				},
+			});
+			await page.goto("/settings/import");
+			await page.locator("#import-source").click();
+			await page.getByRole("option", { name: "IMAP", exact: true }).click();
+			await page.locator("#imap-security").click();
+			await page.getByRole("option", { name: "STARTTLS (port 143)" }).click();
+			await page.locator("#imap-host").fill("127.0.0.1");
+			await page.locator("#imap-port").fill(String(demoImap.port));
+			await page.locator("#imap-username").fill("user@example.test");
+			await page.locator("#imap-password").fill("app-password");
+			await page.getByRole("button", { name: "Show folders" }).click();
+			const table = page.getByRole("table", { name: "Folders to import" });
+			await expect(table.locator("tbody tr")).toHaveCount(3);
+			await expect(table.locator('[data-size="exact"]')).toHaveCount(3);
+			const totals = page.getByTestId("import-size-total");
+			await expect(totals.locator('[data-total="database"]')).toBeVisible();
+			// Only the folder table and the totals are the subject: hide the sign-in fields.
+			await page.evaluate(() => {
+				const hide = (selector: string, ancestor: string) =>
+					document.querySelector<HTMLElement>(selector)?.closest<HTMLElement>(ancestor)?.style.setProperty("display", "none");
+				hide("#imap-host", "div.grid");
+				hide("#imap-username", "div.grid");
+				hide("#imap-security", "div.space-y-2");
+				hide("#imap-mode", "div.space-y-2");
+			});
+			return page.locator("form").filter({ has: table });
+		},
+	},
+	{
+		// Settings → Connected accounts → Connect account: Mail goes to → New mailbox for this account.
+		name: "2026-11-05-new-mailbox-light",
+		theme: "light",
+		viewport: { width: 900, height: 1000 },
+		open: async (page) => {
+			await page.goto("/settings/connected-accounts");
+			await page.getByRole("button", { name: "Connect account" }).click();
+			const dialog = page.getByRole("dialog", { name: "Connect an account" });
+			await dialog.getByLabel("Email address").fill("jane.demo@example.test");
+			await dialog.getByLabel("Email address").blur();
+			await dialog.locator("#external-mailbox").click();
+			await page.getByRole("option", { name: "New mailbox for this account…" }).click();
+			await expect(dialog.getByLabel("Mailbox name")).toHaveValue("jane.demo-example");
+			return dialog;
+		},
+	},
+
 	{
 		name: "2026-11-02-mobile-tab-bar-light",
 		theme: "light",
@@ -280,6 +345,10 @@ async function toWebp(png: Buffer): Promise<Buffer> {
 test.describe("changelog screenshots", () => {
 	test.skip(!RECORD, "Set KITE_CHANGELOG_SHOTS=1 (npm run changelog:screenshot) to take them");
 	test.beforeAll(seedDemoData);
+	test.afterAll(async () => {
+		await demoImap?.close();
+		demoImap = null;
+	});
 
 	for (const shot of SHOTS) {
 		test(shot.name, async ({ browser }) => {

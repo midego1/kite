@@ -47,7 +47,7 @@ export function ConnectedAccountsSettings() {
 		refetchInterval: (query) => (query.state.data?.accounts.some((account) => account.sync.running) ? 3_000 : 60_000),
 	});
 	const [editing, setEditing] = useState<Editing>(null);
-	const [notice, setNotice] = useState<{ text: string; accountId?: string } | null>(null);
+	const [notice, setNotice] = useState<{ text: string; accountId?: string; tone?: "success" | "warning" } | null>(null);
 	const refresh = () => {
 		// The composer's From menu lists connected addresses, so the mailbox list follows every change here.
 		window.dispatchEvent(new Event(MAILBOXES_CHANGED_EVENT));
@@ -83,7 +83,7 @@ export function ConnectedAccountsSettings() {
 					{error.message}
 				</p>
 			)}
-			{notice && <ConnectedNotice text={notice.text} accountId={notice.accountId} />}
+			{notice && <ConnectedNotice text={notice.text} accountId={notice.accountId} tone={notice.tone} />}
 			{data && <AccountList data={data} onEdit={(account) => setEditing({ account })} onChanged={refresh} />}
 			<ForwardingGuide ref={guide} provider={forwarding} onProviderChange={setForwarding} />
 			{editing && data && (
@@ -93,10 +93,21 @@ export function ConnectedAccountsSettings() {
 					account={editing.account}
 					presets={data.presets}
 					onForwardInstead={showForwarding}
-					onSaved={(account, connected) => {
+					onMailboxLeftBehind={(address) => {
+						setNotice({
+							text: `Kite created the mailbox ${address}, but no account is connected to it. You can still use it, or delete it in Settings → Mailboxes.`,
+							tone: "warning",
+						});
+						void refresh();
+					}}
+					onSaved={(account, connected, unusedMailbox) => {
 						setEditing(null);
 						setNotice({
-							text: connected ? `Connected ${account.address}.` : `Saved ${account.address}.`,
+							text:
+								(connected ? `Connected ${account.address}.` : `Saved ${account.address}.`) +
+								(unusedMailbox
+									? ` Kite had created the mailbox ${unusedMailbox} for this try; it is not used, and you can delete it in Settings → Mailboxes.`
+									: ""),
 							accountId: connected ? account.id : undefined,
 						});
 						void refresh();
@@ -107,10 +118,18 @@ export function ConnectedAccountsSettings() {
 	);
 }
 
-function ConnectedNotice({ text, accountId }: { text: string; accountId?: string }) {
+function ConnectedNotice({
+	text,
+	accountId,
+	tone = "success",
+}: {
+	text: string;
+	accountId?: string;
+	tone?: "success" | "warning";
+}) {
 	const { isEnabled } = useModules();
 	return (
-		<Notice tone="success">
+		<Notice tone={tone}>
 			{text}
 			{accountId && isEnabled("import") && (
 				<>

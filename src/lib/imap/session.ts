@@ -37,6 +37,12 @@ export type ImapSession = {
 	 * `n`; the caller drops what it has seen.
 	 */
 	fetchSummaries(fromUid: number, toUid?: number | null): Promise<ImapMessageSummary[]>;
+	/**
+	 * UID and size only (`FETCH n:m (UID RFC822.SIZE)`, no bodies) of the open folder's messages with sequence numbers
+	 * from `fromSeq` to `toSeq`: about 40 bytes of answer per message, which is how an import measures a folder whose
+	 * server has no STATUS=SIZE.
+	 */
+	fetchSizes(fromSeq: number, toSeq: number): Promise<ImapMessageSummary[]>;
 	fetchMessages(uids: string[], options?: { gmailLabels?: boolean }): Promise<Map<string, ImapFetchedMessage>>;
 	listMailboxNames(): Promise<string[]>;
 	/**
@@ -63,15 +69,21 @@ type ImapEnv = Parameters<typeof openMailSocket>[0];
 export async function openImapSession(
 	env: ImapEnv,
 	login: ImapLogin,
-	options: ImapConnectionOptions = {},
+	options: ImapConnectionOptions & { signal?: AbortSignal } = {},
 ): Promise<ImapSession> {
+	const { signal, ...limits } = options;
+	signal?.throwIfAborted();
 	const socket = await openMailSocket(env, login, IMAP_PORTS);
-	const imap = new ImapConnection(socket, { ...imapLimits(env.KITE_RUNTIME), ...options });
+	const imap = new ImapConnection(socket, { ...imapLimits(env.KITE_RUNTIME), ...limits });
+	const abort = () => void imap.close().catch(() => undefined);
+	signal?.addEventListener("abort", abort, { once: true });
 	try {
+		signal?.throwIfAborted();
 		await signIn(imap, login, allowsPlainText(login.host, mailHostPolicy(env, process.env.NODE_ENV)));
 		// Servers announce more after sign-in (Gmail's X-GM-EXT-1, SPECIAL-USE), and not always in the OK.
 		await imap.capability();
 	} catch (error) {
+		signal?.removeEventListener("abort", abort);
 		await imap.close();
 		throw error;
 	}
@@ -95,6 +107,12 @@ export async function openImapSession(
 			const from = Math.max(1, Math.floor(fromUid));
 			const to = toUid === null ? "*" : Math.max(from, Math.floor(toUid));
 			const lines = await imap.command(`UID FETCH ${from}:${to} (UID FLAGS INTERNALDATE RFC822.SIZE)`);
+			return parseFetchSummaries(lines);
+		},
+		async fetchSizes(fromSeq, toSeq) {
+			const from = Math.max(1, Math.floor(fromSeq));
+			const to = Math.max(from, Math.floor(toSeq));
+			const lines = await imap.command(`FETCH ${from}:${to} (UID RFC822.SIZE)`);
 			return parseFetchSummaries(lines);
 		},
 		fetchMessages: (uids, options) => imap.fetchMessages(uids, options),
@@ -124,7 +142,8 @@ export async function openImapSession(
 			return Array.from(new Set(lines.map(parseListMailboxName).filter((name): name is string => !!name)));
 		},
 		async close() {
-			await imap.command("LOGOUT").catch(() => undefined);
+			signal?.removeEventListener("abort", abort);
+			if (!signal?.aborted) await imap.command("LOGOUT").catch(() => undefined);
 			await imap.close();
 		},
 	};

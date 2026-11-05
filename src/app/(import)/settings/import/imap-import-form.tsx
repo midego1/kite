@@ -1,7 +1,7 @@
 "use client";
 
 import type { FormEvent } from "react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { Upload } from "lucide-react";
@@ -12,7 +12,17 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { ImportSizeNotice } from "@/components/settings/import-size-notice";
 import { AccountMappingTable } from "./account-mapping-table";
-import type { AccountPlan, ImapFormState, ImapImportMode, ImportFolderSummary, ImportSourceAccount } from "./types";
+import { useAccountMailbox } from "./use-account-mailbox";
+import { sizeNoticeProps, withMeasuredBytes } from "./size-utils";
+import { useFolderSizes } from "./use-folder-sizes";
+import type {
+	AccountPlan,
+	FolderSizeState,
+	ImapFormState,
+	ImapImportMode,
+	ImportFolderSummary,
+	ImportSourceAccount,
+} from "./types";
 import {
 	adoptExistingFolders,
 	canSubmitImap,
@@ -23,8 +33,11 @@ import {
 	fetchImportSourceAccounts,
 	fetchMailboxFolders,
 	hasImapSource,
+	includedFolderCount,
+	mailboxAddressOf,
+	imapAccountBody,
 	imapSecurityValue,
-	plannedMessageCount,
+	planIsStale,
 	systemDestinations,
 	withImapSecurity,
 } from "./utils";
@@ -58,7 +71,13 @@ export function ImapImportForm({ mailboxId, onStarted }: { mailboxId: string | n
 		queryFn: fetchImportSourceAccounts,
 		refetchOnWindowFocus: false,
 	});
+	const { mailboxes, intoAccountMailbox } = useAccountMailbox(accountParam, sourceAccounts, mailboxId);
 	const [plan, setPlan] = useState<AccountPlan | null>(null);
+	// The login the plan was read with, kept for measuring sizes; it changes only when the folders are read again.
+	const [source, setSource] = useState<{ key: number; body: Record<string, unknown> } | null>(null);
+	const sourceCounter = useRef(0);
+	// Counts reads of the folders and changes of account; a read that finishes after the account changed is dropped.
+	const planRequest = useRef(0);
 	const [kiteFolders, setKiteFolders] = useState<ImportFolderSummary[]>([]);
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState<string | null>(null);
@@ -66,16 +85,15 @@ export function ImapImportForm({ mailboxId, onStarted }: { mailboxId: string | n
 	const [sizeConfirmRequired, setSizeConfirmRequired] = useState(false);
 	const [importAnyway, setImportAnyway] = useState(false);
 	const account = form.mode === "account";
+	const target = mailboxAddressOf(mailboxes, mailboxId);
 
 	function setForm(next: ImapFormState) {
 		// A plan belongs to the account it was read from.
-		if (
-			next.accountId !== form.accountId ||
-			next.host !== form.host ||
-			next.username !== form.username ||
-			next.port !== form.port
-		)
+		if (planIsStale(form, next)) {
+			planRequest.current += 1;
 			setPlan(null);
+			setSource(null);
+		}
 		setFormState(next);
 	}
 
@@ -95,8 +113,11 @@ export function ImapImportForm({ mailboxId, onStarted }: { mailboxId: string | n
 	const loadPlan = () =>
 		run(async () => {
 			if (!mailboxId) throw new Error("Select a mailbox first");
+			const ticket = (planRequest.current += 1);
 			const [loaded, folders] = await Promise.all([fetchAccountPlan(form), fetchMailboxFolders(mailboxId)]);
+			if (ticket !== planRequest.current) return;
 			setKiteFolders(folders);
+			setSource({ key: (sourceCounter.current += 1), body: imapAccountBody(form) });
 			setPlan(adoptExistingFolders(loaded, folders));
 		});
 
@@ -104,21 +125,25 @@ export function ImapImportForm({ mailboxId, onStarted }: { mailboxId: string | n
 		event.preventDefault();
 		if (!mailboxId) return;
 		void run(async () => {
-			if (account && plan) await createAccountImportJob(mailboxId, form, plan.folders, importAnyway);
+			if (account && plan)
+				await createAccountImportJob(mailboxId, form, withMeasuredBytes(plan.folders, sizes), importAnyway);
 			else await createImapImportJob(mailboxId, form, form.destination, form.folder, importAnyway);
 			setStarted(account ? "Started the import of the account." : `Started the import of ${form.folder}.`);
 			setPlan(null);
+			setSource(null);
 			setFormState((current) => ({ ...current, password: "" }));
 			onStarted();
 		});
 	}
 
-	const messages = account ? (plan ? plannedMessageCount(plan.folders) : null) : estimatedImapMessages(form, 1);
+	// Only the whole-account table is measured; switching to One folder stops it.
+	const { sizes, totals } = useFolderSizes(source, account ? plan : null);
+	const messages = account ? (totals?.messages ?? null) : estimatedImapMessages(form, 1);
 	const canSubmit =
 		canSubmitImap({
 			form,
 			hasMailbox: !!mailboxId,
-			sources: account ? (plan?.folders.filter((folder) => folder.include).length ?? 0) : 1,
+			sources: account ? includedFolderCount(plan) : 1,
 			loading,
 			blockedBySize: sizeConfirmRequired && !importAnyway,
 		}) &&
@@ -126,13 +151,26 @@ export function ImapImportForm({ mailboxId, onStarted }: { mailboxId: string | n
 
 	return (
 		<form onSubmit={onSubmit} className="space-y-4">
+			{target && (
+				<p className="text-sm text-neutral-700" data-testid="import-target">
+					The mail is imported into <span className="font-medium">{target}</span>.
+				</p>
+			)}
 			<ModeSelect form={form} setForm={setForm} />
-			<SourceSelect form={form} setForm={setForm} accounts={sourceAccounts} />
+			<SourceSelect
+				form={form}
+				setForm={(next) => {
+					if (next.accountId && next.accountId !== form.accountId) intoAccountMailbox(next.accountId);
+					setForm(next);
+				}}
+				accounts={sourceAccounts}
+			/>
 			{!form.accountId && <CredentialFields form={form} setForm={setForm} />}
 			{account ? (
 				<AccountFields
 					plan={plan}
 					kiteFolders={kiteFolders}
+					sizes={sizes}
 					loading={loading}
 					canLoad={hasImapSource(form) && !!mailboxId}
 					onLoad={() => void loadPlan()}
@@ -142,7 +180,7 @@ export function ImapImportForm({ mailboxId, onStarted }: { mailboxId: string | n
 				<FolderFields form={form} setForm={setForm} />
 			)}
 			<ImportSizeNotice
-				messages={messages}
+				{...sizeNoticeProps(totals, plan, messages)}
 				importAnyway={importAnyway}
 				onImportAnywayChange={setImportAnyway}
 				onRequiresConfirmation={setSizeConfirmRequired}
@@ -315,6 +353,7 @@ function FolderFields({ form, setForm }: FormProps) {
 function AccountFields(props: {
 	plan: AccountPlan | null;
 	kiteFolders: ImportFolderSummary[];
+	sizes: Record<string, FolderSizeState>;
 	loading: boolean;
 	canLoad: boolean;
 	onLoad: () => void;
@@ -331,7 +370,12 @@ function AccountFields(props: {
 				{props.plan ? "Read folders again" : "Show folders"}
 			</Button>
 			{props.plan && (
-				<AccountMappingTable plan={props.plan} kiteFolders={props.kiteFolders} onChange={props.onChange} />
+				<AccountMappingTable
+					plan={props.plan}
+					kiteFolders={props.kiteFolders}
+					sizes={props.sizes}
+					onChange={props.onChange}
+				/>
 			)}
 		</div>
 	);

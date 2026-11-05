@@ -13,7 +13,6 @@ import type {
 	ImportSourceOption,
 	ImportSourceSection,
 } from "./types";
-import { isolateDirection } from "@/lib/bidi-utils";
 
 export const importSourceOptions: ImportSourceOption[] = [
 	{ value: "inbox", label: "Inbox", imapFolder: "INBOX", destination: "system:inbox", system: true },
@@ -228,7 +227,7 @@ export async function fetchAccountPlan(form: ImapFormState): Promise<AccountPlan
 }
 
 /** The source of a request: a connected account by id, or the server and password typed into the form. */
-function imapAccountBody(form: ImapFormState) {
+export function imapAccountBody(form: ImapFormState) {
 	if (form.accountId) return { accountId: form.accountId };
 	return {
 		host: form.host,
@@ -264,22 +263,6 @@ export async function pauseImportJob(id: string): Promise<void> {
 	}
 }
 
-/** Messages the ticked rows hold, or null while any of them is unknown (for the size estimate). */
-export function plannedMessageCount(folders: AccountPlanFolder[]): number | null {
-	const included = folders.filter((folder) => folder.include);
-	if (!included.length) return 0;
-	return included.every((folder) => folder.messages !== null)
-		? included.reduce((sum, folder) => sum + (folder.messages ?? 0), 0)
-		: null;
-}
-
-export function formatPlannedBytes(bytes: number | null): string {
-	if (bytes === null) return "—";
-	if (bytes < 1024 * 1024) return isolateDirection(`${Math.max(1, Math.round(bytes / 1024))} KB`);
-	if (bytes < 1024 * 1024 * 1024) return isolateDirection(`${(bytes / (1024 * 1024)).toFixed(1)} MB`);
-	return isolateDirection(`${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`);
-}
-
 /** Where a job's folder went, in words for the jobs list. */
 export function describeJobDestination(folder: Pick<ImportJobFolder, "destination" | "destinationName">): string {
 	if (folder.destination === "gmail:labels") return "By Gmail label";
@@ -313,5 +296,31 @@ export async function fetchImportSourceAccounts(): Promise<ImportSourceAccount[]
 	if (data.refusal || !Array.isArray(data.accounts)) return [];
 	return data.accounts
 		.filter((account) => account.status === "active")
-		.map((account) => ({ id: account.id, address: account.address, label: account.label }));
+		.map((account) => ({
+			id: account.id,
+			address: account.address,
+			label: account.label,
+			mailboxId: account.mailboxId,
+		}));
+}
+
+/** A plan belongs to the account it was read from: another account, server, user name or port makes it stale. */
+export function planIsStale(previous: ImapFormState, next: ImapFormState): boolean {
+	return (
+		next.accountId !== previous.accountId ||
+		next.host !== previous.host ||
+		next.username !== previous.username ||
+		next.port !== previous.port
+	);
+}
+
+/** How many folders the mapping table has ticked. */
+export function includedFolderCount(plan: AccountPlan | null): number {
+	return plan?.folders.filter((folder) => folder.include).length ?? 0;
+}
+
+/** The address of the mailbox with this id (`name@host`), or null. */
+export function mailboxAddressOf(mailboxes: { id: string; localPart: string; hostname: string }[], id: string | null) {
+	const found = mailboxes.find((mailbox) => mailbox.id === id);
+	return found ? `${found.localPart}@${found.hostname}` : null;
 }

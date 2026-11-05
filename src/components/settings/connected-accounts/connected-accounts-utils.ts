@@ -85,7 +85,7 @@ function accountRequestBody(form: AccountFormState) {
 	};
 }
 
-export async function connectAccount(form: AccountFormState): Promise<ExternalAccountView> {
+async function connectAccount(form: AccountFormState): Promise<ExternalAccountView> {
 	const response = await authFetch("/api/external-accounts", {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
@@ -94,7 +94,7 @@ export async function connectAccount(form: AccountFormState): Promise<ExternalAc
 	return (await readJson<{ account: ExternalAccountView }>(response, "Could not connect the account")).account;
 }
 
-export async function updateAccount(id: string, form: AccountFormState): Promise<ExternalAccountView> {
+async function updateAccount(id: string, form: AccountFormState): Promise<ExternalAccountView> {
 	const response = await authFetch(`/api/external-accounts/${encodeURIComponent(id)}`, {
 		method: "PATCH",
 		headers: { "Content-Type": "application/json" },
@@ -248,4 +248,16 @@ export function sendingText(account: Pick<ExternalAccountView, "address" | "send
 		default:
 			return "Reconnect the account to send from this address.";
 	}
+}
+
+/** The dialog's submit button: what it is doing while it works (creating a mailbox, then testing the connection). */
+export function submitLabel(saving: "mailbox" | "account" | "delete" | null, editing: boolean): string {
+	if (saving === "mailbox") return "Creating the mailbox…";
+	if (saving === "account") return "Testing the connection…";
+	return editing ? "Save" : "Connect";
+}
+
+/** Saves the dialog: an edit of `account`, or a new connection. */
+export function saveAccount(account: ExternalAccountView | null, form: AccountFormState): Promise<ExternalAccountView> {
+	return account ? updateAccount(account.id, form) : connectAccount(form);
 }

@@ -30,7 +30,7 @@ import { createServer as createTlsServer, TLSSocket } from "node:tls";
  *   STARTTLS, then no handshake), `secondChallenge` (a second `+` during AUTHENTICATE PLAIN), `untaggedFlood` (CAPABILITY answered by
  *   an endless stream of untagged lines of that many bytes each).
  * - `omitUidNext`: EXAMINE names no UIDNEXT. `strictEmptyFetch`: UID FETCH in an empty folder is answered BAD.
- * - `folders`: `{ [name]: [message, …] }`, each a raw message or `{ raw, flags, internalDate, size, unfetchable,
+ * - `folders`: `{ [name]: [message, …] }`, each a raw message or `{ raw, flags, internalDate, size, uid, unfetchable,
  *   vanishes }` (an IMAP date-time string; `size: null` leaves RFC822.SIZE out; an `unfetchable` message makes a
  *   FETCH of its body answer NO after the others, as Gmail does; a `vanishes` one is left out of body FETCHes, as if
  *   expunged meanwhile); UIDs count up from 1 per folder. FETCH reports `FLAGS`, `INTERNALDATE` and `RFC822.SIZE` before the
@@ -53,7 +53,11 @@ export async function startFakeImap(options = {}) {
 	function addMessage(folder, message) {
 		if (!folders.has(folder)) folders.set(folder, { nextUid: 1, uidValidity: 1, messages: [] });
 		const entry = folders.get(folder);
-		const uid = entry.nextUid++;
+		// A message may name its own UID (a mailbox whose earlier mail was expunged): UIDNEXT follows it.
+		const named = typeof message === "object" && !Buffer.isBuffer(message) ? message.uid : undefined;
+		if (named !== undefined) entry.nextUid = Math.max(entry.nextUid, named);
+		const uid = named ?? entry.nextUid;
+		entry.nextUid = uid + 1;
 		const {
 			raw,
 			flags = [],
@@ -285,21 +289,34 @@ export async function startFakeImap(options = {}) {
 						set,
 						entry.messages.map((message) => message.uid),
 					);
-					if (options.hugeLiteral) return send(`* 1 FETCH (UID 1 BODY[] {4000000000}\r\n${"x".repeat(1000)}`);
-					if (options.fetchGate) {
-						const gate = typeof options.fetchGate === "function" ? options.fetchGate(fetches++) : options.fetchGate;
-						gate.then(() => !state.socket.destroyed && respondFetch(tag, args, entry, wanted));
-						return;
-					}
-					if (options.fetchDelayMs) {
-						const later = () => respondFetch(tag, args, entry, wanted);
-						setTimeout(() => !state.socket.destroyed && later(), options.fetchDelayMs);
-						return;
-					}
-					return respondFetch(tag, args, entry, wanted);
+					return answerFetch(tag, args, entry, wanted);
 				}
 			}
+			if (name === "FETCH" && entry) {
+				// By sequence number (`FETCH n:m (…)`): the nth message of the folder, as UIDs for the shared answer.
+				const [set] = args.split(" ");
+				const numbers = uidSet(
+					set,
+					entry.messages.map((_, index) => index + 1),
+				);
+				return answerFetch(tag, args, entry, new Set([...numbers].map((number) => entry.messages[number - 1].uid)));
+			}
 			return send(`${tag} BAD unknown command\r\n`);
+		}
+
+		function answerFetch(tag, args, entry, wanted) {
+			if (options.hugeLiteral) return send(`* 1 FETCH (UID 1 BODY[] {4000000000}\r\n${"x".repeat(1000)}`);
+			if (options.fetchGate) {
+				const gate = typeof options.fetchGate === "function" ? options.fetchGate(fetches++) : options.fetchGate;
+				gate.then(() => !state.socket.destroyed && respondFetch(tag, args, entry, wanted));
+				return;
+			}
+			if (options.fetchDelayMs) {
+				const later = () => respondFetch(tag, args, entry, wanted);
+				setTimeout(() => !state.socket.destroyed && later(), options.fetchDelayMs);
+				return;
+			}
+			return respondFetch(tag, args, entry, wanted);
 		}
 
 		function respondFetch(tag, args, entry, wanted) {

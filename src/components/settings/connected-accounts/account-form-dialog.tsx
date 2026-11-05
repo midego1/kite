@@ -12,14 +12,17 @@ import { Select } from "@/components/ui/select";
 import type { ExternalAccountView } from "@/lib/external-accounts/types";
 import type { AccountFormState, PresetOption } from "./connected-accounts-types";
 import { forwardingProviderFor, type ForwardingProviderId } from "./forwarding-guide-utils";
+import { MailboxField, MailboxLeftBehind } from "./account-mailbox-field";
+import { chosenMailboxId, errorText, firstId, NEW_MAILBOX_VALUE, unusedMailboxAddress } from "./new-mailbox-utils";
+import { useNewMailbox } from "./use-new-mailbox";
 import {
 	accountForm,
 	canSubmitAccountForm,
-	connectAccount,
+	submitLabel,
 	detectProvider,
 	emptyAccountForm,
 	SYNC_INTERVAL_OPTIONS,
-	updateAccount,
+	saveAccount,
 } from "./connected-accounts-utils";
 
 type FieldsProps = { form: AccountFormState; setForm: (form: AccountFormState) => void };
@@ -37,6 +40,7 @@ export function AccountFormDialog({
 	presets,
 	onSaved,
 	onForwardInstead,
+	onMailboxLeftBehind,
 }: {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
@@ -44,20 +48,47 @@ export function AccountFormDialog({
 	presets: PresetOption[];
 	/** Closes the dialog and opens the forwarding guide at this provider (where connecting is not possible). */
 	onForwardInstead?: (provider: ForwardingProviderId) => void;
-	onSaved: (account: ExternalAccountView, connected: boolean) => void;
+	/** `unusedMailbox`: the address of a mailbox Kite created for this try that the account was not connected to. */
+	onSaved: (account: ExternalAccountView, connected: boolean, unusedMailbox?: string) => void;
+	/** The dialog closed with a mailbox it created but no account connected to it (the address of that mailbox). */
+	onMailboxLeftBehind?: (address: string) => void;
 }) {
-	const { mailboxes, selectedMailbox } = useSelectedMailbox();
+	const { mailboxes, selectedMailbox, isLoading } = useSelectedMailbox();
 	const managed = mailboxes.filter((mailbox) => (mailbox.permission ?? "full_access") === "full_access");
 	const [draft, setForm] = useState<AccountFormState>(() =>
-		account ? accountForm(account) : emptyAccountForm(selectedMailbox?.id ?? managed[0]?.id ?? ""),
+		account ? accountForm(account) : emptyAccountForm(firstId(selectedMailbox?.id, managed[0]?.id)),
 	);
 	// The mailboxes may arrive after the dialog opened; until one is chosen, the first one the user manages is used.
-	const form = draft.mailboxId ? draft : { ...draft, mailboxId: managed[0]?.id ?? "" };
-	const [saving, setSaving] = useState(false);
+	const chosenId = firstId(draft.mailboxId, managed[0]?.id);
+	const [saving, setSaving] = useState<"mailbox" | "account" | "delete" | null>(null);
 	const [error, setError] = useState<string | null>(null);
+	// With no mailbox to choose from (a new account of someone who may create mailboxes) the new mailbox is the choice.
+	const fresh = useNewMailbox({
+		editing: !!account,
+		address: draft.address,
+		mailboxId: chosenId || (isLoading ? "" : NEW_MAILBOX_VALUE),
+		mailboxes,
+	});
+	const form = {
+		...draft,
+		mailboxId: chosenMailboxId({
+			chosen: draft.mailboxId,
+			firstManaged: managed[0]?.id,
+			offered: fresh.offered,
+			loading: isLoading,
+		}),
+	};
 	const preset = presets.find((entry) => entry.id === form.preset);
 	const editing = !!account;
+	const { created } = fresh;
 	const mailbox = managed.find((entry) => entry.id === form.mailboxId);
+
+	function close(open: boolean) {
+		// Escape and the close button must not end a request that is creating a mailbox or connecting to it.
+		if (!open && saving !== null) return;
+		if (!open && created) onMailboxLeftBehind?.(created.address);
+		onOpenChange(open);
+	}
 
 	async function detect() {
 		if (editing || !form.address.includes("@")) return;
@@ -69,20 +100,49 @@ export function AccountFormDialog({
 
 	async function submit(event: FormEvent<HTMLFormElement>) {
 		event.preventDefault();
-		setSaving(true);
+		setError(null);
+		let target: { id: string } | null = null;
+		try {
+			if (fresh.creating) setSaving("mailbox");
+			target = await fresh.ensure();
+		} catch (createError) {
+			// Nothing was created, so nothing is left to explain: the person fixes the name and tries again.
+			setError(errorText(createError, "Could not create the mailbox"));
+			setSaving(null);
+			return;
+		}
+		// From here on the dialog stands on the new mailbox, so a second try reuses it instead of making another.
+		const connecting = target ? { ...form, mailboxId: target.id } : form;
+		if (target) setForm(connecting);
+		setSaving("account");
+		try {
+			const saved = await saveAccount(account, connecting);
+			// A mailbox made earlier by this dialog that the person then left for another one stays; say so.
+			const unused = unusedMailboxAddress(created, connecting.mailboxId);
+			fresh.clear();
+			onSaved(saved, !account, unused);
+		} catch (submitError) {
+			setError(errorText(submitError, "Could not save the account"));
+		} finally {
+			setSaving(null);
+		}
+	}
+
+	async function deleteCreated() {
+		setSaving("delete");
 		setError(null);
 		try {
-			const saved = account ? await updateAccount(account.id, form) : await connectAccount(form);
-			onSaved(saved, !account);
-		} catch (submitError) {
-			setError(submitError instanceof Error ? submitError.message : "Could not save the account");
+			await fresh.deleteCreated();
+			setForm({ ...form, mailboxId: firstId(selectedMailbox?.id, managed[0]?.id) });
+		} catch (deleteError) {
+			setError(errorText(deleteError, "Could not delete the mailbox"));
 		} finally {
-			setSaving(false);
+			setSaving(null);
 		}
 	}
 
 	return (
-		<Dialog open={open} onOpenChange={onOpenChange}>
+		<Dialog open={open} onOpenChange={close}>
 			<DialogContent className="max-h-[calc(100vh-4rem)] w-[min(560px,calc(100vw-32px))] overflow-y-auto">
 				<DialogHeader>
 					<DialogTitle>{editing ? `Edit ${account.address}` : "Connect an account"}</DialogTitle>
@@ -122,12 +182,15 @@ export function AccountFormDialog({
 					{preset?.passwordSignIn !== false && (
 						<CredentialFields form={form} setForm={setForm} preset={preset} editing={editing} />
 					)}
-					<MailboxField form={form} setForm={setForm} mailboxes={managed} />
+					<MailboxField form={form} setForm={setForm} mailboxes={managed} fresh={fresh} />
 					<IntervalField form={form} setForm={setForm} />
 					{mailbox?.type === "shared" && (
 						<Notice tone="warning" compact icon={false} role="none">
 							Everyone with access to {mailbox.displayName || mailboxAddress(mailbox)} will see mail from this account.
 						</Notice>
+					)}
+					{created && (
+						<MailboxLeftBehind address={created.address} busy={saving !== null} onDelete={() => void deleteCreated()} />
 					)}
 					{error && (
 						<p
@@ -138,11 +201,14 @@ export function AccountFormDialog({
 						</p>
 					)}
 					<div className="flex justify-end gap-2">
-						<Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
+						<Button type="button" variant="outline" onClick={() => close(false)} disabled={saving !== null}>
 							Cancel
 						</Button>
-						<Button type="submit" disabled={saving || !canSubmitAccountForm(form, editing, preset)}>
-							{saving ? "Testing the connection…" : editing ? "Save" : "Connect"}
+						<Button
+							type="submit"
+							disabled={saving !== null || !!fresh.problem || !canSubmitAccountForm(form, editing, preset)}
+						>
+							{submitLabel(saving, editing)}
 						</Button>
 					</div>
 				</form>
@@ -320,27 +386,6 @@ function CredentialFields({
 				</p>
 			</div>
 		</>
-	);
-}
-
-function MailboxField({ form, setForm, mailboxes }: FieldsProps & { mailboxes: MailboxOption[] }) {
-	return (
-		<div className="space-y-2">
-			<Label htmlFor="external-mailbox">Mail goes to</Label>
-			<Select
-				id="external-mailbox"
-				containerClassName="w-full"
-				className="h-10 text-sm"
-				value={form.mailboxId}
-				onChange={(event) => setForm({ ...form, mailboxId: event.target.value })}
-			>
-				{mailboxes.map((mailbox) => (
-					<option key={mailbox.id} value={mailbox.id}>
-						{mailbox.displayName ? `${mailbox.displayName} (${mailboxAddress(mailbox)})` : mailboxAddress(mailbox)}
-					</option>
-				))}
-			</Select>
-		</div>
 	);
 }
 

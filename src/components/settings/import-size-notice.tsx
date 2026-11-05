@@ -61,7 +61,9 @@ export function ImportSizeNotice({
 					onRequiresConfirmation(!!next?.requiresConfirmation);
 				})
 				.catch(() => {
-					if (active) onRequiresConfirmation(false);
+					if (!active) return;
+					setEstimate(null);
+					onRequiresConfirmation(false);
 				});
 		}, 300);
 		return () => {

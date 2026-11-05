@@ -170,3 +170,25 @@ test("the 70% warning uses the measured sizes instead of a default per message",
 		await fake.close();
 	}
 });
+
+test("a failed estimate refresh clears the previous warning", async ({ page }) => {
+	let fail = false;
+	await page.route("**/api/import/estimate", (route) =>
+		fail
+			? route.abort("failed")
+			: route.continue({
+					headers: { ...route.request().headers(), [SIZE_HEADER]: `used=${9 * GB};limit=${10 * GB}` },
+				}),
+	);
+	await page.goto("/settings/import");
+	await chooseOption(page.locator("#import-source"), { label: "IMAP" });
+	await chooseOption(page.locator("#imap-mode"), "folder");
+	await page.getByLabel("Import all messages (newest first)").uncheck();
+	await page.locator("#imap-limit").fill("20");
+	await expect(page.getByTestId("import-size-notice")).toContainText("above 90%");
+	fail = true;
+	const failed = page.waitForEvent("requestfailed", (request) => request.url().includes("/api/import/estimate"));
+	await page.locator("#imap-limit").fill("21");
+	await failed;
+	await expect(page.getByTestId("import-size-notice")).toHaveCount(0);
+});

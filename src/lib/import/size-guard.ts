@@ -1,7 +1,6 @@
 import { count } from "drizzle-orm";
 import { getDb } from "@/db";
 import { messages } from "@/db/schema";
-import { canOffloadHtmlBodies } from "@/lib/email/bodies";
 import { isAttachmentRawIndexEnabled } from "@/lib/email/attachment-storage-utils";
 import { getDatabaseSize, testDatabaseSize } from "@/lib/db/size";
 import type { DatabaseSize } from "@/lib/db/size-utils";
@@ -25,9 +24,7 @@ export async function estimateImportForInstall(
 		usedBytes: size.usedBytes,
 		limitBytes: size.limitBytes,
 		installMessageCount: row?.total ?? 0,
-		// What the import itself will do: it offloads big HTML bodies once the database can say where they are, and
-		// stores attachments inside the raw message unless ATTACHMENT_RAW_INDEX is off.
-		bodyOffload: await canOffloadHtmlBodies(env),
+		// Verified attachments stay inside the raw message unless ATTACHMENT_RAW_INDEX is off.
 		rawIndex: isAttachmentRawIndexEnabled(env.ATTACHMENT_RAW_INDEX),
 	});
 }

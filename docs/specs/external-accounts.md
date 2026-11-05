@@ -141,7 +141,7 @@ Counting is cheap and needs no bodies: `STATUS <folder> (MESSAGES UIDNEXT UIDVAL
 `estimateImport` (`src/lib/import/estimate-utils.ts`, pure) turns counts and sizes into:
 
 - **Mail store**: the sum of `RFC822.SIZE` × 1.0. The raw MIME is written once and verified attachments are ranges of it ([attachments stored once](attachments-once.md)); with `ATTACHMENT_RAW_INDEX=off` each attachment is stored decoded again and the factor is 1.51 (that spec's measurement). Attachments the MIME index cannot verify (such as quoted-printable or uuencoded parts) still need decoded objects with the raw index on. Those copies and offloaded HTML bodies (§5.3) are not included in the estimate. (The original design said 1.75, from before attachments were stored once.)
-- **Database**: messages × the install's average D1 bytes per message (`usedBytes / count(messages)` when the install has at least 1,000 messages, else 40 KB), capped per message at `min(RFC822.SIZE, 128 KB)`; with body offload on (§5.3), the cap drops to 24 KB.
+- **Database**: messages × the install's average D1 bytes per message (`usedBytes / count(messages)` when the install has at least 1,000 messages, else 40 KB), capped per message at `min(RFC822.SIZE, 128 KB)`. HTML offload (§5.3) does not reduce that cap: source sizes do not reveal how much plain text remains in the database and its search index. This is an estimate, not a maximum for an individual message.
 
 The import page shows, before **Start**: "About 48,000 messages, 6.1 GB of mail. Adds about 1.9 GB to the database (now 3.1 GB of 10 GB) and 6.1 GB to mail storage." Thresholds on the projected database size:
 

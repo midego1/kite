@@ -6,8 +6,6 @@ const DEFAULT_DATABASE_BYTES_PER_MESSAGE = 40_000;
 const MIN_MESSAGES_FOR_AVERAGE = 1000;
 /** The most D1 one imported message is assumed to add. */
 const MAX_DATABASE_BYTES_PER_MESSAGE = 128 * 1024;
-/** The same, once HTML bodies over 16 KB are kept in the mail store instead of D1. */
-const MAX_DATABASE_BYTES_PER_MESSAGE_OFFLOADED = 24 * 1024;
 /**
  * Mail store bytes per byte of source mail: the raw message is written once (`imports/<id>.eml`) and its verified
  * attachments are 'raw' rows pointing into it, with no decoded copy (`docs/specs/attachments-once.md`).
@@ -33,7 +31,6 @@ export type ImportEstimateInput = {
 	limitBytes: number | null;
 	/** `count(messages)` of the install, for its own average. */
 	installMessageCount: number;
-	bodyOffload?: boolean;
 	/** `ATTACHMENT_RAW_INDEX` is on (the default): attachments live inside the raw message and are not stored again. */
 	rawIndex?: boolean;
 };
@@ -65,8 +62,11 @@ function averageDatabaseBytesPerMessage(usedBytes: number, installMessageCount: 
 export function estimateImport(input: ImportEstimateInput): ImportEstimate {
 	const messages = input.messages === null ? null : Math.max(0, Math.floor(input.messages));
 	const rawBytes = input.rawBytes !== null && input.rawBytes >= 0 ? Math.floor(input.rawBytes) : null;
-	const cap = input.bodyOffload ? MAX_DATABASE_BYTES_PER_MESSAGE_OFFLOADED : MAX_DATABASE_BYTES_PER_MESSAGE;
-	let perMessage = Math.min(averageDatabaseBytesPerMessage(input.usedBytes, input.installMessageCount), cap);
+	// Source sizes do not distinguish HTML from text. Offloading HTML never bounds the text or its search index.
+	let perMessage = Math.min(
+		averageDatabaseBytesPerMessage(input.usedBytes, input.installMessageCount),
+		MAX_DATABASE_BYTES_PER_MESSAGE,
+	);
 	// A message cannot add more than it weighs; the totals give the average weight.
 	if (messages && rawBytes !== null) perMessage = Math.min(perMessage, rawBytes / messages);
 	const databaseAddBytes = messages ? Math.round(messages * perMessage) : 0;

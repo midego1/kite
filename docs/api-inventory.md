@@ -169,6 +169,7 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/folders/[id]`                                          | DELETE, GET, PATCH     | [source](../src/app/api/folders/[id]/route.ts)                                          |
 | `/api/folders`                                               | GET, POST              | [source](../src/app/api/folders/route.ts)                                               |
 | `/api/import/account/plan`                                   | POST                   | [source](../src/app/api/import/account/plan/route.ts)                                   |
+| `/api/import/account/sizes`                                  | POST                   | [source](../src/app/api/import/account/sizes/route.ts)                                  |
 | `/api/import/estimate`                                       | POST                   | [source](../src/app/api/import/estimate/route.ts)                                       |
 | `/api/import/imap/folders`                                   | POST                   | [source](../src/app/api/import/imap/folders/route.ts)                                   |
 | `/api/import/imap`                                           | POST                   | [source](../src/app/api/import/imap/route.ts)                                           |

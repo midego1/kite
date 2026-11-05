@@ -136,14 +136,14 @@ The job, the IMAP client and the delivery path are the same code on Workers and 
 
 ### 5.2 Estimate before import
 
-Counting is cheap and needs no bodies: `STATUS <folder> (MESSAGES UIDNEXT UIDVALIDITY)` per folder and `UID FETCH 1:* (UID RFC822.SIZE)` per selected folder (one line per message, about 30 bytes each, so 100,000 messages is about 3 MB on one connection). On Gmail the same is done on All Mail with `X-GM-LABELS`, which also yields the per-label counts for the mapping table.
+Counting is cheap and needs no bodies: `STATUS <folder> (MESSAGES UIDNEXT UIDVALIDITY)` per folder, with `SIZE` where the server offers `STATUS=SIZE` (RFC 8438), and otherwise `UID FETCH n:m (UID RFC822.SIZE)` per selected folder (one line per message, about 40 bytes each, so 100,000 messages is about 4 MB). As built, that fetch is not one `1:*`: the import page asks `POST /api/import/account/sizes` for steps of at most 10,000 UIDs, newest first, and adds them up (`src/lib/import/folder-sizes.ts`, `folder-size-utils.ts`), so a Worker holds one step at a time and nothing is stored between steps; see [Sizes before you start](../modules.md#sizes-before-you-start). On Gmail the same is done on All Mail with `X-GM-LABELS`, which also yields the per-label counts for the mapping table.
 
 `estimateImport` (`src/lib/import/estimate-utils.ts`, pure) turns counts and sizes into:
 
-- **Mail store**: the sum of `RFC822.SIZE` × 1.75 (raw MIME plus the decoded attachment copy; 1.0 once attachments are stored once).
+- **Mail store**: the sum of `RFC822.SIZE` × 1.0. The raw MIME is written once and attachments are ranges of it ([attachments stored once](attachments-once.md)); with `ATTACHMENT_RAW_INDEX=off` each attachment is stored decoded again and the factor is 1.51 (that spec's measurement). Offloaded HTML bodies (§5.3) add their own object, which the estimate leaves out. (The original design said 1.75, from before attachments were stored once.)
 - **Database**: messages × the install's average D1 bytes per message (`usedBytes / count(messages)` when the install has at least 1,000 messages, else 40 KB), capped per message at `min(RFC822.SIZE, 128 KB)`; with body offload on (§5.3), the cap drops to 24 KB.
 
-The import page shows, before **Start**: "About 48,000 messages, 6.1 GB of mail. Adds about 1.9 GB to the database (now 3.1 GB of 10 GB) and 10.7 GB to mail storage." Thresholds on the projected database size:
+The import page shows, before **Start**: "About 48,000 messages, 6.1 GB of mail. Adds about 1.9 GB to the database (now 3.1 GB of 10 GB) and 6.1 GB to mail storage." Thresholds on the projected database size:
 
 | Projected use | What happens |
 | --- | --- |

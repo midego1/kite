@@ -249,3 +249,10 @@ export function sendingText(account: Pick<ExternalAccountView, "address" | "send
 			return "Reconnect the account to send from this address.";
 	}
 }
+
+/** The dialog's submit button: what it is doing while it works (creating a mailbox, then testing the connection). */
+export function submitLabel(saving: "mailbox" | "account" | "delete" | null, editing: boolean): string {
+	if (saving === "mailbox") return "Creating the mailbox…";
+	if (saving === "account") return "Testing the connection…";
+	return editing ? "Save" : "Connect";
+}

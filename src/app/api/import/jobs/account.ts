@@ -12,6 +12,11 @@ import type { AccountImportJobRequest } from "./types";
 
 type SessionUser = Parameters<typeof getMailboxAccessLevel>[1];
 
+/** The sum of counts the client sent back, or null when any of them is unknown. */
+function sumAdvisory(counts: (number | null)[]): number | null {
+	return counts.every((count) => count !== null) ? counts.reduce<number>((sum, count) => sum + count!, 0) : null;
+}
+
 /**
  * `POST /api/import/jobs` with `scope: "account"`: one job over the folders the user kept in the mapping table.
  * New Kite folders are created only once the request has passed every check, the folder destinations included.
@@ -37,14 +42,16 @@ export async function createAccountJobResponse(
 	const access = await getMailboxAccessLevel(getDb(env), user, body.mailboxId);
 	if (!access?.canManage) return Response.json({ error: "Mailbox not found" }, { status: 404 });
 
-	// The plan's counts come back from the client, so they are advisory: one unknown count makes the total unknown
-	// (the estimate then looks at the database as it is), and the run's size guard pauses the job at the stop point
-	// whatever the client claimed.
-	const counts = folders.map((folder) => folder.messages);
-	const messages = counts.every((count) => count !== null)
-		? counts.reduce<number>((sum, count) => sum + count!, 0)
-		: null;
-	const sizeCheck = await checkImportStart(env, request, { messages, confirmed: body.confirmDatabaseFull === true });
+	// The plan's counts and sizes come back from the client, so they are advisory: one unknown count makes the total
+	// unknown (the estimate then looks at the database as it is), and the run's size guard pauses the job at the stop
+	// point whatever the client claimed. With every size the estimate caps a message at its weight.
+	const messages = sumAdvisory(folders.map((folder) => folder.messages));
+	const rawBytes = sumAdvisory(folders.map((folder) => folder.bytes));
+	const sizeCheck = await checkImportStart(env, request, {
+		messages,
+		rawBytes,
+		confirmed: body.confirmDatabaseFull === true,
+	});
 	if (sizeCheck.refusal) return sizeCheck.refusal;
 
 	const mailbox = { id: access.mailbox.id, userId: access.mailbox.userId };

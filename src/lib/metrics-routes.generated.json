@@ -156,6 +156,7 @@
 	"/api/folders/[id]",
 	"/api/folders",
 	"/api/import/account/plan",
+	"/api/import/account/sizes",
 	"/api/import/estimate",
 	"/api/import/imap/folders",
 	"/api/import/imap",

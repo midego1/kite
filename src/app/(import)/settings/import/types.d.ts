@@ -117,7 +117,38 @@ export type AccountPlanFolder = {
 	bytes: number | null;
 };
 
+/** Where measuring one folder's size stands (`POST /api/import/account/sizes`, for servers without STATUS=SIZE). */
+export type FolderSizeState = {
+	status: "measuring" | "done" | "unavailable";
+	/** Messages and bytes counted so far; the totals once `done`. */
+	messages: number;
+	bytes: number;
+	/** Share (0 to 1) of the folder's UID range covered. */
+	progress: number;
+};
+
+/** The size of one table row as shown: from STATUS, measured, still being measured (an estimate) or not known. */
+export type PlannedFolderSize =
+	| { kind: "exact"; bytes: number }
+	| { kind: "estimated"; bytes: number; progress: number }
+	| { kind: "measuring"; progress: number }
+	| { kind: "unknown" };
+
+/** The ticked rows added up for the totals under the table. */
+export type PlannedTotals = {
+	/** Null while any ticked folder's count is unknown. */
+	messages: number | null;
+	/** Bytes of the ticked folders, or null while any of them has no size or estimate yet. */
+	bytes: number | null;
+	sizeKind: "exact" | "estimated" | "unknown";
+	/** Ticked folders still being measured. */
+	measuring: number;
+	/** Ticked folders the server could not measure. */
+	unavailable: number;
+};
+
 export type AccountPlan = { gmail: boolean; folders: AccountPlanFolder[] };
 
 /** A connected account offered as the import source. */
-export type ImportSourceAccount = { id: string; address: string; label: string };
+/** `mailboxId` is where the account's mail goes; an import from it starts in that mailbox. */
+export type ImportSourceAccount = { id: string; address: string; label: string; mailboxId: string };

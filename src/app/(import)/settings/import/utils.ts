@@ -3,6 +3,7 @@ import type { ExternalAccountView } from "@/lib/external-accounts/types";
 import type {
 	AccountPlan,
 	AccountPlanFolder,
+	FolderSizeState,
 	ImapFormState,
 	ImportJobFolder,
 	ImportFolderSummary,
@@ -12,8 +13,10 @@ import type {
 	ImportSourceItem,
 	ImportSourceOption,
 	ImportSourceSection,
+	PlannedFolderSize,
+	PlannedTotals,
 } from "./types";
-import { isolateDirection } from "@/lib/bidi-utils";
+import { formatDatabaseBytes } from "@/lib/db/size-utils";
 
 export const importSourceOptions: ImportSourceOption[] = [
 	{ value: "inbox", label: "Inbox", imapFolder: "INBOX", destination: "system:inbox", system: true },
@@ -228,7 +231,7 @@ export async function fetchAccountPlan(form: ImapFormState): Promise<AccountPlan
 }
 
 /** The source of a request: a connected account by id, or the server and password typed into the form. */
-function imapAccountBody(form: ImapFormState) {
+export function imapAccountBody(form: ImapFormState) {
 	if (form.accountId) return { accountId: form.accountId };
 	return {
 		host: form.host,
@@ -273,11 +276,9 @@ export function plannedMessageCount(folders: AccountPlanFolder[]): number | null
 		: null;
 }
 
+/** A size in the table and under it: the same decimal units as the database size, so rows and totals agree. */
 export function formatPlannedBytes(bytes: number | null): string {
-	if (bytes === null) return "—";
-	if (bytes < 1024 * 1024) return isolateDirection(`${Math.max(1, Math.round(bytes / 1024))} KB`);
-	if (bytes < 1024 * 1024 * 1024) return isolateDirection(`${(bytes / (1024 * 1024)).toFixed(1)} MB`);
-	return isolateDirection(`${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`);
+	return bytes === null ? "—" : formatDatabaseBytes(bytes);
 }
 
 /** Where a job's folder went, in words for the jobs list. */
@@ -313,5 +314,142 @@ export async function fetchImportSourceAccounts(): Promise<ImportSourceAccount[]
 	if (data.refusal || !Array.isArray(data.accounts)) return [];
 	return data.accounts
 		.filter((account) => account.status === "active")
-		.map((account) => ({ id: account.id, address: account.address, label: account.label }));
+		.map((account) => ({
+			id: account.id,
+			address: account.address,
+			label: account.label,
+			mailboxId: account.mailboxId,
+		}));
+}
+
+/** What the size of folder `folder` is, in the table: the server's own total, a finished measurement, or progress. */
+export function plannedFolderSize(folder: AccountPlanFolder, state: FolderSizeState | undefined): PlannedFolderSize {
+	if (folder.bytes !== null) return { kind: "exact", bytes: folder.bytes };
+	if (folder.messages === 0) return { kind: "exact", bytes: 0 };
+	if (!state || state.status === "unavailable") return { kind: "unknown" };
+	if (state.status === "done") return { kind: "exact", bytes: state.bytes };
+	// A partial sum says little; scale the average message of what was counted to the folder's count, newest first.
+	if (state.messages > 0 && folder.messages)
+		return {
+			kind: "estimated",
+			bytes: Math.round((state.bytes / state.messages) * folder.messages),
+			progress: state.progress,
+		};
+	return { kind: "measuring", progress: state.progress };
+}
+
+/** The ticked folders whose size the server did not report, so the page measures them (in table order). */
+export function foldersToMeasure(folders: AccountPlanFolder[]): string[] {
+	return folders
+		.filter((folder) => folder.include && folder.bytes === null && !!folder.messages)
+		.map((folder) => folder.sourceName);
+}
+
+/** Adds up the ticked rows: messages, size (exact once every row is, estimated while some are being measured). */
+export function plannedTotals(folders: AccountPlanFolder[], sizes: Record<string, FolderSizeState>): PlannedTotals {
+	const included = folders.filter((folder) => folder.include);
+	let bytes = 0;
+	let known = 0;
+	let estimated = 0;
+	let measuring = 0;
+	let unavailable = 0;
+	for (const folder of included) {
+		const state = sizes[folder.sourceName];
+		const size = plannedFolderSize(folder, state);
+		if (size.kind === "exact" || size.kind === "estimated") {
+			bytes += size.bytes;
+			known += 1;
+		}
+		if (size.kind === "estimated") estimated += 1;
+		if (size.kind === "estimated" || size.kind === "measuring") measuring += 1;
+		else if (size.kind === "unknown") {
+			// No state yet means it waits its turn, unless there is nothing to measure it by (no message count).
+			if (state?.status === "unavailable" || !folder.messages) unavailable += 1;
+			else measuring += 1;
+		}
+	}
+	const complete = included.length > 0 && known === included.length;
+	return {
+		messages: plannedMessageCount(folders),
+		bytes: complete ? bytes : null,
+		sizeKind: !complete ? "unknown" : estimated ? "estimated" : "exact",
+		measuring,
+		unavailable,
+	};
+}
+
+/** The rows as the job request sends them: a folder measured to the end carries its size, so the job's estimate has it. */
+export function withMeasuredBytes(folders: AccountPlanFolder[], sizes: Record<string, FolderSizeState>) {
+	return folders.map((folder) => {
+		const size = plannedFolderSize(folder, sizes[folder.sourceName]);
+		return size.kind === "exact" ? { ...folder, bytes: size.bytes } : folder;
+	});
+}
+
+/** One step of measuring a folder; `unavailable` when the server cannot be measured this way. */
+export type FolderSizeStepAnswer =
+	| { unavailable: true }
+	| { messages: number; bytes: number; nextCursor: number | null; done: boolean; progress: number };
+
+export async function fetchFolderSizeStep(
+	source: Record<string, unknown>,
+	folder: string,
+	cursor: number | null,
+	signal?: AbortSignal,
+): Promise<FolderSizeStepAnswer> {
+	const response = await authFetch("/api/import/account/sizes", {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ ...source, folder, cursor }),
+		signal,
+	});
+	const data = (await response.json()) as FolderSizeStepAnswer & { error?: string };
+	if (!response.ok) throw new Error(data.error ?? "Unable to measure the folder");
+	return data;
+}
+
+/** The lines under the totals: measuring still going, folders that could not be measured, and why totals are upper bounds. */
+export function importSizeNotes(totals: PlannedTotals, gmail: boolean): string[] {
+	const folders = (count: number) => `${count} folder${count === 1 ? "" : "s"}`;
+	const notes: string[] = [];
+	if (totals.measuring > 0)
+		notes.push(
+			`Still measuring ${folders(totals.measuring)}. The size is an estimate until that is done; you can start the import at any time.`,
+		);
+	if (totals.unavailable > 0)
+		notes.push(
+			`This server could not say how big ${folders(totals.unavailable)} ${totals.unavailable === 1 ? "is" : "are"}, so ${totals.unavailable === 1 ? "it is" : "they are"} not in the size. The import is not affected.`,
+		);
+	notes.push(
+		gmail
+			? "Gmail's All Mail holds every label's copy of a message once. Kite skips mail it already has (matched by Message-ID), so these totals are an upper bound."
+			: "Mail that is already in Kite, or in more than one of these folders, is copied once (matched by Message-ID), so these totals are an upper bound.",
+	);
+	return notes;
+}
+
+/** A plan belongs to the account it was read from: another account, server, user name or port makes it stale. */
+export function planIsStale(previous: ImapFormState, next: ImapFormState): boolean {
+	return (
+		next.accountId !== previous.accountId ||
+		next.host !== previous.host ||
+		next.username !== previous.username ||
+		next.port !== previous.port
+	);
+}
+
+/** How many folders the mapping table has ticked. */
+export function includedFolderCount(plan: AccountPlan | null): number {
+	return plan?.folders.filter((folder) => folder.include).length ?? 0;
+}
+
+/** What the size notice shows for the page: the totals of a plan (always) or only the warning for a single folder. */
+export function sizeNoticeProps(totals: PlannedTotals | null, plan: AccountPlan | null, messages: number | null) {
+	return {
+		messages,
+		rawBytes: totals?.bytes ?? null,
+		sizeKind: totals?.sizeKind ?? ("unknown" as const),
+		showTotals: !!totals,
+		notes: totals && plan ? importSizeNotes(totals, plan.gmail) : [],
+	};
 }

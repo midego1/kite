@@ -3,12 +3,14 @@
 import { CARD_CLASS, TABLE_HEAD_CLASS } from "@/components/ui/page-utils";
 import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import type { AccountPlan, AccountPlanFolder, ImportFolderSummary } from "./types";
-import { formatPlannedBytes, systemDestinations } from "./utils";
+import type { AccountPlan, AccountPlanFolder, FolderSizeState, ImportFolderSummary } from "./types";
+import { formatPlannedBytes, plannedFolderSize, systemDestinations } from "./utils";
 
 type Props = {
 	plan: AccountPlan;
 	kiteFolders: ImportFolderSummary[];
+	/** Sizes being measured for the folders the server gave none for. */
+	sizes: Record<string, FolderSizeState>;
 	onChange: (folders: AccountPlanFolder[]) => void;
 };
 
@@ -26,7 +28,7 @@ const roleLabels: Record<AccountPlanFolder["role"], string> = {
  * The mapping table of a whole-account import (spec §4.1): one row per source folder with a checkbox, its message
  * count and size, and where it goes in Kite. Every row can be changed before the import starts.
  */
-export function AccountMappingTable({ plan, kiteFolders, onChange }: Props) {
+export function AccountMappingTable({ plan, kiteFolders, sizes, onChange }: Props) {
 	function update(index: number, change: Partial<AccountPlanFolder>) {
 		onChange(plan.folders.map((folder, at) => (at === index ? { ...folder, ...change } : folder)));
 	}
@@ -78,7 +80,9 @@ export function AccountMappingTable({ plan, kiteFolders, onChange }: Props) {
 								<td className="px-3 py-2 text-end tabular-nums text-neutral-700">
 									{folder.messages === null ? "—" : folder.messages.toLocaleString("en-US")}
 								</td>
-								<td className="px-3 py-2 text-end tabular-nums text-neutral-700">{formatPlannedBytes(folder.bytes)}</td>
+								<td className="px-3 py-2 text-end tabular-nums text-neutral-700">
+									<FolderSizeCell folder={folder} state={sizes[folder.sourceName]} />
+								</td>
 								<td className="min-w-48 px-3 py-2">
 									<DestinationSelect
 										folder={folder}
@@ -92,6 +96,29 @@ export function AccountMappingTable({ plan, kiteFolders, onChange }: Props) {
 				</table>
 			</div>
 		</div>
+	);
+}
+
+/** The size of a row: the server's total, a measured one, or an estimate that says how far the measuring is. */
+function FolderSizeCell({ folder, state }: { folder: AccountPlanFolder; state: FolderSizeState | undefined }) {
+	const size = plannedFolderSize(folder, state);
+	if (size.kind === "exact") return <span data-size="exact">{formatPlannedBytes(size.bytes)}</span>;
+	if (size.kind === "unknown")
+		return (
+			<span data-size="unknown" title={state?.status === "unavailable" ? "This server cannot say" : "Not measured yet"}>
+				—
+			</span>
+		);
+	const percent = `${Math.round(size.progress * 100)}%`;
+	return (
+		<span
+			data-size={size.kind}
+			title="Estimated from the part measured so far; Kite keeps measuring while you choose."
+			className="text-neutral-500"
+		>
+			{size.kind === "estimated" ? `≈ ${formatPlannedBytes(size.bytes)} · ` : ""}
+			measuring {percent}
+		</span>
 	);
 }
 

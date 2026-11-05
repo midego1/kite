@@ -37,6 +37,12 @@ export type ImapSession = {
 	 * `n`; the caller drops what it has seen.
 	 */
 	fetchSummaries(fromUid: number, toUid?: number | null): Promise<ImapMessageSummary[]>;
+	/**
+	 * UID and size only (`UID FETCH n:m (UID RFC822.SIZE)`, no bodies) of the open folder's messages with UIDs from
+	 * `fromUid` to `toUid`: about 40 bytes of answer per message, which is how an import measures a folder whose server
+	 * has no STATUS=SIZE.
+	 */
+	fetchSizes(fromUid: number, toUid: number): Promise<ImapMessageSummary[]>;
 	fetchMessages(uids: string[], options?: { gmailLabels?: boolean }): Promise<Map<string, ImapFetchedMessage>>;
 	listMailboxNames(): Promise<string[]>;
 	/**
@@ -95,6 +101,12 @@ export async function openImapSession(
 			const from = Math.max(1, Math.floor(fromUid));
 			const to = toUid === null ? "*" : Math.max(from, Math.floor(toUid));
 			const lines = await imap.command(`UID FETCH ${from}:${to} (UID FLAGS INTERNALDATE RFC822.SIZE)`);
+			return parseFetchSummaries(lines);
+		},
+		async fetchSizes(fromUid, toUid) {
+			const from = Math.max(1, Math.floor(fromUid));
+			const to = Math.max(from, Math.floor(toUid));
+			const lines = await imap.command(`UID FETCH ${from}:${to} (UID RFC822.SIZE)`);
 			return parseFetchSummaries(lines);
 		},
 		fetchMessages: (uids, options) => imap.fetchMessages(uids, options),

@@ -172,10 +172,19 @@ test("a message cannot add more than it weighs, and offloaded bodies cap at 24 K
 	assert.equal(offloaded.databaseBytesPerMessage, 24_576);
 });
 
-test("the mail store holds 1.75 times the raw size", () => {
+test("the mail store holds the raw size once, as attachments are stored inside the raw message", () => {
 	const result = estimate.estimateImport({ ...base, messages: 48_000, rawBytes: 6.1 * GB });
-	assert.equal(result.mailStoreBytes, Math.round(6.1 * GB * 1.75));
+	assert.equal(estimate.MAIL_STORE_FACTOR, 1);
+	assert.equal(result.mailStoreBytes, Math.round(6.1 * GB));
 	assert.equal(estimate.estimateImport({ ...base, messages: 10, rawBytes: null }).mailStoreBytes, null);
+});
+
+test("with ATTACHMENT_RAW_INDEX off every attachment is stored again, about 1.51 times the raw size", () => {
+	const on = estimate.estimateImport({ ...base, messages: 1000, rawBytes: 1 * GB, rawIndex: true });
+	const off = estimate.estimateImport({ ...base, messages: 1000, rawBytes: 1 * GB, rawIndex: false });
+	assert.equal(on.mailStoreBytes, 1 * GB);
+	assert.equal(off.mailStoreBytes, Math.round(1.51 * GB));
+	assert.equal(estimate.MAIL_STORE_FACTOR_WITHOUT_RAW_INDEX, 1.51);
 });
 
 test("an unknown message count adds nothing but still reports the current level", () => {
@@ -220,7 +229,7 @@ test("the summary reads like the spec's example", () => {
 	const { summary } = estimate.describeImportEstimate(result, size.formatDatabaseBytes);
 	assert.match(
 		summary,
-		/^About 48,000 messages, 6\.1 GB of mail\. Adds about 1\.9 GB to the database \(now 3\.1 GB of 10 GB\) and 10\.7 GB to mail storage\.$/,
+		/^About 48,000 messages, 6\.1 GB of mail\. Adds about 1\.9 GB to the database \(now 3\.1 GB of 10 GB\) and 6\.1 GB to mail storage\.$/,
 	);
 	const unknown = estimate.describeImportEstimate(
 		estimate.estimateImport({ ...base, messages: null, rawBytes: null }),
@@ -276,4 +285,34 @@ test("the database alert fires from 90% and names the percentage", () => {
 	assert.deepEqual(rules.evaluateAlertRules({ ...snapshot, databaseUsedPercent: 93.4 }, now), [
 		{ rule: "database_nearly_full", fingerprint: "active", count: 93 },
 	]);
+});
+
+test("the totals list messages, the source size, mail storage and the database, and call an estimate an estimate", () => {
+	const result = estimate.estimateImport({
+		usedBytes: 3.1 * GB,
+		limitBytes: 10 * GB,
+		installMessageCount: 0,
+		messages: 48_000,
+		rawBytes: 6.1 * GB,
+	});
+	const rows = (kind, totals = { messages: 48_000, rawBytes: 6.1 * GB }, source = result) =>
+		Object.fromEntries(
+			estimate.importTotalRows(totals, source, size.formatDatabaseBytes, kind).map((row) => [row.key, row.value]),
+		);
+	assert.deepEqual(rows("exact"), {
+		messages: "48,000",
+		source: "6.1 GB",
+		"mail-store": "6.1 GB",
+		database: "about 1.9 GB (now 3.1 GB of 10 GB)",
+	});
+	const estimated = rows("estimated");
+	assert.equal(estimated.source, "about 6.1 GB (estimate)");
+	assert.equal(estimated["mail-store"], "about 6.1 GB");
+	// Not measured: no size, and nothing claimed for the mail store.
+	const unknown = rows("unknown", { messages: 48_000, rawBytes: null });
+	assert.equal(unknown.source, "Not known yet");
+	assert.equal(unknown["mail-store"], undefined);
+	// No database size (the server could not read it): messages and source size still show.
+	const noDatabase = rows("exact", { messages: 48_000, rawBytes: 6.1 * GB }, null);
+	assert.deepEqual(Object.keys(noDatabase), ["messages", "source"]);
 });

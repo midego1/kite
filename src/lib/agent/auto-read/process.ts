@@ -112,6 +112,9 @@ async function modelStep(input: {
 		});
 		return { skip: null, model, hintOnly };
 	} catch (error) {
+		// AI was turned off for the mailbox while the job ran: the job stops (`processAgentTriageJob` skips it) without
+		// the module steps or any suggestion.
+		if (error instanceof MailboxAiOffError) throw error;
 		const refusal = thrownRefusal(error);
 		if (refusal) return { skip: refusal, model: null, hintOnly };
 		if (!hintOnly && !isLastAttempt(job)) throw error;

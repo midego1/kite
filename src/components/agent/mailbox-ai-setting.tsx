@@ -1,31 +1,34 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { authFetch } from "@/lib/auth/client";
 import { Switch } from "@/components/ui/switch";
 import { MAILBOXES_CHANGED_EVENT, clearMailboxesCache } from "@/components/mailbox-provider-utils";
-import { mailboxAiSaveError } from "./mailbox-ai-setting-utils";
+import { loadMailboxAiState, mailboxAiSaveError, type MailboxAiState } from "./mailbox-ai-setting-utils";
 
 /**
  * "No AI for this mailbox", at the top of the mailbox's assistant settings. Only people who manage the mailbox can
  * change it, and it applies to everyone with access. Turning it on calls no model.
  */
-export function MailboxAiSetting({
-	mailboxId,
-	aiDisabled,
-	ready,
-	canManage,
-	onChange,
-}: {
-	mailboxId: string;
-	aiDisabled: boolean;
-	/** False until migration 0091, when the switch cannot be saved yet. */
-	ready: boolean;
-	canManage: boolean;
-	onChange: (aiDisabled: boolean) => void;
-}) {
+export function MailboxAiSetting({ mailboxId, onChange }: { mailboxId: string; onChange?: () => void }) {
+	const [state, setState] = useState<MailboxAiState | null>(null);
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+
+	useEffect(() => {
+		let active = true;
+		void loadMailboxAiState(mailboxId)
+			.then((next) => {
+				if (active) setState(next);
+			})
+			.catch(() => undefined);
+		return () => {
+			active = false;
+		};
+	}, [mailboxId]);
+
+	if (!state) return null;
+	const { aiDisabled, ready, canManage } = state;
 
 	async function save(next: boolean) {
 		setBusy(true);
@@ -37,8 +40,9 @@ export function MailboxAiSetting({
 				body: JSON.stringify({ mailboxId, aiDisabled: next }),
 			});
 			if (!response.ok) return setError(await mailboxAiSaveError(response));
-			onChange(next);
-			// The mailbox list carries the switch, so Write with Kite and the reader follow it at once.
+			setState((current) => current && { ...current, aiDisabled: next });
+			onChange?.();
+			// The mailbox list carries the switch, so the chat, Write with Kite and the reader follow it at once.
 			clearMailboxesCache();
 			window.dispatchEvent(new Event(MAILBOXES_CHANGED_EVENT));
 		} catch {

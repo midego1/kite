@@ -14,7 +14,7 @@ import { mailboxAiOff } from "./mailbox-ai";
 import { MAILBOX_AI_OFF_REASON } from "./mailbox-ai-utils";
 
 /** The audit action of turning "No AI for this mailbox" on or off. */
-export const MAILBOX_AI_AUDIT_ACTION = "agent.mailbox_ai";
+const MAILBOX_AI_AUDIT_ACTION = "agent.mailbox_ai";
 
 /** Databases known to have applied 0091; migrations only add, so a hit is final for the isolate's life. */
 const appliedDatabases = new WeakSet<object>();

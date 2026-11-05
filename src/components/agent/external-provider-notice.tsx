@@ -10,25 +10,30 @@ export type ChatProviderState = {
 	configured: boolean;
 	/** The provider's name while chat is refused for an external provider that is not allowed. */
 	externalBlocked: string | null;
-	/** "No AI for this mailbox" is on: chat is off here. */
+	/** "No AI for this mailbox" is on. */
 	mailboxAiOff: boolean;
+	/** Chat can run here: a provider, allowed to read mail, in a mailbox with AI on. */
+	ready: boolean;
 };
 
-export const NO_PROVIDER: ChatProviderState = { configured: false, externalBlocked: null, mailboxAiOff: false };
+export const NO_PROVIDER: ChatProviderState = {
+	configured: false,
+	externalBlocked: null,
+	mailboxAiOff: false,
+	ready: false,
+};
 
 export function chatProviderState(
 	data: Pick<AgentSettingsResponse, "providerConfigured" | "externalProviderBlocked" | "providerLabel" | "aiDisabled">,
 ): ChatProviderState {
+	const externalBlocked = data.externalProviderBlocked ? data.providerLabel : null;
+	const mailboxAiOff = data.aiDisabled === true;
 	return {
 		configured: data.providerConfigured,
-		externalBlocked: data.externalProviderBlocked ? data.providerLabel : null,
-		mailboxAiOff: data.aiDisabled === true,
+		externalBlocked,
+		mailboxAiOff,
+		ready: data.providerConfigured && !externalBlocked && !mailboxAiOff,
 	};
-}
-
-/** Whether chat can run here. */
-export function chatAvailable(provider: ChatProviderState): boolean {
-	return provider.configured && !provider.externalBlocked && !provider.mailboxAiOff;
 }
 
 /**

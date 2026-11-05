@@ -6,8 +6,6 @@ import { missingColumnFromError } from "@/lib/auth/user-lookup-utils";
 import { isNoSuchTableError } from "@/lib/modules/state-utils";
 import { MailboxAiOffError } from "./mailbox-ai-utils";
 
-export { MailboxAiOffError } from "./mailbox-ai-utils";
-
 /** Before migration 0091 the switch does not exist, so no mailbox can have it on: today's behaviour is kept. */
 function beforeMigration(error: unknown): boolean {
 	return missingColumnFromError(error) === "ai_disabled" || isNoSuchTableError(error);

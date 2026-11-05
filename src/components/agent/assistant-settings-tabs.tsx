@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState, type ReactNode } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AgentActivity } from "./agent-activity";
+import { MailboxAiSetting } from "./mailbox-ai-setting";
 
 const TABS = [
 	{ id: "settings", label: "Settings" },
@@ -12,12 +13,18 @@ const TABS = [
 
 type TabId = (typeof TABS)[number]["id"];
 
-/** The assistant settings view: the settings form, and Kite's Activity for the mailbox being edited. */
+/**
+ * The assistant settings view: No AI for this mailbox above the settings form, and Kite's Activity for the mailbox
+ * being edited.
+ */
 export function AssistantSettingsTabs({
 	settings,
+	onAiChange,
 	children,
 }: {
 	settings: { mailboxId: string } | null;
+	/** After No AI for this mailbox changed, so the chat can follow it. */
+	onAiChange?: () => void;
 	children: ReactNode;
 }) {
 	const [tab, setTab] = useState<TabId>("settings");
@@ -37,6 +44,7 @@ export function AssistantSettingsTabs({
 				))}
 			</TabsList>
 			<TabsContent value="settings" forceMount hidden={active !== "settings"} className="space-y-4">
+				{mailboxId && <MailboxAiSetting key={mailboxId} mailboxId={mailboxId} onChange={onAiChange} />}
 				{children}
 			</TabsContent>
 			{mailboxId && (

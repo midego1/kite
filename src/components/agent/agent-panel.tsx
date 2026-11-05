@@ -31,14 +31,7 @@ import { AgentTurnView } from "./agent-turn";
 import { useRequestedAssistantPrompt } from "./assistant-prompt-request";
 import { KiteAvatar } from "./kite-avatar";
 import { ChatContext, ChatWelcome } from "./chat-welcome";
-import {
-	AutoDraftProviderNote,
-	chatAvailable,
-	ChatProviderNotice,
-	chatProviderState,
-	NO_PROVIDER,
-} from "./external-provider-notice";
-import { MailboxAiSetting } from "./mailbox-ai-setting";
+import { AutoDraftProviderNote, ChatProviderNotice, chatProviderState, NO_PROVIDER } from "./external-provider-notice";
 import { CurrentEmailChip, useCurrentEmail } from "./current-email";
 import { useChatContentResize } from "./use-chat-content-resize";
 import { ConversationSkeleton } from "./conversation-skeleton";
@@ -104,8 +97,7 @@ export function AgentPanel({ open, fullSize, docked, onClose, onToggleFullSize }
 	const [canManage, setCanManage] = useState(false);
 	const [instructionContext, setInstructionContext] = useState<InstructionContext | null>(null);
 	const [provider, setProvider] = useState(NO_PROVIDER);
-	const chatReady = chatAvailable(provider);
-	const [aiSwitchReady, setAiSwitchReady] = useState(false);
+	const chatReady = provider.ready;
 	const [autoReplyEnabled, setAutoReplyEnabled] = useState(false);
 	const [conversationId, setConversationId] = useState<string | null>(null);
 	const [deletingConversationId, setDeletingConversationId] = useState<string | null>(null);
@@ -198,7 +190,6 @@ export function AgentPanel({ open, fullSize, docked, onClose, onToggleFullSize }
 			setCanManage(data.canManage);
 			setInstructionContext(data.instructionContext ?? null);
 			setProvider(chatProviderState(data));
-			setAiSwitchReady(data.aiSwitchReady === true);
 			setAutoReplyEnabled(data.autoReplyEnabled);
 			setReviewers(data.reviewers ?? []);
 		}
@@ -861,24 +852,11 @@ export function AgentPanel({ open, fullSize, docked, onClose, onToggleFullSize }
 				</>
 			)}
 			{view === "settings" && (
-				<AssistantSettingsTabs settings={settings}>
+				<AssistantSettingsTabs settings={settings} onAiChange={refresh}>
 					<AgentStepLimitSetting />
 					<PersonalInstructionsSetting />
 					<p className="font-medium text-neutral-800">Mailbox settings</p>
 					{!canManage && <p>Mailbox management permission is required to change these settings.</p>}
-					{settings && (
-						<MailboxAiSetting
-							key={settings.mailboxId}
-							mailboxId={settings.mailboxId}
-							aiDisabled={provider.mailboxAiOff}
-							ready={aiSwitchReady}
-							canManage={canManage}
-							onChange={(aiDisabled) => {
-								setProvider((current) => ({ ...current, mailboxAiOff: aiDisabled }));
-								void refresh();
-							}}
-						/>
-					)}
 					{settings && (
 						<>
 							<label className="block">

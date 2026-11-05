@@ -164,7 +164,7 @@ export async function createAgentChatStream(
 		.insert(agentChatMessages)
 		.values({ id: newId("chat"), conversationId: conversation.id, role: "user", content: text });
 	// Earlier answers may quote a mailbox whose AI has been turned off since; they stay on screen but are not sent again.
-	const since = await aiOffSince(context.env);
+	const since = await aiOffSince(context.env, context.user);
 	const prompt = history
 		.reverse()
 		.filter((row) => row.role === "user" || row.role === "assistant")

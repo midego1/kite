@@ -25,6 +25,8 @@ export function mailboxAgentExtraColumns() {
 		listSummariesBulk: integer("list_summaries_bulk", { mode: "boolean" }).notNull().default(false),
 		listSummaryDailyLimit: integer("list_summary_daily_limit").notNull().default(100),
 		aiDisabled: integer("ai_disabled", { mode: "boolean" }).notNull().default(false),
+		/** Migration 0092: when the switch was last turned on; set only when it flips, null while AI is on. */
+		aiDisabledAt: integer("ai_disabled_at", { mode: "timestamp" }),
 	};
 }
 

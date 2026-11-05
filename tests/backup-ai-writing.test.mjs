@@ -141,11 +141,14 @@ test("No AI for this mailbox round-trips, and a backup from before 0091 restores
 		{ mailbox_id: "mailbox-a", ai_disabled: 0 },
 	]);
 
-	restored.db.exec("UPDATE mailbox_agent_settings SET ai_disabled = 1");
+	restored.db.exec("UPDATE mailbox_agent_settings SET ai_disabled = 1, ai_disabled_at = 1700000000");
 	const current = await exportDocument(restored);
 	assert.equal(current.tables.mailbox_agent_settings[0].ai_disabled, 1);
+	assert.equal(current.tables.mailbox_agent_settings[0].ai_disabled_at, 1700000000);
 	const target = await database(t);
 	seedAccountData(target);
 	await restoreDatabaseRecords(target, encode(current));
-	assert.deepEqual(all(target, "SELECT ai_disabled FROM mailbox_agent_settings"), [{ ai_disabled: 1 }]);
+	assert.deepEqual(all(target, "SELECT ai_disabled, ai_disabled_at FROM mailbox_agent_settings"), [
+		{ ai_disabled: 1, ai_disabled_at: 1700000000 },
+	]);
 });

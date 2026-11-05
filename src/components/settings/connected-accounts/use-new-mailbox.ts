@@ -37,7 +37,7 @@ export function useNewMailbox(input: {
 		enabled: !input.editing && canManageOwnMailboxes(me?.user),
 		refetchOnWindowFocus: false,
 	});
-	const offered = !input.editing && canOfferNewMailbox(me?.user, domains);
+	const offered = !input.editing && !created && canOfferNewMailbox(me?.user, domains);
 	const creating = offered && input.mailboxId === NEW_MAILBOX_VALUE;
 	const domainId = domains.some((domain) => domain.id === typed.domainId) ? typed.domainId : (domains[0]?.id ?? "");
 	const taken = new Set(input.mailboxes.filter((entry) => entry.domainId === domainId).map((entry) => entry.localPart));

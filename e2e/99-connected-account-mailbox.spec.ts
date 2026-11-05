@@ -210,6 +210,9 @@ test("a retry connects to the mailbox chosen after a failed connection", async (
 		await chooseOption(dialog.locator("#external-mailbox"), { label: "New mailbox for this account…" });
 		await dialog.getByRole("button", { name: "Connect" }).click();
 		await expect(dialog.getByTestId("mailbox-left-behind")).toBeVisible();
+		expect((await readOptions(dialog.locator("#external-mailbox"))).map((option) => option.label)).not.toContain(
+			"New mailbox for this account…",
+		);
 		await chooseOption(dialog.locator("#external-mailbox"), original.id);
 		await dialog.getByLabel("Password or app password").fill(APP_PASSWORD);
 		await dialog.getByRole("button", { name: "Connect" }).click();

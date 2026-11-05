@@ -111,7 +111,7 @@ test("the first step is the newest window and its cursor moves down", async (t) 
 	assert.equal(last.nextCursor, null);
 });
 
-test("an empty folder is done at once, and a message without a size counts without weight", async (t) => {
+test("an empty folder is done at once, but missing sizes make the measurement unavailable", async (t) => {
 	const { env } = await fake(t, {
 		folders: {
 			Empty: [],
@@ -124,7 +124,7 @@ test("an empty folder is done at once, and a message without a size counts witho
 	const empty = await measureFolderStep(env, account, "Empty", null);
 	assert.deepEqual({ ...empty }, { messages: 0, bytes: 0, nextCursor: null, uidNext: 1 });
 	const odd = await measureFolderStep(env, account, "Odd", null);
-	assert.deepEqual({ ...odd }, { messages: 2, bytes: 500, nextCursor: null, uidNext: 3 });
+	assert.equal(odd, null);
 });
 
 test("a server that names no UIDNEXT on EXAMINE is asked with STATUS instead", async (t) => {

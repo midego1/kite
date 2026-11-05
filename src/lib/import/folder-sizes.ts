@@ -52,7 +52,10 @@ export async function measureFolderStep(
 			const answered = await session.fetchSizes(window.from, window.to);
 			signal?.throwIfAborted();
 			// A server answers `n:m` with the UIDs inside it, but a stray unsolicited line must not be counted.
-			const sum = sumSizes(answered.filter((entry) => entry.uid >= window.from && entry.uid <= window.to));
+			const entries = answered.filter((entry) => entry.uid >= window.from && entry.uid <= window.to);
+			// Missing sizes cannot establish a total. Let the page use its unknown-size estimate, never a partial sum.
+			if (entries.some((entry) => entry.size === null)) return null;
+			const sum = sumSizes(entries);
 			messages += sum.messages;
 			bytes += sum.bytes;
 			next = window.from > 1 ? window.from - 1 : null;

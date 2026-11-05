@@ -50,11 +50,13 @@ export function ImportSizeNotice({
 }: Props) {
 	const [estimate, setEstimate] = useState<ImportEstimate | null>(null);
 	const knownBytes = sizeKind === "unknown" ? null : rawBytes;
+	// Job starts carry only finished measurements, so the warning must use that same basis.
+	const estimateBytes = sizeKind === "exact" ? rawBytes : null;
 
 	useEffect(() => {
 		let active = true;
 		const timer = window.setTimeout(() => {
-			fetchImportEstimate(messages, knownBytes)
+			fetchImportEstimate(messages, estimateBytes)
 				.then((next) => {
 					if (!active) return;
 					setEstimate(next);
@@ -70,7 +72,7 @@ export function ImportSizeNotice({
 			active = false;
 			window.clearTimeout(timer);
 		};
-	}, [messages, knownBytes, onRequiresConfirmation]);
+	}, [messages, estimateBytes, onRequiresConfirmation]);
 
 	const level = estimate?.projectedLevel ?? "ok";
 	if (!showTotals && (!estimate || level === "ok")) return null;

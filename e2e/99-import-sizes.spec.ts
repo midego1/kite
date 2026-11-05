@@ -192,3 +192,38 @@ test("a failed estimate refresh clears the previous warning", async ({ page }) =
 	await failed;
 	await expect(page.getByTestId("import-size-notice")).toHaveCount(0);
 });
+
+test("partial source sizes do not lower the confirmation warning used when starting an import", async ({ page }) => {
+	const requests: { rawBytes?: number | null }[] = [];
+	await page.route("**/api/import/estimate", (route) => {
+		requests.push(route.request().postDataJSON());
+		return route.continue({
+			headers: {
+				...route.request().headers(),
+				[SIZE_HEADER]: `used=${9 * GB - 1_000_000};limit=${10 * GB}`,
+			},
+		});
+	});
+	let release: () => void = () => undefined;
+	const gate = new Promise<void>((resolve) => (release = resolve));
+	await page.route("**/api/import/account/sizes", async (route) => {
+		const next = route.request().postDataJSON().cursor !== null;
+		if (next) await gate;
+		await route.fulfill({
+			json: { messages: 10, bytes: 100, nextCursor: next ? null : 90, done: next, progress: next ? 1 : 0.1 },
+		});
+	});
+	const fake = await startFakeImap({ authPlain: true, folders: { INBOX: weighted(100, 10, "partial") } });
+	try {
+		const table = await showFolders(page, fake.port);
+		await expect(table.locator("[data-size]")).toHaveAttribute("data-size", "estimated");
+		await expect(page.getByTestId("import-size-notice")).toContainText("above 90%");
+		await expect(page.getByRole("button", { name: "Import account" })).toBeDisabled();
+		expect(requests.length).toBeGreaterThan(0);
+		expect(requests.every((request) => request.rawBytes == null)).toBe(true);
+	} finally {
+		release();
+		await page.unrouteAll({ behavior: "ignoreErrors" });
+		await fake.close();
+	}
+});

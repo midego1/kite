@@ -341,7 +341,7 @@ export function plannedFolderSize(folder: AccountPlanFolder, state: FolderSizeSt
 /** The ticked folders whose size the server did not report, so the page measures them (in table order). */
 export function foldersToMeasure(folders: AccountPlanFolder[]): string[] {
 	return folders
-		.filter((folder) => folder.include && folder.bytes === null && !!folder.messages)
+		.filter((folder) => folder.include && folder.bytes === null && folder.messages !== 0)
 		.map((folder) => folder.sourceName);
 }
 
@@ -363,8 +363,8 @@ export function plannedTotals(folders: AccountPlanFolder[], sizes: Record<string
 		if (size.kind === "estimated") estimated += 1;
 		if (size.kind === "estimated" || size.kind === "measuring") measuring += 1;
 		else if (size.kind === "unknown") {
-			// No state yet means it waits its turn, unless there is nothing to measure it by (no message count).
-			if (state?.status === "unavailable" || !folder.messages) unavailable += 1;
+			// No state yet means it waits its turn, even when STATUS did not give a message count.
+			if (state?.status === "unavailable") unavailable += 1;
 			else measuring += 1;
 		}
 	}

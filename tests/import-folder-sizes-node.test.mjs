@@ -197,9 +197,10 @@ test("the totals add up exact sizes, call a partly measured sum an estimate and 
 	assert.equal(failed.unavailable, 1);
 	// Ticking C adds a folder that is not measured yet.
 	assert.equal(page.plannedTotals([...folders.slice(0, 2), row("C", true, 50, null)], done).measuring, 1);
-	// An empty folder weighs nothing without being measured, and a folder without a count cannot be measured.
+	// An empty folder weighs nothing; an unknown count still permits a UID-based measurement.
 	assert.equal(page.plannedFolderSize(row("E", true, 0, null), undefined).bytes, 0);
-	assert.equal(page.plannedTotals([row("F", true, null, null)], {}).unavailable, 1);
+	assert.equal(page.plannedTotals([row("F", true, null, null)], {}).measuring, 1);
+	assert.deepEqual(page.foldersToMeasure([row("F", true, null, null), row("E", true, 0, null)]), ["F"]);
 });
 
 test("a measured folder goes to the job with its size, an estimate does not", () => {

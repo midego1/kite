@@ -104,6 +104,24 @@ test("a server with STATUS=SIZE gives the sizes at once and nothing is measured"
 	}
 });
 
+test("a selected folder with an unknown count is still measured", async ({ page }) => {
+	await page.route("**/api/import/account/plan", async (route) => {
+		const response = await route.fetch();
+		const data = await response.json();
+		data.folders[0].messages = null;
+		await route.fulfill({ response, json: data });
+	});
+	const fake = await startFakeImap({ authPlain: true, folders: { INBOX: weighted(2, 1000, "unknown") } });
+	try {
+		const table = await showFolders(page, fake.port);
+		await expect(table.locator("[data-size]")).toHaveAttribute("data-size", "exact");
+		await expect(table).toContainText("2 KB");
+		await expect(page.getByTestId("import-size-total")).not.toContainText("could not say how big");
+	} finally {
+		await fake.close();
+	}
+});
+
 test("a folder the server cannot be measured for is left out of the size, and the import is not blocked", async ({
 	page,
 }) => {

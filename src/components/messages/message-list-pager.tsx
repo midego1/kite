@@ -45,35 +45,48 @@ function ListPager({ pager }: { pager: MessageListPagerState }) {
 	);
 }
 
-const STICKY_ROW = "sticky top-0 z-20 flex items-center bg-white px-5 text-sm text-neutral-500";
+const PAGER_BOX = "flex items-center bg-white px-5 text-sm text-neutral-500";
 
 /** No section label to share a row with: a slim row that stays at the top while the list scrolls. */
 export function ListPagerRow({ pager }: { pager: MessageListPagerState }) {
 	return (
-		<div role="presentation" className={clsx(STICKY_ROW, "h-8 justify-end")}>
+		<div role="listitem" className={clsx(PAGER_BOX, "sticky top-0 z-20 h-8 justify-end")}>
 			<ListPager pager={pager} />
 		</div>
 	);
 }
 
-/**
- * Decorative: the rows carry everything, and a list may only hold list items. The first label carries the pager
- * and sticks to the top, so the pager stays reachable as it was in the fixed header; the label truncates first.
- */
-export function ListSectionLabel({ section, pager }: { section: ListSection; pager: MessageListPagerState | null }) {
+/** Decorative: the rows carry everything, and a list may only hold list items. */
+export function ListSectionLabel({ section, withPager }: { section: ListSection; withPager: boolean }) {
 	if (!section.label) return null;
 	return (
 		<div
 			role="presentation"
 			className={
-				pager ? clsx(STICKY_ROW, "min-h-8 justify-between gap-2") : "px-5 pb-1 pt-3 text-sm text-neutral-500 first:pt-1"
+				withPager
+					? // Room for the pager that floats over the end of this row: the label truncates before it.
+						"flex min-h-8 items-center pe-40 ps-5 text-sm text-neutral-500"
+					: "px-5 pb-1 pt-3 text-sm text-neutral-500 first:pt-1"
 			}
 		>
 			<p aria-hidden="true" className="min-w-0 truncate">
 				{section.label}
 				{section.count !== null && <span className="ms-2">[{section.count}]</span>}
 			</p>
-			{pager && <ListPager pager={pager} />}
+		</div>
+	);
+}
+
+/**
+ * The pager of a list with a section label: a zero-height sticky anchor just above the first label whose pager
+ * sits over the label row's end, then stays at the top while the list scrolls (only the pager sticks, not the label).
+ */
+export function StickyPager({ pager }: { pager: MessageListPagerState }) {
+	return (
+		<div role="listitem" className="sticky top-0 z-20 h-0">
+			<div className={clsx(PAGER_BOX, "absolute end-0 top-0 h-8 justify-end")}>
+				<ListPager pager={pager} />
+			</div>
 		</div>
 	);
 }

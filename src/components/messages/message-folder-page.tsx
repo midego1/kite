@@ -19,7 +19,7 @@ import { useClearSelection } from "./use-clear-selection";
 import { useOpenRowBridge } from "./use-open-row-bridge";
 import { MessageListHeader } from "./message-list-header";
 import { buildListPager } from "./message-list-pager-utils";
-import { ListPagerRow, ListSectionLabel } from "./message-list-pager";
+import { ListPagerRow, ListSectionLabel, StickyPager } from "./message-list-pager";
 import { MessageListRow } from "./message-list-row";
 import {
 	applySelection,
@@ -400,7 +400,9 @@ export function MessageFolderPage({
 		setOffset,
 		setPageCursors,
 	});
-	const paged = pager.canPrevious || pager.canNext;
+	// The bulk toolbar replaces the header there and a page change drops the selection, so the pager waits (as it did).
+	const bulk = selectedIds.length > 0 && !compact;
+	const paged = (pager.canPrevious || pager.canNext) && !bulk;
 
 	return (
 		<div className="flex h-full min-h-0 flex-1 flex-col" data-selection-scope="">
@@ -454,7 +456,14 @@ export function MessageFolderPage({
 				}
 			/>
 
-			<div className="min-h-0 flex-1 overflow-y-auto overscroll-contain scrollbar-gutter-stable" data-density={density}>
+			<div
+				className={clsx(
+					"min-h-0 flex-1 overflow-y-auto overscroll-contain scrollbar-gutter-stable",
+					// Keyboard focus scrolls a row clear of the sticky pager.
+					paged && "scroll-pt-8",
+				)}
+				data-density={density}
+			>
 				<div
 					ref={listRef}
 					role="list"
@@ -468,12 +477,9 @@ export function MessageFolderPage({
 				>
 					<UpdateNoticeRow compact={(compact || isMobile) && config.folder !== "drafts"} density={density} />
 					{paged && !sections[0]?.label && <ListPagerRow pager={pager} />}
+					{paged && sections[0]?.label && <StickyPager pager={pager} />}
 					{sections.map((section, index) => [
-						<ListSectionLabel
-							key={`section-${section.key}`}
-							section={section}
-							pager={index === 0 && paged ? pager : null}
-						/>,
+						<ListSectionLabel key={`section-${section.key}`} section={section} withPager={index === 0 && paged} />,
 						...section.messages.map((message) => (
 							<MessageListRow
 								key={message.id}

@@ -15,19 +15,26 @@ import { MAILBOX_AI_OFF_REASON } from "./mailbox-ai-utils";
 /** The audit action of turning "No AI for this mailbox" on or off. */
 const MAILBOX_AI_AUDIT_ACTION = "agent.mailbox_ai";
 
-/** Databases known to have applied 0091; migrations only add, so a hit is final for the isolate's life. */
+/** Databases known to have applied 0092 (and so 0091); migrations only add, so a hit is final for the isolate's life. */
 const appliedDatabases = new WeakSet<object>();
 
 /**
- * Whether the switch can be stored: false before migration 0091, when a save answers 409 `MIGRATION_PENDING`. Reads
- * only the column list, never the column itself.
+ * Which of the switch's columns exist: `ai_disabled` (0091; without it a save answers 409 `MIGRATION_PENDING`) and
+ * `ai_disabled_at` (0092; without it the switch still saves and the chat's history cut falls back to the mailbox's
+ * last settings save). Reads only the column list, never the columns themselves.
  */
-export async function mailboxAiSwitchAvailable(env: CloudflareEnv): Promise<boolean> {
-	if (appliedDatabases.has(env.DB)) return true;
+async function mailboxAiColumns(env: CloudflareEnv): Promise<{ disabled: boolean; disabledAt: boolean }> {
+	if (appliedDatabases.has(env.DB)) return { disabled: true, disabledAt: true };
 	const { results } = await env.DB.prepare("PRAGMA table_info(mailbox_agent_settings)").all<{ name: string }>();
-	if (!results.some((column) => column.name === "ai_disabled")) return false;
-	appliedDatabases.add(env.DB);
-	return true;
+	const names = new Set(results.map((column) => column.name));
+	const columns = { disabled: names.has("ai_disabled"), disabledAt: names.has("ai_disabled_at") };
+	if (columns.disabled && columns.disabledAt) appliedDatabases.add(env.DB);
+	return columns;
+}
+
+/** Whether the switch can be stored: false before migration 0091, when a save answers 409 `MIGRATION_PENDING`. */
+export async function mailboxAiSwitchAvailable(env: CloudflareEnv): Promise<boolean> {
+	return (await mailboxAiColumns(env)).disabled;
 }
 
 /**
@@ -73,13 +80,20 @@ export async function setMailboxAiDisabled(
 	access: MailboxAccessLevel,
 	disabled: boolean,
 ): Promise<"saved" | "migration_pending"> {
-	if (!(await mailboxAiSwitchAvailable(env))) return "migration_pending";
+	const columns = await mailboxAiColumns(env);
+	if (!columns.disabled) return "migration_pending";
 	const mailboxId = access.mailbox.id;
 	const db = getDb(env);
 	await ensureMailboxAgentSettingsRow(db, access);
+	const now = new Date();
+	// Only a flip reaches the row, so the time is when AI was turned off, whatever is saved for the mailbox later.
 	const changed = await db
 		.update(mailboxAgentSettings)
-		.set({ aiDisabled: disabled, updatedAt: new Date() })
+		.set({
+			aiDisabled: disabled,
+			updatedAt: now,
+			...(columns.disabledAt ? { aiDisabledAt: disabled ? now : null } : {}),
+		})
 		.where(and(eq(mailboxAgentSettings.mailboxId, mailboxId), ne(mailboxAgentSettings.aiDisabled, disabled)))
 		.returning({ mailboxId: mailboxAgentSettings.mailboxId });
 	if (changed.length > 0)

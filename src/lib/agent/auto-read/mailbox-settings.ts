@@ -12,10 +12,14 @@ type MailboxAgentSettingsRow = typeof mailboxAgentSettings.$inferInsert;
 const LIST_SUMMARY_KEYS = Object.keys(LIST_SUMMARY_DEFAULTS) as (keyof typeof LIST_SUMMARY_DEFAULTS)[];
 // Columns a deploy may run ahead of: 0069's task instructions and 0072's one-line summary settings.
 const PENDING_KEYS: readonly string[] = [...TASK_INSTRUCTION_KEYS, ...LIST_SUMMARY_KEYS];
-// 0091's switch is never part of a settings save (`mailbox-ai.ts` writes it), so a save before 0091 only omits it.
-const PENDING_COLUMNS: readonly string[] = [...TASK_INSTRUCTION_KEYS, ...LIST_SUMMARY_KEYS, "aiDisabled" as const].map(
-	(key) => mailboxAgentSettings[key].name,
-);
+// 0091's switch and 0092's time are never part of a settings save (`mailbox-ai-settings.ts` writes them), so a save
+// before those migrations only omits them.
+const PENDING_COLUMNS: readonly string[] = [
+	...TASK_INSTRUCTION_KEYS,
+	...LIST_SUMMARY_KEYS,
+	"aiDisabled" as const,
+	"aiDisabledAt" as const,
+].map((key) => mailboxAgentSettings[key].name);
 
 /** Whether an update stores something in a pending column that would be lost without its migration. */
 function setsPendingValue(values: MailboxAgentSettingsRow): boolean {

@@ -666,6 +666,13 @@
       "when": 1793673600000,
       "tag": "0091_add_mailbox_ai_disabled",
       "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "6",
+      "when": 1793760000000,
+      "tag": "0092_add_mailbox_ai_disabled_at",
+      "breakpoints": true
     }
   ]
 }

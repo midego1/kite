@@ -34,7 +34,7 @@ const MODULES = [
 	["loadRowLines", "src/lib/agent/summaries/lines.ts"],
 	["listSuggestions", "src/lib/agent/auto-read/suggestion-api.ts"],
 	["createDb", "src/db/index.ts"],
-	["aiHiddenSources", "src/lib/agent/mailbox-ai.ts"],
+	["aiHiddenSources, aiOffSince", "src/lib/agent/mailbox-ai.ts"],
 	["listSubscriptionsTool", "src/lib/finance/tools.ts"],
 	["runCalendarTool", "src/lib/calendar/tools.ts"],
 	["moduleHost", "src/lib/modules/host.ts"],
@@ -85,6 +85,7 @@ const {
 	listSuggestions,
 	createDb,
 	aiHiddenSources,
+	aiOffSince,
 	listSubscriptionsTool,
 	runCalendarTool,
 	moduleHost,
@@ -544,4 +545,95 @@ test("a model selected before the switch refuses its next call (a fallback, repa
 		{ name: "MailboxAiOffError" },
 	);
 	assert.equal(requests.length, 0);
+});
+
+test("a model selected before the switch refuses its next streamed call too, and streams while AI is on", async (t) => {
+	const { env, setAi, requests } = await harness(t);
+	const selection = await getAgentModel(env, { mailboxId: "mailbox-off" });
+	const prompt = [{ role: "user", content: [{ type: "text", text: "Hello" }] }];
+	const { stream } = await selection.model.doStream({ prompt });
+	for await (const _part of stream);
+	assert.equal(requests.length, 1);
+	await setAi("mailbox-off", true);
+	await assert.rejects(
+		selection.model.doStream({ prompt: [{ role: "user", content: [{ type: "text", text: MARKER }] }] }),
+		{ name: "MailboxAiOffError" },
+	);
+	assert.equal(requests.length, 1);
+	assert.deepEqual(
+		requests.filter((raw) => raw.includes(MARKER)),
+		[],
+	);
+});
+
+const stranger = { id: "user-3", email: "stranger@example.com", role: "user" };
+
+test("the history cut is when the switch flipped, for people who can read that mailbox only", async (t) => {
+	const { database, env, setAi } = await harness(t);
+	database.db.exec(
+		"INSERT INTO users (id, email, password_hash, name, role, created_at) VALUES ('user-3', 'stranger@example.com', 'hash', 'Stranger', 'user', 1)",
+	);
+	assert.equal(await aiOffSince(env, owner), null);
+	await setAi("mailbox-off", true);
+	const since = await aiOffSince(env, owner);
+	assert.ok(since instanceof Date);
+	// A later settings save or a sender mute in that mailbox does not move it.
+	database.db.exec(`UPDATE mailbox_agent_settings SET updated_at = updated_at + 3600,
+		capabilities = json_set(capabilities, '$.mutedSenders', json('["noise@example.net"]')) WHERE mailbox_id = 'mailbox-off'`);
+	assert.equal((await aiOffSince(env, owner)).getTime(), since.getTime());
+	// Saving the same value again does not move it either.
+	await setAi("mailbox-off", true);
+	assert.equal((await aiOffSince(env, owner)).getTime(), since.getTime());
+	// The read-only member can read it, the stranger cannot.
+	assert.equal(
+		(await aiOffSince(env, { id: "user-2", email: "reader@example.com", role: "user" })).getTime(),
+		since.getTime(),
+	);
+	assert.equal(await aiOffSince(env, stranger), null);
+	// Turning AI back on clears the time.
+	await setAi("mailbox-off", false);
+	assert.equal(await aiOffSince(env, owner), null);
+	assert.equal(
+		database.db.prepare("SELECT ai_disabled_at FROM mailbox_agent_settings WHERE mailbox_id = 'mailbox-off'").get()
+			.ai_disabled_at,
+		null,
+	);
+});
+
+test("before 0092 the switch still saves and the cut falls back to the last settings save; 0092 takes the audit time", async (t) => {
+	const before = copyMigrationsBefore(scratch, 92);
+	const { database, env, setAi } = await harness(t, { migrations: before });
+	assert.equal((await setAi("mailbox-off", true)).status, 200);
+	const audit = database.db
+		.prepare("SELECT created_at FROM audit_logs WHERE action = 'agent.mailbox_ai'")
+		.get().created_at;
+	database.db.exec("UPDATE mailbox_agent_settings SET updated_at = updated_at + 3600 WHERE mailbox_id = 'mailbox-off'");
+	const saved = database.db
+		.prepare("SELECT updated_at FROM mailbox_agent_settings WHERE mailbox_id = 'mailbox-off'")
+		.get().updated_at;
+	assert.equal((await aiOffSince(env, owner)).getTime(), saved * 1000);
+	await applyMigrations(database, migrationsDir);
+	assert.equal(
+		database.db.prepare("SELECT ai_disabled_at FROM mailbox_agent_settings WHERE mailbox_id = 'mailbox-off'").get()
+			.ai_disabled_at,
+		audit,
+	);
+	assert.equal((await aiOffSince(env, owner)).getTime(), audit * 1000);
+});
+
+test("with no mailbox off nothing is looked up, and only actions taken in an AI-off mailbox hide a record", async (t) => {
+	const { database, env, setAi } = await harness(t);
+	database.db
+		.exec(`INSERT INTO agent_actions (id, mailbox_id, initiator, action, status, after, created_at, updated_at) VALUES
+		('act-on', 'mailbox-on', 'user', 'finance.track_subscription', 'applied', '{"ref":{"kind":"finance:subscription","id":"sub-on"}}', 1, 1),
+		('act-off', 'mailbox-off', 'user', 'finance.track_subscription', 'applied', '{"ref":{"kind":"finance:subscription","id":"sub-off"}}', 1, 1)`);
+	const sources = [
+		{ refs: [{ kind: "finance:subscription", id: "sub-on" }] },
+		{ refs: [{ kind: "finance:subscription", id: "sub-off" }] },
+		{ messageIds: ["missing-message"] },
+		{ mailboxIds: [""] },
+	];
+	assert.deepEqual(await aiHiddenSources(env, sources), [false, false, false, true]);
+	await setAi("mailbox-off", true);
+	assert.deepEqual(await aiHiddenSources(env, sources), [false, true, true, true]);
 });

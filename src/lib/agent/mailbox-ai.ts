@@ -1,4 +1,6 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, sql, type SQL } from "drizzle-orm";
+import type { SessionUser } from "@/lib/auth/types";
+import { listAccessibleMailboxIds } from "@/lib/mailboxes/access";
 import { getDb, type AppDatabase } from "@/db";
 import { inJsonArray } from "@/db/chunk-utils";
 import { mailboxAgentSettings, messages } from "@/db/schema";
@@ -75,16 +77,39 @@ async function messageMailboxes(db: AppDatabase, ids: string[]): Promise<Map<str
 	return new Map(rows.map((row) => [row.id, row.mailboxId]));
 }
 
-/** The mailboxes of applied agent actions that changed each ref (the module's result names it as `ref`). */
-async function refMailboxes(db: AppDatabase, keys: string[]): Promise<Map<string, string[]>> {
+/** Every mailbox with AI off in the install: few, so the per-record checks below start from it. */
+async function allAiOffMailboxIds(db: AppDatabase): Promise<Set<string>> {
+	try {
+		const rows = await db
+			.select({ mailboxId: mailboxAgentSettings.mailboxId })
+			.from(mailboxAgentSettings)
+			.where(eq(mailboxAgentSettings.aiDisabled, true));
+		return new Set(rows.map((row) => row.mailboxId));
+	} catch (error) {
+		if (beforeMigration(error)) return new Set();
+		throw error;
+	}
+}
+
+/**
+ * The AI-off mailboxes of applied or pending agent actions that changed each ref (the module's result names it as
+ * `ref`). Only actions taken in those mailboxes are read (`agent_actions_mailbox_created_idx`), never the whole log.
+ */
+async function refMailboxes(db: AppDatabase, keys: string[], off: ReadonlySet<string>): Promise<Map<string, string[]>> {
 	const found = new Map<string, string[]>();
-	if (keys.length === 0) return found;
+	if (keys.length === 0 || off.size === 0) return found;
 	const key = sql<string>`json_extract(${agentActions.after}, '$.ref.kind') || ':' || json_extract(${agentActions.after}, '$.ref.id')`;
 	try {
 		const rows = await db
 			.select({ key, mailboxId: agentActions.mailboxId })
 			.from(agentActions)
-			.where(and(inArray(agentActions.status, ["applied", "pending"]), inJsonArray(key, keys)));
+			.where(
+				and(
+					inJsonArray(agentActions.mailboxId, [...off]),
+					inArray(agentActions.status, ["applied", "pending"]),
+					inJsonArray(key, keys),
+				),
+			);
 		for (const row of rows) found.set(row.key, [...(found.get(row.key) ?? []), row.mailboxId]);
 		return found;
 	} catch (error) {
@@ -93,52 +118,63 @@ async function refMailboxes(db: AppDatabase, keys: string[]): Promise<Map<string
 	}
 }
 
+const hasLostId = (source: AiSource) =>
+	[...(source.mailboxIds ?? []), ...(source.messageIds ?? [])].some((id) => id === "");
+
 /**
  * For each source, whether what it describes must stay away from the AI provider: anything read from a mailbox with
- * AI off, or changed by an action taken in one. Fails closed: a message that cannot be found, an empty id or a read
- * error hides the record (or throws).
+ * AI off, or changed by an action taken in one. Fails closed: an empty id, or (while any mailbox has AI off) a
+ * message that cannot be found, hides the record; a read error throws. With no mailbox off nothing else is read.
  */
 export async function aiHiddenSources(env: CloudflareEnv, sources: readonly AiSource[]): Promise<boolean[]> {
 	if (sources.length === 0) return [];
 	const db = getDb(env);
+	const off = await allAiOffMailboxIds(db);
+	if (off.size === 0) return sources.map(hasLostId);
 	const messageIds = [...new Set(sources.flatMap((source) => (source.messageIds ?? []).filter(present)))];
 	const refKeys = [...new Set(sources.flatMap((source) => (source.refs ?? []).map(refKey)))];
 	const [byMessage, byRef] = await Promise.all([
 		messageMailboxes(db, messageIds.filter(Boolean)),
-		refMailboxes(db, refKeys),
+		refMailboxes(db, refKeys, off),
 	]);
-	const resolved = sources.map((source) => {
-		let lost = false;
-		const ids: string[] = [];
-		for (const id of (source.mailboxIds ?? []).filter(present))
-			if (id) ids.push(id);
-			else lost = true;
+	return sources.map((source) => {
+		if (hasLostId(source)) return true;
+		const ids = (source.mailboxIds ?? []).filter(present);
 		for (const id of (source.messageIds ?? []).filter(present)) {
-			const mailboxId = id ? byMessage.get(id) : undefined;
-			if (mailboxId === undefined) lost = true;
-			else if (mailboxId) ids.push(mailboxId);
+			const mailboxId = byMessage.get(id);
+			if (mailboxId === undefined) return true;
+			if (mailboxId) ids.push(mailboxId);
 		}
 		for (const ref of source.refs ?? []) ids.push(...(byRef.get(refKey(ref)) ?? []));
-		return { lost, ids };
+		return ids.some((id) => off.has(id));
 	});
-	const off = await aiOffMailboxIds(
-		db,
-		resolved.flatMap((entry) => entry.ids),
-	);
-	return resolved.map((entry) => entry.lost || entry.ids.some((id) => off.has(id)));
 }
 
 /**
- * When the most recent mailbox with AI off last had its settings saved (at or after the switch was turned on), or
- * null when no mailbox has AI off. Chat history from before then is not sent again: it may quote such a mailbox.
+ * When AI was last turned off for a mailbox this viewer can read, or null when none has it off. Chat history from
+ * before then is not sent again: an earlier answer may quote that mailbox. The time is `ai_disabled_at` (0092), set only
+ * when the switch flips; before 0092, or for a row restored without it, the mailbox's last settings save stands in,
+ * which is never earlier than the switch.
  */
-export async function aiOffSince(env: CloudflareEnv): Promise<Date | null> {
-	try {
-		const [row] = await getDb(env)
-			.select({ at: sql<number | null>`max(${mailboxAgentSettings.updatedAt})` })
+export async function aiOffSince(env: CloudflareEnv, viewer: Pick<SessionUser, "id" | "email" | "role">) {
+	const db = getDb(env);
+	const readable = await listAccessibleMailboxIds(db, viewer);
+	if (readable.length === 0) return null;
+	const where = and(eq(mailboxAgentSettings.aiDisabled, true), inJsonArray(mailboxAgentSettings.mailboxId, readable));
+	const latest = (at: SQL) =>
+		db
+			.select({ at: sql<number | null>`max(${at})` })
 			.from(mailboxAgentSettings)
-			.where(eq(mailboxAgentSettings.aiDisabled, true));
-		return row?.at ? new Date(Number(row.at) * 1000) : null;
+			.where(where);
+	try {
+		let rows: { at: number | null }[];
+		try {
+			rows = await latest(sql`coalesce(${mailboxAgentSettings.aiDisabledAt}, ${mailboxAgentSettings.updatedAt})`);
+		} catch (error) {
+			if (missingColumnFromError(error) !== "ai_disabled_at") throw error;
+			rows = await latest(sql`${mailboxAgentSettings.updatedAt}`);
+		}
+		return rows[0]?.at ? new Date(Number(rows[0].at) * 1000) : null;
 	} catch (error) {
 		if (beforeMigration(error)) return null;
 		throw error;

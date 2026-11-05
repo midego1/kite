@@ -39,6 +39,8 @@ export type MailboxOption = {
 	externalIdentities?: SendIdentity[];
 	/** Null when the mailbox has no Screener settings (off). */
 	screener?: { enabled: boolean; mode: "screener" | "inbox" } | null;
+	/** "No AI for this mailbox": its AI features are hidden or explained; the server refuses them either way. */
+	aiDisabled?: boolean;
 };
 
 type MailboxContextValue = {

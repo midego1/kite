@@ -68,6 +68,7 @@ export async function fetchMailboxOptions(force = false): Promise<MailboxOption[
 				senderAddresses: m.senderAddresses,
 				externalIdentities: m.externalIdentities,
 				screener: m.screener,
+				aiDisabled: m.aiDisabled === true,
 			}));
 			if (requestGeneration === cacheGeneration) {
 				mailboxesCache = items;

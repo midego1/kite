@@ -12,7 +12,8 @@ type MailboxAgentSettingsRow = typeof mailboxAgentSettings.$inferInsert;
 const LIST_SUMMARY_KEYS = Object.keys(LIST_SUMMARY_DEFAULTS) as (keyof typeof LIST_SUMMARY_DEFAULTS)[];
 // Columns a deploy may run ahead of: 0069's task instructions and 0072's one-line summary settings.
 const PENDING_KEYS: readonly string[] = [...TASK_INSTRUCTION_KEYS, ...LIST_SUMMARY_KEYS];
-const PENDING_COLUMNS: readonly string[] = [...TASK_INSTRUCTION_KEYS, ...LIST_SUMMARY_KEYS].map(
+// 0091's switch is never part of a settings save (`mailbox-ai.ts` writes it), so a save before 0091 only omits it.
+const PENDING_COLUMNS: readonly string[] = [...TASK_INSTRUCTION_KEYS, ...LIST_SUMMARY_KEYS, "aiDisabled" as const].map(
 	(key) => mailboxAgentSettings[key].name,
 );
 

@@ -64,7 +64,7 @@ export async function generateDraft(
 	const generated = await callWithFallback(options, async (current) => {
 		sent = current;
 		// A parameter fallback is a new request, so the opt-in is checked again.
-		const model = await selectAutoReadModel(env, settings.modelId);
+		const model = await selectAutoReadModel(env, { mailboxId: job.mailboxId, modelId: settings.modelId });
 		const reply = await withReservedSpend(
 			{
 				env,
@@ -136,7 +136,10 @@ async function existingReply(env: CloudflareEnv, messageId: string) {
 /** The draft model, or null after recording that the provider may not read this mail. */
 async function draftModel(input: ReplySuggestionInput): Promise<AgentSelection | null> {
 	try {
-		return await selectAutoReadModel(input.env, input.settings.modelId);
+		return await selectAutoReadModel(input.env, {
+			mailboxId: input.job.mailboxId,
+			modelId: input.settings.modelId,
+		});
 	} catch (error) {
 		if (!(error instanceof ExternalProviderNotAllowedError)) throw error;
 		await blockDraft(input, "external_provider_not_allowed");

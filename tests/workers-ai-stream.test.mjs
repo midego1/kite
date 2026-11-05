@@ -77,7 +77,10 @@ async function deduped(...chunks) {
 }
 
 async function streamedText(events, options) {
-	const agent = await getAgentModel({ DB: emptyDb, AI: { run: async () => sseStream(events, options) } });
+	const agent = await getAgentModel(
+		{ DB: emptyDb, AI: { run: async () => sseStream(events, options) } },
+		{ mailboxId: "mailbox-1" },
+	);
 	assert.ok(agent?.model);
 	return streamText({ model: agent.model, prompt: "Say OK" }).text;
 }
@@ -114,12 +117,16 @@ test("a tool call sent in both formats is called once", async () => {
 	const toolCall = [
 		{ index: 0, id: "call_lookup", type: "function", function: { name: "lookup", arguments: '{"city":"Utrecht"}' } },
 	];
-	const agent = await getAgentModel({
-		DB: emptyDb,
-		AI: {
-			run: async () => sseStream([{ tool_calls: toolCall, choices: [{ index: 0, delta: { tool_calls: toolCall } }] }]),
+	const agent = await getAgentModel(
+		{
+			DB: emptyDb,
+			AI: {
+				run: async () =>
+					sseStream([{ tool_calls: toolCall, choices: [{ index: 0, delta: { tool_calls: toolCall } }] }]),
+			},
 		},
-	});
+		{ mailboxId: "mailbox-1" },
+	);
 	const result = streamText({
 		model: agent.model,
 		prompt: "Look up Utrecht",

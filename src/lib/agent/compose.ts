@@ -136,7 +136,7 @@ export async function createComposeStream(
 	const access = await getMailboxAccessLevel(db, user, request.mailboxId);
 	if (!access?.canSendOnBehalf) throw new ComposeRefusal(404, "Mailbox not found");
 	const settings = await readMailboxAgentSettingsRow(db, request.mailboxId);
-	const selection = await selectInteractiveModel(env, settings?.modelId);
+	const selection = await selectInteractiveModel(env, { mailboxId: request.mailboxId, modelId: settings?.modelId });
 	const source = request.mode === "write" ? await loadSource(env, user, request) : null;
 	const prompt = buildComposePrompt({
 		...request,

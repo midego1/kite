@@ -5,6 +5,7 @@ import { Sparkles } from "lucide-react";
 import { Tooltip } from "@/components/ui/tooltip";
 import { authFetch } from "@/lib/auth/client";
 import type { WriteWithKiteComposer, WriteWithKiteSelection } from "./write-with-kite-types";
+import { MAILBOX_AI_OFF_REASON, MAILBOX_AI_OFF_TEXT } from "@/lib/agent/mailbox-ai-utils";
 
 // The panel, its requests and HTML handling load only when the button is used.
 const WriteWithKitePanel = lazy(() => import("./write-with-kite-panel"));
@@ -49,19 +50,25 @@ export function WriteWithKite({
 }) {
 	// The composer's own mailbox (its From), not the sidebar's. The answer is kept per mailbox, so changing From hides
 	// the button until that mailbox's answer arrives.
-	const [checked, setChecked] = useState<{ mailboxId: string; available: boolean } | null>(null);
+	const [checked, setChecked] = useState<{ mailboxId: string; available: boolean; aiOff?: boolean } | null>(null);
 	const [openState, setOpen] = useState<{ mailboxId: string; selection: WriteWithKiteSelection | null } | null>(null);
 	// A panel belongs to the mailbox it was opened for: changing From closes it, and it does not come back with the answer.
 	const open = openState?.mailboxId === mailboxId ? openState : null;
 	const available = !!mailboxId && checked?.mailboxId === mailboxId && checked.available;
+	const aiOff = !!mailboxId && checked?.mailboxId === mailboxId && !!checked.aiOff;
 
 	useEffect(() => {
 		let active = true;
 		if (!mailboxId) return;
 		void authFetch(`/api/agent/compose?mailboxId=${encodeURIComponent(mailboxId)}`, { redirectOnUnauthorized: false })
 			.then(async (response) => {
-				const data = (await response.json().catch(() => ({}))) as { available?: boolean };
-				if (active) setChecked({ mailboxId, available: response.ok && data.available === true });
+				const data = (await response.json().catch(() => ({}))) as { available?: boolean; reason?: string };
+				if (active)
+					setChecked({
+						mailboxId,
+						available: response.ok && data.available === true,
+						aiOff: data.reason === MAILBOX_AI_OFF_REASON,
+					});
 			})
 			.catch(() => undefined);
 		return () => {
@@ -86,6 +93,22 @@ export function WriteWithKite({
 		return () => editor.removeEventListener("keydown", onKeyDown);
 	}, [available, editorId, mailboxId]);
 
+	// No AI for this mailbox: the button stays where people look for it and says why it does nothing.
+	if (aiOff)
+		return (
+			<Tooltip label={MAILBOX_AI_OFF_TEXT}>
+				<button
+					type="button"
+					aria-label={`Write with Kite: ${MAILBOX_AI_OFF_TEXT}`}
+					aria-disabled="true"
+					data-testid="write-with-kite-ai-off"
+					onMouseDown={(event) => event.preventDefault()}
+					className="cursor-not-allowed rounded-md p-1.5 text-neutral-400"
+				>
+					<Sparkles className="h-4 w-4" />
+				</button>
+			</Tooltip>
+		);
 	if (!available) return null;
 	return (
 		<>

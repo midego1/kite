@@ -326,6 +326,11 @@ export type CapabilityCallContext = {
 	timeZone: string;
 	grants: string[];
 	mailboxIds?: string[];
+	/**
+	 * Chat only: mailboxes with "No AI for this mailbox" on. An assistant tool leaves out anything that came from
+	 * their mail, because its answer goes to the AI provider.
+	 */
+	aiOffMailboxIds?: string[];
 	trigger: CapabilityTrigger;
 };
 

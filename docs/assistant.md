@@ -46,6 +46,19 @@ What automatic reading sends: the message's sender, subject and text, the facts 
 
 Message text is treated as untrusted. A message that tries to give the model orders cannot make Kite act: the model has no tools, its answer is validated, and anything that changes something needs your click at Suggest only.
 
+## No AI for this mailbox
+
+A mailbox can be kept away from AI altogether: **No AI for this mailbox**, at the top of the mailbox's settings in the assistant panel. While it is on, nothing from the mailbox is sent to any AI provider, by any route. It is off by default.
+
+- **Who.** Only people who can manage the mailbox (full access) can change it; anyone else gets 403 from `PUT /api/agent/settings/ai`. It applies to everyone who can open the mailbox, admins included, whatever their personal instructions say. Each change writes an audit row (`agent.mailbox_ai`).
+- **Turning it on calls no model.** Kite skips the mailbox's queued automatic work (reason `mailbox_ai_off`), expires its open suggestions (they stop showing in the reader, the message list and For you; the action log keeps them) and deletes its stored summaries, translations and one-line summaries (derived data that backups never hold). Reply drafts suggested earlier stay as your drafts.
+- **What is off.** Chat, Write with Kite, Summarize and its translations, suggestions, one-line summaries, automatic reading with its module steps (Calendar invites, Money Watch), the older **Automatically draft replies**, and writing style learning. The assistant panel says "AI is off for this mailbox" instead of the chat; Write with Kite and Summarize stay where you look for them, greyed out, with the same words.
+- **Other mailboxes.** The chat works per mailbox, so its tools never reach this one: searching and listing in another mailbox cannot return its mail, and asking for one of its messages by id answers only "AI is off for this mailbox", never a subject or sender. In the All mailboxes view the open email is offered to the chat only when it belongs to the chat's mailbox. Money Watch's assistant tool leaves out subscriptions found in this mailbox. Calendar events you accepted are your calendar, not mail, and stay visible to the assistant.
+- **Replies elsewhere.** Write with Kite is unavailable when you write from this mailbox. When you reply from another mailbox and quote mail from this one, the composer text is your own text: Write with Kite in that other mailbox can use it, because you put it there.
+- **Not affected.** Webhooks, the spam filter (it runs in Kite without a model), MCP and the REST API. MCP and API keys serve the client you connect directly; Kite calls no model for them, so an AI client you connect with a key still reads what the key allows. Restrict the key to other mailboxes when that client must not see this one.
+- **How it is enforced.** On the server, in one place: every model request is made through `getAgentModel` (`src/lib/agent/model.ts`), which refuses with `mailbox_ai_off` (HTTP 403 for a request a person makes) when the mailbox whose mail the request carries has the switch on. It is read again for every request and every chat step, so a job queued before the switch, or a chat answer already running, stops too. `tests/mailbox-ai-gate.test.mjs` fails when a new model call site does not get its model through it.
+- **Before the database update.** The switch needs migration 0091. Until it is applied no mailbox can have it on, everything works as before, and saving it answers 409 `MIGRATION_PENDING`. Backups carry the setting with the rest of the mailbox's assistant settings; restoring an older backup leaves it off.
+
 ## AI providers
 
 The primary admin chooses the provider in [Admin → Agent](/agent) and can save several: Workers AI, Anthropic, Haimaker, OpenAI, OpenRouter, Groq or a custom OpenAI-compatible endpoint, each with a name, its base URL, its API key and its models with their rates. **Saved providers** lists them; the one marked **In use** is the only one used, and every AI feature (chat, Write with Kite, automatic reading, summaries, agent drafts, spend and the model choices in each mailbox) uses that one, as before with the single provider. **Use this provider** switches to another in one click, without typing its key or models again, and a request that starts afterwards uses it. The external-provider opt-in still applies to whichever provider is in use, so while it is on, switching to another external vendor first asks you to confirm that the permission now applies to that vendor.
@@ -181,6 +194,7 @@ Chat, Write with Kite, summaries and their translations, automatic reading and a
 
 - **Install-wide.** The primary admin can turn automatic reading off for every mailbox with one switch, and can turn external providers off again at any time.
 - **Per mailbox.** Set the level to Off, or use **Pause for 24 hours**. While a mailbox is paused, the settings show the end time and a **Resume** button.
+- **No AI for this mailbox.** Stops every AI feature for one mailbox, not only automatic reading (see [No AI for this mailbox](#no-ai-for-this-mailbox)).
 - **Assistant off.** Turning the email assistant off stops all of it.
 
 When each switch takes effect differs. Kite checks the automatic-reading switch, a mailbox's Off level and pause, and the daily limit when a queued job starts. A job that has not started yet is skipped. A job that is already running may still finish its remaining model calls, such as a repair, a fallback or a reply draft. The external-provider opt-in is checked again before every model request, so turning it off also stops those remaining calls to an external provider.
@@ -191,6 +205,7 @@ When each switch takes effect differs. Kite checks the automatic-reading switch,
 
 - Automatic reading is turned off for this install, for this mailbox, or the email assistant is off.
 - Kite is paused for this mailbox.
+- AI is off for this mailbox.
 - The external AI provider is not allowed to read mail automatically.
 - Daily limit reached, daily spend cap reached, or rate limited.
 - The message was moved or deleted first.

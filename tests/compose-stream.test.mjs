@@ -128,17 +128,20 @@ const outcome = (db) => db.db.prepare("SELECT status, error_code, finish_reason,
 test("an external provider needs the primary admin's opt-in on every request; Workers AI does not", async (t) => {
 	const { db, env } = await setup(t, { allowed: 0 });
 	for (let attempt = 0; attempt < 2; attempt++)
-		await assert.rejects(selectInteractiveModel(env, null), (error) => {
+		await assert.rejects(selectInteractiveModel(env, { mailboxId: "mailbox-1" }), (error) => {
 			assert.ok(error instanceof InteractiveModelRefusedError);
 			assert.equal(error.reason, "external_provider_not_allowed");
 			return true;
 		});
 	db.db.exec("UPDATE app_settings SET agent_external_auto_read_allowed = 1");
-	assert.equal((await selectInteractiveModel(env, null)).providerKind, "compatible");
+	assert.equal((await selectInteractiveModel(env, { mailboxId: "mailbox-1" })).providerKind, "compatible");
 	db.db.exec("UPDATE app_settings SET agent_external_auto_read_allowed = 0, agent_provider = 'cloudflare'");
-	assert.equal((await selectInteractiveModel(env, null)).providerKind, "cloudflare");
+	assert.equal((await selectInteractiveModel(env, { mailboxId: "mailbox-1" })).providerKind, "cloudflare");
 	db.db.exec("UPDATE app_settings SET agent_enabled = 0");
-	await assert.rejects(selectInteractiveModel(env, null), (error) => error.reason === "assistant_disabled");
+	await assert.rejects(
+		selectInteractiveModel(env, { mailboxId: "mailbox-1" }),
+		(error) => error.reason === "assistant_disabled",
+	);
 });
 
 test("a reply is written from the email the server loads, streamed, checked and settled in ai_usage only", async (t) => {

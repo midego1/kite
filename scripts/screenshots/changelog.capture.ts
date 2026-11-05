@@ -318,6 +318,24 @@ const SHOTS: Shot[] = [
 			return page;
 		},
 	},
+	{
+		// The assistant panel's settings: No AI for this mailbox, turned on (it stays on in the e2e state afterwards).
+		name: "2026-11-05-mailbox-no-ai",
+		viewport: { width: 1280, height: 900 },
+		open: async (page) => {
+			await page.goto("/inbox");
+			const toggle = page.getByRole("button", { name: /^(Open|Close) email assistant$/ });
+			await expect(toggle).toBeVisible();
+			if ((await toggle.getAttribute("aria-label")) === "Open email assistant") await toggle.click({ timeout: 45_000 });
+			const panel = page.locator("#email-assistant-panel");
+			await panel.getByRole("button", { name: "Assistant settings" }).click();
+			const toggleAi = panel.getByRole("switch", { name: "No AI for this mailbox" });
+			await expect(toggleAi).toBeEnabled();
+			if ((await toggleAi.getAttribute("aria-checked")) !== "true") await toggleAi.click();
+			await expect(toggleAi).toBeChecked();
+			return panel.getByTestId("mailbox-ai-setting");
+		},
+	},
 ];
 
 async function openPage(browser: Browser, { theme = "light", viewport }: Shot) {

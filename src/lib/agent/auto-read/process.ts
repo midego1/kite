@@ -27,6 +27,8 @@ import { storeTriageSuggestions } from "./suggestions";
 import { loadTriageContext } from "./triage-context";
 import { runTriageModel, SpendCapReachedError } from "./triage-run";
 import { lineGateFor, settleTriageLine } from "../summaries/lines";
+import { mailboxAiOff } from "../mailbox-ai";
+import { MAILBOX_AI_OFF_REASON, MailboxAiOffError } from "../mailbox-ai-utils";
 
 type AgentJobRow = typeof agentJobs.$inferSelect;
 
@@ -71,6 +73,7 @@ const NO_MODEL: ModelStep = { skip: null, model: null, hintOnly: false };
 function thrownRefusal(error: unknown): string | null {
 	if (error instanceof SpendCapReachedError) return "spend_cap";
 	if (error instanceof ExternalProviderNotAllowedError) return "external_provider_not_allowed";
+	if (error instanceof MailboxAiOffError) return MAILBOX_AI_OFF_REASON;
 	return null;
 }
 
@@ -153,6 +156,8 @@ type TriageOutcome = { skip: string; note?: undefined } | { skip: null; note: st
 
 /** Everything the job reads before it looks at the message, or why it stops here. */
 async function prepareTriage(env: CloudflareEnv, db: AppDatabase, job: AgentJobRow) {
+	// Checked when the job starts, so a job queued before the mailbox's AI was turned off never reads its mail.
+	if (await mailboxAiOff(env, job.mailboxId)) return { skip: MAILBOX_AI_OFF_REASON };
 	const install = await getAutoReadInstallSettings(env);
 	const row = await readMailboxAgentSettingsRow(db, job.mailboxId);
 	const [source] = await db.select().from(messages).where(eq(messages.id, job.sourceMessageId)).limit(1);

@@ -27,6 +27,9 @@ import { EMAIL_TOOL_NAMES, emailToolDescriptions, emailToolSchemas, runEmailTool
 import { agentToday } from "./time";
 import type { AgentToolContext } from "./types";
 import type { ModuleProposal } from "./chat-actions-utils";
+import { getDb } from "@/db";
+import { listAccessibleMailboxIds } from "@/lib/mailboxes/access";
+import { aiOffMailboxIds } from "./mailbox-ai";
 
 type ToolSchema = Parameters<typeof jsonSchema>[0];
 
@@ -81,11 +84,14 @@ export async function buildChatTools(context: AgentToolContext) {
 	const timeZone = normalizeTimeZone(context.timeZone);
 	const viewer = { userId: context.user.id, role: context.user.role, isPrimaryAdmin: context.user.isPrimaryAdmin };
 	const enabled = await listEnabledModules(context.env, viewer);
+	const readable = await listAccessibleMailboxIds(getDb(context.env), context.user);
 	const callContext = buildCallContext({
 		trigger: "chat",
 		viewer,
 		timeZone,
 		mailboxIds: [context.mailboxId],
+		// Module tools see the viewer's own records across mailboxes; those from a mailbox with AI off are left out.
+		aiOffMailboxIds: [...(await aiOffMailboxIds(context.env, readable))],
 		enabled,
 		manifests: MODULE_MANIFESTS,
 	});

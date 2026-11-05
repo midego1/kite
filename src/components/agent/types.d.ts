@@ -147,6 +147,10 @@ export type AgentSettingsResponse = {
 	externalProviderBlocked: boolean;
 	/** The provider's name, such as "OpenAI" or "Workers AI". */
 	providerLabel: string;
+	/** "No AI for this mailbox" is on. */
+	aiDisabled?: boolean;
+	/** False until migration 0091, when the switch cannot be saved yet. */
+	aiSwitchReady?: boolean;
 };
 export type AgentConversationsResponse = { conversations: AgentConversation[] };
 export type AgentJobsResponse = { jobs: AgentJob[] };

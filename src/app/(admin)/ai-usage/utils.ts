@@ -117,6 +117,7 @@ const ERROR_LABELS: Record<string, string> = {
 	external_provider_not_allowed: "External provider not allowed",
 	assistant_off: "Assistant off",
 	no_provider: "No provider",
+	mailbox_ai_off: "AI off for the mailbox",
 	network: "Network error",
 	internal: "Internal error",
 };

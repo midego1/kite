@@ -85,6 +85,7 @@ type CallContextInput = {
 	locale?: string;
 	requestId?: string;
 	mailboxIds?: string[];
+	aiOffMailboxIds?: string[];
 	/** Modules on for the viewer; a session trigger (`chat`, `api`) holds all of their grants. */
 	enabled?: Iterable<ModuleId>;
 	manifests?: readonly Pick<ModuleManifest, "id" | "grants">[];
@@ -103,6 +104,7 @@ export function buildCallContext(input: CallContextInput): CapabilityCallContext
 		timeZone: input.timeZone,
 		grants,
 		...(input.mailboxIds ? { mailboxIds: input.mailboxIds } : {}),
+		...(input.aiOffMailboxIds?.length ? { aiOffMailboxIds: input.aiOffMailboxIds } : {}),
 		trigger: input.trigger,
 	};
 }

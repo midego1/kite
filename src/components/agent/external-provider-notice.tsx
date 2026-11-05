@@ -3,32 +3,51 @@
 import Link from "next/link";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import type { AgentSettingsResponse } from "./types";
+import { MAILBOX_AI_OFF_TEXT } from "@/lib/agent/mailbox-ai-utils";
 
 /** Whether chat can run: a provider is set up and, when it is external, the primary admin allowed it to read mail. */
 export type ChatProviderState = {
 	configured: boolean;
 	/** The provider's name while chat is refused for an external provider that is not allowed. */
 	externalBlocked: string | null;
+	/** "No AI for this mailbox" is on: chat is off here. */
+	mailboxAiOff: boolean;
 };
 
-export const NO_PROVIDER: ChatProviderState = { configured: false, externalBlocked: null };
+export const NO_PROVIDER: ChatProviderState = { configured: false, externalBlocked: null, mailboxAiOff: false };
 
 export function chatProviderState(
-	data: Pick<AgentSettingsResponse, "providerConfigured" | "externalProviderBlocked" | "providerLabel">,
+	data: Pick<AgentSettingsResponse, "providerConfigured" | "externalProviderBlocked" | "providerLabel" | "aiDisabled">,
 ): ChatProviderState {
 	return {
 		configured: data.providerConfigured,
 		externalBlocked: data.externalProviderBlocked ? data.providerLabel : null,
+		mailboxAiOff: data.aiDisabled === true,
 	};
 }
 
+/** Whether chat can run here. */
+export function chatAvailable(provider: ChatProviderState): boolean {
+	return provider.configured && !provider.externalBlocked && !provider.mailboxAiOff;
+}
+
 /**
- * Why chat is off, above the conversation: no provider at all, or an external provider the primary admin has not
- * allowed to read mail. The primary admin gets the link that allows it, everyone else whom to ask.
+ * Why chat is off, above the conversation: AI is off for the mailbox, no provider at all, or an external provider the
+ * primary admin has not allowed to read mail. The primary admin gets the link that allows it, everyone else whom to ask.
  */
 export function ChatProviderNotice({ provider }: { provider: ChatProviderState }) {
 	const user = useCurrentUser();
 	const primaryAdmin = user?.role === "admin" && user.isPrimaryAdmin;
+	if (provider.mailboxAiOff)
+		return (
+			<p
+				className="rounded-2xl border border-neutral-200 bg-neutral-50 p-3 text-neutral-700"
+				data-testid="mailbox-ai-off-notice"
+			>
+				{MAILBOX_AI_OFF_TEXT} Chat, Write with Kite, summaries and suggestions are off here, so nothing from it goes to
+				the AI. Someone who manages the mailbox can change this in the assistant settings.
+			</p>
+		);
 	if (!provider.configured)
 		return (
 			<p className="rounded-2xl border border-amber-100 bg-amber-50 p-3 text-amber-800">

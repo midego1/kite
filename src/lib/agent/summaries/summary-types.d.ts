@@ -54,6 +54,11 @@ export type SummaryState = {
 	translatable: boolean;
 	eligible: boolean;
 	reason?:
-		"not_eligible" | "assistant_off" | "no_provider" | "external_provider_not_allowed" | "provider_key_unreadable";
+		| "not_eligible"
+		| "assistant_off"
+		| "no_provider"
+		| "external_provider_not_allowed"
+		| "provider_key_unreadable"
+		| "mailbox_ai_off";
 	migrationPending?: boolean;
 };

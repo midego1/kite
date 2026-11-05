@@ -13,6 +13,7 @@ import { isPaused, triageMessageGate, withinRecoveryWindow } from "./schedule-ut
 import { resolveMailboxAgentSettings } from "./settings-utils";
 import { supersedeOlderReplies } from "./suggestion-lifecycle";
 import { scheduleLineSummary } from "../summaries/lines";
+import { mailboxAiOff } from "../mailbox-ai";
 
 export type AgentWorkInput = Parameters<typeof scheduleAutoDraft>[1] & {
 	/** Set on the duplicate-raw-key recovery path: when the already stored message was received. */
@@ -95,6 +96,8 @@ export async function scheduleAgentWork(env: CloudflareEnv, input: AgentWorkInpu
 	if (!settings) return;
 	// Before every gate: the older reply is outdated even when this message is never triaged.
 	await supersedeOlderReplies(env, input.sourceMessageId);
+	// No AI for this mailbox: no triage, auto-draft or one-line summary job is made for its mail.
+	if (await mailboxAiOff(env, input.mailboxId)) return;
 	if (!(await scheduleTriageOrDraft(env, input, settings))) await scheduleLineSummary(env, input);
 }
 

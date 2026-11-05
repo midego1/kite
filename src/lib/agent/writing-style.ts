@@ -9,6 +9,7 @@ import { loadMessageBodies } from "@/lib/email/bodies";
 import { getMailboxAccessLevel, listAccessibleMailboxes } from "@/lib/mailboxes/access";
 import { isNoSuchTableError } from "@/lib/modules/state-utils";
 import { readUserAiSettings } from "./user-ai-settings";
+import { mailboxAiOff } from "./mailbox-ai";
 import type { StyleMeasurement, WritingStyleProfileState } from "./writing-style-types";
 import {
 	describeWritingStyle,
@@ -73,6 +74,8 @@ export async function styleDescriptionFor(
 	options: { withoutFormality?: boolean } = {},
 ): Promise<string | null> {
 	if (!(await readUserAiSettings(db, userId)).writingStyleEnabled) return null;
+	// No AI for this mailbox: its profile never goes into a prompt (every request for it is refused anyway).
+	if (await mailboxAiOff(db, mailboxId)) return null;
 	try {
 		const [row] = await db.select().from(writingStyleProfiles).where(where(userId, mailboxId)).limit(1);
 		return describeWritingStyle(profileOf(row), options);
@@ -152,6 +155,8 @@ export async function learnFromComposerSend(env: CloudflareEnv, input: ComposerS
 	}
 	try {
 		if (!(await readUserAiSettings(db, input.userId)).writingStyleEnabled) return;
+		// No AI for this mailbox: nothing is learnt from it while the switch is on.
+		if (await mailboxAiOff(db, input.mailboxId)) return;
 		const measured = measureMessage(ownText(input.html, input.text));
 		if (measured) await updateStyleProfile(db, input.userId, input.mailboxId, [measured], { insert: true });
 	} catch {
@@ -285,11 +290,15 @@ function releaseBackfill(db: AppDatabase, userId: string, mailboxId: string) {
 	return db.update(writingStyleProfiles).set({ backfillRequestedAt: null }).where(where(userId, mailboxId));
 }
 
-/** Whether the job may go on: the user still opted in and can send from the mailbox, and the profile still exists. */
+/**
+ * Whether the job may go on: the user still opted in and can send from the mailbox, AI is on for it, and the profile
+ * still exists.
+ */
 async function backfillAllowed(db: AppDatabase, userId: string, mailboxId: string): Promise<boolean> {
 	const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
 	const access = user && !user.disabled ? await getMailboxAccessLevel(db, user, mailboxId) : null;
 	if (!access?.canSendOnBehalf || !(await readUserAiSettings(db, userId)).writingStyleEnabled) return false;
+	if (await mailboxAiOff(db, mailboxId)) return false;
 	const [row] = await db
 		.select({ userId: writingStyleProfiles.userId })
 		.from(writingStyleProfiles)

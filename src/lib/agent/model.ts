@@ -5,8 +5,19 @@ import { getAgentProviderConfig } from "./provider";
 import { AgentProviderKeyUnreadableError } from "./provider-connections";
 import { COMPATIBLE_PROVIDER_NAME } from "./auto-read/model-call-utils";
 import { withDedupedStreams } from "./workers-ai-stream-utils";
+import { assertMailboxAiAllowed } from "./mailbox-ai";
 
-export async function getAgentModel(env: CloudflareEnv, requestedModel?: string | null) {
+/** Whose mail a model request carries, and the model it asks for. */
+export type AgentModelRequest = { mailboxId: string; modelId?: string | null };
+
+/**
+ * The model for one request, and the only place a provider client is made. It refuses with `MailboxAiOffError`
+ * when AI is off for the mailbox whose mail the request carries ("No AI for this mailbox"), so no path can reach a
+ * provider without passing that check (`tests/mailbox-ai-gate.test.mjs` scans for model calls that bypass it).
+ */
+export async function getAgentModel(env: CloudflareEnv, request: AgentModelRequest) {
+	await assertMailboxAiAllowed(env, request.mailboxId);
+	const requestedModel = request.modelId;
 	const config = await getAgentProviderConfig(env);
 	if (config.keyUnreadable) throw new AgentProviderKeyUnreadableError();
 	const modelId = requestedModel && config.models.includes(requestedModel) ? requestedModel : config.model;

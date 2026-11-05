@@ -10,7 +10,14 @@ import { getAutoReadInstallSettings } from "../auto-read/install-settings";
 import { readMailboxAgentSettingsRow } from "../auto-read/mailbox-settings";
 import { buildModelCallOptions, callWithFallback, completedText } from "../auto-read/model-call-utils";
 import { reportAiErrorClass } from "../ai-errors";
-import { aiErrorHttpStatus, classifyAiError, UnusableAnswerError, type AiErrorDetails } from "../ai-error-utils";
+import {
+	aiErrorHttpStatus,
+	aiErrorMessage,
+	classifyAiError,
+	UnusableAnswerError,
+	type AiErrorDetails,
+} from "../ai-error-utils";
+import { mailboxAiOff } from "../mailbox-ai";
 import { aiCallTimeoutMs } from "../provider-url-utils";
 import {
 	finishReasonOf,
@@ -188,10 +195,18 @@ function keyOf(anchor: Anchor, scope: SummaryScope, digest: string): SummaryKey 
 
 type SummaryRequest = { scope: SummaryScope; language: string | null };
 
-/** Why the button cannot run here, if it cannot: the message is excluded, the assistant is off or unconfigured. */
-async function unavailableReason(env: CloudflareEnv, eligible: boolean): Promise<SummaryState["reason"]> {
-	const refusal = await interactiveRefusal(env);
+/**
+ * Why the button cannot run here, if it cannot: the message is excluded, the assistant is off or unconfigured, or AI
+ * is off for the mailbox.
+ */
+async function unavailableReason(
+	env: CloudflareEnv,
+	eligible: boolean,
+	mailboxId: string,
+): Promise<SummaryState["reason"]> {
+	const refusal = await interactiveRefusal(env, mailboxId);
 	if (refusal === "assistant_disabled") return "assistant_off";
+	if (refusal === "mailbox_ai_off") return refusal;
 	if (refusal === "external_provider_not_allowed" || refusal === "provider_key_unreadable") return refusal;
 	if (refusal === "not_configured" || !(await getAgentProviderPublicConfig(env)).configured) return "no_provider";
 	return eligible ? undefined : "not_eligible";
@@ -225,9 +240,10 @@ export async function getSummaryState(
 
 async function stateOf(env: CloudflareEnv, loaded: Loaded, request: SummaryRequest): Promise<SummaryState> {
 	const eligible = loaded.coveredIds.length > 0;
-	const reason = await unavailableReason(env, eligible);
+	const reason = await unavailableReason(env, eligible, loaded.anchor.mailboxId);
 	const empty = { summary: null, translation: null, translatable: false };
-	if (reason === "assistant_off") return { ...empty, eligible: false, reason };
+	// With AI off for the mailbox nothing stored is shown either; turning it off deleted the summaries.
+	if (reason === "assistant_off" || reason === "mailbox_ai_off") return { ...empty, eligible: false, reason };
 	const cached = await readCachedSummary(getDb(env), loaded.key, request.language);
 	if (cached.pending) return { ...empty, eligible: false, migrationPending: true };
 	const base = { eligible: !reason, ...(reason ? { reason } : {}) };
@@ -329,7 +345,10 @@ async function generate(input: GenerateInput): Promise<{ summary: SummaryContent
 	const startedAt = Date.now();
 	const trace: CallTrace = { modelId: null, provider: null, usage: null, finishReason: null };
 	const call = async (prompt: SummaryPrompt) => {
-		const selection: ModelSelection = await selectInteractiveModel(input.env, settings?.modelId);
+		const selection: ModelSelection = await selectInteractiveModel(input.env, {
+			mailboxId: input.mailboxId,
+			modelId: settings?.modelId,
+		});
 		trace.modelId = selection.modelId;
 		trace.provider = selection.provider;
 		const options = buildModelCallOptions({
@@ -419,6 +438,8 @@ export async function createSummary(
 	request: SummaryRequest & { translateTo?: string | null },
 ): Promise<SummaryState> {
 	const loaded = await load(env, user, messageId, request.scope);
+	if (await mailboxAiOff(env, loaded.anchor.mailboxId))
+		throw new SummaryRefusal(403, aiErrorMessage("mailbox_ai_off"), "mailbox_ai_off");
 	if (!loaded.coveredIds.length) throw new SummaryRefusal(409, "This message cannot be summarized.", "not_eligible");
 	const cached = await readCachedSummary(getDb(env), loaded.key, request.translateTo ?? null);
 	if (cached.pending) throw new SummaryRefusal(409, "Apply the pending database update first", "MIGRATION_PENDING");
@@ -484,6 +505,7 @@ export async function currentThreadSummary(env: CloudflareEnv, user: SessionUser
 	try {
 		const db = getDb(env);
 		const anchor = await loadAnchor(db, user, messageId);
+		if (await mailboxAiOff(env, anchor.mailboxId)) return null;
 		const coveredIds = await loadCoveredIds(db, anchor, "thread");
 		if (!coveredIds.length) return null;
 		const cached = await readCachedSummary(db, keyOf(anchor, "thread", ""), null);

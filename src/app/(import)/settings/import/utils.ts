@@ -268,7 +268,7 @@ export async function pauseImportJob(id: string): Promise<void> {
 }
 
 /** Messages the ticked rows hold, or null while any of them is unknown (for the size estimate). */
-export function plannedMessageCount(folders: AccountPlanFolder[]): number | null {
+function plannedMessageCount(folders: AccountPlanFolder[]): number | null {
 	const included = folders.filter((folder) => folder.include);
 	if (!included.length) return 0;
 	return included.every((folder) => folder.messages !== null)
@@ -408,7 +408,10 @@ export async function fetchFolderSizeStep(
 	return data;
 }
 
-/** The lines under the totals: measuring still going, folders that could not be measured, and why totals are upper bounds. */
+/**
+ * @public Exercised by the unit tests. The lines under the totals: measuring still going, folders that could not be
+ * measured, and why totals are upper bounds.
+ */
 export function importSizeNotes(totals: PlannedTotals, gmail: boolean): string[] {
 	const folders = (count: number) => `${count} folder${count === 1 ? "" : "s"}`;
 	const notes: string[] = [];

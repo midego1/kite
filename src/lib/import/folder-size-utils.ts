@@ -1,11 +1,11 @@
 /** UIDs asked for by one `UID FETCH n:m (UID RFC822.SIZE)`: at most this many answer lines of about 40 bytes. */
-export const SIZE_WINDOW_UIDS = 10_000;
+const SIZE_WINDOW_UIDS = 10_000;
 /** One measuring step stops after this many messages, so a request stays short and its answer small. */
-export const SIZE_STEP_MESSAGES = 10_000;
+const SIZE_STEP_MESSAGES = 10_000;
 /** A sparse folder (many expunged UIDs) answers few messages per window; a step still ends after this many windows. */
-export const SIZE_STEP_MAX_WINDOWS = 50;
+const SIZE_STEP_MAX_WINDOWS = 50;
 /** A step starts no further window after this long. */
-export const SIZE_STEP_MAX_MS = 10_000;
+const SIZE_STEP_MAX_MS = 10_000;
 
 export type SizeStepLimits = { windowUids: number; stepMessages: number; maxWindows: number; maxMs: number };
 

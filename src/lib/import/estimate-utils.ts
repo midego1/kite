@@ -13,11 +13,13 @@ const MAX_DATABASE_BYTES_PER_MESSAGE_OFFLOADED = 24 * 1024;
  * attachments are 'raw' rows pointing into it, with no decoded copy (`docs/specs/attachments-once.md`).
  * A body offloaded to the mail store (HTML over 16 KB, when body offload is on) adds its decoded HTML as one more object.
  * That share depends on the mail and nothing here measures it, so it is left out.
+ * @public Exercised by the unit tests.
  */
 export const MAIL_STORE_FACTOR = 1;
 /**
  * The same with `ATTACHMENT_RAW_INDEX=off`: every attachment is stored again, decoded. The spec measured 1.51 GB per GB
  * of mail, assuming attachments are 70% of the raw bytes and base64 decodes to 0.731 of its size.
+ * @public Exercised by the unit tests.
  */
 export const MAIL_STORE_FACTOR_WITHOUT_RAW_INDEX = 1.51;
 

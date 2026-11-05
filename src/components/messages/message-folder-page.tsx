@@ -18,6 +18,8 @@ import { useRegisterUpdateList } from "@/components/update-notice-store";
 import { useClearSelection } from "./use-clear-selection";
 import { useOpenRowBridge } from "./use-open-row-bridge";
 import { MessageListHeader } from "./message-list-header";
+import { buildListPager, isPagerShown } from "./message-list-pager-utils";
+import { ListSectionLabel, PagerSlot } from "./message-list-pager";
 import { MessageListRow } from "./message-list-row";
 import {
 	applySelection,
@@ -387,6 +389,19 @@ export function MessageFolderPage({
 		return () => registerAction(null);
 	});
 
+	const pager = buildListPager({
+		range: pageRange,
+		offset,
+		limit,
+		shown: messages.length,
+		total,
+		isLoading,
+		nextCursor,
+		setOffset,
+		setPageCursors,
+	});
+	const paged = isPagerShown(pager, selectedIds.length > 0 && !compact);
+
 	return (
 		<div className="flex h-full min-h-0 flex-1 flex-col" data-selection-scope="">
 			<p role="status" aria-live="polite" className="sr-only">
@@ -427,17 +442,6 @@ export function MessageFolderPage({
 						? { value: unreadOnly ? "unread" : "all", onChange: (value) => setUnreadOnly(value === "unread") }
 						: null
 				}
-				pager={{
-					range: pageRange,
-					canPrevious: offset > 0 && !isLoading,
-					canNext: offset + messages.length < total && !isLoading,
-					previous: () => setOffset(Math.max(offset - limit, 0)),
-					next: () => {
-						const nextOffset = offset + limit;
-						if (nextCursor) setPageCursors((current) => ({ ...current, [nextOffset]: nextCursor }));
-						setOffset(nextOffset);
-					},
-				}}
 				emptyFolder={
 					permanentDeleteFolder
 						? {
@@ -450,7 +454,14 @@ export function MessageFolderPage({
 				}
 			/>
 
-			<div className="min-h-0 flex-1 overflow-y-auto overscroll-contain scrollbar-gutter-stable" data-density={density}>
+			<div
+				className={clsx(
+					"min-h-0 flex-1 overflow-y-auto overscroll-contain scrollbar-gutter-stable",
+					// Keyboard focus scrolls a row clear of the sticky pager.
+					paged && "scroll-pt-8",
+				)}
+				data-density={density}
+			>
 				<div
 					ref={listRef}
 					role="list"
@@ -463,18 +474,9 @@ export function MessageFolderPage({
 					)}
 				>
 					<UpdateNoticeRow compact={(compact || isMobile) && config.folder !== "drafts"} density={density} />
-					{sections.map((section) => [
-						section.label && (
-							// Decorative: the rows carry everything, and a list may only hold list items.
-							<p
-								key={`section-${section.key}`}
-								aria-hidden="true"
-								className="px-5 pb-1 pt-3 text-sm text-neutral-500 first:pt-1"
-							>
-								{section.label}
-								{section.count !== null && <span className="ms-2">[{section.count}]</span>}
-							</p>
-						),
+					{paged && <PagerSlot pager={pager} labelled={!!sections[0]?.label} />}
+					{sections.map((section, index) => [
+						<ListSectionLabel key={`section-${section.key}`} section={section} withPager={index === 0 && paged} />,
 						...section.messages.map((message) => (
 							<MessageListRow
 								key={message.id}

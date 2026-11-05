@@ -194,3 +194,25 @@ export async function seedDemoData(): Promise<void> {
 	await seedDrive(api);
 	await api.dispose();
 }
+
+/** Delivers enough invented mail to fill a second Inbox page (the list holds 25 rows), once. */
+export async function seedPagedMail(): Promise<void> {
+	const api = await apiContext(STORAGE_STATE);
+	const probe = await api.get(`/api/messages?${new URLSearchParams({ q: "Weekly digest 1", limit: "1" })}`);
+	const { messages: existing } = (await probe.json()) as { messages: unknown[] };
+	if (existing.length === 0) {
+		for (let index = 1; index <= 24; index += 1) {
+			const subject = `Weekly digest ${index}`;
+			const html = `<p>Highlights from the Tailspin team for week ${index}: nothing needs your attention.</p>`;
+			await postInbound(api, {
+				from: `"Tailspin Digest" <digest@tailspin.test>`,
+				to: `"Support" <${SUPPORT_ADDRESS}>`,
+				subject,
+				html,
+				text: plainText(html),
+			});
+			await waitForMessage(api, subject);
+		}
+	}
+	await api.dispose();
+}

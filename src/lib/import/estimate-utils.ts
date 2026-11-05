@@ -6,6 +6,8 @@ const DEFAULT_DATABASE_BYTES_PER_MESSAGE = 40_000;
 const MIN_MESSAGES_FOR_AVERAGE = 1000;
 /** The most D1 one imported message is assumed to add. */
 const MAX_DATABASE_BYTES_PER_MESSAGE = 128 * 1024;
+/** Headers, row metadata and indexes still occupy database space for tiny source messages. */
+const MIN_DATABASE_BYTES_PER_MESSAGE = 2 * 1024;
 /**
  * Mail store bytes per byte of source mail: the raw message is written once (`imports/<id>.eml`) and its verified
  * attachments are 'raw' rows pointing into it, with no decoded copy (`docs/specs/attachments-once.md`).
@@ -67,8 +69,9 @@ export function estimateImport(input: ImportEstimateInput): ImportEstimate {
 		averageDatabaseBytesPerMessage(input.usedBytes, input.installMessageCount),
 		MAX_DATABASE_BYTES_PER_MESSAGE,
 	);
-	// A message cannot add more than it weighs; the totals give the average weight.
+	// Raw size can reduce the average, but cannot erase the per-message database overhead.
 	if (messages && rawBytes !== null) perMessage = Math.min(perMessage, rawBytes / messages);
+	perMessage = Math.max(MIN_DATABASE_BYTES_PER_MESSAGE, perMessage);
 	const databaseAddBytes = messages ? Math.round(messages * perMessage) : 0;
 	const projectedBytes = input.usedBytes + databaseAddBytes;
 	const currentLevel = databaseUseLevel(input.usedBytes, input.limitBytes);

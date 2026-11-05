@@ -172,6 +172,18 @@ test("raw sizes cap the average, but HTML offload does not impose a smaller cap 
 	assert.equal(unknownBodies.databaseBytesPerMessage, 131_072);
 });
 
+test("tiny source messages retain a database overhead floor and can still require confirmation", () => {
+	const result = estimate.estimateImport({
+		usedBytes: 8.9 * GB,
+		limitBytes: 10 * GB,
+		installMessageCount: 2000,
+		messages: 100_000,
+		rawBytes: 10_000_000,
+	});
+	assert.equal(result.databaseBytesPerMessage, 2048);
+	assert.equal(result.requiresConfirmation, true);
+});
+
 test("the mail store holds the raw size once, as attachments are stored inside the raw message", () => {
 	const result = estimate.estimateImport({ ...base, messages: 48_000, rawBytes: 6.1 * GB });
 	assert.equal(estimate.MAIL_STORE_FACTOR, 1);

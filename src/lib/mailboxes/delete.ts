@@ -113,6 +113,21 @@ export async function deleteMailboxWithContents(env: CloudflareEnv, mailboxId: s
 	return purgeMailbox(env, mailboxId, MAILBOX_PURGE_REQUEST_BUDGET_MS);
 }
 
+/** Cleanup after a failed connection must never purge mail or a connected account, including concurrent writes. */
+export async function deleteEmptyMailbox(env: CloudflareEnv, mailboxId: string): Promise<boolean> {
+	const accounts = await env.DB.prepare(
+		"SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'external_accounts'",
+	).first();
+	const result = await env.DB.prepare(
+		`DELETE FROM mailboxes WHERE id = ?
+		 AND NOT EXISTS (SELECT 1 FROM messages WHERE mailbox_id = mailboxes.id)
+		 ${accounts ? "AND NOT EXISTS (SELECT 1 FROM external_accounts WHERE mailbox_id = mailboxes.id)" : ""}`,
+	)
+		.bind(mailboxId)
+		.run();
+	return result.meta.changes > 0;
+}
+
 export async function processMailboxPurge(env: CloudflareEnv, payload: MailboxPurgeMessage): Promise<void> {
 	const [mailbox] = await getDb(env)
 		.select({ disabled: mailboxes.disabled })

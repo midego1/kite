@@ -30,9 +30,8 @@ export async function measureFolderStep(
 	signal?: AbortSignal,
 ): Promise<FolderSizeStep | null> {
 	signal?.throwIfAborted();
-	const session = await openImportSession(env, account);
-	const stop = () => void session.close().catch(() => undefined);
-	signal?.addEventListener("abort", stop, { once: true });
+	// An abort closes the connection, wherever the request is (signing in, or waiting for an answer).
+	const session = await openImportSession(env, account, signal);
 	try {
 		const examined = await session.examine(folder);
 		const exists = examined.exists ?? (await session.status(folder))?.messages ?? null;
@@ -58,7 +57,6 @@ export async function measureFolderStep(
 		}
 		return { messages, bytes, unsized, nextCursor: next, exists, uidValidity: examined.uidValidity };
 	} finally {
-		signal?.removeEventListener("abort", stop);
 		await session.close().catch(() => undefined);
 	}
 }

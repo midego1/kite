@@ -164,12 +164,24 @@ test("a young install falls back to 40 KB per message", () => {
 	assert.equal(result.databaseAddBytes, 4e6);
 });
 
-test("a message cannot add more than it weighs, and offloaded bodies cap at 24 KB", () => {
+test("raw sizes cap the average, but HTML offload does not impose a smaller cap on unknown text bodies", () => {
 	const light = estimate.estimateImport({ ...base, messages: 1000, rawBytes: 5_000_000 });
 	assert.equal(light.databaseBytesPerMessage, 5000);
 	assert.equal(light.databaseAddBytes, 5_000_000);
-	const offloaded = estimate.estimateImport({ ...base, messages: 1000, rawBytes: null, bodyOffload: true });
-	assert.equal(offloaded.databaseBytesPerMessage, 24_576);
+	const unknownBodies = estimate.estimateImport({ ...base, messages: 1000, rawBytes: null });
+	assert.equal(unknownBodies.databaseBytesPerMessage, 131_072);
+});
+
+test("tiny source messages retain a database overhead floor and can still require confirmation", () => {
+	const result = estimate.estimateImport({
+		usedBytes: 8.9 * GB,
+		limitBytes: 10 * GB,
+		installMessageCount: 2000,
+		messages: 100_000,
+		rawBytes: 10_000_000,
+	});
+	assert.equal(result.databaseBytesPerMessage, 2048);
+	assert.equal(result.requiresConfirmation, true);
 });
 
 test("the mail store holds the raw size once, as attachments are stored inside the raw message", () => {

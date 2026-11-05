@@ -32,8 +32,9 @@ export async function measureFolderStep(
 	cursor: number | null,
 	limits: SizeStepLimits = DEFAULT_SIZE_STEP_LIMITS,
 	now: () => number = Date.now,
+	signal?: AbortSignal,
 ): Promise<FolderSizeStep | null> {
-	const session = await openImportSession(env, account);
+	const session = await openImportSession(env, account, signal);
 	try {
 		const uidNext = await folderUidNext(session, folder);
 		if (uidNext === null) return null;
@@ -42,12 +43,14 @@ export async function measureFolderStep(
 		let messages = 0;
 		let bytes = 0;
 		for (let windows = 0; windows < limits.maxWindows; windows += 1) {
+			signal?.throwIfAborted();
 			const window = nextSizeWindow(next, uidNext, limits.windowUids);
 			if (!window) {
 				next = null;
 				break;
 			}
 			const answered = await session.fetchSizes(window.from, window.to);
+			signal?.throwIfAborted();
 			// A server answers `n:m` with the UIDs inside it, but a stray unsolicited line must not be counted.
 			const sum = sumSizes(answered.filter((entry) => entry.uid >= window.from && entry.uid <= window.to));
 			messages += sum.messages;

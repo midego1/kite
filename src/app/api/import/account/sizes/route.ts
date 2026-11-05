@@ -43,7 +43,7 @@ export const POST = withModule("import", async (request, { checkUser }) => {
 	const refused = importServerProblem(env, input);
 	if (refused) return NextResponse.json({ error: refused }, { status: 400 });
 	try {
-		const step = await measureFolderStep(env, input, folder, cursor);
+		const step = await measureFolderStep(env, input, folder, cursor, undefined, undefined, request.signal);
 		if (!step) return NextResponse.json({ unavailable: true }, { headers: { "Cache-Control": "no-store" } });
 		return NextResponse.json(
 			{

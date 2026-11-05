@@ -69,15 +69,21 @@ type ImapEnv = Parameters<typeof openMailSocket>[0];
 export async function openImapSession(
 	env: ImapEnv,
 	login: ImapLogin,
-	options: ImapConnectionOptions = {},
+	options: ImapConnectionOptions & { signal?: AbortSignal } = {},
 ): Promise<ImapSession> {
+	const { signal, ...limits } = options;
+	signal?.throwIfAborted();
 	const socket = await openMailSocket(env, login, IMAP_PORTS);
-	const imap = new ImapConnection(socket, { ...imapLimits(env.KITE_RUNTIME), ...options });
+	const imap = new ImapConnection(socket, { ...imapLimits(env.KITE_RUNTIME), ...limits });
+	const abort = () => void imap.close().catch(() => undefined);
+	signal?.addEventListener("abort", abort, { once: true });
 	try {
+		signal?.throwIfAborted();
 		await signIn(imap, login, allowsPlainText(login.host, mailHostPolicy(env, process.env.NODE_ENV)));
 		// Servers announce more after sign-in (Gmail's X-GM-EXT-1, SPECIAL-USE), and not always in the OK.
 		await imap.capability();
 	} catch (error) {
+		signal?.removeEventListener("abort", abort);
 		await imap.close();
 		throw error;
 	}
@@ -136,7 +142,8 @@ export async function openImapSession(
 			return Array.from(new Set(lines.map(parseListMailboxName).filter((name): name is string => !!name)));
 		},
 		async close() {
-			await imap.command("LOGOUT").catch(() => undefined);
+			signal?.removeEventListener("abort", abort);
+			if (!signal?.aborted) await imap.command("LOGOUT").catch(() => undefined);
 			await imap.close();
 		},
 	};

@@ -56,6 +56,29 @@ async function measureAll(env, folder, limits) {
 
 const SMALL = { windowUids: 10, stepMessages: 10, maxWindows: 50, maxMs: 60_000 };
 
+test("aborting a measuring request closes a stalled IMAP fetch without starting another window", async (t) => {
+	const controller = new AbortController();
+	let release;
+	let fetching;
+	const started = new Promise((resolve) => (fetching = resolve));
+	const gate = new Promise((resolve) => (release = resolve));
+	const { env, server } = await fake(t, {
+		fetchGate: () => {
+			fetching();
+			return gate;
+		},
+	});
+	const step = measureFolderStep(env, account, "INBOX", null, SMALL, Date.now, controller.signal);
+	await started;
+	controller.abort();
+	try {
+		await assert.rejects(step);
+		assert.equal(server.commands.filter((entry) => /UID FETCH/i.test(entry.line)).length, 1);
+	} finally {
+		release();
+	}
+});
+
 test("a folder is measured in steps whose sums are the folder's size", async (t) => {
 	const messages = Array.from({ length: 35 }, (_, index) => ({
 		raw: sampleMessage(index + 1),

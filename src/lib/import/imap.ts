@@ -14,14 +14,18 @@ type ImapImportEnv = Parameters<typeof openImapSession>[0];
 type ImapAccount = Pick<ImapImportInput, "host" | "port" | "secure" | "username" | "password">;
 
 /** Signs in to the source account of an import (`secure` off means STARTTLS, never plain text). */
-export function openImportSession(env: ImapImportEnv, input: ImapAccount) {
-	return openImapSession(env, {
-		host: input.host,
-		port: input.port,
-		security: imapSecurity(input.secure),
-		username: input.username,
-		password: input.password,
-	});
+export function openImportSession(env: ImapImportEnv, input: ImapAccount, signal?: AbortSignal) {
+	return openImapSession(
+		env,
+		{
+			host: input.host,
+			port: input.port,
+			security: imapSecurity(input.secure),
+			username: input.username,
+			password: input.password,
+		},
+		{ signal },
+	);
 }
 
 /** Why the import form's server is refused before anything connects (a local host, a port other than 993 or 143). */

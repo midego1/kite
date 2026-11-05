@@ -86,7 +86,7 @@ const scratch = makeBundleDirectory("kite-mailbox-ai-off-dirs-");
 after(() => rmSync(scratch, { recursive: true, force: true }));
 
 /** Appears only in the mail of the mailbox with AI off. */
-const TOKEN = "NOAI-7731-SECRET";
+const MARKER = "NOAI-7731-MARKER";
 const now = () => Math.floor(Date.now() / 1000);
 
 const owner = {
@@ -120,7 +120,7 @@ async function harness(t, { migrations = migrationsDir } = {}) {
 			('mailbox-on', 'user-1', 'domain-1', 'owner', 'personal', 1);
 		INSERT INTO mailbox_access (id, mailbox_id, user_id, permission, created_at) VALUES ('access-1', 'mailbox-off', 'user-2', 'read_only', 1);
 		INSERT INTO messages (id, user_id, mailbox_id, direction, from_addr, to_addr, subject, text_body, status, thread_id, created_at) VALUES
-			('email-off', 'user-1', 'mailbox-off', 'inbound', 'customer@example.net', 'private@example.com', 'Offer ${TOKEN}', 'Body ${TOKEN}', 'received', 'thread-off', ${at}),
+			('email-off', 'user-1', 'mailbox-off', 'inbound', 'customer@example.net', 'private@example.com', 'Offer ${MARKER}', 'Body ${MARKER}', 'received', 'thread-off', ${at}),
 			('email-on', 'user-1', 'mailbox-on', 'inbound', 'friend@example.net', 'owner@example.com', 'Lunch', 'See you at noon?', 'received', 'thread-on', ${at});
 	`);
 	const requests = [];
@@ -179,7 +179,7 @@ async function harness(t, { migrations = migrationsDir } = {}) {
 		putMailboxAi(request("/api/agent/settings/ai", { method: "PUT", as, body: { mailboxId, aiDisabled } }));
 	const chat = (mailboxId, text = "What is in my inbox?") =>
 		postAgentChat(request("/api/agent/chat", { method: "POST", body: { mailboxId, text } }));
-	const leaked = () => requests.filter((raw) => raw.includes(TOKEN));
+	const leaked = () => requests.filter((raw) => raw.includes(MARKER));
 	return { database, env, requests, leaked, request, setAi, chat };
 }
 
@@ -229,10 +229,10 @@ test("turning it on stops queued jobs, expires suggestions and deletes stored su
 			('job-triage', 'triage', 'mailbox-off', 'email-off', 'user-1', 1, ${at}),
 			('job-other', 'triage', 'mailbox-on', 'email-on', 'user-1', 1, ${at});
 		INSERT INTO agent_suggestions (id, mailbox_id, message_id, reviewer_user_id, kind, title, created_at) VALUES
-			('sugg-off', 'mailbox-off', 'email-off', 'user-1', 'summary', 'About ${TOKEN}', ${at}),
+			('sugg-off', 'mailbox-off', 'email-off', 'user-1', 'summary', 'About ${MARKER}', ${at}),
 			('sugg-on', 'mailbox-on', 'email-on', 'user-1', 'summary', 'Lunch', ${at});
 		INSERT INTO ai_summaries (id, mailbox_id, kind, thread_key, message_id, text, coverage_digest, source, created_at, updated_at) VALUES
-			('line-off', 'mailbox-off', 'line', 'thread-off', 'email-off', 'Line ${TOKEN}', 'x', 'line_job', ${at}, ${at}),
+			('line-off', 'mailbox-off', 'line', 'thread-off', 'email-off', 'Line ${MARKER}', 'x', 'line_job', ${at}, ${at}),
 			('line-on', 'mailbox-on', 'line', 'thread-on', 'email-on', 'Lunch at noon', 'x', 'line_job', ${at}, ${at});
 	`);
 	assert.equal((await setAi("mailbox-off", true)).status, 200);
@@ -253,7 +253,7 @@ test("turning it on stops queued jobs, expires suggestions and deletes stored su
 	// The lists stop showing anything from it even if a row slipped in after the switch.
 	database.db
 		.exec(`INSERT INTO ai_summaries (id, mailbox_id, kind, thread_key, message_id, text, coverage_digest, source, created_at, updated_at)
-		VALUES ('late', 'mailbox-off', 'line', 'thread-off', 'email-off', 'Late ${TOKEN}', 'x', 'line_job', ${at}, ${at});
+		VALUES ('late', 'mailbox-off', 'line', 'thread-off', 'email-off', 'Late ${MARKER}', 'x', 'line_job', ${at}, ${at});
 		UPDATE mailbox_agent_settings SET list_summaries = 1;
 		INSERT OR IGNORE INTO mailbox_agent_settings (mailbox_id, list_summaries, updated_at) VALUES ('mailbox-on', 1, 1);
 		UPDATE agent_suggestions SET status = 'open' WHERE id = 'sugg-off';`);
@@ -364,8 +364,8 @@ test("chat tools answer a plain refusal for a message of the mailbox and never s
 	await assert.rejects(runEmailTool(context, "get_thread", { emailId: "email-off" }), {
 		message: "AI is off for this mailbox",
 	});
-	const searched = JSON.stringify(await runEmailTool(context, "search_emails", { query: TOKEN }));
-	assert.ok(!searched.includes(TOKEN));
+	const searched = JSON.stringify(await runEmailTool(context, "search_emails", { query: MARKER }));
+	assert.ok(!searched.includes(MARKER));
 	const listed = JSON.stringify(await runEmailTool(context, "list_emails", {}));
 	assert.ok(!listed.includes("email-off"));
 	// Asked in the mailbox itself (a turn that was already running): the same refusal, for every tool.

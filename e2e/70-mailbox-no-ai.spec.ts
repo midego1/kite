@@ -52,7 +52,7 @@ test.describe("No AI for this mailbox", () => {
 	test("nothing from the mailbox reaches the model, and another mailbox still works", async ({ browser }) => {
 		const off = await newAccount("noai");
 		const on = await newAccount("withai");
-		const secret = uniqueToken("NOAISECRET");
+		const marker = uniqueToken("NOAIMARK");
 		const visible = uniqueToken("AIOKAY");
 		try {
 			// Only someone who manages the mailbox may change it; turning it on calls no model.
@@ -65,13 +65,13 @@ test.describe("No AI for this mailbox", () => {
 			);
 			expect(fake.requests()).toHaveLength(0);
 
-			const subjectOff = `Contract ${secret}`;
+			const subjectOff = `Contract ${marker}`;
 			const subjectOn = `Lunch ${visible}`;
 			await postInbound(api, {
 				from: "Sam Rivers <sam@outside.test>",
 				to: off.address,
 				subject: subjectOff,
-				text: `The private terms are ${secret}. Please reply soon.`,
+				text: `The private terms are ${marker}. Please reply soon.`,
 			});
 			await postInbound(api, {
 				from: "Sam Rivers <sam@outside.test>",
@@ -89,7 +89,7 @@ test.describe("No AI for this mailbox", () => {
 
 			// Chat, Summarize and Write with Kite are refused before any model request.
 			const chat = await off.api.post("/api/agent/chat", {
-				data: { mailboxId: off.mailboxId, text: `Summarize ${secret}`, currentMessageId: messageOff.id },
+				data: { mailboxId: off.mailboxId, text: `Summarize ${marker}`, currentMessageId: messageOff.id },
 			});
 			expect(chat.status()).toBe(403);
 			expect((await chat.json()).code).toBe("mailbox_ai_off");
@@ -97,7 +97,7 @@ test.describe("No AI for this mailbox", () => {
 			expect(summary.status()).toBe(403);
 			expect((await summary.json()).code).toBe("mailbox_ai_off");
 			const compose = await off.api.post("/api/agent/compose", {
-				data: { mailboxId: off.mailboxId, mode: "rewrite", action: "formal", text: `Reply about ${secret}` },
+				data: { mailboxId: off.mailboxId, mode: "rewrite", action: "formal", text: `Reply about ${marker}` },
 			});
 			expect(compose.status()).toBe(403);
 			expect((await compose.json()).code).toBe("mailbox_ai_off");
@@ -136,7 +136,7 @@ test.describe("No AI for this mailbox", () => {
 			}
 
 			// Nothing the model received carries the mailbox's mail; the other mailbox's did go out.
-			expect(carrying(secret)).toEqual([]);
+			expect(carrying(marker)).toEqual([]);
 			expect(carrying(visible).length).toBeGreaterThan(0);
 			expect(fake.requests().some((request) => request.emailId === messageOff.id)).toBe(false);
 			const jobs = await okJson<{ jobs: { kind: string }[] }>(

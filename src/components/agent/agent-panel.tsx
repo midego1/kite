@@ -97,7 +97,7 @@ export function AgentPanel({ open, fullSize, docked, onClose, onToggleFullSize }
 	const [canManage, setCanManage] = useState(false);
 	const [instructionContext, setInstructionContext] = useState<InstructionContext | null>(null);
 	const [provider, setProvider] = useState(NO_PROVIDER);
-	const chatReady = provider.configured && !provider.externalBlocked;
+	const chatReady = provider.ready;
 	const [autoReplyEnabled, setAutoReplyEnabled] = useState(false);
 	const [conversationId, setConversationId] = useState<string | null>(null);
 	const [deletingConversationId, setDeletingConversationId] = useState<string | null>(null);
@@ -852,7 +852,7 @@ export function AgentPanel({ open, fullSize, docked, onClose, onToggleFullSize }
 				</>
 			)}
 			{view === "settings" && (
-				<AssistantSettingsTabs settings={settings}>
+				<AssistantSettingsTabs settings={settings} mailboxId={mailboxId} onAiChange={refresh}>
 					<AgentStepLimitSetting />
 					<PersonalInstructionsSetting />
 					<p className="font-medium text-neutral-800">Mailbox settings</p>

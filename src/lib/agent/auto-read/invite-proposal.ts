@@ -32,7 +32,7 @@ export async function generateProposalIntro(
 			ownerUserId: mailbox.userId,
 			mailboxType: mailbox.type,
 		});
-		const selection = await selectAutoReadModel(env, settings.modelId);
+		const selection = await selectAutoReadModel(env, { mailboxId: mailbox.id, modelId: settings.modelId });
 		const thread = await loadDraftThread(env, mailbox.id, source);
 		const instructed = { ...settings, instructions: `${settings.instructions}\n\n${PROPOSAL_INSTRUCTIONS}`.trim() };
 		const text = await generateDraft(

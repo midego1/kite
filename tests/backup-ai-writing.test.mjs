@@ -127,3 +127,25 @@ test("a backup taken before 0070 restores after it with no style profiles, and b
 		{ sample_count: 12, greetings: '{"hi {name},":9}' },
 	]);
 });
+
+test("No AI for this mailbox round-trips, and a backup from before 0091 restores with it off", async (t) => {
+	const legacy = await database(t, copyMigrationsBefore(scratch, 91));
+	seedAccountData(legacy);
+	legacy.db.exec("INSERT INTO mailbox_agent_settings (mailbox_id, enabled, updated_at) VALUES ('mailbox-a', 1, 1)");
+	const older = await exportDocument(legacy);
+	assert.equal("ai_disabled" in older.tables.mailbox_agent_settings[0], false);
+	const restored = await database(t);
+	seedAccountData(restored);
+	await restoreDatabaseRecords(restored, encode(older));
+	assert.deepEqual(all(restored, "SELECT mailbox_id, ai_disabled FROM mailbox_agent_settings"), [
+		{ mailbox_id: "mailbox-a", ai_disabled: 0 },
+	]);
+
+	restored.db.exec("UPDATE mailbox_agent_settings SET ai_disabled = 1");
+	const current = await exportDocument(restored);
+	assert.equal(current.tables.mailbox_agent_settings[0].ai_disabled, 1);
+	const target = await database(t);
+	seedAccountData(target);
+	await restoreDatabaseRecords(target, encode(current));
+	assert.deepEqual(all(target, "SELECT ai_disabled FROM mailbox_agent_settings"), [{ ai_disabled: 1 }]);
+});

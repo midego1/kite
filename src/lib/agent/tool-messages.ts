@@ -1,9 +1,11 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, ne, or } from "drizzle-orm";
 import { getDb } from "@/db";
 import { messages } from "@/db/schema";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { SCREENING_STATUS } from "@/lib/screener/screener-utils";
 import type { AgentToolContext } from "./types";
+import { mailboxAiOff } from "./mailbox-ai";
+import { MAILBOX_AI_OFF_TOOL_TEXT } from "./mailbox-ai-utils";
 
 export function publicMessage(row: typeof messages.$inferSelect) {
 	return {
@@ -24,12 +26,42 @@ export function publicMessage(row: typeof messages.$inferSelect) {
 	};
 }
 
+/**
+ * The caller's access to the context's mailbox. In the chat, whose tool results go to the AI provider, a mailbox
+ * with AI off answers only "AI is off for this mailbox" (a turn can still be running when the switch is turned on).
+ */
 export async function requireAccess(context: AgentToolContext, write = false, manage = false) {
 	const access = await getMailboxAccessLevel(getDb(context.env), context.user, context.mailboxId);
 	if (!access?.canRead || (write && !access.canSendOnBehalf) || (manage && !access.canManage)) {
 		throw new Error("Mailbox not found or permission denied");
 	}
+	if (context.origin === "chat" && (await mailboxAiOff(context.env, context.mailboxId)))
+		throw new Error(MAILBOX_AI_OFF_TOOL_TEXT);
 	return access;
+}
+
+/**
+ * Asked in the chat for a message of another mailbox the user can read that has AI off: the plain refusal, never
+ * its subject or sender. Anything else stays "not found".
+ */
+async function refuseAiOffMessage(context: AgentToolContext, messageId: string): Promise<void> {
+	if (context.origin !== "chat") return;
+	const db = getDb(context.env);
+	// The same rows `ownMessage` would show: never the Screener's held mail or another user's draft.
+	const [row] = await db
+		.select({ mailboxId: messages.mailboxId })
+		.from(messages)
+		.where(
+			and(
+				eq(messages.id, messageId),
+				ne(messages.status, SCREENING_STATUS),
+				or(ne(messages.status, "draft"), eq(messages.userId, context.user.id)),
+			),
+		)
+		.limit(1);
+	if (!row?.mailboxId || row.mailboxId === context.mailboxId) return;
+	if (!(await getMailboxAccessLevel(db, context.user, row.mailboxId))?.canRead) return;
+	if (await mailboxAiOff(context.env, row.mailboxId)) throw new Error(MAILBOX_AI_OFF_TOOL_TEXT);
 }
 
 export async function ownMessage(context: AgentToolContext, messageId: string, notFoundMessage = "Message not found") {
@@ -39,7 +71,9 @@ export async function ownMessage(context: AgentToolContext, messageId: string, n
 		.from(messages)
 		.where(and(eq(messages.id, messageId), eq(messages.mailboxId, context.mailboxId)))
 		.limit(1);
-	if (!row || row.status === SCREENING_STATUS || (row.status === "draft" && row.userId !== context.user.id))
+	if (!row || row.status === SCREENING_STATUS || (row.status === "draft" && row.userId !== context.user.id)) {
+		if (!row) await refuseAiOffMessage(context, messageId);
 		throw new Error(notFoundMessage);
+	}
 	return row;
 }

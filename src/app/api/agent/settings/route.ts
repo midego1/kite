@@ -24,6 +24,8 @@ import {
 import { CHAT_FIXED_RULES, DRAFT_FIXED_RULES } from "@/lib/agent/fixed-rules-utils";
 import { readMailboxAgentSettings, saveMailboxAgentSettings } from "@/lib/agent/auto-read/mailbox-settings";
 import { aiWritingMigrationApplied } from "@/lib/agent/ai-writing-migration";
+import { mailboxAiOff } from "@/lib/agent/mailbox-ai";
+import { mailboxAiSwitchAvailable } from "@/lib/agent/mailbox-ai-settings";
 
 async function listReviewers(db: AppDatabase, mailboxId: string) {
 	const reviewers: { id: string; name: string; email: string }[] = [];
@@ -86,6 +88,9 @@ export async function GET(request: Request) {
 			triage: unavailableModelChoice(settings.triageModelId, models, null),
 		},
 		canManage: access.canManage,
+		// "No AI for this mailbox"; `aiSwitchReady` is false until migration 0091, when the switch cannot be saved.
+		aiDisabled: await mailboxAiOff(env, mailboxId),
+		aiSwitchReady: await mailboxAiSwitchAvailable(env),
 		instructionContext: {
 			// False until migration 0069 adds the task instruction columns; the fields cannot be saved before.
 			ready: await aiWritingMigrationApplied(env),

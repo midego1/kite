@@ -491,7 +491,7 @@ test("a key sealed under another APP_ENCRYPTION_KEY is reported, never thrown, a
 	);
 
 	// AI requests say why they cannot run.
-	await assert.rejects(getAgentModel(restored), (error) => {
+	await assert.rejects(getAgentModel(restored, { mailboxId: "mailbox-1" }), (error) => {
 		assert.equal(classifyAiError(error).code, "provider_key_unreadable");
 		return true;
 	});

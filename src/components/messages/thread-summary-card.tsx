@@ -9,9 +9,27 @@ import { Tooltip } from "@/components/ui/tooltip";
 import type { SummaryPoint, SummaryScope, SummaryState } from "@/lib/agent/summaries/summary-types";
 import type { ThreadSummaryController } from "./thread-summary-types";
 import { canSummarize, summaryCopyText, translateLabel } from "./thread-summary-utils";
+import { MAILBOX_AI_OFF_TEXT } from "@/lib/agent/mailbox-ai-utils";
 
 /** The reader toolbar's Summarize button, shown only where a summary can be made. */
 export function SummarizeButton({ controller }: { controller: ThreadSummaryController }) {
+	// No AI for this mailbox: the button stays where people look for it and says why it does nothing.
+	if (controller.state?.reason === "mailbox_ai_off")
+		return (
+			<Tooltip label={MAILBOX_AI_OFF_TEXT}>
+				<Button
+					variant="ghost"
+					size="sm"
+					aria-label={`Summarize: ${MAILBOX_AI_OFF_TEXT}`}
+					aria-disabled="true"
+					data-testid="summarize-ai-off"
+					className="cursor-not-allowed gap-1.5 text-neutral-400 hover:bg-transparent"
+				>
+					<Sparkles aria-hidden className="h-4 w-4" />
+					<span className="hidden sm:inline">Summarize</span>
+				</Button>
+			</Tooltip>
+		);
 	if (!canSummarize(controller.state)) return null;
 	const label = controller.scope === "thread" ? "Summarize conversation" : "Summarize message";
 	const tooltip = controller.blocked ?? label;

@@ -7,13 +7,14 @@ import { rowConversationKey } from "@/lib/messages/conversation-key";
 import { groupSuggestionCounts } from "./suggestion-badge-utils";
 import type { SuggestionCount } from "./suggestion-types";
 import { visibleSuggestionsWhere, type SuggestionVisibility } from "./suggestion-visibility";
+import { aiOffMailboxIds } from "../mailbox-ai";
 
 // Conversation rows are keyed per mailbox, as the message list groups them.
 type ListRow = { id: string; mailboxId: string | null; threadId: string | null };
 
 /**
  * Open suggestion counts for the rows of a message list, in one grouped query over every message the
- * rows stand for. Only rows in mailboxes where the user has full access get any, and kinds owned by a
+ * rows stand for. Only rows in mailboxes where the user has full access and AI is on get any, and kinds owned by a
  * module that is off for the user, or reviewer-only kinds someone else reviews, are left out. Returns the field to
  * spread into each row: `{ agentSuggestions }`, or nothing.
  */
@@ -24,7 +25,10 @@ export async function loadRowSuggestions(
 	threadMessageIds: ReadonlyMap<string, string[]>,
 	visibility: SuggestionVisibility | null = null,
 ): Promise<(rowId: string) => { agentSuggestions?: SuggestionCount[] }> {
-	const fullAccess = new Set(mailboxes.filter((mailbox) => mailbox.permission === "full_access").map(({ id }) => id));
+	const candidates = mailboxes.filter((mailbox) => mailbox.permission === "full_access").map(({ id }) => id);
+	// No AI for this mailbox: no badges, also for a suggestion stored while the switch was being turned on.
+	const off = await aiOffMailboxIds(db, candidates);
+	const fullAccess = new Set(candidates.filter((id) => !off.has(id)));
 	const members = rows
 		.filter((row) => row.mailboxId && fullAccess.has(row.mailboxId))
 		.map((row) => ({ id: row.id, messageIds: threadMessageIds.get(rowConversationKey(row)) ?? [row.id] }));

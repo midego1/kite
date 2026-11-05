@@ -28,6 +28,7 @@ import { notifySuggestionsQuietly } from "./suggestion-events";
 import { messageTargets } from "./suggestion-refs";
 import { hiddenFromViewer } from "./module-steps-utils";
 import { suggestionVisibilityFor, visibleSuggestionsWhere } from "./suggestion-visibility";
+import { aiOffMailboxIds } from "../mailbox-ai";
 
 const LIST_LIMIT = 200;
 const drafts = alias(messages, "draft");
@@ -73,8 +74,17 @@ export async function listSuggestions(env: CloudflareEnv, user: SessionUser, que
 		.select({ mailboxId: mailboxAgentSettings.mailboxId, autonomy: mailboxAgentSettings.autonomy })
 		.from(mailboxAgentSettings)
 		.where(inArray(mailboxAgentSettings.mailboxId, ids));
-	const autonomy = new Map(settings.map((row) => [row.mailboxId, row.autonomy]));
-	const conditions: SQL[] = [inArray(agentSuggestions.mailboxId, ids)];
+	// No AI for this mailbox: its suggestions are not listed and it counts as off, so For you can hide.
+	const off = await aiOffMailboxIds(env, ids);
+	const autonomy = new Map(
+		settings.map((row) => [row.mailboxId, off.has(row.mailboxId) ? ("off" as const) : row.autonomy]),
+	);
+	const conditions: SQL[] = [
+		inArray(
+			agentSuggestions.mailboxId,
+			ids.filter((id) => !off.has(id)),
+		),
+	];
 	const visible = visibleSuggestionsWhere(await suggestionVisibilityFor(env, user));
 	if (visible) conditions.push(visible);
 	if (query.status !== "all") conditions.push(eq(agentSuggestions.status, query.status));

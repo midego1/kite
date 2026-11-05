@@ -23,6 +23,7 @@ const AI_ERROR_CODES = [
 	"assistant_off",
 	"no_provider",
 	"provider_key_unreadable",
+	"mailbox_ai_off",
 	"network",
 	"internal",
 ] as const;
@@ -108,6 +109,7 @@ const REFUSALS_BEFORE_CALL = new Set<AiErrorCode>([
 	"assistant_off",
 	"no_provider",
 	"provider_key_unreadable",
+	"mailbox_ai_off",
 ]);
 
 export function aiErrorIsRefusal(code: AiErrorCode): boolean {
@@ -159,6 +161,8 @@ const MESSAGES: Record<AiErrorCode, (input: MessageInput) => string> = {
 	no_provider: () => "No AI provider is set up. An admin can set one up in Admin → Agent.",
 	provider_key_unreadable: () =>
 		"The AI provider's saved API key can't be read (APP_ENCRYPTION_KEY may have changed). The primary admin can enter it again in Admin → Agent.",
+	mailbox_ai_off: () =>
+		"AI is off for this mailbox. Someone who manages the mailbox can turn it back on in its assistant settings.",
 	network: () => "Kite could not reach the AI provider. Try again in a moment.",
 	internal: () =>
 		"Something went wrong in Kite while asking the AI. Try again; if it keeps happening, the primary admin can see the error in Admin → Agent.",
@@ -225,6 +229,7 @@ const REFUSALS: Record<string, AiErrorCode> = {
 	not_configured: "no_provider",
 	provider_key_unreadable: "provider_key_unreadable",
 	external_provider_not_allowed: "external_provider_not_allowed",
+	mailbox_ai_off: "mailbox_ai_off",
 };
 
 /** Kite's own errors, recognised by name so this file needs no server import. */
@@ -248,6 +253,7 @@ const KITE_ERRORS: Record<string, (error: unknown) => AiErrorClass> = {
 	ChatSpendCapError: () => ({ code: "spend_cap", status: null }),
 	ExternalProviderNotAllowedError: () => ({ code: "external_provider_not_allowed", status: null }),
 	AgentProviderKeyUnreadableError: () => ({ code: "provider_key_unreadable", status: null }),
+	MailboxAiOffError: () => ({ code: "mailbox_ai_off", status: null }),
 	InteractiveModelRefusedError: (error) => {
 		const reason = record(error)?.reason;
 		return { code: (typeof reason === "string" && REFUSALS[reason]) || "no_provider", status: null };
@@ -293,6 +299,7 @@ export function aiErrorHttpStatus(code: AiErrorCode): number {
 			return 429;
 		case "assistant_off":
 		case "external_provider_not_allowed":
+		case "mailbox_ai_off":
 			return 403;
 		case "no_provider":
 		case "provider_key_unreadable":
@@ -347,6 +354,7 @@ const CAUSES: Record<AiErrorCode, string> = {
 	assistant_off: "the assistant is turned off",
 	no_provider: "no AI provider is set up",
 	provider_key_unreadable: "the AI provider's saved API key can't be read",
+	mailbox_ai_off: "AI is off for this mailbox",
 	network: "Kite could not reach the provider",
 	internal: "Kite hit an unexpected error",
 };

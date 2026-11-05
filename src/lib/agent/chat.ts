@@ -23,6 +23,7 @@ import { AGENT_STEP_LIMIT_FALLBACK, agentStepSettings, clampAgentMaxSteps } from
 import { serializeAgentToolOutput } from "./tool-history-utils";
 import { withCurrentEmailContext } from "./current-email-utils";
 import { ownMessage } from "./tool-messages";
+import { aiOffSince, mailboxAiOff } from "./mailbox-ai";
 
 export async function getAgentConversation(context: AgentToolContext, conversationId: string) {
 	const db = getDb(context.env);
@@ -138,7 +139,10 @@ export async function createAgentChatStream(
 	if (!access?.canRead) throw new Error("Mailbox not found");
 	const settings = await readMailboxAgentSettingsRow(db, context.mailboxId);
 	// The assistant switch, the provider and the external-provider opt-in, as for the composer and summaries.
-	const selection = await selectInteractiveModel(context.env, settings?.modelId);
+	const selection = await selectInteractiveModel(context.env, {
+		mailboxId: context.mailboxId,
+		modelId: settings?.modelId,
+	});
 	const currentEmailId = await resolveCurrentEmailId(context, currentMessageId);
 	let conversation = conversationId ? await getAgentConversation(context, conversationId) : null;
 	if (conversationId && !conversation) throw new Error("Conversation not found");
@@ -159,9 +163,12 @@ export async function createAgentChatStream(
 	await db
 		.insert(agentChatMessages)
 		.values({ id: newId("chat"), conversationId: conversation.id, role: "user", content: text });
+	// Earlier answers may quote a mailbox whose AI has been turned off since; they stay on screen but are not sent again.
+	const since = await aiOffSince(context.env);
 	const prompt = history
 		.reverse()
 		.filter((row) => row.role === "user" || row.role === "assistant")
+		.filter((row) => !since || row.createdAt > since)
 		.map((row) => ({ role: row.role as "user" | "assistant", content: row.content }));
 	prompt.push({ role: "user", content: withCurrentEmailContext(text, currentEmailId) });
 	const { tools, fragments } = await buildChatTools(context);
@@ -187,10 +194,12 @@ export async function createAgentChatStream(
 		tools,
 		stopWhen: stepCountIs(maxSteps),
 		// Every step reserves its estimate against the daily caps first; a refused step ends the turn.
-		// The opt-in is checked again before every step, so turning it off also stops a turn already running.
+		// The opt-in and the mailbox's "No AI" switch are checked again before every step, so turning either off also
+		// stops a turn already running.
 		prepareStep: async ({ stepNumber, messages }) => {
 			if (await externalProviderRefused(context.env, selection.providerKind))
 				throw new InteractiveModelRefusedError("external_provider_not_allowed");
+			if (await mailboxAiOff(context.env, context.mailboxId)) throw new InteractiveModelRefusedError("mailbox_ai_off");
 			const step = agentStepSettings(stepNumber, maxSteps, system);
 			await spend.beforeStep(stepPromptChars(step?.instructions ?? system, messages));
 			return step;

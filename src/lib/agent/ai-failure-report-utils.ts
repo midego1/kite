@@ -124,6 +124,11 @@ const EXPLANATIONS: Record<AiErrorCode, (input: ExplainInput) => Explanation> = 
 		fix: "Add a provider in Admin → Agent.",
 		link: PROVIDER_SETTINGS,
 	}),
+	mailbox_ai_off: () => ({
+		cause: "A mailbox has No AI for this mailbox on, so Kite refused to send its mail to the AI.",
+		fix: "Nothing to fix: this is the mailbox's own setting. Someone who manages the mailbox can turn AI back on at the top of the assistant panel's settings, with that mailbox selected.",
+		link: { href: "/inbox", label: "Open the inbox" },
+	}),
 	internal: () => ({
 		cause: "Something went wrong inside Kite, not at the provider.",
 		fix: "Look for ai.failed in the server logs around the times shown. Recent AI errors lists each request.",

@@ -659,6 +659,13 @@
       "when": 1793587200000,
       "tag": "0090_add_attachment_storage_job",
       "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "6",
+      "when": 1793673600000,
+      "tag": "0091_add_mailbox_ai_disabled",
+      "breakpoints": true
     }
   ]
 }

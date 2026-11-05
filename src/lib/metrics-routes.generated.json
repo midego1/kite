@@ -62,6 +62,7 @@
 	"/api/agent/jobs/[id]/retry",
 	"/api/agent/jobs",
 	"/api/agent/mcp-keys",
+	"/api/agent/settings/ai",
 	"/api/agent/settings",
 	"/api/agent/settings/senders",
 	"/api/agent/suggestions/[id]/accept",

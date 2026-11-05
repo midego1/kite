@@ -6,6 +6,7 @@ import { recentModuleMessagesFromSender } from "@/lib/email/module-recent";
 import { sendModuleMail } from "@/lib/email/module-send";
 import { dispatchModuleWebhook } from "@/lib/email/module-webhooks";
 import { externalSourceLogin } from "@/lib/external-accounts/source-login";
+import { aiHiddenSources } from "@/lib/agent/mailbox-ai";
 import { findDescriptor, MODULE_CAPABILITIES } from "./capability-registry";
 import type { HostAgentServices, HostResolvedRef, ModuleHost } from "./host-types";
 import {
@@ -114,6 +115,8 @@ export const moduleHost: ModuleHost = {
 		readAttachment: (ctx, messageId, attachmentId, options) =>
 			readModuleAttachment(getEnv(), ctx, messageId, attachmentId, options),
 		send: (ctx, draft) => sendModuleMail(getEnv(), ctx, draft),
+		aiHidden: async (ctx, sources) =>
+			ctx.trigger === "chat" ? aiHiddenSources(getEnv(), sources) : sources.map(() => false),
 		importMessages: (_ctx, request) => importModuleMessages(getEnv(), request),
 	},
 	users: { getProfile: (_ctx, userId) => getUserProfile(getEnv(), userId) },

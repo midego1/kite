@@ -10,6 +10,7 @@ import { tracksAccountIdentity } from "@/lib/profile/identity-utils";
 import { mailboxSchema } from "@/lib/validators";
 import { ensureMailboxDomainRouting, getMailboxDomainAddresses } from "@/lib/mailboxes/domain-addresses";
 import { listScreenerSettings, enableScreenerForNewMailbox } from "@/lib/screener/settings";
+import { aiOffMailboxIds } from "@/lib/agent/mailbox-ai";
 import { listSendIdentities } from "@/lib/external-accounts/identities";
 import { ensurePersonalMailbox } from "./utils";
 
@@ -20,6 +21,11 @@ export async function GET(request: Request) {
 	const db = getDb(env);
 	const rows = await ensurePersonalMailbox(env, db, user);
 	const screener = await listScreenerSettings(
+		db,
+		rows.map((mailbox) => mailbox.id),
+	);
+	// "No AI for this mailbox": the UI hides or explains its AI features there; the server refuses them either way.
+	const aiOff = await aiOffMailboxIds(
 		db,
 		rows.map((mailbox) => mailbox.id),
 	);
@@ -35,6 +41,7 @@ export async function GET(request: Request) {
 				senderAddresses: await getMailboxDomainAddresses(db, mailbox),
 				externalIdentities: identities.get(mailbox.id) ?? [],
 				screener: screener.get(mailbox.id) ?? null,
+				aiDisabled: aiOff.has(mailbox.id),
 			})),
 		),
 		canCreateShared: user.role === "admin",

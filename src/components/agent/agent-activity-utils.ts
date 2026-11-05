@@ -49,6 +49,7 @@ const REASON_TEXT: Record<string, string> = {
 	model_flag_trusted_sender:
 		"No phishing warning: the AI model found the message suspicious, but the sender is trusted and Kite found no sign of phishing in it",
 	autonomy_off: "Skipped: automatic reading is off for this mailbox",
+	mailbox_ai_off: "Skipped: AI is off for this mailbox",
 	assistant_disabled: "Skipped: the email assistant is turned off",
 	source_changed: "Skipped: the message was moved or deleted first",
 	reviewer_unavailable: "Skipped: the reviewer can no longer read this mailbox",

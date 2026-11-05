@@ -17,6 +17,7 @@ import type { MailboxAgentSettingsState } from "../auto-read/settings-types";
 import { utcDayStartSeconds } from "../auto-read/spend-utils";
 import { agentJobQueueMessage } from "../queue-utils";
 import { lineScheduleGate, lineSummaryGate } from "./line-utils";
+import { aiOffMailboxIds } from "../mailbox-ai";
 
 const logger = createLogger("agent");
 
@@ -218,7 +219,9 @@ export async function loadRowLines<T extends ListRow>(
 			.where(
 				and(inJsonArray(mailboxAgentSettings.mailboxId, mailboxIds), eq(mailboxAgentSettings.listSummaries, true)),
 			);
-		const on = new Set(enabled.map((row) => row.mailboxId));
+		// No AI for this mailbox: lines stored before it was turned off are not shown (turning it off deletes them).
+		const off = await aiOffMailboxIds(db, mailboxIds);
+		const on = new Set(enabled.map((row) => row.mailboxId).filter((id) => !off.has(id)));
 		const members = new Map(
 			rows.filter((row) => row.mailboxId && on.has(row.mailboxId)).map((row) => [row.id, threadMessageIds(row)]),
 		);

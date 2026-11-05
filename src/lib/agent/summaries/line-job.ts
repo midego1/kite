@@ -23,6 +23,8 @@ import { buildLinePrompt, cleanLine, LINE_MAX_OUTPUT_TOKENS } from "./line-utils
 import { lineGateFor, notifyLine, saveLine } from "./lines";
 import { traceAiError } from "../ai-errors";
 import { UnusableAnswerError } from "../ai-error-utils";
+import { mailboxAiOff } from "../mailbox-ai";
+import { MAILBOX_AI_OFF_REASON, MailboxAiOffError } from "../mailbox-ai-utils";
 
 type AgentJobRow = typeof agentJobs.$inferSelect;
 type Outcome = { skip: string } | { skip: null; line: string; modelId: string };
@@ -35,6 +37,7 @@ async function prepare(env: CloudflareEnv, db: AppDatabase, job: AgentJobRow) {
 	const install = await getAutoReadInstallSettings(env);
 	if (!install.agentEnabled) return { skip: "assistant_disabled" } as const;
 	if (!install.autoReadEnabled) return { skip: "kill_switch" } as const;
+	if (await mailboxAiOff(env, job.mailboxId)) return { skip: MAILBOX_AI_OFF_REASON } as const;
 	const row = await readMailboxAgentSettingsRow(db, job.mailboxId);
 	const [source] = await db.select().from(messages).where(eq(messages.id, job.sourceMessageId)).limit(1);
 	const [mailbox] = await db.select().from(mailboxes).where(eq(mailboxes.id, job.mailboxId)).limit(1);
@@ -69,7 +72,7 @@ async function writeLine(
 		rates: config.rates,
 	});
 	const prompt = buildLinePrompt({ messageId: source.id, subject: source.subject, body: context.bodyText });
-	const selection = await selectAutoReadModel(env, requested);
+	const selection = await selectAutoReadModel(env, { mailboxId: job.mailboxId, modelId: requested });
 	const options = buildModelCallOptions({
 		provider: selection.providerKind,
 		preset: selection.preset,
@@ -90,7 +93,7 @@ async function writeLine(
 	};
 	const reply = await callWithFallback(options, async (current) => {
 		sent = current;
-		const model = await selectAutoReadModel(env, requested);
+		const model = await selectAutoReadModel(env, { mailboxId: job.mailboxId, modelId: requested });
 		return withReservedSpend(
 			{
 				env,
@@ -160,6 +163,7 @@ export async function processLineSummaryJob(env: CloudflareEnv, jobId: string) {
 	} catch (error) {
 		if (error instanceof ExternalProviderNotAllowedError)
 			return void (await skipAgentJob(db, jobId, "external_provider_not_allowed"));
+		if (error instanceof MailboxAiOffError) return void (await skipAgentJob(db, jobId, MAILBOX_AI_OFF_REASON));
 		await failAndRequeueAgentJob(env, db, job, error);
 	}
 }

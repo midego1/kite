@@ -59,6 +59,7 @@ const LATER_MIGRATIONS = [
 	"0088_attachment_raw_storage.sql",
 	"0089_add_external_identities.sql",
 	"0090_add_attachment_storage_job.sql",
+	"0091_add_mailbox_ai_disabled.sql",
 ];
 /** Columns a later migration adds to a table this test pins; everything else must stay as it was. */
 const LATER_COLUMNS = {

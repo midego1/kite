@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { primaryLanguage } from "@/lib/agent/summaries/summary-utils";
 import type { SummaryScope, SummaryState } from "@/lib/agent/summaries/summary-types";
 import { useKeyChanged } from "@/hooks/use-synced-state";
+import { MAILBOXES_CHANGED_EVENT } from "@/components/mailbox-provider-utils";
 import type { AiErrorBody } from "@/lib/agent/ai-error-utils";
 import type { ThreadSummaryBusy, ThreadSummaryController } from "./thread-summary-types";
 import { canSummarize, summaryError, summaryUrl } from "./thread-summary-utils";
@@ -14,7 +15,7 @@ function browserLanguage(): string | null {
 
 /**
  * Reloads the summary state when the conversation may have changed: new or moved mail (`kite:messages-changed`,
- * which realtime events and local actions dispatch) and the window regaining focus.
+ * which realtime events and local actions dispatch), the window regaining focus and a changed mailbox list.
  */
 function useRefreshSignal(): [number, () => void] {
 	const [signal, setSignal] = useState(0);
@@ -22,9 +23,12 @@ function useRefreshSignal(): [number, () => void] {
 	useEffect(() => {
 		window.addEventListener("kite:messages-changed", bump);
 		window.addEventListener("focus", bump);
+		// "No AI for this mailbox" changed: the state then says so and shows no summary.
+		window.addEventListener(MAILBOXES_CHANGED_EVENT, bump);
 		return () => {
 			window.removeEventListener("kite:messages-changed", bump);
 			window.removeEventListener("focus", bump);
+			window.removeEventListener(MAILBOXES_CHANGED_EVENT, bump);
 		};
 	}, [bump]);
 	return [signal, bump];

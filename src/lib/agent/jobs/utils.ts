@@ -28,6 +28,8 @@ import { traceAiError } from "../ai-errors";
 import { UnusableAnswerError, classifyAiError } from "../ai-error-utils";
 import { InteractiveModelRefusedError } from "../interactive-model";
 import { externalProviderRefused } from "../external-provider";
+import { mailboxAiOff } from "../mailbox-ai";
+import { MAILBOX_AI_OFF_REASON, MailboxAiOffError } from "../mailbox-ai-utils";
 
 export type AgentDraftQueueMessage = { kind: "agent.draft"; jobId: string };
 
@@ -173,6 +175,8 @@ export async function processAgentDraftJob(env: CloudflareEnv, jobId: string) {
 	const skip = (reason: string) => skipAgentJob(db, jobId, reason);
 	try {
 		if (!(await getAgentEnabled(env))) return void (await skip("Assistant disabled"));
+		// Checked when the job starts, so a job queued before the mailbox's AI was turned off never reads its mail.
+		if (await mailboxAiOff(env, job.mailboxId)) return void (await skip(MAILBOX_AI_OFF_REASON));
 		const settings = await readMailboxAgentSettingsRow(db, job.mailboxId);
 		const [source] = await db.select().from(messages).where(eq(messages.id, job.sourceMessageId)).limit(1);
 		const [reviewer] = await db.select().from(users).where(eq(users.id, job.reviewerUserId)).limit(1);
@@ -231,7 +235,7 @@ export async function processAgentDraftJob(env: CloudflareEnv, jobId: string) {
 					.limit(1)
 			: [];
 		if (newer) return void (await skip("A newer message or sent reply superseded this draft"));
-		const selection = await getAgentModel(env, settings.modelId);
+		const selection = await getAgentModel(env, { mailboxId: job.mailboxId, modelId: settings.modelId });
 		if (!selection) throw new InteractiveModelRefusedError("not_configured");
 		// Automatic work like automatic reading: an external provider needs the primary admin's opt-in. Scheduling
 		// already checks it; this catches the opt-in turned off, or the provider switched, while the job waited.
@@ -248,6 +252,7 @@ export async function processAgentDraftJob(env: CloudflareEnv, jobId: string) {
 			thread: await loadDraftThread(env, job.mailboxId, source),
 		});
 		if (!(await getAgentEnabled(env))) return void (await skip("Assistant disabled during generation"));
+		if (await mailboxAiOff(env, job.mailboxId)) return void (await skip(MAILBOX_AI_OFF_REASON));
 		const [currentSettings] = await db
 			.select({ autoDraftEnabled: mailboxAgentSettings.autoDraftEnabled })
 			.from(mailboxAgentSettings)
@@ -285,6 +290,7 @@ export async function processAgentDraftJob(env: CloudflareEnv, jobId: string) {
 			draftId: result.draftId,
 		});
 	} catch (error) {
+		if (error instanceof MailboxAiOffError) return void (await skip(MAILBOX_AI_OFF_REASON));
 		await failAndRequeueAgentJob(env, db, job, error);
 	}
 }

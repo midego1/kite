@@ -59,7 +59,7 @@ export async function runTriageModel(input: TriageRunInput): Promise<{ result: T
 		// The saved rates, not Kite's price list: a Kite update must not move automatic reading to another model.
 		rates: config.rates,
 	});
-	const selection = await selectAutoReadModel(env, requested);
+	const selection = await selectAutoReadModel(env, { mailboxId: job.mailboxId, modelId: requested });
 	const prompt = buildTriagePrompt({
 		messageId: context.source.id,
 		from: context.source.fromAddr,
@@ -85,7 +85,7 @@ export async function runTriageModel(input: TriageRunInput): Promise<{ result: T
 		oneLine: input.oneLine,
 		generate: async (request, options) => {
 			// The repair and a parameter fallback are new requests, so the opt-in is checked again.
-			const current = await selectAutoReadModel(env, requested);
+			const current = await selectAutoReadModel(env, { mailboxId: job.mailboxId, modelId: requested });
 			const reply = await withReservedSpend(
 				{
 					env,

@@ -13,17 +13,16 @@ import type { ExternalAccountView } from "@/lib/external-accounts/types";
 import type { AccountFormState, PresetOption } from "./connected-accounts-types";
 import { forwardingProviderFor, type ForwardingProviderId } from "./forwarding-guide-utils";
 import { MailboxField, MailboxLeftBehind } from "./account-mailbox-field";
-import { NEW_MAILBOX_VALUE } from "./new-mailbox-utils";
+import { chosenMailboxId, errorText, firstId, NEW_MAILBOX_VALUE, unusedMailboxAddress } from "./new-mailbox-utils";
 import { useNewMailbox } from "./use-new-mailbox";
 import {
 	accountForm,
 	canSubmitAccountForm,
 	submitLabel,
-	connectAccount,
 	detectProvider,
 	emptyAccountForm,
 	SYNC_INTERVAL_OPTIONS,
-	updateAccount,
+	saveAccount,
 } from "./connected-accounts-utils";
 
 type FieldsProps = { form: AccountFormState; setForm: (form: AccountFormState) => void };
@@ -57,10 +56,10 @@ export function AccountFormDialog({
 	const { mailboxes, selectedMailbox, isLoading } = useSelectedMailbox();
 	const managed = mailboxes.filter((mailbox) => (mailbox.permission ?? "full_access") === "full_access");
 	const [draft, setForm] = useState<AccountFormState>(() =>
-		account ? accountForm(account) : emptyAccountForm(selectedMailbox?.id ?? managed[0]?.id ?? ""),
+		account ? accountForm(account) : emptyAccountForm(firstId(selectedMailbox?.id, managed[0]?.id)),
 	);
 	// The mailboxes may arrive after the dialog opened; until one is chosen, the first one the user manages is used.
-	const chosenId = draft.mailboxId || managed[0]?.id || "";
+	const chosenId = firstId(draft.mailboxId, managed[0]?.id);
 	const [saving, setSaving] = useState<"mailbox" | "account" | "delete" | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	// With no mailbox to choose from (a new account of someone who may create mailboxes) the new mailbox is the choice.
@@ -70,10 +69,15 @@ export function AccountFormDialog({
 		mailboxId: chosenId || (isLoading ? "" : NEW_MAILBOX_VALUE),
 		mailboxes,
 	});
-	const form =
-		chosenId || !fresh.offered || isLoading
-			? { ...draft, mailboxId: chosenId }
-			: { ...draft, mailboxId: NEW_MAILBOX_VALUE };
+	const form = {
+		...draft,
+		mailboxId: chosenMailboxId({
+			chosen: draft.mailboxId,
+			firstManaged: managed[0]?.id,
+			offered: fresh.offered,
+			loading: isLoading,
+		}),
+	};
 	const preset = presets.find((entry) => entry.id === form.preset);
 	const editing = !!account;
 	const { created } = fresh;
@@ -103,7 +107,7 @@ export function AccountFormDialog({
 			target = await fresh.ensure();
 		} catch (createError) {
 			// Nothing was created, so nothing is left to explain: the person fixes the name and tries again.
-			setError(createError instanceof Error ? createError.message : "Could not create the mailbox");
+			setError(errorText(createError, "Could not create the mailbox"));
 			setSaving(null);
 			return;
 		}
@@ -112,13 +116,13 @@ export function AccountFormDialog({
 		if (target) setForm(connecting);
 		setSaving("account");
 		try {
-			const saved = account ? await updateAccount(account.id, connecting) : await connectAccount(connecting);
+			const saved = await saveAccount(account, connecting);
 			// A mailbox made earlier by this dialog that the person then left for another one stays; say so.
-			const unused = created && created.id !== connecting.mailboxId ? created.address : undefined;
+			const unused = unusedMailboxAddress(created, connecting.mailboxId);
 			fresh.clear();
 			onSaved(saved, !account, unused);
 		} catch (submitError) {
-			setError(submitError instanceof Error ? submitError.message : "Could not save the account");
+			setError(errorText(submitError, "Could not save the account"));
 		} finally {
 			setSaving(null);
 		}
@@ -129,9 +133,9 @@ export function AccountFormDialog({
 		setError(null);
 		try {
 			await fresh.deleteCreated();
-			setForm({ ...form, mailboxId: selectedMailbox?.id ?? managed[0]?.id ?? "" });
+			setForm({ ...form, mailboxId: firstId(selectedMailbox?.id, managed[0]?.id) });
 		} catch (deleteError) {
-			setError(deleteError instanceof Error ? deleteError.message : "Could not delete the mailbox");
+			setError(errorText(deleteError, "Could not delete the mailbox"));
 		} finally {
 			setSaving(null);
 		}

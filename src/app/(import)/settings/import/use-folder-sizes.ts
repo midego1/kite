@@ -3,8 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { maxSizeSteps } from "@/lib/import/folder-size-utils";
 import type { FolderToMeasure } from "./size-utils";
-import { fetchFolderSizeStep } from "./size-utils";
-import type { FolderSizeState } from "./types";
+import { fetchFolderSizeStep, foldersToMeasure, plannedTotals } from "./size-utils";
+import type { AccountPlan, FolderSizeState } from "./types";
 
 type Source = { key: number; body: Record<string, unknown> };
 type Saved = {
@@ -47,7 +47,7 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
  * folders read again). A server that cannot be measured this way marks the folder `unavailable`. A changed
  * UIDVALIDITY starts that folder again. Nothing here ever blocks the import.
  */
-export function useFolderSizes(source: Source | null, wanted: FolderToMeasure[]): Record<string, FolderSizeState> {
+function useMeasuredSizes(source: Source | null, wanted: FolderToMeasure[]): Record<string, FolderSizeState> {
 	const [sizes, setSizes] = useState<Record<string, FolderSizeState>>({});
 	const saved = useRef(new Map<string, Saved>());
 	const finished = useRef(new Set<string>());
@@ -127,4 +127,10 @@ export function useFolderSizes(source: Source | null, wanted: FolderToMeasure[])
 	}, [source, wantedKey]);
 
 	return sizes;
+}
+
+/** Measures the plan's ticked folders that have no size from the server, and adds up the table's rows. */
+export function useFolderSizes(source: Source | null, plan: AccountPlan | null) {
+	const sizes = useMeasuredSizes(source, plan ? foldersToMeasure(plan.folders) : []);
+	return { sizes, totals: plan ? plannedTotals(plan.folders, sizes) : null };
 }

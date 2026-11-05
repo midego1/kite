@@ -256,3 +256,8 @@ export function submitLabel(saving: "mailbox" | "account" | "delete" | null, edi
 	if (saving === "account") return "Testing the connection…";
 	return editing ? "Save" : "Connect";
 }
+
+/** Saves the dialog: an edit of `account`, or a new connection. */
+export function saveAccount(account: ExternalAccountView | null, form: AccountFormState): Promise<ExternalAccountView> {
+	return account ? updateAccount(account.id, form) : connectAccount(form);
+}

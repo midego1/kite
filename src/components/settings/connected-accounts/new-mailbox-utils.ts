@@ -103,3 +103,32 @@ export async function deleteAccountMailbox(id: string): Promise<void> {
 	}
 	mailboxesChanged();
 }
+
+/**
+ * The mailbox the dialog's "Mail goes to" shows: the one chosen, else the first the person manages; with none to choose
+ * from (and the mailbox list loaded) the new mailbox is the choice when it is offered, so the select is never a dead end.
+ */
+export function chosenMailboxId(input: {
+	chosen: string;
+	firstManaged: string | undefined;
+	offered: boolean;
+	loading: boolean;
+}): string {
+	const id = input.chosen || input.firstManaged || "";
+	return id || (input.offered && !input.loading ? NEW_MAILBOX_VALUE : "");
+}
+
+/** The address of a mailbox this dialog made earlier that the account is not connected to, if there is one. */
+export function unusedMailboxAddress(created: CreatedMailbox | null, connectedId: string): string | undefined {
+	return created && created.id !== connectedId ? created.address : undefined;
+}
+
+/** What went wrong, for the dialog's alert. */
+export function errorText(error: unknown, fallback: string): string {
+	return error instanceof Error ? error.message : fallback;
+}
+
+/** The first id that is set, or "". */
+export function firstId(...ids: (string | undefined)[]): string {
+	return ids.find((id) => !!id) ?? "";
+}

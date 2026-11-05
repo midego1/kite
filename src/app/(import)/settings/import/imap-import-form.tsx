@@ -13,7 +13,7 @@ import { Select } from "@/components/ui/select";
 import { ImportSizeNotice } from "@/components/settings/import-size-notice";
 import { AccountMappingTable } from "./account-mapping-table";
 import { useAccountMailbox } from "./use-account-mailbox";
-import { sizeNoticeProps, foldersToMeasure, plannedTotals, withMeasuredBytes } from "./size-utils";
+import { sizeNoticeProps, withMeasuredBytes } from "./size-utils";
 import { useFolderSizes } from "./use-folder-sizes";
 import type {
 	AccountPlan,
@@ -34,6 +34,7 @@ import {
 	fetchMailboxFolders,
 	hasImapSource,
 	includedFolderCount,
+	mailboxAddressOf,
 	imapAccountBody,
 	imapSecurityValue,
 	planIsStale,
@@ -84,8 +85,7 @@ export function ImapImportForm({ mailboxId, onStarted }: { mailboxId: string | n
 	const [sizeConfirmRequired, setSizeConfirmRequired] = useState(false);
 	const [importAnyway, setImportAnyway] = useState(false);
 	const account = form.mode === "account";
-	const into = mailboxes.find((mailbox) => mailbox.id === mailboxId);
-	const target = into ? `${into.localPart}@${into.hostname}` : null;
+	const target = mailboxAddressOf(mailboxes, mailboxId);
 
 	function setForm(next: ImapFormState) {
 		// A plan belongs to the account it was read from.
@@ -137,8 +137,7 @@ export function ImapImportForm({ mailboxId, onStarted }: { mailboxId: string | n
 	}
 
 	// Only the whole-account table is measured; switching to One folder stops it.
-	const sizes = useFolderSizes(source, account && plan ? foldersToMeasure(plan.folders) : []);
-	const totals = account && plan ? plannedTotals(plan.folders, sizes) : null;
+	const { sizes, totals } = useFolderSizes(source, account ? plan : null);
 	const messages = account ? (totals?.messages ?? null) : estimatedImapMessages(form, 1);
 	const canSubmit =
 		canSubmitImap({

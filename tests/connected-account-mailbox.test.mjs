@@ -4,16 +4,23 @@ import { bundleModules } from "./support/modules-bundle.mjs";
 
 // The connect dialog's "New mailbox for this account": the suggested name, what is refused, who is offered it.
 
-const { suggestMailboxLocalPart, mailboxLocalPartProblem, canOfferNewMailbox, submitLabel } = await bundleModules(
-	"kite-new-mailbox-",
+const {
+	suggestMailboxLocalPart,
+	mailboxLocalPartProblem,
+	canOfferNewMailbox,
+	chosenMailboxId,
+	unusedMailboxAddress,
+	firstId,
+	errorText,
+	NEW_MAILBOX_VALUE,
+	submitLabel,
+} = await bundleModules("kite-new-mailbox-", [
 	[
-		[
-			"suggestMailboxLocalPart, mailboxLocalPartProblem, canOfferNewMailbox",
-			"src/components/settings/connected-accounts/new-mailbox-utils.ts",
-		],
-		["submitLabel", "src/components/settings/connected-accounts/connected-accounts-utils.ts"],
+		"suggestMailboxLocalPart, mailboxLocalPartProblem, canOfferNewMailbox, chosenMailboxId, unusedMailboxAddress, firstId, errorText, NEW_MAILBOX_VALUE",
+		"src/components/settings/connected-accounts/new-mailbox-utils.ts",
 	],
-);
+	["submitLabel", "src/components/settings/connected-accounts/connected-accounts-utils.ts"],
+]);
 
 test("the suggested name is the part before the @ and the provider", () => {
 	assert.equal(suggestMailboxLocalPart("jane@example.com"), "jane-example");
@@ -62,4 +69,29 @@ test("the submit button says what it is doing", () => {
 	assert.equal(submitLabel(null, false), "Connect");
 	assert.equal(submitLabel(null, true), "Save");
 	assert.equal(submitLabel("delete", false), "Connect");
+});
+
+test("with no mailbox to choose from the new mailbox is the choice, never a dead end", () => {
+	const choose = (input) =>
+		chosenMailboxId({ chosen: "", firstManaged: undefined, offered: true, loading: false, ...input });
+	assert.equal(choose({}), NEW_MAILBOX_VALUE);
+	assert.equal(choose({ firstManaged: "mbx_1" }), "mbx_1");
+	assert.equal(choose({ chosen: "mbx_2", firstManaged: "mbx_1" }), "mbx_2");
+	// Not offered (no permission), or the list has not loaded yet: nothing is chosen for the person.
+	assert.equal(choose({ offered: false }), "");
+	assert.equal(choose({ loading: true }), "");
+});
+
+test("a mailbox the dialog made is reported as unused only when the account went elsewhere", () => {
+	const created = { id: "mbx_new", address: "jane-example@example.com" };
+	assert.equal(unusedMailboxAddress(created, "mbx_other"), "jane-example@example.com");
+	assert.equal(unusedMailboxAddress(created, "mbx_new"), undefined);
+	assert.equal(unusedMailboxAddress(null, "mbx_other"), undefined);
+});
+
+test("small helpers of the dialog", () => {
+	assert.equal(firstId(undefined, "", "a", "b"), "a");
+	assert.equal(firstId(), "");
+	assert.equal(errorText(new Error("no"), "fallback"), "no");
+	assert.equal(errorText("x", "fallback"), "fallback");
 });

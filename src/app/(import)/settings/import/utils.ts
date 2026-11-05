@@ -318,3 +318,9 @@ export function planIsStale(previous: ImapFormState, next: ImapFormState): boole
 export function includedFolderCount(plan: AccountPlan | null): number {
 	return plan?.folders.filter((folder) => folder.include).length ?? 0;
 }
+
+/** The address of the mailbox with this id (`name@host`), or null. */
+export function mailboxAddressOf(mailboxes: { id: string; localPart: string; hostname: string }[], id: string | null) {
+	const found = mailboxes.find((mailbox) => mailbox.id === id);
+	return found ? `${found.localPart}@${found.hostname}` : null;
+}

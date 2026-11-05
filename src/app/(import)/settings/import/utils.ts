@@ -389,18 +389,27 @@ export function withMeasuredBytes(folders: AccountPlanFolder[], sizes: Record<st
 /** One step of measuring a folder; `unavailable` when the server cannot be measured this way. */
 export type FolderSizeStepAnswer =
 	| { unavailable: true }
-	| { messages: number; bytes: number; nextCursor: number | null; done: boolean; progress: number };
+	| {
+			messages: number;
+			bytes: number;
+			nextCursor: number | null;
+			done: boolean;
+			progress: number;
+			uidValidity: number | null;
+			reset: boolean;
+	  };
 
 export async function fetchFolderSizeStep(
 	source: Record<string, unknown>,
 	folder: string,
 	cursor: number | null,
 	signal?: AbortSignal,
+	uidValidity?: number | null,
 ): Promise<FolderSizeStepAnswer> {
 	const response = await authFetch("/api/import/account/sizes", {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({ ...source, folder, cursor }),
+		body: JSON.stringify({ ...source, folder, cursor, uidValidity }),
 		signal,
 	});
 	const data = (await response.json()) as FolderSizeStepAnswer & { error?: string };

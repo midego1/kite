@@ -5,7 +5,7 @@ import type { FolderSizeState } from "./types";
 import { fetchFolderSizeStep } from "./utils";
 
 type Source = { key: number; body: Record<string, unknown> };
-type Saved = { cursor: number | null; messages: number; bytes: number; progress: number };
+type Saved = { cursor: number | null; messages: number; bytes: number; progress: number; uidValidity: number | null };
 
 /**
  * Measures the size of the folders in `wanted` (ticked, no STATUS=SIZE from the server) one step at a time, newest
@@ -36,16 +36,30 @@ export function useFolderSizes(source: Source | null, wanted: string[]): Record<
 			setSizes((current) => (controller.signal.aborted ? current : { ...current, [name]: state }));
 
 		async function measure(name: string) {
-			const progress = saved.current.get(name) ?? { cursor: null, messages: 0, bytes: 0, progress: 0 };
+			const progress = saved.current.get(name) ?? {
+				cursor: null,
+				messages: 0,
+				bytes: 0,
+				progress: 0,
+				uidValidity: null,
+			};
 			saved.current.set(name, progress);
 			for (;;) {
 				publish(name, { status: "measuring", ...progress });
-				const answer = await fetchFolderSizeStep(source!.body, name, progress.cursor, controller.signal);
+				const answer = await fetchFolderSizeStep(
+					source!.body,
+					name,
+					progress.cursor,
+					controller.signal,
+					progress.uidValidity,
+				);
 				if (controller.signal.aborted) return;
 				if ("unavailable" in answer) {
 					finished.current.add(name);
 					return void publish(name, { status: "unavailable", ...progress });
 				}
+				if (answer.reset) Object.assign(progress, { cursor: null, messages: 0, bytes: 0, progress: 0 });
+				progress.uidValidity = answer.uidValidity;
 				progress.messages += answer.messages;
 				progress.bytes += answer.bytes;
 				progress.progress = answer.progress;

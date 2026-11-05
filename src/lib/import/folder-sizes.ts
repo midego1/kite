@@ -12,11 +12,14 @@ import {
 type ImapAccount = Pick<ImapImportInput, "host" | "port" | "secure" | "username" | "password">;
 type SizeEnv = Parameters<typeof openImportSession>[0];
 
-/** The folder's `UIDNEXT` from EXAMINE, else from STATUS; null when the server names none (sizes cannot be walked). */
-async function folderUidNext(session: ImapSession, folder: string): Promise<number | null> {
+/** The folder's UID namespace and next UID, falling back to STATUS when EXAMINE omits them. */
+async function folderState(session: ImapSession, folder: string) {
 	const examined = await session.examine(folder);
-	if (examined.uidNext !== null) return examined.uidNext;
-	return (await session.status(folder))?.uidNext ?? null;
+	const status = examined.uidNext === null || examined.uidValidity === null ? await session.status(folder) : null;
+	return {
+		uidNext: examined.uidNext ?? status?.uidNext ?? null,
+		uidValidity: examined.uidValidity ?? status?.uidValidity ?? null,
+	};
 }
 
 /**
@@ -31,15 +34,16 @@ export async function measureFolderStep(
 	folder: string,
 	cursor: number | null,
 	limits: SizeStepLimits = DEFAULT_SIZE_STEP_LIMITS,
-	now: () => number = Date.now,
-	signal?: AbortSignal,
+	options: { now?: () => number; signal?: AbortSignal; uidValidity?: number | null } = {},
 ): Promise<FolderSizeStep | null> {
+	const { now = Date.now, signal } = options;
 	const session = await openImportSession(env, account, signal);
 	try {
-		const uidNext = await folderUidNext(session, folder);
+		const { uidNext, uidValidity } = await folderState(session, folder);
 		if (uidNext === null) return null;
+		const reset = options.uidValidity != null && options.uidValidity !== uidValidity;
 		const startedAt = now();
-		let next = cursor;
+		let next = reset ? null : cursor;
 		let messages = 0;
 		let bytes = 0;
 		for (let windows = 0; windows < limits.maxWindows; windows += 1) {
@@ -61,7 +65,7 @@ export async function measureFolderStep(
 			next = window.from > 1 ? window.from - 1 : null;
 			if (next === null || messages >= limits.stepMessages || now() - startedAt >= limits.maxMs) break;
 		}
-		return { messages, bytes, nextCursor: next, uidNext };
+		return { messages, bytes, nextCursor: next, uidNext, uidValidity, reset };
 	} finally {
 		await session.close();
 	}

@@ -68,7 +68,7 @@ test("aborting a measuring request closes a stalled IMAP fetch without starting 
 			return gate;
 		},
 	});
-	const step = measureFolderStep(env, account, "INBOX", null, SMALL, Date.now, controller.signal);
+	const step = measureFolderStep(env, account, "INBOX", null, SMALL, { signal: controller.signal });
 	await started;
 	controller.abort();
 	try {
@@ -111,6 +111,26 @@ test("the first step is the newest window and its cursor moves down", async (t) 
 	assert.equal(last.nextCursor, null);
 });
 
+test("a changed UIDVALIDITY restarts at the newest window instead of reusing an older cursor", async (t) => {
+	const { env, server } = await fake(t, {
+		folders: { INBOX: Array.from({ length: 25 }, (_, index) => ({ raw: sampleMessage(index + 1), size: 100 })) },
+	});
+	const limits = { ...SMALL, maxWindows: 1 };
+	const first = await measureFolderStep(env, account, "INBOX", null, limits);
+	server.bumpUidValidity("INBOX");
+	const restarted = await measureFolderStep(env, account, "INBOX", first.nextCursor, limits, {
+		uidValidity: first.uidValidity,
+	});
+	assert.equal(restarted.reset, true);
+	assert.equal(restarted.uidValidity, 2);
+	assert.equal(restarted.nextCursor, first.nextCursor);
+	const continued = await measureFolderStep(env, account, "INBOX", restarted.nextCursor, limits, {
+		uidValidity: restarted.uidValidity,
+	});
+	assert.equal(continued.reset, false);
+	assert.equal(continued.nextCursor, 5);
+});
+
 test("an empty folder is done at once, but missing sizes make the measurement unavailable", async (t) => {
 	const { env } = await fake(t, {
 		folders: {
@@ -122,7 +142,7 @@ test("an empty folder is done at once, but missing sizes make the measurement un
 		},
 	});
 	const empty = await measureFolderStep(env, account, "Empty", null);
-	assert.deepEqual({ ...empty }, { messages: 0, bytes: 0, nextCursor: null, uidNext: 1 });
+	assert.deepEqual({ ...empty }, { messages: 0, bytes: 0, nextCursor: null, uidNext: 1, uidValidity: 1, reset: false });
 	const odd = await measureFolderStep(env, account, "Odd", null);
 	assert.equal(odd, null);
 });

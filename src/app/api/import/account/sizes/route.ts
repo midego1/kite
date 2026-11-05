@@ -11,7 +11,12 @@ import { resolveImportSource } from "../../connected-account";
 import type { ImapFolderListRequest } from "../../imap/folders/types";
 import { parseImapFolderListRequest } from "../../imap/folders/utils";
 
-type SizesRequest = ImapFolderListRequest & { accountId?: unknown; folder?: unknown; cursor?: unknown };
+type SizesRequest = ImapFolderListRequest & {
+	accountId?: unknown;
+	folder?: unknown;
+	cursor?: unknown;
+	uidValidity?: unknown;
+};
 
 /**
  * One step of measuring a folder's size for the import page when the server has no STATUS=SIZE: the messages and bytes of
@@ -28,6 +33,7 @@ export const POST = withModule("import", async (request, { checkUser }) => {
 	let input: ReturnType<typeof parseImapFolderListRequest>;
 	let folder: string;
 	let cursor: number | null;
+	let uidValidity: number | null;
 	try {
 		const resolved = await resolveImportSource(auth.user, await readJsonBody<SizesRequest>(request, 16 * 1024));
 		if ("error" in resolved) return resolved.error;
@@ -36,6 +42,7 @@ export const POST = withModule("import", async (request, { checkUser }) => {
 			throw new Error("A folder is required");
 		folder = resolved.body.folder;
 		cursor = parseSizeCursor(resolved.body.cursor);
+		uidValidity = parseSizeCursor(resolved.body.uidValidity);
 	} catch (error) {
 		const status = error instanceof RequestBodyTooLargeError ? 413 : 400;
 		return NextResponse.json({ error: error instanceof Error ? error.message : "Invalid IMAP request" }, { status });
@@ -43,12 +50,17 @@ export const POST = withModule("import", async (request, { checkUser }) => {
 	const refused = importServerProblem(env, input);
 	if (refused) return NextResponse.json({ error: refused }, { status: 400 });
 	try {
-		const step = await measureFolderStep(env, input, folder, cursor, undefined, undefined, request.signal);
+		const step = await measureFolderStep(env, input, folder, cursor, undefined, {
+			signal: request.signal,
+			uidValidity,
+		});
 		if (!step) return NextResponse.json({ unavailable: true }, { headers: { "Cache-Control": "no-store" } });
 		return NextResponse.json(
 			{
 				messages: step.messages,
 				bytes: step.bytes,
+				uidValidity: step.uidValidity,
+				reset: step.reset,
 				nextCursor: step.nextCursor,
 				done: step.nextCursor === null,
 				progress: sizeProgress(step.nextCursor, step.uidNext),

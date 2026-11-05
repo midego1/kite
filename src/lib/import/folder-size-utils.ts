@@ -24,6 +24,9 @@ export type FolderSizeStep = {
 	nextCursor: number | null;
 	/** The folder's `UIDNEXT`: the first step's cursor is just below it, so `uidNext - 1 - nextCursor` UIDs are covered. */
 	uidNext: number;
+	uidValidity: number | null;
+	/** A changed UID namespace discarded the caller's cursor; discard earlier sums too. */
+	reset: boolean;
 };
 
 /**

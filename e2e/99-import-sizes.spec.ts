@@ -227,3 +227,25 @@ test("partial source sizes do not lower the confirmation warning used when start
 		await fake.close();
 	}
 });
+
+test("a changed UIDVALIDITY discards earlier folder size totals", async ({ page }) => {
+	let calls = 0;
+	await page.route("**/api/import/account/sizes", async (route) => {
+		const next = calls++ > 0;
+		if (next) expect(route.request().postDataJSON().uidValidity).toBe(1);
+		await route.fulfill({
+			json: next
+				? { messages: 2, bytes: 500, uidValidity: 2, reset: true, nextCursor: null, done: true, progress: 1 }
+				: { messages: 1, bytes: 1000, uidValidity: 1, reset: false, nextCursor: 1, done: false, progress: 0.5 },
+		});
+	});
+	const fake = await startFakeImap({ authPlain: true, folders: { INBOX: weighted(2, 250, "rebuilt") } });
+	try {
+		const table = await showFolders(page, fake.port);
+		await expect(table.locator("[data-size]")).toHaveAttribute("data-size", "exact");
+		await expect(page.getByTestId("import-size-total").locator('[data-total="source"]')).toContainText("500 B");
+		expect(calls).toBe(2);
+	} finally {
+		await fake.close();
+	}
+});

@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import type { AppDatabase } from "@/db";
 import { messages } from "@/db/schema";
 import { externalAccounts } from "@/db/schema/external-accounts";
+import { isNoSuchTableError } from "@/lib/modules/state-utils";
 
 /**
  * Why a mailbox is not empty and unused: it holds a message (mail arrived, or an account delivered into it) or a
@@ -22,8 +23,10 @@ export async function mailboxInUse(db: AppDatabase, mailboxId: string): Promise<
 			.where(eq(externalAccounts.mailboxId, mailboxId))
 			.limit(1);
 		return account ? "account" : null;
-	} catch {
-		return null;
+	} catch (error) {
+		// Only a missing table (before the connected accounts migration) means no accounts; anything else must not pass.
+		if (isNoSuchTableError(error)) return null;
+		throw error;
 	}
 }
 

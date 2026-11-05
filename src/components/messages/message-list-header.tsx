@@ -3,7 +3,7 @@
 import clsx from "clsx";
 import Link from "next/link";
 import { useLayoutEffect } from "react";
-import { Check, ChevronLeft, ChevronRight, PanelLeft, SlidersHorizontal, Trash2 } from "lucide-react";
+import { Check, PanelLeft, SlidersHorizontal, Trash2 } from "lucide-react";
 import { MailSearchInput } from "@/components/mail-search/mail-search-input";
 import { useSidebar } from "@/components/sidebar-state";
 import { Button } from "@/components/ui/button";
@@ -16,32 +16,6 @@ import { FolderHeading } from "./folder-heading";
 import type { MessageListHeaderProps } from "./message-list-header-types";
 import { MessageListChips } from "./message-list-chips";
 import { getSelectionToolbarFolder } from "./utils";
-
-function ListPager({ pager, compact }: Pick<MessageListHeaderProps, "pager" | "compact">) {
-	return (
-		<div className={clsx("flex items-center gap-1 text-neutral-500", compact && "ms-auto")}>
-			<span className="whitespace-nowrap px-1 text-xs text-neutral-500">
-				{pager.range.start} - {pager.range.end} of {pager.range.total}
-			</span>
-			<Tooltip label="Previous page">
-				<Button
-					variant="ghost"
-					size="sm"
-					disabled={!pager.canPrevious}
-					onClick={pager.previous}
-					aria-label="Previous page"
-				>
-					<ChevronLeft className="h-4 w-4 rtl:-scale-x-100" />
-				</Button>
-			</Tooltip>
-			<Tooltip label="Next page">
-				<Button variant="ghost" size="sm" disabled={!pager.canNext} onClick={pager.next} aria-label="Next page">
-					<ChevronRight className="h-4 w-4 rtl:-scale-x-100" />
-				</Button>
-			</Tooltip>
-		</div>
-	);
-}
 
 function EmptyFolderButton({
 	emptyFolder,
@@ -102,7 +76,6 @@ function SidebarToggleButton({ listVisible }: { listVisible: boolean }) {
  * The top of a folder list, after Zero's: the panel icon (while the sidebar is expanded), the title, "Select" and the list settings, then the
  * search field and the category chips. Checkboxes show while selecting; the bulk toolbar replaces the title
  * once something is selected. Below 20rem of list width "Select" shows only its icon, so the title keeps the room.
- * The pager row appears only when there is more than one page.
  */
 export function MessageListHeader({
 	config,
@@ -112,7 +85,6 @@ export function MessageListHeader({
 	selection,
 	selecting,
 	filter,
-	pager,
 	emptyFolder,
 	screenerVisible,
 	listVisible,
@@ -120,7 +92,6 @@ export function MessageListHeader({
 	// Only a selection pane beside the list replaces the toolbar; compact styling alone (a phone) must not.
 	const bulk = selection.count > 0 && !selectionInPane;
 	const headerIcons = config.headerIcons ?? [];
-	const paged = pager.canPrevious || pager.canNext;
 	return (
 		<div className="@container shrink-0">
 			<div className="flex h-14 items-center gap-2 border-b border-neutral-200 px-3">
@@ -195,11 +166,6 @@ export function MessageListHeader({
 				<MailSearchInput variant="panel" />
 				<MessageListChips config={config} filter={filter} screenerVisible={screenerVisible} />
 			</div>
-			{paged && !bulk && (
-				<div className="flex h-8 items-center justify-end px-3">
-					<ListPager pager={pager} compact />
-				</div>
-			)}
 		</div>
 	);
 }

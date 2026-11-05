@@ -3,7 +3,7 @@ import path from "node:path";
 import { expect, test, type Browser, type Locator, type Page } from "@playwright/test";
 import sharp from "sharp";
 import { STORAGE_STATE } from "../../e2e/support/constants";
-import { RTL_MAIL, seedDemoData, seedRtlMail, THREAD } from "./demo-data";
+import { RTL_MAIL, seedDemoData, seedPagedMail, seedRtlMail, THREAD } from "./demo-data";
 
 // Screenshots for the changelog (docs/releasing.md#screenshots-in-the-changelog), taken against the isolated,
 // seeded e2e server, so only invented demo data appears. They land in public/changelog/<name>.webp, ready for a
@@ -238,6 +238,19 @@ const SHOTS: Shot[] = [
 			await expect(thumbnail).toBeVisible();
 			await expect.poll(() => dialog.locator("img").evaluateAll((images) => images.every((image) => (image as HTMLImageElement).complete))).toBe(true);
 			return dialog;
+		},
+	},
+	{
+		// The pager shares a row with the first section label of the Inbox list beside an open message.
+		name: "2026-11-05-list-pager-inline",
+		viewport: { width: 1280, height: 800 },
+		open: async (page) => {
+			await seedPagedMail();
+			await page.goto("/inbox");
+			await page.getByRole("main").getByText("Weekly digest 24", { exact: true }).first().click();
+			await expect(page.getByRole("heading", { level: 1, name: "Weekly digest 24" })).toBeVisible();
+			await expect(page.getByRole("button", { name: "Next page" })).toBeVisible();
+			return page;
 		},
 	},
 ];

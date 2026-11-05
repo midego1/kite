@@ -1,11 +1,11 @@
 import type { BulkMessageAction } from "@/app/api/messages/bulk/types";
-import type { MessageFolderConfig, PageRange } from "./types";
+import type { MessageFolderConfig } from "./types";
 
 export type MessageListFilter = "all" | "unread";
 
 export type MessageListHeaderProps = {
 	config: MessageFolderConfig;
-	/** The list beside a reading pane: the title row and a slim pager row below it. */
+	/** The list beside a reading pane: the title row. */
 	compact: boolean;
 	/** A selection pane next to the list offers the bulk actions, so the header skips them. */
 	selectionInPane: boolean;
@@ -34,12 +34,5 @@ export type MessageListHeaderProps = {
 	/** Whether the Inbox's chips link to the Screener. */
 	screenerVisible: boolean;
 	filter: { value: MessageListFilter; onChange: (value: MessageListFilter) => void } | null;
-	pager: {
-		range: PageRange;
-		canPrevious: boolean;
-		canNext: boolean;
-		previous: () => void;
-		next: () => void;
-	};
 	emptyFolder: { folder: "trash" | "spam"; disabled: boolean; emptying: boolean; run: () => void } | null;
 };

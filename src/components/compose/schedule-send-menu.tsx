@@ -12,7 +12,7 @@ import {
 } from "./schedule-send-utils";
 import type { ScheduleSendMenuProps } from "./schedule-send-types";
 import { getUserTimeZone } from "@/lib/time/utils";
-import { PAST_SCHEDULE_MESSAGE, isPastScheduledSend } from "@/lib/email/undo-send-utils";
+import { isPastScheduledSend } from "@/lib/email/undo-send-utils";
 import { useT } from "@/lib/i18n/use-t";
 
 export function ScheduleSendMenu({
@@ -122,7 +122,7 @@ export function ScheduleSendMenu({
 								role="alert"
 								className="mx-2 mb-2 max-w-56 text-xs text-red-600 dark:text-red-400"
 							>
-								{PAST_SCHEDULE_MESSAGE}
+								{t("That send time has already passed. Pick a later time.")}
 							</p>
 						)}
 					</DropdownMenu.Content>

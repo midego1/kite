@@ -35,7 +35,7 @@ export function AssistantNavItem({ assistant }: { assistant: AssistantToggleStat
 			aria-controls="email-assistant-panel"
 		>
 			<Sparkles size={minimal ? RAIL_ICON_SIZE : 16} />
-			{!minimal && "Assistant"}
+			{!minimal && t("Assistant")}
 		</Button>
 	);
 	return minimal ? (

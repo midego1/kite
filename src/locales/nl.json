@@ -32,6 +32,7 @@
 	"Archive (e)": "Archiveren (e)",
 	"Archive Message": "Bericht archiveren",
 	"Archived": "Gearchiveerd",
+	"Assistant": "Assistent",
 	"Attach files": "Bestanden bijvoegen",
 	"Attach files (up to {maxMb} MB total)": "Bestanden bijvoegen (tot {maxMb} MB in totaal)",
 	"Attach files (up to {maxMb} MB total). Files over {thresholdMb} MB are sent as 30-day R2 download links.": "Bestanden bijvoegen (tot {maxMb} MB in totaal). Bestanden groter dan {thresholdMb} MB worden verstuurd als R2-downloadlinks die 30 dagen geldig zijn.",

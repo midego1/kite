@@ -32,6 +32,7 @@
 	"Archive (e)": "أرشفة (e)",
 	"Archive Message": "أرشفة الرسالة",
 	"Archived": "المؤرشفة",
+	"Assistant": "المساعد",
 	"Attach files": "إرفاق ملفات",
 	"Attach files (up to {maxMb} MB total)": "إرفاق ملفات (حتى {maxMb} ميغابايت إجمالًا)",
 	"Attach files (up to {maxMb} MB total). Files over {thresholdMb} MB are sent as 30-day R2 download links.": "إرفاق ملفات (حتى {maxMb} ميغابايت إجمالًا). تُرسل الملفات الأكبر من {thresholdMb} ميغابايت كروابط تنزيل R2 صالحة 30 يومًا.",

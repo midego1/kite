@@ -59,7 +59,7 @@ import {
 	senderOptionsFor,
 	sentToastMessage,
 } from "./sender-options-utils";
-import { PAST_SCHEDULE_MESSAGE, isPastScheduledSend } from "@/lib/email/undo-send-utils";
+import { isPastScheduledSend } from "@/lib/email/undo-send-utils";
 import type { ComposeAttachment, ComposeDraftSnapshot, ComposeStoredAttachment, ComposeThreading } from "./types";
 import type { ComposeAttachmentPolicy } from "./attachment-policy-types";
 import type { InlineComposerActions } from "./inline-composer-types";
@@ -327,7 +327,7 @@ export function ComposeForm({
 		}
 		if (scheduleInvalid || isPastScheduledSend(scheduledAt)) {
 			setPreviewOpen(false);
-			setToast({ type: "error", message: t(PAST_SCHEDULE_MESSAGE) });
+			setToast({ type: "error", message: t("That send time has already passed. Pick a later time.") });
 			return;
 		}
 		const isAgentDraft = !!draftId && agentRevision !== null;

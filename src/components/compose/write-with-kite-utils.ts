@@ -57,17 +57,31 @@ export function hasRichFormatting(html: string): boolean {
 	return RICH_FORMATTING.test(html);
 }
 
-/** The languages Translate offers: the browser's own first when it is not one of the others. */
-export function translateLanguages(browserLanguage: string | undefined): string[] {
-	const fixed = ["English", "Dutch", "German", "French", "Spanish"];
+const FIXED_TRANSLATE_LANGUAGES = [
+	{ code: "en", name: "English" },
+	{ code: "nl", name: "Dutch" },
+	{ code: "de", name: "German" },
+	{ code: "fr", name: "French" },
+	{ code: "es", name: "Spanish" },
+];
+
+/** The languages Translate offers, with their codes: the browser's own first when it is not one of the others. */
+export function translateLanguageOptions(browserLanguage: string | undefined): { code: string; name: string }[] {
+	const code = browserLanguage?.split("-")[0].toLowerCase();
 	let own: string | null = null;
 	try {
-		const code = browserLanguage?.split("-")[0];
 		own = code ? (new Intl.DisplayNames(["en"], { type: "language" }).of(code) ?? null) : null;
 	} catch {
 		own = null;
 	}
-	return own && !fixed.includes(own) ? [own, ...fixed] : fixed;
+	if (!code || !own || FIXED_TRANSLATE_LANGUAGES.some((language) => language.name === own))
+		return FIXED_TRANSLATE_LANGUAGES;
+	return [{ code, name: own }, ...FIXED_TRANSLATE_LANGUAGES];
+}
+
+/** The names `translateLanguageOptions` gives, as the composer's Translate lists them. */
+export function translateLanguages(browserLanguage: string | undefined): string[] {
+	return translateLanguageOptions(browserLanguage).map((language) => language.name);
 }
 
 export type ComposeStreamEvent =

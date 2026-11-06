@@ -18,6 +18,7 @@ import {
 	ShieldAlert,
 	Trash2,
 } from "lucide-react";
+import { MessageTranslateItem } from "@/components/messages/message-translate-item";
 import { MessageSourceDialog } from "@/components/messages/message-source-dialog";
 import { useMessageListHref } from "@/components/messages/message-detail-navigation";
 import { useRowMessageIds } from "@/components/messages/open-row-context";
@@ -72,6 +73,7 @@ export function MessageActions({
 	messageMeta,
 	bodyHtml,
 	onSummarizeMessage,
+	translate,
 	print,
 }: MessageActionsProps) {
 	const t = useT();
@@ -444,6 +446,7 @@ export function MessageActions({
 								{t("Summarize this message")}
 							</button>
 						)}
+						{translate && <MessageTranslateItem menu={translate} onClose={() => setMoreOpen(false)} />}
 						<button
 							type="button"
 							className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm text-neutral-700 hover:bg-neutral-100"

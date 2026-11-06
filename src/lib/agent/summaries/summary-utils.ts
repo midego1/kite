@@ -18,6 +18,17 @@ export const POINTS_TOTAL_MAX_CHARS = 1_200;
 /** The language code of a summary whose language is unknown. */
 export const UNKNOWN_LANGUAGE = "und";
 
+/** The statuses whose messages are ever summarised; drafts, spam, trash, the Screener and module statuses never. */
+export const SUMMARY_STATUSES = ["received", "sent", "archived"] as const;
+
+/** Whether a message may be summarised: a summarised status and not judged spam. */
+export function isSummaryEligible(message: { status: string; spamVerdict?: string | null }): boolean {
+	return (SUMMARY_STATUSES as readonly string[]).includes(message.status) && message.spamVerdict !== "spam";
+}
+
+/** Where a reply's quoted part starts in HTML: a blockquote, or the composer's quote wrapper (`wrapQuotedHtml`). */
+export const QUOTE_START = /<blockquote\b|<[a-z]+\b[^>]*\bdata-kite-quote\b/i;
+
 const LANGUAGE_CODE = /^[a-z]{2}$/;
 const TRAILING_PUNCTUATION = /[.,;:!?]+$/;
 
@@ -40,6 +51,15 @@ export function canTranslate(summaryLanguage: string | null | undefined, userLan
 	return from !== UNKNOWN_LANGUAGE && to !== UNKNOWN_LANGUAGE && from !== to;
 }
 
+/** Whether a two-letter code is a language at all; `zz` is not, and a model must not be asked to write in it. */
+export function isKnownLanguage(code: string): boolean {
+	try {
+		return new Intl.DisplayNames(["en"], { type: "language", fallback: "none" }).of(code) !== undefined;
+	} catch {
+		return false;
+	}
+}
+
 /** A language's English name for the prompt ("Dutch" for `nl`), or the code itself when it has none. */
 export function languageName(code: string, locale = "en"): string {
 	try {
@@ -49,7 +69,7 @@ export function languageName(code: string, locale = "en"): string {
 	}
 }
 
-async function sha256Prefix(value: string): Promise<string> {
+export async function sha256Prefix(value: string): Promise<string> {
 	const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
 	return Array.from(new Uint8Array(digest).slice(0, 8), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
@@ -73,7 +93,7 @@ export async function instructionsDigest(
 	return sha256Prefix(JSON.stringify([general, summary, personal?.name.trim() ?? ""]));
 }
 
-function extractJson(text: string): unknown {
+export function extractJson(text: string): unknown {
 	const trimmed = text.trim();
 	const fenced = trimmed.match(/^```[a-z]*[ \t]*\n?([\s\S]*?)\n?```$/i);
 	const candidate = (fenced ? fenced[1] : trimmed).trim();
@@ -102,7 +122,7 @@ function cut(text: string, max: number): string {
 }
 
 /** The links and addresses in `text` that the summarised messages do not contain. */
-function unknownReferences(text: string, references: ThreadReferences): string[] {
+export function unknownReferences(text: string, references: ThreadReferences): string[] {
 	const addresses = (text.match(EMAIL_PATTERN) ?? []).filter(
 		(address) => !references.addresses.has(address.replace(TRAILING_PUNCTUATION, "").toLowerCase()),
 	);

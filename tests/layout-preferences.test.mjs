@@ -82,6 +82,12 @@ test("parseLayoutPatch needs a layout object with at least one valid choice", ()
 	assert.equal(parseLayoutPatch({ layout: { readingPane: "sideways" } }), null);
 	assert.equal(parseLayoutPatch({ readingPane: "none" }), null);
 	assert.equal(parseLayoutPatch(null), null);
+	assert.deepEqual(parseLayoutPatch({ layout: { translateNever: ["en", "<b>", 3] } }), { translateNever: ["en"] });
+	assert.deepEqual(
+		parseLayoutPatch({ layout: { translateNever: [] } }),
+		{ translateNever: [] },
+		"the last one removed",
+	);
 });
 
 test("a layout maps to the browser storage the views read", () => {
@@ -94,6 +100,8 @@ test("a layout maps to the browser storage the views read", () => {
 		fontScope: "everywhere",
 		interfaceDirection: "rtl",
 		interfaceLanguage: "ar",
+		translateTo: "th",
+		translateNever: ["en", "de"],
 		listWidth: 420,
 		listHeight: 300,
 	};
@@ -107,12 +115,23 @@ test("a layout maps to the browser storage the views read", () => {
 		["kite-font-scope", "everywhere"],
 		["kite-interface-direction", "rtl"],
 		["kite-interface-language", "ar"],
+		["kite-translate-to", "th"],
+		["kite-translate-never", "en,de"],
 		["kite-column-width:message-list", "420"],
 		["kite-column-width:message-list:user-1", "420"],
 		["kite-column-width:message-list-height", "300"],
 		["kite-column-width:message-list-height:user-1", "300"],
 	]);
 	assert.deepEqual(layoutStorageEntries({}, "user-1"), []);
+	// Each choice stands alone, and turning one off or emptying it is a value too.
+	assert.deepEqual(layoutStorageEntries({ conversationView: true }, "user-1"), [["kite-conversation-view", "on"]]);
+	assert.deepEqual(layoutStorageEntries({ translateTo: "th" }, "user-1"), [["kite-translate-to", "th"]]);
+	assert.deepEqual(layoutStorageEntries({ translateNever: [] }, "user-1"), [["kite-translate-never", ""]]);
+	assert.deepEqual(layoutStorageEntries({ density: "default" }, "user-1"), [["kite-message-density", "default"]]);
+	assert.deepEqual(layoutStorageEntries({ listHeight: 300 }, "user-1"), [
+		["kite-column-width:message-list-height", "300"],
+		["kite-column-width:message-list-height:user-1", "300"],
+	]);
 });
 
 test("withoutKeys leaves out choices made here and not saved yet", () => {

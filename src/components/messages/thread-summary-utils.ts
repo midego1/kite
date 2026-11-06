@@ -1,6 +1,6 @@
 import { readAiErrorBody, type AiErrorBody } from "@/lib/agent/ai-error-utils";
 import type { SummaryScope, SummaryState } from "@/lib/agent/summaries/summary-types";
-import { languageName } from "@/lib/agent/summaries/summary-utils";
+import { shownLanguageName } from "./message-translation-utils";
 import { t } from "@/lib/i18n/translator";
 
 /** The summary route of a message, with the scope and the reader's language. */
@@ -20,9 +20,9 @@ export function showsCurrentSummary(state: SummaryState | null, hidden: boolean)
 	return !hidden && !!state?.summary && !state.summary.stale;
 }
 
-/** "Translate to Dutch": the interface is English, so the language is named in English. */
+/** "Translate to Dutch", naming the language in the interface language. */
 export function translateLabel(language: string): string {
-	return t("Translate to {languageName}", { languageName: languageName(language) });
+	return t("Translate to {languageName}", { languageName: shownLanguageName(language) });
 }
 
 /** The summary as plain text for Copy: the overview, then one line per point. */
@@ -31,10 +31,13 @@ export function summaryCopyText(summary: Pick<NonNullable<SummaryState["summary"
 }
 
 /** The error text of a failed summary request, from the route's `{ error }` body, with an AI failure's details. */
-export async function summaryError(response: Response): Promise<{ message: string; failure: AiErrorBody | null }> {
+export async function summaryError(
+	response: Response,
+	fallback = t("Kite could not summarize this. Try again."),
+): Promise<{ message: string; failure: AiErrorBody | null }> {
 	const body = (await response.json().catch(() => null)) as { error?: unknown } | null;
 	return {
-		message: typeof body?.error === "string" ? body.error : t("Kite could not summarize this. Try again."),
+		message: typeof body?.error === "string" ? body.error : fallback,
 		failure: readAiErrorBody(body),
 	};
 }

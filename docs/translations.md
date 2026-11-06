@@ -10,7 +10,7 @@ Translated so far: the sidebar, the account menu, the message list, the reader's
 
 Pages anyone can open without an account (the home page, sign-in and setup, `/book`, `/c` and public Drive links at `/d`) stay English and left to right whatever the language setting says, until they are translated. An explicit Direction on this browser still applies there.
 
-This setting changes Kite's own text. The mail you read is not translated by it, and nor is what you write: text that goes into a message, such as `Re:` or the line above a quote, stays as it was. Dates, numbers and sizes use the interface language; in English they keep following the browser's locale, as they always did.
+This setting changes Kite's own text. The mail you read is not translated by it (**Translate** in the reader does that), and nor is what you write: text that goes into a message, such as `Re:` or the line above a quote, stays as it was. Dates, numbers and sizes use the interface language; in English they keep following the browser's locale, as they always did.
 
 Corrections to the Arabic are welcome.
 

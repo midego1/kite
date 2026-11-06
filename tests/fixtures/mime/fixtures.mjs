@@ -1,8 +1,7 @@
 // Synthetic MIME messages for tests/mime-index.test.mjs: example.com only, no real people or mail.
 // Each fixture is { name, raw, expected }, where `expected` lists, per postal-mime attachment in order, whether the
 // index must match it ("match"), must not ("unmatched"), or may do either ("either"; the byte check decides).
-// postal-mime 2.7 hands 7bit and 8bit bodies back with LF line breaks and a final LF, so those rarely match and are
-// stored as objects, as before.
+// postal-mime 4.x hands 7bit, 8bit and binary bodies back as sent, so they match a range of the raw like base64 does.
 
 /** Deterministic bytes, so fixtures are stable between runs. */
 export function pseudoRandomBytes(length, seed = 1) {
@@ -223,7 +222,7 @@ export const FIXTURES = [
 				],
 			],
 		}),
-		expected: ["either"],
+		expected: ["match"],
 	},
 	{
 		name: "a 7bit text attachment, LF-only",
@@ -242,7 +241,7 @@ export const FIXTURES = [
 				],
 			],
 		}),
-		expected: ["either"],
+		expected: ["match"],
 	},
 	{
 		name: "a 7bit text attachment, CRLF",
@@ -259,7 +258,7 @@ export const FIXTURES = [
 				],
 			],
 		}),
-		expected: ["either"],
+		expected: ["match"],
 	},
 	{
 		name: "quoted-printable and uuencode attachments",

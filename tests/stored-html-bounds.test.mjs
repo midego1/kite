@@ -39,6 +39,7 @@ await build({
 const { sanitizeStoredEmailHtml } = await import(pathToFileURL(bundle).href);
 const MAX_OPEN_ELEMENTS = 512;
 const MAX_TAG_ATTRIBUTES = 1_024;
+const MAX_TAG_ENTITIES = 256 * 1024;
 const MAX_SANITIZED_HTML_CHARS = 26_000_000;
 
 const worker = join(directory, "worker.mjs");
@@ -49,6 +50,7 @@ import { buildSnippet, parseRawMime } from ${JSON.stringify(pathToFileURL(bundle
 
 const header = "From: a@example.com\\r\\nTo: b@example.com\\r\\nSubject: x\\r\\nMIME-Version: 1.0\\r\\nContent-Type: text/html\\r\\n\\r\\n";
 const lines = (line, count) => (line + "\\r\\n").repeat(count);
+const tagWith = (names, quotes) => "<p " + names.map((name) => name + "='" + '"'.repeat(quotes) + "'").join(" ") + ">x";
 const shapes = {
 	openShort: () => lines("<b>", 149_000),
 	openLong: () => lines("<b>".repeat(18), 149_000),
@@ -69,6 +71,14 @@ const shapes = {
 	attributeEntities: () => '<a title="' + "&".repeat(23_000_000) + '">x',
 	attributeQuotes: () => "<a title='" + '"'.repeat(23_000_000) + "'>x",
 	urlSpaces: () => '<a href="' + " ".repeat(23_000_000) + 'x">x',
+	sixAttributes: () => tagWith(["title", "class", "lang", "style", "dir", "width"], 3_000_000),
+	smallerSixAttributes: () => tagWith(["title", "class", "lang", "style", "dir", "width"], 2_000_000),
+	twoAttributes: () => tagWith(["title", "class"], 4_000_000),
+	dataAttributes: () => tagWith(Array.from({ length: 1_000 }, (_, index) => "data-a" + index), 24_000),
+	attributeReferences: () => '<a title="' + "&lt;".repeat(4_000_000) + '">x</a>',
+	shortAttributeReferences: () => '<a title="' + "&lt".repeat(7_000_000) + '">x</a>',
+	unknownTagReferences: () => '<zz y="' + "&lt;".repeat(4_000_000) + '">x</zz>',
+	largeImage: () => '<p>one</p><img src="data:image/png;base64,' + "A".repeat(20_000_000) + '"><p>two</p>',
 };
 
 const out = {};
@@ -94,11 +104,16 @@ test("large bodies of tags, text and attributes are sanitized within a 128 MB he
 		timeout: 300_000,
 	});
 	const results = JSON.parse(output);
-	assert.equal(Object.keys(results).length, 19);
+	assert.equal(Object.keys(results).length, 27);
 	for (const [name, result] of Object.entries(results)) {
 		assert.ok(result.ms < 60_000, `${name}: ${result.ms} ms`);
-		assert.ok(result.html <= MAX_SANITIZED_HTML_CHARS + 512 * 1024, `${name}: ${result.html} characters`);
+		assert.ok(result.html <= MAX_SANITIZED_HTML_CHARS + 2_000_000, `${name}: ${result.html} characters`);
 	}
+	for (const name of ["sixAttributes", "smallerSixAttributes", "twoAttributes", "dataAttributes"]) {
+		assert.ok(results[name].html <= MAX_SANITIZED_HTML_CHARS, `${name}: ${results[name].html} characters`);
+	}
+	// A large value without entities is an ordinary inline image.
+	assert.equal(results.largeImage.html, 20_000_055);
 	// Balanced markup of this size stays whole.
 	assert.equal(results.closedDivs.html, 22_040_000);
 	assert.equal(results.longDivs.html, 149_000 * 162);
@@ -168,6 +183,41 @@ test("an attribute that outgrows the limit is left out", () => {
 	assert.equal(sanitizeStoredEmailHtml(`<a title="${"&".repeat(MAX_SANITIZED_HTML_CHARS / 2)}">x</a>`), "<a>x</a>");
 	const data = `data:image/png;base64,${"A".repeat(1_000_000)}`;
 	assert.equal(sanitizeStoredEmailHtml(`<img src="${data}">`), `<img src="${data}">`);
+});
+
+test("attributes share the output limit, and those that do not fit are left out", () => {
+	const quotes = '"'.repeat(MAX_SANITIZED_HTML_CHARS / 12);
+	const escaped = "&quot;".repeat(quotes.length);
+	const third = "x".repeat(10);
+	assert.equal(
+		sanitizeStoredEmailHtml(`<p title='${quotes}' class='${quotes}' lang='${quotes}' dir="${third}">x</p>`),
+		`<p title="${escaped}" dir="${third}">x</p>`,
+	);
+	const exact = "x".repeat(MAX_SANITIZED_HTML_CHARS - '<p title="">'.length);
+	assert.equal(sanitizeStoredEmailHtml(`<p title="${exact}">x</p>`).length, exact.length + '<p title=""></p>'.length);
+	assert.equal(sanitizeStoredEmailHtml(`<p title="${exact}x">x</p>`), "<p>x</p>");
+});
+
+test("entities in one tag are limited and the rest stays as text", () => {
+	const entities = "&lt;".repeat(MAX_TAG_ENTITIES);
+	assert.equal(
+		sanitizeStoredEmailHtml(`<p>one</p><a title="${entities}">two</a>`),
+		`<p>one</p><a title="${"&lt;".repeat(MAX_TAG_ENTITIES)}">two</a>`,
+	);
+	const half = "&lt;".repeat(MAX_TAG_ENTITIES / 2 + 1);
+	assert.match(
+		sanitizeStoredEmailHtml(`<p>one</p><a title="${half}" class="${half}">two</a><a>three</a>`),
+		/^<p>one<\/p><div style="white-space: pre-wrap">/,
+	);
+	const cut = sanitizeStoredEmailHtml(`<div><zz y="${entities}&lt;">two</zz>`);
+	assert.match(cut, /^<div><\/div><div style="white-space: pre-wrap">/);
+	assert.equal(unbalanced(cut), "");
+	assert.deepEqual(findActiveContent(cut, parse), []);
+	// Each tag starts afresh, and text entities do not count.
+	const perTag = `<a title="${entities}">a</a>`.repeat(2);
+	assert.equal(sanitizeStoredEmailHtml(perTag), perTag);
+	const text = `<p>${entities}${entities}</p>`;
+	assert.equal(sanitizeStoredEmailHtml(text), text);
 });
 
 test("long values are escaped and checked like short ones", () => {

@@ -7,6 +7,7 @@ import {
 	stripDraftMarkdown,
 	type ThreadReferences,
 } from "../auto-read/draft-guard-utils";
+import { OBFUSCATED_ADDRESS, bareDomainMatches, obfuscatedAddress } from "../reference-patterns-utils";
 import type { PersonalInstructions } from "../instruction-types";
 import type { SummaryLabel, SummaryOutcome, SummaryPoint } from "./summary-types";
 
@@ -121,6 +122,30 @@ function cut(text: string, max: number): string {
 	return `${(space > max / 2 ? head.slice(0, space) : head).trimEnd()}…`;
 }
 
+type Known = ThreadReferences & { hosts: Set<string> };
+
+// The model reads at most this much of a message and of the conversation, so nothing past it can be repeated; the
+// scans below are also quadratic on a long run of address characters, which a hostile message could supply.
+const REFERENCE_TEXT_MAX_CHARS = 2_500;
+const REFERENCE_TOTAL_MAX_CHARS = 30_000;
+
+const hostOf = (url: string) => url.replace(/^https:\/\//, "").split(/[/?#]/)[0];
+
+/**
+ * The thread's references plus its bare domains and spelled-out addresses, which a summary may repeat. The domain
+ * of every known address is a known host too ("Message from acme.com" for billing@acme.com).
+ */
+function collectKnown(texts: (string | null | undefined)[]): Known {
+	const bounded = texts.filter(Boolean).map((text) => (text as string).slice(0, REFERENCE_TEXT_MAX_CHARS));
+	const joined = bounded.join("\n").slice(0, REFERENCE_TOTAL_MAX_CHARS);
+	const { addresses, urls } = collectThreadReferences([joined]);
+	for (const match of bareDomainMatches(joined)) urls.add(normalizeUrl(`https://${match[0]}`));
+	for (const match of joined.matchAll(OBFUSCATED_ADDRESS)) addresses.add(obfuscatedAddress(match[1], match[2]));
+	const hosts = new Set([...urls].map(hostOf));
+	for (const address of addresses) hosts.add(address.slice(address.lastIndexOf("@") + 1));
+	return { addresses, urls, hosts };
+}
+
 /** The links and addresses in `text` that the summarised messages do not contain. */
 export function unknownReferences(text: string, references: ThreadReferences): string[] {
 	const addresses = (text.match(EMAIL_PATTERN) ?? []).filter(
@@ -130,9 +155,23 @@ export function unknownReferences(text: string, references: ThreadReferences): s
 	return [...urls, ...addresses];
 }
 
-function withoutUnknown(text: string, references: ThreadReferences): string {
+/**
+ * What a summary may not contain, as written: the links and addresses the messages do not contain, bare domains
+ * such as `evil.test/pay` (known by link or by host) and addresses spelled out as `name (at) domain`.
+ */
+function unknownSummaryReferences(text: string, known: Known): string[] {
+	const spelledOut = [...text.matchAll(OBFUSCATED_ADDRESS)]
+		.filter((match) => !known.addresses.has(obfuscatedAddress(match[1], match[2])))
+		.map((match) => match[0]);
+	const domains = bareDomainMatches(text, true)
+		.filter((match) => !known.urls.has(normalizeUrl(`https://${match[0]}`)) && !known.hosts.has(match[1].toLowerCase()))
+		.map((match) => match[0]);
+	return [...unknownReferences(text, known), ...spelledOut, ...domains];
+}
+
+function withoutUnknown(text: string, known: Known): string {
 	let result = text;
-	for (const value of unknownReferences(text, references)) result = result.split(value).join("");
+	for (const value of unknownSummaryReferences(text, known)) result = result.split(value).join("");
 	return result
 		.replace(/\(\s*\)/g, "")
 		.replace(/\s{2,}/g, " ")
@@ -151,7 +190,7 @@ function label(value: unknown): SummaryLabel | null {
 	return SUMMARY_LABELS.find((candidate) => candidate.toLowerCase() === text) ?? null;
 }
 
-function checkPoints(value: unknown, references: ThreadReferences): SummaryPoint[] {
+function checkPoints(value: unknown, references: Known): SummaryPoint[] {
 	if (!Array.isArray(value)) return [];
 	const points: SummaryPoint[] = [];
 	let total = 0;
@@ -161,7 +200,7 @@ function checkPoints(value: unknown, references: ThreadReferences): SummaryPoint
 		const pointLabel = label(rawLabel);
 		const text = cut(plain(rawText), POINT_MAX_CHARS);
 		// A point naming a link or address the conversation does not contain is dropped whole.
-		if (!pointLabel || !text || unknownReferences(text, references).length) continue;
+		if (!pointLabel || !text || unknownSummaryReferences(text, references).length) continue;
 		if (total + text.length > POINTS_TOTAL_MAX_CHARS) break;
 		total += text.length;
 		points.push({ label: pointLabel, text });
@@ -201,7 +240,7 @@ export function checkSummaryOutput(raw: string, context: SummaryCheckContext): S
 	if (!json || typeof json !== "object" || Array.isArray(json))
 		return { ok: false, error: "the reply is not a JSON object" };
 	const value = json as { language?: unknown; overview?: unknown; points?: unknown };
-	const references = collectThreadReferences(context.references);
+	const references = collectKnown(context.references);
 	const overview = cut(withoutUnknown(plain(value.overview), references), OVERVIEW_MAX_CHARS);
 	if (!overview) return { ok: false, error: "the overview is empty" };
 	if (META_PREFIX.test(overview)) return { ok: false, error: "the overview describes the summary instead of being it" };

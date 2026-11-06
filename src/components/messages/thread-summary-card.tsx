@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import clsx from "clsx";
 import { Copy, Languages, RefreshCw, Sparkles, X } from "lucide-react";
 import { AiErrorNotice } from "@/components/agent/ai-error-notice";
@@ -31,38 +31,59 @@ export function SummarizeButton({ controller }: { controller: ThreadSummaryContr
 			</Tooltip>
 		);
 	if (!canSummarize(controller.state)) return null;
+	return <EnabledSummarizeButton controller={controller} />;
+}
+
+function EnabledSummarizeButton({ controller }: { controller: ThreadSummaryController }) {
+	const reasonId = useId();
 	const label = controller.scope === "thread" ? "Summarize conversation" : "Summarize message";
-	const tooltip = controller.blocked ?? label;
+	// aria-disabled, not disabled: the button keeps focus while a request runs and can be reached to read why it is off.
+	const off = controller.busy !== null || !!controller.blocked;
 	return (
-		<Tooltip label={tooltip}>
-			<Button
-				variant="ghost"
-				size="sm"
-				aria-label={label}
-				disabled={controller.busy !== null || !!controller.blocked}
-				onClick={() => controller.summarize()}
-				className="gap-1.5 text-neutral-700"
-			>
-				<Sparkles aria-hidden className="h-4 w-4" />
-				<span className="hidden sm:inline">{controller.busy === "summarize" ? "Summarizing…" : "Summarize"}</span>
-			</Button>
-		</Tooltip>
+		<>
+			<Tooltip label={controller.blocked ?? label}>
+				<Button
+					data-summarize-button
+					variant="ghost"
+					size="sm"
+					aria-label={label}
+					aria-disabled={off || undefined}
+					aria-describedby={controller.blocked ? reasonId : undefined}
+					onClick={() => {
+						if (!off) controller.summarize();
+					}}
+					className={clsx("gap-1.5 text-neutral-700", off && "cursor-default opacity-50 hover:bg-transparent")}
+				>
+					<Sparkles aria-hidden className="h-4 w-4" />
+					<span className="hidden sm:inline">{controller.busy === "summarize" ? "Summarizing…" : "Summarize"}</span>
+				</Button>
+			</Tooltip>
+			{controller.blocked && (
+				<span id={reasonId} className="sr-only">
+					{controller.blocked}
+				</span>
+			)}
+			<span role="status" aria-live="polite" className="sr-only" data-summary-announcement>
+				{controller.announcement}
+			</span>
+		</>
 	);
 }
 
 function Points({ points }: { points: SummaryPoint[] }) {
 	if (!points.length) return null;
 	return (
-		<ul className="mt-2 space-y-1">
+		// A description list: a screen reader reads each pair as "Asks: text" and counts the points.
+		<dl className="mt-2 space-y-1" aria-label="Key points">
 			{points.map((point, index) => (
-				<li key={`${point.label}-${index}`} className="flex gap-2">
-					<span className="w-24 shrink-0 font-medium text-neutral-900">{point.label}</span>
-					<span dir="auto" className="min-w-0">
+				<div key={`${point.label}-${index}`} className="flex gap-2">
+					<dt className="w-24 shrink-0 font-medium text-neutral-900">{point.label}</dt>
+					<dd dir="auto" className="min-w-0">
 						{point.text}
-					</span>
-				</li>
+					</dd>
+				</div>
 			))}
-		</ul>
+		</dl>
 	);
 }
 

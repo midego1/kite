@@ -182,8 +182,16 @@ export async function unavailableReason(
 type Loaded = { anchor: Anchor; coveredIds: string[]; key: SummaryKey; current: string };
 
 async function load(env: CloudflareEnv, user: SessionUser, messageId: string, scope: SummaryScope): Promise<Loaded> {
+	return loadCovered(env, user, await loadAnchor(getDb(env), user, messageId), scope);
+}
+
+async function loadCovered(
+	env: CloudflareEnv,
+	user: SessionUser,
+	anchor: Anchor,
+	scope: SummaryScope,
+): Promise<Loaded> {
 	const db = getDb(env);
-	const anchor = await loadAnchor(db, user, messageId);
 	const coveredIds = await loadCoveredIds(db, anchor, scope);
 	const personal = await personalInstructionsFor(db, user);
 	const key = keyOf(anchor, scope, await instructionsDigest(personal));
@@ -201,16 +209,24 @@ export async function getSummaryState(
 	messageId: string,
 	request: SummaryRequest,
 ): Promise<SummaryState> {
-	const loaded = await load(env, user, messageId, request.scope);
-	return stateOf(env, loaded, request);
+	const anchor = await loadAnchor(getDb(env), user, messageId);
+	// With the assistant or the mailbox's AI off nothing else is read: no covered ids, no cached summary.
+	const refusal = await interactiveRefusal(env, anchor.mailboxId);
+	if (refusal === "assistant_disabled") return switchedOff("assistant_off");
+	if (refusal === "mailbox_ai_off") return switchedOff(refusal);
+	return stateOf(env, await loadCovered(env, user, anchor, request.scope), request);
+}
+
+function switchedOff(reason: "assistant_off" | "mailbox_ai_off"): SummaryState {
+	return { summary: null, translation: null, translatable: false, eligible: false, reason };
 }
 
 async function stateOf(env: CloudflareEnv, loaded: Loaded, request: SummaryRequest): Promise<SummaryState> {
 	const eligible = loaded.coveredIds.length > 0;
 	const reason = await unavailableReason(env, eligible, loaded.anchor.mailboxId);
-	const empty = { summary: null, translation: null, translatable: false };
 	// With AI off for the mailbox nothing stored is shown either; turning it off deleted the summaries.
-	if (reason === "assistant_off" || reason === "mailbox_ai_off") return { ...empty, eligible: false, reason };
+	if (reason === "assistant_off" || reason === "mailbox_ai_off") return switchedOff(reason);
+	const empty = { summary: null, translation: null, translatable: false };
 	const cached = await readCachedSummary(getDb(env), loaded.key, request.language);
 	if (cached.pending) return { ...empty, eligible: false, migrationPending: true };
 	const base = { eligible: !reason, ...(reason ? { reason } : {}) };

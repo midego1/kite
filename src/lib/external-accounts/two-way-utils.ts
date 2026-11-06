@@ -363,7 +363,8 @@ export type ReconcilePlan = {
 /**
  * Why a folder's answer cannot be read as "what is not here has left", or null when it can. An empty Inbox, or one
  * holding far fewer messages than Kite tracks, is more often a provider's hiccup than a user's work, and either way the
- * cost of waiting is small. The answer's own count is checked against EXISTS: the messages before the first one answered
+ * cost of waiting is small; a baseline, which the owner asks for by turning the setting off and on, believes it. The
+ * answer's own count is checked against EXISTS: the messages before the first one answered
  * (its sequence number says how many), those answered, and those after the range (at most the UIDs above it) must add
  * up to what the folder holds, so a capped or cut answer shows.
  */
@@ -373,12 +374,14 @@ export function judgeAnswer(input: {
 	tracked: number;
 	high: number;
 	answered: readonly { seq: number }[];
+	/** A baseline changes nothing in Kite, so a small Inbox is taken at its word: that is the way out of a pause. */
+	baseline: boolean;
 }): "empty_folder" | "far_below" | "partial" | null {
-	const { exists, uidNext, tracked, high, answered } = input;
+	const { exists, uidNext, tracked, high, answered, baseline } = input;
 	if (!tracked) return null;
 	if (exists === null) return "partial";
-	if (exists === 0) return "empty_folder";
-	if (tracked >= FAR_BELOW_MIN_TRACKED && exists * 2 < tracked) return "far_below";
+	if (exists === 0) return baseline ? null : "empty_folder";
+	if (!baseline && tracked >= FAR_BELOW_MIN_TRACKED && exists * 2 < tracked) return "far_below";
 	if (!answered.length) return "partial";
 	const before = Math.min(...answered.map((entry) => entry.seq)) - 1;
 	const after = Math.max((uidNext ?? 0) - 1 - high, 0);

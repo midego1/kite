@@ -114,6 +114,11 @@ export async function readDueActions(env: StoreEnv, accountId: string, now: Date
 		.limit(limit);
 }
 
+/** Whether anything is due, asked before a session is opened or replaced for it. */
+export async function hasDueActions(env: StoreEnv, accountId: string, now: Date): Promise<boolean> {
+	return (await readDueActions(env, accountId, now, 1)).length > 0;
+}
+
 /** What waits for this account, as a pass needs it: which messages are moving, and the flag actions by message. */
 export async function readPendingActions(
 	env: StoreEnv,

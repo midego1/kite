@@ -32,8 +32,8 @@ import {
 } from "./sync-utils";
 
 import { drainOutbox } from "./two-way-run";
+import { hasDueActions } from "./two-way-outbox";
 import { noteProblems, readTwoWayConfig, twoWayReady } from "./two-way-store";
-import { writesToProvider } from "./two-way-utils";
 
 const logger = createLogger("external-sync");
 
@@ -257,8 +257,9 @@ export async function writebackExternalAccount(
 ): Promise<void> {
 	const clock = options.now ?? (() => new Date());
 	if (!(await externalAccountTablesReady(env)) || !(await twoWayReady(env))) return;
+	// Asked by what is due, not by the settings: a move half done finishes after they are turned off.
+	if (!(await hasDueActions(env, accountId, clock()))) return;
 	const config = await readTwoWayConfig(env, accountId);
-	if (!writesToProvider(config.settings)) return;
 	const notes: string[] = [];
 	let more: boolean | null = false;
 	try {

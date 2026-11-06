@@ -10,6 +10,7 @@ import {
 	deleteActions,
 	failActions,
 	finishFlags,
+	hasDueActions,
 	finishMoved,
 	readDueActions,
 	readPendingActions,
@@ -29,7 +30,7 @@ import {
 	type KiteFlagUpdate,
 	type TwoWayConfig,
 } from "./two-way-store";
-import type { ProviderSupport } from "./two-way-types";
+import type { ProviderMoveKind, ProviderSupport } from "./two-way-types";
 import {
 	actionAllowed,
 	isLastAttempt,
@@ -48,7 +49,6 @@ import {
 	WRITEBACK_BATCH,
 	WRITEBACK_KICK_DELAY_SECONDS,
 	WRITEBACK_ROWS_PER_RUN,
-	writesToProvider,
 	type FlagChange,
 	type OutboxRow,
 	type ProviderFact,
@@ -178,17 +178,36 @@ async function clearAbandonedMarks(session: ImapSession, rows: readonly OutboxRo
 		});
 }
 
-/** Moves one kind of row to its folder, and returns the rows that left. */
-async function moveRows(
+/**
+ * One kind of move, with `left` the rows finished and `dropped` those that cannot start. A move already begun always
+ * goes on the way it began, needing neither the target (the copy is made) nor the setting: only finishing, or the
+ * mark coming off when it gives up, leaves the folder as it should be.
+ */
+async function settleMoves(
 	env: CloudflareEnv,
 	session: ImapSession,
-	support: ProviderSupport,
+	support: ProviderSupport | null,
 	rows: readonly OutboxRow[],
-	target: string,
+	targets: { kind: ProviderMoveKind; sourceFolder: string },
 	failures: Failures,
 ) {
-	if (support.moveMethod !== "move") return moveByCopy(env, session, rows, target, failures);
-	return eachSucceeding(rows, (uids) => session.moveMessages(uids, target), failures);
+	const begun = await moveByCopy(
+		env,
+		session,
+		rows.filter((row) => row.step > 0),
+		"",
+		failures,
+	);
+	const fresh = rows.filter((row) => row.step === 0);
+	const target = moveTarget(support, targets.kind);
+	if (!support || !target) return { left: begun, dropped: fresh };
+	// Already where it should go: a message from the provider's Spam folder, moved to Spam.
+	if (target === targets.sourceFolder) return { left: [...begun, ...fresh], dropped: [] };
+	const moved =
+		support.moveMethod === "move"
+			? await eachSucceeding(fresh, (uids) => session.moveMessages(uids, target), failures)
+			: await moveByCopy(env, session, fresh, target, failures);
+	return { left: [...begun, ...moved], dropped: [] };
 }
 
 /** One batch of one folder: read what is at the UIDs, then flags, then moves, recording each result as it lands. */
@@ -233,20 +252,16 @@ async function writeBatch(
 	await finishFlags(env, flagged);
 	counts.flagged += stored.size;
 	for (const { kind, rows: group } of plan.moves) {
-		const target = moveTarget(support, kind);
-		if (!support || !target) {
-			counts.unsupported += group.length;
-			await deleteActions(
-				env,
-				group.map((row) => row.id),
-			);
-			continue;
-		}
-		const done = target === sourceFolder ? group : await moveRows(env, session, support, group, target, failures);
-		await finishMoved(env, done);
-		counts.moved += done.length;
+		const { left, dropped } = await settleMoves(env, session, support, group, { kind, sourceFolder }, failures);
+		counts.unsupported += dropped.length;
+		await deleteActions(
+			env,
+			dropped.map((row) => row.id),
+		);
+		await finishMoved(env, left);
+		counts.moved += left.length;
 	}
-	await clearAbandonedMarks(session, readable, failures);
+	await clearAbandonedMarks(session, rows, failures);
 }
 
 /** Flags go first in the folder, because a move gives its message another UID. */
@@ -365,17 +380,16 @@ async function confirmGone(session: ImapSession, candidates: ReconcilePlan["cand
 }
 
 const DISTRUST_TEXT: Record<NonNullable<ReturnType<typeof judgeAnswer>>, string> = {
-	empty_folder: "The provider shows an empty Inbox",
-	far_below: "The provider shows far fewer Inbox messages than Kite tracks",
-	partial: "The provider's answer about the Inbox looks incomplete",
+	empty_folder:
+		'The provider shows an empty Inbox, so Kite moves nothing to Trash until that clears. If you emptied it yourself, turn "Deleted or moved out of the Inbox" off and on: Kite starts over from what is there, and those messages stay in Kite.',
+	far_below:
+		'The provider shows far fewer Inbox messages than Kite tracks, so Kite moves nothing to Trash until that clears. If you cleaned it out yourself, turn "Deleted or moved out of the Inbox" off and on: Kite starts over from what is there, and those messages stay in Kite.',
+	partial: "The provider's answer about the Inbox looks incomplete, so Kite moves nothing to Trash until that clears.",
 };
 
 /** Says once per episode that deletes from the provider are paused, not at every check. */
 function notePause(run: TwoWayRun, distrust: ReturnType<typeof judgeAnswer>, alreadyPaused: boolean) {
-	if (distrust && !alreadyPaused)
-		run.notes.push(
-			`${DISTRUST_TEXT[distrust]}, so Kite moves nothing to Trash until that clears. If you emptied it yourself, turn "Deleted or moved out of the Inbox" off and on to start over.`,
-		);
+	if (distrust && !alreadyPaused) run.notes.push(DISTRUST_TEXT[distrust]);
 }
 
 /** The flag changes whose UID still holds the stored message; the rest are left alone and their rows retired. */
@@ -474,6 +488,7 @@ async function comparePass(
 		tracked: refs.length,
 		high: refs[0]?.uid ?? 0,
 		answered,
+		baseline: pass.adoptGone,
 	});
 	const plan = planReconcile({ ...pass, refs, seen, believed: !distrust, pendingMoves: pending.moves });
 	const applied = await applyPlan(env, session, account, plan, {
@@ -482,7 +497,7 @@ async function comparePass(
 		run,
 		now,
 	});
-	notePause(run, distrust, !!state?.gonePaused);
+	notePause(run, pass.syncGone ? distrust : null, !!state?.gonePaused);
 	const lowUid = refs.length === RECONCILE_WINDOW ? refs[refs.length - 1].uid : pass.lowUid;
 	await updateTwoWayState(env, account.id, {
 		...passResult(pass, state, inbox, { plan, distrust, lowUid, backfilled }),
@@ -535,7 +550,8 @@ export async function runTwoWay(
 ): Promise<void> {
 	if (!(await twoWayReady(env))) return;
 	const config = await readTwoWayConfig(env, account.id);
-	if (writesToProvider(config.settings)) {
+	// Asked by what is due, not by the settings: a move half done finishes after they are turned off.
+	if (await hasDueActions(env, account.id, run.clock())) {
 		const more = await drainOutbox(env, await session(), account, config, run);
 		// After this run gives the lease back.
 		if (more)

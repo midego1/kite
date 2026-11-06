@@ -209,7 +209,13 @@ export async function recordFetchedMessage(
 		)
 		.limit(1);
 	if (!message) return;
-	const seen = { ...place, state: "present" as const, providerRead: input.read, providerStarred: input.starred };
+	const seen = {
+		...place,
+		state: "present" as const,
+		providerRead: input.read,
+		providerStarred: input.starred,
+		missingSince: null,
+	};
 	await db
 		.insert(externalMessageRefs)
 		.values({ messageId: input.messageId, accountId: input.accountId, ...seen })

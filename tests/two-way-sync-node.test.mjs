@@ -392,6 +392,82 @@ test("giving up on the fallback takes the deleted mark off again", async (t) => 
 	assert.ok(problems().some((text) => /gave up on 1 change/.test(text)));
 });
 
+test("a move half done finishes after every setting is turned off", async (t) => {
+	const { server, env, writeBack, check, setTwoWay, arrive, message, actions, has, db } = await start(t, {
+		move: false,
+	});
+	await setTwoWay({ kiteDelete: "trash" });
+	await arrive("left half done");
+	await arrive("by a check");
+	await updateMessageStatusForUser(env, session, message("left half done").id, "trash");
+	await updateMessageStatusForUser(env, session, message("by a check").id, "trash");
+	server.refuseWrite("EXPUNGE", "NO not now");
+	await writeBack();
+	assert.deepEqual(
+		actions().map((row) => row.step),
+		[2, 2],
+	);
+	await setTwoWay({});
+	assert.equal(actions().length, 2, "turning off keeps what began");
+	server.refuseWrite("EXPUNGE", null);
+	await writeBack();
+	assert.deepEqual(actions(), []);
+	assert.equal(has("INBOX", "left half done"), false);
+
+	const before = server.commands.length;
+	await check();
+	assert.equal(
+		server.commands.slice(before).some((command) => /SELECT|STORE|EXPUNGE/.test(command.line)),
+		false,
+		"with nothing left, off is off again",
+	);
+	assert.equal(db.db.prepare("SELECT count(*) AS n FROM external_provider_actions").get().n, 0);
+});
+
+test("a regular check finishes a half-done move with every setting off", async (t) => {
+	const { server, env, writeBack, check, setTwoWay, arrive, message, actions, has, db } = await start(t, {
+		move: false,
+	});
+	await setTwoWay({ kiteDelete: "trash" });
+	await arrive("finished by a check");
+	await updateMessageStatusForUser(env, session, message("finished by a check").id, "trash");
+	server.refuseWrite("STORE", "NO not now");
+	await writeBack();
+	assert.equal(actions()[0].step, 1);
+	await setTwoWay({});
+	server.refuseWrite("STORE", null);
+	db.db.exec("UPDATE external_provider_actions SET next_attempt_at = 0");
+	await check();
+	assert.deepEqual(actions(), []);
+	assert.equal(has("INBOX", "finished by a check"), false);
+	assert.equal(server.listMessages("Trash").length, 1, "and it never copied twice");
+});
+
+test("a half-done move whose target is gone still finishes, or gives up and takes the mark off", async (t) => {
+	const { server, env, writeBack, setTwoWay, arrive, message, actions, flagsAt, has } = await start(t, { move: false });
+	await setTwoWay({ kiteDelete: "trash" });
+	await arrive("target gone");
+	await arrive("target gone, finished");
+	await updateMessageStatusForUser(env, session, message("target gone").id, "trash");
+	server.refuseWrite("EXPUNGE", "NO not now");
+	await writeBack();
+	assert.equal(actions()[0].step, 2);
+	server.dropFolder("Trash");
+	for (let attempt = 0; attempt < 6; attempt += 1) await writeBack();
+	assert.deepEqual(actions(), []);
+	assert.deepEqual(flagsAt("INBOX", "target gone"), [], "the mark is off, not left behind by a dropped row");
+
+	await recreateTrash(server);
+	await updateMessageStatusForUser(env, session, message("target gone, finished").id, "trash");
+	await writeBack();
+	assert.equal(actions()[0].step, 2);
+	server.dropFolder("Trash");
+	server.refuseWrite("EXPUNGE", null);
+	await writeBack();
+	assert.deepEqual(actions(), []);
+	assert.equal(has("INBOX", "target gone, finished"), false);
+});
+
 test("an Undo does not strand a move half done", async (t) => {
 	const { server, env, writeBack, setTwoWay, arrive, message, actions, has } = await start(t, { move: false });
 	await setTwoWay({ kiteDelete: "trash" });
@@ -524,6 +600,11 @@ test("a message Kite's user already restored stays: the provider's move is appli
 	assert.equal(message("restored").status, "received");
 });
 
+/** The Trash folder again, as a provider recreating it would. */
+function recreateTrash(server) {
+	server.addMessage("Trash", { raw: sampleMessage(99, { subject: "already there" }) });
+}
+
 async function trackedInbox(context, count, flags = []) {
 	const { server, setTwoWay, check } = context;
 	await setTwoWay({ providerGone: "trash", providerFlags: true });
@@ -588,6 +669,54 @@ test("an EXISTS far below what is tracked pauses deletes, and flags keep working
 	assert.equal(message("kept 0").read, 1);
 });
 
+for (const [name, shrink] of [
+	["an empty Inbox", (server, uids) => uids],
+	["an Inbox far below what is tracked", (server, uids) => uids.slice(2)],
+])
+	test(`turning the setting off and on is the way out of ${name}: a new baseline, and the mail stays in Kite`, async (t) => {
+		const context = await start(t);
+		const { server, env, accountId, check, setTwoWay, message, ref, problems, db, arrive } = context;
+		const uids = await trackedInbox(context, 30);
+		for (const uid of shrink(server, uids)) server.removeMessage("INBOX", uid);
+		await check();
+		await check();
+		assert.equal(db.db.prepare("SELECT gone_paused AS paused FROM external_two_way_state").get().paused, 1);
+		const noted = problems().length;
+
+		await setTwoWay({ providerFlags: true });
+		await setTwoWay({ providerGone: "trash", providerFlags: true });
+		await check();
+		assert.equal(db.db.prepare("SELECT gone_paused AS paused FROM external_two_way_state").get().paused, 0);
+		assert.equal(problems().length, noted, "no new problem");
+		assert.equal(trashed(context), 0, "the baseline changes nothing in Kite");
+		assert.equal(ref("kept 29").state, "gone");
+		assert.equal(message("kept 29").status, "received");
+
+		// Sync works again from there.
+		assert.equal((await readTwoWayView(env, owner, accountId)).settings.providerGone, "trash");
+		const uid = await arrive("after the way out");
+		await arrive("and a neighbour");
+		await check();
+		server.removeMessage("INBOX", uid);
+		await check();
+		await check();
+		assert.equal(message("after the way out").status, "trash");
+	});
+
+test("turning the setting off and on does not make a cut answer believed", async (t) => {
+	const context = await start(t);
+	const { server, check, setTwoWay, ref } = context;
+	await trackedInbox(context, 30);
+	server.capFlagFetches(10);
+	await check();
+	await setTwoWay({ providerFlags: true });
+	await setTwoWay({ providerGone: "trash", providerFlags: true });
+	await check();
+	await check();
+	assert.equal(ref("kept 25").state, "present");
+	assert.equal(trashed(context), 0);
+});
+
 test("a tagged-OK partial answer trashes nothing", async (t) => {
 	const context = await start(t);
 	const { server, check, problems, ref } = context;
@@ -643,6 +772,7 @@ test("a new UIDVALIDITY moves and trashes nothing, and the mapping follows the m
 	await check();
 	await updateMessageStatusForUser(env, session, message("kept 2").id, "trash");
 	assert.equal(actions().length, 1);
+	db.db.prepare("UPDATE external_message_refs SET missing_since = ?").run(1);
 	server.bumpUidValidity("INBOX");
 	await writeBack();
 	assert.deepEqual(actions(), [], "a row of the old UIDVALIDITY is dropped unread");
@@ -653,10 +783,12 @@ test("a new UIDVALIDITY moves and trashes nothing, and the mapping follows the m
 	assert.equal(message("kept 1").status, "received", "old UIDs identify nothing, so nothing counts as gone");
 	await check();
 	assert.equal(ref("kept 2").uidvalidity, 2, "the reset's fetch re-points the mapping");
+	assert.equal(ref("kept 2").missing_since, null, "and what was noted of the old UID goes with it");
 });
 
 test("a UID that now holds another message is never touched", async (t) => {
-	const { writeBack, server, env, accountId, setTwoWay, arrive, message, has, actions, problems, db } = await start(t);
+	const { db, writeBack, server, env, accountId, setTwoWay, arrive, message, has, actions, problems, db } =
+		await start(t);
 	await setTwoWay({ kiteDelete: "trash" });
 	await arrive("the real one");
 	db.db.exec("UPDATE messages SET provider_message_id = '<someone-else@example.org>'");

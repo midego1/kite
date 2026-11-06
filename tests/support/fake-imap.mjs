@@ -483,6 +483,10 @@ export async function startFakeImap(options = {}) {
 		removeMessage,
 		setFlags,
 		listMessages,
+		/** Removes a folder, as a user deleting it at the provider would. */
+		dropFolder(name) {
+			folders.delete(name);
+		},
 		/** At most `n` lines in every attribute-only FETCH, with a tagged OK; null ends it. */
 		capFlagFetches(n) {
 			flagFetchCap = n;

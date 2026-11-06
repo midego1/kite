@@ -384,7 +384,15 @@ const answer = (from, count) => Array.from({ length: count }, (_, index) => ({ s
 
 test("the answer's count must add up to EXISTS", () => {
 	const judge = (overrides) =>
-		judgeAnswer({ exists: 100, uidNext: 101, tracked: 100, high: 100, answered: answer(1, 100), ...overrides });
+		judgeAnswer({
+			exists: 100,
+			uidNext: 101,
+			tracked: 100,
+			high: 100,
+			answered: answer(1, 100),
+			baseline: false,
+			...overrides,
+		});
 	assert.equal(judge({}), null);
 	assert.equal(judge({ exists: 0, answered: [] }), "empty_folder", "49 tracked and EXISTS 0 trashes nothing");
 	assert.equal(judge({ exists: 0, tracked: 1, answered: [] }), "empty_folder");
@@ -399,6 +407,11 @@ test("the answer's count must add up to EXISTS", () => {
 	assert.equal(judge({ exists: 103, uidNext: 104, answered: answer(1, 100) }), null, "new mail after the range");
 	assert.equal(judge({ exists: 103, uidNext: null, answered: answer(1, 100) }), "partial");
 	assert.equal(judge({ tracked: 0, exists: 0, answered: [] }), null, "nothing tracked, nothing to judge");
+	assert.equal(judge({ exists: 0, answered: [], baseline: true }), null, "the owner asked to start over");
+	assert.equal(judge({ exists: 40, answered: answer(1, 40), baseline: true }), null);
+	assert.equal(judge({ answered: answer(1, 30), baseline: true }), "partial", "a cut answer stays a cut answer");
+	assert.equal(judge({ exists: null, baseline: true }), "partial");
+	assert.equal(judge({ answered: [], baseline: true }), "partial");
 });
 
 test("a pass stops at its limit and says so, so the next one runs", () => {

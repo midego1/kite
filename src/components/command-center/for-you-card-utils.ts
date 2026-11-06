@@ -3,7 +3,10 @@ import { forYouVisible } from "@/lib/agent/auto-read/for-you-utils";
 import type { OpenSuggestion, SuggestionMailbox } from "@/hooks/open-suggestions-types";
 import { CLIENT_MODULES } from "@/lib/modules/client-data";
 
-/** The suggestions the card lists, at most; the rest is "n more" and the For you page. */
+/**
+ * The suggestions the card lists, at most; the rest is "n more" and the For you page.
+ * @public Consumed by tests that check the cut-off.
+ */
 export const FOR_YOU_CARD_LIMIT = 4;
 
 /** How a kind reads in one row ("Reply", "Phishing"): the row chip's wording where there is one. */
@@ -24,7 +27,10 @@ const MODULE_KIND_LABELS: Readonly<Record<string, string>> = Object.fromEntries(
 	),
 );
 
-/** The kind's name in a row; a kind nobody labelled reads as itself. */
+/**
+ * The kind's name in a row; a kind nobody labelled reads as itself.
+ * @public Consumed by tests that check the labels.
+ */
 export function forYouKindLabel(kind: string): string {
 	return MODULE_KIND_LABELS[kind] ?? CORE_KIND_LABELS[kind] ?? kind;
 }

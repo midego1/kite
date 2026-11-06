@@ -7,7 +7,13 @@ import { Button } from "@/components/ui/button";
 import { formatMessageListTimestamp } from "@/components/messages/utils";
 import { AGENT_SUGGESTION_EVENT, dispatchAgentSuggestionChanged } from "@/hooks/message-realtime-utils";
 import { authFetch } from "@/lib/auth/client";
-import type { ActivityAction, ActivityLoadState, ActivityResponse, ActivitySkippedJob } from "./agent-activity-types";
+import type {
+	ActivityAction,
+	ActivityLineJob,
+	ActivityLoadState,
+	ActivityResponse,
+	ActivitySkippedJob,
+} from "./agent-activity-types";
 import {
 	actionLabel,
 	actionTarget,
@@ -121,11 +127,24 @@ function ActionRow({
 	);
 }
 
-function SkippedRow({ job }: { job: ActivitySkippedJob }) {
+function SkippedRow({
+	job,
+	onRetry,
+	retrying = false,
+}: {
+	job: ActivitySkippedJob & Partial<Pick<ActivityLineJob, "status" | "canRetry">>;
+	onRetry?: (job: ActivityLineJob) => void;
+	retrying?: boolean;
+}) {
 	return (
-		<li className="px-4 py-3" data-activity-skipped={job.id}>
+		<li
+			className="px-4 py-3"
+			{...(job.status
+				? { "data-activity-line-job": job.id, "data-status": job.status }
+				: { "data-activity-skipped": job.id })}
+		>
 			<p className="text-sm text-neutral-900" data-activity-reason>
-				{reasonText(job.reason) ?? "Skipped"}
+				{reasonText(job.reason) ?? (job.status === "failed" ? "Failed" : "Skipped")}
 			</p>
 			<Link
 				dir="auto"
@@ -137,6 +156,18 @@ function SkippedRow({ job }: { job: ActivitySkippedJob }) {
 			<time dateTime={job.createdAt} className="text-xs text-neutral-500">
 				{formatMessageListTimestamp(job.createdAt)}
 			</time>
+			{job.canRetry && onRetry && (
+				<Button
+					type="button"
+					variant="outline"
+					size="sm"
+					className="ms-3"
+					disabled={retrying}
+					onClick={() => onRetry(job as ActivityLineJob)}
+				>
+					Try again
+				</Button>
+			)}
 		</li>
 	);
 }
@@ -147,11 +178,15 @@ function ActivityLists({
 	data,
 	busyId,
 	onUndo,
+	onRetry,
 }: {
 	data: ActivityResponse;
 	busyId: string | null;
 	onUndo: (row: ActivityAction) => void;
+	onRetry: (job: ActivityLineJob) => void;
 }) {
+	const lineJobs = data.lineJobs ?? [];
+	const failedLines = lineJobs.filter((job) => job.status === "failed").length;
 	return (
 		<>
 			<section aria-labelledby="agent-activity-actions" className="space-y-2">
@@ -180,6 +215,24 @@ function ActivityLists({
 					</ul>
 				</section>
 			)}
+			{lineJobs.length > 0 && (
+				<section aria-labelledby="agent-activity-lines" className="space-y-2" data-activity-lines>
+					<details open={failedLines > 0}>
+						<summary
+							id="agent-activity-lines"
+							className="cursor-pointer text-xs font-medium text-neutral-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+						>
+							One-line summaries not written ({lineJobs.length}
+							{failedLines > 0 ? `, ${failedLines} failed` : ""})
+						</summary>
+						<ul className={`mt-2 ${LIST_CLASS}`}>
+							{lineJobs.map((job) => (
+								<SkippedRow key={job.id} job={job} onRetry={onRetry} retrying={busyId !== null} />
+							))}
+						</ul>
+					</details>
+				</section>
+			)}
 		</>
 	);
 }
@@ -205,6 +258,19 @@ export function AgentActivity({ mailboxId }: { mailboxId: string }) {
 		window.dispatchEvent(new Event("kite:messages-changed"));
 	}
 
+	async function retry(job: ActivityLineJob) {
+		setBusyId(job.id);
+		setError(null);
+		try {
+			const response = await authFetch(`/api/agent/jobs/${encodeURIComponent(job.id)}/retry`, { method: "POST" });
+			if (!response.ok) setError(await errorMessage(response, "The summary could not be retried."));
+		} catch {
+			setError("The summary could not be retried.");
+		}
+		setBusyId(null);
+		reload();
+	}
+
 	return (
 		<div className="space-y-4" data-agent-activity={mailboxId}>
 			{error && (
@@ -221,7 +287,14 @@ export function AgentActivity({ mailboxId }: { mailboxId: string }) {
 					{value.message}
 				</p>
 			)}
-			{value.state === "ready" && <ActivityLists data={value.data} busyId={busyId} onUndo={(row) => void undo(row)} />}
+			{value.state === "ready" && (
+				<ActivityLists
+					data={value.data}
+					busyId={busyId}
+					onUndo={(row) => void undo(row)}
+					onRetry={(job) => void retry(job)}
+				/>
+			)}
 		</div>
 	);
 }

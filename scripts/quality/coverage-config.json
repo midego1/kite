@@ -116,6 +116,7 @@
 		"src/lib/agent/chat-spend-utils.ts",
 		"src/lib/agent/compose-prompt-utils.ts",
 		"src/lib/agent/compose-output-utils.ts",
+		"src/lib/agent/reference-patterns-utils.ts",
 		"src/lib/agent/ai-error-utils.ts",
 		"src/lib/agent/mailbox-ai-utils.ts",
 		"src/lib/agent/ai-failure-report-utils.ts",
@@ -284,7 +285,7 @@
 		"src/lib/email/cloud-attachment-utils.ts": "no unit test bundles it; covered only through the e2e suite",
 		"src/lib/email/linkify-dom-utils.ts": "The unit test covers linkifyTextNodes; the composer functions need a real contentEditable and are covered by e2e/67-linkify.spec.ts.",
 		"src/lib/email/post-delivery-utils.ts": "bundled transitively, no direct test",
-		"src/lib/email/reply-content-utils.ts": "bundled transitively, no direct test (functions 35%)",
+		"src/lib/email/reply-content-utils.ts": "tests/quoted-reply-bounds.test.mjs reads a bundle, which leaves functions at 21%",
 		"src/lib/messages/drag-utils.ts": "browser drag-and-drop helpers; no unit test bundles it",
 		"src/lib/search/query-utils.ts": "bundled transitively; branches 42.5% until the search grammar has its own test",
 		"src/lib/seed-utils.ts": "demo-data helper used only by the seed route; no unit test bundles it"

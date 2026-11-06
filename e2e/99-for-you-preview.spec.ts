@@ -174,6 +174,10 @@ test("keyboard focus opens the preview, Tab goes row to row and ArrowDown moves 
 		await expect(popover(page)).toBeVisible();
 		await expect(popover(page)).toContainText(reply.subject!);
 		await expect(popover(page).getByRole("button", { name: "Review draft" })).toBeVisible();
+		// The link says how to reach the preview's buttons.
+		await expect(link).toHaveAccessibleDescription(/down arrow/i);
+		// The link says how to reach the preview's buttons.
+		await expect(link).toHaveAccessibleDescription(/down arrow/i);
 		// Its controls are out of the Tab order: Tab leaves the row (to the next row, whose own preview opens) and its preview closes.
 		await page.keyboard.press("Tab");
 		await expect(popover(page).filter({ hasText: reply.subject! })).toHaveCount(0);
@@ -193,6 +197,13 @@ test("keyboard focus opens the preview, Tab goes row to row and ArrowDown moves 
 		// Focus handed back to the row does not open the preview again.
 		await page.waitForTimeout(700);
 		await expect(popover(page)).toHaveCount(0);
+		// Opened again by keyboard after having been entered once, it starts out of the Tab order once more.
+		await page.keyboard.press("Tab");
+		await page.keyboard.press("Shift+Tab");
+		await expect(link).toBeFocused();
+		await expect(popover(page).filter({ hasText: reply.subject! })).toBeVisible();
+		await page.keyboard.press("Tab");
+		await expect(popover(page).filter({ hasText: reply.subject! })).toHaveCount(0);
 	} finally {
 		await closeAll(account, restore, context);
 	}

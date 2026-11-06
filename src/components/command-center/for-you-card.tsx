@@ -6,6 +6,7 @@ import { Sparkles, X } from "lucide-react";
 import { SuggestionKindIcon } from "@/components/agent/suggestion-badge";
 import { runCardAction } from "@/components/agent/suggestion-card-actions";
 import { SuggestionPreviewRow } from "@/components/agent/suggestion-preview";
+import { previewHintId } from "@/components/agent/suggestion-preview-utils";
 import { useSelectedMailbox } from "@/components/mailbox-provider";
 import { formatMessageListTimestamp } from "@/components/messages/utils";
 import { useT } from "@/lib/i18n/use-t";
@@ -59,7 +60,11 @@ function ForYouCardEntry({
 			data-kind={row.kind}
 		>
 			{row.href && isSameOriginPath(row.href) ? (
-				<Link href={row.href} className={`${COMMAND_CENTER_LINK_ROW_CLASS} ${ROW_CLASS}`}>
+				<Link
+					href={row.href}
+					aria-describedby={previewHintId(row.id)}
+					className={`${COMMAND_CENTER_LINK_ROW_CLASS} ${ROW_CLASS}`}
+				>
 					{body}
 				</Link>
 			) : (

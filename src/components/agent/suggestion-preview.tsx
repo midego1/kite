@@ -8,6 +8,7 @@ import type { OpenSuggestion } from "@/hooks/open-suggestions-types";
 import {
 	FOCUS_REOPEN_GUARD_MS,
 	hoversWith,
+	previewHintId,
 	PREVIEW_CLOSE_DELAY_MS,
 	PREVIEW_OPEN_DELAY_MS,
 } from "./suggestion-preview-utils";
@@ -47,10 +48,15 @@ export function SuggestionPreviewRow({
 	// Opened by keyboard focus, the preview's controls stay out of the Tab order until ArrowDown moves focus in.
 	const [via, setVia] = useState<"pointer" | "key">("pointer");
 	const [entered, setEntered] = useState(false);
+	// Whatever closed it (a blur, Dismiss, an action, Escape), the next opening starts fresh.
+	if (!open && entered) setEntered(false);
 	const keyboardOnly = open && via === "key" && !entered;
-	const schedule = (next: boolean, delay: number) => {
+	const schedule = (next: boolean, delay: number, kind?: "pointer" | "key") => {
 		window.clearTimeout(timer.current);
-		timer.current = window.setTimeout(() => setOpen(next), delay);
+		timer.current = window.setTimeout(() => {
+			if (kind) setVia(kind);
+			setOpen(next);
+		}, delay);
 	};
 	useEffect(() => () => window.clearTimeout(timer.current), []);
 	useEffect(() => {
@@ -82,8 +88,7 @@ export function SuggestionPreviewRow({
 					onPointerEnter={(event) => {
 						if (!hoversWith(event.pointerType)) return;
 						pointerInside.current = true;
-						setVia("pointer");
-						schedule(true, PREVIEW_OPEN_DELAY_MS);
+						schedule(true, PREVIEW_OPEN_DELAY_MS, "pointer");
 					}}
 					onPointerLeave={(event) => {
 						if (!hoversWith(event.pointerType)) return;
@@ -95,8 +100,7 @@ export function SuggestionPreviewRow({
 						if (Date.now() < ignoreFocusUntil.current) return;
 						if (!(event.target instanceof HTMLElement) || !event.target.matches(":focus-visible")) return;
 						if (open) return;
-						setVia("key");
-						schedule(true, PREVIEW_OPEN_DELAY_MS / 2);
+						schedule(true, PREVIEW_OPEN_DELAY_MS / 2, "key");
 					}}
 					onKeyDown={(event) => {
 						if (event.key !== "ArrowDown" || !open || !keyboardOnly) return;
@@ -111,6 +115,9 @@ export function SuggestionPreviewRow({
 					}}
 				>
 					{children}
+					<span id={previewHintId(suggestion.id)} className="sr-only">
+						{t("Press the down arrow key to reach the preview's buttons.")}
+					</span>
 					<Popover.Content
 						ref={content}
 						tabIndex={-1}
@@ -131,7 +138,7 @@ export function SuggestionPreviewRow({
 						data-suggestion-preview-popover
 						className="z-50 max-h-[var(--radix-popover-content-available-height)] w-[min(26rem,var(--radix-popover-content-available-width))] overflow-y-auto rounded-xl border border-neutral-200 bg-white p-4 text-start text-neutral-900 shadow-lg focus-visible:outline-none"
 					>
-						<SuggestionPreviewContent suggestion={suggestion} mailbox={mailbox} onClose={() => setOpen(false)} />
+						<SuggestionPreviewContent suggestion={suggestion} mailbox={mailbox} onClose={() => changeOpen(false)} />
 					</Popover.Content>
 				</li>
 			</Popover.Anchor>

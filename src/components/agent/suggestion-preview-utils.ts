@@ -4,6 +4,10 @@ export const PREVIEW_OPEN_DELAY_MS = 450;
 export const PREVIEW_CLOSE_DELAY_MS = 220;
 /** After a close, focus landing on the row (given back after Escape) does not open the preview again for this long. */
 export const FOCUS_REOPEN_GUARD_MS = 400;
+/** The id of a row's screen-reader hint (ArrowDown reaches the preview's buttons), which the row's link points at. */
+export function previewHintId(suggestionId: string): string {
+	return `suggestion-preview-hint-${suggestionId}`;
+}
 /** The characters of the message the preview quotes. */
 export const PREVIEW_EXCERPT_CHARS = 320;
 /** The characters of a drafted reply the preview shows. */

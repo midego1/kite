@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { EmptyState, PanelHeader } from "@/components/ui/page";
 import { Checkbox } from "@/components/ui/checkbox";
 import { SuggestionPreviewRow } from "./suggestion-preview";
+import { previewHintId } from "./suggestion-preview-utils";
 import { formatMessageListTimestamp } from "@/components/messages/utils";
 import { dispatchAgentSuggestionChanged } from "@/hooks/message-realtime-utils";
 import type { OpenSuggestion } from "@/hooks/open-suggestions-types";
@@ -70,6 +71,7 @@ function ForYouEntry({
 			{isSameOriginPath(suggestion.messageTarget.href) ? (
 				<Link
 					href={suggestion.messageTarget.href}
+					aria-describedby={previewHintId(suggestion.id)}
 					className="min-w-0 flex-1 rounded-md hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
 				>
 					{summary}

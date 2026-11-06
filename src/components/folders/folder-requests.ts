@@ -1,6 +1,7 @@
 import { authFetch } from "@/lib/auth/client";
 import type { FolderMoveTarget, FolderUsage } from "@/lib/folders/manage-types";
 import { FOLDERS_CHANGED_EVENT } from "@/components/messages/use-mailbox-folders";
+import { t } from "@/lib/i18n/translator";
 
 export type FolderRequestResult = { ok: true } | { ok: false; error: string; status: number };
 
@@ -22,7 +23,7 @@ export async function renameFolder(folderId: string, name: string): Promise<Fold
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify({ name }),
 	}).catch(() => null);
-	if (!response) return { ok: false, status: 0, error: "Could not reach the server. Please try again." };
+	if (!response) return { ok: false, status: 0, error: t("Could not reach the server. Please try again.") };
 	if (!response.ok) return failure(response, "Could not rename the folder.");
 	window.dispatchEvent(new Event(FOLDERS_CHANGED_EVENT));
 	return { ok: true };
@@ -38,7 +39,7 @@ export async function deleteFolderRequest(
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify(moveTo ? { moveTo } : {}),
 	}).catch(() => null);
-	if (!response) return { ok: false, status: 0, error: "Could not reach the server. Please try again." };
+	if (!response) return { ok: false, status: 0, error: t("Could not reach the server. Please try again.") };
 	if (!response.ok) return failure(response, "Could not delete the folder.");
 	window.dispatchEvent(new Event(FOLDERS_CHANGED_EVENT));
 	window.dispatchEvent(new Event("kite:messages-changed"));

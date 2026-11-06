@@ -3,8 +3,8 @@ import { DOMAIN, STORAGE_STATE, SUPPORT_ADDRESS } from "./support/constants";
 import { apiContext, deliverInbound, openMessage, setSendingSettings, signIn, uniqueToken } from "./support/helpers";
 
 // The interface direction setting (ROADMAP milestone 1): Left to right and Right to left are stored like the reading
-// layout, Automatic stays left to right until the interface is translated, and <html dir> is right before the first
-// paint. A mirrored interface keeps every drag, key and floating window on the correct side; a left-to-right one is
+// layout, Automatic follows the interface language (Arabic only when chosen, e2e/101-interface-language), and <html dir>
+// is right before the first paint. A mirrored interface keeps every drag, key and floating window on the correct side; a left-to-right one is
 // untouched, and a change from elsewhere never throws away what is being typed.
 
 const DIRECTION_KEY = "kite-interface-direction";
@@ -108,7 +108,6 @@ test.describe("the setting", () => {
 		await page.getByRole("button", { name: "Open account menu" }).click();
 		const direction = page.getByRole("radiogroup", { name: "Direction" });
 		await expect(direction.getByRole("radio", { name: "Automatic" })).toHaveAttribute("aria-checked", "true");
-		await expect(page.getByText("Left to right until Kite is translated.")).toBeVisible();
 		await direction.getByRole("radio", { name: "Right to left" }).click();
 
 		await expectDirection(page, "rtl");

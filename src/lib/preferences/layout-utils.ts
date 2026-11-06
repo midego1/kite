@@ -1,3 +1,4 @@
+import { isInterfaceLanguageChoice } from "@/lib/i18n/language-utils";
 import type { LayoutPreferences } from "./layout-types";
 
 /** The sizes the resizable message list accepts (`message-split-layout.tsx`). */
@@ -56,6 +57,7 @@ function parseLayoutPreferences(value: unknown): LayoutPreferences {
 	Object.assign(layout, parseFontChoices(input));
 	if (typeof input.interfaceDirection === "string" && INTERFACE_DIRECTIONS.has(input.interfaceDirection))
 		layout.interfaceDirection = input.interfaceDirection as LayoutPreferences["interfaceDirection"];
+	if (isInterfaceLanguageChoice(input.interfaceLanguage)) layout.interfaceLanguage = input.interfaceLanguage;
 	Object.assign(layout, parseTranslationChoices(input));
 	const listWidth = size(input.listWidth, LIST_WIDTH_LIMITS);
 	if (listWidth !== undefined) layout.listWidth = listWidth;

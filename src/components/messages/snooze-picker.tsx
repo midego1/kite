@@ -6,9 +6,11 @@ import { Button } from "@/components/ui/button";
 import { getUserTimeZone } from "@/lib/time/utils";
 import { formatSnoozePresetHint, getSnoozePresets, snoozeMessage } from "./message-list-row-actions-utils";
 import type { SnoozeMenuItemProps, SnoozePickerProps } from "./types";
+import { useT } from "@/lib/i18n/use-t";
 
 /** A Snooze entry for a hand-rolled menu that expands into the picker below it. */
 export function SnoozeMenuItem({ messageId, expanded, onExpandedChange, onSnoozed }: SnoozeMenuItemProps) {
+	const t = useT();
 	return (
 		<div data-snooze-expanded={expanded}>
 			<button
@@ -18,7 +20,7 @@ export function SnoozeMenuItem({ messageId, expanded, onExpandedChange, onSnooze
 				onClick={() => onExpandedChange(!expanded)}
 			>
 				<Clock className="h-4 w-4" />
-				Snooze
+				{t("Snooze")}
 				<ChevronDown
 					className={`ms-auto h-4 w-4 text-neutral-400 transition-transform ${expanded ? "rotate-180" : ""}`}
 				/>
@@ -33,6 +35,7 @@ export function SnoozeMenuItem({ messageId, expanded, onExpandedChange, onSnooze
 }
 
 export function SnoozePicker({ messageId, onSnoozed }: SnoozePickerProps) {
+	const t = useT();
 	const inputId = useId();
 	const [presets] = useState(() => getSnoozePresets());
 	const [customValue, setCustomValue] = useState(() => presets[0].value);
@@ -46,14 +49,14 @@ export function SnoozePicker({ messageId, onSnoozed }: SnoozePickerProps) {
 			await snoozeMessage(messageId, value);
 			onSnoozed();
 		} catch (nextError) {
-			setError(nextError instanceof Error ? nextError.message : "Unable to snooze message");
+			setError(nextError instanceof Error ? nextError.message : t("Unable to snooze message"));
 		} finally {
 			setSnoozing(false);
 		}
 	}
 
 	return (
-		<div role="group" aria-label="Snooze until" className="text-sm">
+		<div role="group" aria-label={t("Snooze until")} className="text-sm">
 			{presets.map((preset) => (
 				<button
 					key={preset.label}
@@ -74,7 +77,7 @@ export function SnoozePicker({ messageId, onSnoozed }: SnoozePickerProps) {
 				}}
 			>
 				<label htmlFor={inputId} className="block text-xs font-medium text-neutral-500">
-					Pick date &amp; time ({getUserTimeZone()})
+					{t("Pick date & time ({timeZone})", { timeZone: getUserTimeZone() })}
 				</label>
 				<input
 					id={inputId}
@@ -89,7 +92,7 @@ export function SnoozePicker({ messageId, onSnoozed }: SnoozePickerProps) {
 					</p>
 				)}
 				<Button type="submit" size="sm" className="w-full" disabled={snoozing}>
-					{snoozing ? "Snoozing..." : "Snooze"}
+					{snoozing ? t("Snoozing...") : t("Snooze")}
 				</Button>
 			</form>
 		</div>

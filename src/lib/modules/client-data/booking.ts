@@ -1,3 +1,4 @@
+import { msg } from "@/lib/i18n/translator";
 import type { ClientModuleData } from "../module-types";
 
 /** The slice of the booking manifest that client code reads, so client bundles never carry the rest of it. */
@@ -7,7 +8,7 @@ export const bookingClientData: ClientModuleData = {
 	nav: [
 		{
 			id: "booking.module-tabs",
-			label: "Bookings",
+			label: msg("Bookings"),
 			href: "/booking",
 			icon: "CalendarClock",
 			placement: "module-tabs",
@@ -15,7 +16,7 @@ export const bookingClientData: ClientModuleData = {
 		},
 		{
 			id: "booking.account-menu",
-			label: "Booking",
+			label: msg("Booking"),
 			href: "/booking",
 			icon: "CalendarClock",
 			placement: "account-menu",

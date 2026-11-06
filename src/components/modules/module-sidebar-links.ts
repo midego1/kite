@@ -1,5 +1,6 @@
 "use client";
 
+import { useT } from "@/lib/i18n/use-t";
 import { CLIENT_MODULES } from "@/lib/modules/client-data";
 import { moduleNavItems } from "@/lib/modules/nav-utils";
 import type { NavLink } from "../components-nav-types";
@@ -11,12 +12,13 @@ const FOR_YOU_HREF = "/for-you";
 
 /** The `sidebar` nav items of the modules on for this user, with their counts, placed under For you. */
 export function useModuleSidebarLinks() {
+	const t = useT();
 	const { modules } = useModules();
 	const items = moduleNavItems(CLIENT_MODULES, "sidebar", modules);
 	const counts = useModuleNavCounts(items);
 	const links = items.map((item): NavLink => ({
 		href: item.href,
-		label: item.label,
+		label: t(item.label),
 		icon: resolveNavIcon(item.icon),
 		count: counts[item.id],
 	}));

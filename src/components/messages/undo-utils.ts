@@ -3,12 +3,13 @@ import toast from "react-hot-toast";
 import { showUndoToast } from "@/components/ui/undo-toast";
 import { authFetch } from "@/lib/auth/client";
 import { describeDraftsDeleted, describeSendPendingRefused } from "./bulk-request-utils";
+import { t } from "@/lib/i18n/translator";
 
 export function describeUndoableMove(action: string, count: number): string | null {
-	const subject = count === 1 ? "Message" : `${count} messages`;
+	const subject = count === 1 ? t("Message") : `${count} messages`;
 	if (action === "trash") return `${subject} moved to Trash`;
 	if (action === "archive") return `${subject} archived`;
-	if (action === "spam") return count === 1 ? "Reported as spam" : `${count} messages reported as spam`;
+	if (action === "spam") return count === 1 ? t("Reported as spam") : `${count} messages reported as spam`;
 	return null;
 }
 

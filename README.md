@@ -362,6 +362,7 @@ CI runs on every pull request and on pushes to `main`, with the browser tests sp
 - [Sending and deliverability: who can send, abuse protection, SPF, DKIM and DMARC](docs/sending-and-deliverability.md)
 - [Spam protection for incoming mail](docs/spam-protection.md)
 - [Screener: approving new senders](docs/screener.md)
+- [Translations: interface languages and adding one](docs/translations.md)
 - [API and integrations](docs/api.md), including the [calendar and booking APIs](docs/api.md#calendar-and-booking)
 - [Email assistant and MCP](docs/email-assistant-and-mcp.md)
 - [Modules: turning Calendar, Booking, templates, import, Money Watch and Drive off](docs/modules.md)

@@ -1,4 +1,5 @@
 import type { Message } from "@/hooks/types";
+import { t } from "@/lib/i18n/translator";
 
 export type MessageRowBadge = { label: string; tone: "neutral" | "warning" };
 
@@ -12,8 +13,9 @@ export function getMessageRowBadges(
 	now = Date.now(),
 ): MessageRowBadge[] {
 	const badges: MessageRowBadge[] = [];
-	if (message.spamVerdict === "suspicious" && folder !== "spam") badges.push({ label: "Suspicious", tone: "warning" });
+	if (message.spamVerdict === "suspicious" && folder !== "spam")
+		badges.push({ label: t("Suspicious"), tone: "warning" });
 	if (folder !== "snoozed" && message.snoozedUntil && Date.parse(message.snoozedUntil) > now)
-		badges.push({ label: "Snoozed", tone: "neutral" });
+		badges.push({ label: t("Snoozed"), tone: "neutral" });
 	return badges;
 }

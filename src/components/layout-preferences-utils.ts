@@ -1,3 +1,4 @@
+import { INTERFACE_LANGUAGE_STORAGE_KEY } from "@/lib/i18n/language-utils";
 import type { LayoutPreferences } from "@/lib/preferences/layout-types";
 import { EMAIL_FONT_PREFERENCE, FONT_PREFERENCE, FONT_SCOPE_PREFERENCE } from "./appearance-preferences";
 import { columnWidthStorageKeys } from "./column-width-preferences";
@@ -24,6 +25,7 @@ export function layoutStorageEntries(layout: LayoutPreferences, userId: string):
 	if (layout.emailFont) entries.push([EMAIL_FONT_PREFERENCE.storageKey, layout.emailFont]);
 	if (layout.fontScope) entries.push([FONT_SCOPE_PREFERENCE.storageKey, layout.fontScope]);
 	if (layout.interfaceDirection) entries.push([INTERFACE_DIRECTION_STORAGE_KEY, layout.interfaceDirection]);
+	if (layout.interfaceLanguage) entries.push([INTERFACE_LANGUAGE_STORAGE_KEY, layout.interfaceLanguage]);
 	if (layout.translateTo) entries.push([TRANSLATE_TO_STORAGE_KEY, layout.translateTo]);
 	if (layout.translateNever) entries.push([TRANSLATE_NEVER_STORAGE_KEY, layout.translateNever.join(",")]);
 	if (layout.listWidth !== undefined)

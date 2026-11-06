@@ -10,6 +10,7 @@ import { useMailboxFolders } from "@/components/messages/use-mailbox-folders";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
 import type { MoveMessageActionItem } from "./types";
+import { useT } from "@/lib/i18n/use-t";
 
 const menuItemClass =
 	"flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm text-neutral-700 outline-none data-[highlighted]:bg-neutral-100";
@@ -27,13 +28,14 @@ export function SnoozeToolbarButton({
 	disabled: boolean;
 	iconSize: number;
 }) {
+	const t = useT();
 	const [open, setOpen] = useState(false);
 	if (!snoozable) return null;
 	return (
 		<Popover.Root open={open} onOpenChange={setOpen}>
-			<Tooltip label={open ? null : "Snooze"}>
+			<Tooltip label={open ? null : t("Snooze")}>
 				<Popover.Trigger asChild>
-					<Button type="button" variant="ghost" size="roundedSM" aria-label="Snooze" disabled={disabled}>
+					<Button type="button" variant="ghost" size="roundedSM" aria-label={t("Snooze")} disabled={disabled}>
 						<Clock size={iconSize} />
 					</Button>
 				</Popover.Trigger>
@@ -43,7 +45,7 @@ export function SnoozeToolbarButton({
 					align="start"
 					sideOffset={6}
 					collisionPadding={8}
-					aria-label="Snooze"
+					aria-label={t("Snooze")}
 					className="z-50 w-72 rounded-xl border border-neutral-200 bg-white p-2 shadow-lg"
 				>
 					<SnoozePicker messageId={messageId} onSnoozed={() => setOpen(false)} />
@@ -55,13 +57,14 @@ export function SnoozeToolbarButton({
 
 /** The mailbox's own folders, loaded when the Move menu opens. */
 function FolderItems({ mailboxId, onMove }: { mailboxId: string | null; onMove: (folderId: string) => void }) {
+	const t = useT();
 	const folders = useMailboxFolders(mailboxId ?? undefined);
 	if (folders.length === 0) return null;
 	return (
 		<>
 			<DropdownMenu.Separator className="my-1 h-px bg-neutral-100" />
 			<DropdownMenu.Label className="mt-1 px-3 pb-1 pt-2 text-sm font-medium text-neutral-500">
-				Folders
+				{t("Folders")}
 			</DropdownMenu.Label>
 			{folders.map((folder) => (
 				<DropdownMenu.Item key={folder.id} className={menuItemClass} onSelect={() => onMove(folder.id)}>
@@ -87,11 +90,12 @@ export function MoveToolbarMenu({
 	iconSize: number;
 	onAction: (action: BulkMessageAction, folderId?: string) => void;
 }) {
+	const t = useT();
 	return (
 		<DropdownMenu.Root>
-			<Tooltip label="Move to">
+			<Tooltip label={t("Move to")}>
 				<DropdownMenu.Trigger asChild>
-					<Button type="button" variant="ghost" size="roundedSM" aria-label="Move to" disabled={disabled}>
+					<Button type="button" variant="ghost" size="roundedSM" aria-label={t("Move to")} disabled={disabled}>
 						<FolderInput size={iconSize} />
 					</Button>
 				</DropdownMenu.Trigger>

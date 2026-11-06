@@ -2,6 +2,7 @@ import { Sparkles } from "lucide-react";
 import { useOpenSuggestions } from "@/hooks/use-open-suggestions";
 import { forYouVisible } from "@/lib/agent/auto-read/for-you-utils";
 import type { NavLink } from "./components-nav-types";
+import { useT } from "@/lib/i18n/use-t";
 
 const FOR_YOU_HREF = "/for-you";
 
@@ -11,9 +12,10 @@ const FOR_YOU_HREF = "/for-you";
  * full-access mailbox has automatic reading off.
  */
 export function useForYouNav() {
+	const t = useT();
 	const { loaded, total, mailboxes } = useOpenSuggestions();
 	const visible = loaded && forYouVisible(mailboxes);
-	const link: NavLink = { href: FOR_YOU_HREF, label: "For you", icon: Sparkles, count: total };
+	const link: NavLink = { href: FOR_YOU_HREF, label: t("For you"), icon: Sparkles, count: total };
 	return {
 		withLink(links: NavLink[]): NavLink[] {
 			const inbox = links.findIndex((item) => item.href === "/inbox");

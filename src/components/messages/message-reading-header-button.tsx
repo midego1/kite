@@ -4,11 +4,17 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, PanelLeftClose, PanelLeftOpen, PanelTopClose, PanelTopOpen } from "lucide-react";
 import { Tooltip } from "@/components/ui/tooltip";
 import { useMessageListVisibility } from "./message-list-visibility";
+import { useT } from "@/lib/i18n/use-t";
 
 export function MessageReadingHeaderButton() {
+	const t = useT();
 	const router = useRouter();
 	const { visible, toggle, singleColumn, stacked, backHref, backLabel } = useMessageListVisibility();
-	const label = singleColumn ? `Back to ${backLabel}` : visible ? "Hide email list" : "Show email list";
+	const label = singleColumn
+		? t("Back to {backLabel}", { backLabel })
+		: visible
+			? t("Hide email list")
+			: t("Show email list");
 	const PanelIcon = stacked ? (visible ? PanelTopClose : PanelTopOpen) : visible ? PanelLeftClose : PanelLeftOpen;
 
 	function handleClick() {

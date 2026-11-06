@@ -9,6 +9,7 @@ import {
 	UNKNOWN_LANGUAGE,
 } from "@/lib/agent/summaries/summary-utils";
 import { getLatestEmailContent, htmlToReadableText } from "@/lib/email/reply-content-utils";
+import { currentLocale, t } from "@/lib/i18n/translator";
 import type { TranslationAvailability, TranslationBody } from "./message-translation-types";
 
 const DEFAULT_TARGET = "en";
@@ -50,9 +51,10 @@ export function translationTargets(
 ): { code: string; name: string }[] {
 	// A browser language without a two-letter code (`fil`) has nothing the translation route could store it under.
 	const options = translateLanguageOptions(browserLanguage).filter((option) => option.code.length === 2);
-	return options.some((option) => option.code === target)
-		? options
-		: [{ code: target, name: languageName(target) }, ...options];
+	const named = options.map((option) => ({ code: option.code, name: shownLanguageName(option.code) }));
+	return named.some((option) => option.code === target)
+		? named
+		: [{ code: target, name: shownLanguageName(target) }, ...named];
 }
 
 /**
@@ -70,14 +72,21 @@ export function translationAvailability(
 	return !message || isSummaryEligible(message) ? "ready" : "hidden";
 }
 
+/** A language's name on screen, in the interface language. What the server sends a model stays in English. */
+export function shownLanguageName(code: string): string {
+	return languageName(code, currentLocale() ?? "en");
+}
+
 /** "Translated from Thai", or without the language when neither the model nor Kite could tell. */
 export function translatedFromLabel(language: string): string {
-	return language === UNKNOWN_LANGUAGE ? "Translated" : `Translated from ${languageName(language)}`;
+	return language === UNKNOWN_LANGUAGE
+		? t("Translated")
+		: t("Translated from {language}", { language: shownLanguageName(language) });
 }
 
 /** Why the menu entry does nothing, for the one state in which it stays visible. */
 export function translationDisabledReason(availability: TranslationAvailability): string | undefined {
-	return availability === "ai_off" ? MAILBOX_AI_OFF_TEXT : undefined;
+	return availability === "ai_off" ? t(MAILBOX_AI_OFF_TEXT) : undefined;
 }
 
 /** The list with `language` in it or, when it was there, without it. */

@@ -8,15 +8,17 @@ import { RAIL_ICON_SIZE, RAIL_ITEM_CLASS, RAIL_TOOLTIP_CLASS } from "@/component
 import { Tooltip } from "@/components/ui/tooltip";
 import { preloadAgentPanel } from "./agent-panel-lazy";
 import type { AssistantToggleState } from "./assistant-open-state";
+import { useT } from "@/lib/i18n/use-t";
 
 /**
  * The Assistant item in the sidebar footer. In the collapsed icon rail it is an icon with a tooltip, like the
  * rail's other items, so the assistant stays reachable from every list view; absent while the assistant is off.
  */
 export function AssistantNavItem({ assistant }: { assistant: AssistantToggleState }) {
+	const t = useT();
 	const { minimal } = useSidebar();
 	if (!assistant.available) return null;
-	const label = assistant.open ? "Close email assistant" : "Open email assistant";
+	const label = assistant.open ? t("Close email assistant") : t("Open email assistant");
 	const button = (
 		<Button
 			type="button"
@@ -33,7 +35,7 @@ export function AssistantNavItem({ assistant }: { assistant: AssistantToggleStat
 			aria-controls="email-assistant-panel"
 		>
 			<Sparkles size={minimal ? RAIL_ICON_SIZE : 16} />
-			{!minimal && "Assistant"}
+			{!minimal && t("Assistant")}
 		</Button>
 	);
 	return minimal ? (
@@ -47,6 +49,7 @@ export function AssistantNavItem({ assistant }: { assistant: AssistantToggleStat
 
 /** The phone header's assistant button; absent while the assistant is off. */
 export function AssistantIconButton({ assistant }: { assistant: AssistantToggleState }) {
+	const t = useT();
 	if (!assistant.available) return null;
 	return (
 		<Button
@@ -56,7 +59,7 @@ export function AssistantIconButton({ assistant }: { assistant: AssistantToggleS
 			className={assistant.open ? "bg-blue-50 text-blue-700" : "text-neutral-600"}
 			onPointerEnter={() => void preloadAgentPanel().catch(() => undefined)}
 			onClick={assistant.toggle}
-			aria-label={assistant.open ? "Close email assistant" : "Open email assistant"}
+			aria-label={assistant.open ? t("Close email assistant") : t("Open email assistant")}
 			aria-expanded={assistant.open}
 			aria-controls="email-assistant-panel"
 		>

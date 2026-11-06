@@ -1,13 +1,14 @@
 import { authFetch } from "@/lib/auth/client";
 import type { ComposeAttachment, ComposeDraft, ComposeThreading, DraftResponse } from "./types";
 import { isolateDirection } from "@/lib/bidi-utils";
+import { formatOneDecimal, t } from "@/lib/i18n/translator";
 
 export async function fetchDraft(draftId: string): Promise<ComposeDraft> {
 	const res = await authFetch(`/api/drafts/${draftId}`);
 	const json = (await res.json()) as DraftResponse;
 
 	if (!res.ok || !json.draft) {
-		throw new Error(json.error ?? "Failed to load draft");
+		throw new Error(json.error ?? t("Failed to load draft"));
 	}
 
 	return json.draft;
@@ -52,9 +53,9 @@ export function buildSendFormData(input: {
 }
 
 export function formatAttachmentSize(size: number): string {
-	if (size < 1024) return isolateDirection(`${size} B`);
-	if (size < 1024 * 1024) return isolateDirection(`${Math.ceil(size / 1024)} KB`);
-	return isolateDirection(`${(size / (1024 * 1024)).toFixed(1)} MB`);
+	if (size < 1024) return isolateDirection(t("{amount} B", { amount: size }));
+	if (size < 1024 * 1024) return isolateDirection(t("{amount} KB", { amount: Math.ceil(size / 1024) }));
+	return isolateDirection(t("{amount} MB", { amount: formatOneDecimal(size / (1024 * 1024)) }));
 }
 
 export function applyMailboxSignature(

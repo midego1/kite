@@ -1,3 +1,4 @@
+import type { MessageKey } from "@/lib/i18n/i18n-types";
 import type { MessageAttachment } from "@/app/(dashboard)/inbox/[messageId]/types";
 import type { LucideIcon } from "lucide-react";
 
@@ -11,6 +12,6 @@ export interface MessageAttachmentCardProps {
 export type AttachmentVisual = {
 	icon: LucideIcon;
 	iconClassName: string;
-	label: string;
+	label: MessageKey;
 	thumbnail: "image" | "video" | null;
 };

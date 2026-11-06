@@ -8,6 +8,7 @@ import { getEmailAddress } from "@/lib/email/address";
 import { cn } from "@/lib/utils";
 import type { RecipientInputProps } from "./recipient-input-types";
 import { getRecipientLabel, isValidRecipient, parseRecipientEntries } from "./recipient-utils";
+import { useT } from "@/lib/i18n/use-t";
 
 /**
  * A To/Cc/Bcc row. Addresses become chips as soon as the user types a comma,
@@ -25,6 +26,7 @@ export function RecipientInput({
 	autoFocus,
 	trailing,
 }: RecipientInputProps) {
+	const t = useT();
 	const [draft, setDraft] = useState("");
 	const inputRef = useRef<HTMLInputElement | null>(null);
 
@@ -72,7 +74,7 @@ export function RecipientInput({
 							{!disabled && (
 								<button
 									type="button"
-									aria-label={`Remove ${getEmailAddress(entry)}`}
+									aria-label={t("Remove {entry}", { entry: getEmailAddress(entry) })}
 									className="rounded-full p-0.5 text-neutral-500 hover:bg-neutral-200 hover:text-neutral-700"
 									onClick={(event) => {
 										event.stopPropagation();

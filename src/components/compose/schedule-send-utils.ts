@@ -7,6 +7,7 @@ import {
 	parseUserDateTimeLocal,
 	zonedDateFields,
 } from "@/lib/time/utils";
+import { t } from "@/lib/i18n/translator";
 
 function atTime(date: Date, hours: number): Date {
 	const fields = new Date(date);
@@ -27,12 +28,12 @@ export function getScheduleSendOptions(now = new Date()): ScheduleSendOption[] {
 		{
 			label:
 				zonedDateFields(laterToday, getUserTimeZone()).toISOString().slice(0, 10) === today.toISOString().slice(0, 10)
-					? "Later today"
-					: "In 3 hours",
+					? t("Later today")
+					: t("In 3 hours"),
 			value: laterToday,
 		},
-		{ label: "Tomorrow morning", value: atTime(tomorrow, 8) },
-		{ label: "Monday morning", value: atTime(monday, 8) },
+		{ label: t("Tomorrow morning"), value: atTime(tomorrow, 8) },
+		{ label: t("Monday morning"), value: atTime(monday, 8) },
 	];
 }
 

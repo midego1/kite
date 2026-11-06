@@ -64,6 +64,13 @@ test("a stored layout keeps only valid choices and clamps sizes", () => {
 	for (const value of [null, "x", [], 4]) assert.deepEqual(parseLayoutPreferences(value), {});
 });
 
+test("a stored language must be one Kite speaks", () => {
+	assert.deepEqual(parseStoredLayout('{"interfaceLanguage":"ar"}'), { interfaceLanguage: "ar" });
+	assert.deepEqual(parseStoredLayout('{"interfaceLanguage":"auto"}'), { interfaceLanguage: "auto" });
+	assert.deepEqual(parseStoredLayout('{"interfaceLanguage":"klingon"}'), {});
+	assert.deepEqual(parseStoredLayout('{"interfaceLanguage":7}'), {});
+});
+
 test("parseStoredLayout reads JSON text and anything else as empty", () => {
 	assert.deepEqual(parseStoredLayout('{"density":"comfortable"}'), { density: "comfortable" });
 	assert.deepEqual(parseStoredLayout("not json"), {});
@@ -92,6 +99,7 @@ test("a layout maps to the browser storage the views read", () => {
 		emailFont: "reader",
 		fontScope: "everywhere",
 		interfaceDirection: "rtl",
+		interfaceLanguage: "ar",
 		translateTo: "th",
 		translateNever: ["en", "de"],
 		listWidth: 420,
@@ -106,6 +114,7 @@ test("a layout maps to the browser storage the views read", () => {
 		["kite-email-font", "reader"],
 		["kite-font-scope", "everywhere"],
 		["kite-interface-direction", "rtl"],
+		["kite-interface-language", "ar"],
 		["kite-translate-to", "th"],
 		["kite-translate-never", "en,de"],
 		["kite-column-width:message-list", "420"],

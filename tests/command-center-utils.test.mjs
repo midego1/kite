@@ -70,15 +70,13 @@ test("the date line names the weekday, day, month and year in the zone", () => {
 	assert.equal(dateLabel(NOW, "Not/AZone", "en-GB"), NOW.toDateString());
 });
 
-test("status chips: unread always, Screener while it screens or holds mail, For you once known and shown", () => {
+test("status chips: unread always, Screener while it screens or holds mail (For you has its own card)", () => {
 	const base = {
 		unread: 12,
 		folderTitle: "Inbox",
 		folderHref: "/inbox",
 		held: 0,
 		screenerOn: false,
-		forYou: null,
-		forYouVisible: false,
 	};
 	assert.deepEqual(
 		statusChips(base).map((chip) => chip.label),
@@ -93,21 +91,17 @@ test("status chips: unread always, Screener while it screens or holds mail, For 
 	);
 	// Held mail keeps the chip after the Screener was switched to Inbox mode.
 	assert.equal(statusChips({ ...base, held: 1 }).length, 2);
-	assert.equal(statusChips({ ...base, forYou: 2, forYouVisible: false }).length, 1);
-	assert.equal(statusChips({ ...base, forYou: null, forYouVisible: true }).length, 1);
-	const all = statusChips({ ...base, screenerOn: true, held: 3, forYou: 2, forYouVisible: true });
+	const all = statusChips({ ...base, screenerOn: true, held: 3 });
 	assert.deepEqual(
 		all.map((chip) => chip.label),
-		["12 unread in Inbox", "3 in Screener", "2 For you"],
+		["12 unread in Inbox", "3 in Screener"],
 	);
-	assert.equal(all[2].href, "/for-you");
 	// A tile draws the number large and what it counts under it; together they read as the label.
 	assert.deepEqual(
 		all.map((chip) => [chip.value, chip.caption]),
 		[
 			[12, "unread in Inbox"],
 			[3, "in Screener"],
-			[2, "For you"],
 		],
 	);
 	const starred = statusChips({ ...base, unread: 0, folderTitle: "Starred", folderHref: "/starred" })[0];
@@ -188,7 +182,6 @@ test("account lines: the quiet states and a check that runs now", () => {
 });
 
 test("the chips' input defaults what is not known, and the accounts card shows only when it may", () => {
-	const quiet = { loaded: false, total: 0, mailboxes: [] };
 	assert.deepEqual(
 		statusChipsInput({
 			unread: undefined,
@@ -196,7 +189,6 @@ test("the chips' input defaults what is not known, and the accounts card shows o
 			folderHref: "/inbox",
 			held: undefined,
 			screener: null,
-			suggestions: quiet,
 		}),
 		{
 			unread: 0,
@@ -204,8 +196,6 @@ test("the chips' input defaults what is not known, and the accounts card shows o
 			folderHref: "/inbox",
 			held: 0,
 			screenerOn: false,
-			forYou: null,
-			forYouVisible: false,
 		},
 	);
 	assert.deepEqual(
@@ -215,7 +205,6 @@ test("the chips' input defaults what is not known, and the accounts card shows o
 			folderHref: "/inbox",
 			held: 2,
 			screener: { enabled: true, mode: "screener" },
-			suggestions: { loaded: true, total: 3, mailboxes: [{ autonomy: "off" }, { autonomy: "suggest" }] },
 		}),
 		{
 			unread: 4,
@@ -223,8 +212,6 @@ test("the chips' input defaults what is not known, and the accounts card shows o
 			folderHref: "/inbox",
 			held: 2,
 			screenerOn: true,
-			forYou: 3,
-			forYouVisible: true,
 		},
 	);
 	assert.equal(
@@ -233,7 +220,6 @@ test("the chips' input defaults what is not known, and the accounts card shows o
 			folderTitle: "Inbox",
 			held: 0,
 			screener: { enabled: true, mode: "inbox" },
-			suggestions: { loaded: true, total: 0, mailboxes: [{ autonomy: "off" }] },
 		}).screenerOn,
 		false,
 	);

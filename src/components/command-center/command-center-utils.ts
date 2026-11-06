@@ -1,4 +1,3 @@
-import { forYouVisible } from "@/lib/agent/auto-read/for-you-utils";
 import type { ExternalAccountView } from "@/lib/external-accounts/types";
 import type { OverviewData } from "@/app/(admin)/admin/overview-types";
 import type { AccountLine, AccountLinesInput, HealthLine, StatusChip, StatusChipsInput } from "./command-center-types";
@@ -51,17 +50,13 @@ export function statusChipsInput(input: {
 	folderHref: string;
 	held: number | undefined;
 	screener: { enabled: boolean; mode: "screener" | "inbox" } | null | undefined;
-	suggestions: { loaded: boolean; total: number; mailboxes: readonly { autonomy: string }[] };
 }): StatusChipsInput {
-	const { suggestions } = input;
 	return {
 		unread: input.unread ?? 0,
 		folderTitle: input.folderTitle,
 		folderHref: input.folderHref,
 		held: input.held ?? 0,
 		screenerOn: input.screener?.enabled === true && input.screener.mode === "screener",
-		forYou: suggestions.loaded ? suggestions.total : null,
-		forYouVisible: suggestions.loaded && forYouVisible(suggestions.mailboxes),
 	};
 }
 
@@ -91,8 +86,6 @@ export function statusChips(input: StatusChipsInput): StatusChip[] {
 	];
 	if (input.screenerOn || input.held > 0)
 		chips.push(chip("screener", input.held, t("in Screener"), "/screener", "amber"));
-	if (input.forYouVisible && input.forYou !== null)
-		chips.push(chip("for-you", input.forYou, t("For you"), "/for-you", "violet"));
 	return chips;
 }
 

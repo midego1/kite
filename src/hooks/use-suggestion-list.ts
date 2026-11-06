@@ -25,13 +25,15 @@ if (typeof window !== "undefined") {
  * empty reading pane, for instance) share one response, one request and one refresh timer
  * (`suggestion-list-store.ts`): a reader that mounts shows the last response at once and refreshes it in the
  * background, joining a request already in flight, and an event or a `reload()` refreshes it once for all of them
- * (once more after a request that was already running). A sign-out or account switch clears everything.
+ * (once more after a request that was already running). A sign-out or account switch clears everything. A reader with `enabled` false holds no data and asks for nothing.
  */
-export function useSuggestionList<T>(url: string): { data: T | null; reload: () => void } {
+export function useSuggestionList<T>(url: string, enabled = true): { data: T | null; reload: () => void } {
 	const [state, setState] = useState<{ url: string; data: T } | null>(null);
 	const reloadRef = useRef<() => void>(() => undefined);
 
 	useEffect(() => {
+		// Off while the reader cannot tell yet which list it wants (no mailbox, as when signed out): no request.
+		if (!enabled) return;
 		const sync = () => {
 			const data = store.read(url);
 			setState(data === undefined ? null : { url, data: data as T });
@@ -41,8 +43,8 @@ export function useSuggestionList<T>(url: string): { data: T | null; reload: () 
 		sync();
 		void store.load(url);
 		return unsubscribe;
-	}, [url]);
+	}, [url, enabled]);
 
 	const reload = useCallback(() => reloadRef.current(), []);
-	return { data: state?.url === url ? state.data : null, reload };
+	return { data: enabled && state?.url === url ? state.data : null, reload };
 }

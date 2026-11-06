@@ -17,6 +17,7 @@ import {
 	THAI_MAIL_TRANSLATED,
 	THREAD,
 } from "./demo-data";
+import { mockForYou } from "./demo-mocks";
 import { sampleMessage, startFakeImap } from "../../tests/support/fake-imap.mjs";
 
 // Screenshots for the changelog (docs/releasing.md#screenshots-in-the-changelog), taken against the isolated,
@@ -62,6 +63,19 @@ async function openThaiMail(page: Page) {
 }
 
 const SHOTS: Shot[] = [
+	{
+		// The home view with nothing open: the For you card with the newest suggestions (demo suggestions from demo-mocks).
+		name: "2026-11-06-command-center-for-you-light",
+		theme: "light",
+		viewport: { width: 1280, height: 900 },
+		open: async (page) => {
+			await mockForYou(page);
+			await page.goto("/inbox");
+			const card = page.getByTestId("command-center-for-you");
+			await expect(card.locator("[data-for-you-card-entry]")).toHaveCount(4);
+			return page.getByTestId("reading-pane-empty");
+		},
+	},
 	{
 		// The quiet bar above a message in a language the reader does not read.
 		name: "2026-11-06-translate-message-light",

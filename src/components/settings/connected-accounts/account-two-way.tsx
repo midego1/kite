@@ -1,7 +1,9 @@
 "use client";
 
+import { ChevronRight } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Select } from "@/components/ui/select";
+import { cn } from "@/lib/utils";
 import type { TwoWaySettings, TwoWayView } from "@/lib/external-accounts/two-way-types";
 import type { ExternalAccountView } from "@/lib/external-accounts/types";
 import { fetchTwoWay, offeredMoves, saveTwoWay, supportNote, twoWaySummary } from "./account-two-way-utils";
@@ -138,7 +140,8 @@ function TwoWayFields({
 
 /**
  * Two-way sync on an account row (spec §6.8), everything off by default. The settings and what the server supports are
- * read when it is opened, because answering them can mean asking the server; the closed row only says that it exists.
+ * read as soon as the row shows, so its state is visible open or closed; the server is asked what it supports at most
+ * once a day, and a failure stays silent until the row is opened.
  */
 export function AccountTwoWay({ account, usable }: { account: ExternalAccountView; usable: boolean }) {
 	const [open, setOpen] = useState(false);
@@ -147,14 +150,16 @@ export function AccountTwoWay({ account, usable }: { account: ExternalAccountVie
 	const [error, setError] = useState<string | null>(null);
 
 	useEffect(() => {
-		if (!open) return;
 		let current = true;
 		fetchTwoWay(account.id)
 			.then((next) => {
-				if (current) setView(next);
+				if (current) {
+					setView(next);
+					setError(null);
+				}
 			})
 			.catch((cause: unknown) => {
-				if (current) setError(cause instanceof Error ? cause.message : "Could not load the two-way settings");
+				if (current && open) setError(cause instanceof Error ? cause.message : "Could not load the two-way settings");
 			});
 		return () => {
 			current = false;
@@ -177,13 +182,20 @@ export function AccountTwoWay({ account, usable }: { account: ExternalAccountVie
 		<div className="space-y-1 pt-1" data-account-two-way={account.address}>
 			<button
 				type="button"
-				className="text-xs font-medium text-neutral-700 underline-offset-2 hover:underline"
+				className="flex w-full flex-wrap items-center gap-x-2 gap-y-0.5 rounded-md text-start text-xs hover:text-neutral-900"
 				aria-expanded={open}
 				onClick={() => setOpen(!open)}
 			>
-				Two-way sync
+				<ChevronRight
+					aria-hidden="true"
+					className={cn(
+						"h-3.5 w-3.5 shrink-0 text-neutral-500 transition-transform rtl:-scale-x-100",
+						open && "rotate-90 rtl:-rotate-90",
+					)}
+				/>
+				<span className="font-medium text-neutral-700">Two-way sync: choose what stays in step</span>
+				{view && <span className="ms-auto text-neutral-500">{twoWaySummary(view.settings)}</span>}
 			</button>
-			{view && !open && <p className="text-xs text-neutral-500">{twoWaySummary(view.settings)}</p>}
 			{open && !view && !error && <p className="text-xs text-neutral-500">Asking the server what it supports…</p>}
 			{open && view && (
 				<TwoWayFields view={view} usable={usable} saving={saving} onSave={(settings) => void save(settings)} />

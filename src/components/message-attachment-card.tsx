@@ -6,9 +6,11 @@ import { assessAttachmentRisk } from "@/lib/email/attachment-risk";
 import type { MessageAttachmentCardProps } from "./message-attachment-card-types";
 import { getAttachmentVisual } from "./message-attachment-card-utils";
 import { MessageAttachmentMenu, useHasAttachmentSlots } from "./message-attachment-menu";
+import { useT } from "@/lib/i18n/use-t";
 
 /** One attachment as Zero's chip: a coloured file-type icon, the name and the size; a click previews it. */
 export function MessageAttachmentCard({ attachment, messageId, mailboxId, onPreview }: MessageAttachmentCardProps) {
+	const t = useT();
 	const visual = getAttachmentVisual(attachment);
 	const Icon = visual.icon;
 	const hasMenu = useHasAttachmentSlots();
@@ -26,14 +28,14 @@ export function MessageAttachmentCard({ attachment, messageId, mailboxId, onPrev
 			<button
 				type="button"
 				onClick={() => onPreview(attachment)}
-				title={`${attachment.filename} · ${visual.label}${flagged ? " · Flagged as risky" : ""}`}
+				title={[attachment.filename, t(visual.label), ...(flagged ? [t("Flagged as risky")] : [])].join(" · ")}
 				data-attachment-risk={flagged ? risk.level : undefined}
 				className={`flex h-9 max-w-full items-center gap-2 rounded-lg bg-neutral-100 ps-2.5 text-start text-sm transition-colors hover:bg-neutral-200 ${hasMenu ? "pe-10" : "pe-3"}`}
 			>
 				{flagged ? (
 					<AlertTriangle
 						className={`h-4 w-4 shrink-0 ${risk.level === "danger" ? "text-red-600" : "text-amber-600"}`}
-						aria-label="Flagged as risky"
+						aria-label={t("Flagged as risky")}
 					/>
 				) : (
 					<Icon className={`h-4 w-4 shrink-0 ${iconColor}`} aria-hidden="true" />

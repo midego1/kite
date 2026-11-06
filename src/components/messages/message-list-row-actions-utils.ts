@@ -9,6 +9,7 @@ import {
 	parseUserDateTimeLocal,
 	zonedDateFields,
 } from "@/lib/time/utils";
+import { t } from "@/lib/i18n/translator";
 
 export type SnoozePreset = {
 	label: string;
@@ -29,9 +30,9 @@ export function getSnoozePresets(now = new Date()): SnoozePreset[] {
 	nextMonth.setUTCMonth(nextMonth.getUTCMonth() + 1);
 
 	return [
-		{ label: "Tomorrow", value: formatSnoozeDateTime(dateFromZonedFields(tomorrow, getUserTimeZone())) },
-		{ label: "Next week", value: formatSnoozeDateTime(dateFromZonedFields(nextWeek, getUserTimeZone())) },
-		{ label: "Next month", value: formatSnoozeDateTime(dateFromZonedFields(nextMonth, getUserTimeZone())) },
+		{ label: t("Tomorrow"), value: formatSnoozeDateTime(dateFromZonedFields(tomorrow, getUserTimeZone())) },
+		{ label: t("Next week"), value: formatSnoozeDateTime(dateFromZonedFields(nextWeek, getUserTimeZone())) },
+		{ label: t("Next month"), value: formatSnoozeDateTime(dateFromZonedFields(nextMonth, getUserTimeZone())) },
 	];
 }
 

@@ -1,9 +1,11 @@
 "use client";
 
 import { ShieldX } from "lucide-react";
+import { useT } from "@/lib/i18n/use-t";
 
 /** The "Report phishing" entry of a message's More actions menu; the caller confirms and runs it. */
 export function ReportPhishingItem({ onSelect }: { onSelect: () => void }) {
+	const t = useT();
 	return (
 		<button
 			type="button"
@@ -11,7 +13,7 @@ export function ReportPhishingItem({ onSelect }: { onSelect: () => void }) {
 			onClick={onSelect}
 		>
 			<ShieldX className="h-4 w-4 shrink-0" />
-			Report phishing
+			{t("Report phishing")}
 		</button>
 	);
 }

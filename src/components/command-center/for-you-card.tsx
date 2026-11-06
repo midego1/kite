@@ -7,6 +7,7 @@ import { SuggestionKindIcon } from "@/components/agent/suggestion-badge";
 import { runCardAction } from "@/components/agent/suggestion-card-actions";
 import { useSelectedMailbox } from "@/components/mailbox-provider";
 import { formatMessageListTimestamp } from "@/components/messages/utils";
+import { useT } from "@/lib/i18n/use-t";
 import { useOpenSuggestions } from "@/hooks/use-open-suggestions";
 import { isSameOriginPath } from "@/lib/modules/path-utils";
 import {
@@ -30,6 +31,7 @@ function ForYouCardEntry({
 	dismissing: boolean;
 	onDismiss: () => void;
 }) {
+	const t = useT();
 	const body = (
 		<>
 			<span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-600">
@@ -61,8 +63,8 @@ function ForYouCardEntry({
 				type="button"
 				disabled={dismissing}
 				onClick={onDismiss}
-				aria-label={`Dismiss ${row.subject}`}
-				title="Dismiss"
+				aria-label={t("Dismiss {subject}", { subject: row.subject })}
+				title={t("Dismiss")}
 				className="flex h-8 w-8 pointer-coarse:h-11 pointer-coarse:w-11 shrink-0 items-center justify-center rounded-lg text-neutral-500 transition-colors hover:bg-neutral-200/60 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 disabled:opacity-50"
 			>
 				<X className="h-4 w-4" aria-hidden="true" />
@@ -79,6 +81,7 @@ function ForYouCardEntry({
  * is in its header.
  */
 export function ForYouCard() {
+	const t = useT();
 	const { viewMailboxes } = useSelectedMailbox();
 	// One mailbox in view asks for that mailbox's own list: the shared one stops at 200 rows across every mailbox,
 	// which other mailboxes could fill. Several in view use the shared list the sidebar already loaded.
@@ -102,15 +105,15 @@ export function ForYouCard() {
 
 	return (
 		<CommandCenterCard
-			title="For you"
+			title={t("For you")}
 			icon={Sparkles}
 			count={view.count}
-			action={{ label: "Open For you", href: "/for-you" }}
+			action={{ label: t("Open For you"), href: "/for-you" }}
 			testId="command-center-for-you"
 		>
 			{view.rows.length === 0 ? (
-				<CommandCenterEmpty icon={Sparkles} action={{ label: "Open For you", href: "/for-you" }}>
-					Nothing for you right now.
+				<CommandCenterEmpty icon={Sparkles} action={{ label: t("Open For you"), href: "/for-you" }}>
+					{t("Nothing for you right now.")}
 				</CommandCenterEmpty>
 			) : (
 				<ul className={COMMAND_CENTER_LIST_CLASS}>
@@ -126,7 +129,7 @@ export function ForYouCard() {
 			)}
 			{view.more > 0 && (
 				<Link href="/for-you" className={`mt-2 block w-fit px-2 ${COMMAND_CENTER_LINK_CLASS}`}>
-					{view.more} more
+					{t("{count} more", { count: view.more })}
 				</Link>
 			)}
 		</CommandCenterCard>

@@ -16,6 +16,7 @@ import {
 	CommandCenterCard,
 	CommandCenterPill,
 } from "./command-center-card";
+import { useT } from "@/lib/i18n/use-t";
 
 const CHECK_CLASS = `h-4 w-4 shrink-0 ${SUCCESS_TEXT_CLASS}`;
 
@@ -27,14 +28,15 @@ const CHECK_CLASS = `h-4 w-4 shrink-0 ${SUCCESS_TEXT_CLASS}`;
  * while fresh.
  */
 export function CommandCenterAdminCard({ primary }: { primary: boolean }) {
+	const t = useT();
 	const overview = useOverview(primary, true, { refetchOnMount: true });
 	const items = attentionItems(overview.data, primary).filter((item) => item.id !== "migrations");
 	const health = healthLines(overview.data, new Date());
 	return (
 		<CommandCenterCard
-			title="Needs attention"
+			title={t("Needs attention")}
 			icon={ShieldCheck}
-			action={{ label: "Admin overview", href: "/admin" }}
+			action={{ label: t("Admin overview"), href: "/admin" }}
 			testId="command-center-attention"
 		>
 			{overview.loading ? (
@@ -65,9 +67,9 @@ export function CommandCenterAdminCard({ primary }: { primary: boolean }) {
 					{items.length === 0 && (
 						<p className={COMMAND_CENTER_ROW_CLASS} data-testid="command-center-all-clear">
 							<CheckCircle2 className={CHECK_CLASS} aria-hidden="true" />
-							<span className="min-w-0 flex-1 truncate">Nothing else needs your attention.</span>
+							<span className="min-w-0 flex-1 truncate">{t("Nothing else needs your attention.")}</span>
 							<CommandCenterPill tone="ok" className="ms-auto">
-								All clear
+								{t("All clear")}
 							</CommandCenterPill>
 						</p>
 					)}

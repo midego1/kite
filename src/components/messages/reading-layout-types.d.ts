@@ -1,3 +1,4 @@
+import type { MessageKey } from "@/lib/i18n/i18n-types";
 import type { MessageFolderConfig } from "./types";
 
 /** Where an open message appears relative to the message list. */
@@ -8,8 +9,8 @@ export type MessageListDensity = "default" | "comfortable" | "compact";
 
 export type ReadingLayoutOption<T extends string> = {
 	value: T;
-	label: string;
-	description: string;
+	label: MessageKey;
+	description: MessageKey;
 };
 
 export type MessageRowDensityStyle = {

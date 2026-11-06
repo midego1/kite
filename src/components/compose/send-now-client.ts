@@ -1,4 +1,5 @@
 import { authFetch } from "@/lib/auth/client";
+import { t } from "@/lib/i18n/translator";
 
 /** `failed` is set when the provider refused the message: it is no longer held and can only be edited and sent again. */
 export type SendNowOutcome = { ok: true } | { ok: false; error: string; failed: boolean };
@@ -13,8 +14,8 @@ export async function requestSendNow(messageId: string): Promise<SendNowOutcome>
 		const res = await authFetch(`/api/messages/${encodeURIComponent(messageId)}/send-now`, { method: "POST" });
 		if (res.ok) return { ok: true };
 		const data = (await res.json().catch(() => ({}))) as { error?: string; failed?: boolean };
-		return { ok: false, error: data.error ?? "Could not send now", failed: data.failed === true };
+		return { ok: false, error: data.error ?? t("Could not send now"), failed: data.failed === true };
 	} catch {
-		return { ok: false, error: "Could not send now", failed: false };
+		return { ok: false, error: t("Could not send now"), failed: false };
 	}
 }

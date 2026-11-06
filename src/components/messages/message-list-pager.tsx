@@ -6,36 +6,38 @@ import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
 import type { ListSection } from "./message-list-sections-utils";
 import type { MessageListPagerState } from "./message-list-pager-types";
+import { useT } from "@/lib/i18n/use-t";
 
 /**
  * "1 - 25 of 308" and the previous/next arrows. It shares a row with the first section label (or stands alone
  * in a slim row when the list has none), so it is as small as a label row: 28 px arrows, never shrunk.
  */
 function ListPager({ pager }: { pager: MessageListPagerState }) {
+	const t = useT();
 	return (
 		<div className="flex shrink-0 items-center gap-0.5 text-neutral-500">
 			<span className="whitespace-nowrap px-1 text-xs text-neutral-500">
-				{pager.range.start} - {pager.range.end} of {pager.range.total}
+				{t("{start} - {end} of {total}", pager.range)}
 			</span>
-			<Tooltip label="Previous page">
+			<Tooltip label={t("Previous page")}>
 				<Button
 					variant="ghost"
 					size="sm"
 					disabled={!pager.canPrevious}
 					onClick={pager.previous}
-					aria-label="Previous page"
+					aria-label={t("Previous page")}
 					className="h-7 w-7 p-0"
 				>
 					<ChevronLeft className="h-4 w-4 rtl:-scale-x-100" />
 				</Button>
 			</Tooltip>
-			<Tooltip label="Next page">
+			<Tooltip label={t("Next page")}>
 				<Button
 					variant="ghost"
 					size="sm"
 					disabled={!pager.canNext}
 					onClick={pager.next}
-					aria-label="Next page"
+					aria-label={t("Next page")}
 					className="h-7 w-7 p-0"
 				>
 					<ChevronRight className="h-4 w-4 rtl:-scale-x-100" />

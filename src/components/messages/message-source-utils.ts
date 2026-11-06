@@ -1,6 +1,7 @@
 import { authFetch } from "@/lib/auth/client";
 import { formatUserDate } from "@/lib/time/utils";
 import type { AuthenticationSummary, MessageSourceSummary } from "./message-source-types";
+import { t } from "@/lib/i18n/translator";
 
 export async function fetchMessageSource(messageId: string, signal: AbortSignal): Promise<string> {
 	const response = await authFetch(`/api/messages/${encodeURIComponent(messageId)}/original`, {
@@ -8,7 +9,7 @@ export async function fetchMessageSource(messageId: string, signal: AbortSignal)
 		redirectOnUnauthorized: false,
 	});
 	const source = await response.text();
-	if (!response.ok) throw new Error(source || "Unable to load original message");
+	if (!response.ok) throw new Error(source || t("Unable to load original message"));
 	return source;
 }
 
@@ -47,13 +48,16 @@ function deliveryDuration(headers: Map<string, string[]>, sentAt: Date): string 
 	const deliveredAt = new Date(receivedDate);
 	const seconds = Math.round((deliveredAt.getTime() - sentAt.getTime()) / 1000);
 	if (!Number.isFinite(seconds) || seconds < 0) return null;
-	if (seconds < 60) return `Delivered after ${seconds} ${seconds === 1 ? "second" : "seconds"}`;
+	if (seconds < 60)
+		return t("{count, plural, one {Delivered after # second} other {Delivered after # seconds}}", { count: seconds });
 	const minutes = Math.round(seconds / 60);
-	if (minutes < 60) return `Delivered after ${minutes} ${minutes === 1 ? "minute" : "minutes"}`;
+	if (minutes < 60)
+		return t("{count, plural, one {Delivered after # minute} other {Delivered after # minutes}}", { count: minutes });
 	const hours = Math.round(minutes / 60);
-	if (hours < 48) return `Delivered after ${hours} ${hours === 1 ? "hour" : "hours"}`;
+	if (hours < 48)
+		return t("{count, plural, one {Delivered after # hour} other {Delivered after # hours}}", { count: hours });
 	const days = Math.round(hours / 24);
-	return `Delivered after ${days} ${days === 1 ? "day" : "days"}`;
+	return t("{count, plural, one {Delivered after # day} other {Delivered after # days}}", { count: days });
 }
 
 function authResult(headers: Map<string, string[]>, method: "spf" | "dkim" | "dmarc"): AuthenticationSummary | null {

@@ -5,6 +5,7 @@ import { ContactAvatar } from "@/components/contacts/contact-avatar";
 import { ContactCard } from "@/components/contacts/contact-card";
 import { formatUserDate } from "@/lib/time/utils";
 import type { ThreadParticipant } from "./conversation-thread-utils";
+import { useT } from "@/lib/i18n/use-t";
 
 const MAX_PARTICIPANT_CHIPS = 6;
 
@@ -34,6 +35,7 @@ export function ReaderThreadHeader({
 	ownAddress: string;
 	ownAddresses: readonly string[];
 }) {
+	const t = useT();
 	const firstDay = range ? formatDay(range.first) : null;
 	const lastDay = range ? formatDay(range.last) : null;
 	const shown = participants.slice(0, MAX_PARTICIPANT_CHIPS);
@@ -57,7 +59,7 @@ export function ReaderThreadHeader({
 				</p>
 			)}
 			{shown.length > 0 && (
-				<ul aria-label="Participants" className="mt-4 flex flex-wrap items-center gap-2">
+				<ul aria-label={t("Participants")} className="mt-4 flex flex-wrap items-center gap-2">
 					{shown.map((person) => {
 						const face = (
 							<>

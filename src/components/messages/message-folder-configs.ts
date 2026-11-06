@@ -1,10 +1,11 @@
 import { Archive, Clock, Send, ShieldAlert, Star, Trash2, UserCheck } from "lucide-react";
 import type { MessageFolderConfig } from "./types";
+import { msg } from "@/lib/i18n/translator";
 
 export const inboxFolderConfig: MessageFolderConfig = {
 	folder: "inbox",
-	title: "Inbox",
-	emptyText: "No emails",
+	title: msg("Inbox"),
+	emptyText: msg("No emails"),
 	hrefPrefix: "/inbox",
 	icon: Star,
 	// headerIcons: [MailOpen, Clock],
@@ -13,8 +14,8 @@ export const inboxFolderConfig: MessageFolderConfig = {
 
 export const starredFolderConfig: MessageFolderConfig = {
 	folder: "starred",
-	title: "Starred",
-	emptyText: "No starred emails",
+	title: msg("Starred"),
+	emptyText: msg("No starred emails"),
 	hrefPrefix: "/starred",
 	icon: Star,
 	badgeVariant: "outline",
@@ -22,8 +23,8 @@ export const starredFolderConfig: MessageFolderConfig = {
 
 export const snoozedFolderConfig: MessageFolderConfig = {
 	folder: "snoozed",
-	title: "Snoozed",
-	emptyText: "No snoozed emails",
+	title: msg("Snoozed"),
+	emptyText: msg("No snoozed emails"),
 	hrefPrefix: "/snoozed",
 	icon: Clock,
 	badgeVariant: "outline",
@@ -31,8 +32,8 @@ export const snoozedFolderConfig: MessageFolderConfig = {
 
 export const sentFolderConfig: MessageFolderConfig = {
 	folder: "sent",
-	title: "Sent",
-	emptyText: "No emails",
+	title: msg("Sent"),
+	emptyText: msg("No emails"),
 	hrefPrefix: "/sent",
 	icon: Send,
 	// headerIcons: [MailOpen, Clock],
@@ -41,8 +42,8 @@ export const sentFolderConfig: MessageFolderConfig = {
 
 export const archivedFolderConfig: MessageFolderConfig = {
 	folder: "archived",
-	title: "Archived",
-	emptyText: "No archived emails",
+	title: msg("Archived"),
+	emptyText: msg("No archived emails"),
 	hrefPrefix: "/archived",
 	icon: Archive,
 	badgeVariant: "outline",
@@ -50,8 +51,8 @@ export const archivedFolderConfig: MessageFolderConfig = {
 
 export const spamFolderConfig: MessageFolderConfig = {
 	folder: "spam",
-	title: "Spam",
-	emptyText: "No spam",
+	title: msg("Spam"),
+	emptyText: msg("No spam"),
 	hrefPrefix: "/spam",
 	icon: ShieldAlert,
 	badgeVariant: "outline",
@@ -59,8 +60,8 @@ export const spamFolderConfig: MessageFolderConfig = {
 
 export const trashFolderConfig: MessageFolderConfig = {
 	folder: "trash",
-	title: "Trash",
-	emptyText: "No emails in trash",
+	title: msg("Trash"),
+	emptyText: msg("No emails in trash"),
 	hrefPrefix: "/trash",
 	icon: Trash2,
 	badgeVariant: "outline",
@@ -68,8 +69,8 @@ export const trashFolderConfig: MessageFolderConfig = {
 
 export const screenerFolderConfig: MessageFolderConfig = {
 	folder: "screener",
-	title: "Screener",
-	emptyText: "Nobody new is waiting. Mail from senders you have not approved shows up here.",
+	title: msg("Screener"),
+	emptyText: msg("Nobody new is waiting. Mail from senders you have not approved shows up here."),
 	hrefPrefix: "/screener",
 	icon: UserCheck,
 	badgeVariant: "outline",

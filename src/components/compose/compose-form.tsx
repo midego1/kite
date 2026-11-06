@@ -59,12 +59,15 @@ import {
 	senderOptionsFor,
 	sentToastMessage,
 } from "./sender-options-utils";
-import { PAST_SCHEDULE_MESSAGE, isPastScheduledSend } from "@/lib/email/undo-send-utils";
+import { isPastScheduledSend } from "@/lib/email/undo-send-utils";
 import type { ComposeAttachment, ComposeDraftSnapshot, ComposeStoredAttachment, ComposeThreading } from "./types";
 import type { ComposeAttachmentPolicy } from "./attachment-policy-types";
+import { attachFilesLabel, refusedAttachments } from "./compose-attachment-utils";
 import type { InlineComposerActions } from "./inline-composer-types";
 import { responseError } from "./response-error-utils";
 import { useInlineSendLifecycle } from "./use-inline-send-lifecycle";
+import { t as translate } from "@/lib/i18n/translator";
+import { useT } from "@/lib/i18n/use-t";
 
 export function ComposeForm({
 	mode = "page",
@@ -79,6 +82,7 @@ export function ComposeForm({
 	/** The docked reply's ways out, by draft id (inline-reply-composer.tsx). */
 	inline?: InlineComposerActions;
 }) {
+	const t = useT();
 	const router = useRouter();
 	const { selectedMailbox, setSelectedMailbox, mailboxes, defaultFrom, rememberFrom } = useComposeMailbox();
 	const [draftId, setDraftId] = useState<string | null>(null);
@@ -274,7 +278,7 @@ export function ComposeForm({
 			})
 			.catch((err) => {
 				if (cancelled) return;
-				const message = err instanceof Error ? err.message : "Failed to load draft";
+				const message = err instanceof Error ? err.message : translate("Failed to load draft");
 				setToast({ type: "error", message });
 			})
 			.finally(() => {
@@ -310,21 +314,21 @@ export function ComposeForm({
 
 	async function submitMessage({ skipPreview = false }: { skipPreview?: boolean } = {}) {
 		if (to.length === 0) {
-			setToast({ type: "error", message: "Add at least one recipient" });
+			setToast({ type: "error", message: t("Add at least one recipient") });
 			return;
 		}
 		const invalid = [...to, ...cc, ...bcc].find((entry) => !isValidRecipient(entry));
 		if (invalid) {
-			setToast({ type: "error", message: `"${invalid}" is not a valid email address` });
+			setToast({ type: "error", message: t('"{invalid}" is not a valid email address', { invalid }) });
 			return;
 		}
 		if (!hasMeaningfulHtml(html) && !quotedHtml) {
-			setToast({ type: "error", message: "Write a message before sending" });
+			setToast({ type: "error", message: t("Write a message before sending") });
 			return;
 		}
 		if (scheduleInvalid || isPastScheduledSend(scheduledAt)) {
 			setPreviewOpen(false);
-			setToast({ type: "error", message: PAST_SCHEDULE_MESSAGE });
+			setToast({ type: "error", message: t("That send time has already passed. Pick a later time.") });
 			return;
 		}
 		const isAgentDraft = !!draftId && agentRevision !== null;
@@ -349,7 +353,7 @@ export function ComposeForm({
 					for (const attachment of attachments) form.append("attachments", attachment.file);
 					const uploaded = await authFetch(`/api/drafts/${draftId}/attachments`, { method: "POST", body: form });
 					const result = (await uploaded.json()) as { attachments?: ComposeStoredAttachment[]; error?: string };
-					if (!uploaded.ok) throw new Error(result.error || "Could not add attachments to the draft");
+					if (!uploaded.ok) throw new Error(result.error || t("Could not add attachments to the draft"));
 					setStoredAttachments((current) => [...current, ...(result.attachments ?? [])]);
 					setAttachments([]);
 				}
@@ -387,14 +391,14 @@ export function ComposeForm({
 					error?: string;
 				};
 				if (!response.ok || !result.approvalId || !result.snapshot)
-					throw new Error(result.error || "Could not create review");
+					throw new Error(result.error || t("Could not create review"));
 				setAgentReview({
 					approvalId: result.approvalId,
 					snapshot: result.snapshot,
 					unfamiliarRecipients: result.unfamiliarRecipients ?? [],
 				});
 			} catch (cause) {
-				setToast({ type: "error", message: cause instanceof Error ? cause.message : "Could not review draft" });
+				setToast({ type: "error", message: cause instanceof Error ? cause.message : t("Could not review draft") });
 			} finally {
 				setLoading(false);
 			}
@@ -434,7 +438,7 @@ export function ComposeForm({
 			data = (await res.json()) as typeof data;
 			ok = res.ok;
 		} catch (cause) {
-			data = { error: cause instanceof Error ? cause.message : "Send failed" };
+			data = { error: cause instanceof Error ? cause.message : t("Send failed") };
 		}
 		setSending(null);
 		setLoading(false);
@@ -445,7 +449,7 @@ export function ComposeForm({
 			setAttachments(sent.attachments);
 			void loadStoredAttachments(sent.draftId);
 			setScheduledAt(sent.scheduledAt);
-			setToast({ type: "error", message: data.error ?? "Send failed" });
+			setToast({ type: "error", message: data.error ?? t("Send failed") });
 			return;
 		}
 		rememberFrom(selectedMailbox, selectedFrom);
@@ -530,7 +534,7 @@ export function ComposeForm({
 		});
 		const data = (await res.json()) as { draftId?: string; error?: string };
 		if (!res.ok || !data.draftId) {
-			setToast({ type: "error", message: data.error ?? "Could not undo send" });
+			setToast({ type: "error", message: data.error ?? t("Could not undo send") });
 			return;
 		}
 
@@ -541,7 +545,7 @@ export function ComposeForm({
 		inline?.undone(data.draftId);
 		setAttachments([]);
 		await loadStoredAttachments(data.draftId);
-		setToast({ type: "success", message: "Sending undone" });
+		setToast({ type: "success", message: t("Sending undone") });
 		window.dispatchEvent(new Event("kite:messages-changed"));
 	}
 
@@ -575,7 +579,7 @@ export function ComposeForm({
 			}
 			if (!deleted) {
 				setDeletingDraft(false);
-				setToast({ type: "error", message: "Could not delete draft" });
+				setToast({ type: "error", message: t("Could not delete draft") });
 				return;
 			}
 		}
@@ -598,7 +602,7 @@ export function ComposeForm({
 		if (!id) return;
 		const res = await authFetch(`/api/drafts/${id}/attachments/${attachmentId}`, { method: "DELETE" });
 		if (!res.ok) {
-			setToast({ type: "error", message: "Could not remove attachment" });
+			setToast({ type: "error", message: t("Could not remove attachment") });
 			return;
 		}
 		setStoredAttachments((current) => current.filter((item) => item.id !== attachmentId));
@@ -607,21 +611,13 @@ export function ComposeForm({
 	function addAttachments(files: FileList | null) {
 		if (!files) return;
 		const nextFiles = Array.from(files);
-		const nextCount = storedAttachments.length + attachments.length + nextFiles.length;
-		const totalSize =
-			storedAttachments.reduce((total, item) => total + item.size, 0) +
-			[...attachments.map((attachment) => attachment.file), ...nextFiles].reduce((total, file) => total + file.size, 0);
-
-		if (nextCount > 10) {
-			setToast({ type: "error", message: "A message can include at most 10 attachments" });
-			return;
-		}
-		if (nextFiles.some((file) => file.size > attachmentPolicy.maxMb * 1_000_000)) {
-			setToast({ type: "error", message: `Each attachment must be ${attachmentPolicy.maxMb} MB or smaller` });
-			return;
-		}
-		if (totalSize > attachmentPolicy.maxMb * 1_000_000) {
-			setToast({ type: "error", message: `Attachments must total ${attachmentPolicy.maxMb} MB or less` });
+		const refused = refusedAttachments(
+			attachmentPolicy,
+			[...storedAttachments.map((item) => item.size), ...attachments.map((attachment) => attachment.file.size)],
+			nextFiles.map((file) => file.size),
+		);
+		if (refused) {
+			setToast({ type: "error", message: refused });
 			return;
 		}
 
@@ -776,7 +772,7 @@ export function ComposeForm({
 						className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center border-2 border-dashed border-blue-400 bg-blue-50/90 text-sm font-medium text-blue-700"
 						aria-hidden="true"
 					>
-						Drop files to attach
+						{t("Drop files to attach")}
 					</div>
 				)}
 				<ComposeHeader
@@ -805,7 +801,7 @@ export function ComposeForm({
 						)}
 					>
 						<Label htmlFor={`${mode}-from`} className="text-sm text-neutral-500">
-							From
+							{t("From")}
 						</Label>
 						<Select
 							id={`${mode}-from`}
@@ -817,7 +813,7 @@ export function ComposeForm({
 							className="h-8 px-0 py-1 text-sm shadow-none focus-visible:ring-0"
 							containerClassName="border-0 flex-1"
 						>
-							{senderOptions.length === 0 && <option value="">Select a mailbox first</option>}
+							{senderOptions.length === 0 && <option value="">{t("Select a mailbox first")}</option>}
 							{senderOptions.map((option) => (
 								<option
 									key={`${option.mailbox.id}|${option.address}`}
@@ -832,10 +828,10 @@ export function ComposeForm({
 					</div>
 					<RecipientInput
 						id={`${mode}-to`}
-						label="To"
+						label={t("To")}
 						value={to}
 						onChange={setTo}
-						placeholder='Recipients, or "Maya Chen" <maya@example.com>'
+						placeholder={t('Recipients, or "Maya Chen" <maya@example.com>')}
 						required
 						autoFocus={!draftIdToLoad}
 						disabled={loadingDraft}
@@ -843,7 +839,7 @@ export function ComposeForm({
 							<>
 								{!showCc && (
 									<button type="button" className="rounded px-1 hover:text-neutral-800" onClick={() => setShowCc(true)}>
-										Cc
+										{t("Cc")}
 									</button>
 								)}
 								{!showBcc && (
@@ -852,7 +848,7 @@ export function ComposeForm({
 										className="rounded px-1 hover:text-neutral-800"
 										onClick={() => setShowBcc(true)}
 									>
-										Bcc
+										{t("Bcc")}
 									</button>
 								)}
 							</>
@@ -861,10 +857,10 @@ export function ComposeForm({
 					{showCc && (
 						<RecipientInput
 							id={`${mode}-cc`}
-							label="Cc"
+							label={t("Cc")}
 							value={cc}
 							onChange={setCc}
-							placeholder="Carbon copy"
+							placeholder={t("Carbon copy")}
 							disabled={loadingDraft}
 							autoFocus={!loadingDraft && cc.length === 0}
 						/>
@@ -872,10 +868,10 @@ export function ComposeForm({
 					{showBcc && (
 						<RecipientInput
 							id={`${mode}-bcc`}
-							label="Bcc"
+							label={t("Bcc")}
 							value={bcc}
 							onChange={setBcc}
-							placeholder="Blind carbon copy, hidden from other recipients"
+							placeholder={t("Blind carbon copy, hidden from other recipients")}
 							disabled={loadingDraft}
 							autoFocus={!loadingDraft && bcc.length === 0}
 						/>
@@ -884,7 +880,7 @@ export function ComposeForm({
 						<SubjectField id={`${mode}-subject`} value={subject} onChange={setSubject} disabled={loadingDraft} />
 					</div>
 					<Label htmlFor={`${mode}-text`} className="sr-only">
-						Body
+						{t("Body")}
 					</Label>
 					<RichTextEditor
 						id={`${mode}-text`}
@@ -892,7 +888,7 @@ export function ComposeForm({
 						onChange={setHtml}
 						quotedHtml={quotedHtml}
 						disabled={loadingDraft}
-						placeholder="Write your message"
+						placeholder={t("Write your message")}
 						footerContent={attachmentContent}
 						toolbarStart={
 							<div className="flex items-center">
@@ -903,12 +899,12 @@ export function ComposeForm({
 									className="rounded-e-none px-4"
 								>
 									{loading
-										? "Preparing…"
+										? t("Preparing…")
 										: scheduledAt
-											? "Schedule"
+											? t("Schedule")
 											: agentRevision !== null || sendingSettings.previewEnabled
-												? "Review send"
-												: "Send"}
+												? t("Review send")
+												: t("Send")}
 								</Button>
 								<ScheduleSendMenu
 									disabled={loading || loadingDraft || !fromAddr}
@@ -933,17 +929,11 @@ export function ComposeForm({
 									className="hidden"
 									onChange={(event) => addAttachments(event.target.files)}
 								/>
-								<Tooltip
-									label={
-										attachmentPolicy.cloudLinks
-											? `Attach files (up to ${attachmentPolicy.maxMb} MB total). Files over ${Math.round(attachmentPolicy.cloudThresholdBytes / 1_000_000)} MB are sent as 30-day R2 download links.`
-											: `Attach files (up to ${attachmentPolicy.maxMb} MB total)`
-									}
-								>
+								<Tooltip label={attachFilesLabel(attachmentPolicy)}>
 									<button
 										ref={attachButton}
 										type="button"
-										aria-label="Attach files"
+										aria-label={t("Attach files")}
 										onClick={() => attachmentInput.current?.click()}
 										disabled={loading || loadingDraft}
 										className="rounded-md p-1.5 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 disabled:pointer-events-none disabled:opacity-50"
@@ -953,10 +943,10 @@ export function ComposeForm({
 								</Tooltip>
 								<WriteWithKite editorId={`${mode}-text`} mailboxId={selectedMailbox?.id} composer={kiteComposer} />
 								<span className="flex-1" />
-								<Tooltip label="Delete draft">
+								<Tooltip label={t("Delete draft")}>
 									<button
 										type="button"
-										aria-label="Delete draft"
+										aria-label={t("Delete draft")}
 										onClick={() => void deleteDraftAndClose()}
 										disabled={loading || loadingDraft || deletingDraft}
 										className="rounded-md p-1.5 text-neutral-500 hover:bg-red-50 hover:text-red-600 disabled:pointer-events-none disabled:opacity-50"

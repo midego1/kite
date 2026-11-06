@@ -23,6 +23,7 @@ import type {
 } from "./types";
 import { ArchiveIcon, InboxIcon, ShieldAlertIcon, Trash2Icon } from "lucide-react";
 import { requestConfirmation } from "@/components/ui/confirm-dialog-utils";
+import { t } from "@/lib/i18n/translator";
 
 export function getMessageBackHref(direction: "inbound" | "outbound", status: string) {
 	if (status === "trash") return "/trash";
@@ -65,10 +66,11 @@ export function openUnsubscribeUrl(url: string) {
 
 export function confirmTrashWithoutUnsubscribe() {
 	return requestConfirmation({
-		title: "Move this sender to Trash?",
-		description:
+		title: t("Move this sender to Trash?"),
+		description: t(
 			"This email does not provide an unsubscribe link. It will be moved to Trash, and future emails from this sender will also be moved to Trash.",
-		confirmLabel: "Move to Trash",
+		),
+		confirmLabel: t("Move to Trash"),
 	});
 }
 
@@ -89,7 +91,7 @@ export async function createTrashSenderRule({ mailboxId, senderAddress }: TrashS
 		}),
 	});
 	const data = (await response.json()) as { error?: string };
-	if (!response.ok) throw new Error(data.error ?? "Unable to create trash rule");
+	if (!response.ok) throw new Error(data.error ?? t("Unable to create trash rule"));
 }
 
 export async function blockMessageContact({ mailboxId, senderAddress }: BlockMessageContactInput) {
@@ -99,17 +101,17 @@ export async function blockMessageContact({ mailboxId, senderAddress }: BlockMes
 		body: JSON.stringify({ mailboxId, address: senderAddress }),
 	});
 	const data = (await response.json()) as { error?: string };
-	if (!response.ok) throw new Error(data.error ?? "Unable to block contact");
+	if (!response.ok) throw new Error(data.error ?? t("Unable to block contact"));
 }
 
 export function getMoveMessageActions(status: string, direction: "inbound" | "outbound"): MoveMessageActionItem[] {
 	const actions: MoveMessageActionItem[] = [];
 	if ((status === "archived" || status === "spam") && direction === "inbound") {
-		actions.push({ action: "inbox", label: status === "spam" ? "Not spam" : "Inbox", icon: InboxIcon });
+		actions.push({ action: "inbox", label: status === "spam" ? t("Not spam") : t("Inbox"), icon: InboxIcon });
 	}
-	if (status !== "archived") actions.push({ action: "archive", label: "Archived", icon: ArchiveIcon });
-	if (status !== "spam") actions.push({ action: "spam", label: "Spam", icon: ShieldAlertIcon });
-	if (status !== "trash") actions.push({ action: "trash", label: "Trash", icon: Trash2Icon });
+	if (status !== "archived") actions.push({ action: "archive", label: t("Archived"), icon: ArchiveIcon });
+	if (status !== "spam") actions.push({ action: "spam", label: t("Spam"), icon: ShieldAlertIcon });
+	if (status !== "trash") actions.push({ action: "trash", label: t("Trash"), icon: Trash2Icon });
 	return actions;
 }
 
@@ -273,7 +275,7 @@ export async function createForwardDraft({ mailboxId, ownAddress, message, bodyT
 		}),
 	});
 	const data = (await response.json()) as { draft?: { id: string }; error?: string };
-	if (!response.ok || !data.draft) throw new Error(data.error ?? "Unable to start forward");
+	if (!response.ok || !data.draft) throw new Error(data.error ?? t("Unable to start forward"));
 	return data.draft.id;
 }
 
@@ -310,6 +312,6 @@ export async function createReplyDraft({
 		draft?: { id: string };
 		error?: string;
 	};
-	if (!response.ok || !data.draft) throw new Error(data.error ?? "Unable to create reply draft");
+	if (!response.ok || !data.draft) throw new Error(data.error ?? t("Unable to create reply draft"));
 	return data.draft.id;
 }

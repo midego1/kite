@@ -755,7 +755,7 @@ test("an empty answer from a folder that says it holds mail trashes nothing", as
 });
 
 test("a new UIDVALIDITY moves and trashes nothing, and the mapping follows the messages to their new UIDs", async (t) => {
-	const { writeBack, server, env, accountId, setTwoWay, arrive, check, message, ref, actions, has, problems } =
+	const { db, writeBack, server, env, accountId, setTwoWay, arrive, check, message, ref, actions, has, problems } =
 		await start(t);
 	await setTwoWay({ kiteDelete: "trash", providerGone: "trash", providerFlags: true });
 	const internalDate = new Date()
@@ -787,8 +787,7 @@ test("a new UIDVALIDITY moves and trashes nothing, and the mapping follows the m
 });
 
 test("a UID that now holds another message is never touched", async (t) => {
-	const { db, writeBack, server, env, accountId, setTwoWay, arrive, message, has, actions, problems, db } =
-		await start(t);
+	const { writeBack, server, env, accountId, setTwoWay, arrive, message, has, actions, problems, db } = await start(t);
 	await setTwoWay({ kiteDelete: "trash" });
 	await arrive("the real one");
 	db.db.exec("UPDATE messages SET provider_message_id = '<someone-else@example.org>'");

@@ -4,7 +4,7 @@ import type {
 	ReadingLayoutOption,
 	ReadingPaneMode,
 } from "./reading-layout-types";
-import { t, msg } from "@/lib/i18n/translator";
+import { msg } from "@/lib/i18n/translator";
 
 export const READING_PANE_STORAGE_KEY = "kite-reading-pane";
 /** The on/off switch that preceded the reading pane setting; read once to migrate it. */

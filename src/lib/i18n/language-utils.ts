@@ -45,7 +45,7 @@ function primarySubtag(language: string | null | undefined): string {
 	return (language ?? "").split(/[-_]/)[0]!.toLowerCase();
 }
 
-/** Automatic takes the browser's first language when it is one Automatic may pick, and English otherwise. */
+/** Automatic takes the browser's first language when it is one Automatic may pick, and English otherwise. @public Exercised by the unit tests. */
 export function resolveInterfaceLanguage(
 	preference: LayoutInterfaceLanguage,
 	browserLanguage: string | null | undefined,

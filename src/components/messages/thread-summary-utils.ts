@@ -30,10 +30,27 @@ export function summaryCopyText(summary: Pick<NonNullable<SummaryState["summary"
 }
 
 /** The error text of a failed summary request, from the route's `{ error }` body, with an AI failure's details. */
-export async function summaryError(response: Response): Promise<{ message: string; failure: AiErrorBody | null }> {
+export async function summaryError(
+	response: Response,
+	fallback = "Kite could not summarize this. Try again.",
+): Promise<{ message: string; failure: AiErrorBody | null }> {
 	const body = (await response.json().catch(() => null)) as { error?: unknown } | null;
 	return {
-		message: typeof body?.error === "string" ? body.error : "Kite could not summarize this. Try again.",
+		message: typeof body?.error === "string" ? body.error : fallback,
 		failure: readAiErrorBody(body),
 	};
+}
+
+/** The per-minute AI request limit's window: a refusal for it lifts after this long (a spend cap lifts at 00:00 UTC). */
+const RATE_LIMIT_RESET_MS = 60_000;
+
+/** How long the Summarize button stays off after a 429 with this error code, or null when it stays off for the page. */
+export function blockedResetMs(code: string | null | undefined): number | null {
+	return code === "rate_limited" ? RATE_LIMIT_RESET_MS : null;
+}
+
+/** What a screen reader hears when a request starts or ends (the card's content swap alone is silent). */
+export function summaryAnnouncement(kind: "summarize" | "translate", phase: "started" | "done"): string {
+	if (kind === "translate") return phase === "started" ? "Translating the summary" : "Translation ready";
+	return phase === "started" ? "Summarizing" : "Summary ready";
 }

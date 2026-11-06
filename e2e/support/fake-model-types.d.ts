@@ -1,5 +1,13 @@
 export type FakeRequestKind =
-	"triage" | "repair" | "draft" | "compose" | "summary" | "summary_translation" | "line_summary" | "other";
+	| "triage"
+	| "repair"
+	| "draft"
+	| "compose"
+	| "summary"
+	| "summary_translation"
+	| "message_translation"
+	| "line_summary"
+	| "other";
 
 export type FakeToolCall = { name: string; arguments?: unknown };
 
@@ -17,6 +25,8 @@ export type FakeScenarioContext = {
 	/** 1 for the first request of this kind for the same `<<<EMAIL id=…>>>`, then 2, 3, … */
 	callNumber: number;
 	slowMs: number;
+	/** The whole prompt, for a message translation, which answers from its own pieces. */
+	prompt?: string;
 };
 
 export type FakeScenario = {
@@ -28,6 +38,8 @@ export type FakeScenario = {
 	summary?: (context: FakeScenarioContext) => FakeModelReply;
 	/** Summary translations; scenarios without one answer with `summary-thread`'s. */
 	translation?: (context: FakeScenarioContext) => FakeModelReply;
+	/** Message translations; scenarios without one translate the pieces of the request (`translateFromPrompt`). */
+	messageTranslation?: (context: FakeScenarioContext) => FakeModelReply;
 	/** One-line summary requests of their own; scenarios without one answer with `LINE_FROM_JOB`. */
 	line?: (context: FakeScenarioContext) => FakeModelReply;
 	/** Repair requests get the scenario's triage reply too; otherwise they get benign valid JSON. */

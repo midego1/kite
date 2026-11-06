@@ -120,6 +120,34 @@ export async function recordRunError(
 	if (retry) await enqueueImportJob(env, job.id, 30 * attempts);
 }
 
+/**
+ * A run refused by the owner's limit on failed sign-ins (`SignInLimitError`): the job is not at fault, so it keeps its
+ * attempts and password, releases its lease and is queued again once the limit has room (`retryAfterSeconds` and a
+ * second). Without a queue the five-minute cron picks the job up again.
+ */
+export async function deferForSignInLimit(
+	env: CloudflareEnv,
+	job: ImportJobRow,
+	hold: LeaseHold,
+	limit: { message: string; retryAfterSeconds: number },
+): Promise<void> {
+	const deferred = await underLease(hold, async (held) => {
+		const rows = await getDb(env)
+			.update(importJobs)
+			.set({
+				lastError: noteAfterError(job.lastError, limit.message),
+				leaseUntil: null,
+				total: job.total,
+				updatedAt: new Date(),
+			})
+			.where(and(eq(importJobs.id, job.id), eq(importJobs.status, "running"), eq(importJobs.leaseUntil, held)))
+			.returning({ id: importJobs.id });
+		hold.ended = true;
+		return rows.length > 0;
+	});
+	if (deferred) await enqueueImportJob(env, job.id, limit.retryAfterSeconds + 1);
+}
+
 /** Refused connections (no TLS, a private host), authentication and missing-folder errors will not fix themselves. */
 function isPermanentImportError(error: unknown, message: string): boolean {
 	return (

@@ -11,8 +11,10 @@ export type ThreadSummaryController = {
 	error: string | null;
 	/** The code and details of a failed AI request, for the card's Details. */
 	failure: AiErrorBody | null;
-	/** Why the button is disabled after a cap or the rate limit refused it. */
+	/** Why the button is off after a cap or the rate limit refused it; the rate limit's lifts by itself. */
 	blocked: string | null;
+	/** A polite announcement for screen readers: a request started or finished. */
+	announcement: string;
 	hidden: boolean;
 	/** The reader's language, the primary subtag of the browser's. */
 	language: string | null;

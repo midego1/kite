@@ -1,4 +1,5 @@
 import { openImportSession } from "./imap";
+import type { SignInGuard } from "./sign-in-limit";
 import type { ImapImportInput } from "./imap-types";
 import {
 	DEFAULT_SIZE_STEP_LIMITS,
@@ -18,7 +19,8 @@ type SizeEnv = Parameters<typeof openImportSession>[0];
  * repeats with `nextCursor` until it is null and adds the steps up, so no request holds more than one step in memory
  * (about 10,000 answer lines) and nothing is stored between steps. A message deleted between steps can shift the
  * numbers by one, so the sum is a preview. Null when the server does not say how many messages the folder holds.
- * An aborted request (`signal`, the page moved on) closes the session at once.
+ * An aborted request (`signal`, the page moved on) closes the session at once. A `guard` counts a failed sign-in
+ * against the user's limit; a step that signs in and measures never does.
  */
 export async function measureFolderStep(
 	env: SizeEnv,
@@ -28,10 +30,11 @@ export async function measureFolderStep(
 	limits: SizeStepLimits = DEFAULT_SIZE_STEP_LIMITS,
 	now: () => number = Date.now,
 	signal?: AbortSignal,
+	guard?: SignInGuard,
 ): Promise<FolderSizeStep | null> {
 	signal?.throwIfAborted();
 	// An abort closes the connection, wherever the request is (signing in, or waiting for an answer).
-	const session = await openImportSession(env, account, signal);
+	const session = await openImportSession(env, account, signal, guard);
 	try {
 		const examined = await session.examine(folder);
 		const exists = examined.exists ?? (await session.status(folder))?.messages ?? null;

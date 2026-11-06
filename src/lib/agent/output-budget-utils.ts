@@ -9,6 +9,11 @@ export const TRIAGE_ANSWER_TOKENS = 400;
 export const DRAFT_ANSWER_TOKENS = 900;
 /** A summary or its translation (`SUMMARY_MAX_OUTPUT_TOKENS`). */
 export const SUMMARY_ANSWER_TOKENS = 1_600;
+/**
+ * One part of a message translation (`TRANSLATION_CHUNK_MAX_CHARS` of source text): about 3,500 tokens for the
+ * longest part in a script that takes many tokens per character, and the JSON around it.
+ */
+export const TRANSLATION_ANSWER_TOKENS = 4_500;
 /** Added when a request thinks: a reasoning effort was set, or the model cannot stop thinking. */
 export const THINKING_ROOM_TOKENS = 1_100;
 /** The most module extensions add to a triage request (`MODULE_EXTENSION_MAX_OUTPUT_TOKENS`). */

@@ -17,6 +17,7 @@ import { CommandCenterAccountsCard } from "./command-center-accounts-card";
 import { CommandCenterModuleCards } from "./command-center-module-cards";
 import { CommandCenterQuickActions } from "./command-center-quick-actions";
 import { CommandCenterStats } from "./command-center-stats";
+import { ForYouCard } from "./for-you-card";
 import { FloatingKite } from "./floating-kite";
 import { useCommandCenterData } from "./use-command-center-data";
 
@@ -31,8 +32,8 @@ const CARD_GRID_CLASS = "grid items-start gap-4 @2xl:grid-cols-2 @2xl:[&>*:only-
 
 /**
  * What the empty reading pane shows instead of "Select a message to read" alone: a greeting with the date, the
- * counts that matter as tiles (unread, Screener, For you), the connected accounts and how they are doing, the
- * quick actions, for admins what needs attention (the database notice with Apply now first, then the admin
+ * counts that matter as tiles (unread, Screener), the For you card with the newest open suggestions, the
+ * connected accounts and how they are doing, the quick actions, for admins what needs attention (the database notice with Apply now first, then the admin
  * overview's list and what is fine), and the cards modules declare as `reading-pane` slots, which core draws
  * without naming a module, last because they arrive last. Everything comes from data the mailbox loads anyway or
  * from queries the Settings and Admin pages share; nothing here is made up. It is drawn with the app's own tokens:
@@ -97,6 +98,11 @@ export function CommandCenter({ config }: { config: MessageFolderConfig }) {
 
 			<div className="mt-4 empty:hidden">
 				<MigrationsNoticeCard />
+			</div>
+
+			{/* Draws nothing until the shared suggestion list is in, and nothing at all while For you is hidden. */}
+			<div className="mt-4 empty:hidden">
+				<ForYouCard />
 			</div>
 
 			<div className={`mt-4 ${CARD_GRID_CLASS}`}>

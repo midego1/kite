@@ -4,6 +4,7 @@ import { expect, test, type Browser, type Locator, type Page } from "@playwright
 import sharp from "sharp";
 import { STORAGE_STATE } from "../../e2e/support/constants";
 import { RTL_MAIL, seedDemoData, seedPagedMail, seedRtlMail, THREAD } from "./demo-data";
+import { mockForYou } from "./demo-mocks";
 import { sampleMessage, startFakeImap } from "../../tests/support/fake-imap.mjs";
 
 // Screenshots for the changelog (docs/releasing.md#screenshots-in-the-changelog), taken against the isolated,
@@ -33,6 +34,19 @@ const demoFolder = (count: number, bytes: number, label: string) =>
 	Array.from({ length: count }, (_, index) => ({ raw: sampleMessage(index + 1, { subject: `${label} ${index + 1}` }), size: bytes }));
 
 const SHOTS: Shot[] = [
+	{
+		// The home view with nothing open: the For you card with the newest suggestions (demo suggestions from demo-mocks).
+		name: "2026-11-06-command-center-for-you-light",
+		theme: "light",
+		viewport: { width: 1280, height: 900 },
+		open: async (page) => {
+			await mockForYou(page);
+			await page.goto("/inbox");
+			const card = page.getByTestId("command-center-for-you");
+			await expect(card.locator("[data-for-you-card-entry]")).toHaveCount(4);
+			return page.getByTestId("reading-pane-empty");
+		},
+	},
 	{
 		// Settings → Import → IMAP → Whole account: each folder's size and the totals the import adds.
 		name: "2026-11-05-import-sizes-light",

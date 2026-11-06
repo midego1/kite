@@ -1,7 +1,7 @@
 "use client";
 
 import clsx from "clsx";
-import { CircleCheck, Receipt, Reply, ShieldAlert } from "lucide-react";
+import { CircleCheck, Receipt, Reply, ShieldAlert, Sparkles } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { resolveNavIcon } from "@/components/modules/client-registry";
 import { pickSuggestionBadge } from "@/lib/agent/auto-read/suggestion-badge-utils";
@@ -43,6 +43,12 @@ const CHIPS: Partial<Record<SuggestionKind, Chip>> = {
 	task: { label: "Task", icon: CircleCheck, className: "border-blue-200 bg-blue-50 text-blue-700" },
 	receipt: { label: "Receipt", icon: Receipt, className: "border-neutral-200 bg-neutral-50 text-neutral-600" },
 };
+
+/** The icon of a suggestion kind's chip; kinds without a chip (summaries, labels) get the sparkles of For you. */
+export function SuggestionKindIcon({ kind, className }: { kind: SuggestionKind; className?: string }) {
+	const Icon = Object.hasOwn(CHIPS, kind) ? (CHIPS[kind]?.icon ?? Sparkles) : Sparkles;
+	return <Icon aria-hidden className={clsx(className, Icon === Reply && "rtl:-scale-x-100")} />;
+}
 
 /** One chip for the row's most important open Kite suggestion, plus "+n" for the others. */
 export function SuggestionBadge({ suggestions }: { suggestions?: SuggestionCount[] }) {

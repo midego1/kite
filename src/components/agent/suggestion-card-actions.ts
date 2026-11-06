@@ -80,7 +80,7 @@ const DISMISS_BODY: Partial<Record<CardAction, object>> = {
 };
 
 async function apply(
-	suggestion: CardSuggestion,
+	suggestion: Pick<CardSuggestion, "id" | "mailboxId">,
 	action: CardAction,
 ): Promise<{ undo: () => Promise<void>; message: string }> {
 	if (action === "pause") return { undo: await pauseMailbox(suggestion.mailboxId), message: TOAST_TEXT.pause };
@@ -100,7 +100,10 @@ async function apply(
  * Runs a card action once, refreshes every surface, and offers Undo in a toast. Returns false when
  * the same suggestion already has an action in flight, so a double click applies once.
  */
-export async function runCardAction(suggestion: CardSuggestion, action: CardAction): Promise<boolean> {
+export async function runCardAction(
+	suggestion: Pick<CardSuggestion, "id" | "mailboxId">,
+	action: CardAction,
+): Promise<boolean> {
 	if (inFlight.has(suggestion.id)) return false;
 	inFlight.add(suggestion.id);
 	try {

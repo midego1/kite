@@ -8,21 +8,19 @@ import {
 } from "@/components/settings/connected-accounts/connected-accounts-utils";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { useMessageCounts } from "@/hooks/use-message-counts";
-import { useOpenSuggestions } from "@/hooks/use-open-suggestions";
 import type { ExternalAccountView } from "@/lib/external-accounts/types";
 import type { MessageFolderConfig } from "@/components/messages/types";
 import { canConnectAccounts, statusChipsInput } from "./command-center-utils";
 
 /**
  * Everything the command center shows, from data the mailbox loads anyway where it can: the session, the
- * mailboxes and their counts, the open suggestions (the For you sidebar item's list), the connected accounts
+ * mailboxes and their counts, the connected accounts
  * (the Settings page's query, shared). The admin card loads its own data (command-center-admin-card.tsx).
  */
 export function useCommandCenterData(config: MessageFolderConfig) {
 	const user = useCurrentUser();
 	const { selectedMailbox, mailboxScope, isLoading: mailboxesLoading } = useSelectedMailbox();
 	const { counts, isLoading: countsLoading } = useMessageCounts(mailboxScope, !mailboxesLoading);
-	const suggestions = useOpenSuggestions();
 	const folderCount = config.folderId ? counts.customFolders[config.folderId] : counts.folders[config.folder];
 
 	const connected = useQuery({
@@ -42,7 +40,6 @@ export function useCommandCenterData(config: MessageFolderConfig) {
 		folderHref: config.hrefPrefix,
 		held: counts.folders.screener?.total,
 		screener: selectedMailbox?.screener,
-		suggestions,
 	});
 
 	const accounts: readonly ExternalAccountView[] = connected.data?.accounts ?? [];

@@ -96,6 +96,7 @@
 	"Could not check what is in this folder.": "تعذّر التحقق من محتوى هذا المجلد.",
 	"Could not copy": "تعذّر النسخ",
 	"Could not create review": "تعذّر إنشاء المراجعة",
+	"Could not create trash rule": "تعذّر إنشاء قاعدة سلة المهملات",
 	"Could not delete draft": "تعذّر حذف المسودة",
 	"Could not delete message": "تعذّر حذف الرسالة",
 	"Could not delete the messages. Please try again.": "تعذّر حذف الرسائل. حاول مرة أخرى.",

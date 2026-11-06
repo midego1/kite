@@ -73,6 +73,7 @@ export async function POST(request: Request) {
 	}
 	const raw = await getObject(config, state.bucket, notification.key);
 	const result = await intakeProviderMail(env, {
+		provider: "ses",
 		from: notification.from,
 		recipients: notification.recipients,
 		raw,

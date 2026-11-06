@@ -731,7 +731,7 @@ test("Resend recipients: the header lists plus received_for, whichever of them n
 			bcc: null,
 			received_for: ["b@example.com", "a@example.com"],
 		}),
-		["list@lists.test", "a@example.com", "b@example.com", "a@example.com"],
+		["b@example.com", "a@example.com", "list@lists.test", "a@example.com"],
 	);
 	assert.deepEqual(resendRecipients({}), []);
 });
@@ -756,9 +756,10 @@ test("a provider key is stable per message and recipient, sorts by time and hold
 
 test("a repeated provider delivery reaches each mailbox once, and a forward that names the mailbox only in received_for arrives", async (t) => {
 	const { env, database, row } = await setup(t);
-	database.db.exec(
-		"INSERT INTO mailboxes (id, user_id, domain_id, local_part, created_at) VALUES ('mailbox-b', 'owner', 'domain-1', 'b', 1)",
-	);
+	database.db.exec(`
+		UPDATE domains SET receiving_provider = 'resend';
+		INSERT INTO mailboxes (id, user_id, domain_id, local_part, created_at) VALUES ('mailbox-b', 'owner', 'domain-1', 'b', 1);
+	`);
 	const sent = [];
 	const queued = { ...env, INBOUND_QUEUE: { send: async (body) => sent.push(body) } };
 	const raw = encoder.encode(message("Message-ID: <one@partner.test>\r\n")).buffer;
@@ -772,6 +773,7 @@ test("a repeated provider delivery reaches each mailbox once, and a forward that
 	};
 	const deliver = () =>
 		intakeProviderMail(queued, {
+			provider: "resend",
 			from: email.from,
 			recipients: resendRecipients(email),
 			raw,
@@ -794,7 +796,95 @@ test("a repeated provider delivery reaches each mailbox once, and a forward that
 
 	// Without a usable time every call stands alone, as before.
 	sent.length = 0;
-	await intakeProviderMail(queued, { from: email.from, recipients: ["a@example.com"], raw, delivery: null });
+	await intakeProviderMail(queued, {
+		provider: "resend",
+		from: email.from,
+		recipients: ["a@example.com"],
+		raw,
+		delivery: null,
+	});
 	for (const payload of sent) await processInboundMessage(env, payload);
 	assert.equal(row("SELECT count(*) AS count FROM messages WHERE mailbox_id = 'mailbox-a'").count, 2);
+});
+
+test("two queue messages for one provider delivery at the same moment store one row", async (t) => {
+	const { env, database, row } = await setup(t);
+	database.db.exec("UPDATE domains SET receiving_provider = 'resend'");
+	const sent = [];
+	const queued = { ...env, INBOUND_QUEUE: { send: async (body) => sent.push(body) } };
+	const raw = encoder.encode(message("Message-ID: <two@partner.test>\r\n")).buffer;
+	const input = {
+		provider: "resend",
+		from: "sender@partner.test",
+		recipients: ["a@example.com"],
+		raw,
+		delivery: { id: "e2", receivedAt: Date.now() },
+	};
+	await intakeProviderMail(queued, input);
+	await intakeProviderMail(queued, input);
+	await Promise.all(sent.map((payload) => processInboundMessage(env, payload)));
+	assert.equal(row("SELECT count(*) AS count FROM messages").count, 1);
+});
+
+test("Resend's addresses count only on domains that receive through Resend; SES's envelope is taken as it is", async (t) => {
+	const { env, database } = await setup(t);
+	database.db.exec(`
+		UPDATE domains SET receiving_provider = 'resend';
+		INSERT INTO domains (id, user_id, hostname, zone_id, status, receiving_provider, created_at)
+			VALUES ('domain-2', 'owner', 'cloudflare.test', 'zone-2', 'active', 'cloudflare', 1),
+			       ('domain-3', 'owner', 'none.test', 'zone-3', 'active', 'none', 1);
+		INSERT INTO mailboxes (id, user_id, domain_id, local_part, created_at)
+			VALUES ('mailbox-c', 'owner', 'domain-2', 'c', 1), ('mailbox-n', 'owner', 'domain-3', 'n', 1);
+	`);
+	const sent = [];
+	const queued = { ...env, INBOUND_QUEUE: { send: async (body) => sent.push(body) } };
+	const raw = encoder.encode(message("")).buffer;
+	const warnings = [];
+	t.mock.method(console, "warn", (line) => {
+		if (String(line).includes("email.provider_recipient_dropped")) warnings.push(JSON.parse(line));
+	});
+	const recipients = ["c@cloudflare.test", "n@none.test", "a@example.com", "stranger@elsewhere.test"];
+
+	assert.deepEqual(await intakeProviderMail(queued, { provider: "resend", from: "x@partner.test", recipients, raw }), {
+		delivered: 1,
+		dropped: null,
+	});
+	assert.deepEqual(
+		sent.map(({ to }) => to),
+		["a@example.com"],
+	);
+	assert.deepEqual(warnings.map(({ fields }) => fields.domain).sort(), ["cloudflare.test", "none.test"]);
+	assert.ok(!JSON.stringify(warnings).includes("c@cloudflare.test"), "a domain, never an address");
+
+	// SES names the envelope, so its recipients are taken whatever the domain's setting says, as before.
+	sent.length = 0;
+	await intakeProviderMail(queued, { provider: "ses", from: "x@partner.test", recipients, raw });
+	assert.deepEqual(sent.map(({ to }) => to).sort(), ["a@example.com", "c@cloudflare.test", "n@none.test"]);
+});
+
+test("a Resend message reaches at most 50 addresses, and addresses elsewhere do not use them up", async (t) => {
+	const { env, database } = await setup(t);
+	const local = Array.from({ length: 60 }, (_, index) => `person${index}`);
+	database.db.exec("UPDATE domains SET receiving_provider = 'resend'");
+	const insert = database.db.prepare(
+		"INSERT INTO mailboxes (id, user_id, domain_id, local_part, created_at) VALUES (?, 'owner', 'domain-1', ?, 1)",
+	);
+	for (const part of [...local, "first"]) insert.run(`mailbox-${part}`, part);
+	const sent = [];
+	const queued = { ...env, INBOUND_QUEUE: { send: async (body) => sent.push(body) } };
+	const logged = [];
+	t.mock.method(console, "warn", (line) => {
+		if (String(line).includes("email.provider_recipients_capped")) logged.push(JSON.parse(line).fields);
+	});
+	const named = local.map((part) => `${part}@example.com`);
+	const foreign = Array.from({ length: 60 }, (_, index) => `person${index}@elsewhere.test`);
+	await intakeProviderMail(queued, {
+		provider: "resend",
+		from: "x@partner.test",
+		recipients: resendRecipients({ received_for: ["first@example.com"], to: foreign, cc: named }),
+		raw: encoder.encode(message("")).buffer,
+	});
+	assert.equal(sent.length, 50);
+	assert.equal(sent[0].to, "first@example.com");
+	assert.deepEqual(logged, [{ provider: "resend", count: 61 }]);
 });

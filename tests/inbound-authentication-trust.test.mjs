@@ -554,13 +554,19 @@ test("SES: its own receipt verdicts count, the message's Authentication-Results 
 		"amazonses.com; spf=pass smtp.mailfrom=x@bank.test; dkim=pass; dmarc=fail",
 	);
 	const ses = await intakeProviderMail(env, {
+		provider: "ses",
 		from: notification.from,
 		recipients: notification.recipients,
 		raw,
 		headers: notification.headers,
 		authenticationResults: notification.authenticationResults,
 	});
-	const resend = await intakeProviderMail(env, { from: "x@bank.test", recipients: ["owner@example.com"], raw });
+	const resend = await intakeProviderMail(env, {
+		provider: "ses",
+		from: "x@bank.test",
+		recipients: ["owner@example.com"],
+		raw,
+	});
 	assert.equal(ses.delivered + resend.delivered, 2);
 	assert.deepEqual(
 		queued.map((payload) => payload.authenticationResults),

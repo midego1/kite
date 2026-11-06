@@ -51,6 +51,7 @@ export async function POST(request: Request) {
 	if (!rawResponse.ok) return NextResponse.json({ error: "Could not download the raw message" }, { status: 502 });
 
 	const result = await intakeProviderMail(env, {
+		provider: "resend",
 		from: getEmailAddress(email.from),
 		recipients: resendRecipients(email),
 		raw: await rawResponse.arrayBuffer(),

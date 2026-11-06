@@ -2,6 +2,9 @@ import { sha256Hex } from "@/lib/aws/sigv4";
 import { getEmailAddressList } from "@/lib/email/address";
 import type { ResendReceivedEmail } from "@/lib/email/resend-api-types";
 
+/** The most recipients one Resend message is delivered to, the same as one SMTP transaction here. */
+export const MAX_PROVIDER_RECIPIENTS = 50;
+
 /** A provider's own message: its id, and the time it received it, which every repeat reports the same. */
 export type ProviderDelivery = { id: string; receivedAt: number };
 
@@ -15,15 +18,15 @@ export async function providerRawKey(delivery: ProviderDelivery, recipient: stri
 }
 
 /**
- * Every address a Resend message may be for. Resend does not say whether `to`, `cc` and `bcc` are the envelope or the
- * headers, so none of them is enough alone: a mailing list or a forward names someone else in To, and a delivered
- * message carries no Bcc header. `received_for`, from the `Received` headers, is the closest to the envelope, but
- * Resend describes it as the addresses a message was forwarded for and it can name an earlier hop instead, so it adds
- * to the others rather than replacing them: a stray copy is better than lost mail. Intake keeps the known domains, and
- * every address goes through routing like an envelope recipient, which gains a sender nothing RCPT TO would not.
+ * Every address a Resend message may be for, `received_for` first. Resend does not say whether `to`, `cc` and `bcc` are
+ * the envelope or the headers, so none of them is enough alone: a mailing list or a forward names someone else in To,
+ * and a delivered message carries no Bcc header. `received_for` is the closest to the envelope, but it comes from
+ * `Received` headers the sender can write too, and Resend describes it as the addresses a message was forwarded for, so
+ * it can name an earlier hop. None of these proves the mail was sent to that address, so intake takes only addresses on
+ * domains that receive through Resend: there a sender gains nothing it could not get by adding them to RCPT TO.
  */
 export function resendRecipients(email: ResendReceivedEmail): string[] {
-	return [...(email.to ?? []), ...(email.cc ?? []), ...(email.bcc ?? []), ...(email.received_for ?? [])].flatMap(
+	return [...(email.received_for ?? []), ...(email.to ?? []), ...(email.cc ?? []), ...(email.bcc ?? [])].flatMap(
 		(value) => getEmailAddressList(value),
 	);
 }

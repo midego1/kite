@@ -88,7 +88,8 @@ export function ForYouCard() {
 	// mailbox shared without full access, which would answer the scoped request with a 404.
 	const only =
 		viewMailboxes.length === 1 && viewMailboxes[0].permission === "full_access" ? viewMailboxes[0].id : undefined;
-	const suggestions = useOpenSuggestions(only);
+	// With no mailbox (signing out, or not loaded yet) it is off, so the list it wants is never asked for in vain.
+	const suggestions = useOpenSuggestions(only, viewMailboxes.length > 0);
 	const [dismissing, setDismissing] = useState<ReadonlySet<string>>(new Set());
 	const view = forYouCardView(
 		suggestions,

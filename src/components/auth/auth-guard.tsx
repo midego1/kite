@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import type { AuthGuardProps } from "./auth-guard-types";
 import { getAuthGuardDecision } from "./auth-guard-utils";
 import { LoadingTransition } from "@/components/loading-transition";
@@ -10,7 +10,10 @@ import { StartupFailure } from "@/components/startup-failure";
 import { publishStartupStats, resetStartupStats } from "@/components/startup-stats";
 import { ModulesProvider } from "@/components/modules/modules-context";
 import { useAuthMe } from "@/hooks/use-auth-me";
+import { isInterfaceLanguageReady, subscribeToLanguageLoad } from "@/lib/i18n/language-loader";
 import { saveUserTimeZonePreference } from "@/lib/time/client";
+
+const serverLanguageReady = () => true;
 
 export function AuthGuard({
 	children,
@@ -23,6 +26,7 @@ export function AuthGuard({
 	const pathname = usePathname();
 	const router = useRouter();
 	const session = useAuthMe();
+	const languageReady = useSyncExternalStore(subscribeToLanguageLoad, isInterfaceLanguageReady, serverLanguageReady);
 	const [continued, setContinued] = useState(false);
 	// Derived rather than stored, so a guard remounted by a route-group change renders
 	// straight from the cached session instead of flashing the loading state.
@@ -91,7 +95,7 @@ export function AuthGuard({
 				children
 			) : (
 				<LoadingTransition
-					ready={decision.authorized}
+					ready={decision.authorized && languageReady}
 					failure={
 						decision.unreachable ? <StartupFailure onRetry={retry} onContinue={() => setContinued(true)} /> : null
 					}

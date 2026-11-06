@@ -3,7 +3,8 @@
 import { DirectionProvider, useDirection } from "@radix-ui/react-direction";
 import { usePathname } from "next/navigation";
 import { useEffect, useLayoutEffect, useSyncExternalStore } from "react";
-import { readInterfaceDirection } from "@/components/messages/use-reading-layout";
+import { readInterfaceDirection, readInterfaceLanguage } from "@/components/messages/use-reading-layout";
+import { resolveInterfaceLanguage } from "@/lib/i18n/language-utils";
 import {
 	documentDirection,
 	type InterfaceDirection,
@@ -18,7 +19,8 @@ function subscribeToDocumentDirection(onChange: () => void) {
 }
 
 function applyStoredDirection() {
-	document.documentElement.dir = resolveInterfaceDirection(readInterfaceDirection(), navigator.language);
+	const language = resolveInterfaceLanguage(readInterfaceLanguage(), navigator.language);
+	document.documentElement.dir = resolveInterfaceDirection(readInterfaceDirection(), language);
 }
 
 /**

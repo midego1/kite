@@ -8,6 +8,7 @@ import { MAILBOXES_CHANGED_EVENT } from "@/components/mailbox-provider-utils";
 import type { AiErrorBody } from "@/lib/agent/ai-error-utils";
 import type { ThreadSummaryBusy, ThreadSummaryController } from "./thread-summary-types";
 import { canSummarize, summaryError, summaryUrl } from "./thread-summary-utils";
+import { t } from "@/lib/i18n/translator";
 
 function browserLanguage(): string | null {
 	return typeof navigator === "undefined" ? null : primaryLanguage(navigator.language);

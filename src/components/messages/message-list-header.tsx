@@ -15,7 +15,7 @@ import { BulkMessageToolbar } from "./bulk-message-toolbar";
 import { FolderHeading } from "./folder-heading";
 import type { MessageListHeaderProps } from "./message-list-header-types";
 import { MessageListChips } from "./message-list-chips";
-import { getSelectionToolbarFolder } from "./utils";
+import { folderTitle, getSelectionToolbarFolder } from "./utils";
 import { useT } from "@/lib/i18n/use-t";
 
 function EmptyFolderButton({

@@ -1,5 +1,6 @@
 "use client";
 
+import { useT } from "@/lib/i18n/use-t";
 import type { LucideIcon } from "lucide-react";
 import { Clock, Mail, Paperclip, Star, UserCheck, Zap } from "lucide-react";
 import { useMailSearch } from "@/components/mail-search/mail-search-context";
@@ -7,7 +8,6 @@ import { FilterChip } from "@/components/ui/filter-chip";
 import { Tooltip } from "@/components/ui/tooltip";
 import type { MessageListHeaderProps } from "./message-list-header-types";
 import { hasSearchTerm, toggleSearchTerm, withoutChipTerms, type ChipSearchTerm } from "./message-list-chips-utils";
-import { useT } from "@/lib/i18n/use-t";
 
 type Chip = {
 	key: string;
@@ -24,14 +24,14 @@ function ChipButton({ chip }: { chip: Chip }) {
 			active={chip.active}
 			icon={chip.icon}
 			fillIcon={chip.key === "all"}
-			label={t(chip.label)}
+			label={chip.label}
 			iconOnly={!chip.active}
 			href={chip.href}
 			onClick={chip.onClick}
 			className={chip.active ? "min-w-0 max-w-60 flex-1" : undefined}
 		/>
 	);
-	return chip.active ? control : <Tooltip label={t(chip.label)}>{control}</Tooltip>;
+	return chip.active ? control : <Tooltip label={chip.label}>{control}</Tooltip>;
 }
 
 /**

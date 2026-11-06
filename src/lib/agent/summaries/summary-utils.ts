@@ -7,7 +7,7 @@ import {
 	stripDraftMarkdown,
 	type ThreadReferences,
 } from "../auto-read/draft-guard-utils";
-import { BARE_DOMAIN, OBFUSCATED_ADDRESS, obfuscatedAddress } from "../reference-patterns-utils";
+import { OBFUSCATED_ADDRESS, bareDomainMatches, obfuscatedAddress } from "../reference-patterns-utils";
 import type { PersonalInstructions } from "../instruction-types";
 import type { SummaryLabel, SummaryOutcome, SummaryPoint } from "./summary-types";
 
@@ -124,15 +124,26 @@ function cut(text: string, max: number): string {
 
 type Known = ThreadReferences & { hosts: Set<string> };
 
+// The model reads at most this much of a message and of the conversation, so nothing past it can be repeated; the
+// scans below are also quadratic on a long run of address characters, which a hostile message could supply.
+const REFERENCE_TEXT_MAX_CHARS = 2_500;
+const REFERENCE_TOTAL_MAX_CHARS = 30_000;
+
 const hostOf = (url: string) => url.replace(/^https:\/\//, "").split(/[/?#]/)[0];
 
-/** The thread's references plus its bare domains and spelled-out addresses, which a summary may repeat. */
+/**
+ * The thread's references plus its bare domains and spelled-out addresses, which a summary may repeat. The domain
+ * of every known address is a known host too ("Message from acme.com" for billing@acme.com).
+ */
 function collectKnown(texts: (string | null | undefined)[]): Known {
-	const joined = texts.filter(Boolean).join("\n");
-	const { addresses, urls } = collectThreadReferences(texts);
-	for (const match of joined.matchAll(BARE_DOMAIN)) urls.add(normalizeUrl(`https://${match[0]}`));
+	const bounded = texts.filter(Boolean).map((text) => (text as string).slice(0, REFERENCE_TEXT_MAX_CHARS));
+	const joined = bounded.join("\n").slice(0, REFERENCE_TOTAL_MAX_CHARS);
+	const { addresses, urls } = collectThreadReferences([joined]);
+	for (const match of bareDomainMatches(joined)) urls.add(normalizeUrl(`https://${match[0]}`));
 	for (const match of joined.matchAll(OBFUSCATED_ADDRESS)) addresses.add(obfuscatedAddress(match[1], match[2]));
-	return { addresses, urls, hosts: new Set([...urls].map(hostOf)) };
+	const hosts = new Set([...urls].map(hostOf));
+	for (const address of addresses) hosts.add(address.slice(address.lastIndexOf("@") + 1));
+	return { addresses, urls, hosts };
 }
 
 /** The links and addresses in `text` that the summarised messages do not contain. */
@@ -152,7 +163,7 @@ function unknownSummaryReferences(text: string, known: Known): string[] {
 	const spelledOut = [...text.matchAll(OBFUSCATED_ADDRESS)]
 		.filter((match) => !known.addresses.has(obfuscatedAddress(match[1], match[2])))
 		.map((match) => match[0]);
-	const domains = [...text.matchAll(BARE_DOMAIN)]
+	const domains = bareDomainMatches(text, true)
 		.filter((match) => !known.urls.has(normalizeUrl(`https://${match[0]}`)) && !known.hosts.has(match[1].toLowerCase()))
 		.map((match) => match[0]);
 	return [...unknownReferences(text, known), ...spelledOut, ...domains];

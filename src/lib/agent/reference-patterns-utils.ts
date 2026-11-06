@@ -9,12 +9,25 @@ export const BARE_DOMAIN = new RegExp(
 	`(?<![\\w@./:-])((?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+(?:${TLDS}))\\b(\\/[^\\s<>()\\[\\]"'\`]*)?`,
 	"gi",
 );
-// "name (at) example (dot) com", "name [at] example.com": spelled-out addresses in brackets.
+// "name (at) example (dot) com", "name [at] example.com": spelled-out addresses in brackets. The local part starts
+// where a run of address characters starts and the parts are bounded, so a long run in a hostile message cannot
+// make the scan quadratic.
 export const OBFUSCATED_ADDRESS =
-	/([\w.+-]+)\s*[[(]\s*at\s*[\])]\s*([\w-]+(?:(?:\s*[[(]\s*dot\s*[\])]\s*|\.)[\w-]+)+)/gi;
+	/(?<![\w.+-])([\w.+-]{1,64})\s{0,8}[[(]\s{0,8}at\s{0,8}[\])]\s{0,8}([\w-]{1,63}(?:(?:\s{0,8}[[(]\s{0,8}dot\s{0,8}[\])]\s{0,8}|\.)[\w-]{1,63}){1,8})/gi;
 const DOT_WORD = /\s*[[(]\s*dot\s*[\])]\s*/gi;
 
 /** The address an obfuscated spelling stands for: `name (at) example (dot) com` is `name@example.com`. */
 export function obfuscatedAddress(local: string, domain: string): string {
 	return `${local}@${domain.replace(DOT_WORD, ".").replace(/\s+/g, "")}`.toLowerCase();
+}
+
+/**
+ * The bare domains in `text`. With `sentenceSafe`, one whose last label is capitalised ("fine.No problem",
+ * "end.In the end": two sentences with no space) and has no path is not counted, so a summary does not lose words
+ * to a country-code domain; all-lowercase and all-capitals endings ("evil.com", "EVIL.COM") still are.
+ */
+export function bareDomainMatches(text: string, sentenceSafe = false): RegExpMatchArray[] {
+	const matches = [...text.matchAll(BARE_DOMAIN)];
+	if (!sentenceSafe) return matches;
+	return matches.filter((match) => match[2] || !/^[A-Z][a-z]+$/.test(match[1].slice(match[1].lastIndexOf(".") + 1)));
 }

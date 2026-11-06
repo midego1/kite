@@ -15,6 +15,7 @@ after(() => rmSync(outDir, { recursive: true, force: true }));
 await build({
 	entryPoints: {
 		utils: fileURLToPath(import.meta.resolve("../src/lib/agent/summaries/summary-utils.ts")),
+		patterns: fileURLToPath(import.meta.resolve("../src/lib/agent/reference-patterns-utils.ts")),
 		prompt: fileURLToPath(import.meta.resolve("../src/lib/agent/summaries/summary-prompt-utils.ts")),
 		client: fileURLToPath(import.meta.resolve("../src/components/messages/thread-summary-utils.ts")),
 		schema: fileURLToPath(import.meta.resolve("../src/app/api/messages/[messageId]/summary/schema.ts")),
@@ -59,6 +60,7 @@ const {
 	summaryUrl,
 	translateLabel,
 } = await load("client");
+const { OBFUSCATED_ADDRESS, bareDomainMatches } = await load("patterns");
 const { summaryQuerySchema, summaryRequestSchema } = await load("schema");
 
 const message = (index, overrides = {}) => ({
@@ -257,6 +259,37 @@ test("the rate limit lifts by itself, a spend cap does not, and requests are ann
 	assert.equal(summaryAnnouncement("summarize", "started"), "Summarizing");
 	assert.equal(summaryAnnouncement("summarize", "done"), "Summary ready");
 	assert.equal(summaryAnnouncement("translate", "done"), "Translation ready");
+});
+
+test("a long run of address characters in a message cannot stall the checks", () => {
+	const started = Date.now();
+	for (const run of ["a".repeat(200_000), "a.".repeat(100_000), "a.b-".repeat(50_000), `${"a".repeat(100_000)} (at `]) {
+		assert.equal([...run.matchAll(OBFUSCATED_ADDRESS)].length, 0);
+		assert.equal(bareDomainMatches(run).length, 0);
+		const outcome = checkSummaryOutput(JSON.stringify({ overview: "Sam asks for Friday." }), {
+			references: [run, `${run}@example.com`, message(1, { text: run }).text],
+		});
+		assert.equal(outcome.ok, true);
+	}
+	assert.ok(Date.now() - started < 3_000, `took ${Date.now() - started} ms`);
+});
+
+test("the domain of a known address is known, and a capitalised ending is a sentence, not a domain", () => {
+	const references = summaryReferences([
+		message(1, { text: "Invoice due.", from: "Acme <billing@acme.com>" }),
+		message(2, { text: "Or write bob (at) partner (dot) nl" }),
+	]);
+	const check = (overview) => checkSummaryOutput(JSON.stringify({ overview }), { references }).summary.overview;
+	assert.equal(check("Message from acme.com asks you to pay."), "Message from acme.com asks you to pay.");
+	assert.equal(check("See partner.nl for details."), "See partner.nl for details.");
+	assert.equal(
+		check("It is fine.No problem. At the end.In the end all agree."),
+		"It is fine.No problem. At the end.In the end all agree.",
+	);
+	// Lowercase and capital endings, and any ending with a path, are still domains.
+	assert.equal(check("Visit evil.com now."), "Visit now.");
+	assert.equal(check("Visit EVIL.COM now."), "Visit now.");
+	assert.equal(check("Visit evil.No/pay now."), "Visit now.");
 });
 
 test("long texts are cut, the points stop at 1,200 characters and the language falls back to und", () => {

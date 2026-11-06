@@ -33,7 +33,6 @@ await build({
 
 const {
 	evaluateSignInAttempts,
-	signInLimitMessage,
 	signInServerKey,
 	SIGN_IN_FAILURES_PER_SERVER,
 	SIGN_IN_FAILURES_PER_USER,
@@ -41,6 +40,7 @@ const {
 	planFetchSegments,
 	canPrefetch,
 	isAuthRefusal,
+	signInLimitMessage,
 	oversizedNote,
 } = await import(pathToFileURL(join(outDir, "entry.mjs")).href);
 
@@ -191,16 +191,42 @@ test("a message without a stated size is planned at the cap: alone, and never pr
 	assert.equal(canPrefetch(segments[0], segments[1]), false);
 });
 
-test("cancelled sign-ins are not failures, but have a larger limit of their own", () => {
+test("cancelled sign-ins are not failures, but are limited per server and per user", () => {
 	const server = signInServerKey("a.example.com", 993);
-	const cancelled = (count) =>
-		Array.from({ length: count }, (_, index) => ({ at: NOW - 100_000 + index * 1000, server, aborted: true }));
-	assert.deepEqual(evaluateSignInAttempts(cancelled(30), server, NOW), { allowed: true });
-	const verdict = evaluateSignInAttempts(cancelled(31), server, NOW);
+	const cancelled = (count, at = server) =>
+		Array.from({ length: count }, (_, index) => ({ at: NOW - 100_000 + index * 1000, server: at, aborted: true }));
+	// The attempt being checked may still be cancelled, so 8 marked ones at a server leave no room: 8 in all.
+	assert.deepEqual(evaluateSignInAttempts(cancelled(7), server, NOW), { allowed: true });
+	const verdict = evaluateSignInAttempts(cancelled(8), server, NOW);
 	assert.equal(verdict.allowed, false);
+	assert.equal(verdict.reason, "cancels");
 	assert.equal(verdict.retryAfterSeconds, 500);
-	// They do not count toward the failure limits.
-	assert.deepEqual(evaluateSignInAttempts([...cancelled(20), ...attempts(5, server)], server, NOW), { allowed: true });
+	// Another server is its own count; the user as a whole stops at 15 cancelled attempts.
+	assert.deepEqual(evaluateSignInAttempts(cancelled(8), "b.example.com:993", NOW), { allowed: true });
+	const spread = Array.from({ length: 15 }, (_, index) => ({
+		at: NOW - 100_000 + index * 1000,
+		server: signInServerKey(`h${index}.example.com`, 993),
+		aborted: true,
+	}));
+	assert.deepEqual(evaluateSignInAttempts(spread.slice(0, 14), "x.example.com:993", NOW), { allowed: true });
+	assert.equal(evaluateSignInAttempts(spread, "x.example.com:993", NOW).reason, "cancels");
+	// They do not count toward the failure limits, nor failures toward theirs.
+	assert.deepEqual(evaluateSignInAttempts([...cancelled(7), ...attempts(5, server)], server, NOW), { allowed: true });
+});
+
+test("failures are reported as failures even when cancels are over their limit too", () => {
+	const server = signInServerKey("a.example.com", 993);
+	const rows = [
+		...Array.from({ length: 9 }, (_, index) => ({ at: NOW - 100_000 + index, server, aborted: true })),
+		...attempts(SIGN_IN_FAILURES_PER_SERVER + 1, server),
+	];
+	assert.equal(evaluateSignInAttempts(rows, server, NOW).reason, "failures");
+});
+
+test("being refused for cancelling never tells anyone to check the password", () => {
+	assert.doesNotMatch(signInLimitMessage(120, "cancels"), /password|user name/i);
+	assert.match(signInLimitMessage(120, "cancels"), /try again in 2 minutes/i);
+	assert.match(signInLimitMessage(120, "failures"), /Check the user name and password/);
 });
 
 test("a server's refusal of the login is told from a cut connection", () => {

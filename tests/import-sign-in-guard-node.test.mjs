@@ -124,8 +124,8 @@ test("a cancelled sign-in is not a failure, but a refusal the server already sen
 		/sign-in failed/,
 	);
 	assert.equal(rows(), 1);
-	// Cancelling again and again never runs a correct password into the limit.
-	for (let attempt = 0; attempt < 12; attempt += 1) {
+	// Cancelling a few times never runs a correct password into the limit (failures are limited at 5).
+	for (let attempt = 0; attempt < 5; attempt += 1) {
 		const aborted = new AbortController();
 		await assert.rejects(
 			guard(
@@ -141,12 +141,12 @@ test("a cancelled sign-in is not a failure, but a refusal the server already sen
 	assert.equal(await guard(SERVER, async () => "ok"), "ok");
 });
 
-test("cancelling is bounded too: the credentials may have been sent before the cancel", async (t) => {
+test("cancelling is bounded per server and per user, with a message that does not blame the password", async (t) => {
 	const { rows, cancelledRows, guard } = await fixture(t);
-	const cancel = () => {
+	const cancel = (server = SERVER) => {
 		const controller = new AbortController();
 		return guard(
-			SERVER,
+			server,
 			async () => {
 				controller.abort();
 				throw new Error("The connection was closed");
@@ -154,9 +154,25 @@ test("cancelling is bounded too: the credentials may have been sent before the c
 			controller.signal,
 		);
 	};
-	for (let attempt = 0; attempt < 31; attempt += 1) await assert.rejects(cancel(), /connection was closed/);
+	// Eight cancelled sign-ins reach one server; the ninth is refused before it connects.
+	for (let attempt = 0; attempt < 8; attempt += 1) await assert.rejects(cancel(), /connection was closed/);
 	assert.equal(rows(), 0);
-	// The attempt being checked is still in flight, not yet marked, so the one after the 30th marked is the last.
-	assert.equal(cancelledRows(), 31);
-	await assert.rejects(cancel(), (error) => error instanceof SignInLimitError);
+	assert.equal(cancelledRows(), 8);
+	await assert.rejects(
+		cancel(),
+		(error) => error instanceof SignInLimitError && error.reason === "cancels" && !/password/i.test(error.message),
+	);
+	assert.equal(cancelledRows(), 8, "a refused attempt leaves no row");
+	// A correct password at that server is refused as well for now, but another server still works, up to 15 in all.
+	await assert.rejects(
+		guard(SERVER, async () => "ok"),
+		SignInLimitError,
+	);
+	for (let index = 0; index < 7; index += 1)
+		await assert.rejects(cancel({ host: `h${index}.example.com`, port: 993 }), /connection was closed/);
+	assert.equal(cancelledRows(), 15);
+	await assert.rejects(
+		guard({ host: "fresh.example.com", port: 993 }, async () => "ok"),
+		(error) => error.reason === "cancels",
+	);
 });

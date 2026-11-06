@@ -10,13 +10,17 @@ import {
 	SIGN_IN_WINDOW_MS,
 	signInLimitMessage,
 	signInServerKey,
+	type SignInLimitReason,
 	type SignInVerdict,
 } from "./sign-in-limit-utils";
 
 /** Too many failed sign-ins; `retryAfterSeconds` is when the oldest failure that counts leaves the window. */
 export class SignInLimitError extends Error {
-	constructor(readonly retryAfterSeconds: number) {
-		super(signInLimitMessage(retryAfterSeconds));
+	constructor(
+		readonly retryAfterSeconds: number,
+		readonly reason: SignInLimitReason = "failures",
+	) {
+		super(signInLimitMessage(retryAfterSeconds, reason));
 		this.name = "SignInLimitError";
 	}
 }
@@ -39,7 +43,7 @@ export type SignInGuard = <T>(
  * included; past 10 for the user, or 5 for the user and server, it is refused (`SignInLimitError`) and its row removed.
  * A sign-in that succeeds removes its row, so what stays are failures, and attempts still in flight, which is what
  * keeps parallel requests from all seeing room. A cancelled one (the page walked away) is marked instead and counts
- * only against a larger limit of its own, since the password may have been sent before the cancel. No rate-limit binding is needed (works the same on Workers and Node);
+ * only against limits of its own (per user and per server), since the password may have been sent before the cancel. No rate-limit binding is needed (works the same on Workers and Node);
  * when the row cannot be written or counted the sign-in is refused rather than allowed unchecked.
  */
 export function importSignInGuard(env: CloudflareEnv, userId: string): SignInGuard {
@@ -103,7 +107,7 @@ export function importSignInGuard(env: CloudflareEnv, userId: string): SignInGua
 		}
 		if (!verdict.allowed) {
 			await released();
-			throw new SignInLimitError(verdict.retryAfterSeconds);
+			throw new SignInLimitError(verdict.retryAfterSeconds, verdict.reason);
 		}
 		let session: Awaited<ReturnType<typeof open>>;
 		try {

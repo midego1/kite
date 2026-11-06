@@ -141,8 +141,8 @@
 		"zod": "^4.4.3"
 	},
 	"devDependencies": {
-		"@cloudflare/vite-plugin": "^1.64.0",
-		"@cloudflare/workers-types": "^5.20261016.1",
+		"@cloudflare/vite-plugin": "^1.66.0",
+		"@cloudflare/workers-types": "^5.20261030.1",
 		"@playwright/test": "^1.64.1",
 		"@tailwindcss/postcss": "^4.3.3",
 		"@types/bcryptjs": "^2.4.6",
@@ -162,7 +162,7 @@
 		"eslint-config-next": "16.4.3",
 		"jscpd": "^5.4.2",
 		"jsdom": "^29.1.1",
-		"knip": "^6.42.1",
+		"knip": "^6.44.0",
 		"prettier": "^3.9.10",
 		"sharp": "^0.35.5",
 		"tailwindcss": "^4.3.3",

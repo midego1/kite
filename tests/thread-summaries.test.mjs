@@ -292,6 +292,12 @@ test("the domain of a known address is known, and a capitalised ending is a sent
 	assert.equal(check("Visit evil.com now."), "Visit now.");
 	assert.equal(check("Visit EVIL.COM now."), "Visit now.");
 	assert.equal(check("Visit evil.No/pay now."), "Visit now.");
+	// A capitalised ending only counts as a sentence after one lowercase word and when it is an English word.
+	assert.equal(check("Visit Evil.Com now."), "Visit now.");
+	assert.equal(check("Visit evil.Com now."), "Visit now.");
+	assert.equal(check("Log in at Paypal.Co today."), "Log in at today.");
+	assert.equal(check("Go to login.paypal.Com."), "Go to.");
+	assert.equal(check("Go to Evil.No now."), "Go to now.");
 });
 
 test("long texts are cut, the points stop at 1,200 characters and the language falls back to und", () => {

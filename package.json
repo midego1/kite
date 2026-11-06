@@ -136,7 +136,7 @@
 		"smtp-server": "^3.21.1",
 		"tailwind-merge": "^3.7.0",
 		"vinext": "1.1.0",
-		"workers-ai-provider": "^4.0.0",
+		"workers-ai-provider": "^4.0.1",
 		"ws": "^8.21.0",
 		"zod": "^4.4.3"
 	},

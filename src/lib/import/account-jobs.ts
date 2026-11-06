@@ -232,7 +232,7 @@ async function runAccountFolder(
 	const handled = await fetchInChunks(
 		run,
 		remaining.slice(0, run.budget),
-		{ gmailLabels: gmail },
+		{ gmailLabels: gmail, folderName: folder.sourceName },
 		async (part, fetched) => {
 			const groups = new Map<string, HostImportMessage[]>();
 			let missing = 0;

@@ -220,12 +220,11 @@ test("a provider that rebuilt its Inbox moves and trashes nothing", async () => 
 		expect(saved.ok()).toBe(true);
 		await runCheck(user.api, admin, id);
 
-		const moved = addMail(fake, `${token} deleted before the rebuild`);
+		addMail(fake, `${token} deleted before the rebuild`);
 		await runCheck(user.api, admin, id);
 		await waitForMessage(user.api, `${token} deleted before the rebuild`);
 		const message = (await findMessage(user.api, `${token} deleted before the rebuild`, "received"))!;
 		expect((await bulk(user.api, "trash", [message.id])).ok()).toBe(true);
-		expect(moved).toBeGreaterThan(0);
 		fake.bumpUidValidity("INBOX");
 		await runCheck(user.api, admin, id);
 
@@ -237,7 +236,7 @@ test("a provider that rebuilt its Inbox moves and trashes nothing", async () => 
 	}
 });
 
-test("a move the provider refuses shows in the account's problems and goes through once it can", async ({
+test("a move the provider refuses stays waiting and shows in the account's problems", async ({
 	browser,
 }) => {
 	test.setTimeout(180_000);

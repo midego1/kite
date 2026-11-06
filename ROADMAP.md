@@ -138,7 +138,7 @@ Google treats full Gmail access (`https://mail.google.com/`) as a restricted sco
    - Admin settings take the client ID and secret of the install's own app registration, with setup steps in `docs/providers.md`.
    - Test: unit tests for the XOAUTH2 string and token refresh; manual check against a real test account, since CI has no provider credentials.
 
-**Not planned: two-way sync.** Mirroring reads, moves and deletes back to the provider needs conflict handling, an always-open IMAP connection that Workers cannot hold, and per-provider quirks, for little gain once new mail arrives and replies go out from the right address.
+**Two-way sync is opt-in and bounded.** Mirroring reads, moves and deletes back to the provider is a per-account choice ([Two-way sync](docs/external-accounts.md#two-way-sync), since November 2026): it polls like the rest of sync, needs no always-open connection, and stops at the settings it lists instead of mirroring every folder.
 
 ## Milestone 7: Drive and storage
 

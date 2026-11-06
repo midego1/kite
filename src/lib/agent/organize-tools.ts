@@ -5,6 +5,7 @@ import { DEFAULT_FOLDER_COLOR } from "@/lib/folders/colors";
 import { insertFolder } from "@/lib/folders/insert";
 import { newId } from "@/lib/ids";
 import { createAuditLog, createAuditLogs } from "@/lib/mailboxes/audit";
+import { recordKiteChange } from "@/lib/external-accounts/two-way-record";
 import { updateMessageStatusForUser } from "@/lib/user";
 import { folderColorValue } from "./organize-tools-utils";
 import { ownMessage, publicMessage, requireAccess } from "./tool-messages";
@@ -53,6 +54,12 @@ async function setRead(context: AgentToolContext, rows: readonly MessageRow[], r
 				),
 			),
 		);
+	await recordKiteChange(
+		context.env,
+		context.user,
+		rows.map((row) => row.id),
+		{ kind: "flags", read },
+	);
 	await createAuditLogs(
 		context.env,
 		rows.map((row) => ({

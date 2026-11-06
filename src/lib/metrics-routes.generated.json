@@ -145,6 +145,7 @@
 	"/api/external-accounts/[id]",
 	"/api/external-accounts/[id]/sync",
 	"/api/external-accounts/[id]/test",
+	"/api/external-accounts/[id]/two-way",
 	"/api/external-accounts/attention",
 	"/api/external-accounts/detect",
 	"/api/external-accounts",

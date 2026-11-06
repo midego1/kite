@@ -4,6 +4,7 @@ import { getDb } from "@/db";
 import { messages } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/cookies";
 import { getEnv } from "@/lib/cloudflare";
+import { recordKiteChange } from "@/lib/external-accounts/two-way-record";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { isHiddenDraft } from "@/lib/messages/draft-privacy-utils";
 
@@ -33,5 +34,6 @@ export async function POST(_request: Request, { params }: { params: Promise<{ me
 
 	const starred = !message.starred;
 	await db.update(messages).set({ starred }).where(eq(messages.id, message.id));
+	await recordKiteChange(env, user, [message.id], { kind: "flags", starred });
 	return NextResponse.json({ starred });
 }

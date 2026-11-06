@@ -2,6 +2,8 @@
 export const PREVIEW_OPEN_DELAY_MS = 450;
 /** The grace period after leaving the row or the preview, so crossing the gap between them does not close it. */
 export const PREVIEW_CLOSE_DELAY_MS = 220;
+/** After a close, focus landing on the row (given back after Escape) does not open the preview again for this long. */
+export const FOCUS_REOPEN_GUARD_MS = 400;
 /** The characters of the message the preview quotes. */
 export const PREVIEW_EXCERPT_CHARS = 320;
 /** The characters of a drafted reply the preview shows. */

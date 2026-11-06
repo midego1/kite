@@ -98,6 +98,10 @@ test("hovering a For you row previews the message and the reader card's actions,
 		await expect(open.getByRole("button", { name: "Dismiss" })).toBeVisible();
 		// Nothing was sent: the reply is only ever opened as a draft.
 		await expect(open.getByRole("button", { name: /^send/i })).toHaveCount(0);
+		// A click on its plain text takes no focus target: the preview stays while the pointer is in it.
+		await open.getByText("Message", { exact: true }).click();
+		await page.waitForTimeout(600);
+		await expect(open).toBeVisible();
 		await page.keyboard.press("Escape");
 		await expect(popover(page)).toHaveCount(0);
 
@@ -155,7 +159,7 @@ test("the preview's Dismiss closes the suggestion with an Undo toast, from the c
 	}
 });
 
-test("keyboard focus opens the preview, Tab reaches its buttons and Escape closes it", async ({ browser }) => {
+test("keyboard focus opens the preview, Tab goes row to row and ArrowDown moves into it", async ({ browser }) => {
 	const restore = await useFakeProvider(api, fake);
 	const { account, reply } = await setUp();
 	const { context, page } = await openAs(browser, account, account.mailboxId);
@@ -169,10 +173,25 @@ test("keyboard focus opens the preview, Tab reaches its buttons and Escape close
 		await expect(link).toBeFocused();
 		await expect(popover(page)).toBeVisible();
 		await expect(popover(page)).toContainText(reply.subject!);
-		// The preview follows its row in the page, so Tab reaches Review draft without closing it.
-		for (let step = 0; step < 6; step++) await page.keyboard.press("Tab");
+		await expect(popover(page).getByRole("button", { name: "Review draft" })).toBeVisible();
+		// Its controls are out of the Tab order: Tab leaves the row (to the next row, whose own preview opens) and its preview closes.
+		await page.keyboard.press("Tab");
+		await expect(popover(page).filter({ hasText: reply.subject! })).toHaveCount(0);
+		await expect(link).not.toBeFocused();
+		await page.keyboard.press("Shift+Tab");
+		await expect(link).toBeFocused();
 		await expect(popover(page)).toBeVisible();
+		// ArrowDown moves focus into the preview, whose buttons then take Tab; Escape closes it and returns to the row.
+		await page.keyboard.press("ArrowDown");
+		const review = popover(page).getByRole("button", { name: "Review draft" });
+		await expect(review).toBeFocused();
+		await page.keyboard.press("Tab");
+		await expect(popover(page).getByRole("button", { name: "Discard" })).toBeFocused();
 		await page.keyboard.press("Escape");
+		await expect(popover(page)).toHaveCount(0);
+		await expect(link).toBeFocused();
+		// Focus handed back to the row does not open the preview again.
+		await page.waitForTimeout(700);
 		await expect(popover(page)).toHaveCount(0);
 	} finally {
 		await closeAll(account, restore, context);

@@ -36,6 +36,9 @@ test.describe.configure({ mode: "parallel" });
 let fake: FakeModel;
 let api: APIRequestContext;
 
+/** Links outside the command center, whose For you card lists the same subjects as the list rows. */
+const listLinks = (page: Page) => page.locator("a:not([data-testid='reading-pane-empty'] a)");
+
 test.beforeAll(async () => {
 	fake = await startFakeModel();
 	api = await apiContext(STORAGE_STATE);
@@ -2084,7 +2087,7 @@ test.describe("reply suggestions", () => {
 
 	/** The badge inside the list row whose link carries the subject. */
 	const rowBadge = (page: Page, subject: string) =>
-		page.getByRole("link").filter({ hasText: subject }).locator("[data-suggestion-badge]");
+		listLinks(page).filter({ hasText: subject }).locator("[data-suggestion-badge]");
 
 	test("inbox rows show the highest-priority suggestion chip, summaries get none, and conversations aggregate", async ({
 		browser,
@@ -2156,7 +2159,7 @@ test.describe("reply suggestions", () => {
 			await expect(rowBadge(page, phishSubject)).toHaveAttribute("data-suggestion-badge", "phishing");
 			await expect(rowBadge(page, phishSubject)).toHaveText("Phishing");
 			await expect(rowBadge(page, followUp.message.subject!)).toHaveText("Reply");
-			await expect(page.getByRole("link").filter({ hasText: summarySubject })).toBeVisible();
+			await expect(listLinks(page).filter({ hasText: summarySubject })).toBeVisible();
 			await expect(rowBadge(page, summarySubject)).toHaveCount(0);
 
 			await page.evaluate(() => localStorage.setItem("kite-conversation-view", "on"));
@@ -2411,8 +2414,8 @@ test.describe("reply suggestions", () => {
 				await selectMailbox(page, sharedId);
 				await page.addInitScript(() => localStorage.setItem("kite-conversation-view", "off"));
 				await page.goto("/inbox");
-				await expect(page.getByRole("link").filter({ hasText: question.message.subject! })).toBeVisible();
-				await expect(page.getByRole("link").filter({ hasText: phish.subject! })).toBeVisible();
+				await expect(listLinks(page).filter({ hasText: question.message.subject! })).toBeVisible();
+				await expect(listLinks(page).filter({ hasText: phish.subject! })).toBeVisible();
 				await expect(page.locator("[data-suggestion-badge]")).toHaveCount(0);
 				await expect(forYouItem(page).getByRole("link")).toHaveText(/^For you$/);
 				await forYouItem(page).getByRole("link").click();
@@ -2493,7 +2496,7 @@ test.describe("reply suggestions", () => {
 				if (!localStorage.getItem("kite-reading-pane")) localStorage.setItem("kite-reading-pane", "right");
 			});
 			await page.goto("/inbox");
-			await page.getByRole("link").filter({ hasText: question.message.subject! }).click();
+			await listLinks(page).filter({ hasText: question.message.subject! }).click();
 			await expect(page).toHaveURL(new RegExp(`/inbox/${question.message.id}$`));
 			await expect(readerCard(page)).toHaveCount(1);
 			await expect(readerCard(page).locator("[data-suggestion-summary]")).toContainText(
@@ -3431,7 +3434,7 @@ test.describe("reply suggestions", () => {
 				localStorage.setItem("kite-reading-pane", "right");
 			});
 			await page.goto("/inbox");
-			await page.getByRole("link").filter({ hasText: carol.message.subject! }).click();
+			await listLinks(page).filter({ hasText: carol.message.subject! }).click();
 			await expect(page).toHaveURL(new RegExp(`/inbox/${carol.message.id}$`));
 			await expect(replyBlock(page)).toHaveAttribute("data-suggestion-id", carolReply.id);
 			const badges = page.locator("[data-suggestion-badge]");
@@ -3589,7 +3592,7 @@ test.describe("reply suggestions", () => {
 
 	/** The list row's link; the new-mail toast links to the same message. */
 	const rowLink = (page: Page, subject: string) =>
-		page.getByRole("link").filter({ hasText: subject }).filter({ hasNotText: "New email" });
+		listLinks(page).filter({ hasText: subject }).filter({ hasNotText: "New email" });
 
 	test("first run: Suggest only through settings, then the badge, card, Review draft, Dismiss, Activity Undo and live thread updates", async ({
 		browser,
@@ -4502,7 +4505,7 @@ test.describe("calendar invite card", () => {
 			await page.addInitScript((id) => localStorage.setItem("kite-session-user", id), account.id);
 			await page.addInitScript(() => localStorage.setItem("kite-conversation-view", "off"));
 			await page.goto("/inbox");
-			const row = (message: { subject: string | null }) => page.getByRole("link").filter({ hasText: message.subject! });
+			const row = (message: { subject: string | null }) => listLinks(page).filter({ hasText: message.subject! });
 			await expect(row(first.message).locator('[data-suggestion-badge="calendar_invite"]')).toBeVisible();
 			await expect(row(clash.message).locator('[data-suggestion-badge="calendar_invite"]')).toBeVisible();
 

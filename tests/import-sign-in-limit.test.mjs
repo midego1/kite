@@ -1,0 +1,159 @@
+import assert from "node:assert/strict";
+import { rmSync } from "node:fs";
+import { dirname, join } from "node:path";
+import test, { after } from "node:test";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { makeBundleDirectory } from "./support/bundle-directory.mjs";
+
+import { build } from "esbuild";
+
+const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+const outDir = makeBundleDirectory("kite-import-sign-in-limit-test-");
+after(() => rmSync(outDir, { recursive: true, force: true }));
+
+await build({
+	stdin: {
+		contents: `
+			export * from "./src/lib/import/sign-in-limit-utils.ts";
+			export * from "./src/lib/import/capped-fetch-utils.ts";
+		`,
+		resolveDir: root,
+		sourcefile: "import-sign-in-limit-test-entry.js",
+	},
+	outfile: join(outDir, "entry.mjs"),
+	bundle: true,
+	sourcemap: "inline",
+	absWorkingDir: root,
+	platform: "node",
+	format: "esm",
+	target: "node22",
+	tsconfig: join(root, "tsconfig.json"),
+	logLevel: "silent",
+});
+
+const {
+	evaluateSignInAttempts,
+	signInLimitMessage,
+	signInServerKey,
+	SIGN_IN_FAILURES_PER_SERVER,
+	SIGN_IN_FAILURES_PER_USER,
+	SIGN_IN_WINDOW_MS,
+	planFetchBatches,
+	oversizedNote,
+} = await import(pathToFileURL(join(outDir, "entry.mjs")).href);
+
+const NOW = 1_800_000_000_000;
+const MB = 1024 * 1024;
+
+/** `count` attempts at `server`, `ageMs` old each, one second apart (the oldest first). */
+function attempts(count, server, ageMs = 60_000) {
+	return Array.from({ length: count }, (_, index) => ({ at: NOW - ageMs + index * 1000, server }));
+}
+
+test("servers are grouped by host and port without case or a trailing dot", () => {
+	assert.equal(signInServerKey("IMAP.Example.com.", 993), "imap.example.com:993");
+	assert.notEqual(signInServerKey("imap.example.com", 993), signInServerKey("imap.example.com", 143));
+});
+
+test("an attempt is allowed while its user has at most the limit in the window, its own row included", () => {
+	const server = signInServerKey("a.example.com", 993);
+	assert.deepEqual(evaluateSignInAttempts(attempts(SIGN_IN_FAILURES_PER_SERVER, server), server, NOW), {
+		allowed: true,
+	});
+	const spread = Array.from({ length: SIGN_IN_FAILURES_PER_USER }, (_, index) => ({
+		at: NOW - 1000 * (index + 1),
+		server: signInServerKey(`host${index}.example.com`, 993),
+	}));
+	assert.deepEqual(evaluateSignInAttempts(spread, "host0.example.com:993", NOW), { allowed: true });
+});
+
+test("past the per-user limit it is refused whatever the server", () => {
+	const rows = Array.from({ length: SIGN_IN_FAILURES_PER_USER + 1 }, (_, index) => ({
+		at: NOW - 100_000 + index * 1000,
+		server: signInServerKey(`host${index}.example.com`, 993),
+	}));
+	const verdict = evaluateSignInAttempts(rows, "other.example.com:993", NOW);
+	assert.equal(verdict.allowed, false);
+	// One other failure has to leave the window: the oldest, 100 s old, leaves after 500 s.
+	assert.equal(verdict.retryAfterSeconds, 500);
+});
+
+test("past the per-server limit it is refused for that server only", () => {
+	const server = signInServerKey("a.example.com", 993);
+	const other = signInServerKey("b.example.com", 993);
+	const rows = attempts(SIGN_IN_FAILURES_PER_SERVER + 1, server, 30_000);
+	assert.equal(evaluateSignInAttempts(rows, server, NOW).allowed, false);
+	assert.deepEqual(evaluateSignInAttempts(rows, other, NOW), { allowed: true });
+});
+
+test("failures older than the window are not counted", () => {
+	const server = signInServerKey("a.example.com", 993);
+	const old = attempts(50, server, SIGN_IN_WINDOW_MS + 100_000);
+	assert.deepEqual(evaluateSignInAttempts(old, server, NOW), { allowed: true });
+	// Right at the edge a row still counts only while it is newer than the window.
+	const edge = [{ at: NOW - SIGN_IN_WINDOW_MS, server }, ...attempts(SIGN_IN_FAILURES_PER_SERVER, server)];
+	assert.deepEqual(evaluateSignInAttempts(edge, server, NOW), { allowed: true });
+});
+
+test("the wait is until enough failures have left the window, at least a second, and the longer of the two limits", () => {
+	const server = signInServerKey("a.example.com", 993);
+	// 8 failures at this server, just inside the window: 3 over the per-server limit, so the 3rd oldest has to leave.
+	const rows = Array.from({ length: SIGN_IN_FAILURES_PER_SERVER + 3 }, (_, index) => ({
+		at: NOW - SIGN_IN_WINDOW_MS + 10_000 + index * 1000,
+		server,
+	}));
+	const verdict = evaluateSignInAttempts(rows, server, NOW);
+	assert.equal(verdict.allowed, false);
+	// The row that has to leave is the 3rd oldest (10 s + 2 s into the window): 12 s of the window are used up.
+	assert.equal(verdict.retryAfterSeconds, 12);
+	const justExpiring = [
+		...attempts(SIGN_IN_FAILURES_PER_SERVER, server, 1000),
+		{ at: NOW - SIGN_IN_WINDOW_MS + 1, server },
+		{ at: NOW - 1, server },
+	];
+	assert.equal(evaluateSignInAttempts(justExpiring, server, NOW).retryAfterSeconds >= 1, true);
+});
+
+test("the refusal says how long to wait in plain words", () => {
+	assert.match(signInLimitMessage(30), /try again in a minute/);
+	assert.match(signInLimitMessage(61), /try again in 2 minutes/);
+	assert.match(signInLimitMessage(600), /try again in 10 minutes/);
+});
+
+test("batches of messages are cut by count and by bytes, in order", () => {
+	const uids = Array.from({ length: 10 }, (_, index) => String(index + 1));
+	const sizes = new Map(uids.map((uid) => [uid, 5 * MB]));
+	const plan = planFetchBatches(uids, sizes, { messageBytes: 36 * MB, batchBytes: 16 * MB, batchMessages: 25 });
+	assert.deepEqual(plan.batches, [["1", "2", "3"], ["4", "5", "6"], ["7", "8", "9"], ["10"]]);
+	assert.deepEqual(plan.oversized, []);
+	const byCount = planFetchBatches(uids, new Map(), { messageBytes: 36 * MB, batchMessages: 4 });
+	assert.deepEqual(
+		byCount.batches.map((batch) => batch.length),
+		[4, 4, 2],
+	);
+});
+
+test("a message above the cap is set aside and never fails the batch; one at the cap is fetched alone", () => {
+	const sizes = new Map([
+		["1", 1000],
+		["2", 40 * MB],
+		["3", 36 * MB],
+		["4", 2000],
+	]);
+	const plan = planFetchBatches(["1", "2", "3", "4"], sizes, { messageBytes: 36 * MB });
+	assert.deepEqual(plan.oversized, [{ uid: "2", size: 40 * MB }]);
+	assert.deepEqual(plan.batches, [["1"], ["3"], ["4"]]);
+});
+
+test("a message without a stated size is fetched, assumed to weigh 1 MB", () => {
+	const plan = planFetchBatches(["1", "2"], new Map([["1", null]]), { messageBytes: 36 * MB, batchBytes: 1 * MB });
+	assert.deepEqual(plan.batches, [["1"], ["2"]]);
+	assert.deepEqual(plan.oversized, []);
+});
+
+test("a skipped message is named with its folder, UID and size", () => {
+	assert.equal(
+		oversizedNote("INBOX", { uid: "42", size: 80 * MB }, 36 * MB),
+		"INBOX: skipped message 42, 80 MB is over the 36 MB limit",
+	);
+});

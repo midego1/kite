@@ -8,6 +8,7 @@ import { getDatabaseSize } from "@/lib/db/size";
 import { insertRow, selectRow, selectRows } from "@/lib/db/pending-columns";
 import { parseImportDestination } from "./destination";
 import { openImportSession } from "./imap";
+import { importSignInGuard } from "./sign-in-limit";
 import {
 	IMPORT_CONFIRMED_NOTE,
 	carriedImportNote,
@@ -361,7 +362,9 @@ export async function processImportJob(
 			await finishJob(env, job, hold, "failed", source.refused);
 			return;
 		}
-		const session = await openImportSession(env, source);
+		// A failed sign-in counts against the owner's limit like the form's: a job with a wrong password is retried
+		// later (the limit's refusal is transient) and cannot be used to try passwords without end.
+		const session = await openImportSession(env, source, undefined, importSignInGuard(env, job.userId));
 		run = {
 			env,
 			ctx,

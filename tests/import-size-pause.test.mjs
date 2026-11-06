@@ -20,6 +20,8 @@ const stubs = {
 			return {
 				examine: async () => undefined,
 				searchUids: async () => fake.uids.map(String),
+				fetchUidSizes: async (uids) =>
+					uids.map((uid) => ({ uid: Number(uid), flags: [], internalDate: null, size: fake.sizes?.[uid] ?? 20 })),
 				fetchMessages: async (uids) =>
 					new Map(
 						uids.map((uid) => [
@@ -191,6 +193,21 @@ test("a confirmed import goes on above 90% and a transient error keeps the confi
 	assert.equal(current.status, "completed");
 	assert.deepEqual(globalThis.__fakeImport.batches, [25, 25, 10]);
 	assert.equal(current.password, "");
+});
+
+test("a message above the size limit is skipped and named, and the rest of its batch is imported", async (t) => {
+	const { env, database } = await fixture(t, 0.3);
+	globalThis.__fakeImport.uids = [1, 2, 3];
+	globalThis.__fakeImport.sizes = { 2: 200 * 1024 * 1024 };
+	const job = await createImportJob(env, jobFields);
+	await processImportJob(env, job.id, ctx);
+	const done = row(database, job.id);
+	assert.equal(done.status, "completed");
+	assert.deepEqual(globalThis.__fakeImport.batches, [2]);
+	assert.equal(done.processed, 3);
+	assert.equal(done.imported, 2);
+	assert.equal(done.skipped, 1);
+	assert.deepEqual(JSON.parse(done.errors), ["INBOX: skipped message 2, 200 MB is over the 36 MB limit"]);
 });
 
 test("even a confirmed import pauses at 98% of the limit", async (t) => {

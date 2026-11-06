@@ -4,6 +4,7 @@ import { getEnv } from "@/lib/cloudflare";
 import { RequestBodyTooLargeError } from "@/lib/http/errors";
 import { readJsonBody } from "@/lib/http/request";
 import { importServerProblem, listImapFolders } from "@/lib/import/imap";
+import { importSignInGuard, SignInLimitError, signInLimitResponse } from "@/lib/import/sign-in-limit";
 import type { ImapFolderListRequest } from "./types";
 import { parseImapFolderListRequest } from "./utils";
 import { withModule } from "@/lib/modules/route-guard";
@@ -30,9 +31,10 @@ export const POST = withModule("import", async (request, { checkUser }) => {
 	if (refused) return NextResponse.json({ error: refused }, { status: 400 });
 
 	try {
-		const folders = await listImapFolders(env, input);
+		const folders = await listImapFolders(env, input, importSignInGuard(env, auth.user.id));
 		return NextResponse.json({ folders });
 	} catch (error) {
+		if (error instanceof SignInLimitError) return signInLimitResponse(error);
 		return NextResponse.json(
 			{ error: error instanceof Error ? error.message : "Unable to list IMAP folders" },
 			{ status: 502 },

@@ -4,11 +4,13 @@ import { importJobs } from "@/db/schema/import-jobs";
 import { getDatabaseSize } from "@/lib/db/size";
 import { createLogger } from "@/lib/logger.mjs";
 import type { ImapFetchedMessage } from "@/lib/imap/types";
+import { imapLimits } from "@/lib/imap/protocol-utils";
 import type { ImapSession } from "@/lib/imap/session";
 import { moduleHost } from "@/lib/modules/host";
 import type { CapabilityCallContext } from "@/lib/modules/module-types";
 import type { HostImportMessage, HostImportResult } from "@/lib/modules/host-types";
 import { encodeRawMime } from "@/lib/email/module-import-utils";
+import { fetchWithinSizeCap } from "./capped-fetch";
 import { getImportMessageUserId, parseImportDestination } from "./destination";
 import { chunk, hostImportMessageFromImap, selectRemainingUids } from "./imap-utils";
 import { importPauseNote } from "./size-guard-utils";
@@ -110,23 +112,28 @@ export const hasRunTime = (run: ImportRun) => Date.now() - run.startedAt < RUN_T
 
 /**
  * Fetches `uids` in chunks, the next one from IMAP while the current one is written to D1/R2, until the time budget
- * runs out. `onChunk` returns false to stop (the job was cancelled or paused). Returns how many UIDs were handled, or
+ * runs out. A message above the connection's size limit is not fetched (`fetchWithinSizeCap`): it is missing from what
+ * `onChunk` gets, so the caller counts it as skipped, and the job's problems name it. `folderName` is how they name the
+ * folder. `onChunk` returns false to stop (the job was cancelled or paused). Returns how many UIDs were handled, or
  * null when it stopped.
  */
 export async function fetchInChunks(
 	run: ImportRun,
 	uids: number[],
-	options: { gmailLabels?: boolean },
+	options: { gmailLabels?: boolean; folderName: string },
 	onChunk: (uids: number[], fetched: Map<string, ImapFetchedMessage>) => Promise<boolean>,
 ): Promise<number | null> {
 	const chunks = chunk(uids, FETCH_CHUNK_SIZE);
-	const fetchChunk = (part: number[]) => run.session.fetchMessages(part.map(String), options);
+	const limits = imapLimits(run.env.KITE_RUNTIME);
+	const fetchChunk = (part: number[]) =>
+		fetchWithinSizeCap(run.session, part.map(String), options, limits, options.folderName);
 	let handled = 0;
 	let nextFetch = chunks.length ? fetchChunk(chunks[0]) : null;
 	for (let index = 0; index < chunks.length; index += 1) {
-		const fetched = await nextFetch!;
+		const { fetched, skipped } = await nextFetch!;
 		nextFetch = hasRunTime(run) && index + 1 < chunks.length ? fetchChunk(chunks[index + 1]) : null;
 		nextFetch?.catch(() => undefined);
+		if (skipped.length) run.errors = [...run.errors, ...skipped].slice(-MAX_STORED_ERRORS);
 		// Another run holds the job now: nothing of this chunk is written.
 		if (run.hold.lost || !(await onChunk(chunks[index], fetched))) {
 			await nextFetch?.catch(() => undefined);
@@ -332,17 +339,22 @@ export async function runFolderJob(run: ImportRun): Promise<ImportRunOutcome> {
 	let remaining = selectRemainingUids(allUids, job.cursorUid);
 	if (job.maxMessages) remaining = remaining.slice(0, Math.max(job.maxMessages - job.processed, 0));
 	let cursorUid = job.cursorUid;
-	const handled = await fetchInChunks(run, remaining.slice(0, run.budget), {}, async (uids, fetched) => {
-		const batch: HostImportMessage[] = [];
-		for (const uid of uids) {
-			const message = fetched.get(String(uid));
-			if (message) batch.push(hostImportMessageFromImap(`${job.folder}-${uid}.eml`, message, encodeRawMime));
-		}
-		const result = await importBatch(run, job.destination, batch);
-		addChunkResult(run, uids.length, { ...result, missing: uids.length - batch.length });
-		cursorUid = uids[uids.length - 1];
-		return recordChunk(run, { ...run.progress, cursorUid, total: run.total, errors: run.errors });
-	});
+	const handled = await fetchInChunks(
+		run,
+		remaining.slice(0, run.budget),
+		{ folderName: job.folder },
+		async (uids, fetched) => {
+			const batch: HostImportMessage[] = [];
+			for (const uid of uids) {
+				const message = fetched.get(String(uid));
+				if (message) batch.push(hostImportMessageFromImap(`${job.folder}-${uid}.eml`, message, encodeRawMime));
+			}
+			const result = await importBatch(run, job.destination, batch);
+			addChunkResult(run, uids.length, { ...result, missing: uids.length - batch.length });
+			cursorUid = uids[uids.length - 1];
+			return recordChunk(run, { ...run.progress, cursorUid, total: run.total, errors: run.errors });
+		},
+	);
 	if (handled === null) return "stopped";
 	return handled >= remaining.length ? "done" : "more";
 }

@@ -110,7 +110,7 @@ export function useThreadSummary(messageId: string, defaultScope: SummaryScope):
 				setState(next);
 				setHidden(false);
 			} catch {
-				if (current()) setError("Kite could not summarize this. Try again.");
+				if (current()) setError(t("Kite could not summarize this. Try again."));
 			} finally {
 				if (current()) setBusy(null);
 			}

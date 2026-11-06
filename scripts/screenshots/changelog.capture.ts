@@ -318,6 +318,33 @@ const SHOTS: Shot[] = [
 			return page;
 		},
 	},
+	...(
+		[
+			["2026-11-06-interface-dutch", "nl", "Accountmenu openen"],
+			["2026-11-06-interface-arabic", "ar", "فتح قائمة الحساب"],
+		] as const
+	).map(
+		([name, language, accountMenu]): Shot => ({
+			// The shell in a translated language, with the account menu open on the Language setting.
+			name,
+			theme: "light",
+			viewport: { width: 1280, height: 860 },
+			open: async (page) => {
+				await seedDemoData();
+				await page.addInitScript(
+					(value) => {
+						localStorage.setItem("kite-layout-sync", "off");
+						localStorage.setItem("kite-interface-language", value);
+					},
+					language,
+				);
+				await page.goto("/inbox");
+				await page.getByRole("button", { name: accountMenu }).click();
+				await expect(page.getByRole("radiogroup").last()).toBeVisible();
+				return page;
+			},
+		}),
+	),
 	{
 		// The assistant panel's settings: No AI for this mailbox, turned on (it stays on in the e2e state afterwards).
 		name: "2026-11-05-mailbox-no-ai",

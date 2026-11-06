@@ -38,3 +38,7 @@ export const msg = <T extends string>(key: T): T => key;
 
 /** The locale for `Intl` and `toLocale*` calls; undefined (the browser's own) in English. */
 export const currentLocale = (): string | undefined => current.locale;
+
+/** A size or other amount with exactly one decimal, in the interface language. */
+export const formatOneDecimal = (value: number): string =>
+	new Intl.NumberFormat(current.locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(value);

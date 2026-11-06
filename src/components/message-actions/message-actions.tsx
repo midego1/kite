@@ -107,7 +107,7 @@ export function MessageActions({
 				if (movesMessageOutOfList(action)) leaveReader();
 				else router.refresh();
 			} catch {
-				setError("Could not update message");
+				setError(t("Could not update message"));
 			} finally {
 				setPendingAction(null);
 			}
@@ -172,7 +172,7 @@ export function MessageActions({
 		if (!(await confirmTrashWithoutUnsubscribe())) return;
 		setPendingAction("unsubscribe");
 		if (!mailboxId) {
-			setError("Could not create trash rule");
+			setError(t("Could not create trash rule"));
 			setPendingAction(null);
 			return;
 		}
@@ -181,7 +181,7 @@ export function MessageActions({
 			await createTrashSenderRule({ mailboxId, senderAddress });
 			await runAction("trash");
 		} catch {
-			setError("Could not create trash rule");
+			setError(t("Could not create trash rule"));
 			setPendingAction(null);
 		}
 	}
@@ -202,7 +202,7 @@ export function MessageActions({
 		setMoreOpen(false);
 		setError(null);
 		if (!mailboxId) {
-			setError("Could not block contact");
+			setError(t("Could not block contact"));
 			return;
 		}
 
@@ -474,7 +474,7 @@ export function MessageActions({
 				</Popover.Portal>
 			</Popover.Root>
 			{!isMobile && (
-				<Tooltip label={canDeleteForever ? t("Delete forever") : shortcutsEnabled ? t("Delete (#)") : "Delete"}>
+				<Tooltip label={canDeleteForever ? t("Delete forever") : shortcutsEnabled ? t("Delete (#)") : t("Delete")}>
 					<Button
 						variant="ghost"
 						size="roundedSM"

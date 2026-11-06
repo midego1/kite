@@ -3,7 +3,7 @@ import type { ExternalAccountView } from "@/lib/external-accounts/types";
 import type { OverviewData } from "@/app/(admin)/admin/overview-types";
 import type { AccountLine, AccountLinesInput, HealthLine, StatusChip, StatusChipsInput } from "./command-center-types";
 import { isolateDirection } from "@/lib/bidi-utils";
-import { currentLocale, t } from "@/lib/i18n/translator";
+import { currentLocale, formatOneDecimal, t } from "@/lib/i18n/translator";
 
 /** How many connected accounts the card lists before pointing at Settings. */
 const MAX_ACCOUNT_LINES = 4;
@@ -160,8 +160,8 @@ export function attentionHref(href: string): string {
 
 /** Megabytes with one decimal below a gigabyte, gigabytes above. */
 function formatBytes(bytes: number): string {
-	if (bytes >= 1024 ** 3) return isolateDirection(`${(bytes / 1024 ** 3).toFixed(1)} GB`);
-	return isolateDirection(`${Math.max(1, Math.round(bytes / 1024 ** 2))} MB`);
+	if (bytes >= 1024 ** 3) return isolateDirection(t("{amount} GB", { amount: formatOneDecimal(bytes / 1024 ** 3) }));
+	return isolateDirection(t("{amount} MB", { amount: Math.max(1, Math.round(bytes / 1024 ** 2)) }));
 }
 
 /**

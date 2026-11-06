@@ -52,7 +52,8 @@ export function CommandCenter({ config }: { config: MessageFolderConfig }) {
 		const now = new Date();
 		const timeZone = getUserTimeZone();
 		return { greeting: greetingFor(hourIn(now, timeZone)), date: dateLabel(now, timeZone) };
-	}, []);
+		// eslint-disable-next-line react-hooks/exhaustive-deps -- a new language must read them again, whatever it changed.
+	}, [t]);
 	const now = new Date();
 	const chips = statusChips(data.chips);
 	const accounts = accountLines({ accounts: data.accounts, now });

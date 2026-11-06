@@ -74,7 +74,7 @@ export function SidebarFooter({ extra, notices }: { extra?: ReactNode; notices?:
 		// The label follows the browser's locale and time zone, so it cannot be part of the server render.
 		// eslint-disable-next-line react-hooks/set-state-in-effect
 		setUpdatedLabel(formatBuildTime(BUILD_TIME));
-	}, []);
+	}, [t]);
 
 	// The icon rail keeps only the items that have an icon form: today the assistant toggle.
 	if (minimal) return extra ? <div className="flex flex-col gap-px pt-2">{extra}</div> : null;

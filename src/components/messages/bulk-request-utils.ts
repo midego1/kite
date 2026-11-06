@@ -17,7 +17,7 @@ export function draftDeletionConfirmation(count: number) {
 		description: t(
 			"Drafts don't go to Trash, where everyone with access to the mailbox would see them. Deleted drafts and their attachments can't be restored; the rest of the selection goes to Trash as usual.",
 		),
-		confirmLabel: "Delete",
+		confirmLabel: t("Delete"),
 	};
 }
 

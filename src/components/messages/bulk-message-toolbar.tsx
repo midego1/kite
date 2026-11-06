@@ -121,7 +121,7 @@ function MailSelectionToolbar({
 	const trash =
 		folder === "trash"
 			? { action: "inbox", label: t("Restore"), Icon: Undo2 }
-			: { action: "trash", label: "Delete", Icon: Trash2 };
+			: { action: "trash", label: t("Delete"), Icon: Trash2 };
 	// Trash and Spam also offer the irreversible delete; the page confirms before running it.
 	const canDeleteForever = supportsPermanentDelete(folder);
 	const moveOptions = [

@@ -91,17 +91,18 @@ test.describe("interface language", () => {
 		await page.context().close();
 	});
 
-	test("plurals and dates follow the language", async ({ browser }) => {
-		const page = await openBrowser(browser, "en-US", "nl");
-		await openInbox(page);
-		const row = page.locator("[data-message-row]").first();
-		await expect(row).toBeVisible();
-		await expect(page.locator(SIDEBAR).getByRole("button", { name: /Accountmenu openen/ })).toBeVisible();
-		const formatted = await page.evaluate(() =>
-			new Intl.DateTimeFormat("nl", { month: "long" }).format(new Date(2026, 2, 1)),
-		);
-		expect(formatted).toBe("maart");
-		await page.context().close();
+	test("dates follow the language, and English keeps the browser's", async ({ browser }) => {
+		const longDate = (locale: string) => new Intl.DateTimeFormat(locale, { month: "long" }).format(new Date());
+		for (const [locale, chosen, expected] of [
+			["en-US", "nl", longDate("nl")],
+			["en-US", "ar", longDate("ar")],
+			["de-DE", "en", longDate("de-DE")],
+		] as const) {
+			const page = await openBrowser(browser, locale, chosen);
+			await openInbox(page);
+			await expect(page.getByText(expected, { exact: false }).first()).toBeVisible();
+			await page.context().close();
+		}
 	});
 
 	test("Automatic follows the browser language, and one Kite does not speak stays English", async ({ browser }) => {

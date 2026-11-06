@@ -142,7 +142,7 @@ export async function runDraftListAction(draftIds: string[], action: string) {
 	const confirmed = await requestConfirmation({
 		title: draftIds.length === 1 ? t("Delete this draft?") : t("Delete {count} drafts?", { count: draftIds.length }),
 		description: t("Deleted drafts and their attachments are removed at once. This can't be undone."),
-		confirmLabel: "Delete",
+		confirmLabel: t("Delete"),
 	});
 	if (!confirmed) return LIST_ACTION_CANCELLED;
 	const responses = await Promise.all(

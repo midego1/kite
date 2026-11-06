@@ -236,9 +236,7 @@ test("a provider that rebuilt its Inbox moves and trashes nothing", async () => 
 	}
 });
 
-test("a move the provider refuses stays waiting and shows in the account's problems", async ({
-	browser,
-}) => {
+test("a move the provider refuses stays waiting and shows in the account's problems", async ({ browser }) => {
 	test.setTimeout(180_000);
 	const token = uniqueToken("xtwo");
 	const { address, fake, admin, user, id } = await setup(token);

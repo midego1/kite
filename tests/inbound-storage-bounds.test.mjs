@@ -264,7 +264,7 @@ test("a delivered message with huge fields is stored, its HTML offloaded to the 
 
 test("a message that cannot be parsed is dropped once, without a retry", async (t) => {
 	const { env, put, exists, row } = await setup(t);
-	const rawR2Key = await put(`inbound/${Date.now()}-bomb.eml`, message("", "a\r\n".repeat(100_000)));
+	const rawR2Key = await put(`inbound/${Date.now()}-bomb.eml`, message("", "a\r\n".repeat(200_000)));
 	await processInboundMessage(env, { from: "x@partner.test", to: "a@example.com", rawR2Key });
 	assert.equal(await exists(rawR2Key), false);
 	assert.equal(row("SELECT count(*) AS count FROM messages").count, 0);
@@ -608,7 +608,7 @@ test("only a MIME limit drops the raw object; any other parse error is retried w
 	assert.equal(await exists(rawR2Key), true);
 	const outcome = await deliverInboundMessage(env, {
 		...input,
-		raw: encoder.encode(message("", "a\r\n".repeat(50_000))).buffer,
+		raw: encoder.encode(message("", "a\r\n".repeat(200_000))).buffer,
 	});
 	assert.equal(outcome.reason, "unparseable");
 	assert.match(outcome.detail, /^Message rejected:/);
@@ -648,7 +648,7 @@ test("the sweeper looks keys up in chunks and keeps a week, and an unreadable up
 test("a reply to stored mail over the MIME limits goes to the row's From", async (t) => {
 	const { env, put } = await setup(t);
 	const user = { id: "owner", role: "user", isPrimaryAdmin: false, email: "owner@example.com" };
-	const rawR2Key = await put("inbound/1-old.eml", message("Reply-To: desk@partner.test\r\n", "a\r\n".repeat(50_000)));
+	const rawR2Key = await put("inbound/1-old.eml", message("Reply-To: desk@partner.test\r\n", "a\r\n".repeat(200_000)));
 	const context = { env, user, mailboxId: "mailbox-a" };
 	const source = { fromAddr: "Sender <sender@partner.test>", toAddr: "a@example.com", ccAddr: null, rawR2Key };
 	assert.deepEqual(await getReplyRecipients(context, source, false), { to: "sender@partner.test", cc: "" });
@@ -704,7 +704,7 @@ test("the SMTP listener answers a MIME limit with 552 and still takes good mail"
 			`${body}\r\n.\r\n`,
 			"QUIT\r\n",
 		]);
-	assert.deepEqual(await send(message("", "a\r\n".repeat(50_000))), ["250", "250", "250", "354", "552", "221"]);
+	assert.deepEqual(await send(message("", "a\r\n".repeat(200_000))), ["250", "250", "250", "354", "552", "221"]);
 	assert.equal(queued.length, 0);
 	assert.deepEqual(await send(message("")), ["250", "250", "250", "354", "250", "221"]);
 	assert.equal(queued.length, 1);

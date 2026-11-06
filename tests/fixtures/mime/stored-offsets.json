@@ -1,0 +1,21 @@
+{
+	"multipart/mixed": [[0, 492, 6842, "base64"]],
+	"related inside alternative inside mixed, with an inline cid image": [
+		[0, 724, 1642, "base64"],
+		[1, 2538, 6842, "base64"]
+	],
+	"LF-only line endings": [[0, 474, 6755, "base64"]],
+	"base64 without line breaks": [[0, 492, 6668, "base64"]],
+	"base64 with 64-column lines": [[0, 492, 6876, "base64"]],
+	"base64 with 72-column lines and trailing spaces": [[0, 492, 7036, "base64"]],
+	"quoted boundary with spaces and punctuation": [[0, 498, 6842, "base64"]],
+	"folded Content-Type headers": [[0, 504, 6842, "base64"]],
+	"a preamble and an epilogue": [[0, 540, 6842, "base64"]],
+	"a missing close delimiter": [[0, 492, 6844, "base64"]],
+	"two identical attachments": [
+		[0, 492, 6842, "base64"],
+		[1, 7488, 6842, "base64"]
+	],
+	"an attachment as the whole message": [[0, 322, 6844, "base64"]],
+	"RFC 2231 file names": [[0, 499, 6842, "base64"]]
+}

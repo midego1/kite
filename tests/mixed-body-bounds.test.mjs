@@ -77,6 +77,16 @@ const shapes = {
 	returnsHtmlAtLimit: () => mixed(text("hi"), html("a\\r".repeat(1_599_000))),
 	wordsHtmlAtLimit: () => mixed(text("hi"), html("word12 ".repeat(1_065_000))),
 	separatorsHtmlAtLimit: () => mixed(text("hi"), html("\\u2028".repeat(1_599_000))),
+	placeholdersHtml: () => mixed(text("hi"), html("a\\u0001".repeat(2_000_000))),
+	onlyPlaceholdersHtml: () => mixed(text("hi"), html("\\u0001".repeat(4_000_000))),
+	referencesHtml: () => mixed(text("hi"), html("&amp;lt".repeat(1_200_000))),
+	unknownReferencesHtml: () => mixed(text("hi"), html("&amp;a;".repeat(1_300_000))),
+	numericReferencesHtml: () => mixed(text("hi"), html("&amp;#60;".repeat(1_000_000))),
+	shortReferencesHtml: () => mixed(text("hi"), html("&a;".repeat(2_000_000))),
+	placeholdersHtmlAtLimit: () => mixed(text("hi"), html("a\\u0001".repeat(1_599_000))),
+	referencesHtmlAtLimit: () => mixed(text("hi"), html("&amp;lt".repeat(516_000))),
+	unknownReferencesHtmlAtLimit: () => mixed(text("hi"), html("&amp;a;".repeat(516_000))),
+	numericReferencesHtmlAtLimit: () => mixed(text("hi"), html("&amp;#60;".repeat(484_000))),
 	spacedText: () => mixed(hello, text("word12 ".repeat(1_900_000))),
 };
 
@@ -108,17 +118,38 @@ test("large text and HTML parts are rendered within a 128 MB heap", () => {
 		timeout: 300_000,
 	});
 	const results = JSON.parse(output);
-	assert.equal(Object.keys(results).length, 20);
+	assert.equal(Object.keys(results).length, 30);
 	for (const [name, result] of Object.entries(results)) assert.ok(result.ms < 60_000, `${name}: ${result.ms} ms`);
 	// Over the limit: the parts keep to their own format.
 	assert.equal(results.brackets.html, "<p>hi</p>".length);
 	assert.equal(results.links.html, "<p>hi</p>".length);
 	assert.equal(results.htmlBrackets.text, 2);
-	for (const name of ["spacedHtml", "returnsHtml", "wordsHtml", "separatorsHtml", "tabsHtml"]) {
+	for (const name of [
+		"spacedHtml",
+		"returnsHtml",
+		"wordsHtml",
+		"separatorsHtml",
+		"tabsHtml",
+		"placeholdersHtml",
+		"onlyPlaceholdersHtml",
+		"referencesHtml",
+		"unknownReferencesHtml",
+		"numericReferencesHtml",
+		"shortReferencesHtml",
+	]) {
 		assert.equal(results[name].text, 2, name);
 	}
 	// Under it: both bodies hold both parts.
-	for (const name of ["spacedHtmlAtLimit", "returnsHtmlAtLimit", "wordsHtmlAtLimit", "separatorsHtmlAtLimit"]) {
+	for (const name of [
+		"spacedHtmlAtLimit",
+		"returnsHtmlAtLimit",
+		"wordsHtmlAtLimit",
+		"separatorsHtmlAtLimit",
+		"placeholdersHtmlAtLimit",
+		"referencesHtmlAtLimit",
+		"unknownReferencesHtmlAtLimit",
+		"numericReferencesHtmlAtLimit",
+	]) {
 		assert.ok(results[name].text > 2, name);
 	}
 	assert.ok(results.spacedText.html > 13_000_000);
@@ -186,9 +217,22 @@ test("in HTML, a run of spaces and tabs counts once and line ends count nine tim
 	const available = MAX_BODY_CONVERSION_COST - textCost;
 	assert.ok((await render(`${"a".repeat(available - 8 - 1000)}${" \t".repeat(500)}`)).text.length > 2);
 	assert.equal((await render(`${"a".repeat(available - 8 - 999)}${" \t".repeat(500)}`)).text, "hi");
-	for (const character of ["\u2028", "\u2029"]) {
+	for (const character of ["\u2028", "\u2029", "\u0001"]) {
 		const count = Math.floor(available / 9);
 		assert.ok((await render(character.repeat(count))).text.length >= 2, character);
 		assert.equal((await render(character.repeat(count + 1))).text, "hi", character);
 	}
+});
+
+test("in HTML, an entity counts 25 times its first character", async () => {
+	const render = async (body) => parseRawMime(parts.encode(parts.mixed(parts.text("hi"), parts.html(body))));
+	const available = MAX_BODY_CONVERSION_COST - "hi".length;
+	const count = Math.floor(available / 25);
+	assert.ok((await render("&".repeat(count))).text.length >= 2);
+	assert.equal((await render("&".repeat(count + 1))).text, "hi");
+	// Beside a text part, an ampersand in plain text only gets escaped.
+	const plain = await parseRawMime(
+		parts.encode(parts.mixed(parts.html("<p>one</p>"), parts.text("&".repeat(count + 1)))),
+	);
+	assert.notEqual(plain.html, "<p>one</p>");
 });

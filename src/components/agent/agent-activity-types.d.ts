@@ -31,7 +31,14 @@ export type ActivitySkippedJob = {
 	createdAt: string;
 };
 
-export type ActivityResponse = { actions: ActivityAction[]; skippedJobs: ActivitySkippedJob[] };
+/** A one-line summary job that did not write a line: skipped with a reason, or failed (then it may be retried). */
+export type ActivityLineJob = ActivitySkippedJob & { status: "skipped" | "failed"; canRetry: boolean };
+
+export type ActivityResponse = {
+	actions: ActivityAction[];
+	skippedJobs: ActivitySkippedJob[];
+	lineJobs: ActivityLineJob[];
+};
 
 export type ActivityTarget = { href: string | null; label: string };
 

@@ -4,6 +4,7 @@ import { columnWidthStorageKeys } from "./column-width-preferences";
 import { INTERFACE_DIRECTION_STORAGE_KEY } from "./interface-direction-utils";
 import { CONVERSATION_VIEW_STORAGE_KEY } from "./messages/conversation-view-utils";
 import { MESSAGE_DENSITY_STORAGE_KEY, READING_PANE_STORAGE_KEY } from "./messages/reading-layout-utils";
+import { TRANSLATE_NEVER_STORAGE_KEY, TRANSLATE_TO_STORAGE_KEY } from "./messages/translate-target-utils";
 
 /** `off` keeps this browser's own layout: it neither loads the account's nor saves its own. */
 export const LAYOUT_SYNC_DEVICE_KEY = "kite-layout-sync";
@@ -23,6 +24,8 @@ export function layoutStorageEntries(layout: LayoutPreferences, userId: string):
 	if (layout.emailFont) entries.push([EMAIL_FONT_PREFERENCE.storageKey, layout.emailFont]);
 	if (layout.fontScope) entries.push([FONT_SCOPE_PREFERENCE.storageKey, layout.fontScope]);
 	if (layout.interfaceDirection) entries.push([INTERFACE_DIRECTION_STORAGE_KEY, layout.interfaceDirection]);
+	if (layout.translateTo) entries.push([TRANSLATE_TO_STORAGE_KEY, layout.translateTo]);
+	if (layout.translateNever) entries.push([TRANSLATE_NEVER_STORAGE_KEY, layout.translateNever.join(",")]);
 	if (layout.listWidth !== undefined)
 		for (const key of columnWidthStorageKeys("message-list", userId)) entries.push([key, String(layout.listWidth)]);
 	if (layout.listHeight !== undefined)

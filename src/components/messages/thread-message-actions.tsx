@@ -20,6 +20,7 @@ import {
 	runSingleMessageAction,
 } from "@/components/message-actions/utils";
 import { toggleMessageStar } from "./message-list-row-actions-utils";
+import { MessageTranslateItem } from "./message-translate-item";
 import { PrintMenuItems } from "./print/print-menu-items";
 import { useLoadRemoteImages } from "./use-load-remote-images";
 import { confirmReportSpam } from "./spam-report";
@@ -33,6 +34,7 @@ export function ThreadMessageActions({
 	ownAddresses = [],
 	starOnly = false,
 	remoteImagesShown = false,
+	translate,
 }: ThreadMessageActionsProps) {
 	const { openDraftComposer } = useCompose();
 	const [alwaysLoadRemoteImages] = useLoadRemoteImages();
@@ -221,6 +223,7 @@ export function ThreadMessageActions({
 								>
 									<FileCode2 className="h-4 w-4" /> Show original
 								</button>
+								{translate && <MessageTranslateItem menu={translate} onClose={() => setMoreOpen(false)} />}
 								<PrintMenuItems
 									print={{
 										conversation: false,

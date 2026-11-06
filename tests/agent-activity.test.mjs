@@ -72,6 +72,12 @@ test("initiators, statuses and actions read as plain words", () => {
 test("skip and block reasons are shown in plain words, never as bare codes", () => {
 	assert.equal(reasonText("daily_limit"), "Paused: daily limit reached");
 	assert.match(reasonText("spend_cap"), /spend cap/);
+	// One-line summary jobs: every gate code has plain words, none falls back to the raw code.
+	for (const code of ["list_summaries_off", "not_in_inbox", "suspicious", "not_new", "own_address", "too_short"])
+		assert.match(reasonText(code), /^Skipped: /, code);
+	for (const code of ["bulk", "phishing", "muted_sender", "unusable_answer"])
+		assert.match(reasonText(code), /^Skipped: /, code);
+	assert.match(reasonText("ai_error:timeout"), /^Failed: /);
 	assert.match(reasonText("kill_switch"), /turned off for this install/);
 	assert.match(reasonText("external_provider_not_allowed"), /external AI provider is not allowed/);
 	assert.match(reasonText("paused"), /paused for this mailbox/);

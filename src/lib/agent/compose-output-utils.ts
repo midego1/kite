@@ -5,21 +5,11 @@ import {
 	normalizeUrl,
 	stripDraftMarkdown,
 } from "./auto-read/draft-guard-utils";
+import { BARE_DOMAIN, OBFUSCATED_ADDRESS, obfuscatedAddress } from "./reference-patterns-utils";
 import type { ComposeMode, ComposeOutcome, ComposeWarning } from "./compose-types";
 
 const WRITE_MAX_CHARS = 12_000;
 const TRAILING_PUNCTUATION = /[.,;:!?]+$/;
-// Common generic and country domains. A domain must end in one of them to count as a link, so "e.g.", "i.e."
-// and "Node.js" in ordinary prose are left alone.
-const TLDS =
-	"com|net|org|info|biz|io|co|app|dev|ai|me|tv|ly|xyz|online|site|email|cloud|link|shop|nl|de|fr|es|uk|be|ch|at|it|eu|us|ca|au|ru|cn|jp|in|br|se|no|dk|fi|pl|pt|ie|nz|za|test|example";
-const BARE_DOMAIN = new RegExp(
-	`(?<![\\w@./:-])((?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+(?:${TLDS}))\\b(\\/[^\\s<>()\\[\\]"'\`]*)?`,
-	"gi",
-);
-// "name (at) example (dot) com", "name [at] example.com": spelled-out addresses in brackets.
-const OBFUSCATED_ADDRESS = /([\w.+-]+)\s*[[(]\s*at\s*[\])]\s*([\w-]+(?:(?:\s*[[(]\s*dot\s*[\])]\s*|\.)[\w-]+)+)/gi;
-const DOT_WORD = /\s*[[(]\s*dot\s*[\])]\s*/gi;
 const UNTRUSTED_LINK = /\[untrusted link: ([^\]\s]+)\]/g;
 // Markdown a user's own text may contain on purpose; plain "- " list lines do not count.
 const MARKDOWN = /(^|\n)\s{0,3}(#{1,6}\s|```)|\*\*[^*\n]+\*\*|__[^_\n]+__|`[^`\n]+`|\[[^\]\n]+\]\([^)\s]+\)/;
@@ -94,7 +84,7 @@ export function checkComposeOutput(raw: string, context: ComposeCheckContext): C
 
 	let text = raw.replace(/\r\n?/g, "\n").replace(UNTRUSTED_LINK, "$1");
 	text = text.replace(OBFUSCATED_ADDRESS, (value, local: string, domain: string) =>
-		checkAddress(value, `${local}@${domain.replace(DOT_WORD, ".").replace(/\s+/g, "")}`.toLowerCase()),
+		checkAddress(value, obfuscatedAddress(local, domain)),
 	);
 	text = text.replace(URL_PATTERN, (url) => {
 		const key = normalizeUrl(url);

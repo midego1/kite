@@ -186,6 +186,7 @@
 	"/api/messages/[messageId]/status",
 	"/api/messages/[messageId]/summary",
 	"/api/messages/[messageId]/thread",
+	"/api/messages/[messageId]/translation",
 	"/api/messages/bulk",
 	"/api/messages/counts",
 	"/api/messages/empty",

@@ -59,6 +59,8 @@ export type ImapSession = {
 	 * server has no STATUS=SIZE.
 	 */
 	fetchSizes(fromSeq: number, toSeq: number): Promise<ImapMessageSummary[]>;
+	/** UID and size only of these UIDs (`UID FETCH n,m (UID RFC822.SIZE)`, no bodies); a size is null when the server left it out. */
+	fetchUidSizes(uids: string[]): Promise<ImapMessageSummary[]>;
 	/** Flags alone (`UID FETCH n:m (UID FLAGS)`) of the open folder's messages from `fromUid` to `toUid`. */
 	fetchFlags(fromUid: number, toUid: number): Promise<ReturnType<typeof parseFetchFlags>>;
 	/** The same for exactly these UIDs (`UID FETCH a,b,c (UID FLAGS)`), which a server answers one by one. */
@@ -155,6 +157,11 @@ export async function openImapSession(
 			const from = Math.max(1, Math.floor(fromSeq));
 			const to = Math.max(from, Math.floor(toSeq));
 			const lines = await imap.command(`FETCH ${from}:${to} (UID RFC822.SIZE)`);
+			return parseFetchSummaries(lines);
+		},
+		async fetchUidSizes(uids) {
+			if (uids.length === 0) return [];
+			const lines = await imap.command(`UID FETCH ${uids.join(",")} (UID RFC822.SIZE)`);
 			return parseFetchSummaries(lines);
 		},
 		async fetchFlags(fromUid, toUid) {

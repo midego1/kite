@@ -32,6 +32,18 @@ function TargetPicker({ controller }: { controller: MessageTranslationController
 	);
 }
 
+/** Right after a language was taken off the offer, the way back, since the bar is about to stop appearing. */
+function Stopped({ controller }: { controller: MessageTranslationController }) {
+	return (
+		<>
+			<span>Translation won&apos;t be offered for {languageName(controller.detected ?? "")}.</span>
+			<button type="button" className={LINK} onClick={controller.toggleNeverOffered}>
+				Undo
+			</button>
+		</>
+	);
+}
+
 /** "This message is in Thai. Translate to English", with the language to choose and a way to wave it off. */
 function Offer({ controller }: { controller: MessageTranslationController }) {
 	const { detected, busy } = controller;
@@ -133,8 +145,9 @@ function Notes({ controller }: { controller: MessageTranslationController }) {
  * not read, then what was translated and the way back. Nothing while there is nothing to say.
  */
 export function MessageTranslationBar({ controller }: { controller: MessageTranslationController }) {
-	const { translation, offered, busy, error } = controller;
-	if (!translation && !offered && !busy && !error) return null;
+	const { translation, offered, busy, error, justStopped } = controller;
+	if (!translation && !offered && !busy && !error && !justStopped) return null;
+	const offer = justStopped ? <Stopped controller={controller} /> : <Offer controller={controller} />;
 	return (
 		<section
 			aria-label="Translation"
@@ -142,7 +155,7 @@ export function MessageTranslationBar({ controller }: { controller: MessageTrans
 			className="mb-3 flex flex-wrap items-center gap-x-1.5 gap-y-1 rounded-lg bg-neutral-50 px-3 py-2 text-xs text-neutral-600"
 		>
 			<Languages className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-			{translation ? <Translated controller={controller} /> : <Offer controller={controller} />}
+			{translation ? <Translated controller={controller} /> : offer}
 			<Notes controller={controller} />
 			{error && (
 				<AiErrorNotice className="w-full" message={error} error={controller.failure} onRetry={controller.retry} />

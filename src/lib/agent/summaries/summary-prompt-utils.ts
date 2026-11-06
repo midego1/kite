@@ -4,7 +4,7 @@ import { cleanGeneralInstructions, summaryPreferenceText } from "../instruction-
 import { createNonce, markUntrustedLinks, stripDelimiters, wrapUntrusted } from "../untrusted-utils";
 import { SUMMARY_ANSWER_TOKENS } from "../output-budget-utils";
 import type { SummaryMessage, SummaryPrompt, SummaryPromptInput, TranslationPromptInput } from "./summary-types";
-import { languageName } from "./summary-utils";
+import { languageName, QUOTE_START } from "./summary-utils";
 
 export { isSummaryEligible, SUMMARY_STATUSES } from "./summary-utils";
 
@@ -20,9 +20,6 @@ const SUMMARY_EARLIER_LINES = 30;
  * that in other scripts; 400 cut long conversations off, which showed as a provider error.
  */
 export const SUMMARY_MAX_OUTPUT_TOKENS = SUMMARY_ANSWER_TOKENS;
-
-// Where a reply's quoted part starts in HTML: a blockquote, or the composer's quote wrapper (`wrapQuotedHtml`).
-const QUOTE_START = /<blockquote\b|<[a-z]+\b[^>]*\bdata-kite-quote\b/i;
 
 /**
  * A message's own words: the text body (or the readable text of the HTML before its quoted part), without the

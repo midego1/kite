@@ -26,6 +26,9 @@ export function isSummaryEligible(message: { status: string; spamVerdict?: strin
 	return (SUMMARY_STATUSES as readonly string[]).includes(message.status) && message.spamVerdict !== "spam";
 }
 
+/** Where a reply's quoted part starts in HTML: a blockquote, or the composer's quote wrapper (`wrapQuotedHtml`). */
+export const QUOTE_START = /<blockquote\b|<[a-z]+\b[^>]*\bdata-kite-quote\b/i;
+
 const LANGUAGE_CODE = /^[a-z]{2}$/;
 const TRAILING_PUNCTUATION = /[.,;:!?]+$/;
 

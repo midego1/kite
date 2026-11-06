@@ -40,6 +40,8 @@ export type MessageTranslationController = {
 	neverOffered: boolean;
 	/** Stops offering this message's language, or starts again. */
 	toggleNeverOffered: () => void;
+	/** The language was taken off the offer just now, here: the bar stays a moment longer to undo it. */
+	justStopped: boolean;
 	translation: MessageTranslation | null;
 	/** The translation on screen; null while the original is. */
 	shown: MessageTranslation | null;

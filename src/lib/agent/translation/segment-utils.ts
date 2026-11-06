@@ -3,6 +3,7 @@ import { EMAIL_PATTERN, URL_PATTERN } from "../auto-read/draft-guard-utils";
 import { findLinks, type LinkMatch } from "@/lib/email/linkify-utils";
 import { splitRepliedEmailContent } from "@/lib/email/reply-content-utils";
 import { sha256Prefix } from "../summaries/summary-utils";
+import { detectMessageLanguage } from "./detect-language-utils";
 import type { TranslationPlan, TranslationSlot, TranslationSource } from "./translation-types";
 
 /**
@@ -235,6 +236,14 @@ export function messageSlots(body: { htmlBody?: string | null; textBody?: string
 	return { format: "text", source, slots: textSlots(source) };
 }
 
+/**
+ * The language of the slots in `indexes`, or null when they do not say clearly. Quoted history is left out by
+ * passing only the new part: a Thai reply over an English thread is in Thai.
+ */
+export function slotsLanguage(parsed: TranslationSource, indexes: readonly number[]): string | null {
+	return detectMessageLanguage(indexes.map((index) => parsed.slots[index].text).join("\n"));
+}
+
 /** Identifies the pieces a stored translation lines up with, so one never lands on a body cut differently. */
 export function slotsDigest(slots: readonly TranslationSlot[]): Promise<string> {
 	return sha256Prefix(JSON.stringify(["v1", ...slots.map((slot) => slot.text)]));
@@ -288,41 +297,75 @@ function replaceSlots(
 	return result + parsed.source.slice(cursor);
 }
 
-/** Whether two slots end up as one run of text with nothing between them: one was cut from the other. */
-function touches(first: TranslationSlot, second: TranslationSlot): boolean {
-	return first.end === second.start && !first.post && !second.pre;
-}
+/** Part of a text node as the reader will see it: `index` is the translated slot it came from, null for fixed text. */
+type RunPart = { text: string; index: number | null };
 
-/** The message's text with the pieces of one run put together again, the way the reader sees it. */
-export function sourceTexts(parsed: TranslationSource): string[] {
-	const texts: string[] = [];
+/**
+ * The message after rebuilding, as the text nodes the reader links: the translated pieces, and around them the text
+ * nothing changes (slots not translated, white space kept at a slot's edge, and what lies between slots). A tag ends
+ * a node, and in plain text only white space does, which the matcher handles.
+ */
+function textRuns(parsed: TranslationSource, segments: readonly (string | null)[]): RunPart[][] {
+	const html = parsed.format === "html";
+	const decode = html ? decodeEntities : (raw: string) => raw;
+	const runs: RunPart[][] = [[]];
+	const fixed = (raw: string) => {
+		if (raw) runs[runs.length - 1].push({ text: decode(raw), index: null });
+	};
+	const between = (raw: string) => {
+		const tag = html ? raw.indexOf("<") : -1;
+		if (tag < 0) return fixed(raw);
+		fixed(raw.slice(0, tag));
+		runs.push([]);
+		fixed(raw.slice(raw.lastIndexOf(">") + 1));
+	};
+	let cursor = 0;
 	parsed.slots.forEach((slot, index) => {
-		if (index && touches(parsed.slots[index - 1], slot)) texts[texts.length - 1] += slot.text;
-		else texts.push(slot.text);
+		between(parsed.source.slice(cursor, slot.start));
+		cursor = slot.end;
+		const translated = segments[index];
+		if (translated === null || translated === undefined) return fixed(parsed.source.slice(slot.start, slot.end));
+		const shown = spaced(slot, html ? translated : translated.trim());
+		runs[runs.length - 1].push(
+			{ text: slot.pre, index: null },
+			{ text: shown, index },
+			{ text: slot.post, index: null },
+		);
 	});
-	return texts;
+	between(parsed.source.slice(cursor));
+	return runs;
 }
 
-/** Takes the matched ranges out of the pieces of one joined run. */
-function withoutLinks(pieces: readonly string[], links: readonly LinkMatch[]): string[] {
+/** The message's own text, one string per text node, the way the reader sees it. */
+export function sourceTexts(parsed: TranslationSource): string[] {
+	return textRuns(parsed, [])
+		.map((run) => run.map((part) => part.text).join(""))
+		.filter(Boolean);
+}
+
+/** The run with `links`, given by their place in the joined text, taken out of its translated parts. */
+function withoutLinks(run: readonly RunPart[], links: readonly LinkMatch[]): RunPart[] {
 	let offset = 0;
-	return pieces.map((piece) => {
+	return run.map((part) => {
 		const start = offset;
-		offset += piece.length;
+		offset += part.text.length;
+		if (part.index === null) return part;
 		const removed = (at: number) => links.some((link) => start + at >= link.start && start + at < link.end);
-		return links.length
-			? piece
-					.split("")
-					.filter((_, at) => !removed(at))
-					.join("")
-			: piece;
+		return {
+			...part,
+			text: part.text
+				.split("")
+				.filter((_, at) => !removed(at))
+				.join(""),
+		};
 	});
 }
 
 /**
- * The reader links text after the pieces are put back, so two neighbouring pieces that look harmless alone can join
- * into a link, and they may have come from different requests. Each run of touching translated pieces is read as
- * one text, and whatever `invented` refuses is taken out of the pieces it spans.
+ * The reader links text after the pieces are put back, so a piece that looks harmless alone can join its neighbour
+ * into a link: another piece, from another request or left in the original, or text between the two. Each text node
+ * is read whole, and what `invented` refuses is taken out of its translated parts, never out of the sender's text,
+ * until nothing more goes: taking one out can join what was around it.
  */
 export function withoutJoinedLinks(
 	parsed: TranslationSource,
@@ -330,24 +373,14 @@ export function withoutJoinedLinks(
 	invented: (link: LinkMatch) => boolean,
 ): (string | null)[] {
 	const result = [...segments];
-	const present = (index: number) => result[index] !== null && result[index] !== undefined;
-	const piece = (index: number) => {
-		const text = result[index] as string;
-		return parsed.format === "text" ? text.trim() : text;
-	};
-	for (let first = 0; first < parsed.slots.length; first += 1) {
-		if (!present(first)) continue;
-		let last = first;
-		while (last + 1 < parsed.slots.length && present(last + 1) && touches(parsed.slots[last], parsed.slots[last + 1]))
-			last += 1;
-		if (last === first) continue;
-		const indexes = Array.from({ length: last - first + 1 }, (_, offset) => first + offset);
-		const pieces = indexes.map(piece);
-		const cleaned = withoutLinks(pieces, findLinks(pieces.join("")).filter(invented));
-		indexes.forEach((index, position) => {
-			result[index] = cleaned[position];
-		});
-		first = last;
+	for (let run of textRuns(parsed, segments)) {
+		if (!run.some((part) => part.index !== null)) continue;
+		for (;;) {
+			const cleaned = withoutLinks(run, findLinks(run.map((part) => part.text).join("")).filter(invented));
+			if (cleaned.every((part, position) => part.text === run[position].text)) break;
+			run = cleaned;
+		}
+		for (const part of run) if (part.index !== null) result[part.index] = part.text;
 	}
 	return result;
 }

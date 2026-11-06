@@ -38,7 +38,7 @@ await build({
 const load = (name) => import(pathToFileURL(join(outDir, `${name}.mjs`)).href);
 const { detectMessageLanguage } = await load("detect");
 const { findLinks } = await load("linkify");
-const { messageSlots, planChunks, rebuildMessage, slotsDigest, sourceTexts, withoutJoinedLinks } =
+const { messageSlots, planChunks, rebuildMessage, slotsDigest, slotsLanguage, sourceTexts, withoutJoinedLinks } =
 	await load("segment");
 const {
 	buildMessageTranslationPrompt,
@@ -580,8 +580,7 @@ test("neighbouring pieces that join into a link lose it", () => {
 	const invented = (link) => isInventedLink(link, references);
 	assert.deepEqual(withoutJoinedLinks(parsed, ["See https://evil.exa", "mple/pay now"], invented), ["See ", " now"]);
 	assert.deepEqual(withoutJoinedLinks(parsed, ["Pay pay@evil", ".test now"], invented), ["Pay ", " now"]);
-	// Nothing to join: a piece not translated, or text that is no link.
-	assert.deepEqual(withoutJoinedLinks(parsed, ["https://evil.exa", null], invented), ["https://evil.exa", null]);
+	// Text that is no link stays.
 	assert.deepEqual(withoutJoinedLinks(parsed, ["Hello ", "world"], invented), ["Hello ", "world"]);
 });
 
@@ -595,14 +594,86 @@ test("a link the message does contain may come back joined", () => {
 	assert.deepEqual(joined, ["See https://real.", "example/one now"]);
 });
 
-test("pieces separated by white space or a tag are not one run", () => {
-	const parsed = messageSlots({ htmlBody: "<p>one <b>two</b></p>" });
-	const invented = () => true;
-	assert.deepEqual(withoutJoinedLinks(parsed, ["https://evil.exa", "mple/pay"], invented), [
-		"https://evil.exa",
-		"mple/pay",
-	]);
-	assert.deepEqual(sourceTexts(parsed), ["one", "two"]);
+test("a piece is checked against the sender's text it ends up next to", () => {
+	// The next piece stays in the original, past the cap or cut off, and it starts with the rest of an address.
+	const parsed = messageSlots({ htmlBody: `<p>${"一".repeat(2_990)}。evil.test/pay${"二".repeat(2_000)}</p>` });
+	assert.equal(parsed.slots.length, 2);
+	const references = linkReferences(sourceTexts(parsed));
+	const invented = (link) => isInventedLink(link, references);
+	assert.deepEqual(withoutJoinedLinks(parsed, ["Pay here https://", null], invented), ["Pay here ", null]);
+	// The sender's text is never what goes, and the piece keeps its place in front of it.
+	assert.deepEqual(withoutJoinedLinks(parsed, [null, "evil.test/pay"], invented), [null, "evil.test/pay"]);
+	assert.ok(rebuildMessage(parsed, ["Pay here ", null]).startsWith("<p>Pay here evil.test/pay"));
+});
+
+test("text between two slots counts too", () => {
+	const digits = `${"1".repeat(1_600)}。`;
+	const parsed = messageSlots({ htmlBody: `<p>${"一".repeat(2_990)}。${digits}${"二".repeat(2_000)}</p>` });
+	assert.equal(parsed.slots.length, 2, "the digits are no slot");
+	assert.notEqual(parsed.slots[0].end, parsed.slots[1].start);
+	const references = linkReferences(sourceTexts(parsed));
+	const invented = (link) => isInventedLink(link, references);
+	assert.deepEqual(withoutJoinedLinks(parsed, ["See https://evil.test/", "path"], invented), ["See ", ""]);
+	// And the text after a node's last slot.
+	const around = messageSlots({ htmlBody: `<p>${"一".repeat(2_990)}。${digits}</p>` });
+	assert.deepEqual(withoutJoinedLinks(around, ["See https://evil.test/"], invented), ["See "]);
+});
+
+test("taking one link out can join another, and that goes too", () => {
+	const parsed = messageSlots({ htmlBody: `<p>${"一".repeat(2_990)}。${"二".repeat(2_000)}</p>` });
+	const references = linkReferences(sourceTexts(parsed));
+	const cleaned = withoutJoinedLinks(parsed, ["https://evil.test/a https://", "evil.test/b"], (link) =>
+		isInventedLink(link, references),
+	);
+	assert.equal(cleaned.join("").includes("evil.test"), false, cleaned.join(""));
+});
+
+test("a tag ends the text a link can run through", () => {
+	const parsed = messageSlots({ htmlBody: "<p>one<b>two</b>three</p>" });
+	const segments = ["https://", "evil.test/pay", "more"];
+	assert.deepEqual(
+		withoutJoinedLinks(parsed, segments, () => true),
+		segments,
+	);
+	assert.deepEqual(sourceTexts(parsed), ["one", "two", "three"]);
+});
+
+test("a link in the sender's text around a piece is theirs", () => {
+	const parsed = messageSlots({ htmlBody: "<p>Read <b>this</b> at https://real.example/a today</p>" });
+	const references = linkReferences(sourceTexts(parsed));
+	assert.equal(references.links.has("https://real.example/a"), true);
+	const segments = ["Lees", "dit", "op https://real.example/a vandaag"];
+	assert.deepEqual(
+		withoutJoinedLinks(parsed, segments, (link) => isInventedLink(link, references)),
+		segments,
+	);
+});
+
+test("hidden text and code are no source for a link", () => {
+	const parsed = messageSlots({
+		htmlBody:
+			'<p>Hello there</p><div style="display:none">https://evil.test/a</div><code>https://evil.test/b</code><p>Bye</p>',
+	});
+	assert.equal(sourceTexts(parsed).join(" ").includes("evil.test"), false);
+});
+
+test("the language of a reply is that of its new part, not the thread under it", () => {
+	const english =
+		"Hi Sam, thanks for the update on the project. We will have the report ready for you at the end of this week and I can send it to you if that is what you would like.";
+	const parsed = messageSlots({
+		htmlBody: `<div>สวัสดีครับ เราจะส่งเอกสารให้คุณในวันจันทร์นี้</div><div class="gmail_quote"><blockquote>${english}</blockquote></div>`,
+	});
+	const own = parsed.slots.flatMap((slot, index) => (slot.quoted ? [] : [index]));
+	assert.equal(slotsLanguage(parsed, own), "th");
+	assert.equal(
+		slotsLanguage(
+			parsed,
+			parsed.slots.map((_, index) => index),
+		),
+		"en",
+		"what the whole message reads as",
+	);
+	assert.equal(slotsLanguage(parsed, []), null);
 });
 
 test("plain text is read trimmed, as it is put back", () => {
@@ -631,6 +702,9 @@ test("the sample is the subject and the new words, from text or HTML", () => {
 	const quoted = "New words\n\nOn Mon, Sam <sam@example.test> wrote:\n> old words";
 	assert.equal(translationSample({ subject: "Hi", textBody: quoted }), "Hi\nNew words");
 	assert.ok(translationSample({ htmlBody: "<p>From html</p>", textBody: "  " }).includes("From html"));
+	const reply = translationSample({ htmlBody: "<p>New</p><blockquote>Old thread</blockquote>" });
+	assert.ok(reply.includes("New"));
+	assert.equal(reply.includes("Old thread"), false, "HTML-only mail is read without its quote");
 	assert.equal(translationSample({}), "\n");
 });
 

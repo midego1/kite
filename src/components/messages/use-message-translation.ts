@@ -48,6 +48,7 @@ export function useMessageTranslation(input: MessageTranslationInput): MessageTr
 	const [blocked, setBlocked] = useState(false);
 	const [dismissed, setDismissed] = useState(false);
 	const [retryable, setRetryable] = useState(true);
+	const [justStopped, setJustStopped] = useState(false);
 	const [chosen, setChosen] = useTranslateTarget();
 	const [never, setNever] = useTranslateNever();
 	const [reading] = useState(browserLanguages);
@@ -62,6 +63,7 @@ export function useMessageTranslation(input: MessageTranslationInput): MessageTr
 		setBlocked(false);
 		setDismissed(false);
 		setRetryable(true);
+		setJustStopped(false);
 	}
 	useEffect(() => {
 		shownKey.current = messageId;
@@ -143,8 +145,11 @@ export function useMessageTranslation(input: MessageTranslationInput): MessageTr
 		dismiss: () => setDismissed(true),
 		neverOffered: !!detected && never.includes(detected),
 		toggleNeverOffered: () => {
-			if (detected) setNever(toggledLanguage(never, detected));
+			if (!detected) return;
+			setJustStopped(!never.includes(detected));
+			setNever(toggledLanguage(never, detected));
 		},
+		justStopped,
 		translation: off ? null : translation,
 		shown,
 		busy,

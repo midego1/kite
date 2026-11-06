@@ -5,6 +5,7 @@ import {
 	isSummaryEligible,
 	languageName,
 	primaryLanguage,
+	QUOTE_START,
 	UNKNOWN_LANGUAGE,
 } from "@/lib/agent/summaries/summary-utils";
 import { getLatestEmailContent, htmlToReadableText } from "@/lib/email/reply-content-utils";
@@ -32,7 +33,9 @@ export function offersTranslation(detected: string | null, reading: readonly str
 
 /** The text the local detection reads: the subject and the message's own words, without its quoted history. */
 export function translationSample(body: TranslationBody): string {
-	const text = body.textBody?.trim() ? body.textBody : htmlToReadableText(body.htmlBody);
+	const html = body.htmlBody ?? "";
+	const quote = html.search(QUOTE_START);
+	const text = body.textBody?.trim() ? body.textBody : htmlToReadableText(quote >= 0 ? html.slice(0, quote) : html);
 	return `${body.subject ?? ""}\n${getLatestEmailContent(text)}`;
 }
 

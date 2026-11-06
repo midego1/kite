@@ -9,7 +9,6 @@ import { TRANSLATION_ANSWER_TOKENS } from "../output-budget-utils";
 import { checkedModelAnswer, SummaryRefusal } from "../summaries/model-answer";
 import { loadAnchor, unavailableReason, type Anchor } from "../summaries/service";
 import { isSummaryEligible, languageName, UNKNOWN_LANGUAGE } from "../summaries/summary-utils";
-import { detectMessageLanguage } from "./detect-language-utils";
 import {
 	buildMessageTranslationPrompt,
 	checkTranslationAnswer,
@@ -26,6 +25,7 @@ import {
 	planChunks,
 	rebuildMessage,
 	slotsDigest,
+	slotsLanguage,
 	sourceTexts,
 	withoutJoinedLinks,
 } from "./segment-utils";
@@ -60,8 +60,6 @@ async function loadParsedMessage(env: CloudflareEnv, messageId: string): Promise
 
 const hasLetters = (text: string) => /\p{L}/u.test(text);
 const known = (language: string) => (language === UNKNOWN_LANGUAGE ? null : language);
-const detected = (parsed: Parsed) =>
-	detectMessageLanguage(parsed.slots.map((slot) => slot.text).join("\n")) ?? UNKNOWN_LANGUAGE;
 
 function present(parsed: Parsed, target: string, content: StoredTranslation, model: string | null): MessageTranslation {
 	const body = rebuildMessage(parsed, content.segments);
@@ -176,6 +174,14 @@ async function translateSlots(input: TranslateInput) {
 	return { translated, first: first.value, subject: answers[0]?.value.subject ?? null, modelId: first.modelId };
 }
 
+/** Whether a kept translation may be returned or a new one made; the same switches apply to both. */
+async function refuseUnavailable(env: CloudflareEnv, anchor: Anchor): Promise<void> {
+	const reason = await unavailableReason(env, isSummaryEligible(anchor), anchor.mailboxId);
+	if (reason === "mailbox_ai_off" || reason === "assistant_off")
+		throw new SummaryRefusal(aiErrorHttpStatus(reason), aiErrorMessage(reason), reason);
+	if (!isSummaryEligible(anchor)) throw new SummaryRefusal(409, "This message cannot be translated.", "not_eligible");
+}
+
 /**
  * Translates a message into `target`, keeping the result, or returns what is kept with no model call. The new part
  * comes first; `quoted` adds the quoted history to what is stored. Anyone who can read the mailbox may do this,
@@ -190,10 +196,7 @@ export async function createTranslation(
 	const { target } = request;
 	const db = getDb(env);
 	const anchor = await loadAnchor(db, user, messageId);
-	const reason = await unavailableReason(env, isSummaryEligible(anchor), anchor.mailboxId);
-	if (reason === "mailbox_ai_off" || reason === "assistant_off")
-		throw new SummaryRefusal(aiErrorHttpStatus(reason), aiErrorMessage(reason), reason);
-	if (!isSummaryEligible(anchor)) throw new SummaryRefusal(409, "This message cannot be translated.", "not_eligible");
+	await refuseUnavailable(env, anchor);
 	const stored = await readMessageTranslation(db, anchor.id, target);
 	if (stored.pending) throw new SummaryRefusal(409, "Apply the pending database update first", "MIGRATION_PENDING");
 	const parsed = await loadParsedMessage(env, anchor.id);
@@ -207,7 +210,8 @@ export async function createTranslation(
 	});
 	if (valid && !wanted.length) return { translation: present(parsed, target, valid.content, valid.model) };
 	// Nothing to do when the message is plainly in that language already; when Kite is unsure, the model decides.
-	if (!valid && detected(parsed) === target)
+	const newPartLanguage = slotsLanguage(parsed, wanted);
+	if (!valid && newPartLanguage === target)
 		throw new SummaryRefusal(409, `This message is already in ${languageName(target)}.`, "already_in_language");
 	const references = linkReferences([parsed.subject, ...sourceTexts(parsed)]);
 	const { translated, ...answer } = await translateSlots({
@@ -222,7 +226,7 @@ export async function createTranslation(
 	});
 	const { first, modelId } = answer;
 	const content: StoredTranslation = {
-		from: valid?.content.from ?? (known(first.language) || detected(parsed)),
+		from: valid?.content.from ?? (known(first.language) || newPartLanguage || UNKNOWN_LANGUAGE),
 		subject: valid ? valid.content.subject : answer.subject,
 		segments: withoutJoinedLinks(
 			parsed,

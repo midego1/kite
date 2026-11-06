@@ -393,6 +393,27 @@ test.describe("Translating a message", () => {
 		}
 	});
 
+	test("a foreign reply over a thread in the target language is translated", async ({ browser }) => {
+		const account = await newAccount("translatereply");
+		const english =
+			"Hi Sam, thanks for the update on the project. We will have the report ready for you at the end of this week and I can send it to you if that is what you would like.";
+		const message = await deliver(account, {
+			text: THAI,
+			html: `<div>${THAI}</div><div class="gmail_quote"><blockquote>${english}</blockquote></div>`,
+		});
+		const { context, page } = await signedInPage(browser, account);
+		try {
+			await page.goto(`/inbox/${message.id}`);
+			await bar(page).getByRole("button", { name: "Translate to English" }).click();
+			await expect(bar(page)).toContainText("Translated from Thai");
+			await expect(frame(page).locator("div").first()).toContainText(`${FAKE_TRANSLATION_PREFIX} ${THAI}`);
+			expect(translations()).toHaveLength(1);
+		} finally {
+			await context.close();
+			await account.api.dispose();
+		}
+	});
+
 	test("a language can be taken off the offer, and put back", async ({ browser }) => {
 		const account = await newAccount("translatenever");
 		const dutch =
@@ -402,8 +423,13 @@ test.describe("Translating a message", () => {
 		const { context, page } = await signedInPage(browser, account);
 		try {
 			await page.goto(`/inbox/${first.id}`);
+			// The choice can be undone on the spot.
 			await bar(page).getByRole("button", { name: "Don't offer for Dutch" }).click();
-			await expect(bar(page)).toHaveCount(0);
+			await expect(bar(page)).toContainText("won't be offered for Dutch");
+			await bar(page).getByRole("button", { name: "Undo" }).click();
+			await expect(bar(page)).toContainText("This message is in Dutch.");
+			await bar(page).getByRole("button", { name: "Don't offer for Dutch" }).click();
+			await expect(bar(page).getByRole("button", { name: "Undo" })).toBeVisible();
 			await expect
 				.poll(
 					async () =>

@@ -6,7 +6,10 @@ export const PREVIEW_CLOSE_DELAY_MS = 220;
 export const PREVIEW_EXCERPT_CHARS = 320;
 /** The characters of a drafted reply the preview shows. */
 export const PREVIEW_DRAFT_CHARS = 700;
-/** The part of an HTML body that is read for its text; the rest of a very large message is never parsed. */
+/**
+ * The part of an HTML body that is read for its text; the rest of a very large message is never parsed.
+ * @public Consumed by tests that check the cap.
+ */
 export const PREVIEW_HTML_LIMIT = 200_000;
 
 /** The pointer kinds that hover: a finger has no hover, so touch keeps the row opening the message. */

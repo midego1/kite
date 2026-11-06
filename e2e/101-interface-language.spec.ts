@@ -125,16 +125,22 @@ test.describe("interface language", () => {
 
 	test("public pages stay English and left to right for someone who chose Arabic", async ({ browser }) => {
 		const page = await openBrowser(browser, "ar-EG", "ar");
-		await page.goto("/login");
-		await expectHtml(page, "en", "ltr");
-		await page.goto("/d/no-such-link");
-		await expectHtml(page, "en", "ltr");
-		await page.goto("/book/no-such-user");
-		await expectHtml(page, "en", "ltr");
+		for (const path of ["/d/no-such-link", "/book/no-such-user", "/"]) {
+			await page.goto(path);
+			await expectHtml(page, "en", "ltr");
+		}
 		await page.goto("/inbox");
 		await expect(nav(page, "المُرسَلة")).toBeVisible();
 		await expectHtml(page, "ar", "rtl");
 		await page.context().close();
+
+		const signedOut = await browser.newContext({ locale: "ar-EG", storageState: { cookies: [], origins: [] } });
+		const login = await signedOut.newPage();
+		await login.addInitScript((key) => localStorage.setItem(key, "ar"), LANGUAGE_KEY);
+		await login.goto("/login");
+		await expect(login.getByRole("button", { name: /sign in/i }).first()).toBeVisible();
+		await expectHtml(login, "en", "ltr");
+		await signedOut.close();
 	});
 
 	test("English downloads no catalog, and an Arabic reader fetches only theirs", async ({ browser }) => {

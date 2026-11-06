@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import { emptyEmailColours } from "@/components/messages/email-colour-utils";
+import type { MessageTranslation } from "@/lib/agent/translation/translation-types";
 import type { EmailColourFacts } from "@/components/messages/email-html-frame-types";
 import { sanitizeEmailHtml } from "@/app/(dashboard)/inbox/[messageId]/email-html-sanitizer";
 import { collapseQuotedEmailHtml } from "@/app/(dashboard)/inbox/[messageId]/quote-collapse-utils";
@@ -28,6 +29,21 @@ export type ReaderBody = {
 	quotedColours: EmailColourFacts;
 	blockedRemoteImages: number;
 };
+
+/**
+ * The translated message as the reader shows it, null while the original is on screen. It takes the way the
+ * original takes: split from its quoted history, sanitized and folded here, then the sandboxed frame.
+ */
+export function useTranslatedReaderBody(
+	input: ReaderBodyInput | null,
+	translation: Pick<MessageTranslation, "text" | "html"> | null,
+): ReaderBody | null {
+	return useReaderBody(
+		input && translation
+			? { ...input, textBody: translation.text ?? input.textBody, htmlBody: translation.html ?? input.htmlBody }
+			: null,
+	);
+}
 
 /**
  * A message's body as the reader shows it: split from its quoted history, sanitized and folded. Sanitizing parses

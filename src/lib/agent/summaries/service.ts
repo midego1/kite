@@ -1,40 +1,20 @@
 import { bodyBytesColumn, withStoredBodies } from "@/lib/messages/body-batches";
-import { generateText, type LanguageModelUsage } from "ai";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { getDb, type AppDatabase } from "@/db";
 import { messages } from "@/db/schema";
 import { loadMessageBodies } from "@/lib/email/bodies";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import type { SessionUser } from "@/lib/auth/types";
-import { getAutoReadInstallSettings } from "../auto-read/install-settings";
 import { readMailboxAgentSettingsRow } from "../auto-read/mailbox-settings";
-import { buildModelCallOptions, callWithFallback, completedText } from "../auto-read/model-call-utils";
-import { reportAiErrorClass } from "../ai-errors";
-import {
-	aiErrorHttpStatus,
-	aiErrorMessage,
-	classifyAiError,
-	UnusableAnswerError,
-	type AiErrorDetails,
-} from "../ai-error-utils";
+import { aiErrorMessage } from "../ai-error-utils";
 import { mailboxAiOff } from "../mailbox-ai";
-import { aiCallTimeoutMs } from "../provider-url-utils";
-import {
-	finishReasonOf,
-	keepReservedEstimate,
-	reconcileAiSpend,
-	refusedSpendCap,
-	reserveAiSpend,
-} from "../auto-read/spend";
-import type { AutoSpendSource, ReserveAiSpendInput } from "../auto-read/spend-types";
-import { spendCapMessage } from "../chat-spend-utils";
-import { interactiveRefusal, selectInteractiveModel } from "../interactive-model";
+import type { AutoSpendSource } from "../auto-read/spend-types";
+import { interactiveRefusal } from "../interactive-model";
 import { getAgentProviderPublicConfig } from "../provider";
 import { personalInstructionsFor } from "../user-ai-settings";
 import { agentThreadCondition } from "../thread-context";
 import {
 	buildSummaryPrompt,
-	buildSummaryRepairPrompt,
 	buildTranslationPrompt,
 	isSummaryEligible,
 	SUMMARY_FULL_MESSAGES,
@@ -43,6 +23,7 @@ import {
 	summaryReferences,
 	summaryText,
 } from "./summary-prompt-utils";
+import { checkedModelAnswer, SummaryRefusal } from "./model-answer";
 import { readCachedSummary, saveSummary, saveTranslation, storedContent, type SummaryKey } from "./store";
 import type { SummaryContent, SummaryMessage, SummaryPrompt, SummaryScope, SummaryState } from "./summary-types";
 import {
@@ -59,23 +40,9 @@ const MAX_COVERED_MESSAGES = 200;
 const SUMMARY_CALL_TIMEOUT_MS = 60_000;
 const ELIGIBLE = [...SUMMARY_STATUSES];
 
-/**
- * A request answered with its status and a code before or instead of a saved summary; a failed AI request also
- * carries the details the card shows under Details.
- */
-export class SummaryRefusal extends Error {
-	constructor(
-		readonly status: number,
-		message: string,
-		readonly code: string,
-		readonly details?: AiErrorDetails,
-	) {
-		super(message);
-		this.name = "SummaryRefusal";
-	}
-}
+export { SummaryRefusal };
 
-type Anchor = {
+export type Anchor = {
 	id: string;
 	mailboxId: string;
 	threadKey: string;
@@ -87,7 +54,7 @@ type Anchor = {
  * The opened message, when the user can read its mailbox; another user's draft and mail of a mailbox they cannot
  * read are not found, so ids do not leak.
  */
-async function loadAnchor(db: AppDatabase, user: SessionUser, messageId: string): Promise<Anchor> {
+export async function loadAnchor(db: AppDatabase, user: SessionUser, messageId: string): Promise<Anchor> {
 	const [row] = await db
 		.select({
 			id: messages.id,
@@ -199,7 +166,7 @@ type SummaryRequest = { scope: SummaryScope; language: string | null };
  * Why the button cannot run here, if it cannot: the message is excluded, the assistant is off or unconfigured, or AI
  * is off for the mailbox.
  */
-async function unavailableReason(
+export async function unavailableReason(
 	env: CloudflareEnv,
 	eligible: boolean,
 	mailboxId: string,
@@ -282,9 +249,11 @@ async function stateOf(env: CloudflareEnv, loaded: Loaded, request: SummaryReque
 	};
 }
 
-type ModelSelection = Awaited<ReturnType<typeof selectInteractiveModel>>;
-
-type GenerateInput = {
+/**
+ * One summary or translation, checked by code: an unusable answer gets one repair turn, a second one is an error
+ * that says what was wrong.
+ */
+async function generate(input: {
 	env: CloudflareEnv;
 	userId: string;
 	mailboxId: string;
@@ -292,152 +261,19 @@ type GenerateInput = {
 	prompt: SummaryPrompt;
 	references: string[];
 	language?: string;
-};
-
-/** The reservation was refused at a cap; the message names which one. */
-class SpendCapRefusal extends Error {
-	constructor(message: string) {
-		super(message);
-		this.name = "SpendCapReachedError";
-	}
-}
-
-/** A provider's HTTP status when it refused the request outright (a 4xx), which costs nothing. */
-function rejectedOutright(error: unknown): boolean {
-	const status = (error as { statusCode?: unknown } | null)?.statusCode;
-	return typeof status === "number" && status >= 400 && status < 500;
-}
-
-/**
- * Reserves the spend of one request, or refuses with the message that names the cap. A call that fails without
- * reporting usage (a timeout, an abort, a dropped connection) keeps its estimate as the recorded spend, as compose
- * and chat do; only a request the provider refused outright is settled at zero.
- */
-async function reserved<T extends { usage: LanguageModelUsage | undefined }>(
-	reserve: ReserveAiSpendInput,
-	call: () => Promise<T>,
-) {
-	const reservation = await reserveAiSpend(reserve);
-	if (!reservation) throw new SpendCapRefusal(spendCapMessage(await refusedSpendCap(reserve), reserve));
-	let result: T;
-	try {
-		result = await call();
-	} catch (error) {
-		const outcome = { status: "failed", errorCode: classifyAiError(error).code } as const;
-		if (rejectedOutright(error))
-			await reconcileAiSpend({ env: reserve.env, reservation, rates: reserve.details.rates, outcome });
-		else await keepReservedEstimate(reserve.env, reservation, outcome);
-		throw error;
-	}
-	await reconcileAiSpend({
-		env: reserve.env,
-		reservation,
-		rates: reserve.details.rates,
-		usage: result.usage,
-		outcome: { status: "ok", finishReason: finishReasonOf(result) },
+}): Promise<{ summary: SummaryContent; modelId: string }> {
+	const { references, language, ...request } = input;
+	const { value, modelId } = await checkedModelAnswer<SummaryContent>({
+		...request,
+		answerTokens: SUMMARY_MAX_OUTPUT_TOKENS,
+		timeoutMs: SUMMARY_CALL_TIMEOUT_MS,
+		check: (text) => {
+			const parsed = checkSummaryOutput(text, { references, ...(language ? { language } : {}) });
+			return parsed.ok ? { ok: true, value: parsed.summary } : parsed;
+		},
+		problemText: summaryProblemText,
 	});
-	return result;
-}
-
-/** What the last model request of a summary said, for the log line of a failure. */
-type CallTrace = {
-	modelId: string | null;
-	provider: string | null;
-	usage: LanguageModelUsage | null;
-	finishReason: string | null;
-};
-
-/**
- * One summary or translation: the model chosen and the opt-in checked again for every request (the repair turn
- * too), each request's estimate reserved against the mailbox and install caps and settled with its usage, the
- * answer checked by code. An unusable answer gets one repair turn; a second one is an error. Every failure is
- * logged once and answered with its own code and message (`ai-error-utils.ts`).
- */
-async function generate(input: GenerateInput): Promise<{ summary: SummaryContent; modelId: string }> {
-	const db = getDb(input.env);
-	const settings = await readMailboxAgentSettingsRow(db, input.mailboxId);
-	const install = await getAutoReadInstallSettings(input.env);
-	const timeoutMs = aiCallTimeoutMs(input.env, process.env.NODE_ENV, SUMMARY_CALL_TIMEOUT_MS);
-	const startedAt = Date.now();
-	const trace: CallTrace = { modelId: null, provider: null, usage: null, finishReason: null };
-	const call = async (prompt: SummaryPrompt) => {
-		const selection: ModelSelection = await selectInteractiveModel(input.env, {
-			mailboxId: input.mailboxId,
-			modelId: settings?.modelId,
-		});
-		trace.modelId = selection.modelId;
-		trace.provider = selection.provider;
-		const options = buildModelCallOptions({
-			provider: selection.providerKind,
-			preset: selection.preset,
-			kind: "draft",
-			modelId: selection.modelId,
-			// The summary's own budget, which a parameter fallback keeps; a thinking request's room comes on top.
-			answerTokens: SUMMARY_MAX_OUTPUT_TOKENS,
-			reasoningEffort: selection.reasoningEffort,
-		});
-		let sent = options;
-		const result = await callWithFallback(options, (current) => {
-			sent = current;
-			return reserved(
-				{
-					env: input.env,
-					details: selection,
-					source: input.source,
-					mailboxId: input.mailboxId,
-					jobId: null,
-					promptChars: prompt.system.length + prompt.messages.reduce((sum, message) => sum + message.content.length, 0),
-					maxOutputTokens: current.maxOutputTokens,
-					installCapMicros: install.dailySpendCapMicros,
-					mailboxCapMicros: settings?.dailySpendCapMicros ?? null,
-					tokenCap: install.chatTokenCap,
-				},
-				() =>
-					generateText({
-						model: selection.model,
-						system: prompt.system,
-						messages: prompt.messages,
-						maxOutputTokens: current.maxOutputTokens,
-						providerOptions: current.providerOptions,
-						maxRetries: 0,
-						abortSignal: AbortSignal.timeout(timeoutMs),
-					}),
-			);
-		});
-		trace.usage = result.usage ?? null;
-		trace.finishReason = result.finishReason;
-		return { text: completedText(result, sent), modelId: selection.modelId };
-	};
-	const check = (text: string) =>
-		checkSummaryOutput(text, { references: input.references, ...(input.language ? { language: input.language } : {}) });
-	try {
-		const first = await call(input.prompt);
-		const parsed = check(first.text);
-		if (parsed.ok) return { summary: parsed.summary, modelId: first.modelId };
-		const second = await call(buildSummaryRepairPrompt(input.prompt, first.text, parsed.error));
-		const repaired = check(second.text);
-		if (repaired.ok) return { summary: repaired.summary, modelId: second.modelId };
-		throw new UnusableAnswerError(summaryProblemText(repaired.error));
-	} catch (error) {
-		if (error instanceof SummaryRefusal) throw error;
-		const failure = classifyAiError(error);
-		const body = await reportAiErrorClass(
-			error instanceof SpendCapRefusal ? { ...failure, message: error.message } : failure,
-			{
-				env: input.env,
-				feature: input.source,
-				model: trace.modelId,
-				provider: trace.provider,
-				startedAt,
-				usage: trace.usage,
-				finishReason: trace.finishReason,
-				timeoutMs,
-				userId: input.userId,
-				mailboxId: input.mailboxId,
-			},
-		);
-		throw new SummaryRefusal(aiErrorHttpStatus(body.code), body.error, body.code, body.details);
-	}
+	return { summary: value, modelId };
 }
 
 const changed = () => new SummaryRefusal(409, "The conversation changed; summarize again.", "conversation_changed");

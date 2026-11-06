@@ -17,7 +17,9 @@ import type { MessageAttachment } from "@/app/(dashboard)/inbox/[messageId]/type
 import { needsRiskReview } from "@/lib/email/attachment-risk";
 
 import { cn } from "@/lib/utils";
+import type { ThreadMessage } from "@/hooks/types";
 import type { ConversationMessageCardProps, ConversationThreadProps } from "./conversation-thread-types";
+import type { TranslationAvailability } from "./message-translation-types";
 import { ViaAccountChip } from "./via-account-chip";
 import { ThreadMessageActions } from "./thread-message-actions";
 import {
@@ -28,8 +30,11 @@ import {
 } from "./conversation-thread-utils";
 import clsx from "clsx";
 import { LinkifiedText } from "./linkified-text";
-import { useReaderBody } from "./use-reader-body";
+import { useReaderBody, useTranslatedReaderBody, type ReaderBodyInput } from "./use-reader-body";
 import { SuggestionCard } from "../agent/suggestion-card";
+import { MessageTranslationBar } from "./message-translation-bar";
+import { useMessageTranslation } from "./use-message-translation";
+import { isSummaryEligible } from "@/lib/agent/summaries/summary-utils";
 
 /**
  * The other messages in a conversation, ordered oldest to newest and collapsed
@@ -51,6 +56,7 @@ export function ConversationThread({
 	hideTriageSummary = false,
 	remoteImagesShownIds,
 	onShowRemoteImages,
+	translationAvailability: availability = "hidden",
 }: ConversationThreadProps) {
 	const slice = partitionThread(messages, currentMessageId, position, latestMessagesFirst);
 	// The reader mounts one thread above the message and one below; only the upper one carries the card.
@@ -90,6 +96,7 @@ export function ConversationThread({
 							showFullRecipientAddresses={showFullRecipientAddresses}
 							remoteImagesShown={remoteImagesShownIds.has(firstMessage.id)}
 							onShowRemoteImages={() => onShowRemoteImages(firstMessage.id)}
+							translationAvailability={availability}
 						/>
 					</li>
 					{collapsed ? (
@@ -119,6 +126,7 @@ export function ConversationThread({
 									showFullRecipientAddresses={showFullRecipientAddresses}
 									remoteImagesShown={remoteImagesShownIds.has(message.id)}
 									onShowRemoteImages={() => onShowRemoteImages(message.id)}
+									translationAvailability={availability}
 								/>
 							</li>
 						))
@@ -134,6 +142,7 @@ export function ConversationThread({
 								showFullRecipientAddresses={showFullRecipientAddresses}
 								remoteImagesShown={remoteImagesShownIds.has(lastMessage.id)}
 								onShowRemoteImages={() => onShowRemoteImages(lastMessage.id)}
+								translationAvailability={availability}
 							/>
 						</li>
 					)}
@@ -193,6 +202,18 @@ function ThreadAttachmentChip({
 	);
 }
 
+/** A card's body, in the original or its translation, with the translation's controls. */
+function useCardBody(message: ThreadMessage, input: ReaderBodyInput | null, availability: TranslationAvailability) {
+	const original = useReaderBody(input);
+	const translation = useMessageTranslation({
+		messageId: message.id,
+		body: input && { subject: message.subject, textBody: message.textBody, htmlBody: message.htmlBody },
+		availability: availability === "ready" && !isSummaryEligible(message) ? "hidden" : availability,
+	});
+	const translated = useTranslatedReaderBody(input, translation.shown);
+	return { body: translated ?? original, translation };
+}
+
 export function ConversationMessageCard({
 	message,
 	mailboxId,
@@ -203,6 +224,7 @@ export function ConversationMessageCard({
 	showFullRecipientAddresses = false,
 	remoteImagesShown,
 	onShowRemoteImages,
+	translationAvailability: availability = "hidden",
 }: ConversationMessageCardProps) {
 	const [locallyExpanded, setLocallyExpanded] = useState(defaultExpanded);
 	const [locallyRead, setLocallyRead] = useSyncedState(message.read);
@@ -218,19 +240,18 @@ export function ConversationMessageCard({
 	const attachments = message.attachments.filter((attachment) => attachment.disposition === "attachment");
 
 	// Collapsed cards render no body, so they never sanitize; an open one sanitizes once per message and setting.
-	const body = useReaderBody(
-		expanded
-			? {
-					messageId: message.id,
-					textBody: message.textBody,
-					htmlBody: message.htmlBody,
-					snippet: message.snippet,
-					attachments: message.attachments,
-					blockRemoteImages: !alwaysLoadRemoteImages && !remoteImagesShown,
-					dropFontFamily: readerFont !== undefined,
-				}
-			: null,
-	);
+	const input = expanded
+		? {
+				messageId: message.id,
+				textBody: message.textBody,
+				htmlBody: message.htmlBody,
+				snippet: message.snippet,
+				attachments: message.attachments,
+				blockRemoteImages: !alwaysLoadRemoteImages && !remoteImagesShown,
+				dropFontFamily: readerFont !== undefined,
+			}
+		: null;
+	const { body, translation } = useCardBody(message, input, availability);
 
 	return (
 		<article
@@ -312,10 +333,12 @@ export function ConversationMessageCard({
 						ownAddresses={ownAddresses}
 						starOnly={!expanded}
 						remoteImagesShown={remoteImagesShown}
+						translate={translation.menu}
 					/>
 				</div>
 				{expanded && body && (
 					<div className="pb-6 pt-1">
+						<MessageTranslationBar controller={translation} />
 						{body.blockedRemoteImages > 0 && <RemoteImagesNotice onShow={onShowRemoteImages} />}
 						<EmailBody
 							html={body.html}

@@ -30,10 +30,13 @@ export function summaryCopyText(summary: Pick<NonNullable<SummaryState["summary"
 }
 
 /** The error text of a failed summary request, from the route's `{ error }` body, with an AI failure's details. */
-export async function summaryError(response: Response): Promise<{ message: string; failure: AiErrorBody | null }> {
+export async function summaryError(
+	response: Response,
+	fallback = "Kite could not summarize this. Try again.",
+): Promise<{ message: string; failure: AiErrorBody | null }> {
 	const body = (await response.json().catch(() => null)) as { error?: unknown } | null;
 	return {
-		message: typeof body?.error === "string" ? body.error : "Kite could not summarize this. Try again.",
+		message: typeof body?.error === "string" ? body.error : fallback,
 		failure: readAiErrorBody(body),
 	};
 }

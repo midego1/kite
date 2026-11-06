@@ -19,6 +19,17 @@ export const POINTS_TOTAL_MAX_CHARS = 1_200;
 /** The language code of a summary whose language is unknown. */
 export const UNKNOWN_LANGUAGE = "und";
 
+/** The statuses whose messages are ever summarised; drafts, spam, trash, the Screener and module statuses never. */
+export const SUMMARY_STATUSES = ["received", "sent", "archived"] as const;
+
+/** Whether a message may be summarised: a summarised status and not judged spam. */
+export function isSummaryEligible(message: { status: string; spamVerdict?: string | null }): boolean {
+	return (SUMMARY_STATUSES as readonly string[]).includes(message.status) && message.spamVerdict !== "spam";
+}
+
+/** Where a reply's quoted part starts in HTML: a blockquote, or the composer's quote wrapper (`wrapQuotedHtml`). */
+export const QUOTE_START = /<blockquote\b|<[a-z]+\b[^>]*\bdata-kite-quote\b/i;
+
 const LANGUAGE_CODE = /^[a-z]{2}$/;
 const TRAILING_PUNCTUATION = /[.,;:!?]+$/;
 
@@ -41,6 +52,15 @@ export function canTranslate(summaryLanguage: string | null | undefined, userLan
 	return from !== UNKNOWN_LANGUAGE && to !== UNKNOWN_LANGUAGE && from !== to;
 }
 
+/** Whether a two-letter code is a language at all; `zz` is not, and a model must not be asked to write in it. */
+export function isKnownLanguage(code: string): boolean {
+	try {
+		return new Intl.DisplayNames(["en"], { type: "language", fallback: "none" }).of(code) !== undefined;
+	} catch {
+		return false;
+	}
+}
+
 /** A language's English name for the prompt ("Dutch" for `nl`), or the code itself when it has none. */
 export function languageName(code: string, locale = "en"): string {
 	try {
@@ -50,7 +70,7 @@ export function languageName(code: string, locale = "en"): string {
 	}
 }
 
-async function sha256Prefix(value: string): Promise<string> {
+export async function sha256Prefix(value: string): Promise<string> {
 	const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
 	return Array.from(new Uint8Array(digest).slice(0, 8), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
@@ -74,7 +94,7 @@ export async function instructionsDigest(
 	return sha256Prefix(JSON.stringify([general, summary, personal?.name.trim() ?? ""]));
 }
 
-function extractJson(text: string): unknown {
+export function extractJson(text: string): unknown {
 	const trimmed = text.trim();
 	const fenced = trimmed.match(/^```[a-z]*[ \t]*\n?([\s\S]*?)\n?```$/i);
 	const candidate = (fenced ? fenced[1] : trimmed).trim();
@@ -115,27 +135,32 @@ function collectKnown(texts: (string | null | undefined)[]): Known {
 	return { addresses, urls, hosts: new Set([...urls].map(hostOf)) };
 }
 
-/**
- * The links and addresses in `text` that the summarised messages do not contain, as written: full links, bare
- * domains such as `evil.test/pay` (known by link or by host) and addresses, including `name (at) domain`.
- */
-function unknownReferences(text: string, known: Known): string[] {
+/** The links and addresses in `text` that the summarised messages do not contain. */
+export function unknownReferences(text: string, references: ThreadReferences): string[] {
 	const addresses = (text.match(EMAIL_PATTERN) ?? []).filter(
-		(address) => !known.addresses.has(address.replace(TRAILING_PUNCTUATION, "").toLowerCase()),
+		(address) => !references.addresses.has(address.replace(TRAILING_PUNCTUATION, "").toLowerCase()),
 	);
+	const urls = (text.match(URL_PATTERN) ?? []).filter((url) => !references.urls.has(normalizeUrl(url)));
+	return [...urls, ...addresses];
+}
+
+/**
+ * What a summary may not contain, as written: the links and addresses the messages do not contain, bare domains
+ * such as `evil.test/pay` (known by link or by host) and addresses spelled out as `name (at) domain`.
+ */
+function unknownSummaryReferences(text: string, known: Known): string[] {
 	const spelledOut = [...text.matchAll(OBFUSCATED_ADDRESS)]
 		.filter((match) => !known.addresses.has(obfuscatedAddress(match[1], match[2])))
 		.map((match) => match[0]);
-	const urls = (text.match(URL_PATTERN) ?? []).filter((url) => !known.urls.has(normalizeUrl(url)));
 	const domains = [...text.matchAll(BARE_DOMAIN)]
 		.filter((match) => !known.urls.has(normalizeUrl(`https://${match[0]}`)) && !known.hosts.has(match[1].toLowerCase()))
 		.map((match) => match[0]);
-	return [...urls, ...spelledOut, ...addresses, ...domains];
+	return [...unknownReferences(text, known), ...spelledOut, ...domains];
 }
 
 function withoutUnknown(text: string, known: Known): string {
 	let result = text;
-	for (const value of unknownReferences(text, known)) result = result.split(value).join("");
+	for (const value of unknownSummaryReferences(text, known)) result = result.split(value).join("");
 	return result
 		.replace(/\(\s*\)/g, "")
 		.replace(/\s{2,}/g, " ")
@@ -164,7 +189,7 @@ function checkPoints(value: unknown, references: Known): SummaryPoint[] {
 		const pointLabel = label(rawLabel);
 		const text = cut(plain(rawText), POINT_MAX_CHARS);
 		// A point naming a link or address the conversation does not contain is dropped whole.
-		if (!pointLabel || !text || unknownReferences(text, references).length) continue;
+		if (!pointLabel || !text || unknownSummaryReferences(text, references).length) continue;
 		if (total + text.length > POINTS_TOTAL_MAX_CHARS) break;
 		total += text.length;
 		points.push({ label: pointLabel, text });

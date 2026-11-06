@@ -75,7 +75,7 @@ test("detection names the language of a clear message from its script", () => {
 		ur: "السلام علیکم، آپ کے پیغام کا شکریہ۔ ہم جلد ہی آپ سے رابطہ کریں گے۔",
 		ru: "Здравствуйте, спасибо за ваше письмо, мы скоро свяжемся с вами. Вы получите ответ.",
 		uk: "Доброго дня, дякуємо за ваш лист, ми скоро зв'яжемося з вами і дамо відповідь.",
-		hi: "नमस्ते, आपके संदेश के लिए धन्यवाद। हम जल्द ही आपसे संपर्क करेंगे।",
+		hi: "नमस्ते, आपका संदेश मिल गया है। हम जल्द ही आपसे संपर्क करेंगे, यह बहुत ज़रूरी है।",
 	};
 	for (const [code, text] of Object.entries(samples)) assert.equal(detectMessageLanguage(text), code, code);
 });
@@ -108,6 +108,18 @@ test("detection stays quiet when it is not sure", () => {
 		"names and numbers",
 	);
 	assert.equal(detectMessageLanguage("Сербия Београд Загреб наша книга"), null, "a Cyrillic language it cannot name");
+});
+
+test("a script two languages share stays undecided, and so does mail in two scripts", () => {
+	assert.equal(detectMessageLanguage("नमस्कार, तुमचा संदेश मिळाला आहे आणि आम्ही लवकरच संपर्क करू."), null, "Marathi");
+	assert.equal(
+		detectMessageLanguage("नमस्ते, तपाईंको सन्देश प्राप्त भयो र हामी चाँडै सम्पर्क गर्नेछौं।"),
+		null,
+		"Nepali",
+	);
+	const thai = "สวัสดีครับ ขอบคุณมาก ".repeat(2);
+	const greek = "Καλημέρα σας ευχαριστώ πολύ ".repeat(2);
+	assert.equal(detectMessageLanguage(`${thai}${greek}`), null);
 });
 
 test("a mostly foreign message with Latin names is still foreign, and a mostly English one is not", () => {
@@ -150,6 +162,16 @@ test("entities are decoded for the model and white space around a node stays", (
 		["Tom & Jerry — café today"].map((text) => text.replace(/\s+/g, " ")),
 	);
 	assert.equal(rebuildMessage(parsed, ["Tom en Jerry"]), "<p>  Tom en Jerry  </p>");
+});
+
+test("a space the translation needs between pieces stays, and none is doubled", () => {
+	const parsed = messageSlots({ htmlBody: "<p>请点击<a href='/x'>这里</a> 继续</p>" });
+	assert.equal(
+		rebuildMessage(parsed, ["Please click ", "here", " to go on"]),
+		"<p>Please click <a href='/x'>here</a> to go on</p>",
+	);
+	const plainText = messageSlots({ textBody: "Hallo daar" });
+	assert.equal(rebuildMessage(plainText, [" Hello there "]), "Hello there");
 });
 
 test("a translation is only ever text: HTML in the answer stays inert", () => {
@@ -284,6 +306,25 @@ test("plain text keeps its paragraphs, list markers and quoted history", () => {
 	);
 });
 
+test("an inline reply keeps the new lines between the quoted ones", () => {
+	const parsed = messageSlots({
+		textBody: [
+			"> Can you come?",
+			"Yes, on Monday.",
+			"> And Sam?",
+			"He comes too.",
+			"",
+			"On Mon, Sam <sam@example.test> wrote:",
+			"> Old",
+		].join("\n"),
+	});
+	assert.deepEqual(texts(parsed), ["Yes, on Monday.", "He comes too."]);
+	assert.equal(
+		rebuildMessage(parsed, ["Ja, maandag.", "Hij komt ook."]).split("\n").slice(0, 4).join("\n"),
+		["> Can you come?", "Ja, maandag.", "> And Sam?", "Hij komt ook."].join("\n"),
+	);
+});
+
 test("plain text is never escaped, and a message without a body has no slots", () => {
 	const parsed = messageSlots({ textBody: "Is 1 < 2 & 3?" });
 	assert.equal(rebuildMessage(parsed, ["Is 1 < 2 & 3 waar?"]), "Is 1 < 2 & 3 waar?");
@@ -301,11 +342,11 @@ test("a stored translation is tied to the pieces it was made from", async () => 
 test("long mail is planned into requests and stops at the cap", () => {
 	const slots = Array.from({ length: 10 }, (_, index) => ({ text: "x".repeat(2_000), index }));
 	const indexes = slots.map((_, index) => index);
-	assert.deepEqual(planChunks(slots, indexes, { maxChars: 6_000, maxChunks: 5 }), {
+	assert.deepEqual(planChunks(slots, indexes, { maxChars: 6_100, maxChunks: 5 }), {
 		chunks: [[0, 1, 2], [3, 4, 5], [6, 7, 8], [9]],
 		cut: false,
 	});
-	assert.deepEqual(planChunks(slots, indexes, { maxChars: 6_000, maxChunks: 2 }), {
+	assert.deepEqual(planChunks(slots, indexes, { maxChars: 6_100, maxChunks: 2 }), {
 		chunks: [
 			[0, 1, 2],
 			[3, 4, 5],
@@ -314,11 +355,20 @@ test("long mail is planned into requests and stops at the cap", () => {
 	});
 	assert.deepEqual(planChunks(slots, [], { maxChars: 6_000, maxChunks: 2 }), { chunks: [], cut: false });
 	// The subject takes room in the first request.
-	assert.deepEqual(planChunks(slots, [0, 1, 2], { maxChars: 6_000, maxChunks: 5, reserved: 100 }).chunks, [
+	assert.deepEqual(planChunks(slots, [0, 1, 2], { maxChars: 6_100, maxChunks: 5, reserved: 100 }).chunks, [
 		[0, 1],
 		[2],
 	]);
 	assert.equal(TRANSLATION_CHUNK_MAX_CHARS * TRANSLATION_MAX_CHUNKS, 30_000);
+	// A table of one-word cells does not fill one answer.
+	const cells = Array.from({ length: 3_000 }, () => ({ text: "Yes" }));
+	const plan = planChunks(
+		cells,
+		cells.map((_, index) => index),
+		{ maxChars: 6_000, maxChunks: 5 },
+	);
+	assert.ok(plan.chunks.every((chunk) => chunk.length <= 225));
+	assert.equal(plan.cut, true);
 });
 
 test("the prompt carries the mail as nonce-delimited data and no markup", () => {
@@ -367,7 +417,10 @@ test("a good answer passes with its language and subject", () => {
 	assert.deepEqual(noSubject.value, { language: "und", subject: null, segments: ["a", "b"] });
 	// Words may move between pieces.
 	assert.equal(check('{"segments":["สวัสดี โลก",""]}').ok, true);
-	assert.equal(check('{"segments":[]}', { sources: [], references: [] }).ok, true);
+	assert.equal(check('{"subject":"เรื่อง","segments":[]}', { sources: [], references: [] }).ok, true);
+	assert.equal(check('{"segments":[]}', { sources: [], references: [], subject: false }).ok, true);
+	// A subject is not worth a second request when the body came back.
+	assert.equal(check('{"segments":["ก","ข"]}').value.subject, null);
 });
 
 test("an answer that does not line up is refused, in plain words", () => {
@@ -389,8 +442,9 @@ test("an answer that does not line up is refused, in plain words", () => {
 	assert.equal(translationProblemText("every piece is empty"), "it had no text");
 	assert.equal(translationProblemText("the reply is empty"), "it was empty");
 	assert.equal(translationProblemText("something else"), "it did not pass Kite's checks");
-	// A piece that is not a string is no translation.
-	assert.equal(check('{"segments":[{"a":1},"โลก"]}').value.segments[0], "");
+	assert.equal(refused('{"segments":[{"a":1},"โลก"]}'), "a piece is not text");
+	assert.equal(refused('{"segments":[]}', { sources: [], references: [] }), "the subject is missing");
+	assert.equal(refused('{"subject":" ","segments":[]}', { sources: [], references: [] }), "the subject is missing");
 });
 
 test("an injected link or address does not survive; the sender's own do", () => {
@@ -409,6 +463,10 @@ test("an injected link or address does not survive; the sender's own do", () => 
 	assert.equal(result.ok, true);
 	assert.equal(result.value.segments[0], "Zie https://real.example/offer of sam@real.example");
 	assert.equal(result.value.segments[1], "Mail en nu");
+	const kept = check(JSON.stringify({ segments: ["  a\n\n    b https://evil.example/x\n  c", "d"] }), {
+		subject: false,
+	});
+	assert.deepEqual(kept.value.segments, [" a\n\n    b\n  c", "d"], "only the link goes");
 	assert.equal(result.value.subject, "Win at");
 });
 
@@ -498,6 +556,7 @@ test("the remembered language reads safely", () => {
 
 test("the route takes a language code and nothing else", () => {
 	assert.equal(translationQuerySchema.safeParse({ target: "th" }).success, true);
+	assert.equal(translationQuerySchema.safeParse({ target: "zz" }).success, false, "no such language");
 	assert.equal(translationQuerySchema.safeParse({ target: "TH" }).success, false);
 	assert.equal(translationQuerySchema.safeParse({ target: "thai" }).success, false);
 	assert.equal(translationQuerySchema.safeParse({ target: null }).success, false);

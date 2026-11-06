@@ -48,6 +48,15 @@ export function canTranslate(summaryLanguage: string | null | undefined, userLan
 	return from !== UNKNOWN_LANGUAGE && to !== UNKNOWN_LANGUAGE && from !== to;
 }
 
+/** Whether a two-letter code is a language at all; `zz` is not, and a model must not be asked to write in it. */
+export function isKnownLanguage(code: string): boolean {
+	try {
+		return new Intl.DisplayNames(["en"], { type: "language", fallback: "none" }).of(code) !== undefined;
+	} catch {
+		return false;
+	}
+}
+
 /** A language's English name for the prompt ("Dutch" for `nl`), or the code itself when it has none. */
 export function languageName(code: string, locale = "en"): string {
 	try {
@@ -110,7 +119,7 @@ function cut(text: string, max: number): string {
 }
 
 /** The links and addresses in `text` that the summarised messages do not contain. */
-function unknownReferences(text: string, references: ThreadReferences): string[] {
+export function unknownReferences(text: string, references: ThreadReferences): string[] {
 	const addresses = (text.match(EMAIL_PATTERN) ?? []).filter(
 		(address) => !references.addresses.has(address.replace(TRAILING_PUNCTUATION, "").toLowerCase()),
 	);
@@ -118,12 +127,9 @@ function unknownReferences(text: string, references: ThreadReferences): string[]
 	return [...urls, ...addresses];
 }
 
-/** `text` without the links and addresses the messages do not contain; text without any comes back unchanged. */
-export function withoutUnknown(text: string, references: ThreadReferences): string {
-	const unknown = unknownReferences(text, references);
-	if (!unknown.length) return text;
+function withoutUnknown(text: string, references: ThreadReferences): string {
 	let result = text;
-	for (const value of unknown) result = result.split(value).join("");
+	for (const value of unknownReferences(text, references)) result = result.split(value).join("");
 	return result
 		.replace(/\(\s*\)/g, "")
 		.replace(/\s{2,}/g, " ")

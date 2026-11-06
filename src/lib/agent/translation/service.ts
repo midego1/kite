@@ -4,8 +4,7 @@ import { messages } from "@/db/schema";
 import type { SessionUser } from "@/lib/auth/types";
 import { loadMessageBody } from "@/lib/email/bodies";
 import { bodyBytesColumn, withStoredBodies } from "@/lib/messages/body-batches";
-import { aiErrorMessage } from "../ai-error-utils";
-import { mailboxAiOff } from "../mailbox-ai";
+import { aiErrorHttpStatus, aiErrorMessage } from "../ai-error-utils";
 import { TRANSLATION_ANSWER_TOKENS } from "../output-budget-utils";
 import { checkedModelAnswer, SummaryRefusal } from "../summaries/model-answer";
 import { loadAnchor, unavailableReason, type Anchor } from "../summaries/service";
@@ -170,8 +169,9 @@ export async function createTranslation(
 	const { target } = request;
 	const db = getDb(env);
 	const anchor = await loadAnchor(db, user, messageId);
-	if (await mailboxAiOff(env, anchor.mailboxId))
-		throw new SummaryRefusal(403, aiErrorMessage("mailbox_ai_off"), "mailbox_ai_off");
+	const reason = await unavailableReason(env, isSummaryEligible(anchor), anchor.mailboxId);
+	if (reason === "mailbox_ai_off" || reason === "assistant_off")
+		throw new SummaryRefusal(aiErrorHttpStatus(reason), aiErrorMessage(reason), reason);
 	if (!isSummaryEligible(anchor)) throw new SummaryRefusal(409, "This message cannot be translated.", "not_eligible");
 	const stored = await readMessageTranslation(db, anchor.id, target);
 	if (stored.pending) throw new SummaryRefusal(409, "Apply the pending database update first", "MIGRATION_PENDING");

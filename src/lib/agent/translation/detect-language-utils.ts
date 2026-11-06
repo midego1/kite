@@ -29,7 +29,6 @@ const SINGLE_LANGUAGE_SCRIPTS: readonly (readonly [RegExp, string])[] = [
 	[/\p{Script=Hebrew}/gu, "he"],
 	[/\p{Script=Armenian}/gu, "hy"],
 	[/\p{Script=Georgian}/gu, "ka"],
-	[/\p{Script=Devanagari}/gu, "hi"],
 	[/\p{Script=Bengali}/gu, "bn"],
 	[/\p{Script=Tamil}/gu, "ta"],
 	[/\p{Script=Telugu}/gu, "te"],
@@ -60,6 +59,11 @@ const SHARED_SCRIPTS: readonly (readonly [RegExp, (sample: string) => string | n
 			if (/[ٹڈڑںے]/u.test(sample)) return "ur";
 			return /[پچژگ]/u.test(sample) ? "fa" : "ar";
 		},
+	],
+	[
+		// Hindi, Marathi and Nepali share this script: only their common verbs tell them apart.
+		/\p{Script=Devanagari}/gu,
+		(sample) => (/(?:^|\s)(?:है|हैं)(?=[\s।,.]|$)/u.test(sample) && !/आहे|आणि|हुन्छ|छन्/u.test(sample) ? "hi" : null),
 	],
 	[
 		/\p{Script=Cyrillic}/gu,
@@ -95,14 +99,17 @@ function count(text: string, pattern: RegExp): number {
 	return text.match(pattern)?.length ?? 0;
 }
 
-/** Whichever non-Latin script holds enough of the letters, if one does; a shared script may stay undecided. */
+/**
+ * The non-Latin script that holds enough of the letters, if one does. A shared script may stay undecided, and so
+ * does mail with two such scripts.
+ */
 function languageOfScript(sample: string, letters: number): { language: string | null } | null {
-	const share = (pattern: RegExp) => count(sample, pattern) / letters;
-	for (const [pattern, language] of SINGLE_LANGUAGE_SCRIPTS)
-		if (share(pattern) >= MIN_SCRIPT_SHARE) return { language };
-	for (const [pattern, decide] of SHARED_SCRIPTS)
-		if (share(pattern) >= MIN_SCRIPT_SHARE) return { language: decide(sample) };
-	return null;
+	const holds = (pattern: RegExp) => count(sample, pattern) / letters >= MIN_SCRIPT_SHARE;
+	const single = SINGLE_LANGUAGE_SCRIPTS.filter(([pattern]) => holds(pattern));
+	const shared = SHARED_SCRIPTS.filter(([pattern]) => holds(pattern));
+	if (single.length + shared.length > 1) return { language: null };
+	if (single.length) return { language: single[0][1] };
+	return shared.length ? { language: shared[0][1](sample) } : null;
 }
 
 function languageOfLatinWords(sample: string, letters: number): string | null {

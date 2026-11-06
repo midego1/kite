@@ -34,6 +34,8 @@ const QUOTE_IDS = ["divRplyFwdMsg"];
 const WHOLE_LINE_LIST_ITEM = /^(\s*(?:[-•*]|\d{1,3}[.)])\s+)(.*)$/;
 const BREAK = /[\s。！？；，、]/;
 const LETTER = /\p{L}/u;
+/** What one piece adds to a request and its answer, in characters of source text. */
+const PIECE_OVERHEAD_CHARS = 24;
 const ROOT_DIRECTION = /^\s*<div dir="(?:ltr|rtl)">/;
 
 type Frame = { skip: boolean; quoted: boolean; preformatted: boolean };
@@ -163,12 +165,28 @@ function htmlSlots(html: string): TranslationSlot[] {
 
 const plain = { skip: false, quoted: false, preformatted: true };
 
-/** One paragraph's slots: a list keeps its markers, one slot per item; any other paragraph is one slot. */
+/** One paragraph's slots, without its quoted lines: an inline reply has new lines between them. */
 function paragraphSlots(paragraph: string, offset: number): TranslationSlot[] {
-	const lines = paragraph.split("\n");
-	if (lines.some((line) => line.trimStart().startsWith(">"))) return [];
+	const slots: TranslationSlot[] = [];
+	let position = offset;
+	let run: string[] = [];
+	const flush = (end: number) => {
+		if (run.length) slots.push(...runSlots(run, end - run.join("\n").length - 1));
+		run = [];
+	};
+	for (const line of paragraph.split("\n")) {
+		position += line.length + 1;
+		if (line.trimStart().startsWith(">")) flush(position - line.length - 1);
+		else run.push(line);
+	}
+	flush(position);
+	return slots;
+}
+
+/** Consecutive lines: a list keeps its markers, one slot per item; anything else is one slot. */
+function runSlots(lines: string[], offset: number): TranslationSlot[] {
 	if (!lines.every((line) => WHOLE_LINE_LIST_ITEM.test(line)))
-		return slotsOfRun(paragraph, offset, plain, (raw) => raw);
+		return slotsOfRun(lines.join("\n"), offset, plain, (raw) => raw);
 	const slots: TranslationSlot[] = [];
 	let position = offset;
 	for (const line of lines) {
@@ -222,11 +240,25 @@ function escapeHtml(text: string): string {
  * it becomes `auto`, or Arabic turned into English would stay aligned to the right.
  */
 export function rebuildMessage(parsed: TranslationSource, segments: readonly (string | null)[]): string {
-	if (parsed.format === "text") return replaceSlots(parsed, segments, (text) => text);
+	if (parsed.format === "text")
+		return replaceSlots(
+			parsed,
+			segments.map((segment) => segment?.trim() ?? null),
+			(text) => text,
+		);
 	const rebuilt = replaceSlots(parsed, segments, escapeHtml);
 	return segments.some((segment) => segment !== null && segment !== undefined)
 		? rebuilt.replace(ROOT_DIRECTION, '<div dir="auto">')
 		: rebuilt;
+}
+
+/**
+ * A translation keeps a space at its edge only where the original had none: Thai and Chinese run pieces together
+ * that English has to separate ("Please click " + "here"). Plain text has no pieces to separate.
+ */
+function spaced(slot: TranslationSlot, translated: string): string {
+	const start = slot.pre ? translated.trimStart() : translated;
+	return slot.post ? start.trimEnd() : start;
 }
 
 function replaceSlots(
@@ -239,15 +271,16 @@ function replaceSlots(
 	parsed.slots.forEach((slot, index) => {
 		const translated = segments[index];
 		if (translated === null || translated === undefined) return;
-		result += parsed.source.slice(cursor, slot.start) + encode(slot.pre + translated + slot.post);
+		result += parsed.source.slice(cursor, slot.start) + encode(slot.pre + spaced(slot, translated) + slot.post);
 		cursor = slot.end;
 	});
 	return result + parsed.source.slice(cursor);
 }
 
 /**
- * Groups slots, in the order given, into requests of at most `maxChars` of source text each, and stops at
- * `maxChunks`. Neighbouring pieces stay together so a request reads as connected text.
+ * Groups slots, in the order given, into requests of at most `maxChars` each, and stops at `maxChunks`. Each piece
+ * also counts for the JSON around it, or a table of 3,000 one-word cells would not fit one answer. Neighbouring
+ * pieces stay together so a request reads as connected text.
  */
 export function planChunks(
 	slots: readonly TranslationSlot[],
@@ -258,7 +291,7 @@ export function planChunks(
 	let chunk: number[] = [];
 	let size = limits.reserved ?? 0;
 	for (const index of indexes) {
-		const length = slots[index].text.length;
+		const length = slots[index].text.length + PIECE_OVERHEAD_CHARS;
 		if (chunk.length && size + length > limits.maxChars) {
 			chunks.push(chunk);
 			if (chunks.length === limits.maxChunks) return { chunks, cut: true };

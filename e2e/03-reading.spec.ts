@@ -204,6 +204,26 @@ test("your own reply does not make a read conversation unread", async () => {
 	await api.dispose();
 });
 
+test("quotes past the deepest fold stay readable in the last one", async ({ page }) => {
+	const api = await apiContext(STORAGE_STATE);
+	const subject = `Long thread ${uniqueToken()}`;
+	await deliverInbound(api, {
+		from: `"Thread Starter" <starter@outside.test>`,
+		to: SUPPORT_ADDRESS,
+		subject,
+		text: Array.from({ length: 36 }, (_, level) => `${"> ".repeat(level)}Reply number ${level}.`).join("\n"),
+	});
+	await api.dispose();
+
+	await page.goto("/inbox");
+	await openMessage(page, subject);
+	const folds = page.locator("details").filter({ has: page.locator("> summary", { hasText: "Previous message" }) });
+	await expect(folds).toHaveCount(32);
+	await folds.evaluateAll((elements) => elements.forEach((element) => element.setAttribute("open", "")));
+	await expect(page.locator("pre", { hasText: "Reply number 31." })).toBeVisible();
+	await expect(page.locator("pre", { hasText: "Reply number 35." })).toBeVisible();
+});
+
 test("shows a reply and its original as one conversation", async ({ page }) => {
 	const api = await apiContext(STORAGE_STATE);
 	const token = uniqueToken();

@@ -18,7 +18,6 @@ writeFileSync(
 	entry,
 	`
 export { buildSnippet, parseRawMime } from "${root}/src/lib/email/parse";
-export { conversionCost, MAX_BODY_CONVERSION_COST } from "${root}/src/lib/email/mime-body-utils";
 `,
 );
 const bundle = join(directory, "entry.mjs");
@@ -34,7 +33,8 @@ await build({
 	packages: "external",
 	logLevel: "silent",
 });
-const { conversionCost, MAX_BODY_CONVERSION_COST, parseRawMime } = await import(pathToFileURL(bundle).href);
+const { parseRawMime } = await import(pathToFileURL(bundle).href);
+const MAX_BODY_CONVERSION_COST = 16_000_000;
 
 const messageHelpers = `
 const header = "From: a@example.com\\r\\nTo: b@example.com\\r\\nSubject: x\\r\\nMIME-Version: 1.0\\r\\n";
@@ -148,9 +148,16 @@ test("parts inside multipart/alternative do not count toward the limit", async (
 	assert.equal(parsed.text.length, large.length);
 });
 
-test("characters that get replaced cost more than others", () => {
-	assert.equal(conversionCost("abc"), 3);
-	assert.equal(conversionCost("<a>"), 19);
-	assert.equal(conversionCost("\"'?&\n"), 45);
-	assert.equal(conversionCost(""), 0);
+test("characters that get replaced count nine times", async () => {
+	const htmlCost = "<p>one</p>".length + 4 * 8;
+	const available = MAX_BODY_CONVERSION_COST - htmlCost;
+	const render = async (body) => parseRawMime(parts.encode(parts.mixed(parts.html("<p>one</p>"), parts.text(body))));
+	const count = Math.floor(available / 9);
+	for (const character of ["<", ">", '"', "'", "?", "&"]) {
+		assert.notEqual((await render(character.repeat(count))).html, "<p>one</p>", character);
+		assert.equal((await render(character.repeat(count + 1))).html, "<p>one</p>", character);
+	}
+	const withLines = (extra) => `${"x".repeat(available - 9_001 + extra)}${"\n".repeat(1_000)}y`;
+	assert.notEqual((await render(withLines(0))).html, "<p>one</p>");
+	assert.equal((await render(withLines(1))).html, "<p>one</p>");
 });

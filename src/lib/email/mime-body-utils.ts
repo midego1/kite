@@ -11,13 +11,13 @@ type BodyRenderer = { textMap: Map<unknown, TextEntry>; textTypes: Set<TextType>
  * and both end up in memory beside the sanitizer's input and output. 16 million leaves room in a 128 MB heap for the
  * raw message: 12 MB of plain text and HTML in one `multipart/mixed` stays well under it.
  */
-export const MAX_BODY_CONVERSION_COST = 16_000_000;
+const MAX_BODY_CONVERSION_COST = 16_000_000;
 /** Characters a conversion replaces cost a heap node or two each until the result is flattened. */
 const REPLACED_CHARACTER_COST = 8;
 const REPLACED_CHARACTERS = new Set(Array.from("<>\"'?&\n", (character) => character.charCodeAt(0)));
 
 /** The size of a text part with its characters that get replaced on the way to the other format. */
-export function conversionCost(text: string): number {
+function conversionCost(text: string): number {
 	let cost = text.length;
 	for (let index = 0; index < text.length; index += 1) {
 		if (REPLACED_CHARACTERS.has(text.charCodeAt(index))) cost += REPLACED_CHARACTER_COST;

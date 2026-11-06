@@ -129,7 +129,7 @@
 		"react-dom": "^19.2.6",
 		"react-hot-toast": "^2.6.1",
 		"react-markdown": "^10.1.0",
-		"react-resizable-panels": "^4.15.0",
+		"react-resizable-panels": "^4.15.3",
 		"react-server-dom-webpack": "^19.2.6",
 		"remark-gfm": "^4.0.1",
 		"sass": "^1.105.1",

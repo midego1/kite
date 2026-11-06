@@ -1,4 +1,7 @@
 {
-	"reason": "The Dutch and Arabic catalogs are one chunk per language (about 75 KB raw together), fetched only by someone reading that language; English gains about 14 KB of raw JavaScript.",
-	"client": { "bytes": 32000, "gzipBytes": 16000 }
+	"reason": "The Dutch and Arabic catalogs are one chunk per language (about 80 KB raw together), fetched only by someone reading that language; English gains about 14 KB of raw JavaScript.",
+	"client": {
+		"bytes": 36000,
+		"gzipBytes": 17000
+	}
 }

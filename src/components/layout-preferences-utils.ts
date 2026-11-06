@@ -14,6 +14,8 @@ import {
 export const LAYOUT_SYNC_DEVICE_KEY = "kite-layout-sync";
 /** Fired when the device switch above changes in this tab. */
 export const LAYOUT_SYNC_CHANGE_EVENT = "kite:layout-sync-changed";
+/** Fired when the account's layout has loaded (or will not, with sync off or unavailable), so what waited for it can go. */
+export const LAYOUT_SETTLED_EVENT = "kite:layout-settled";
 /** Fired after the account's layout was written into this browser, for views that read sizes once. */
 export const LAYOUT_PREFERENCES_APPLIED_EVENT = "kite:layout-preferences-applied";
 

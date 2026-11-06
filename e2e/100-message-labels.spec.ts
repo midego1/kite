@@ -234,6 +234,18 @@ test("Compact labels fit a phone, and the name is still reachable", async ({ bro
 	await page.context().close();
 });
 
+test("on a wide list the compact markers can be hovered, so their names show", async ({ browser }) => {
+	const page = await openPage(browser);
+	await page.addInitScript(() => localStorage.setItem("kite-reading-pane", "none"));
+	await showAllMailboxes(page);
+	const synced = row(page, subjects.synced);
+	await expect(synced).toBeVisible({ timeout: 60_000 });
+	// The row's link overlays it; hovering only works when the marker is above that overlay.
+	await synced.locator("[data-via-account]").hover({ timeout: 5_000 });
+	await synced.getByTestId("message-mailbox-label").hover({ timeout: 5_000 });
+	await page.context().close();
+});
+
 test("a connected account is a sidebar view listing only mail that came in through it", async ({ browser }) => {
 	const page = await openPage(browser);
 	await showAllMailboxes(page);
@@ -286,6 +298,99 @@ test("a connected account is a sidebar view listing only mail that came in throu
 	await expect(link).not.toHaveAttribute("aria-current", "page");
 	await expect(page.locator('a[href="/inbox"]').first()).toHaveClass(/bg-blue-100/);
 	await page.reload();
+	await expect(row(page, subjects.direct)).toBeVisible({ timeout: 60_000 });
+	await expect(page.locator("[data-account-view-title]")).toHaveCount(0);
+	await page.context().close();
+});
+
+test("the sidebar's Inbox and the browser's Back leave a view, as the address does", async ({ browser }) => {
+	const page = await openPage(browser);
+	await page.goto("/inbox");
+	const sidebar = page.getByTestId("kite-sidebar-panel");
+	const link = sidebar.getByRole("link", { name: ACCOUNT_LABEL });
+	await expect(link).toBeVisible({ timeout: 60_000 });
+	const title = page.locator(`[data-account-view-title="${address}"]`);
+
+	await link.click();
+	await expect(title).toBeVisible();
+	await expect(row(page, subjects.direct)).toHaveCount(0);
+	await expect(page).toHaveURL(/\/inbox\?via=/);
+
+	// The sidebar's Inbox goes back to the whole list at once: no filter, no highlighted view, no stuck progress bar.
+	await sidebar.locator('a[href="/inbox"]').first().click();
+	await expect(page).toHaveURL(/\/inbox$/);
+	await expect(row(page, subjects.direct)).toBeVisible({ timeout: 30_000 });
+	await expect(title).toHaveCount(0);
+	await expect(link).not.toHaveAttribute("aria-current", "page");
+	await expect(page.locator("div.fixed.inset-x-0.top-0.bg-blue-100")).toHaveCount(0, { timeout: 2_000 });
+
+	// Back returns to the view, and Back again to the list; the list always matches the address.
+	await page.goBack();
+	await expect(title).toBeVisible();
+	await expect(row(page, subjects.direct)).toHaveCount(0);
+	await expect(link).toHaveAttribute("aria-current", "page");
+	await page.goBack();
+	await expect(title).toHaveCount(0);
+	await expect(row(page, subjects.direct)).toBeVisible({ timeout: 30_000 });
+	await page.goForward();
+	await expect(title).toBeVisible();
+
+	// The back arrow is a history step too.
+	await page.getByRole("button", { name: "Back to Inbox" }).click();
+	await expect(title).toHaveCount(0);
+	await page.goBack();
+	await expect(title).toBeVisible();
+
+	// Emptying a folder is not offered inside a view: it would empty the whole folder.
+	await page.goto(`/trash?via=${encodeURIComponent(address)}`);
+	await expect(page.locator(`[data-account-view-title="${address}"]`)).toBeVisible({ timeout: 60_000 });
+	await expect(page.getByRole("button", { name: "Empty Trash" })).toHaveCount(0);
+	await page.goto("/trash");
+	await expect(page.getByRole("button", { name: "Empty Trash" })).toBeVisible({ timeout: 60_000 });
+	await page.context().close();
+});
+
+test("a view is left when the mailbox is switched to one that does not receive the account's mail", async ({
+	browser,
+}) => {
+	const page = await openPage(browser);
+	await page.addInitScript((id) => localStorage.setItem("selected-mailbox-id", id), user.mailboxId);
+	await page.goto(`/inbox?via=${encodeURIComponent(address)}`);
+	const title = page.locator(`[data-account-view-title="${address}"]`);
+	await expect(title).toBeVisible({ timeout: 60_000 });
+	await expect(row(page, subjects.synced)).toBeVisible();
+	const trigger = page.getByRole("button", { name: /^Switch mailbox, current:/ });
+	await trigger.click();
+	await page
+		.getByRole("dialog", { name: "Switch mailbox" })
+		.getByRole("option", { name: /Work desk/ })
+		.click();
+	await expect(title).toHaveCount(0, { timeout: 15_000 });
+	await expect(page).not.toHaveURL(/via=/);
+	await expect(row(page, subjects.work)).toBeVisible({ timeout: 30_000 });
+	await page.context().close();
+});
+
+test("on a phone choosing a view closes the menu, and a view opened from a link is trimmed and ignores an empty value", async ({
+	browser,
+}) => {
+	const page = await openPage(browser, { width: 390, height: 844 });
+	await page.addInitScript((id) => localStorage.setItem("selected-mailbox-id", id), user.mailboxId);
+	await page.goto("/inbox");
+	await expect(row(page, subjects.direct)).toBeVisible({ timeout: 60_000 });
+	await page.getByRole("button", { name: "Open menu" }).click();
+	const sheet = page.getByRole("dialog", { name: "Menu" });
+	await expect(sheet).toBeVisible();
+	await sheet.getByRole("link", { name: ACCOUNT_LABEL }).click();
+	// The page was already the Inbox, so only the view's own handler can close the sheet.
+	await expect(sheet).toHaveCount(0);
+	await expect(page.locator(`[data-account-view-title="${address}"]`)).toBeVisible();
+	await expect(row(page, subjects.synced)).toBeVisible();
+	await expect(row(page, subjects.direct)).toHaveCount(0);
+
+	await page.goto(`/inbox?via=%20${encodeURIComponent(address)}%20`);
+	await expect(page.locator(`[data-account-view-title="${address}"]`)).toBeVisible({ timeout: 60_000 });
+	await page.goto("/inbox?via=%20");
 	await expect(row(page, subjects.direct)).toBeVisible({ timeout: 60_000 });
 	await expect(page.locator("[data-account-view-title]")).toHaveCount(0);
 	await page.context().close();
@@ -361,15 +466,15 @@ test("each mailbox and account gets a colour of its own choosing, shown in rows,
 	await page.goto("/inbox");
 	const colored = row(page, subjects.synced);
 	await expect(colored).toBeVisible({ timeout: 60_000 });
-	await expect(dot(colored)).toHaveAttribute("data-label-dot", "#e22d80");
-	await expect(colored.locator("[data-via-account] svg")).toHaveCSS("color", rgb("#0f8b82"));
+	await expect(dot(colored)).toHaveAttribute("data-label-dot", "#e64a92");
+	await expect(colored.locator("[data-via-account] svg")).toHaveCSS("color", rgb("#25958d"));
 	// Another mailbox keeps its own colour, and the sidebar shows the same ones.
-	await expect(dot(row(page, subjects.work))).toHaveAttribute("data-label-dot", "#17963f");
+	await expect(dot(row(page, subjects.work))).toHaveAttribute("data-label-dot", "#1f9a46");
 	await expect(
-		page.getByRole("button", { name: new RegExp(`^Open ${homeName}`) }).locator('[data-label-dot="#e22d80"]'),
+		page.getByRole("button", { name: new RegExp(`^Open ${homeName}`) }).locator('[data-label-dot="#e64a92"]'),
 	).toBeVisible();
 	const sidebar = page.getByTestId("kite-sidebar-panel");
-	await expect(sidebar.getByRole("link", { name: ACCOUNT_LABEL }).locator("svg")).toHaveCSS("color", rgb("#0f8b82"));
+	await expect(sidebar.getByRole("link", { name: ACCOUNT_LABEL }).locator("svg")).toHaveCSS("color", rgb("#25958d"));
 
 	// It is saved to the account, so another browser starts with it.
 	const accountId = (await json<{ accounts: { id: string }[] }>(await user.api.get("/api/external-accounts")))
@@ -383,7 +488,7 @@ test("each mailbox and account gets a colour of its own choosing, shown in rows,
 	const other = await openPage(browser);
 	await other.addInitScript(() => localStorage.setItem("kite-all-mailboxes", "true"));
 	await other.goto("/inbox");
-	await expect(dot(row(other, subjects.synced))).toHaveAttribute("data-label-dot", "#e22d80", { timeout: 60_000 });
+	await expect(dot(row(other, subjects.synced))).toHaveAttribute("data-label-dot", "#e64a92", { timeout: 60_000 });
 	await other.context().close();
 
 	// The sidebar entry's menu changes the account's colour too, and the choice reaches the row at once.
@@ -393,7 +498,7 @@ test("each mailbox and account gets a colour of its own choosing, shown in rows,
 		.getByRole("radiogroup", { name: `Colour for ${ACCOUNT_LABEL}` })
 		.getByRole("radio", { name: "Orange" })
 		.click();
-	await expect(row(page, subjects.synced).locator("[data-via-account] svg")).toHaveCSS("color", rgb("#ea580c"));
+	await expect(row(page, subjects.synced).locator("[data-via-account] svg")).toHaveCSS("color", rgb("#e6570c"));
 	await page.keyboard.press("Escape");
 
 	// Back to automatic and no colour.

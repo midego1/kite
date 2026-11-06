@@ -3,6 +3,7 @@ import {
 	isRetryableLayoutLoad,
 	LAYOUT_LOAD_RETRY_DELAYS_MS,
 	LAYOUT_PREFERENCES_APPLIED_EVENT,
+	LAYOUT_SETTLED_EVENT,
 	LAYOUT_SYNC_CHANGE_EVENT,
 	LAYOUT_SYNC_DEVICE_KEY,
 	type LayoutSaveMarks,
@@ -23,7 +24,9 @@ const SAVE_DELAY_MS = 600;
  * Before migration 0080, or with the device switch off, it does nothing and the layout stays in the browser.
  *
  * While the account's layout loads, choices made here wait (and win over the loaded ones); once it loaded,
- * or every attempt failed, they are saved. Saves merge on the server, so saving without a load is safe.
+ * or every attempt failed, they are saved. Saves merge on the server, so saving without a load is safe, except for
+ * whole maps (the label colours), which replace the saved one: those must only be saved from what the account's
+ * layout was merged into, so housekeeping that saves without a choice (`isLayoutSettled`) waits for the load.
  */
 let session: { userId: string; loading: boolean } | null = null;
 let unsaved: LayoutPreferences = {};
@@ -71,6 +74,20 @@ function browserStorage(): Storage | null {
 	} catch {
 		return null;
 	}
+}
+
+/**
+ * Whether the account's layout has been merged into this browser, or never will be (sync off on this device, or not
+ * stored yet before migration 0080). Saving something nobody chose just now (a cleanup) before this could overwrite
+ * what another device saved.
+ */
+export function isLayoutSettled(): boolean {
+	if (!isLayoutSyncEnabled() || unavailable) return true;
+	return session !== null && !session.loading;
+}
+
+function announceSettled(): void {
+	window.dispatchEvent(new Event(LAYOUT_SETTLED_EVENT));
 }
 
 export function isLayoutSyncEnabled(): boolean {
@@ -195,16 +212,19 @@ export async function startLayoutSync(userId: string): Promise<void> {
 	// Switched off on this device while the load was out: keep this browser's layout as it is.
 	if (!isLayoutSyncEnabled()) {
 		current.loading = false;
+		announceSettled();
 		return;
 	}
 	if (loaded && !loaded.data.ready) {
 		unavailable = true;
+		announceSettled();
 		return;
 	}
 	current.loading = false;
 	// The server answers only validated choices (`parseStoredLayout`).
 	if (loaded?.data.layout)
 		applyLayout(withoutKeys(withoutSavedSince(loaded.data.layout, marksOf(userId), loaded.loadTick), unsaved), userId);
+	announceSettled();
 	await flushLayoutSave();
 }
 

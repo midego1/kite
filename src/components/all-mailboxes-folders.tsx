@@ -43,7 +43,7 @@ export function AllMailboxesFolders({
 				<div key={mailbox.id} role="group" aria-label={`${getMailboxName(mailbox)} folders`}>
 					{!minimal && (
 						<p className="flex items-center gap-1.5 truncate px-6 pb-0.5 pt-2 text-xs font-medium text-neutral-500">
-							<LabelDot color={colorOf({ id: mailbox.id, address: getMailboxAddress(mailbox) }).value} />
+							<LabelDot color={colorOf(mailbox.id).value} />
 							<span className="truncate">{getMailboxName(mailbox)}</span>
 						</p>
 					)}

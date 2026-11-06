@@ -7,7 +7,6 @@ import { bundleModules } from "./support/modules-bundle.mjs";
 
 const {
 	LABEL_COLORS,
-	automaticMailboxColors,
 	mailboxLabelColor,
 	accountLabelColor,
 	withLabelColor,
@@ -19,7 +18,7 @@ const {
 	layoutStorageEntries,
 } = await bundleModules("kite-label-colors-", [
 	[
-		"LABEL_COLORS, automaticMailboxColors, mailboxLabelColor, accountLabelColor, withLabelColor, pruneLabelColors, hasStaleLabelColors, parseStoredLabelColors",
+		"LABEL_COLORS, mailboxLabelColor, accountLabelColor, withLabelColor, pruneLabelColors, hasStaleLabelColors, parseStoredLabelColors",
 		"src/components/messages/label-colors-utils.ts",
 	],
 	["parseStoredLayout, parseLayoutPatch", "src/lib/preferences/layout-utils.ts"],
@@ -42,7 +41,8 @@ const contrast = (a, b) => {
 // What a row sits on: the page and card whites, the hover and selected greys, the Lavender and Classic selected tints
 // (light), and the dark theme's page, card, hover and selected greys (src/app/globals.css).
 const LIGHT_ROWS = ["#ffffff", "#fafafa", "#f4f4f5", "#f3f2ff", "#eff6ff"];
-const DARK_ROWS = ["#141414", "#1a1a1a", "#202020", "#262626"];
+// Kite classic's dark list: the selected stacked row and the hovered row.
+const DARK_ROWS = ["#141414", "#1a1a1a", "#202020", "#262626", "#303134", "#35363a"];
 
 test("the palette has eight colours, and the layout accepts exactly those", () => {
 	assert.equal(LABEL_COLORS.length, 8);
@@ -63,53 +63,32 @@ test("every colour reads on every row background, in light and dark, at 3:1", ()
 			assert.ok(contrast(color.value, row) >= 3, `${color.id} on ${row}: ${contrast(color.value, row).toFixed(2)}`);
 });
 
-/** What a mailbox gets on its own: the colour its address hashes to, with no other mailbox to avoid. */
-const alone = (address) => automaticMailboxColors([{ id: "only", address }]).get("only");
+/** What a mailbox gets on its own. */
+const automaticOf = (id) => mailboxLabelColor(undefined, { id }).id;
 
-test("a mailbox's automatic colour is stable, case-blind and from the palette", () => {
+test("a mailbox's automatic colour depends on its id alone and comes from the palette", () => {
 	const ids = new Set(LABEL_COLORS.map((color) => color.id));
-	for (const address of ["me@example.com", "work@example.com", "help@example.org", ""])
-		assert.ok(ids.has(alone(address)));
-	assert.equal(alone("Me@Example.com "), alone("me@example.com"));
-	const used = new Set(Array.from({ length: 40 }, (_, index) => alone(`box${index}@example.com`)));
-	assert.ok(used.size >= 5, `automatic colours spread over the palette (${used.size})`);
-});
-
-test("the user's own mailboxes get different automatic colours, whatever order they are listed in", () => {
-	const mailboxes = Array.from({ length: 8 }, (_, index) => ({
-		id: `box-${index}`,
-		address: `box${index}@example.com`,
-	}));
-	for (const count of [2, 3, 5, 8]) {
-		const colors = automaticMailboxColors(mailboxes.slice(0, count));
-		assert.equal(new Set(colors.values()).size, count, `${count} mailboxes, all different`);
-	}
-	const forward = automaticMailboxColors(mailboxes);
-	const backward = automaticMailboxColors([...mailboxes].reverse());
-	assert.deepEqual([...forward.entries()].sort(), [...backward.entries()].sort());
-	// Stable: the same mailboxes get the same colours again, and a mailbox that does not collide keeps its hash colour.
-	assert.deepEqual([...automaticMailboxColors(mailboxes).entries()], [...forward.entries()]);
-	assert.equal(automaticMailboxColors([mailboxes[0]]).get("box-0"), alone(mailboxes[0].address));
-	// More mailboxes than colours: every one still gets a colour of the palette.
-	const crowd = Array.from({ length: 11 }, (_, index) => ({ id: `m${index}`, address: `m${index}@example.org` }));
-	const ids = new Set(LABEL_COLORS.map((color) => color.id));
-	assert.equal(automaticMailboxColors(crowd).size, 11);
-	for (const color of automaticMailboxColors(crowd).values()) assert.ok(ids.has(color));
-	// A set colour wins, and the automatic ones come from the given set.
-	assert.equal(mailboxLabelColor({ mailboxes: { "box-1": "red" } }, mailboxes[1], forward).id, "red");
-	assert.equal(mailboxLabelColor(undefined, mailboxes[1], forward).id, forward.get("box-1"));
+	const mailboxIds = Array.from({ length: 40 }, (_, index) => `mbx_${index}-abc`);
+	for (const id of mailboxIds) assert.ok(ids.has(automaticOf(id)), id);
+	// The same id gives the same colour whoever else exists, and the colours spread over the palette.
+	assert.deepEqual(
+		mailboxIds.map(automaticOf),
+		mailboxIds.map((id) => mailboxLabelColor({ mailboxes: { other: "red" } }, { id }).id),
+	);
+	assert.ok(new Set(mailboxIds.map(automaticOf)).size >= 6, "automatic colours spread over the palette");
+	assert.equal(mailboxLabelColor(undefined, { id: "mbx_1" }).chosen, false);
 });
 
 test("a chosen colour wins over the automatic one, per mailbox and per account", () => {
-	const mailbox = { id: "box-1", address: "me@example.com" };
+	const mailbox = { id: "box-1" };
 	const automatic = mailboxLabelColor(undefined, mailbox);
 	assert.equal(automatic.chosen, false);
-	assert.equal(automatic.id, alone(mailbox.address));
+	assert.equal(automatic.id, automaticOf("box-1"));
 	const chosen = mailboxLabelColor({ mailboxes: { "box-1": "pink" } }, mailbox);
-	assert.deepEqual(chosen, { id: "pink", value: "#e22d80", chosen: true });
+	assert.deepEqual(chosen, { id: "pink", value: "#e64a92", chosen: true });
 	assert.equal(mailboxLabelColor({ mailboxes: { "box-2": "pink" } }, mailbox).chosen, false);
 	assert.equal(accountLabelColor(undefined, "acc-1"), null);
-	assert.equal(accountLabelColor({ accounts: { "acc-1": "teal" } }, "acc-1"), "#0f8b82");
+	assert.equal(accountLabelColor({ accounts: { "acc-1": "teal" } }, "acc-1"), "#25958d");
 	assert.equal(accountLabelColor({ mailboxes: { "acc-1": "teal" } }, "acc-1"), null);
 });
 

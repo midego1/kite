@@ -3,8 +3,7 @@
 import * as Popover from "@radix-ui/react-popover";
 import { Link2, MoreHorizontal } from "lucide-react";
 import { useSelectedMailbox } from "@/components/mailbox-provider";
-import { getMailboxAddress, getMailboxName } from "@/components/mailbox-selector-utils";
-import { handOffMailSearch, useOptionalMailSearch } from "@/components/mail-search/mail-search-context";
+import { getMailboxName } from "@/components/mailbox-selector-utils";
 import { LabelColorPicker } from "@/components/messages/label-color-picker";
 import { LabelDot } from "@/components/messages/label-dot";
 import { accountLabelColor } from "@/components/messages/label-colors-utils";
@@ -13,6 +12,7 @@ import { accountViewHref, type AccountViewEntry } from "@/lib/external-accounts/
 import { useStoredState } from "@/hooks/use-stored-state";
 import { NavItem } from "./components-nav";
 import { NavSectionHeader, useSectionOpen } from "./nav-section-header";
+import { useSidebar } from "./sidebar-state";
 
 /** Set once the hint under the section header was dismissed or an account view was opened. */
 const ACCOUNTS_HINT_KEY = "kite:nav:accounts-hint-seen";
@@ -23,7 +23,7 @@ const ACCOUNTS_HINT_KEY = "kite:nav:accounts-hint-seen";
  * focus, opens the colour choice.
  */
 function AccountViewItem({ entry, active, onOpen }: { entry: AccountViewEntry; active: boolean; onOpen: () => void }) {
-	const search = useOptionalMailSearch();
+	const { setMobileOpen } = useSidebar();
 	const colors = useLabelColors();
 	const chosen = colors.accounts?.[entry.id];
 	return (
@@ -36,11 +36,11 @@ function AccountViewItem({ entry, active, onOpen }: { entry: AccountViewEntry; a
 					icon: Link2,
 					iconColor: accountLabelColor(colors, entry.id) ?? undefined,
 					active,
-					// The mail search outlives page changes, so the click sets it; the address alone only seeds a fresh one.
+					// The address carries the view; a tap on a phone also closes the menu sheet, which a link to the page
+					// already open would not (only a route change does).
 					onSelect: () => {
 						onOpen();
-						handOffMailSearch("", entry.address);
-						search?.setView(entry.address);
+						setMobileOpen(false);
 					},
 				}}
 			/>
@@ -49,7 +49,7 @@ function AccountViewItem({ entry, active, onOpen }: { entry: AccountViewEntry; a
 					<button
 						type="button"
 						aria-label={`Colour for ${entry.label}`}
-						className="absolute end-1 top-1.5 flex h-6 w-6 items-center justify-center rounded-md bg-neutral-100 text-neutral-600 opacity-0 transition-opacity hover:bg-neutral-200 hover:text-neutral-900 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 group-hover/account:opacity-100 data-[state=open]:opacity-100 max-md:top-2.5 max-md:h-7 max-md:w-7"
+						className="absolute end-1 top-1.5 flex h-6 w-6 items-center justify-center rounded-md bg-neutral-100 text-neutral-600 opacity-0 transition-opacity hover:bg-neutral-200 hover:text-neutral-900 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 group-hover/account:opacity-100 pointer-coarse:opacity-100 data-[state=open]:opacity-100 max-md:top-2.5 max-md:h-7 max-md:w-7"
 					>
 						<MoreHorizontal aria-hidden className="h-4 w-4" />
 					</button>
@@ -117,7 +117,7 @@ export function SidebarAccountViews({
 					<div key={mailbox.id} role="group" aria-label={`${getMailboxName(mailbox)} connected accounts`}>
 						{allMailboxes && (
 							<p className="flex items-center gap-1.5 truncate px-6 pb-0.5 pt-2 text-xs font-medium text-neutral-500">
-								<LabelDot color={colorOf({ id: mailbox.id, address: getMailboxAddress(mailbox) }).value} />
+								<LabelDot color={colorOf(mailbox.id).value} />
 								<span className="truncate">{getMailboxName(mailbox)}</span>
 							</p>
 						)}

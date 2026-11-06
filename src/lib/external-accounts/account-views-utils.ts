@@ -1,4 +1,4 @@
-import { viaChipText, viaSearchQuery } from "./via-utils";
+import { viaChipText } from "./via-utils";
 import type { ExternalAccountPresetId } from "./types";
 
 /**
@@ -12,8 +12,6 @@ export type AccountViewEntry = {
 	/** What the entry reads: the account's label, or its provider while the label is still the address. */
 	label: string;
 	address: string;
-	/** The mail search the view runs, `via:` and the address (what the reader's chip and a typed search also use). */
-	query: string;
 };
 
 /** The accounts of a `GET /api/external-accounts` answer, reduced to what a view needs; anything unexpected is none. */
@@ -29,7 +27,7 @@ export function parseAccountViews(value: unknown): AccountViewEntry[] {
 			label: typeof label === "string" ? label : address,
 			preset: (typeof preset === "string" ? preset : "other") as ExternalAccountPresetId,
 		};
-		return [{ id, mailboxId, label: viaChipText(via), address, query: viaSearchQuery(via) }];
+		return [{ id, mailboxId, label: viaChipText(via), address }];
 	});
 }
 
@@ -65,4 +63,19 @@ export function activeAccountView(
 export function openViewName(entries: readonly AccountViewEntry[] | undefined, view: string): string {
 	const address = view.trim().toLowerCase();
 	return entries?.find((entry) => entry.address.toLowerCase() === address)?.label ?? view;
+}
+
+/**
+ * Whether the open view's account is one of the user's own that delivers into a mailbox that is not in view
+ * (`inView` are the entries of the mailboxes in view): the view would list nothing of the mailbox they switched to.
+ * An address that is none of the user's accounts is left alone.
+ */
+export function isAccountOutside(
+	accounts: readonly AccountViewEntry[],
+	inView: readonly AccountViewEntry[],
+	view: string,
+): boolean {
+	const address = view.trim().toLowerCase();
+	const own = (entry: AccountViewEntry) => entry.address.toLowerCase() === address;
+	return accounts.some(own) && !inView.some(own);
 }

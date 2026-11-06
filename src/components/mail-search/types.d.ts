@@ -9,9 +9,13 @@ export type MailSearchContextValue = {
 	setQuery: (query: string) => void;
 	/**
 	 * The address of the connected account whose view is open, or null. A view narrows the list to mail that came in
-	 * through the account without being typed into the search box.
+	 * through the account without being typed into the search box. It lives in the address (`?via=`), so it follows
+	 * every navigation, Back included.
 	 */
 	view: string | null;
-	/** Opens the view of an account's mail (its address), or closes the open view with null. */
-	setView: (address: string | null) => void;
+	/**
+	 * Opens the view of an account's mail (its address), or closes the open view with null, by navigating (a history
+	 * entry, or `replace` when the page should not be left behind).
+	 */
+	setView: (address: string | null, options?: { replace?: boolean }) => void;
 };

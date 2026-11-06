@@ -238,6 +238,28 @@ function StackedMessageRow(props: RowViewProps) {
 	);
 }
 
+/**
+ * The mailbox and connected account markers of a single-line row. The compact markers come first, left of the subject:
+ * the row's hover actions cover the right end, where the markers could then not be hovered for their names. They sit
+ * above the link's overlay for the same reason. The text chips stay at the right, as they always were.
+ */
+function RowMarkers({ placement, ...props }: RowViewProps & { placement: "leading" | "trailing" }) {
+	const leading = props.labels !== "full" && props.labels !== "off";
+	if (leading !== (placement === "leading")) return null;
+	return (
+		<>
+			{props.labels !== "off" && (
+				<ViaAccountChip
+					message={props.row.rowMessage}
+					compact={props.labels !== "full"}
+					className={leading ? "relative z-10" : undefined}
+				/>
+			)}
+			{props.mailboxLabel}
+		</>
+	);
+}
+
 /** The single-line row of a full-width list. */
 function WideMessageRow(props: RowViewProps) {
 	const { message, config, selected, active = false, density = "default", row } = props;
@@ -289,6 +311,7 @@ function WideMessageRow(props: RowViewProps) {
 				<UnreadDot unread={row.unread} />
 			</span>
 			<span className="flex min-w-0 items-center gap-2 text-neutral-700">
+				<RowMarkers {...props} row={row} placement="leading" />
 				{/* The overlay stretches the link over the whole row, so a click anywhere opens the message
 				while the row has one keyboard stop; the checkbox, star and hover actions sit above it. */}
 				{/* Keeps a few letters of the subject when a text chip is wide: the chip shortens first. The small compact
@@ -312,8 +335,7 @@ function WideMessageRow(props: RowViewProps) {
 					</Link>
 				</span>
 				<SendStateBadge message={row.rowMessage} />
-				{props.labels !== "off" && <ViaAccountChip message={row.rowMessage} compact={props.labels !== "full"} />}
-				{props.mailboxLabel}
+				<RowMarkers {...props} row={row} placement="trailing" />
 			</span>
 			<span className="flex min-w-[96px] items-baseline justify-end gap-1.5 group-hover:opacity-0">
 				<AttachmentIndicator message={message} />

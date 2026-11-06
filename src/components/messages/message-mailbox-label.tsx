@@ -26,7 +26,7 @@ export function MessageMailboxLabel({
 	const colorOf = useMailboxLabelColor();
 	if (!mailbox) return null;
 	const address = getMailboxAddress(mailbox);
-	const color = colorOf({ id: mailbox.id, address }).value;
+	const color = colorOf(mailbox.id).value;
 	if (variant === "compact") {
 		const name = getMailboxName(mailbox);
 		return (
@@ -36,7 +36,7 @@ export function MessageMailboxLabel({
 				data-label-variant="compact"
 				aria-label={`Mailbox: ${name}`}
 				title={`Mailbox: ${name === address ? address : `${name} (${address})`}`}
-				className={cn("inline-flex h-4 w-3.5 shrink-0 items-center justify-center", className)}
+				className={cn("relative z-10 inline-flex h-4 w-3.5 shrink-0 items-center justify-center", className)}
 			>
 				<LabelDot color={color} />
 			</span>

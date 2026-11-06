@@ -65,6 +65,15 @@ import { groupListSections } from "./message-list-sections-utils";
 
 const pageSize = 25;
 
+/**
+ * The folder the header can empty (Trash and Spam, not your own folders). While an account's view is open the list is
+ * only part of the folder, and emptying removes all of it, so the button is not offered there.
+ */
+function folderToEmpty(config: MessageFolderPageProps["config"], viewOpen: boolean) {
+	if (viewOpen || config.folderId) return null;
+	return supportsPermanentDelete(config.folder) ? config.folder : null;
+}
+
 export function MessageFolderPage({
 	config,
 	compact = false,
@@ -80,7 +89,7 @@ export function MessageFolderPage({
 		isLoading: mailboxesLoading,
 	} = useSelectedMailbox();
 	const access = useMessageAccess();
-	const { query } = useMailSearch();
+	const { query, view } = useMailSearch();
 	const isMobile = useIsMobile();
 	const [offset, setOffset] = useState(0);
 	// Cursor that starts the page at each offset, filled in as the user pages forward.
@@ -220,7 +229,7 @@ export function MessageFolderPage({
 		setSelectedMessages((current) => applySelection(current, messages, visibleIds, selected));
 	}
 
-	const permanentDeleteFolder = !config.folderId && supportsPermanentDelete(config.folder) ? config.folder : null;
+	const permanentDeleteFolder = folderToEmpty(config, view !== null);
 	async function emptyFolder() {
 		if (!permanentDeleteFolder) return;
 		// In All mailboxes this empties every listed mailbox the user may manage, never a read-only one.

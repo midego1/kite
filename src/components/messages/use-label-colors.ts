@@ -1,13 +1,10 @@
 "use client";
 
-import { useCallback, useMemo, useSyncExternalStore } from "react";
-import { useSelectedMailbox } from "@/components/mailbox-provider";
-import { getMailboxAddress } from "@/components/mailbox-selector-utils";
+import { useCallback, useSyncExternalStore } from "react";
 import { queueLayoutSave } from "@/components/layout-preferences-client";
 import type { LayoutLabelColor, LayoutLabelColors } from "@/lib/preferences/layout-types";
 import {
 	LABEL_COLORS_STORAGE_KEY,
-	automaticMailboxColors,
 	mailboxLabelColor,
 	hasStaleLabelColors,
 	parseStoredLabelColors,
@@ -56,21 +53,10 @@ export function useLabelColors(): LayoutLabelColors {
 	return useSyncExternalStore(subscribe, snapshot, () => NONE);
 }
 
-/**
- * The colour of a mailbox's dot: the one chosen for it, else an automatic one that differs from the automatic colours of
- * the user's other mailboxes (all of the mailboxes they can open, whichever are in view).
- */
+/** The colour of a mailbox's mark: the one chosen for it, else its automatic colour. */
 export function useMailboxLabelColor() {
 	const colors = useLabelColors();
-	const { mailboxes } = useSelectedMailbox();
-	const automatic = useMemo(
-		() => automaticMailboxColors(mailboxes.map((mailbox) => ({ id: mailbox.id, address: getMailboxAddress(mailbox) }))),
-		[mailboxes],
-	);
-	return useCallback(
-		(mailbox: { id: string; address: string }) => mailboxLabelColor(colors, mailbox, automatic),
-		[colors, automatic],
-	);
+	return useCallback((mailboxId: string) => mailboxLabelColor(colors, { id: mailboxId }), [colors]);
 }
 
 function save(next: LayoutLabelColors) {

@@ -1,9 +1,9 @@
 "use client";
 
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { useKeyChanged } from "@/hooks/use-synced-state";
+import { viaSearchQuery } from "@/lib/external-accounts/via-utils";
 import type { MailSearchContextValue } from "./types";
 
 const MailSearchContext = createContext<MailSearchContextValue | null>(null);
@@ -25,28 +25,25 @@ const SEARCH_DEBOUNCE_MS = 250;
 const MAIL_SEARCH_HANDOFF_KEY = "kite:mail-search-handoff";
 /** A note older than this is stale: the view it was meant for never mounted. */
 const HANDOFF_MAX_AGE_MS = 10_000;
-/** The address parameter that opens an account's view (`/inbox?via=<address>`). */
+/** The address parameter that opens a connected account's view (`/inbox?via=<address>`). */
 const VIEW_PARAM = "via";
 
-type Handoff = { query: string; view: string | null };
-
-/** Leaves a search (and an account view) for the next mail view that mounts; nothing is left when storage is unavailable. */
-export function handOffMailSearch(query: string, view: string | null = null): void {
+/** Leaves a search for the next mail view that mounts; nothing is left when storage is unavailable. */
+export function handOffMailSearch(query: string): void {
 	try {
-		sessionStorage.setItem(MAIL_SEARCH_HANDOFF_KEY, JSON.stringify({ query, view, at: Date.now() }));
+		sessionStorage.setItem(MAIL_SEARCH_HANDOFF_KEY, JSON.stringify({ query, at: Date.now() }));
 	} catch {
 		// Private windows can refuse storage; the address still carries the search.
 	}
 }
 
-function readHandoff(): Handoff | null {
+function readHandoff(): string | null {
 	try {
 		const raw = sessionStorage.getItem(MAIL_SEARCH_HANDOFF_KEY);
 		if (!raw) return null;
-		const note = JSON.parse(raw) as { query?: unknown; view?: unknown; at?: unknown };
+		const note = JSON.parse(raw) as { query?: unknown; at?: unknown };
 		if (typeof note.query !== "string" || typeof note.at !== "number") return null;
-		if (Date.now() - note.at > HANDOFF_MAX_AGE_MS) return null;
-		return { query: note.query, view: typeof note.view === "string" && note.view ? note.view : null };
+		return Date.now() - note.at <= HANDOFF_MAX_AGE_MS ? note.query : null;
 	} catch {
 		return null;
 	}
@@ -61,38 +58,31 @@ function clearHandoff(): void {
 }
 
 /**
- * A search handed over to this view: a fresh note the palette or an account view left (the address bar still shows
- * the old page while the new one renders, so the note is what carries it), else `?q=` and `?via=` in the address
- * (`/inbox?q=from:...`). Reading only, so React may call it twice; the note is cleared once the view is mounted.
+ * A search handed over to this view: a fresh note the palette left (the address bar still shows the old page
+ * while the new one renders, so the note is what carries it), else `?q=` in the address (`/inbox?q=from:...`).
+ * Reading only, so React may call it twice; the note is cleared once the view is mounted.
  */
-function initialSearch(): Handoff {
-	if (typeof window === "undefined") return { query: "", view: null };
-	const note = readHandoff();
-	if (note) return note;
-	const params = new URLSearchParams(window.location.search);
-	return { query: params.get("q") ?? "", view: params.get(VIEW_PARAM) || null };
+function initialSearch(): string {
+	if (typeof window === "undefined") return "";
+	return readHandoff() ?? new URLSearchParams(window.location.search).get("q") ?? "";
 }
 
-/** Takes the account view out of the address, so a reload of the page does not open it again. */
-function dropViewFromAddress(): void {
-	try {
-		const url = new URL(window.location.href);
-		if (!url.searchParams.has(VIEW_PARAM)) return;
-		url.searchParams.delete(VIEW_PARAM);
-		window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
-	} catch {
-		// The address stays as it was.
-	}
+/** The account in the address (`?via=`), trimmed; an empty value is no view. */
+function viewFromParams(params: { get(name: string): string | null } | null): string | null {
+	return params?.get(VIEW_PARAM)?.trim() || null;
 }
 
 export function MailSearchProvider({ children }: { children: ReactNode }) {
-	const [initial] = useState(initialSearch);
 	// `input` follows every keystroke; `query` is what lists fetch with, and
 	// trails it slightly so a typed word costs one request instead of one per letter.
-	const [input, setInput] = useState(initial.query);
-	const [typed, setTyped] = useState(initial.query);
-	const [view, setViewState] = useState<string | null>(initial.view);
+	const [input, setInput] = useState(initialSearch);
+	const [typed, setTyped] = useState(input);
 	const pathname = usePathname();
+	const router = useRouter();
+	const params = useSearchParams();
+	// The address is the source of truth for an account view, so the sidebar's Inbox, the browser's Back and a reload all
+	// agree with what the list shows. A view belongs to the mail pages: elsewhere the parameter means nothing.
+	const view = isMailPath(pathname) ? viewFromParams(params) : null;
 
 	useEffect(clearHandoff, []);
 
@@ -103,21 +93,23 @@ export function MailSearchProvider({ children }: { children: ReactNode }) {
 		return () => clearTimeout(timer);
 	}, [input]);
 
-	// A view belongs to the mail pages: leaving them closes it, so no hidden filter follows to Settings or the calendar.
-	if (useKeyChanged(pathname) && !isMailPath(pathname) && view) setViewState(null);
-
 	const value = useMemo<MailSearchContextValue>(
 		() => ({
-			query: [view ? `via:${view}` : "", typed].filter(Boolean).join(" "),
+			query: [view ? viaSearchQuery({ address: view }) : "", typed].filter(Boolean).join(" "),
 			input,
 			setQuery: setInput,
 			view,
-			setView: (address) => {
-				setViewState(address || null);
-				if (!address) dropViewFromAddress();
+			setView: (address, { replace = false } = {}) => {
+				const url = new URL(window.location.href);
+				const next = address?.trim();
+				if (next) url.searchParams.set(VIEW_PARAM, next);
+				else url.searchParams.delete(VIEW_PARAM);
+				const target = `${url.pathname}${url.search}${url.hash}`;
+				if (replace) router.replace(target);
+				else router.push(target);
 			},
 		}),
-		[view, typed, input],
+		[view, typed, input, router],
 	);
 
 	return <MailSearchContext.Provider value={value}>{children}</MailSearchContext.Provider>;

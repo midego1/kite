@@ -34,7 +34,7 @@ export default function SettingsInboxPage() {
 					<SettingsCardSection
 						headingLevel={3}
 						title="Label colours"
-						description="The dot that marks each mailbox in the message list, and the icon of each connected account. They follow your account."
+						description="The square that marks each mailbox in the message list, and the icon of each connected account. They follow your account."
 					>
 						<LabelColorsSettings />
 					</SettingsCardSection>

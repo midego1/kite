@@ -12,6 +12,7 @@ import { LABEL_COLORS } from "./label-colors-utils";
  * (`defaultLabel`: the automatic colour, or the neutral icon). One tab stop; the arrow keys move and choose.
  */
 export function LabelColorPicker({
+	id,
 	label,
 	value,
 	defaultLabel,
@@ -19,6 +20,8 @@ export function LabelColorPicker({
 	onChange,
 	className,
 }: {
+	/** Lets the setting row's label point at the group. */
+	id?: string;
 	/** What the colour is for, e.g. "Colour for Work desk". */
 	label: string;
 	value: LayoutLabelColor | undefined;
@@ -46,7 +49,7 @@ export function LabelColorPicker({
 		onChange(options[next].id);
 	}
 	return (
-		<div role="radiogroup" aria-label={label} className={cn("flex flex-wrap items-center gap-1.5", className)}>
+		<div id={id} role="radiogroup" aria-label={label} className={cn("flex flex-wrap items-center gap-1.5", className)}>
 			{options.map((option, index) => {
 				const checked = index === selected;
 				return (

@@ -4,70 +4,42 @@ export const LABEL_COLORS_STORAGE_KEY = "kite-label-colors";
 
 /**
  * The palette for the dots and icons that mark a mailbox or a connected account in the message list. Each colour keeps
- * at least 3:1 against every row background in light and dark (white to the selected row's grey, and the dark theme's
- * greys), which `tests/label-colors.test.mjs` checks; the Kite and Classic palettes both stay inside those greys.
+ * at least 3:1 against every row background in light and dark (white to the selected row's grey, and the dark themes'
+ * greys, Kite classic's selected row included), which `tests/label-colors.test.mjs` checks; the Kite and Classic palettes both stay inside those greys.
  */
 export const LABEL_COLORS: readonly { id: LayoutLabelColor; label: string; value: string }[] = [
-	{ id: "blue", label: "Blue", value: "#3070f0" },
-	{ id: "purple", label: "Purple", value: "#8b50f2" },
-	{ id: "pink", label: "Pink", value: "#e22d80" },
-	{ id: "red", label: "Red", value: "#e23636" },
-	{ id: "orange", label: "Orange", value: "#ea580c" },
-	{ id: "amber", label: "Amber", value: "#c46f06" },
-	{ id: "green", label: "Green", value: "#17963f" },
-	{ id: "teal", label: "Teal", value: "#0f8b82" },
+	{ id: "blue", label: "Blue", value: "#4a82f2" },
+	{ id: "purple", label: "Purple", value: "#9c69f4" },
+	{ id: "pink", label: "Pink", value: "#e64a92" },
+	{ id: "red", label: "Red", value: "#e65454" },
+	{ id: "orange", label: "Orange", value: "#e6570c" },
+	{ id: "amber", label: "Amber", value: "#c5710a" },
+	{ id: "green", label: "Green", value: "#1f9a46" },
+	{ id: "teal", label: "Teal", value: "#25958d" },
 ];
 
 const VALUE_OF = new Map(LABEL_COLORS.map((color) => [color.id, color.value]));
 
 const labelColorValue = (id: LayoutLabelColor): string => VALUE_OF.get(id) ?? LABEL_COLORS[0].value;
 
-const hashIndex = (address: string): number => {
-	const identity = address.trim().toLowerCase();
+/**
+ * The colour a mailbox gets until the user picks one: a stable choice from the palette by its id, hashed like the
+ * avatar colours. It depends on nothing but the mailbox, so adding or removing another mailbox never changes it, and
+ * every automatic colour is one that reads on the rows. Two mailboxes can share one; choosing a colour tells them apart.
+ */
+function automaticMailboxColor(id: string): LayoutLabelColor {
 	let hash = 0;
-	for (let i = 0; i < identity.length; i++) hash = (Math.imul(hash, 31) + identity.charCodeAt(i)) | 0;
-	return (hash >>> 0) % LABEL_COLORS.length;
-};
-
-/**
- * The colour a mailbox gets until the user picks one: a stable choice from the palette by its address (hashed like the
- * avatar colours), so the same mailbox keeps its colour everywhere and every automatic colour is one that reads on the
- * rows. `automaticMailboxColors` is what the views use, which keeps the user's own mailboxes apart.
- */
-function automaticMailboxColor(address: string): LayoutLabelColor {
-	return LABEL_COLORS[hashIndex(address)].id;
+	for (let i = 0; i < id.length; i++) hash = (Math.imul(hash, 31) + id.charCodeAt(i)) | 0;
+	return LABEL_COLORS[(hash >>> 0) % LABEL_COLORS.length].id;
 }
 
-/**
- * The automatic colours of a set of mailboxes: each takes the colour its address hashes to, and a mailbox that would
- * share one with an earlier mailbox (by id order, so the result does not depend on how they are listed) moves on to the
- * next free colour. Two mailboxes only share a colour once there are more of them than colours.
- */
-export function automaticMailboxColors(
-	mailboxes: readonly { id: string; address: string }[],
-): Map<string, LayoutLabelColor> {
-	const colors = new Map<string, LayoutLabelColor>();
-	const taken = new Set<number>();
-	for (const mailbox of [...mailboxes].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))) {
-		const start = hashIndex(mailbox.address);
-		let index = start;
-		for (let step = 0; step < LABEL_COLORS.length && taken.has(index); step++)
-			index = (index + 1) % LABEL_COLORS.length;
-		if (taken.has(index)) index = start;
-		taken.add(index);
-		colors.set(mailbox.id, LABEL_COLORS[index].id);
-	}
-	return colors;
-}
-
-/** The colour of a mailbox's dot: the one chosen for it, else its automatic colour (`automatic`: from the user's set). */
+/** The colour of a mailbox's mark: the one chosen for it, else its automatic colour. */
 export function mailboxLabelColor(
 	colors: LayoutLabelColors | undefined,
-	mailbox: { id: string; address: string },
-	automatic?: ReadonlyMap<string, LayoutLabelColor>,
+	mailbox: { id: string },
 ): { id: LayoutLabelColor; value: string; chosen: boolean } {
 	const chosen = colors?.mailboxes?.[mailbox.id];
-	const id = chosen ?? automatic?.get(mailbox.id) ?? automaticMailboxColor(mailbox.address);
+	const id = chosen ?? automaticMailboxColor(mailbox.id);
 	return { id, value: labelColorValue(id), chosen: chosen !== undefined };
 }
 

@@ -92,7 +92,7 @@ export function SidebarAccounts() {
 						<MailboxAvatar mailbox={mailbox} className="h-7 w-7 rounded-md text-xs" />
 						{/* The colour of this mailbox's dot in the message list, so the dot is recognisable here. */}
 						<LabelDot
-							color={colorOf({ id: mailbox.id, address: getMailboxAddress(mailbox) }).value}
+							color={colorOf(mailbox.id).value}
 							className="absolute -end-0.5 -top-0.5 ring-2 ring-[var(--background)]"
 						/>
 						{active && (

@@ -30,6 +30,16 @@ function runOnSelect(link: NavLink, event: MouseEvent<HTMLAnchorElement>): void 
 	if (!event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) link.onSelect?.();
 }
 
+/**
+ * Whether a click on the link goes to another route, so the progress bar has a route change to wait for: not for a link
+ * to the page already open (the sidebar's Inbox on an Inbox that is narrowed to an account only drops `?via=`), nor for
+ * a click that opens it elsewhere.
+ */
+function changesRoute(link: NavLink, active: boolean, pathname: string, event: MouseEvent<HTMLAnchorElement>): boolean {
+	if (!link.preloadMessages || active || pathname === link.href) return false;
+	return !(event.metaKey || event.ctrlKey || event.shiftKey || event.altKey);
+}
+
 /** Only a link that says it is the current place marks itself; the others keep the markup they always had. */
 function ariaCurrentOf(link: NavLink): "page" | undefined {
 	return link.active ? "page" : undefined;
@@ -154,7 +164,7 @@ export function NavItem({ link, iconClassName, labelClassName, wrap }: Props) {
 
 	function navigate(event: MouseEvent<HTMLAnchorElement>) {
 		runOnSelect(link, event);
-		if (!link.preloadMessages || active || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+		if (!changesRoute(link, active, pathname, event)) return;
 		preload();
 		setNavigationProgress(12);
 		// The bar is cosmetic; never leave it hanging if the route change fails.

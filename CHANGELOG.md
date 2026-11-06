@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.11.06.6] - 2026-11-06
+
+### Changed
+
+- The home view now shows what Kite found for you: the newest suggestions with their kind, subject and sender, a quick Dismiss and a link to For you. The count tile it replaces now sits in the card's header.
+  ![The command center with the For you card listing four suggestions](/changelog/2026-11-06-command-center-for-you-light.webp)
+
 ## [2026.11.06.5] - 2026-11-06
 
 ### Fixed

@@ -67,7 +67,8 @@ export type ForYouCardView = {
  * suggestions of modules that are off for the user, reviewer-only kinds of other reviewers and mailboxes without
  * full access. The card is hidden until the list has arrived and while every mailbox in view has automatic
  * reading off, as the For you sidebar item is. The count is the list's own total when every mailbox it covers is
- * in view, else what the (200-row) list holds for the mailboxes in view.
+ * in view (always so for one mailbox, which the card asks for on its own), else what the shared (200-row) list
+ * holds for the mailboxes in view, which is exact below 200 open suggestions.
  */
 export function forYouCardView(
 	state: {

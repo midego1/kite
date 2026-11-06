@@ -74,13 +74,15 @@ function ForYouCardEntry({
 /**
  * The command center's For you card: the newest open suggestions of the mailboxes in view, each with its kind, the
  * subject, the sender and a Dismiss that works like the reader card's (with Undo), and a link to the For you page.
- * It reads the list the sidebar item and the For you page share (one request, refreshed by the same events), so
- * it costs no request of its own, and it is hidden whenever the sidebar item is. The count that used to be a tile
+ * It reads the list the sidebar item and the For you page share (refreshed by the same events), or for one
+ * mailbox in view that mailbox's own list through the same store, and it is hidden whenever the sidebar item is. The count that used to be a tile
  * is in its header.
  */
 export function ForYouCard() {
-	const suggestions = useOpenSuggestions();
 	const { viewMailboxes } = useSelectedMailbox();
+	// One mailbox in view asks for that mailbox's own list: the shared one stops at 200 rows across every mailbox,
+	// which other mailboxes could fill. Several in view use the shared list the sidebar already loaded.
+	const suggestions = useOpenSuggestions(viewMailboxes.length === 1 ? viewMailboxes[0].id : undefined);
 	const [dismissing, setDismissing] = useState<ReadonlySet<string>>(new Set());
 	const view = forYouCardView(
 		suggestions,

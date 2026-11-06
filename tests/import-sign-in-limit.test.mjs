@@ -131,7 +131,8 @@ test("segments are cut by count and by bytes, in order, and each stays within th
 		[["1", "2", "3"], ["4", "5", "6"], ["7", "8", "9"], ["10"]],
 	);
 	assert.ok(segments.every((segment) => segment.weight <= 16 * MB));
-	const byCount = planFetchSegments(uids, new Map(), { messageBytes: 36 * MB, batchMessages: 4 });
+	const small = new Map(uids.map((uid) => [uid, 1000]));
+	const byCount = planFetchSegments(uids, small, { messageBytes: 36 * MB, batchMessages: 4 });
 	assert.deepEqual(
 		byCount.map((segment) => segment.fetch.length),
 		[4, 4, 2],
@@ -181,12 +182,25 @@ test("only oversized messages make a segment with nothing to fetch", () => {
 	assert.equal(segments[0].weight, 0);
 });
 
-test("a message without a stated size is fetched, assumed to weigh 1 MB", () => {
-	const segments = planFetchSegments(["1", "2"], new Map([["1", null]]), { messageBytes: 36 * MB, batchBytes: 1 * MB });
+test("a message without a stated size is planned at the cap: alone, and never prefetched beside another", () => {
+	const segments = planFetchSegments(["1", "2"], new Map(), { messageBytes: 36 * MB });
 	assert.deepEqual(
 		segments.map((segment) => segment.fetch),
 		[["1"], ["2"]],
 	);
+	assert.equal(canPrefetch(segments[0], segments[1]), false);
+});
+
+test("cancelled sign-ins are not failures, but have a larger limit of their own", () => {
+	const server = signInServerKey("a.example.com", 993);
+	const cancelled = (count) =>
+		Array.from({ length: count }, (_, index) => ({ at: NOW - 100_000 + index * 1000, server, aborted: true }));
+	assert.deepEqual(evaluateSignInAttempts(cancelled(30), server, NOW), { allowed: true });
+	const verdict = evaluateSignInAttempts(cancelled(31), server, NOW);
+	assert.equal(verdict.allowed, false);
+	assert.equal(verdict.retryAfterSeconds, 500);
+	// They do not count toward the failure limits.
+	assert.deepEqual(evaluateSignInAttempts([...cancelled(20), ...attempts(5, server)], server, NOW), { allowed: true });
 });
 
 test("a server's refusal of the login is told from a cut connection", () => {

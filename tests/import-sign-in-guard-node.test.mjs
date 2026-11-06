@@ -48,11 +48,16 @@ async function fixture(t) {
 		"INSERT INTO users (id, email, password_hash, name, role, created_at) VALUES ('u1', 'u@one.test', 'hash', 'U', 'user', 1)",
 	);
 	const env = { DB: database };
-	const rows = () =>
+	// The attempts that count as failures (cancelled ones are marked, see `cancelledRows`).
+	const attempts = (aborted) =>
 		database.db
-			.prepare("SELECT id FROM audit_logs WHERE action = 'import.sign_in_attempt' AND actor_user_id = 'u1'")
+			.prepare(
+				`SELECT id FROM audit_logs WHERE action = 'import.sign_in_attempt' AND actor_user_id = 'u1' AND json_extract(metadata, '$.aborted') IS ${aborted ? "NOT" : ""} NULL`,
+			)
 			.all().length;
-	return { env, rows, guard: importSignInGuard(env, "u1") };
+	const rows = () => attempts(false);
+	const cancelledRows = () => attempts(true);
+	return { env, rows, cancelledRows, guard: importSignInGuard(env, "u1") };
 }
 
 const refused = () => Promise.reject(new Error("IMAP sign-in failed: A1 NO [AUTHENTICATIONFAILED] bad"));
@@ -90,7 +95,7 @@ test("parallel attempts cannot all see room: at most the limit get through", asy
 });
 
 test("a cancelled sign-in is not a failure, but a refusal the server already sent stays one", async (t) => {
-	const { rows, guard } = await fixture(t);
+	const { rows, cancelledRows, guard } = await fixture(t);
 	const controller = new AbortController();
 	// Aborting closes the socket, so the pending read fails with a plain error, not an AbortError.
 	await assert.rejects(
@@ -105,6 +110,7 @@ test("a cancelled sign-in is not a failure, but a refusal the server already sen
 		/connection was closed/,
 	);
 	assert.equal(rows(), 0);
+	assert.equal(cancelledRows(), 1);
 	const second = new AbortController();
 	await assert.rejects(
 		guard(
@@ -133,4 +139,24 @@ test("a cancelled sign-in is not a failure, but a refusal the server already sen
 		);
 	}
 	assert.equal(await guard(SERVER, async () => "ok"), "ok");
+});
+
+test("cancelling is bounded too: the credentials may have been sent before the cancel", async (t) => {
+	const { rows, cancelledRows, guard } = await fixture(t);
+	const cancel = () => {
+		const controller = new AbortController();
+		return guard(
+			SERVER,
+			async () => {
+				controller.abort();
+				throw new Error("The connection was closed");
+			},
+			controller.signal,
+		);
+	};
+	for (let attempt = 0; attempt < 31; attempt += 1) await assert.rejects(cancel(), /connection was closed/);
+	assert.equal(rows(), 0);
+	// The attempt being checked is still in flight, not yet marked, so the one after the 30th marked is the last.
+	assert.equal(cancelledRows(), 31);
+	await assert.rejects(cancel(), (error) => error instanceof SignInLimitError);
 });

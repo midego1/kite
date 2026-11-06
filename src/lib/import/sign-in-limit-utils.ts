@@ -2,6 +2,11 @@
 export const SIGN_IN_FAILURES_PER_USER = 10;
 /** @public Exercised by the unit tests. The same window for one user and one server (host and port), so one provider cannot be hammered. */
 export const SIGN_IN_FAILURES_PER_SERVER = 5;
+/**
+ * Cancelled sign-ins per user in the same window. They are not failures (the page walks away from a size step all the
+ * time), but a cancel can come after the credentials reached the server, so they are bounded too.
+ */
+const SIGN_IN_ABORTS_PER_USER = 30;
 export const SIGN_IN_WINDOW_MS = 10 * 60_000;
 /** The most rows one check reads: a burst of parallel attempts cannot make it grow without bound. */
 export const SIGN_IN_ROWS_READ = 200;
@@ -10,7 +15,7 @@ export const SIGN_IN_ROWS_READ = 200;
 export const SIGN_IN_ATTEMPT_ACTION = "import.sign_in_attempt";
 
 /** One attempt in the window: when it started and the server it named (`signInServerKey`). */
-export type SignInAttemptRow = { at: number; server: string | null };
+export type SignInAttemptRow = { at: number; server: string | null; aborted?: boolean };
 
 export type SignInVerdict = { allowed: true } | { allowed: false; retryAfterSeconds: number };
 
@@ -33,18 +38,24 @@ function secondsUntilRoom(times: readonly number[], limit: number, now: number):
  */
 export function evaluateSignInAttempts(rows: readonly SignInAttemptRow[], server: string, now: number): SignInVerdict {
 	const since = now - SIGN_IN_WINDOW_MS;
-	const user = rows
-		.filter((row) => row.at > since)
+	const inWindow = rows.filter((row) => row.at > since);
+	const aborts = inWindow
+		.filter((row) => row.aborted)
 		.map((row) => row.at)
 		.sort((a, b) => a - b);
-	const sameServer = rows
-		.filter((row) => row.at > since && row.server === server)
+	const user = inWindow
+		.filter((row) => !row.aborted)
+		.map((row) => row.at)
+		.sort((a, b) => a - b);
+	const sameServer = inWindow
+		.filter((row) => !row.aborted && row.server === server)
 		.map((row) => row.at)
 		.sort((a, b) => a - b);
 	const waits: number[] = [];
 	if (user.length > SIGN_IN_FAILURES_PER_USER) waits.push(secondsUntilRoom(user, SIGN_IN_FAILURES_PER_USER, now));
 	if (sameServer.length > SIGN_IN_FAILURES_PER_SERVER)
 		waits.push(secondsUntilRoom(sameServer, SIGN_IN_FAILURES_PER_SERVER, now));
+	if (aborts.length > SIGN_IN_ABORTS_PER_USER) waits.push(secondsUntilRoom(aborts, SIGN_IN_ABORTS_PER_USER, now));
 	return waits.length ? { allowed: false, retryAfterSeconds: Math.max(...waits) } : { allowed: true };
 }
 

@@ -7,8 +7,6 @@ const FETCH_BATCH_MESSAGES = 25;
  * written, and a Workers isolate has 128 MB, so a batch of big messages is split instead of read together.
  */
 const FETCH_BATCH_BYTES = 16 * MB;
-/** What a message whose server named no RFC822.SIZE is assumed to weigh when batches are planned. */
-const UNKNOWN_SIZE_BYTES = 1 * MB;
 
 export type FetchPlanLimits = {
 	/** The largest message taken: above it the message is skipped (`ImapLimits.literalBytes`). */
@@ -38,7 +36,7 @@ export type FetchSegment = {
  * Splits `uids` into segments by their RFC822.SIZE (`sizes`, by UID), in order: messages above the cap are set aside
  * inside the segment they sit in, the rest are grouped up to `batchMessages` and `batchBytes` (a message up to the
  * cap that does not fit with the others gets a segment of its own). A UID the server gave no size for is planned as
- * if it weighed 1 MB.
+ * if it weighed the cap, so it is fetched alone and never prefetched beside another.
  */
 export function planFetchSegments(
 	uids: readonly string[],
@@ -52,7 +50,8 @@ export function planFetchSegments(
 	for (const uid of uids) {
 		const size = sizes.get(uid) ?? null;
 		const oversized = size !== null && size > limits.messageBytes;
-		const weight = oversized ? 0 : (size ?? UNKNOWN_SIZE_BYTES);
+		// A server that names no size is planned for the worst case, the message limit: such a message goes alone.
+		const weight = oversized ? 0 : (size ?? limits.messageBytes);
 		if (
 			current &&
 			!oversized &&

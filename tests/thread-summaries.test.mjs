@@ -23,6 +23,8 @@ await build({
 	outdir: outDir,
 	outExtension: { ".js": ".mjs" },
 	bundle: true,
+	// One shared copy of each module: two bundled copies make Node report the uncalled one as uncovered.
+	splitting: true,
 	sourcemap: "inline",
 	platform: "node",
 	format: "esm",

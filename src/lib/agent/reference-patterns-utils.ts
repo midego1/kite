@@ -14,6 +14,7 @@ export const BARE_DOMAIN = new RegExp(
 // make the scan quadratic.
 export const OBFUSCATED_ADDRESS =
 	/(?<![\w.+-])([\w.+-]{1,64})\s{0,8}[[(]\s{0,8}at\s{0,8}[\])]\s{0,8}([\w-]{1,63}(?:(?:\s{0,8}[[(]\s{0,8}dot\s{0,8}[\])]\s{0,8}|\.)[\w-]{1,63}){1,8})/gi;
+const CAPITALISED_ENDING = /^[A-Z][a-z]+$/;
 const DOT_WORD = /\s*[[(]\s*dot\s*[\])]\s*/gi;
 
 /** The address an obfuscated spelling stands for: `name (at) example (dot) com` is `name@example.com`. */
@@ -29,5 +30,10 @@ export function obfuscatedAddress(local: string, domain: string): string {
 export function bareDomainMatches(text: string, sentenceSafe = false): RegExpMatchArray[] {
 	const matches = [...text.matchAll(BARE_DOMAIN)];
 	if (!sentenceSafe) return matches;
-	return matches.filter((match) => match[2] || !/^[A-Z][a-z]+$/.test(match[1].slice(match[1].lastIndexOf(".") + 1)));
+	const kept: RegExpMatchArray[] = [];
+	for (const match of matches) {
+		const ending = match[1].slice(match[1].lastIndexOf(".") + 1);
+		if (match[2] || !CAPITALISED_ENDING.test(ending)) kept.push(match);
+	}
+	return kept;
 }

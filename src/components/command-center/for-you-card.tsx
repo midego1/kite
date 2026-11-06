@@ -43,7 +43,7 @@ function ForYouCardEntry({
 					{[row.kindLabel, row.sender].filter(Boolean).join(" · ")}
 				</span>
 			</span>
-			<time dateTime={row.createdAt} className="shrink-0 text-xs text-neutral-500 max-[26rem]:hidden">
+			<time dateTime={row.createdAt} className="shrink-0 text-xs text-neutral-500 @max-[26rem]:hidden">
 				{formatMessageListTimestamp(row.createdAt)}
 			</time>
 		</>
@@ -63,7 +63,7 @@ function ForYouCardEntry({
 				onClick={onDismiss}
 				aria-label={`Dismiss ${row.subject}`}
 				title="Dismiss"
-				className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-neutral-500 transition-colors hover:bg-neutral-200/60 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 disabled:opacity-50"
+				className="flex h-8 w-8 pointer-coarse:h-11 pointer-coarse:w-11 shrink-0 items-center justify-center rounded-lg text-neutral-500 transition-colors hover:bg-neutral-200/60 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 disabled:opacity-50"
 			>
 				<X className="h-4 w-4" aria-hidden="true" />
 			</button>

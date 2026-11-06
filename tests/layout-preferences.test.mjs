@@ -86,6 +86,7 @@ test("a layout maps to the browser storage the views read", () => {
 		emailFont: "reader",
 		fontScope: "everywhere",
 		interfaceDirection: "rtl",
+		translateTo: "th",
 		listWidth: 420,
 		listHeight: 300,
 	};
@@ -98,6 +99,7 @@ test("a layout maps to the browser storage the views read", () => {
 		["kite-email-font", "reader"],
 		["kite-font-scope", "everywhere"],
 		["kite-interface-direction", "rtl"],
+		["kite-translate-to", "th"],
 		["kite-column-width:message-list", "420"],
 		["kite-column-width:message-list:user-1", "420"],
 		["kite-column-width:message-list-height", "300"],

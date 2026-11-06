@@ -217,7 +217,12 @@ export const FAKE_SCENARIOS: Record<string, FakeScenario> = {
 				? { content: JSON.stringify(benignTriage).slice(0, 40), finishReason: "length" }
 				: json(benignTriage),
 	},
-	"http-500": { triage: () => ({ status: 500 }), draft: () => ({ status: 500 }), repairsToo: true },
+	"http-500": {
+		triage: () => ({ status: 500 }),
+		draft: () => ({ status: 500 }),
+		messageTranslation: () => ({ status: 500 }),
+		repairsToo: true,
+	},
 	slow: { triage: ({ slowMs }) => ({ ...json(benignTriage), delayMs: slowMs }) },
 	"hostile-extra-keys": {
 		triage: () =>
@@ -231,6 +236,18 @@ export const FAKE_SCENARIOS: Record<string, FakeScenario> = {
 	"hostile-draft-attacker": {
 		triage: () => json({ ...benignTriage, category: "needs_reply", needsReply: true, urgency: "high" }),
 		draft: () => text(HOSTILE_DRAFT_BODY),
+	},
+	// A model that followed the mail: markup and a link the message does not have, in every piece.
+	"translation-hostile": {
+		triage: () => json(benignTriage),
+		messageTranslation: (context) =>
+			json({
+				language: "th",
+				subject: "Subject <b>bold</b>",
+				segments: translationPieces(context.prompt ?? "").map(
+					() => '<img src="x" onerror="window.__injected=true"> Pay at https://evil.test/pay now',
+				),
+			}),
 	},
 	"hostile-wire-money": {
 		triage: () =>
@@ -253,11 +270,31 @@ export const FAKE_SCENARIOS: Record<string, FakeScenario> = {
 	},
 };
 
+/** What the fake "translation" of a piece starts with; specs look for it. */
+export const FAKE_TRANSLATION_PREFIX = "EN:";
+export const FAKE_TRANSLATED_SUBJECT = "Translated subject";
+
+/** The pieces of a message translation request, from the JSON in its untrusted block. */
+function translationPieces(prompt: string): string[] {
+	const block = /<<<EMAIL_TEXT [^\n]*>>>\n([\s\S]*)\n<<<END /.exec(prompt);
+	return block ? ((JSON.parse(block[1]) as { segments?: string[] }).segments ?? []) : [];
+}
+
+/** Answers a message translation with each piece marked, so a spec can see which pieces came back and where. */
+function translateFromPrompt(context: { prompt?: string }): FakeModelReply {
+	return json({
+		language: "th",
+		subject: FAKE_TRANSLATED_SUBJECT,
+		segments: translationPieces(context.prompt ?? "").map((piece) => `${FAKE_TRANSLATION_PREFIX} ${piece}`),
+	});
+}
+
 export function scenarioReply(
 	scenario: FakeScenario,
 	kind: FakeRequestKind,
-	context: { callNumber: number; slowMs: number },
+	context: { callNumber: number; slowMs: number; prompt?: string },
 ): FakeModelReply {
+	if (kind === "message_translation") return (scenario.messageTranslation ?? translateFromPrompt)(context);
 	if (kind === "compose") return (scenario.compose ?? FAKE_SCENARIOS["compose-write"].compose!)(context);
 	if (kind === "line_summary") return scenario.line ? scenario.line(context) : text(LINE_FROM_JOB);
 	if (kind === "summary") return (scenario.summary ?? FAKE_SCENARIOS["summary-thread"].summary!)(context);

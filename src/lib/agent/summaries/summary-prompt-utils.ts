@@ -6,8 +6,8 @@ import { SUMMARY_ANSWER_TOKENS } from "../output-budget-utils";
 import type { SummaryMessage, SummaryPrompt, SummaryPromptInput, TranslationPromptInput } from "./summary-types";
 import { languageName } from "./summary-utils";
 
-/** The statuses whose messages are ever summarised; drafts, spam, trash, the Screener and module statuses never. */
-export const SUMMARY_STATUSES = ["received", "sent", "archived"] as const;
+export { isSummaryEligible, SUMMARY_STATUSES } from "./summary-utils";
+
 /** Messages given in full, the newest ones; earlier messages appear as one line each. */
 export const SUMMARY_FULL_MESSAGES = 20;
 export const SUMMARY_MESSAGE_MAX_CHARS = 2_500;
@@ -20,11 +20,6 @@ const SUMMARY_EARLIER_LINES = 30;
  * that in other scripts; 400 cut long conversations off, which showed as a provider error.
  */
 export const SUMMARY_MAX_OUTPUT_TOKENS = SUMMARY_ANSWER_TOKENS;
-
-/** Whether a message may be summarised: a summarised status and not judged spam. */
-export function isSummaryEligible(message: { status: string; spamVerdict?: string | null }): boolean {
-	return (SUMMARY_STATUSES as readonly string[]).includes(message.status) && message.spamVerdict !== "spam";
-}
 
 // Where a reply's quoted part starts in HTML: a blockquote, or the composer's quote wrapper (`wrapQuotedHtml`).
 const QUOTE_START = /<blockquote\b|<[a-z]+\b[^>]*\bdata-kite-quote\b/i;

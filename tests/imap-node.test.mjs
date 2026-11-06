@@ -397,6 +397,66 @@ test("the highest UID a server answers below `n:*` is not listed twice", async (
 	assert.ok(server.commands.some(({ line }) => line.endsWith("UID SEARCH UID 41:*")));
 });
 
+test("one search has a limit across all its ranges, however a server answers them", async (t) => {
+	const message = /The IMAP server listed more than 30 messages in one folder$/;
+	const messages = Array.from({ length: 45 }, (_, index) => ({ raw: sampleMessage(index + 1), uid: index + 1 }));
+	const limits = { lineBytes: 240, folderUids: 30 };
+
+	// Every range answered in full: within each command's limits, over the limit together. EXISTS said less.
+	const understated = await fake(t, { implicitTls: true, folders: { INBOX: messages } });
+	understated.setExists("INBOX", 25);
+	const session = await openImapSession(nodeEnv(understated), login(), limits);
+	t.after(() => session.close());
+	await session.examine("INBOX");
+	await assert.rejects(session.searchUids(), message);
+	assert.equal(understated.commands.filter(({ line }) => / SEARCH /.test(line)).length, 2, "no range after the limit");
+
+	// Repeats count, in ranges and in one ALL.
+	for (const folders of [{ INBOX: messages.slice(0, 25) }, { INBOX: messages.slice(0, 16) }]) {
+		const repeating = await fake(t, { implicitTls: true, searchRepeats: 2, folders });
+		const repeated = await openImapSession(nodeEnv(repeating), login(), limits);
+		t.after(() => repeated.close());
+		await repeated.examine("INBOX");
+		await assert.rejects(repeated.searchUids(), message);
+	}
+
+	// A folder that says it is over the limit is refused without a search.
+	const large = await fake(t, { implicitTls: true, folders: { INBOX: messages } });
+	const said = await openImapSession(nodeEnv(large), login(), limits);
+	t.after(() => said.close());
+	await said.examine("INBOX");
+	await assert.rejects(said.searchUids(), message);
+	assert.equal(large.commands.filter(({ line }) => / SEARCH /.test(line)).length, 0);
+});
+
+test("a UID a server says twice is listed once", async (t) => {
+	const messages = Array.from({ length: 25 }, (_, index) => ({ raw: sampleMessage(index + 1), uid: index + 1 }));
+	const server = await fake(t, { implicitTls: true, searchRepeats: 2, folders: { INBOX: messages } });
+	const session = await openImapSession(nodeEnv(server), login(), { lineBytes: 240 });
+	t.after(() => session.close());
+	await session.examine("INBOX");
+	assert.deepEqual(
+		await session.searchUids(),
+		messages.map(({ uid }) => String(uid)),
+	);
+});
+
+test("a search starts no new range after its deadline", async (t) => {
+	const messages = Array.from({ length: 45 }, (_, index) => ({ raw: sampleMessage(index + 1), uid: index + 1 }));
+	const server = await fake(t, { implicitTls: true, searchDelayMs: 30, folders: { INBOX: messages } });
+	const session = await openImapSession(nodeEnv(server), login(), { lineBytes: 240 });
+	t.after(() => session.close());
+	await session.examine("INBOX");
+	await assert.rejects(session.searchUids({ deadline: Date.now() + 10 }), /took too long to list the folder$/);
+	assert.equal(server.commands.filter(({ line }) => / SEARCH /.test(line)).length, 1);
+	// One command on its own is not cut short by a deadline already gone.
+	const small = await fake(t, { implicitTls: true });
+	const fits = await openImapSession(nodeEnv(small), login());
+	t.after(() => fits.close());
+	await fits.examine("INBOX");
+	assert.deepEqual(await fits.searchUids({ deadline: 0 }), ["1"]);
+});
+
 test("a folder that fits still gets one UID SEARCH ALL", async (t) => {
 	const server = await fake(t, { implicitTls: true });
 	const session = await openImapSession(nodeEnv(server), login());

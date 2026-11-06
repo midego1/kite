@@ -4,6 +4,8 @@ import { allowsPlainText, mailHostPolicy } from "@/lib/net/host-guard-utils";
 import { ImapConnection, type ImapConnectionOptions } from "./connection";
 import {
 	chooseAuthMethod,
+	collectSearchUids,
+	distinctUids,
 	imapLimits,
 	imapSearchDate,
 	IMAP_PORTS,
@@ -18,11 +20,11 @@ import {
 	type ImapMessageSummary,
 	parseFetchFlags,
 	parseFetchSummaries,
-	parseSearchUids,
 	plainAuthToken,
 	planStartTls,
 	planUidSearch,
 	quoteImapString,
+	tooManyUidsMessage,
 } from "./protocol-utils";
 import type { ImapFetchedMessage, ImapLogin } from "./types";
 
@@ -45,7 +47,11 @@ export type ImapSession = {
 	 * it read-only. Only two-way sync (spec §6.8) calls it, and only when the account's owner turned that on.
 	 */
 	select(folder: string): Promise<ImapFolderState>;
-	searchUids(): Promise<string[]>;
+	/**
+	 * The UIDs of the open folder, in order and each once. A folder too large for one answer takes several commands;
+	 * none but the first starts after `deadline`, which throws (four minutes from now by default).
+	 */
+	searchUids(options?: { deadline?: number }): Promise<string[]>;
 	/** The UIDs of the open folder's messages received on or after `date`'s day (`UID SEARCH SINCE`). */
 	searchUidsSince(date: Date): Promise<number[]>;
 	/**
@@ -94,6 +100,9 @@ export type ImapSession = {
 };
 
 type ImapEnv = Parameters<typeof openMailSocket>[0];
+
+/** How long a search of one folder may keep starting commands, unless the caller has a deadline of its own. */
+const UID_SEARCH_MS = 4 * 60_000;
 
 /**
  * Connects, makes sure the connection is encrypted (implicit TLS, or STARTTLS before anything else is sent) and
@@ -145,21 +154,24 @@ export async function openImapSession(
 			opened = folderState(lines);
 			return opened;
 		},
-		async searchUids() {
+		async searchUids({ deadline = Date.now() + UID_SEARCH_MS } = {}) {
+			const { folderUids } = connectionLimits;
+			if ((opened?.exists ?? 0) > folderUids) throw new Error(tooManyUidsMessage(folderUids));
+			const found = new Uint32Array(folderUids);
 			const windows = opened && planUidSearch(opened, connectionLimits.lineBytes);
-			if (!windows) return (await imap.command("UID SEARCH ALL")).flatMap(parseSearchUids);
-			const uids: string[] = [];
-			for (const { from, to } of windows) {
-				const lines = await imap.command(`UID SEARCH UID ${from}:${to ?? "*"}`);
-				// `n:*` answers the highest UID even when it is below `n`, and a server may ignore the range.
-				for (const uid of lines.flatMap(parseSearchUids))
-					if (Number(uid) >= from && (to === null || Number(uid) <= to)) uids.push(uid);
+			let count = 0;
+			if (!windows) count = collectSearchUids(await imap.command("UID SEARCH ALL"), found, count);
+			for (const [index, range] of (windows ?? []).entries()) {
+				if (index > 0 && Date.now() >= deadline) throw new Error("The IMAP server took too long to list the folder");
+				const lines = await imap.command(`UID SEARCH UID ${range.from}:${range.to ?? "*"}`);
+				count = collectSearchUids(lines, found, count, range);
 			}
-			return uids;
+			return distinctUids(found.subarray(0, count)).map(String);
 		},
 		async searchUidsSince(date) {
 			const lines = await imap.command(`UID SEARCH SINCE ${imapSearchDate(date)}`);
-			return lines.flatMap(parseSearchUids).map(Number);
+			const found = new Uint32Array(connectionLimits.folderUids);
+			return distinctUids(found.subarray(0, collectSearchUids(lines, found, 0)));
 		},
 		async fetchSummaries(fromUid, toUid = null) {
 			const from = Math.max(1, Math.floor(fromUid));
@@ -216,7 +228,7 @@ export async function openImapSession(
 		async hasMessageId(folder, messageId) {
 			await openFolder(`EXAMINE ${quoteImapString(folder)}`);
 			const lines = await imap.command(`UID SEARCH HEADER Message-ID ${quoteImapString(messageId)}`);
-			return lines.flatMap(parseSearchUids).length > 0;
+			return lines.some((line) => /^\* SEARCH\s+\d/i.test(line));
 		},
 		async listMailboxNames() {
 			const lines = await imap.command('LIST "" "*"');

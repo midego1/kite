@@ -19,6 +19,8 @@ export function imapLimits(runtime: "node" | undefined): ImapLimits {
 		lineBytes: 8 * MB,
 		commandResponseBytes: 32 * MB,
 		commandResponseLines: 200_000,
+		// About 33 bytes each once they are strings: 33 MB of a Worker's 128 MB, beside the messages being imported.
+		folderUids: node ? 4_000_000 : 1_000_000,
 		commandTimeoutMs: 180_000,
 		minBytesPerSecond: 64 * 1024,
 		commandMaxMs: 600_000,
@@ -30,13 +32,56 @@ export function quoteImapString(value: string): string {
 	return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 }
 
-export function parseSearchUids(line: string): string[] {
-	const match = line.match(/^\* SEARCH(?:\s+(.+))?$/i);
-	if (!match?.[1]) return [];
-	return match[1]
-		.trim()
-		.split(/\s+/)
-		.filter((value) => /^\d+$/.test(value));
+/** The largest UID (RFC 9051 §2.3.1.1: 32 bits). */
+const MAX_UID = 2 ** 32 - 1;
+const SEARCH_ANSWER = /^\* SEARCH(?=\s|$)/i;
+const isSearchSpace = (code: number) => code === 32 || code === 9;
+
+export const tooManyUidsMessage = (limit: number) => `The IMAP server listed more than ${limit} messages in one folder`;
+
+/**
+ * Copies the UIDs of SEARCH answers into `found` from position `count`, those inside `range` when one is given, and
+ * returns the new count. It reads the numbers in place, without a string for each: an 8 MB line of short UIDs would
+ * otherwise take far more memory than the line itself. `found` is the limit, so a server cannot list more than it
+ * holds, and repeats count, so one cannot get around that by saying the same UID over and over.
+ */
+export function collectSearchUids(
+	lines: readonly string[],
+	found: Uint32Array,
+	count: number,
+	range: { from: number; to: number | null } | null = null,
+): number {
+	let next = count;
+	for (const line of lines) {
+		const start = SEARCH_ANSWER.exec(line)?.[0].length;
+		if (start === undefined) continue;
+		for (let index = start; index < line.length; index += 1) {
+			if (isSearchSpace(line.charCodeAt(index))) continue;
+			let value = 0;
+			let digits = true;
+			for (; index < line.length && !isSearchSpace(line.charCodeAt(index)); index += 1) {
+				const digit = line.charCodeAt(index) - 48;
+				digits &&= digit >= 0 && digit <= 9;
+				value = value * 10 + digit;
+			}
+			if (!digits || value < 1 || value > MAX_UID) continue;
+			// `n:*` answers the highest UID even when it is below `n`, and a server may ignore the range.
+			if (range && (value < range.from || (range.to !== null && value > range.to))) continue;
+			if (next === found.length) throw new Error(tooManyUidsMessage(found.length));
+			found[next] = value;
+			next += 1;
+		}
+	}
+	return next;
+}
+
+/** The UIDs in order, each once. */
+export function distinctUids(found: Uint32Array): number[] {
+	found.sort();
+	const uids: number[] = [];
+	for (let index = 0; index < found.length; index += 1)
+		if (index === 0 || found[index] !== found[index - 1]) uids.push(found[index]);
+	return uids;
 }
 
 /** What one UID may take in a `* SEARCH` line: ten digits, a space, and room for the line's own start. */
@@ -51,7 +96,7 @@ const MAX_SEARCH_WINDOWS = 64;
  * hold it. The answer to SEARCH is a single line, so a folder that might not fit is asked for in ranges each too narrow
  * to overflow that line. The last range ends at `*`, which also finds what arrived since the folder was opened. A
  * server that does not say how large the folder is, or whose UIDs are too sparse for the window cap, gets ALL: the line
- * limit still ends an answer that is too long.
+ * limit still ends an answer that is too long. `collectSearchUids` limits what all the ranges add up to.
  */
 export function planUidSearch(
 	folder: { exists: number | null; uidNext: number | null },

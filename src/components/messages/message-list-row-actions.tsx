@@ -10,8 +10,10 @@ import type { MessageListRowActionsProps } from "./types";
 import { isMessageSnoozed, unsnoozeMessage } from "./message-list-row-actions-utils";
 import { SnoozePicker } from "./snooze-picker";
 import { reportListActionError } from "./list-action-toast";
+import { useT } from "@/lib/i18n/use-t";
 
 export function MessageListRowActions({ message, onAction, compact = false, star }: MessageListRowActionsProps) {
+	const t = useT();
 	const [snoozeOpen, setSnoozeOpen] = useState(false);
 	const snoozed = isMessageSnoozed(message.snoozedUntil);
 	const readAction = message.read ? "unread" : "read";
@@ -24,74 +26,74 @@ export function MessageListRowActions({ message, onAction, compact = false, star
 			>
 				{star && (
 					// One name in both states, so the pressed state carries it ("Star", pressed); the tooltip says what a click does.
-					<Tooltip label={star.starred ? "Unstar" : "Star"}>
+					<Tooltip label={star.starred ? t("Unstar") : t("Star")}>
 						<Button
 							type="button"
 							variant="ghost"
 							size="sm"
 							className={buttonClassName}
 							onClick={star.onToggle}
-							aria-label="Star"
+							aria-label={t("Star")}
 							aria-pressed={star.starred}
 						>
 							<star.icon className={cn("h-4 w-4", star.starred && "fill-amber-400 text-amber-400")} />
 						</Button>
 					</Tooltip>
 				)}
-				<Tooltip label="Archive">
+				<Tooltip label={t("Archive")}>
 					<Button
 						type="button"
 						variant="ghost"
 						size="sm"
 						className={buttonClassName}
 						onClick={() => void onAction("archive")}
-						aria-label="Archive"
+						aria-label={t("Archive")}
 					>
 						<Archive className="h-4 w-4" />
 					</Button>
 				</Tooltip>
-				<Tooltip label="Trash">
+				<Tooltip label={t("Trash")}>
 					<Button
 						type="button"
 						variant="ghost"
 						size="sm"
 						className={buttonClassName}
 						onClick={() => void onAction("trash")}
-						aria-label="Trash"
+						aria-label={t("Trash")}
 					>
 						<Trash2 className="h-4 w-4" />
 					</Button>
 				</Tooltip>
-				<Tooltip label={readAction === "read" ? "Mark as read" : "Mark as unread"}>
+				<Tooltip label={readAction === "read" ? t("Mark as read") : t("Mark as unread")}>
 					<Button
 						type="button"
 						variant="ghost"
 						size="sm"
 						className={buttonClassName}
 						onClick={() => void onAction(readAction)}
-						aria-label={readAction === "read" ? "Mark as read" : "Mark as unread"}
+						aria-label={readAction === "read" ? t("Mark as read") : t("Mark as unread")}
 					>
 						{readAction === "read" ? <MailOpen className="h-4 w-4" /> : <Mail className="h-4 w-4" />}
 					</Button>
 				</Tooltip>
 				{snoozed ? (
-					<Tooltip label="Unsnooze">
+					<Tooltip label={t("Unsnooze")}>
 						<Button
 							type="button"
 							variant="ghost"
 							size="sm"
 							className={buttonClassName}
 							onClick={() => void unsnoozeMessage(message.id).catch(reportListActionError)}
-							aria-label="Unsnooze"
+							aria-label={t("Unsnooze")}
 						>
 							<Clock className="h-4 w-4" />
 						</Button>
 					</Tooltip>
 				) : (
 					<Popover.Root open={snoozeOpen} onOpenChange={setSnoozeOpen}>
-						<Tooltip label={snoozeOpen ? null : "Snooze"}>
+						<Tooltip label={snoozeOpen ? null : t("Snooze")}>
 							<Popover.Trigger asChild>
-								<Button type="button" variant="ghost" size="sm" className={buttonClassName} aria-label="Snooze">
+								<Button type="button" variant="ghost" size="sm" className={buttonClassName} aria-label={t("Snooze")}>
 									<Clock className="h-4 w-4" />
 								</Button>
 							</Popover.Trigger>
@@ -101,7 +103,7 @@ export function MessageListRowActions({ message, onAction, compact = false, star
 								align="end"
 								sideOffset={6}
 								collisionPadding={8}
-								aria-label="Snooze"
+								aria-label={t("Snooze")}
 								className="z-50 w-72 rounded-xl border border-neutral-200 bg-white p-2 shadow-lg"
 							>
 								<SnoozePicker messageId={message.id} onSnoozed={() => setSnoozeOpen(false)} />

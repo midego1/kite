@@ -14,6 +14,12 @@ export type SidebarState = {
 	/** True while a message list header on the page carries the collapse toggle, so the sidebar header drops it. */
 	toggleInListHeader: boolean;
 	setToggleInListHeader(shown: boolean): void;
+	/**
+	 * True while the account menu floats over the sidebar's resize handle. The handle is hit-tested by coordinates at
+	 * document level, so without this it takes the clicks meant for the menu.
+	 */
+	menuOverResizeHandle: boolean;
+	setMenuOverResizeHandle(over: boolean): void;
 };
 
 export type SidebarProviderProps = {

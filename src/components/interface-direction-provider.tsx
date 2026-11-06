@@ -3,7 +3,8 @@
 import { DirectionProvider, useDirection } from "@radix-ui/react-direction";
 import { usePathname } from "next/navigation";
 import { useEffect, useLayoutEffect, useSyncExternalStore } from "react";
-import { readInterfaceDirection } from "@/components/messages/use-reading-layout";
+import { readInterfaceDirection, readInterfaceLanguage } from "@/components/messages/use-reading-layout";
+import { pageLanguage } from "@/lib/i18n/language-utils";
 import {
 	documentDirection,
 	type InterfaceDirection,
@@ -17,8 +18,9 @@ function subscribeToDocumentDirection(onChange: () => void) {
 	return () => observer.disconnect();
 }
 
-function applyStoredDirection() {
-	document.documentElement.dir = resolveInterfaceDirection(readInterfaceDirection(), navigator.language);
+function applyStoredDirection(pathname: string) {
+	const language = pageLanguage(readInterfaceLanguage(), navigator.language, pathname);
+	document.documentElement.dir = resolveInterfaceDirection(readInterfaceDirection(), language);
 }
 
 /**
@@ -33,13 +35,14 @@ export function InterfaceDirectionProvider({ children }: { children: React.React
 	const direction = useSyncExternalStore(subscribeToDocumentDirection, documentDirection, () => "ltr" as const);
 	const pathname = usePathname();
 
-	// eslint-disable-next-line react-hooks/exhaustive-deps -- a navigation is the moment to catch up, whatever it changed.
-	useLayoutEffect(applyStoredDirection, [pathname]);
+	// A navigation is the moment to catch up, whatever it changed.
+	useLayoutEffect(() => applyStoredDirection(pathname), [pathname]);
 
 	useEffect(() => {
-		window.addEventListener(INTERFACE_DIRECTION_CHOSEN_EVENT, applyStoredDirection);
-		return () => window.removeEventListener(INTERFACE_DIRECTION_CHOSEN_EVENT, applyStoredDirection);
-	}, []);
+		const onChosen = () => applyStoredDirection(pathname);
+		window.addEventListener(INTERFACE_DIRECTION_CHOSEN_EVENT, onChosen);
+		return () => window.removeEventListener(INTERFACE_DIRECTION_CHOSEN_EVENT, onChosen);
+	}, [pathname]);
 
 	return <DirectionProvider dir={direction}>{children}</DirectionProvider>;
 }

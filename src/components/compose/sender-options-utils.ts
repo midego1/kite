@@ -1,4 +1,5 @@
 import type { SendIdentity } from "@/lib/external-accounts/types";
+import { t } from "@/lib/i18n/translator";
 
 type SenderMailbox = {
 	localPart: string;
@@ -52,7 +53,7 @@ export function senderOptionLabel(option: { address: string; identity: SendIdent
 
 /** What the composer says after a send: scheduled, sent, or waiting because the provider asked to try later. */
 export function sentToastMessage(result: { scheduled?: boolean; retrying?: boolean }): string {
-	if (result.scheduled) return "Message scheduled";
-	if (result.retrying) return "The provider asked Kite to try again shortly. The message waits in Sent until then.";
-	return "Message sent";
+	if (result.scheduled) return t("Message scheduled");
+	if (result.retrying) return t("The provider asked Kite to try again shortly. The message waits in Sent until then.");
+	return t("Message sent");
 }

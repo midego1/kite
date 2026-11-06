@@ -1,3 +1,4 @@
+import { msg } from "@/lib/i18n/translator";
 import type { ClientModuleData } from "../module-types";
 
 /** The slice of the calendar manifest that client code reads, so client bundles never carry the rest of it. */
@@ -46,7 +47,7 @@ export const calendarClientData: ClientModuleData = {
 	nav: [
 		{
 			id: "calendar.mailbox-selector",
-			label: "Calendar",
+			label: msg("Calendar"),
 			href: "/calendar",
 			icon: "CalendarDays",
 			placement: "mailbox-selector",
@@ -54,7 +55,7 @@ export const calendarClientData: ClientModuleData = {
 		},
 		{
 			id: "calendar.module-tabs",
-			label: "Calendar",
+			label: msg("Calendar"),
 			href: "/calendar",
 			icon: "CalendarDays",
 			placement: "module-tabs",

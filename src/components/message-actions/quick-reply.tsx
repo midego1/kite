@@ -6,6 +6,7 @@ import { useInlineComposerHost } from "@/components/compose/inline-composer-host
 import type { Message } from "@/hooks/types";
 import type { ReplyableMessage } from "./types";
 import { useMessageReply } from "./use-message-reply";
+import { useT } from "@/lib/i18n/use-t";
 
 type QuickReplyProps = {
 	/** The sender as the reader's header names them; mail you sent shows a plain "Reply…". */
@@ -21,6 +22,7 @@ type QuickReplyProps = {
  * in the composer, like Reply in the toolbar or `r`, so drafts, quoting and sending stay in one place.
  */
 export function QuickReply({ name, message, body, ownAddress, ownAddresses }: QuickReplyProps) {
+	const t = useT();
 	const { reply, pending, error } = useMessageReply({
 		mailboxId: message.mailboxId,
 		senderAddress: message.fromAddr,
@@ -59,14 +61,14 @@ export function QuickReply({ name, message, body, ownAddress, ownAddresses }: Qu
 			>
 				<Reply className="h-4 w-4 shrink-0 rtl:-scale-x-100" aria-hidden="true" />
 				{pending ? (
-					<span>Opening the reply…</span>
+					<span>{t("Opening the reply…")}</span>
 				) : message.direction === "inbound" ? (
 					<span className="min-w-0 truncate">
-						Reply to <bdi>{name}</bdi>…
+						{t("Reply to")} <bdi>{name}</bdi>…
 					</span>
 				) : (
 					// Mail you sent: the reply goes to its recipients, not to you.
-					<span>Reply…</span>
+					<span>{t("Reply…")}</span>
 				)}
 			</button>
 			{error && (

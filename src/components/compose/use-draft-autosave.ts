@@ -5,6 +5,7 @@ import type { Dispatch, SetStateAction } from "react";
 import { authFetch } from "@/lib/auth/client";
 import { createDraftSaveQueue, createRequestedDraftKey, withoutAttachmentIds } from "./draft-autosave-utils";
 import type { ComposeAttachment, ComposeDraftSnapshot, ComposeStoredAttachment } from "./types";
+import { t } from "@/lib/i18n/translator";
 
 const AUTOSAVE_DELAY_MS = 900;
 
@@ -134,7 +135,7 @@ async function saveDraftSnapshot(
 	const data = (await res.json().catch(() => ({}))) as { draft?: { id: string }; error?: string };
 	// The server refuses some saves for good (409, 403): say so, or what is typed next would be lost without a word.
 	if (res.status === 409 || res.status === 403) {
-		setters.reportError({ type: "error", message: data.error ?? "Could not save the draft" });
+		setters.reportError({ type: "error", message: data.error ?? t("Could not save the draft") });
 	}
 	const savedId = res.ok ? (data.draft?.id ?? null) : null;
 	if (savedId && next.storeAttachments && !stale())
@@ -169,7 +170,7 @@ async function storeDraftAttachments(
 		const reason = cause instanceof Error && cause.message ? cause.message : "the request failed";
 		setters.reportError({
 			type: "error",
-			message: `Could not save the attachments with the draft (${reason}). They will still be sent.`,
+			message: t("Could not save the attachments with the draft ({reason}). They will still be sent.", { reason }),
 		});
 	}
 }

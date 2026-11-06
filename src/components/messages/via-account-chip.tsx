@@ -5,6 +5,7 @@ import { useOptionalMailSearch } from "@/components/mail-search/mail-search-cont
 import type { Message } from "@/hooks/types";
 import { viaChipText, viaChipTitle, viaSearchQuery } from "@/lib/external-accounts/via-utils";
 import { cn } from "@/lib/utils";
+import { useT } from "@/lib/i18n/use-t";
 
 const chipClass =
 	"inline-flex min-w-0 max-w-40 shrink items-center gap-1 rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-medium text-neutral-600";
@@ -22,6 +23,7 @@ export function ViaAccountChip({
 	filter?: boolean;
 	className?: string;
 }) {
+	const t = useT();
 	const search = useOptionalMailSearch();
 	const { via } = message;
 	if (!via) return null;
@@ -30,7 +32,7 @@ export function ViaAccountChip({
 	const content = (
 		<>
 			<Link2 aria-hidden="true" className="h-3 w-3 shrink-0" />
-			<span className="truncate">via {text}</span>
+			<span className="truncate">{t("via {text}", { text })}</span>
 		</>
 	);
 	if (filter && search)
@@ -38,8 +40,8 @@ export function ViaAccountChip({
 			<button
 				type="button"
 				data-via-account={via.address}
-				title={`${title}. Show all mail through this account`}
-				aria-label={`via ${text}: show all mail through ${via.address}`}
+				title={t("{title}. Show all mail through this account", { title })}
+				aria-label={t("via {text}: show all mail through {address}", { text, address: via.address })}
 				onClick={() => search.setQuery(viaSearchQuery(via))}
 				className={cn(
 					chipClass,

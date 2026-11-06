@@ -2,6 +2,7 @@ import { UserCheck } from "lucide-react";
 import type { MessageCounts } from "@/hooks/types";
 import type { MailboxOption } from "@/components/mailbox-provider";
 import type { NavLink } from "@/components/components-nav-types";
+import { useT } from "@/lib/i18n/use-t";
 
 const SCREENER_HREF = "/screener";
 
@@ -11,9 +12,10 @@ const SCREENER_HREF = "/screener";
  * held mail (for example right after the Screener was switched to Inbox mode).
  */
 export function useScreenerNav(mailbox: MailboxOption | null | undefined, folders: MessageCounts["folders"]) {
+	const t = useT();
 	const held = folders.screener?.total ?? 0;
 	const visible = (mailbox?.screener?.enabled === true && mailbox.screener.mode === "screener") || held > 0;
-	const link: NavLink = { href: SCREENER_HREF, label: "Screener", icon: UserCheck, count: held || undefined };
+	const link: NavLink = { href: SCREENER_HREF, label: t("Screener"), icon: UserCheck, count: held || undefined };
 	return {
 		withLink(links: NavLink[]): NavLink[] {
 			const inbox = links.findIndex((item) => item.href === "/inbox");

@@ -1,6 +1,7 @@
 "use client";
 
 import toast from "react-hot-toast";
+import { t } from "@/lib/i18n/translator";
 
 const LIST_ACTION_ERROR = "Could not update the messages. Please try again.";
 
@@ -14,7 +15,7 @@ export function reportListActionError(error: unknown) {
 export function reportReadOnlySkipped(skipped: number, nothingAllowed: boolean) {
 	if (skipped === 0) return;
 	const message = nothingAllowed
-		? "Read-only mail can't be moved or deleted."
+		? t("Read-only mail can't be moved or deleted.")
 		: `${skipped === 1 ? "1 read-only message was" : `${skipped} read-only messages were`} left as it was.`;
 	toast(message, { id: "list-action-read-only" });
 }

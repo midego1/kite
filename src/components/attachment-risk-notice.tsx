@@ -4,6 +4,7 @@ import { AlertTriangle, ShieldAlert } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import type { AttachmentRisk } from "@/lib/email/attachment-risk-types";
 import { cn } from "@/lib/utils";
+import { useT } from "@/lib/i18n/use-t";
 
 /**
  * Why a file is flagged, with the "I understand the risk" box its download or copy waits for. Renders nothing for a
@@ -20,6 +21,7 @@ export function AttachmentRiskNotice({
 	onAcknowledgedChange: (acknowledged: boolean) => void;
 	className?: string;
 }) {
+	const t = useT();
 	if (!risk || risk.level === "ok") return null;
 	const danger = risk.level === "danger";
 	const Icon = danger ? ShieldAlert : AlertTriangle;
@@ -35,7 +37,9 @@ export function AttachmentRiskNotice({
 		>
 			<Icon className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
 			<div className="min-w-0 flex-1">
-				<p className="font-medium">{danger ? "This file can harm your computer." : "Be careful with this file."}</p>
+				<p className="font-medium">
+					{danger ? t("This file can harm your computer.") : t("Be careful with this file.")}
+				</p>
 				<ul className="mt-1 list-disc space-y-0.5 ps-5">
 					{risk.reasons.map((reason) => (
 						<li key={reason} className="break-words">
@@ -43,14 +47,14 @@ export function AttachmentRiskNotice({
 						</li>
 					))}
 				</ul>
-				<p className="mt-1">Open it only if you expected it from someone you trust.</p>
+				<p className="mt-1">{t("Open it only if you expected it from someone you trust.")}</p>
 				<label className="mt-2 flex cursor-pointer items-center gap-2 font-medium">
 					<Checkbox
 						checked={acknowledged}
 						onChange={(event) => onAcknowledgedChange(event.target.checked)}
 						data-attachment-risk-acknowledge
 					/>
-					I understand the risk
+					{t("I understand the risk")}
 				</label>
 			</div>
 		</div>

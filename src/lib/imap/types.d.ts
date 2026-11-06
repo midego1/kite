@@ -36,6 +36,8 @@ export type ImapLimits = {
 	/** The untagged lines one command collects before its tagged answer. */
 	commandResponseBytes: number;
 	commandResponseLines: number;
+	/** The UIDs one search of a folder may list, across all its commands, repeats included. */
+	folderUids: number;
 	/** The deadline of a command that receives nothing. */
 	commandTimeoutMs: number;
 	/** Arriving bytes extend the deadline at this rate… */

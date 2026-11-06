@@ -21,7 +21,10 @@ const stubs = {
 			fake.opened += 1;
 			return {
 				examine: async () => undefined,
-				searchUids: async () => fake.uids.map(String),
+				searchUids: async (options) => {
+					fake.searchDeadline = options?.deadline;
+					return fake.uids.map(String);
+				},
 				fetchUidSizes: async (uids) =>
 					uids.map((uid) => ({ uid: Number(uid), flags: [], internalDate: null, size: fake.sizes?.[uid] ?? 20 })),
 				fetchMessages: async (uids) => {
@@ -182,6 +185,19 @@ test("a running import stops after the batch that fills the database and pauses 
 	assert.equal(paused.imported, 25);
 	assert.equal(paused.cursor_uid, 76);
 	assert.notEqual(paused.password, "");
+});
+
+test("a folder search stops at the run's four-minute budget, not one of its own", async (t) => {
+	const { env } = await fixture(t, 0.1);
+	globalThis.__fakeImport.uids = [1];
+	const job = await createImportJob(env, jobFields);
+	const started = Date.now();
+	await processImportJob(env, job.id, ctx);
+	const { searchDeadline } = globalThis.__fakeImport;
+	assert.ok(
+		searchDeadline >= started + 4 * 60_000 && searchDeadline <= Date.now() + 4 * 60_000,
+		String(searchDeadline),
+	);
 });
 
 test("a cancelled job still stops the loop and is not paused over it", async (t) => {

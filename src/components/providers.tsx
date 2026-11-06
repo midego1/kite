@@ -14,6 +14,7 @@ import { UpdateAvailableHost } from "@/components/update-available-host";
 import { LayoutPreferencesSync } from "@/components/layout-preferences-sync";
 import { FoldPostureSync } from "@/components/fold-posture-sync";
 import { InterfaceDirectionProvider } from "@/components/interface-direction-provider";
+import { InterfaceLanguageSync } from "@/components/interface-language-sync";
 import { ConfirmDialogHost } from "@/components/ui/confirm-dialog";
 import { toasterProps } from "@/components/ui/toast-styles";
 import { useToastsAtTop } from "@/components/ui/toast-zone";
@@ -71,6 +72,7 @@ export function Providers({ children, initialBranding }: { children: React.React
 
 	return (
 		<InterfaceDirectionProvider>
+			<InterfaceLanguageSync />
 			<QueryClientProvider client={client}>
 				<BrandingProvider initialBranding={initialBranding}>
 					{/* One provider for every Tooltip: they open at once and share the skip-delay between neighbours. */}

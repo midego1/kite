@@ -1,5 +1,6 @@
 "use client";
 
+import { useT } from "@/lib/i18n/use-t";
 import type { LucideIcon } from "lucide-react";
 import { Clock, Mail, Paperclip, Star, UserCheck, Zap } from "lucide-react";
 import { useMailSearch } from "@/components/mail-search/mail-search-context";
@@ -43,6 +44,7 @@ export function MessageListChips({
 	filter,
 	screenerVisible,
 }: Pick<MessageListHeaderProps, "config" | "filter"> & { screenerVisible: boolean }) {
+	const t = useT();
 	const { input: query, setQuery } = useMailSearch();
 	const unread = filter?.value === "unread";
 	const term = (value: ChipSearchTerm) => hasSearchTerm(query, value);
@@ -51,7 +53,7 @@ export function MessageListChips({
 	const chips: Chip[] = [
 		{
 			key: "all",
-			label: inbox ? "Primary" : "All mail",
+			label: inbox ? t("Primary") : t("All mail"),
 			icon: Zap,
 			active: !unread && !anyTerm,
 			onClick: () => {
@@ -63,7 +65,7 @@ export function MessageListChips({
 	if (filter)
 		chips.push({
 			key: "unread",
-			label: "Unread",
+			label: t("Unread"),
 			icon: Mail,
 			active: unread,
 			onClick: () => filter.onChange(unread ? "all" : "unread"),
@@ -71,26 +73,26 @@ export function MessageListChips({
 	chips.push(
 		{
 			key: "attachments",
-			label: "Attachments",
+			label: t("Attachments"),
 			icon: Paperclip,
 			active: term("has:attachment"),
 			onClick: () => setQuery(toggleSearchTerm(query, "has:attachment")),
 		},
 		{
 			key: "starred",
-			label: "Starred",
+			label: t("Starred"),
 			icon: Star,
 			active: term("is:starred"),
 			onClick: () => setQuery(toggleSearchTerm(query, "is:starred")),
 		},
 	);
 	if (inbox) {
-		chips.push({ key: "snoozed", label: "Snoozed", icon: Clock, active: false, href: "/snoozed" });
+		chips.push({ key: "snoozed", label: t("Snoozed"), icon: Clock, active: false, href: "/snoozed" });
 		if (screenerVisible)
-			chips.push({ key: "screener", label: "Screener", icon: UserCheck, active: false, href: "/screener" });
+			chips.push({ key: "screener", label: t("Screener"), icon: UserCheck, active: false, href: "/screener" });
 	}
 	return (
-		<div role="group" aria-label="Show" className="flex items-center gap-2">
+		<div role="group" aria-label={t("Show")} className="flex items-center gap-2">
 			{chips.map((chip) => (
 				<ChipButton key={chip.key} chip={chip} />
 			))}

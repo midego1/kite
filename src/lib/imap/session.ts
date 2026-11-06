@@ -4,6 +4,8 @@ import { allowsPlainText, mailHostPolicy } from "@/lib/net/host-guard-utils";
 import { ImapConnection, type ImapConnectionOptions } from "./connection";
 import {
 	chooseAuthMethod,
+	collectSearchUids,
+	distinctUids,
 	imapLimits,
 	imapSearchDate,
 	IMAP_PORTS,
@@ -18,10 +20,11 @@ import {
 	type ImapMessageSummary,
 	parseFetchFlags,
 	parseFetchSummaries,
-	parseSearchUids,
 	plainAuthToken,
 	planStartTls,
+	planUidSearch,
 	quoteImapString,
+	tooManyUidsMessage,
 } from "./protocol-utils";
 import type { ImapFetchedMessage, ImapLogin } from "./types";
 
@@ -44,7 +47,11 @@ export type ImapSession = {
 	 * it read-only. Only two-way sync (spec §6.8) calls it, and only when the account's owner turned that on.
 	 */
 	select(folder: string): Promise<ImapFolderState>;
-	searchUids(): Promise<string[]>;
+	/**
+	 * The UIDs of the open folder, in order and each once. A folder too large for one answer takes several commands;
+	 * none but the first starts after `deadline`, which throws (four minutes from now by default).
+	 */
+	searchUids(options?: { deadline?: number }): Promise<string[]>;
 	/** The UIDs of the open folder's messages received on or after `date`'s day (`UID SEARCH SINCE`). */
 	searchUidsSince(date: Date): Promise<number[]>;
 	/**
@@ -94,6 +101,9 @@ export type ImapSession = {
 
 type ImapEnv = Parameters<typeof openMailSocket>[0];
 
+/** How long a search of one folder may keep starting commands, unless the caller has a deadline of its own. */
+const UID_SEARCH_MS = 4 * 60_000;
+
 /**
  * Connects, makes sure the connection is encrypted (implicit TLS, or STARTTLS before anything else is sent) and
  * signs in with `AUTHENTICATE PLAIN` or `LOGIN`. Credentials are never sent over a plain connection, except to a
@@ -107,7 +117,8 @@ export async function openImapSession(
 	const { signal, ...limits } = options;
 	signal?.throwIfAborted();
 	const socket = await openMailSocket(env, login, IMAP_PORTS);
-	const imap = new ImapConnection(socket, { ...imapLimits(env.KITE_RUNTIME), ...limits });
+	const connectionLimits = { ...imapLimits(env.KITE_RUNTIME), ...limits };
+	const imap = new ImapConnection(socket, connectionLimits);
 	const abort = () => void imap.close().catch(() => undefined);
 	signal?.addEventListener("abort", abort, { once: true });
 	try {
@@ -126,26 +137,41 @@ export async function openImapSession(
 		exists: parseExists(lines),
 		highestModseq: parseHighestModseq(lines),
 	});
+	/** What the last EXAMINE or SELECT said, for `searchUids`. */
+	let opened: ImapFolderState | null = null;
+	const openFolder = async (command: string) => (opened = folderState(await imap.command(command)));
 	return {
 		get capabilities() {
 			return imap.capabilities;
 		},
 		async examine(folder) {
-			return folderState(await imap.command(`EXAMINE ${quoteImapString(folder)}`));
+			return openFolder(`EXAMINE ${quoteImapString(folder)}`);
 		},
 		async select(folder) {
 			const lines = await imap.command(`SELECT ${quoteImapString(folder)}`);
 			if (lines.some((line) => /\[READ-ONLY\]/i.test(line)))
 				throw new Error("IMAP SELECT failed: the server opened the folder read-only");
-			return folderState(lines);
+			opened = folderState(lines);
+			return opened;
 		},
-		async searchUids() {
-			const lines = await imap.command("UID SEARCH ALL");
-			return lines.flatMap(parseSearchUids);
+		async searchUids({ deadline = Date.now() + UID_SEARCH_MS } = {}) {
+			const { folderUids } = connectionLimits;
+			if ((opened?.exists ?? 0) > folderUids) throw new Error(tooManyUidsMessage(folderUids));
+			const found = new Uint32Array(folderUids);
+			const windows = opened && planUidSearch(opened, connectionLimits.lineBytes);
+			let count = 0;
+			if (!windows) count = collectSearchUids(await imap.command("UID SEARCH ALL"), found, count);
+			for (const [index, range] of (windows ?? []).entries()) {
+				if (index > 0 && Date.now() >= deadline) throw new Error("The IMAP server took too long to list the folder");
+				const lines = await imap.command(`UID SEARCH UID ${range.from}:${range.to ?? "*"}`);
+				count = collectSearchUids(lines, found, count, range);
+			}
+			return distinctUids(found.subarray(0, count)).map(String);
 		},
 		async searchUidsSince(date) {
 			const lines = await imap.command(`UID SEARCH SINCE ${imapSearchDate(date)}`);
-			return lines.flatMap(parseSearchUids).map(Number);
+			const found = new Uint32Array(connectionLimits.folderUids);
+			return distinctUids(found.subarray(0, collectSearchUids(lines, found, 0)));
 		},
 		async fetchSummaries(fromUid, toUid = null) {
 			const from = Math.max(1, Math.floor(fromUid));
@@ -200,9 +226,9 @@ export async function openImapSession(
 		},
 		append: (folder, flags, raw) => imap.appendMessage(folder, flags, raw),
 		async hasMessageId(folder, messageId) {
-			await imap.command(`EXAMINE ${quoteImapString(folder)}`);
+			await openFolder(`EXAMINE ${quoteImapString(folder)}`);
 			const lines = await imap.command(`UID SEARCH HEADER Message-ID ${quoteImapString(messageId)}`);
-			return lines.flatMap(parseSearchUids).length > 0;
+			return lines.some((line) => /^\* SEARCH\s+\d/i.test(line));
 		},
 		async listMailboxNames() {
 			const lines = await imap.command('LIST "" "*"');

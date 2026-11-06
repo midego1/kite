@@ -5,6 +5,7 @@ import { bundleModules } from "./support/modules-bundle.mjs";
 const {
 	quoteImapString,
 	parseSearchUids,
+	planUidSearch,
 	getLiteralLength,
 	isTaggedCompletion,
 	isTaggedOk,
@@ -28,7 +29,7 @@ const {
 	hostImportMessageFromImap,
 } = await bundleModules("kite-imap-utils-", [
 	[
-		"quoteImapString, parseSearchUids, getLiteralLength, isTaggedCompletion, isTaggedOk, parseListMailboxName, parseFetchUid, parseCapabilities, parseGreeting, planStartTls, chooseAuthMethod, plainAuthToken, imapLoginArgument, imapLimits, parseFetchAttributes, parseInternalDate",
+		"quoteImapString, parseSearchUids, planUidSearch, getLiteralLength, isTaggedCompletion, isTaggedOk, parseListMailboxName, parseFetchUid, parseCapabilities, parseGreeting, planStartTls, chooseAuthMethod, plainAuthToken, imapLoginArgument, imapLimits, parseFetchAttributes, parseInternalDate",
 		"src/lib/imap/protocol-utils.ts",
 	],
 	[
@@ -301,4 +302,35 @@ test("IMAP messages carry their state into the direct and the background import"
 	);
 	assert.equal("receivedAt" in undated, false);
 	assert.equal(undated.starred, true);
+});
+
+test("planUidSearch asks for one line when it fits and for ranges when it might not", () => {
+	const MB = 1024 * 1024;
+	const lineBytes = 8 * MB;
+	const width = Math.floor(lineBytes / 12);
+	assert.equal(width, 699_050);
+	// What fits, or a folder that says nothing about its size.
+	assert.equal(planUidSearch({ exists: width, uidNext: 9_000_000 }, lineBytes), null);
+	assert.equal(planUidSearch({ exists: null, uidNext: 9_000_000 }, lineBytes), null);
+	assert.equal(planUidSearch({ exists: 2_000_000, uidNext: null }, lineBytes), null);
+
+	assert.deepEqual(planUidSearch({ exists: 1_000_000, uidNext: 2_000_000 }, lineBytes), [
+		{ from: 1, to: width },
+		{ from: width + 1, to: 2 * width },
+		{ from: 2 * width + 1, to: null },
+	]);
+	// Even a window of the longest UIDs stays inside the line limit.
+	assert.ok(`* SEARCH ${"4294967295 ".repeat(width)}`.length <= lineBytes);
+	// A window ends exactly at the last UID: nothing past it but `*`.
+	assert.deepEqual(planUidSearch({ exists: 30, uidNext: 41 }, 240), [
+		{ from: 1, to: 20 },
+		{ from: 21, to: null },
+	]);
+	// A server that overstates EXISTS on a nearly empty folder still gets one answer.
+	assert.deepEqual(planUidSearch({ exists: 30, uidNext: 1 }, 240), [{ from: 1, to: null }]);
+	// UIDs too sparse for the window cap, or a nonsense UIDNEXT, cost no thousands of round trips.
+	assert.equal(planUidSearch({ exists: 800_000, uidNext: 4_000_000_000 }, lineBytes), null);
+	assert.equal(planUidSearch({ exists: 800_000, uidNext: Number.MAX_SAFE_INTEGER }, lineBytes), null);
+	assert.equal(planUidSearch({ exists: 800_000, uidNext: 64 * width + 1 }, lineBytes)?.length, 64);
+	assert.equal(planUidSearch({ exists: 800_000, uidNext: 64 * width + 2 }, lineBytes), null);
 });

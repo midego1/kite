@@ -361,6 +361,51 @@ test("untagged lines that never end a command are capped by count and by size", 
 	}
 });
 
+test("a folder too large for one SEARCH line is listed in UID ranges, without a gap or a repeat", async (t) => {
+	const lineBytes = 240;
+	const messages = Array.from({ length: 45 }, (_, index) => ({ raw: sampleMessage(index + 1), uid: index + 1 }));
+	const server = await fake(t, { implicitTls: true, folders: { INBOX: messages } });
+	const session = await openImapSession(nodeEnv(server), login(), { lineBytes });
+	t.after(() => session.close());
+	await session.examine("INBOX");
+	assert.deepEqual(
+		await session.searchUids(),
+		messages.map(({ uid }) => String(uid)),
+	);
+	assert.deepEqual(
+		server.commands.filter(({ line }) => / SEARCH /.test(line)).map(({ line }) => line.replace(/^\S+ /, "")),
+		["UID SEARCH UID 1:20", "UID SEARCH UID 21:40", "UID SEARCH UID 41:*"],
+	);
+});
+
+test("the highest UID a server answers below `n:*` is not listed twice", async (t) => {
+	const messages = Array.from({ length: 41 }, (_, index) => ({ raw: sampleMessage(index + 1), uid: index + 1 }));
+	const server = await fake(t, { implicitTls: true, uidplus: true, folders: { INBOX: messages } });
+	const session = await openImapSession(nodeEnv(server), login(), { lineBytes: 240 });
+	t.after(() => session.close());
+	// Expunged from the top: UIDNEXT stays 42, so the last range is `41:*`, which a server answers with UID 30.
+	await session.select("INBOX");
+	const expunged = messages.slice(30).map(({ uid }) => uid);
+	await session.storeFlags(expunged, "+", ["\\Deleted"]);
+	await session.expungeMessages(expunged);
+	await session.examine("INBOX");
+	const uids = await session.searchUids();
+	assert.deepEqual(
+		uids,
+		messages.slice(0, 30).map(({ uid }) => String(uid)),
+	);
+	assert.ok(server.commands.some(({ line }) => line.endsWith("UID SEARCH UID 41:*")));
+});
+
+test("a folder that fits still gets one UID SEARCH ALL", async (t) => {
+	const server = await fake(t, { implicitTls: true });
+	const session = await openImapSession(nodeEnv(server), login());
+	t.after(() => session.close());
+	await session.examine("INBOX");
+	assert.deepEqual(await session.searchUids(), ["1"]);
+	assert.equal(server.commands.filter(({ line }) => /UID SEARCH ALL/.test(line)).length, 1);
+});
+
 test("a server that trickles one byte at a time, or sends nothing, times out per command", async (t) => {
 	for (const misbehaviour of [{ slowLoris: true }, { silent: true }]) {
 		const server = await fake(t, { implicitTls: true, ...misbehaviour });

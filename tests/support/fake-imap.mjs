@@ -362,11 +362,19 @@ export async function startFakeImap(options = {}) {
 					return send(`${tag} OK done\r\n`);
 				}
 				if (sub.toUpperCase() === "SEARCH") {
-					// `UID SEARCH ALL`, `UID SEARCH SINCE <date>`, or `UID SEARCH HEADER Message-ID "<…>"` matched against the raw header.
+					// `UID SEARCH ALL`, `UID SEARCH UID <set>`, `UID SEARCH SINCE <date>`, or `UID SEARCH HEADER Message-ID "<…>"` matched against the raw header.
 					const since = set?.toUpperCase() === "SINCE" ? searchDay(criteria[0]) : null;
+					const range =
+						set?.toUpperCase() === "UID"
+							? uidSet(
+									criteria[0],
+									entry.messages.map((message) => message.uid),
+								)
+							: null;
 					const header = /HEADER Message-ID "((?:[^"\\]|\\.)*)"/i.exec(args)?.[1];
 					const found = entry.messages.filter(
 						(message) =>
+							(range === null || range.has(message.uid)) &&
 							(since === null || messageDay(message.internalDate) >= since) &&
 							(!header || message.raw.toString("latin1").toLowerCase().includes(`message-id: ${header.toLowerCase()}`)),
 					);

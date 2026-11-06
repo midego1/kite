@@ -39,6 +39,35 @@ export function parseSearchUids(line: string): string[] {
 		.filter((value) => /^\d+$/.test(value));
 }
 
+/** What one UID may take in a `* SEARCH` line: ten digits, a space, and room for the line's own start. */
+const SEARCH_BYTES_PER_UID = 12;
+/** UIDs are 32-bit (RFC 9051 §2.3.1.1), whatever a server claims. */
+const MAX_UID_NEXT = 2 ** 32;
+/** With the 8 MB line limit this covers UIDs up to about 44 million; a command per window is the cost of a sparse folder. */
+const MAX_SEARCH_WINDOWS = 64;
+
+/**
+ * The UID ranges that list a whole folder within the line limit, in order, or null when one `UID SEARCH ALL` line can
+ * hold it. The answer to SEARCH is a single line, so a folder that might not fit is asked for in ranges each too narrow
+ * to overflow that line. The last range ends at `*`, which also finds what arrived since the folder was opened. A
+ * server that does not say how large the folder is, or whose UIDs are too sparse for the window cap, gets ALL: the line
+ * limit still ends an answer that is too long.
+ */
+export function planUidSearch(
+	folder: { exists: number | null; uidNext: number | null },
+	lineBytes: number,
+): { from: number; to: number | null }[] | null {
+	const { exists, uidNext } = folder;
+	const width = Math.floor(lineBytes / SEARCH_BYTES_PER_UID);
+	if (exists === null || uidNext === null || exists <= width) return null;
+	const windows = Math.max(1, Math.ceil((Math.min(uidNext, MAX_UID_NEXT) - 1) / width));
+	if (windows > MAX_SEARCH_WINDOWS) return null;
+	return Array.from({ length: windows }, (_, index) => ({
+		from: index * width + 1,
+		to: index === windows - 1 ? null : (index + 1) * width,
+	}));
+}
+
 export function getLiteralLength(line: string): number | null {
 	const match = line.match(/\{(\d+)\}$/);
 	return match ? Number(match[1]) : null;

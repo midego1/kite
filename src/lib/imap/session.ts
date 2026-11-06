@@ -21,6 +21,7 @@ import {
 	parseSearchUids,
 	plainAuthToken,
 	planStartTls,
+	planUidSearch,
 	quoteImapString,
 } from "./protocol-utils";
 import type { ImapFetchedMessage, ImapLogin } from "./types";
@@ -107,7 +108,8 @@ export async function openImapSession(
 	const { signal, ...limits } = options;
 	signal?.throwIfAborted();
 	const socket = await openMailSocket(env, login, IMAP_PORTS);
-	const imap = new ImapConnection(socket, { ...imapLimits(env.KITE_RUNTIME), ...limits });
+	const connectionLimits = { ...imapLimits(env.KITE_RUNTIME), ...limits };
+	const imap = new ImapConnection(socket, connectionLimits);
 	const abort = () => void imap.close().catch(() => undefined);
 	signal?.addEventListener("abort", abort, { once: true });
 	try {
@@ -126,22 +128,34 @@ export async function openImapSession(
 		exists: parseExists(lines),
 		highestModseq: parseHighestModseq(lines),
 	});
+	/** What the last EXAMINE or SELECT said, for `searchUids`. */
+	let opened: ImapFolderState | null = null;
+	const openFolder = async (command: string) => (opened = folderState(await imap.command(command)));
 	return {
 		get capabilities() {
 			return imap.capabilities;
 		},
 		async examine(folder) {
-			return folderState(await imap.command(`EXAMINE ${quoteImapString(folder)}`));
+			return openFolder(`EXAMINE ${quoteImapString(folder)}`);
 		},
 		async select(folder) {
 			const lines = await imap.command(`SELECT ${quoteImapString(folder)}`);
 			if (lines.some((line) => /\[READ-ONLY\]/i.test(line)))
 				throw new Error("IMAP SELECT failed: the server opened the folder read-only");
-			return folderState(lines);
+			opened = folderState(lines);
+			return opened;
 		},
 		async searchUids() {
-			const lines = await imap.command("UID SEARCH ALL");
-			return lines.flatMap(parseSearchUids);
+			const windows = opened && planUidSearch(opened, connectionLimits.lineBytes);
+			if (!windows) return (await imap.command("UID SEARCH ALL")).flatMap(parseSearchUids);
+			const uids: string[] = [];
+			for (const { from, to } of windows) {
+				const lines = await imap.command(`UID SEARCH UID ${from}:${to ?? "*"}`);
+				// `n:*` answers the highest UID even when it is below `n`, and a server may ignore the range.
+				for (const uid of lines.flatMap(parseSearchUids))
+					if (Number(uid) >= from && (to === null || Number(uid) <= to)) uids.push(uid);
+			}
+			return uids;
 		},
 		async searchUidsSince(date) {
 			const lines = await imap.command(`UID SEARCH SINCE ${imapSearchDate(date)}`);
@@ -200,7 +214,7 @@ export async function openImapSession(
 		},
 		append: (folder, flags, raw) => imap.appendMessage(folder, flags, raw),
 		async hasMessageId(folder, messageId) {
-			await imap.command(`EXAMINE ${quoteImapString(folder)}`);
+			await openFolder(`EXAMINE ${quoteImapString(folder)}`);
 			const lines = await imap.command(`UID SEARCH HEADER Message-ID ${quoteImapString(messageId)}`);
 			return lines.flatMap(parseSearchUids).length > 0;
 		},

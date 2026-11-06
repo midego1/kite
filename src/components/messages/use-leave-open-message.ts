@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { useViewHref } from "@/components/mail-search/use-view-href";
 import { useEffect, useRef, useState } from "react";
 import { leavesList, MESSAGES_LEFT_VIEW_EVENT, type MessagesLeftView } from "./left-view-utils";
 import type { MessageFolderConfig } from "./types";
@@ -21,11 +22,12 @@ export function useLeaveOpenMessage(
 ) {
 	const listHref = config.hrefPrefix;
 	const router = useRouter();
+	const viewHref = useViewHref();
 	const [leavingMessageId, setLeavingMessageId] = useState<string | null>(null);
 	// The latest values for the event listener, and the message already being left, so it is left once.
-	const latest = useRef({ selectedMessageId, config, leavingMessageId });
+	const latest = useRef({ selectedMessageId, config, leavingMessageId, viewHref });
 	useEffect(() => {
-		latest.current = { selectedMessageId, config, leavingMessageId };
+		latest.current = { selectedMessageId, config, leavingMessageId, viewHref };
 	});
 	useEffect(() => {
 		// eslint-disable-next-line react-hooks/set-state-in-effect
@@ -36,7 +38,8 @@ export function useLeaveOpenMessage(
 		if (latest.current.leavingMessageId === messageId) return;
 		latest.current.leavingMessageId = messageId;
 		setLeavingMessageId(messageId);
-		router.replace(href);
+		// Back to the list the message was opened from, inside the account view if that is where it was opened.
+		router.replace(latest.current.viewHref(href));
 	}
 
 	useEffect(() => {

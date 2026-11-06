@@ -22,24 +22,42 @@ const VALUE_OF = new Map(LABEL_COLORS.map((color) => [color.id, color.value]));
 
 const labelColorValue = (id: LayoutLabelColor): string => VALUE_OF.get(id) ?? LABEL_COLORS[0].value;
 
-/**
- * The colour a mailbox gets until the user picks one: a stable choice from the palette by its id, hashed like the
- * avatar colours. It depends on nothing but the mailbox, so adding or removing another mailbox never changes it, and
- * every automatic colour is one that reads on the rows. Two mailboxes can share one; choosing a colour tells them apart.
- */
-function automaticMailboxColor(id: string): LayoutLabelColor {
+function hashIndex(id: string): number {
 	let hash = 0;
 	for (let i = 0; i < id.length; i++) hash = (Math.imul(hash, 31) + id.charCodeAt(i)) | 0;
-	return LABEL_COLORS[(hash >>> 0) % LABEL_COLORS.length].id;
+	return (hash >>> 0) % LABEL_COLORS.length;
 }
 
-/** The colour of a mailbox's mark: the one chosen for it, else its automatic colour. */
+/**
+ * The automatic colours of a set of mailboxes (all the ones the user can open): each takes the palette colour its id
+ * hashes to, taken in id order, and a mailbox whose colour is already taken moves on to the next free one. So the
+ * colours are distinct while there are no more mailboxes than colours, nothing depends on how they are listed, and a
+ * mailbox keeps its colour when another is added unless the newcomer's id sorts before it and wants the same slot.
+ * Choosing a colour for a mailbox pins it.
+ */
+export function automaticMailboxColors(ids: readonly string[]): Map<string, LayoutLabelColor> {
+	const colors = new Map<string, LayoutLabelColor>();
+	const taken = new Set<number>();
+	for (const id of [...ids].sort()) {
+		const start = hashIndex(id);
+		let index = start;
+		for (let step = 0; step < LABEL_COLORS.length && taken.has(index); step++)
+			index = (index + 1) % LABEL_COLORS.length;
+		if (taken.has(index)) index = start;
+		taken.add(index);
+		colors.set(id, LABEL_COLORS[index].id);
+	}
+	return colors;
+}
+
+/** The colour of a mailbox's mark: the one chosen for it, else its automatic colour (from `automatic`). */
 export function mailboxLabelColor(
 	colors: LayoutLabelColors | undefined,
 	mailbox: { id: string },
+	automatic: ReadonlyMap<string, LayoutLabelColor>,
 ): { id: LayoutLabelColor; value: string; chosen: boolean } {
 	const chosen = colors?.mailboxes?.[mailbox.id];
-	const id = chosen ?? automaticMailboxColor(mailbox.id);
+	const id = chosen ?? automatic.get(mailbox.id) ?? LABEL_COLORS[hashIndex(mailbox.id)].id;
 	return { id, value: labelColorValue(id), chosen: chosen !== undefined };
 }
 

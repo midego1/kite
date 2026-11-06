@@ -1,10 +1,12 @@
 "use client";
 
-import { useCallback, useSyncExternalStore } from "react";
+import { useCallback, useMemo, useSyncExternalStore } from "react";
+import { useSelectedMailbox } from "@/components/mailbox-provider";
 import { queueLayoutSave } from "@/components/layout-preferences-client";
 import type { LayoutLabelColor, LayoutLabelColors } from "@/lib/preferences/layout-types";
 import {
 	LABEL_COLORS_STORAGE_KEY,
+	automaticMailboxColors,
 	mailboxLabelColor,
 	hasStaleLabelColors,
 	parseStoredLabelColors,
@@ -53,17 +55,23 @@ export function useLabelColors(): LayoutLabelColors {
 	return useSyncExternalStore(subscribe, snapshot, () => NONE);
 }
 
-/** The colour of a mailbox's mark: the one chosen for it, else its automatic colour. */
+/** The colour of a mailbox's mark: the one chosen for it, else an automatic one that differs from the user's other mailboxes'. */
 export function useMailboxLabelColor() {
 	const colors = useLabelColors();
-	return useCallback((mailboxId: string) => mailboxLabelColor(colors, { id: mailboxId }), [colors]);
+	const { mailboxes } = useSelectedMailbox();
+	const automatic = useMemo(() => automaticMailboxColors(mailboxes.map((mailbox) => mailbox.id)), [mailboxes]);
+	return useCallback(
+		(mailboxId: string) => mailboxLabelColor(colors, { id: mailboxId }, automatic),
+		[colors, automatic],
+	);
 }
 
 function save(next: LayoutLabelColors) {
 	try {
 		localStorage.setItem(LABEL_COLORS_STORAGE_KEY, JSON.stringify(next));
 	} catch {
-		// Blocked storage: the choice still applies to the open pages until they close.
+		// Blocked storage: this browser cannot keep or show the choice (the views read it from storage), but the
+		// account still gets it below, and it shows once storage works.
 	}
 	cachedRaw = undefined;
 	window.dispatchEvent(new Event(READING_LAYOUT_CHANGE_EVENT));

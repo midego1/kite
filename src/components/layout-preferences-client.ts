@@ -28,7 +28,7 @@ const SAVE_DELAY_MS = 600;
  * whole maps (the label colours), which replace the saved one: those must only be saved from what the account's
  * layout was merged into, so housekeeping that saves without a choice (`isLayoutSettled`) waits for the load.
  */
-let session: { userId: string; loading: boolean } | null = null;
+let session: { userId: string; loading: boolean; loaded: boolean } | null = null;
 let unsaved: LayoutPreferences = {};
 let timer: ReturnType<typeof setTimeout> | undefined;
 /**
@@ -83,7 +83,7 @@ function browserStorage(): Storage | null {
  */
 export function isLayoutSettled(): boolean {
 	if (!isLayoutSyncEnabled() || unavailable) return true;
-	return session !== null && !session.loading;
+	return session !== null && session.loaded;
 }
 
 function announceSettled(): void {
@@ -204,7 +204,7 @@ async function loadLayout(
  */
 export async function startLayoutSync(userId: string): Promise<void> {
 	if (session?.userId !== userId) forgetAccount();
-	const current = { userId, loading: true };
+	const current = { userId, loading: true, loaded: false };
 	session = current;
 	if (!isLayoutSyncEnabled() || unavailable) return;
 	const loaded = await loadLayout(current);
@@ -224,7 +224,10 @@ export async function startLayoutSync(userId: string): Promise<void> {
 	// The server answers only validated choices (`parseStoredLayout`).
 	if (loaded?.data.layout)
 		applyLayout(withoutKeys(withoutSavedSince(loaded.data.layout, marksOf(userId), loaded.loadTick), unsaved), userId);
-	announceSettled();
+	// A load that failed leaves this browser's copy unconfirmed: choices made here still save, but nothing that rewrites
+	// a whole map from this copy (a cleanup) may count the account's layout as seen.
+	current.loaded = loaded !== null;
+	if (current.loaded) announceSettled();
 	await flushLayoutSave();
 }
 

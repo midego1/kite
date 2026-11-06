@@ -7,6 +7,7 @@ import { bundleModules } from "./support/modules-bundle.mjs";
 
 const {
 	LABEL_COLORS,
+	automaticMailboxColors,
 	mailboxLabelColor,
 	accountLabelColor,
 	withLabelColor,
@@ -18,7 +19,7 @@ const {
 	layoutStorageEntries,
 } = await bundleModules("kite-label-colors-", [
 	[
-		"LABEL_COLORS, mailboxLabelColor, accountLabelColor, withLabelColor, pruneLabelColors, hasStaleLabelColors, parseStoredLabelColors",
+		"LABEL_COLORS, automaticMailboxColors, mailboxLabelColor, accountLabelColor, withLabelColor, pruneLabelColors, hasStaleLabelColors, parseStoredLabelColors",
 		"src/components/messages/label-colors-utils.ts",
 	],
 	["parseStoredLayout, parseLayoutPatch", "src/lib/preferences/layout-utils.ts"],
@@ -63,30 +64,53 @@ test("every colour reads on every row background, in light and dark, at 3:1", ()
 			assert.ok(contrast(color.value, row) >= 3, `${color.id} on ${row}: ${contrast(color.value, row).toFixed(2)}`);
 });
 
-/** What a mailbox gets on its own. */
-const automaticOf = (id) => mailboxLabelColor(undefined, { id }).id;
+const idsOf = (count) => Array.from({ length: count }, (_, index) => `mbx_${index}-abc`);
 
-test("a mailbox's automatic colour depends on its id alone and comes from the palette", () => {
-	const ids = new Set(LABEL_COLORS.map((color) => color.id));
-	const mailboxIds = Array.from({ length: 40 }, (_, index) => `mbx_${index}-abc`);
-	for (const id of mailboxIds) assert.ok(ids.has(automaticOf(id)), id);
-	// The same id gives the same colour whoever else exists, and the colours spread over the palette.
+test("the user's mailboxes get distinct automatic colours from the palette, whatever order they are listed in", () => {
+	const palette = new Set(LABEL_COLORS.map((color) => color.id));
+	for (const count of [1, 2, 4, 6, 8]) {
+		const colors = automaticMailboxColors(idsOf(count));
+		assert.equal(new Set(colors.values()).size, count, `${count} mailboxes, all different`);
+		for (const color of colors.values()) assert.ok(palette.has(color));
+	}
 	assert.deepEqual(
-		mailboxIds.map(automaticOf),
-		mailboxIds.map((id) => mailboxLabelColor({ mailboxes: { other: "red" } }, { id }).id),
+		[...automaticMailboxColors(idsOf(8)).entries()].sort(),
+		[...automaticMailboxColors([...idsOf(8)].reverse()).entries()].sort(),
 	);
-	assert.ok(new Set(mailboxIds.map(automaticOf)).size >= 6, "automatic colours spread over the palette");
-	assert.equal(mailboxLabelColor(undefined, { id: "mbx_1" }).chosen, false);
+	// More mailboxes than colours: every one still gets a colour of the palette.
+	const crowd = automaticMailboxColors(idsOf(11));
+	assert.equal(crowd.size, 11);
+	for (const color of crowd.values()) assert.ok(palette.has(color));
+});
+
+test("adding a mailbox leaves most automatic colours where they were, and removing one moves at most the ones after it", () => {
+	let moved = 0;
+	let total = 0;
+	for (let round = 0; round < 40; round++) {
+		const ids = Array.from({ length: 4 }, (_, index) => `mbx_r${round}_${index}`);
+		const before = automaticMailboxColors(ids);
+		const after = automaticMailboxColors([...ids, `mbx_r${round}_new`]);
+		for (const id of ids) {
+			total++;
+			if (before.get(id) !== after.get(id)) moved++;
+		}
+	}
+	assert.ok(moved / total < 0.2, `${moved} of ${total} existing mailboxes changed colour when one was added`);
+	// A mailbox alone gets its own hash colour, and a chosen colour never moves.
+	const automatic = automaticMailboxColors(["mbx_1"]);
+	assert.equal(mailboxLabelColor(undefined, { id: "mbx_1" }, automatic).chosen, false);
+	assert.equal(mailboxLabelColor({ mailboxes: { mbx_1: "red" } }, { id: "mbx_1" }, automatic).id, "red");
 });
 
 test("a chosen colour wins over the automatic one, per mailbox and per account", () => {
 	const mailbox = { id: "box-1" };
-	const automatic = mailboxLabelColor(undefined, mailbox);
+	const auto = automaticMailboxColors(["box-1", "box-2"]);
+	const automatic = mailboxLabelColor(undefined, mailbox, auto);
 	assert.equal(automatic.chosen, false);
-	assert.equal(automatic.id, automaticOf("box-1"));
-	const chosen = mailboxLabelColor({ mailboxes: { "box-1": "pink" } }, mailbox);
+	assert.equal(automatic.id, auto.get("box-1"));
+	const chosen = mailboxLabelColor({ mailboxes: { "box-1": "pink" } }, mailbox, auto);
 	assert.deepEqual(chosen, { id: "pink", value: "#e64a92", chosen: true });
-	assert.equal(mailboxLabelColor({ mailboxes: { "box-2": "pink" } }, mailbox).chosen, false);
+	assert.equal(mailboxLabelColor({ mailboxes: { "box-2": "pink" } }, mailbox, auto).chosen, false);
 	assert.equal(accountLabelColor(undefined, "acc-1"), null);
 	assert.equal(accountLabelColor({ accounts: { "acc-1": "teal" } }, "acc-1"), "#25958d");
 	assert.equal(accountLabelColor({ mailboxes: { "acc-1": "teal" } }, "acc-1"), null);

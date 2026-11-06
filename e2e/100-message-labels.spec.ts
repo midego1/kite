@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type Browser, type Page } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Browser, type Locator, type Page } from "@playwright/test";
 import { AUTO_READ_ACCOUNT_PASSWORD, createSignedInAccount } from "./support/auto-read";
 import { STORAGE_STATE } from "./support/constants";
 import { apiContext, deliverInbound, uniqueToken, waitForMessage } from "./support/helpers";
@@ -25,7 +25,7 @@ let token: string;
 let address: string;
 let homeName: string;
 let workId: string;
-let subjects: { synced: string; direct: string; work: string };
+let subjects: { synced: string; second: string; direct: string; work: string };
 
 async function json<T>(response: Awaited<ReturnType<APIRequestContext["get"]>>): Promise<T> {
 	expect(response.ok(), `${response.url()} -> ${response.status()} ${await response.text()}`).toBe(true);
@@ -45,7 +45,12 @@ test.beforeAll(async () => {
 	test.setTimeout(240_000);
 	token = uniqueToken("lbl");
 	address = `${token}@example.test`;
-	subjects = { synced: `${token} from the account`, direct: `${token} direct`, work: `${token} for work` };
+	subjects = {
+		synced: `${token} from the account`,
+		second: `${token} also from the account`,
+		direct: `${token} direct`,
+		work: `${token} for work`,
+	};
 	fake = await startFakeImap({ authPlain: true, users: { [address]: APP_PASSWORD }, folders: { INBOX: [] } });
 	const admin = await apiContext(STORAGE_STATE);
 	homeName = `lb${token.slice(-8)}`;
@@ -76,8 +81,10 @@ test.beforeAll(async () => {
 		)
 	).account;
 	fake.addMessage("INBOX", sampleMessage(1, { subject: subjects.synced }));
+	fake.addMessage("INBOX", sampleMessage(2, { subject: subjects.second }));
 	await checkNow(user.api, account.id);
 	await waitForMessage(user.api, subjects.synced);
+	await waitForMessage(user.api, subjects.second);
 	const { mailboxes } = await json<{ mailboxes: { id: string; localPart: string; hostname: string }[] }>(
 		await user.api.get("/api/mailboxes"),
 	);
@@ -123,6 +130,17 @@ function row(page: Page, subject: string) {
 		.getByRole("list", { name: "Inbox" })
 		.locator("[data-message-row]")
 		.filter({ has: page.getByText(subject, { exact: true }) });
+}
+
+/**
+ * Clicks a sidebar view's link until its title shows. Right after choosing All mailboxes the page may still be finishing
+ * the navigation that choice started, which would land after the click and put the plain Inbox back.
+ */
+async function openView(link: Locator, title: Locator) {
+	await expect(async () => {
+		await link.click();
+		await expect(title).toBeVisible({ timeout: 5_000 });
+	}).toPass({ timeout: 45_000 });
 }
 
 async function chooseLabels(page: Page, name: "Compact" | "Full" | "Off") {
@@ -240,9 +258,17 @@ test("on a wide list the compact markers can be hovered, so their names show", a
 	await showAllMailboxes(page);
 	const synced = row(page, subjects.synced);
 	await expect(synced).toBeVisible({ timeout: 60_000 });
+	// Rows with and without the account's icon start their subjects in the same column.
+	const startOf = async (subject: string) =>
+		(await row(page, subject).getByText(subject, { exact: true }).boundingBox())!.x;
+	expect(await startOf(subjects.direct)).toBeCloseTo(await startOf(subjects.synced), 0);
+	expect(await startOf(subjects.work)).toBeCloseTo(await startOf(subjects.synced), 0);
 	// The row's link overlays it; hovering only works when the marker is above that overlay.
 	await synced.locator("[data-via-account]").hover({ timeout: 5_000 });
 	await synced.getByTestId("message-mailbox-label").hover({ timeout: 5_000 });
+	// Above the overlay does not mean out of the row: a click on a marker still opens the message.
+	await synced.getByTestId("message-mailbox-label").click();
+	await expect(page.getByRole("heading", { level: 1, name: subjects.synced })).toBeVisible({ timeout: 30_000 });
 	await page.context().close();
 });
 
@@ -258,11 +284,11 @@ test("a connected account is a sidebar view listing only mail that came in throu
 	await expect(sidebar.locator("[data-accounts-hint]")).toBeVisible();
 	await expect(page.getByRole("group", { name: "Work desk connected accounts" })).toHaveCount(0);
 
-	await link.click();
+	const title = page.locator(`[data-account-view-title="${address}"]`);
+	await openView(link, title);
 	// The view is not a search: the box stays empty, the list is titled with the view, and the way back is beside it.
 	const searchBox = page.getByRole("textbox", { name: /Search mail/ }).first();
 	await expect(searchBox).toHaveValue("");
-	const title = page.locator(`[data-account-view-title="${address}"]`);
 	await expect(title).toContainText(ACCOUNT_LABEL);
 	await expect(title.locator("p")).toHaveAttribute("title", `Only mail that came in through ${address}`);
 	await expect(row(page, subjects.synced)).toBeVisible({ timeout: 30_000 });
@@ -311,8 +337,7 @@ test("the sidebar's Inbox and the browser's Back leave a view, as the address do
 	await expect(link).toBeVisible({ timeout: 60_000 });
 	const title = page.locator(`[data-account-view-title="${address}"]`);
 
-	await link.click();
-	await expect(title).toBeVisible();
+	await openView(link, title);
 	await expect(row(page, subjects.direct)).toHaveCount(0);
 	await expect(page).toHaveURL(/\/inbox\?via=/);
 
@@ -348,6 +373,64 @@ test("the sidebar's Inbox and the browser's Back leave a view, as the address do
 	await page.goto("/trash");
 	await expect(page.getByRole("button", { name: "Empty Trash" })).toBeVisible({ timeout: 60_000 });
 	await page.context().close();
+});
+
+test("opening a message, Newer and Older, archiving it and the phone's back arrow all stay inside the view", async ({
+	browser,
+}) => {
+	const page = await openPage(browser);
+	await page.addInitScript((id) => localStorage.setItem("selected-mailbox-id", id), user.mailboxId);
+	await page.goto(`/inbox?via=${encodeURIComponent(address)}`);
+	const title = page.locator(`[data-account-view-title="${address}"]`);
+	await expect(title).toBeVisible({ timeout: 60_000 });
+	await expect(row(page, subjects.synced)).toBeVisible();
+	await expect(row(page, subjects.second)).toBeVisible();
+	await expect(row(page, subjects.direct)).toHaveCount(0);
+	const inView = async () => {
+		await expect(page).toHaveURL(/via=/);
+		await expect(title).toBeVisible();
+		await expect(row(page, subjects.direct)).toHaveCount(0);
+	};
+
+	// Opening a row keeps the title, the back arrow and the filtered list (no refetch of the whole Inbox).
+	await row(page, subjects.synced).getByRole("link").first().click();
+	await expect(page).toHaveURL(/\/inbox\/[^?]+\?via=/);
+	await expect(page.getByRole("heading", { level: 1, name: subjects.synced })).toBeVisible({ timeout: 30_000 });
+	await inView();
+	await expect(row(page, subjects.second)).toBeVisible();
+
+	// Newer and Older move between the view's messages, still inside the view.
+	const other = page.locator(
+		'button[aria-label="Newer email"]:not([disabled]), button[aria-label="Older email"]:not([disabled])',
+	);
+	await other.first().click();
+	await expect(page.getByRole("heading", { level: 1, name: subjects.second })).toBeVisible({ timeout: 30_000 });
+	await inView();
+
+	// Archiving the open message leaves it for the list of the view, not for the whole Inbox.
+	await page
+		.getByRole("button", { name: /^Archive/ })
+		.last()
+		.click();
+	await expect(page).toHaveURL(/\/inbox\?via=/, { timeout: 30_000 });
+	await inView();
+	await expect(row(page, subjects.second)).toHaveCount(0);
+	await expect(row(page, subjects.synced)).toBeVisible();
+	await page.context().close();
+
+	// On a phone the back arrow of an open message returns to the view's list.
+	const phone = await openPage(browser, { width: 390, height: 844 });
+	await phone.addInitScript((id) => localStorage.setItem("selected-mailbox-id", id), user.mailboxId);
+	await phone.goto(`/inbox?via=${encodeURIComponent(address)}`);
+	await expect(phone.locator(`[data-account-view-title="${address}"]`)).toBeVisible({ timeout: 60_000 });
+	await row(phone, subjects.synced).getByRole("link").first().click();
+	await expect(phone.getByRole("heading", { level: 1, name: subjects.synced })).toBeVisible({ timeout: 30_000 });
+	await phone.getByRole("button", { name: "Back to Inbox" }).click();
+	await expect(phone).toHaveURL(/\/inbox\?via=/);
+	await expect(phone.locator(`[data-account-view-title="${address}"]`)).toBeVisible();
+	await expect(row(phone, subjects.synced)).toBeVisible();
+	await expect(row(phone, subjects.direct)).toHaveCount(0);
+	await phone.context().close();
 });
 
 test("a view is left when the mailbox is switched to one that does not receive the account's mail", async ({

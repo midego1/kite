@@ -246,17 +246,29 @@ function StackedMessageRow(props: RowViewProps) {
 function RowMarkers({ placement, ...props }: RowViewProps & { placement: "leading" | "trailing" }) {
 	const leading = props.labels !== "full" && props.labels !== "off";
 	if (leading !== (placement === "leading")) return null;
-	return (
+	const markers = (
 		<>
-			{props.labels !== "off" && (
-				<ViaAccountChip
-					message={props.row.rowMessage}
-					compact={props.labels !== "full"}
-					className={leading ? "relative z-10" : undefined}
-				/>
-			)}
+			{props.labels !== "off" && <ViaAccountChip message={props.row.rowMessage} compact={props.labels !== "full"} />}
 			{props.mailboxLabel}
 		</>
+	);
+	if (!leading) return markers;
+	// Rows without the link icon keep its place while others in the list have it, so the subjects stay in one column.
+	const gap = props.viaSlot && !props.row.rowMessage.via && (
+		<span aria-hidden className="inline-block h-4 w-3.5 shrink-0" />
+	);
+	// Above the link's overlay, so a click on a marker is no longer the overlay's: it opens the row like a click anywhere
+	// else on it (the link stays the row's one keyboard stop).
+	return (
+		<span
+			className="relative z-10 flex shrink-0 items-center gap-2"
+			onClick={(event) =>
+				event.currentTarget.closest("[data-message-row]")?.querySelector<HTMLElement>("a[href]")?.click()
+			}
+		>
+			{gap}
+			{markers}
+		</span>
 	);
 }
 

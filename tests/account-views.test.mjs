@@ -12,11 +12,12 @@ const {
 	activeAccountView,
 	openViewName,
 	isAccountOutside,
+	hrefWithView,
 	viaSearchQuery,
 	parseSearchQuery,
 } = await bundleModules("kite-account-views-", [
 	[
-		"parseAccountViews, accountViewsIn, accountViewHref, activeAccountView, openViewName, isAccountOutside",
+		"parseAccountViews, accountViewsIn, accountViewHref, activeAccountView, openViewName, isAccountOutside, hrefWithView",
 		"src/lib/external-accounts/account-views-utils.ts",
 	],
 	["viaSearchQuery", "src/lib/external-accounts/via-utils.ts"],
@@ -103,4 +104,13 @@ test("a view is left when the mailboxes in view no longer receive its account, n
 	assert.equal(isAccountOutside(accounts, inBox1, "demo@gmail.example"), false);
 	assert.equal(isAccountOutside(accounts, accountViewsIn(accounts, ["box-1", "box-2"]), "b@gmail.example"), false);
 	assert.equal(isAccountOutside(accounts, inBox1, "someone@else.example"), false);
+});
+
+test("links inside a view carry the account, and links outside one are left alone", () => {
+	assert.equal(hrefWithView("/inbox/msg_1", "demo@gmail.example"), "/inbox/msg_1?via=demo%40gmail.example");
+	assert.equal(hrefWithView("/inbox", "demo@gmail.example"), "/inbox?via=demo%40gmail.example");
+	assert.equal(hrefWithView("/inbox/msg_1?x=1#top", "a@b.example"), "/inbox/msg_1?x=1&via=a%40b.example#top");
+	assert.equal(hrefWithView("/inbox?via=old%40b.example", "new@b.example"), "/inbox?via=new%40b.example");
+	assert.equal(hrefWithView("/inbox/msg_1", null), "/inbox/msg_1");
+	assert.equal(hrefWithView("/inbox/msg_1", ""), "/inbox/msg_1");
 });

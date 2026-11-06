@@ -79,3 +79,18 @@ export function isAccountOutside(
 	const own = (entry: AccountViewEntry) => entry.address.toLowerCase() === address;
 	return accounts.some(own) && !inView.some(own);
 }
+
+/**
+ * The link with the open view carried in it (`?via=`), so opening a message, going to the next or previous one, leaving
+ * it and going back keep the list narrowed to the account. Without a view the link is unchanged.
+ */
+export function hrefWithView(href: string, view: string | null): string {
+	if (!view) return href;
+	const hash = href.indexOf("#");
+	const base = hash === -1 ? href : href.slice(0, hash);
+	const fragment = hash === -1 ? "" : href.slice(hash);
+	const [path, query = ""] = base.split("?");
+	const params = new URLSearchParams(query);
+	params.set("via", view);
+	return `${path}?${params.toString()}${fragment}`;
+}

@@ -500,6 +500,7 @@ export function MessageFolderPage({
 								hoverActions={!isMobile}
 								currentAccountName={accountNameOf(message)}
 								labels={labels}
+								viaSlot={messages.some((item) => item.via)}
 								mailboxLabel={
 									access.showMailboxLabels && labels !== "off" ? (
 										<MessageMailboxLabel

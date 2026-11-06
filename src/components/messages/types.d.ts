@@ -34,6 +34,8 @@ export type MessageListRowProps = {
 	currentAccountName?: string;
 	/** How the row shows its connected account (and sizes the subject for its mailbox label); `compact` by default. */
 	labels?: MessageListLabels;
+	/** Some row of the list came in through a connected account: rows without one keep its slot, so subjects line up. */
+	viaSlot?: boolean;
 	/** The row's mailbox in the All mailboxes view (`MessageMailboxLabel`). */
 	mailboxLabel?: ReactNode;
 	/** False for read-only shared mail: the row offers no archive, trash or swipe to archive. */

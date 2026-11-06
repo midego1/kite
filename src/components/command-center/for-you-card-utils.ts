@@ -49,6 +49,8 @@ export type ForYouCardRow = {
 	createdAt: string;
 	/** Where the message opens, null when the viewer cannot open it. */
 	href: string | null;
+	/** The suggestion as listed, which the hover preview shows. */
+	suggestion: OpenSuggestion;
 };
 
 export type ForYouCardView = {
@@ -99,6 +101,7 @@ export function forYouCardView(
 		sender: suggestion.message.from ? getEmailDisplayName(suggestion.message.from) : "",
 		createdAt: suggestion.createdAt,
 		href: suggestion.messageTarget.href,
+		suggestion,
 	}));
 	return { visible: true, rows, count, more: Math.max(0, count - rows.length) };
 }

@@ -6,6 +6,7 @@ import { Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EmptyState, PanelHeader } from "@/components/ui/page";
 import { Checkbox } from "@/components/ui/checkbox";
+import { SuggestionPreviewRow } from "./suggestion-preview";
 import { formatMessageListTimestamp } from "@/components/messages/utils";
 import { dispatchAgentSuggestionChanged } from "@/hooks/message-realtime-utils";
 import type { OpenSuggestion } from "@/hooks/open-suggestions-types";
@@ -54,7 +55,12 @@ function ForYouEntry({
 		</>
 	);
 	return (
-		<li className="flex items-start gap-3 px-4 py-3" data-for-you-entry={suggestion.id}>
+		<SuggestionPreviewRow
+			suggestion={suggestion}
+			mailbox={mailbox}
+			className="flex items-start gap-3 px-4 py-3"
+			data-for-you-entry={suggestion.id}
+		>
 			<Checkbox
 				className="mt-1"
 				checked={selected}
@@ -74,7 +80,7 @@ function ForYouEntry({
 			<time dateTime={suggestion.createdAt} className="shrink-0 text-xs text-neutral-500">
 				{formatMessageListTimestamp(suggestion.createdAt)}
 			</time>
-		</li>
+		</SuggestionPreviewRow>
 	);
 }
 

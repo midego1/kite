@@ -24,6 +24,7 @@ const bundle = join(directory, "entry.mjs");
 await build({
 	entryPoints: [entry],
 	outfile: bundle,
+	sourcemap: "inline",
 	bundle: true,
 	absWorkingDir: root,
 	platform: "node",

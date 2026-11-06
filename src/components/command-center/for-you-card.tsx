@@ -84,8 +84,11 @@ export function ForYouCard() {
 	const t = useT();
 	const { viewMailboxes } = useSelectedMailbox();
 	// One mailbox in view asks for that mailbox's own list: the shared one stops at 200 rows across every mailbox,
-	// which other mailboxes could fill. Several in view use the shared list the sidebar already loaded.
-	const suggestions = useOpenSuggestions(viewMailboxes.length === 1 ? viewMailboxes[0].id : undefined);
+	// which other mailboxes could fill. Several in view use the shared list the sidebar already loaded, and so does a
+	// mailbox shared without full access, which would answer the scoped request with a 404.
+	const only =
+		viewMailboxes.length === 1 && viewMailboxes[0].permission === "full_access" ? viewMailboxes[0].id : undefined;
+	const suggestions = useOpenSuggestions(only);
 	const [dismissing, setDismissing] = useState<ReadonlySet<string>>(new Set());
 	const view = forYouCardView(
 		suggestions,

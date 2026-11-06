@@ -1,11 +1,10 @@
-import PostalMime from "postal-mime";
-import { formatPostalAddress, formatPostalAddressList } from "@/lib/email/address";
+import PostalMime, { type PostalMimeError } from "postal-mime";
+import { collapseFoldingSpace, formatPostalAddress, formatPostalAddressList } from "@/lib/email/address";
 import { normalizeMessageId, parseMessageIdList } from "@/lib/email/threading";
 import { normalizeAttachmentContent } from "@/lib/email/attachment-content-utils";
 import { getLatestEmailContent, htmlToReadableText } from "@/lib/email/reply-content-utils";
 import { sanitizeStoredEmailHtml } from "@/lib/email/stored-html-utils";
 import { MIME_LIMITS, mimePreflightReason } from "@/lib/email/mime-preflight";
-import { decodeFlowedText } from "@/lib/email/flowed-text-utils";
 import type { AttachmentContent } from "@/lib/email/attachment-types";
 
 export type ParsedEmail = {
@@ -28,15 +27,8 @@ export type ParsedEmail = {
 	attachments: AttachmentContent[];
 };
 
-/**
- * postal-mime 2.7 unfolds format=flowed text in quadratic time (a 2.4 MB message of 39,000 flowed lines took about
- * 25 s); every parser's nodes share one prototype, so its method is replaced once with a linear one that returns the
- * same text. postal-mime 4.x unfolds in linear time itself: drop this when upgrading.
- */
-const mimeNodePrototype = Object.getPrototypeOf((new PostalMime() as unknown as { root: object }).root) as {
-	decodeFlowedText?: (text: string, delSp: boolean) => string;
-};
-if (typeof mimeNodePrototype.decodeFlowedText === "function") mimeNodePrototype.decodeFlowedText = decodeFlowedText;
+/** postal-mime's own caps, reported like the preflight's. */
+const LIMIT_ERROR_CODES = new Set(["EMAXNESTINGDEPTH", "EMAXHEADERSIZE", "EMAXPARTCOUNT"]);
 
 /**
  * A message that can never be parsed within `MIME_LIMITS`. Deterministic: retrying only repeats the work, so callers
@@ -59,22 +51,23 @@ export async function parseRawMime(raw: ArrayBuffer): Promise<ParsedEmail> {
 	if (limitReason) throw new MimeLimitError(limitReason);
 	let email: Awaited<ReturnType<typeof PostalMime.parse>>;
 	try {
-		// forceRfc822Attachments keeps postal-mime from parsing an inline message/rfc822 again with fresh options,
-		// which would restart the nesting count at every level.
+		// forceRfc822Attachments keeps an attached message one leaf part, which is what the preflight models.
 		email = await PostalMime.parse(raw, {
 			maxNestingDepth: MIME_LIMITS.maxNestingDepth,
-			maxHeadersSize: MIME_LIMITS.maxHeaderBytes,
+			maxHeadersSize: MIME_LIMITS.maxTotalHeaderBytes,
+			maxPartCount: MIME_LIMITS.maxParts,
 			forceRfc822Attachments: true,
 		});
 	} catch (error) {
-		const message = error instanceof Error ? error.message : "";
-		if (/^Maximum (MIME nesting depth|header size)/.test(message))
+		if (LIMIT_ERROR_CODES.has((error as PostalMimeError).code)) {
+			const { message } = error as PostalMimeError;
 			throw new MimeLimitError(`Message rejected: ${message.charAt(0).toLowerCase()}${message.slice(1)}.`);
+		}
 		throw error;
 	}
 	const date = email.date ? new Date(email.date) : null;
 	return {
-		subject: email.subject ?? null,
+		subject: email.subject === undefined ? null : collapseFoldingSpace(email.subject),
 		text: email.text ?? null,
 		html: sanitizeStoredEmailHtml(email.html),
 		messageId: email.messageId ?? null,
@@ -87,7 +80,7 @@ export async function parseRawMime(raw: ArrayBuffer): Promise<ParsedEmail> {
 		references: parseMessageIdList(email.references),
 		date: date && !Number.isNaN(date.getTime()) ? date : null,
 		attachments: email.attachments.map((attachment, index) => ({
-			filename: attachment.filename ?? `attachment-${index + 1}`,
+			filename: collapseFoldingSpace(attachment.filename ?? `attachment-${index + 1}`),
 			type: attachment.mimeType || "application/octet-stream",
 			content: normalizeAttachmentContent(attachment.content, attachment.encoding),
 			disposition: attachment.disposition === "inline" ? "inline" : "attachment",

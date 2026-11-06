@@ -343,8 +343,8 @@ test("a message from the MIME builder arrives byte for byte and parses back", as
 		parsed.subject,
 		"Grüße aus Köln — a subject long enough to need folding across more than one header line",
 	);
-	// postal-mime hands text back with LF line endings and the line break before the boundary.
-	assert.equal(parsed.text, "Hallo,\n.\nzwei Zeilen mit Umlauten: äöü.\n");
+	// postal-mime hands text back with LF line endings; the line break before a boundary belongs to the boundary.
+	assert.equal(parsed.text, "Hallo,\n.\nzwei Zeilen mit Umlauten: äöü.");
 	assert.equal(parsed.attachments[0].filename, "bericht.txt");
 	assert.equal(parsed.messageId, built.messageId);
 });

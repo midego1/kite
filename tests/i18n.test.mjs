@@ -11,12 +11,29 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const outDir = makeBundleDirectory("kite-i18n-test-");
 after(() => rmSync(outDir, { recursive: true, force: true }));
 
-// One bundle: a second copy of a source file would count as another, half-run record in the coverage gate.
+async function load(entry, name) {
+	await build({
+		entryPoints: [join(root, entry)],
+		outfile: join(outDir, `${name}.mjs`),
+		bundle: true,
+		sourcemap: "inline",
+		platform: "node",
+		format: "esm",
+		target: "node22",
+		tsconfig: join(root, "tsconfig.json"),
+		logLevel: "silent",
+	});
+	return import(pathToFileURL(join(outDir, `${name}.mjs`)).href);
+}
+
+// Its own bundle, where esbuild keeps the function names the coverage gate merges records by.
+const { createTranslator } = await load("src/lib/i18n/translator-utils.ts", "translator");
+
+// One bundle for the rest: each copy of a source file counts as another, half-run record in the coverage gate.
 const outfile = join(outDir, "i18n.mjs");
 await build({
 	stdin: {
 		contents: `export * from "./src/lib/i18n/message-format-utils.ts";
-			export * from "./src/lib/i18n/translator-utils.ts";
 			export * as languages from "./src/lib/i18n/language-utils.ts";
 			export { createLanguageLoader } from "./src/lib/i18n/language-loader.ts";
 			export { currentLocale, englishTranslator, setTranslator, t } from "./src/lib/i18n/translator.ts";`,
@@ -35,7 +52,6 @@ await build({
 });
 const {
 	createLanguageLoader,
-	createTranslator,
 	currentLocale,
 	describeMessage,
 	englishTranslator,

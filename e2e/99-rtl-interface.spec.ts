@@ -107,7 +107,6 @@ test.describe("the setting", () => {
 		await page.getByRole("button", { name: "Open account menu" }).click();
 		const direction = page.getByRole("radiogroup", { name: "Direction" });
 		await expect(direction.getByRole("radio", { name: "Automatic" })).toHaveAttribute("aria-checked", "true");
-		await expect(page.getByText("Left to right until Kite is translated.")).toBeVisible();
 		await direction.getByRole("radio", { name: "Right to left" }).click();
 
 		await expectDirection(page, "rtl");

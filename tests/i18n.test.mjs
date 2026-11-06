@@ -11,24 +11,39 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const outDir = makeBundleDirectory("kite-i18n-test-");
 after(() => rmSync(outDir, { recursive: true, force: true }));
 
-async function load(entry, name) {
-	await build({
-		entryPoints: [join(root, entry)],
-		outfile: join(outDir, `${name}.mjs`),
-		bundle: true,
-		sourcemap: "inline",
-		platform: "node",
-		format: "esm",
-		target: "node22",
-		tsconfig: join(root, "tsconfig.json"),
-		logLevel: "silent",
-	});
-	return import(pathToFileURL(join(outDir, `${name}.mjs`)).href);
-}
-
-const { describeMessage, formatMessage } = await load("src/lib/i18n/message-format-utils.ts", "format");
-const { createTranslator } = await load("src/lib/i18n/translator-utils.ts", "translator");
-const languages = await load("src/lib/i18n/language-utils.ts", "languages");
+// One bundle: a second copy of a source file would count as another, half-run record in the coverage gate.
+const outfile = join(outDir, "i18n.mjs");
+await build({
+	stdin: {
+		contents: `export * from "./src/lib/i18n/message-format-utils.ts";
+			export * from "./src/lib/i18n/translator-utils.ts";
+			export * as languages from "./src/lib/i18n/language-utils.ts";
+			export { createLanguageLoader } from "./src/lib/i18n/language-loader.ts";
+			export { currentLocale, englishTranslator, setTranslator, t } from "./src/lib/i18n/translator.ts";`,
+		resolveDir: root,
+		loader: "ts",
+	},
+	absWorkingDir: root,
+	outfile,
+	bundle: true,
+	sourcemap: "inline",
+	platform: "node",
+	format: "esm",
+	target: "node22",
+	tsconfig: join(root, "tsconfig.json"),
+	logLevel: "silent",
+});
+const {
+	createLanguageLoader,
+	createTranslator,
+	currentLocale,
+	describeMessage,
+	englishTranslator,
+	formatMessage,
+	languages,
+	setTranslator,
+	t,
+} = await import(pathToFileURL(outfile).href);
 
 const CATALOGS = Object.fromEntries(
 	["nl", "ar"].map((language) => [
@@ -109,30 +124,11 @@ ${lines}`;
 	return program.getSemanticDiagnostics(program.getSourceFile(file)).length;
 }
 
-/** The loader on its own, with fresh state, and the translator it drives. */
-let loaders = 0;
-async function freshLoader() {
-	loaders += 1;
-	const outfile = join(outDir, `loader-${loaders}.mjs`);
-	await build({
-		stdin: {
-			contents: `export * from "./src/lib/i18n/language-loader.ts";
-				export { currentLocale, t } from "./src/lib/i18n/translator.ts";`,
-			resolveDir: root,
-			loader: "ts",
-		},
-		absWorkingDir: root,
-		outfile,
-		bundle: true,
-		sourcemap: "inline",
-		platform: "node",
-		format: "esm",
-		target: "node22",
-		tsconfig: join(root, "tsconfig.json"),
-		logLevel: "silent",
-	});
+/** A loader with fresh state, on a page that shows English. */
+function freshLoader() {
+	setTranslator(englishTranslator());
 	globalThis.document = { documentElement: { lang: "" } };
-	return import(pathToFileURL(outfile).href);
+	return createLanguageLoader();
 }
 
 function deferred() {
@@ -223,6 +219,31 @@ test("a browser tag Intl refuses is normalised, or falls back to the plain langu
 	assert.doesNotThrow(() => createTranslator("nl", languages.interfaceLocale("nl", "nl_NL"), {}));
 });
 
+test("the script's language expression answers like pageLanguage", () => {
+	const page = new Function(
+		"saved",
+		"browser",
+		"pathname",
+		`return ${languages.languageBootstrapExpression("saved", "browser", "pathname")};`,
+	);
+	for (const saved of [null, "auto", "en", "nl", "ar", "klingon"])
+		for (const browser of ["nl-BE", "NL", "nl_NL", "ar-EG", "en-GB", "he", ""])
+			for (const pathname of ["/inbox", "/login", "/book/ada", "/"])
+				assert.equal(
+					page(saved, browser, pathname),
+					languages.pageLanguage(languages.parseInterfaceLanguage(saved), browser, pathname),
+					`${saved} ${browser} ${pathname}`,
+				);
+});
+
+test("only the choices Kite knows count as a language setting", () => {
+	assert.equal(languages.isInterfaceLanguageChoice("auto"), true);
+	assert.equal(languages.isInterfaceLanguageChoice("ar"), true);
+	assert.equal(languages.isInterfaceLanguageChoice("klingon"), false);
+	assert.equal(languages.isInterfaceLanguageChoice(7), false);
+	assert.equal(languages.isInterfaceLanguageChoice(null), false);
+});
+
 test("public pages stay English whatever the setting says; signed-in pages follow it", () => {
 	for (const path of [
 		"/",
@@ -247,82 +268,82 @@ test("public pages stay English whatever the setting says; signed-in pages follo
 });
 
 test("a catalog that fails leaves English, never a stuck mailbox, and the next try works", async () => {
-	const loader = await freshLoader();
+	const loader = freshLoader();
 	let notified = 0;
-	loader.subscribeToLanguageLoad(() => (notified += 1));
+	loader.subscribe(() => (notified += 1));
 	const loading = deferred();
-	const applied = loader.applyInterfaceLanguage("nl", "en", "/inbox", () => loading.promise);
-	assert.equal(loader.isInterfaceLanguageReady(), false, "the mailbox waits for the first catalog");
+	const applied = loader.apply("nl", "en", "/inbox", () => loading.promise);
+	assert.equal(loader.isReady(), false, "the mailbox waits for the first catalog");
 	assert.equal(document.documentElement.lang, "nl");
 	loading.reject(new Error("chunk gone"));
 	await applied;
-	assert.equal(loader.isInterfaceLanguageReady(), true);
+	assert.equal(loader.isReady(), true);
 	assert.equal(notified, 2);
-	assert.equal(loader.t("Inbox"), "Inbox");
+	assert.equal(t("Inbox"), "Inbox");
 
-	await loader.applyInterfaceLanguage("nl", "en", "/inbox", async () => DUTCH);
-	assert.equal(loader.t("Inbox"), "Dutch inbox");
+	await loader.apply("nl", "en", "/inbox", async () => DUTCH);
+	assert.equal(t("Inbox"), "Dutch inbox");
 });
 
 test("a loader or a browser tag that throws cannot hold the mailbox back", async () => {
-	const throwing = await freshLoader();
-	await throwing.applyInterfaceLanguage("nl", "en", "/inbox", () => {
+	const throwing = freshLoader();
+	await throwing.apply("nl", "en", "/inbox", () => {
 		throw new Error("no chunk");
 	});
-	assert.equal(throwing.isInterfaceLanguageReady(), true);
+	assert.equal(throwing.isReady(), true);
 
-	const badTag = await freshLoader();
-	await badTag.applyInterfaceLanguage("auto", "nl_NL", "/inbox", async () => DUTCH);
-	assert.equal(badTag.isInterfaceLanguageReady(), true);
-	assert.equal(badTag.t("Inbox"), "Dutch inbox");
-	assert.equal(badTag.currentLocale(), "nl-NL");
+	const badTag = freshLoader();
+	await badTag.apply("auto", "nl_NL", "/inbox", async () => DUTCH);
+	assert.equal(badTag.isReady(), true);
+	assert.equal(t("Inbox"), "Dutch inbox");
+	assert.equal(currentLocale(), "nl-NL");
 });
 
 test("the last choice wins when catalogs arrive out of order", async () => {
-	const loader = await freshLoader();
+	const loader = freshLoader();
 	const dutch = deferred();
 	const arabic = deferred();
-	const first = loader.applyInterfaceLanguage("nl", "en", "/inbox", () => dutch.promise);
-	const second = loader.applyInterfaceLanguage("ar", "en", "/inbox", () => arabic.promise);
+	const first = loader.apply("nl", "en", "/inbox", () => dutch.promise);
+	const second = loader.apply("ar", "en", "/inbox", () => arabic.promise);
 	arabic.resolve(ARABIC);
 	await second;
-	assert.equal(loader.t("Inbox"), "Arabic inbox");
-	assert.equal(loader.isInterfaceLanguageReady(), false, "the first load has not settled");
+	assert.equal(t("Inbox"), "Arabic inbox");
+	assert.equal(loader.isReady(), false, "the first load has not settled");
 	dutch.resolve(DUTCH);
 	await first;
-	assert.equal(loader.t("Inbox"), "Arabic inbox");
-	assert.equal(loader.isInterfaceLanguageReady(), true);
+	assert.equal(t("Inbox"), "Arabic inbox");
+	assert.equal(loader.isReady(), true);
 
 	const late = deferred();
-	const pending = loader.applyInterfaceLanguage("nl", "en", "/inbox", () => late.promise);
-	await loader.applyInterfaceLanguage("en", "en", "/inbox");
+	const pending = loader.apply("nl", "en", "/inbox", () => late.promise);
+	await loader.apply("en", "en", "/inbox");
 	late.resolve(DUTCH);
 	await pending;
-	assert.equal(loader.t("Inbox"), "Inbox");
+	assert.equal(t("Inbox"), "Inbox");
 	assert.equal(document.documentElement.lang, "en");
 });
 
 test("a later switch never takes the page down, and a public page loads nothing", async () => {
-	const loader = await freshLoader();
-	await loader.applyInterfaceLanguage("en", "en", "/inbox");
+	const loader = freshLoader();
+	await loader.apply("en", "en", "/inbox");
 	const later = deferred();
-	const pending = loader.applyInterfaceLanguage("nl", "en", "/inbox", () => later.promise);
-	assert.equal(loader.isInterfaceLanguageReady(), true);
+	const pending = loader.apply("nl", "en", "/inbox", () => later.promise);
+	assert.equal(loader.isReady(), true);
 	later.resolve(DUTCH);
 	await pending;
 
 	const load = () => assert.fail("a public page fetched a catalog");
-	await loader.applyInterfaceLanguage("ar", "ar", "/login", load);
+	await loader.apply("ar", "ar", "/login", load);
 	assert.equal(document.documentElement.lang, "en");
-	assert.equal(loader.t("Inbox"), "Inbox");
+	assert.equal(t("Inbox"), "Inbox");
 
 	const signedIn = deferred();
-	const arriving = loader.applyInterfaceLanguage("ar", "ar", "/inbox", () => signedIn.promise);
-	assert.equal(loader.isInterfaceLanguageReady(), false, "arriving from a public page is a first load");
+	const arriving = loader.apply("ar", "ar", "/inbox", () => signedIn.promise);
+	assert.equal(loader.isReady(), false, "arriving from a public page is a first load");
 	signedIn.resolve(ARABIC);
 	await arriving;
-	assert.equal(loader.isInterfaceLanguageReady(), true);
-	assert.equal(loader.t("Inbox"), "Arabic inbox");
+	assert.equal(loader.isReady(), true);
+	assert.equal(t("Inbox"), "Arabic inbox");
 });
 
 test("t takes a literal or a msg() key; a plain string does not compile", () => {

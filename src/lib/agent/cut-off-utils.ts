@@ -6,6 +6,7 @@ import {
 	describeUsage,
 	DRAFT_ANSWER_TOKENS,
 	SUMMARY_ANSWER_TOKENS,
+	TRANSLATION_ANSWER_TOKENS,
 	THINKING_ROOM_TOKENS,
 	thinksByDefault,
 	TRIAGE_ANSWER_TOKENS,
@@ -38,6 +39,7 @@ const FEATURE_CAPS: Partial<Record<AiFeature, string>> = {
 	line_summary: `80 tokens${thinkingRoom}`,
 	summary: `${count(SUMMARY_ANSWER_TOKENS)} tokens${thinkingRoom}`,
 	summary_translation: `${count(SUMMARY_ANSWER_TOKENS)} tokens${thinkingRoom}`,
+	message_translation: `${count(TRANSLATION_ANSWER_TOKENS)} tokens per part of the message${thinkingRoom}`,
 	compose: `${count(DRAFT_ANSWER_TOKENS)} to 3,000 tokens depending on the request${thinkingRoom}`,
 };
 
@@ -48,6 +50,7 @@ const BUDGETED: ReadonlySet<AiFeature> = new Set([
 	"line_summary",
 	"summary",
 	"summary_translation",
+	"message_translation",
 ]);
 
 /** What each feature asks for, from docs/assistant.md, so Ask AI can reason about Kite instead of guessing. */

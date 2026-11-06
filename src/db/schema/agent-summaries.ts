@@ -4,8 +4,9 @@ import { mailboxes, messages, users } from "./index";
 
 /**
  * AI summaries (migration 0072, `docs/specs/thread-summaries.md`): the Summarize button's conversation (`thread`) and
- * message (`message`) summaries, their translations and one-line list summaries (`line`). Derived data, shared by
- * everyone who can read the mailbox and skipped in backups. Database triggers delete the rows of a conversation
+ * message (`message`) summaries, their translations, one-line list summaries (`line`) and the reader's message
+ * translations (`message_translation`, one row per message and language). Derived data, shared by everyone who can
+ * read the mailbox and skipped in backups. Database triggers delete the rows of a conversation
  * when one of its messages is deleted or leaves the summarised statuses, and translations go with their source.
  */
 export const aiSummaries = sqliteTable(
@@ -15,12 +16,15 @@ export const aiSummaries = sqliteTable(
 		mailboxId: text("mailbox_id")
 			.notNull()
 			.references(() => mailboxes.id, { onDelete: "cascade" }),
-		kind: text("kind", { enum: ["thread", "message", "line"] }).notNull(),
+		kind: text("kind", { enum: ["thread", "message", "line", "message_translation"] }).notNull(),
 		/** `coalesce(thread_id, id)` of the summarised message. */
 		threadKey: text("thread_key").notNull(),
-		/** Set for `message` and `line` rows; null for `thread`. */
+		/** Set for `message`, `line` and `message_translation` rows; null for `thread`. */
 		messageId: text("message_id").references(() => messages.id, { onDelete: "cascade" }),
-		/** `thread`/`message`: JSON `{ overview, points: [{ label, text }] }`; `line`: the line itself. */
+		/**
+		 * `thread`/`message`: JSON `{ overview, points: [{ label, text }] }`; `line`: the line itself;
+		 * `message_translation`: JSON `{ from, subject, segments }` (`src/lib/agent/translation/store.ts`).
+		 */
 		text: text("text").notNull(),
 		/** First 16 hex characters of SHA-256 over the sorted ids of the messages it covered. */
 		coverageDigest: text("coverage_digest").notNull(),

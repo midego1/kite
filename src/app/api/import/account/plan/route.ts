@@ -4,6 +4,7 @@ import { getEnv } from "@/lib/cloudflare";
 import { RequestBodyTooLargeError } from "@/lib/http/errors";
 import { readJsonBody } from "@/lib/http/request";
 import { importServerProblem, planAccountImport } from "@/lib/import/imap";
+import { importSignInGuard, SignInLimitError, signInLimitResponse } from "@/lib/import/sign-in-limit";
 import { withModule } from "@/lib/modules/route-guard";
 import { resolveImportSource } from "../../connected-account";
 import type { ImapFolderListRequest } from "../../imap/folders/types";
@@ -35,8 +36,9 @@ export const POST = withModule("import", async (request, { checkUser }) => {
 	const refused = importServerProblem(env, input);
 	if (refused) return NextResponse.json({ error: refused }, { status: 400 });
 	try {
-		return NextResponse.json(await planAccountImport(env, input));
+		return NextResponse.json(await planAccountImport(env, input, importSignInGuard(env, auth.user.id)));
 	} catch (error) {
+		if (error instanceof SignInLimitError) return signInLimitResponse(error);
 		return NextResponse.json(
 			{ error: error instanceof Error ? error.message : "Unable to read the account's folders" },
 			{ status: 502 },

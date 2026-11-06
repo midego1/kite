@@ -284,7 +284,7 @@ test("every model selection goes through the opt-in", () => {
 				"src/lib/agent/compose.ts",
 				"src/lib/agent/auto-read/triage-model.ts",
 				"src/lib/agent/summaries/line-job.ts",
-				"src/lib/agent/summaries/service.ts",
+				"src/lib/agent/summaries/model-answer.ts",
 				"src/lib/agent/jobs/draft-generation.ts",
 				"src/lib/agent/step-limit-utils.ts",
 			].includes(file),

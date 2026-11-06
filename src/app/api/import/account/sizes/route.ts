@@ -7,6 +7,7 @@ import { readJsonBody } from "@/lib/http/request";
 import { measureFolderStep } from "@/lib/import/folder-sizes";
 import { parseSizeCursor, sizeProgress } from "@/lib/import/folder-size-utils";
 import { importServerProblem } from "@/lib/import/imap";
+import { importSignInGuard, SignInLimitError, signInLimitResponse } from "@/lib/import/sign-in-limit";
 import { withModule } from "@/lib/modules/route-guard";
 import { resolveImportSource } from "../../connected-account";
 import type { ImapFolderListRequest } from "../../imap/folders/types";
@@ -46,7 +47,16 @@ export const POST = withModule("import", async (request, { checkUser }) => {
 	const refused = importServerProblem(env, input);
 	if (refused) return NextResponse.json({ error: refused }, { status: 400 });
 	try {
-		const step = await measureFolderStep(env, input, folder, cursor, undefined, undefined, request.signal);
+		const step = await measureFolderStep(
+			env,
+			input,
+			folder,
+			cursor,
+			undefined,
+			undefined,
+			request.signal,
+			importSignInGuard(env, auth.user.id),
+		);
 		if (!step) return NextResponse.json({ unavailable: true }, { headers: { "Cache-Control": "no-store" } });
 		return NextResponse.json(
 			{
@@ -61,6 +71,7 @@ export const POST = withModule("import", async (request, { checkUser }) => {
 			{ headers: { "Cache-Control": "no-store" } },
 		);
 	} catch (error) {
+		if (error instanceof SignInLimitError) return signInLimitResponse(error);
 		return NextResponse.json(
 			{ error: error instanceof Error ? error.message : "Unable to measure the folder" },
 			{ status: 502 },

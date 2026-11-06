@@ -3,7 +3,20 @@ import path from "node:path";
 import { expect, test, type Browser, type Locator, type Page } from "@playwright/test";
 import sharp from "sharp";
 import { ADMIN, STORAGE_STATE } from "../../e2e/support/constants";
-import { RTL_MAIL, seedDemoData, seedPagedMail, seedRtlMail, THREAD } from "./demo-data";
+import { useFakeProvider as connectFakeProvider } from "../../e2e/support/agent";
+import { startFakeModel } from "../../e2e/support/fake-model";
+import type { FakeModel } from "../../e2e/support/fake-model-types";
+import { apiContext } from "../../e2e/support/helpers";
+import {
+	RTL_MAIL,
+	seedDemoData,
+	seedPagedMail,
+	seedRtlMail,
+	seedThaiMail,
+	THAI_MAIL,
+	THAI_MAIL_TRANSLATED,
+	THREAD,
+} from "./demo-data";
 import { mockForYou, mockForYouPreview } from "./demo-mocks";
 import { sampleMessage, startFakeImap } from "../../tests/support/fake-imap.mjs";
 
@@ -34,6 +47,21 @@ let demoTwoWay: Awaited<ReturnType<typeof startFakeImap>> | null = null;
 const demoFolder = (count: number, bytes: number, label: string) =>
 	Array.from({ length: count }, (_, index) => ({ raw: sampleMessage(index + 1, { subject: `${label} ${index + 1}` }), size: bytes }));
 
+/** A model for the shots that need the assistant: nothing it answers appears in them. */
+let demoModel: { fake: FakeModel; restore: () => Promise<void> } | null = null;
+
+async function openThaiMail(page: Page) {
+	if (!demoModel) {
+		const api = await apiContext(STORAGE_STATE);
+		const fake = await startFakeModel();
+		demoModel = { fake, restore: await connectFakeProvider(api, fake) };
+	}
+	await seedThaiMail();
+	await page.goto("/inbox");
+	await page.getByRole("main").getByText(THAI_MAIL.subject, { exact: true }).first().click();
+	await expect(page.getByTestId("translation-bar")).toContainText("This message is in Thai.");
+}
+
 const SHOTS: Shot[] = [
 	{
 		// The For you page with the hover preview of a reply suggestion open (demo suggestions and texts from demo-mocks).
@@ -62,6 +90,45 @@ const SHOTS: Shot[] = [
 			const card = page.getByTestId("command-center-for-you");
 			await expect(card.locator("[data-for-you-card-entry]")).toHaveCount(4);
 			return page.getByTestId("reading-pane-empty");
+		},
+	},
+	{
+		// The quiet bar above a message in a language the reader does not read.
+		name: "2026-11-06-translate-message-light",
+		theme: "light",
+		viewport: { width: 1280, height: 700 },
+		open: async (page) => {
+			await openThaiMail(page);
+			return page.locator("[data-reader-scroll]");
+		},
+	},
+	{
+		// The same message translated, with an answer written here so the picture reads as real English.
+		name: "2026-11-06-translated-message-light",
+		theme: "light",
+		viewport: { width: 1280, height: 700 },
+		open: async (page) => {
+			await page.route("**/api/messages/*/translation?*", (route) =>
+				route.fulfill({
+					json: {
+						translation: {
+							target: "en",
+							sourceLanguage: "th",
+							subject: THAI_MAIL_TRANSLATED.subject,
+							html: THAI_MAIL_TRANSLATED.html,
+							text: null,
+							cut: false,
+							quotedPending: false,
+							model: "demo-model",
+						},
+					},
+				}),
+			);
+			await openThaiMail(page);
+			await page.getByRole("button", { name: "Translate to English" }).click();
+			await expect(page.getByTestId("translation-bar")).toContainText("Translated from Thai");
+			await expect(page.frameLocator('iframe[title="Message body"]').last().getByText("Bangkok")).toBeVisible();
+			return page.locator("[data-reader-scroll]");
 		},
 	},
 	{
@@ -472,6 +539,9 @@ test.describe("changelog screenshots", () => {
 	test.afterAll(async () => {
 		await demoImap?.close();
 		demoImap = null;
+		await demoModel?.restore();
+		await demoModel?.fake.close();
+		demoModel = null;
 		await demoTwoWay?.close();
 		demoTwoWay = null;
 	});

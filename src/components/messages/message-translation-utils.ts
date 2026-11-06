@@ -41,19 +41,25 @@ export function translationTargets(
 	browserLanguage: string | undefined,
 	target: string,
 ): { code: string; name: string }[] {
-	const options = translateLanguageOptions(browserLanguage);
+	// A browser language without a two-letter code (`fil`) has nothing the translation route could store it under.
+	const options = translateLanguageOptions(browserLanguage).filter((option) => option.code.length === 2);
 	return options.some((option) => option.code === target)
 		? options
 		: [{ code: target, name: languageName(target) }, ...options];
 }
 
-/** Whether Translate works for a message: the same conditions as Summarize, read from the same state. */
+/**
+ * Whether Translate works for a message: the same conditions as Summarize, read from the same state. Without a
+ * message, whether it works in this mailbox at all, for the conversation's cards to check their own message against.
+ */
 export function translationAvailability(
 	state: SummaryState | null,
 	message?: { status: string; spamVerdict?: string | null } | null,
 ): TranslationAvailability {
 	if (state?.reason === "mailbox_ai_off") return "ai_off";
-	if (!state?.eligible || state.migrationPending) return "hidden";
+	// `not_eligible` is about the open message alone: a later message of the conversation may still be translated.
+	const open = state?.eligible || state?.reason === "not_eligible";
+	if (!open || state?.migrationPending) return "hidden";
 	return !message || isSummaryEligible(message) ? "ready" : "hidden";
 }
 

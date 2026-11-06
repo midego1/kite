@@ -10,7 +10,7 @@ import type { CheckedTranslation, TranslationPromptInput } from "./translation-t
 export const TRANSLATION_CHUNK_MAX_CHARS = 6_000;
 /** Requests for one message; longer mail keeps its end in the original language, with a note in the reader. */
 export const TRANSLATION_MAX_CHUNKS = 5;
-const SUBJECT_MAX_CHARS = 500;
+export const SUBJECT_MAX_CHARS = 500;
 
 // What a shown text must not carry: controls, and characters that reorder or hide text. Joiners stay: some scripts
 // need them.

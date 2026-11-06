@@ -226,13 +226,17 @@ test("quoted history in HTML waits, and text after a quote is the sender's again
 		parsed.slots.map((slot) => [slot.text, slot.quoted]),
 		[
 			["New part", false],
-			["On Monday Sam wrote:", true],
 			["Old part", true],
 			["Kite quote", true],
 			["inline quote", true],
 			["After the quote", false],
 		],
 	);
+});
+
+test("the line the reader folds a quote by stays as it is", () => {
+	const html = "<p>New part</p><p>On Monday Sam wrote:</p><blockquote>Old part</blockquote>";
+	assert.deepEqual(texts(messageSlots({ htmlBody: html })), ["New part", "Old part"]);
 });
 
 test("a forward, which is all quote, counts as new", () => {
@@ -253,6 +257,13 @@ test("a very long run splits on white space, between entities, and comes back wh
 	const rebuilt = rebuildMessage(parsed, texts(parsed));
 	const shown = new JSDOM(rebuilt).window.document.body.textContent;
 	assert.equal(shown.replace(/\s+/g, " ").trim(), "lorem & ipsum ".repeat(600).trim());
+});
+
+test("a long entity at the limit is not torn", () => {
+	const entity = "&CounterClockwiseContourIntegral;";
+	const parsed = messageSlots({ htmlBody: `<p>${"ก".repeat(2_990)}${entity}${"ข".repeat(3_500)}</p>` });
+	assert.ok(parsed.slots.some((slot) => slot.text.includes("∳")));
+	assert.ok(parsed.slots.every((slot) => !slot.text.includes("Counter")));
 });
 
 test("a run with no breaks splits without tearing an entity or a character", () => {
@@ -511,6 +522,7 @@ test("the picker is Write with Kite's list, and holds the choice made elsewhere"
 	assert.deepEqual(translateLanguageOptions("th-TH")[0], { code: "th", name: "Thai" });
 	assert.equal(translationTargets("nl-NL", "nl").length, 5);
 	assert.deepEqual(translationTargets("en-GB", "th")[0], { code: "th", name: "Thai" });
+	assert.ok(translationTargets("fil-PH", "en").every((language) => language.code.length === 2));
 });
 
 test("Translate follows Summarize's state, with AI off kept visible and greyed out", () => {
@@ -518,6 +530,9 @@ test("Translate follows Summarize's state, with AI off kept visible and greyed o
 	assert.equal(translationAvailability({ eligible: true }), "ready");
 	assert.equal(translationAvailability({ eligible: false, reason: "mailbox_ai_off" }), "ai_off");
 	assert.equal(translationAvailability({ eligible: false, reason: "assistant_off" }), "hidden");
+	// The open message cannot be translated, but the rest of its conversation may.
+	assert.equal(translationAvailability({ eligible: false, reason: "not_eligible" }), "ready");
+	assert.equal(translationAvailability({ eligible: false, reason: "not_eligible" }, { status: "trash" }), "hidden");
 	assert.equal(translationAvailability({ eligible: false, reason: "external_provider_not_allowed" }), "hidden");
 	assert.equal(translationAvailability({ eligible: true, migrationPending: true }), "hidden");
 	assert.equal(translationAvailability({ eligible: true }, { status: "spam" }), "hidden");

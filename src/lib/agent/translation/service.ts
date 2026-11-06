@@ -13,6 +13,7 @@ import { detectMessageLanguage } from "./detect-language-utils";
 import {
 	buildMessageTranslationPrompt,
 	checkTranslationAnswer,
+	SUBJECT_MAX_CHARS,
 	translationProblemText,
 	TRANSLATION_CHUNK_MAX_CHARS,
 	TRANSLATION_MAX_CHUNKS,
@@ -176,7 +177,7 @@ export async function createTranslation(
 	const stored = await readMessageTranslation(db, anchor.id, target);
 	if (stored.pending) throw new SummaryRefusal(409, "Apply the pending database update first", "MIGRATION_PENDING");
 	const parsed = await loadParsedMessage(env, anchor.id);
-	const subject = hasLetters(parsed.subject) ? parsed.subject : null;
+	const subject = hasLetters(parsed.subject) ? Array.from(parsed.subject).slice(0, SUBJECT_MAX_CHARS).join("") : null;
 	if (!parsed.slots.length && !subject)
 		throw new SummaryRefusal(409, "This message has no text to translate.", "nothing_to_translate");
 	const valid = stored.row?.digest === parsed.digest ? stored.row : null;

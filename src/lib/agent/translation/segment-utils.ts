@@ -34,6 +34,10 @@ const QUOTE_IDS = ["divRplyFwdMsg"];
 const WHOLE_LINE_LIST_ITEM = /^(\s*(?:[-•*]|\d{1,3}[.)])\s+)(.*)$/;
 const BREAK = /[\s。！？；，、]/;
 const LETTER = /\p{L}/u;
+/** No named entity is longer (`&CounterClockwiseContourIntegral;`). */
+const LONGEST_ENTITY = 34;
+/** The reader folds a quote by this line above it (`collapseQuotedEmailHtml`), so it stays as it is. */
+const QUOTE_INTRODUCTION = /^On\b[\s\S]*\bwrote:\s*$/i;
 /** What one piece adds to a request and its answer, in characters of source text. */
 const PIECE_OVERHEAD_CHARS = 24;
 const ROOT_DIRECTION = /^\s*<div dir="(?:ltr|rtl)">/;
@@ -73,7 +77,7 @@ function breakAt(raw: string, from: number): number {
 	for (let index = limit; index > from + SEGMENT_MAX_CHARS / 2; index -= 1)
 		if (BREAK.test(raw[index])) return index + 1;
 	const entity = raw.lastIndexOf("&", limit);
-	if (entity > limit - 12 && !raw.slice(entity, limit).includes(";")) return entity;
+	if (entity > limit - LONGEST_ENTITY && !raw.slice(entity, limit).includes(";")) return entity;
 	const low = raw.charCodeAt(limit);
 	return low >= 0xdc00 && low <= 0xdfff ? limit + 1 : limit;
 }
@@ -111,7 +115,7 @@ function slotsOfRun(raw: string, offset: number, frame: Frame, decode: (raw: str
 	for (const [from, to] of ranges(raw)) {
 		const decoded = decode(raw.slice(from, to));
 		const text = decoded.trim();
-		if (!isTranslatable(text)) continue;
+		if (!isTranslatable(text) || QUOTE_INTRODUCTION.test(text)) continue;
 		const before = decoded.length - decoded.trimStart().length;
 		slots.push({
 			start: offset + from,

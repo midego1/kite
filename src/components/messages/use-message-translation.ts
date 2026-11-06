@@ -98,7 +98,8 @@ export function useMessageTranslation(input: MessageTranslationInput): MessageTr
 					if (!current()) return;
 					setFailure(details);
 					setError(message);
-					if (response.status === 429) setBlocked(true);
+					// A cap holds until tomorrow; the rate limit is over in a moment, and Try again stays.
+					if (response.status === 429 && details?.code !== "rate_limited") setBlocked(true);
 					return;
 				}
 				const state = (await response.json()) as TranslationState;
@@ -118,16 +119,18 @@ export function useMessageTranslation(input: MessageTranslationInput): MessageTr
 	const shown = showing && !off ? translation : null;
 	const translate = () => {
 		if (translation?.target === target) setShowing(true);
-		else void request({ target, quoted: false });
+		else if (busy === null && !blocked) void request({ target, quoted: false });
 	};
 	const chooseTarget = (next: string) => {
 		setChosen(next);
 		// Already reading a translation: the new language follows at once.
-		if (shown) void request({ target: next, quoted: false });
+		if (shown && busy === null && !blocked) void request({ target: next, quoted: false });
 	};
 	return {
 		detected,
 		target,
+		// Another card may have changed the choice; this one still says what it shows.
+		pickerTarget: shown?.target ?? target,
 		chooseTarget,
 		offered: availability === "ready" && !dismissed && offersTranslation(detected, reading, target),
 		dismiss: () => setDismissed(true),

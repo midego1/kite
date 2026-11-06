@@ -29,6 +29,8 @@ export type MessageTranslationController = {
 	/** The language detected in the browser, or null when unsure. */
 	detected: string | null;
 	target: string;
+	/** What the picker shows: the shown translation's language, else `target`. */
+	pickerTarget: string;
 	chooseTarget: (next: string) => void;
 	/** The bar offers a translation of this message. */
 	offered: boolean;

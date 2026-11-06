@@ -18,12 +18,12 @@ function TargetPicker({ controller }: { controller: MessageTranslationController
 	return (
 		<Select
 			aria-label="Language to translate into"
-			value={controller.target}
+			value={controller.pickerTarget}
 			disabled={controller.busy !== null}
 			containerClassName="border-0 px-0 text-xs font-medium text-blue-700"
 			onChange={(event) => controller.chooseTarget(event.target.value)}
 		>
-			{translationTargets(browserLanguage(), controller.target).map((language) => (
+			{translationTargets(browserLanguage(), controller.pickerTarget).map((language) => (
 				<option key={language.code} value={language.code}>
 					{language.name}
 				</option>

@@ -81,11 +81,11 @@ export default function MessageDetailPage() {
 	const { scrollRef, handleScroll } = useMessageContentScroll(messageId, loading);
 	const summary = useThreadSummary(messageId, "thread");
 	const hideTriageSummary = showsCurrentSummary(summary.state, summary.hidden);
-	const translationState = translationAvailability(summary.state, data?.message);
+	const threadTranslationState = translationAvailability(summary.state);
 	const translation = useMessageTranslation({
 		messageId,
 		body: data?.message?.id === messageId ? { subject: data.message.subject, ...data.body } : null,
-		availability: translationState,
+		availability: translationAvailability(summary.state, data?.message),
 	});
 
 	useEffect(() => {
@@ -266,7 +266,7 @@ export default function MessageDetailPage() {
 					hideTriageSummary={hideTriageSummary}
 					remoteImagesShownIds={remoteImagesShownIds}
 					onShowRemoteImages={showThreadRemoteImages}
-					translationAvailability={translationState}
+					translationAvailability={threadTranslationState}
 				/>
 				{/* Every message of the conversation is a section under a hairline, as in Zero's reader. */}
 				<article className="border-t border-neutral-200 px-4 py-6 sm:px-7">
@@ -462,7 +462,7 @@ export default function MessageDetailPage() {
 					hideTriageSummary={hideTriageSummary}
 					remoteImagesShownIds={remoteImagesShownIds}
 					onShowRemoteImages={showThreadRemoteImages}
-					translationAvailability={translationState}
+					translationAvailability={threadTranslationState}
 				/>
 				<MessageAttachmentViewer
 					attachment={previewAttachment}

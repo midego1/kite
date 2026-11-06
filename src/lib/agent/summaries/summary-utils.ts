@@ -7,6 +7,7 @@ import {
 	stripDraftMarkdown,
 	type ThreadReferences,
 } from "../auto-read/draft-guard-utils";
+import { BARE_DOMAIN, OBFUSCATED_ADDRESS, obfuscatedAddress } from "../reference-patterns-utils";
 import type { PersonalInstructions } from "../instruction-types";
 import type { SummaryLabel, SummaryOutcome, SummaryPoint } from "./summary-types";
 
@@ -101,18 +102,40 @@ function cut(text: string, max: number): string {
 	return `${(space > max / 2 ? head.slice(0, space) : head).trimEnd()}…`;
 }
 
-/** The links and addresses in `text` that the summarised messages do not contain. */
-function unknownReferences(text: string, references: ThreadReferences): string[] {
-	const addresses = (text.match(EMAIL_PATTERN) ?? []).filter(
-		(address) => !references.addresses.has(address.replace(TRAILING_PUNCTUATION, "").toLowerCase()),
-	);
-	const urls = (text.match(URL_PATTERN) ?? []).filter((url) => !references.urls.has(normalizeUrl(url)));
-	return [...urls, ...addresses];
+type Known = ThreadReferences & { hosts: Set<string> };
+
+const hostOf = (url: string) => url.replace(/^https:\/\//, "").split(/[/?#]/)[0];
+
+/** The thread's references plus its bare domains and spelled-out addresses, which a summary may repeat. */
+function collectKnown(texts: (string | null | undefined)[]): Known {
+	const joined = texts.filter(Boolean).join("\n");
+	const { addresses, urls } = collectThreadReferences(texts);
+	for (const match of joined.matchAll(BARE_DOMAIN)) urls.add(normalizeUrl(`https://${match[0]}`));
+	for (const match of joined.matchAll(OBFUSCATED_ADDRESS)) addresses.add(obfuscatedAddress(match[1], match[2]));
+	return { addresses, urls, hosts: new Set([...urls].map(hostOf)) };
 }
 
-function withoutUnknown(text: string, references: ThreadReferences): string {
+/**
+ * The links and addresses in `text` that the summarised messages do not contain, as written: full links, bare
+ * domains such as `evil.test/pay` (known by link or by host) and addresses, including `name (at) domain`.
+ */
+function unknownReferences(text: string, known: Known): string[] {
+	const addresses = (text.match(EMAIL_PATTERN) ?? []).filter(
+		(address) => !known.addresses.has(address.replace(TRAILING_PUNCTUATION, "").toLowerCase()),
+	);
+	const spelledOut = [...text.matchAll(OBFUSCATED_ADDRESS)]
+		.filter((match) => !known.addresses.has(obfuscatedAddress(match[1], match[2])))
+		.map((match) => match[0]);
+	const urls = (text.match(URL_PATTERN) ?? []).filter((url) => !known.urls.has(normalizeUrl(url)));
+	const domains = [...text.matchAll(BARE_DOMAIN)]
+		.filter((match) => !known.urls.has(normalizeUrl(`https://${match[0]}`)) && !known.hosts.has(match[1].toLowerCase()))
+		.map((match) => match[0]);
+	return [...urls, ...spelledOut, ...addresses, ...domains];
+}
+
+function withoutUnknown(text: string, known: Known): string {
 	let result = text;
-	for (const value of unknownReferences(text, references)) result = result.split(value).join("");
+	for (const value of unknownReferences(text, known)) result = result.split(value).join("");
 	return result
 		.replace(/\(\s*\)/g, "")
 		.replace(/\s{2,}/g, " ")
@@ -131,7 +154,7 @@ function label(value: unknown): SummaryLabel | null {
 	return SUMMARY_LABELS.find((candidate) => candidate.toLowerCase() === text) ?? null;
 }
 
-function checkPoints(value: unknown, references: ThreadReferences): SummaryPoint[] {
+function checkPoints(value: unknown, references: Known): SummaryPoint[] {
 	if (!Array.isArray(value)) return [];
 	const points: SummaryPoint[] = [];
 	let total = 0;
@@ -181,7 +204,7 @@ export function checkSummaryOutput(raw: string, context: SummaryCheckContext): S
 	if (!json || typeof json !== "object" || Array.isArray(json))
 		return { ok: false, error: "the reply is not a JSON object" };
 	const value = json as { language?: unknown; overview?: unknown; points?: unknown };
-	const references = collectThreadReferences(context.references);
+	const references = collectKnown(context.references);
 	const overview = cut(withoutUnknown(plain(value.overview), references), OVERVIEW_MAX_CHARS);
 	if (!overview) return { ok: false, error: "the overview is empty" };
 	if (META_PREFIX.test(overview)) return { ok: false, error: "the overview describes the summary instead of being it" };

@@ -37,3 +37,17 @@ export async function summaryError(response: Response): Promise<{ message: strin
 		failure: readAiErrorBody(body),
 	};
 }
+
+/** The per-minute AI request limit's window: a refusal for it lifts after this long (a spend cap lifts at 00:00 UTC). */
+const RATE_LIMIT_RESET_MS = 60_000;
+
+/** How long the Summarize button stays off after a 429 with this error code, or null when it stays off for the page. */
+export function blockedResetMs(code: string | null | undefined): number | null {
+	return code === "rate_limited" ? RATE_LIMIT_RESET_MS : null;
+}
+
+/** What a screen reader hears when a request starts or ends (the card's content swap alone is silent). */
+export function summaryAnnouncement(kind: "summarize" | "translate", phase: "started" | "done"): string {
+	if (kind === "translate") return phase === "started" ? "Translating the summary" : "Translation ready";
+	return phase === "started" ? "Summarizing" : "Summary ready";
+}

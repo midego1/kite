@@ -1,5 +1,6 @@
 import type { MessageAttachment } from "@/app/(dashboard)/inbox/[messageId]/types";
 import { getAttachmentFileUrl, getAttachmentPreviewKind } from "@/components/message-attachment-viewer-utils";
+import type { ComposeAttachmentPolicy } from "./attachment-policy-types";
 import type { ComposeAttachmentEntry, ComposeAttachmentNotice } from "./compose-attachment-types";
 import { t } from "@/lib/i18n/translator";
 
@@ -78,6 +79,24 @@ export function attachmentNotice(sizes: number[], cloudThresholdBytes: number): 
 	if (sizes.some((size) => size > cloudThresholdBytes)) return "links";
 	const total = sizes.reduce((sum, size) => sum + encodedSize(size), 0);
 	return total >= (MESSAGE_LIMIT_BYTES - MESSAGE_SAFETY_MARGIN_BYTES) * NEAR_BUDGET_SHARE ? "near-budget" : null;
+}
+
+/** What is wrong with adding files of `next` bytes to attachments of `current` bytes; null when they fit. */
+export function refusedAttachments(policy: ComposeAttachmentPolicy, current: number[], next: number[]): string | null {
+	const limit = policy.maxMb * 1_000_000;
+	const total = [...current, ...next].reduce((sum, size) => sum + size, 0);
+	if (current.length + next.length > 10) return t("A message can include at most 10 attachments");
+	if (next.some((size) => size > limit))
+		return t("Each attachment must be {maxMb} MB or smaller", { maxMb: policy.maxMb });
+	return total > limit ? t("Attachments must total {maxMb} MB or less", { maxMb: policy.maxMb }) : null;
+}
+
+export function attachFilesLabel(policy: ComposeAttachmentPolicy): string {
+	if (!policy.cloudLinks) return t("Attach files (up to {maxMb} MB total)", { maxMb: policy.maxMb });
+	return t("Attach files (up to {maxMb} MB total). Files over {thresholdMb} MB are sent as 30-day R2 download links.", {
+		maxMb: policy.maxMb,
+		thresholdMb: Math.round(policy.cloudThresholdBytes / 1_000_000),
+	});
 }
 
 export function attachmentNoticeText(notice: ComposeAttachmentNotice, cloudThresholdBytes: number): string {

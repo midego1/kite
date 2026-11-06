@@ -23,7 +23,9 @@ export function useShowFullRecipientAddresses() {
 			})
 			.catch((loadError) => {
 				if (cancelled) return;
-				setError(loadError instanceof Error ? loadError.message : translate("Failed to load recipient address settings"));
+				setError(
+					loadError instanceof Error ? loadError.message : translate("Failed to load recipient address settings"),
+				);
 			})
 			.finally(() => {
 				if (!cancelled) setIsLoading(false);

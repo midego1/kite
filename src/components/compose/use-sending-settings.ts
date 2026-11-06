@@ -22,7 +22,8 @@ export function useSendingSettings() {
 				if (!cancelled) setSettingsState(stored);
 			})
 			.catch((loadError) => {
-				if (!cancelled) setError(loadError instanceof Error ? loadError.message : translate("Failed to load sending settings"));
+				if (!cancelled)
+					setError(loadError instanceof Error ? loadError.message : translate("Failed to load sending settings"));
 			})
 			.finally(() => {
 				if (!cancelled) setIsLoading(false);

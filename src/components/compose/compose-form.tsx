@@ -62,6 +62,7 @@ import {
 import { isPastScheduledSend } from "@/lib/email/undo-send-utils";
 import type { ComposeAttachment, ComposeDraftSnapshot, ComposeStoredAttachment, ComposeThreading } from "./types";
 import type { ComposeAttachmentPolicy } from "./attachment-policy-types";
+import { attachFilesLabel, refusedAttachments } from "./compose-attachment-utils";
 import type { InlineComposerActions } from "./inline-composer-types";
 import { responseError } from "./response-error-utils";
 import { useInlineSendLifecycle } from "./use-inline-send-lifecycle";
@@ -610,27 +611,13 @@ export function ComposeForm({
 	function addAttachments(files: FileList | null) {
 		if (!files) return;
 		const nextFiles = Array.from(files);
-		const nextCount = storedAttachments.length + attachments.length + nextFiles.length;
-		const totalSize =
-			storedAttachments.reduce((total, item) => total + item.size, 0) +
-			[...attachments.map((attachment) => attachment.file), ...nextFiles].reduce((total, file) => total + file.size, 0);
-
-		if (nextCount > 10) {
-			setToast({ type: "error", message: t("A message can include at most 10 attachments") });
-			return;
-		}
-		if (nextFiles.some((file) => file.size > attachmentPolicy.maxMb * 1_000_000)) {
-			setToast({
-				type: "error",
-				message: t("Each attachment must be {maxMb} MB or smaller", { maxMb: attachmentPolicy.maxMb }),
-			});
-			return;
-		}
-		if (totalSize > attachmentPolicy.maxMb * 1_000_000) {
-			setToast({
-				type: "error",
-				message: t("Attachments must total {maxMb} MB or less", { maxMb: attachmentPolicy.maxMb }),
-			});
+		const refused = refusedAttachments(
+			attachmentPolicy,
+			[...storedAttachments.map((item) => item.size), ...attachments.map((attachment) => attachment.file.size)],
+			nextFiles.map((file) => file.size),
+		);
+		if (refused) {
+			setToast({ type: "error", message: refused });
 			return;
 		}
 
@@ -942,19 +929,7 @@ export function ComposeForm({
 									className="hidden"
 									onChange={(event) => addAttachments(event.target.files)}
 								/>
-								<Tooltip
-									label={
-										attachmentPolicy.cloudLinks
-											? t(
-													"Attach files (up to {maxMb} MB total). Files over {thresholdMb} MB are sent as 30-day R2 download links.",
-													{
-														maxMb: attachmentPolicy.maxMb,
-														thresholdMb: Math.round(attachmentPolicy.cloudThresholdBytes / 1_000_000),
-													},
-												)
-											: t("Attach files (up to {maxMb} MB total)", { maxMb: attachmentPolicy.maxMb })
-									}
-								>
+								<Tooltip label={attachFilesLabel(attachmentPolicy)}>
 									<button
 										ref={attachButton}
 										type="button"

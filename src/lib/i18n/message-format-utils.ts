@@ -134,7 +134,7 @@ function collect(nodes: MessageNode[], names: Set<string>, categories: Set<strin
 	}
 }
 
-/** The placeholders and plural forms of a message, or null when it is malformed; for the catalog checks. */
+/** The placeholders and plural forms of a message, or null when it is malformed. @public Exercised by the catalog checks. */
 export function describeMessage(message: string): { names: string[]; categories: string[] } | null {
 	const nodes = parseMessage(message);
 	if (!nodes) return null;

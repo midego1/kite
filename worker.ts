@@ -50,8 +50,8 @@ import { pruneMcpToolCallAudit, runDatabasePruning } from "./src/lib/maintenance
 import { runOperationalAlerts } from "./src/lib/alerts/run";
 import { runTelemetryHeartbeat } from "./src/lib/telemetry/heartbeat";
 import { eraseIdleExternalCredentials } from "./src/lib/external-accounts/retention";
-import { planExternalSync, syncExternalAccount } from "./src/lib/external-accounts/sync";
-import { isExternalSyncMessage } from "./src/lib/external-accounts/sync-utils";
+import { planExternalSync, syncExternalAccount, writebackExternalAccount } from "./src/lib/external-accounts/sync";
+import { isExternalSyncMessage, isExternalWritebackMessage } from "./src/lib/external-accounts/sync-utils";
 import { dispatchModuleQueueMessage, runModuleCronTasks } from "./src/lib/modules/background";
 import { maybeAutoApplyPendingMigrations } from "./src/lib/migrations/auto-apply";
 import { queueRetryDelaySeconds } from "./src/lib/migrations/pending";
@@ -218,6 +218,8 @@ export default {
 				} else if (isExternalSyncMessage(msg.body)) {
 					// A connected account's check for new mail (core, so it runs whatever modules are on).
 					await syncExternalAccount(env, msg.body.accountId);
+				} else if (isExternalWritebackMessage(msg.body)) {
+					await writebackExternalAccount(env, msg.body.accountId);
 				} else if ((await dispatchModuleQueueMessage(env, batch.queue, msg.body)).handled) {
 					// A module's message kind: the registry routes it and an off module's message is acked.
 				} else if (isWebhookRetryMessage(msg.body)) {

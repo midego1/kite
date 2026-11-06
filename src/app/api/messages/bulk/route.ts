@@ -4,6 +4,7 @@ import { getDb, type AppDatabase } from "@/db";
 import { folders, messages } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/cookies";
 import { getEnv } from "@/lib/cloudflare";
+import { recordKiteChange } from "@/lib/external-accounts/two-way-record";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { createAuditLogs } from "@/lib/mailboxes/audit";
 import { queryInChunks, runInChunks } from "@/db/chunk-utils";
@@ -17,7 +18,9 @@ import {
 	isMoveRefusedWhileSending,
 } from "@/lib/messages/send-state-utils";
 import { draftCounts, draftsOnlyResponse, settleDrafts } from "./drafts";
-import type { BulkMessagePayload } from "./types";
+import type { KiteChange } from "@/lib/external-accounts/two-way-types";
+import { kiteMove } from "@/lib/external-accounts/two-way-utils";
+import type { BulkMessageAction, BulkMessagePayload } from "./types";
 import {
 	getReadValueForBulkAction,
 	getStatusForBulkAction,
@@ -44,6 +47,12 @@ async function updateInApprovedMailboxes(
 				.set(values)
 				.where(and(eq(messages.mailboxId, mailboxId), inArray(messages.id, chunk))),
 		);
+}
+
+/** What a plain bulk action is for two-way sync. */
+function bulkChange(action: BulkMessageAction): KiteChange {
+	if (action === "read" || action === "unread") return { kind: "flags", read: action === "read" };
+	return kiteMove(getStatusForBulkAction(action) ?? "");
 }
 
 export async function POST(request: Request) {
@@ -167,6 +176,7 @@ export async function POST(request: Request) {
 	}
 	if (payload.action === "restore") {
 		const superseded = await restoreMessageStates(env, db, restoreStates, selectedMessages, approvedMailbox);
+		await recordKiteChange(env, allowedMessageIds, { kind: "other" });
 		return NextResponse.json({ ok: true, ...(superseded > 0 ? { superseded } : {}), ...refusals });
 	}
 	if (payload.action === "delete") {
@@ -180,16 +190,19 @@ export async function POST(request: Request) {
 		const moved = deleted === deletable.length ? deletable.map((message) => message.id) : [];
 		return NextResponse.json({ ok: true, deleted, skipped, moved, ...refusals });
 	}
-	if (payload.action === "spam")
-		return NextResponse.json({ ...(await reportSpamBulk(env, user, allowedMessageIds)), ...refusals });
-	if (payload.action === "phishing")
-		return NextResponse.json({ ...(await reportPhishingBulk(env, user, allowedMessageIds)), ...refusals });
+	if (payload.action === "spam" || payload.action === "phishing") {
+		const report = payload.action === "spam" ? reportSpamBulk : reportPhishingBulk;
+		const result = await report(env, user, allowedMessageIds);
+		await recordKiteChange(env, result.moved ?? [], { kind: "spam" });
+		return NextResponse.json({ ...result, ...refusals });
+	}
 	if (payload.action === "inbox") {
 		const spamMessageIds = selectedMessages
 			.filter((message) => message.status === "spam" && allowedMessageIds.includes(message.id))
 			.map((message) => message.id);
 		for (const messageId of spamMessageIds) await applySpamFeedback(env, user, messageId, "ham");
 		await updateInApprovedMailboxes(db, approvedMailbox, values);
+		await recordKiteChange(env, allowedMessageIds, { kind: "other" });
 		return NextResponse.json({ ok: true, moved: allowedMessageIds, ...refusals });
 	}
 
@@ -199,6 +212,7 @@ export async function POST(request: Request) {
 				.map((message) => ({ id: message.id, status: message.status, folderId: message.folderId ?? null }))
 		: undefined;
 	await updateInApprovedMailboxes(db, approvedMailbox, values);
+	await recordKiteChange(env, allowedMessageIds, bulkChange(payload.action));
 	await createAuditLogs(
 		env,
 		allowedMessageIds.map((messageId) => ({

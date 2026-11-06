@@ -9,6 +9,8 @@ import { resolveThreadId } from "@/lib/email/threading";
 import { storeMessageAttachments } from "@/lib/email/attachments";
 import { deleteMessageWithObjects } from "@/lib/email/message-cleanup";
 import { canOffloadHtmlBodies, loadMessageBodies } from "@/lib/email/bodies";
+import { recordKiteChange } from "@/lib/external-accounts/two-way-record";
+import { kiteMove } from "@/lib/external-accounts/two-way-utils";
 import { SCREENING_STATUS } from "@/lib/screener/screener-utils";
 import { visibleDraftsCondition } from "@/lib/messages/mailbox-scope";
 import { messageColumnsWithoutBodies, withStoredBodies } from "@/lib/messages/body-batches";
@@ -410,6 +412,10 @@ export const emailSet: JmapMethodHandler = async (ctx, args) => {
 			if (move.folderId !== undefined) set.folderId = move.folderId;
 		}
 		if (Object.keys(set).length) await ctx.db.update(messages).set(set).where(eq(messages.id, id));
+		if (set.read !== undefined || set.starred !== undefined)
+			await recordKiteChange(ctx.env, [id], { kind: "flags", read: set.read, starred: set.starred });
+		if (set.status !== undefined && set.status !== row.status)
+			await recordKiteChange(ctx.env, [id], kiteMove(set.status));
 		updated[id] = null;
 	}
 
@@ -428,9 +434,13 @@ export const emailSet: JmapMethodHandler = async (ctx, args) => {
 			notDestroyed[id] = { type: "forbidden" };
 			continue;
 		}
-		if (row.status === "trash" || row.status === "draft")
+		if (row.status === "trash" || row.status === "draft") {
+			await recordKiteChange(ctx.env, [row.id], { kind: "trash" });
 			await deleteMessageWithObjects(ctx.env, ctx.db, row.id, row.rawR2Key);
-		else await ctx.db.update(messages).set({ status: "trash", folderId: null }).where(eq(messages.id, id));
+		} else {
+			await ctx.db.update(messages).set({ status: "trash", folderId: null }).where(eq(messages.id, id));
+			await recordKiteChange(ctx.env, [id], { kind: "trash" });
+		}
 		destroyed.push(id);
 	}
 

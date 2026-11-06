@@ -136,6 +136,11 @@ const INTERNAL_TABLES = [
 	// server's password while running and point at queue messages, so restoring
 	// them would resume imports against a database they no longer match.
 	"import_jobs",
+	// Two-way sync's working state (migration 0093, spec §6.8): the outbox must never be replayed on a real mailbox
+	// after a restore, and the mapping and pass state rebuild themselves from the raw keys.
+	"external_two_way_state",
+	"external_message_refs",
+	"external_provider_actions",
 	// The folders of a whole-account import (migration 0076): progress rows of an import_jobs row, transient with it.
 	"import_job_folders",
 	// Drive multipart parts of uploads in progress: the store's upload ids they

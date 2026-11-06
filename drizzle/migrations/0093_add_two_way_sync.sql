@@ -1,0 +1,11 @@
+-- Configurable two-way sync of connected accounts (docs/specs/external-accounts.md §6.8). `two_way` is off for every
+-- account. The three tables are internal (not in backups): the mapping of fetched messages to their provider UIDs, the
+-- outbox of actions for the provider, and the working state of each account. The partial index lets the first pass
+-- link messages fetched before this migration without reading the whole `messages` table.
+ALTER TABLE `external_accounts` ADD `two_way` text DEFAULT '{}' NOT NULL;--> statement-breakpoint
+CREATE TABLE `external_two_way_state` (`account_id` text PRIMARY KEY NOT NULL REFERENCES `external_accounts`(`id`) ON DELETE cascade, `support` text, `uidvalidity` integer, `highest_modseq` text, `exists_count` integer, `uid_next` integer, `low_uid` integer DEFAULT 0 NOT NULL, `last_pass_at` integer, `gone_baseline` integer DEFAULT 1 NOT NULL, `flags_baseline` integer DEFAULT 1 NOT NULL, `backfilled` integer DEFAULT 0 NOT NULL, `held_gone` integer DEFAULT 0 NOT NULL, `kicked_at` integer);--> statement-breakpoint
+CREATE TABLE `external_message_refs` (`message_id` text PRIMARY KEY NOT NULL REFERENCES `messages`(`id`) ON DELETE cascade, `account_id` text NOT NULL REFERENCES `external_accounts`(`id`) ON DELETE cascade, `role` text NOT NULL, `uidvalidity` integer NOT NULL, `uid` integer NOT NULL, `state` text DEFAULT 'present' NOT NULL, `provider_read` integer, `provider_starred` integer);--> statement-breakpoint
+CREATE INDEX `external_message_refs_window_idx` ON `external_message_refs` (`account_id`,`role`,`state`,`uidvalidity`,`uid`);--> statement-breakpoint
+CREATE TABLE `external_provider_actions` (`id` text PRIMARY KEY NOT NULL, `account_id` text NOT NULL REFERENCES `external_accounts`(`id`) ON DELETE cascade, `message_id` text NOT NULL, `kind` text NOT NULL, `read` integer, `starred` integer, `role` text NOT NULL, `uidvalidity` integer NOT NULL, `uid` integer NOT NULL, `rfc_message_id` text, `created_at` integer NOT NULL, `attempts` integer DEFAULT 0 NOT NULL, `next_attempt_at` integer NOT NULL);--> statement-breakpoint
+CREATE INDEX `external_provider_actions_due_idx` ON `external_provider_actions` (`account_id`,`next_attempt_at`);--> statement-breakpoint
+CREATE INDEX `messages_external_account_idx` ON `messages` (`external_account_id`) WHERE `external_account_id` IS NOT NULL;

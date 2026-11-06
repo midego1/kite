@@ -7,6 +7,8 @@ import { createAuditLog } from "@/lib/mailboxes/audit";
 import { DRAFT_STATUS, isDraftMoveRefused, isHiddenDraft } from "@/lib/messages/draft-privacy-utils";
 import { isSendPending } from "@/lib/messages/send-state-utils";
 import { deleteMessageWithObjects } from "@/lib/email/message-cleanup";
+import { recordKiteChange } from "@/lib/external-accounts/two-way-record";
+import { kiteMove } from "@/lib/external-accounts/two-way-utils";
 import type { SessionUser } from "@/lib/auth/types";
 import { applySpamFeedbackWithReceipt } from "@/lib/spam/feedback";
 
@@ -92,6 +94,7 @@ export async function markMessageAsReadForUser(env: CloudflareEnv, user: Session
 		messageId,
 		action: "email.read",
 	});
+	if (!message.read) await recordKiteChange(env, [messageId], { kind: "flags", read: true });
 	return true;
 }
 
@@ -121,9 +124,11 @@ export async function updateMessageStatusForUser(
 	if (classification) {
 		const result = await applySpamFeedbackWithReceipt(env, user, messageId, classification);
 		if (result?.receiptId) onReceipt?.(messageId, result.receiptId);
+		if (result) await recordKiteChange(env, [messageId], kiteMove(status));
 		return result !== null;
 	}
 	await db.update(messages).set({ status }).where(eq(messages.id, messageId));
+	await recordKiteChange(env, [messageId], kiteMove(status));
 	await createAuditLog(env, {
 		actorUserId: user.id,
 		mailboxId: message.mailboxId,

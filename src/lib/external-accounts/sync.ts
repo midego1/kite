@@ -12,12 +12,13 @@ import { externalAccountTablesReady } from "./errors";
 import { appendRecentErrors } from "./recent-errors";
 import { readInstallState } from "./settings";
 import type { ExternalAccountRow } from "./serialize-utils";
-import { emptyOutcome, runSync, SyncRefusedError, type RunOutcome } from "./sync-run";
+import { emptyOutcome, openSession, runSync, SyncRefusedError, type RunOutcome } from "./sync-run";
 import { externalSyncRefusal } from "./sync-target";
 import {
 	CHECK_NOW_COOLDOWN_MS,
 	classifySyncError,
 	externalSyncMessage,
+	externalWritebackMessage,
 	isSyncStateChange,
 	nextRegularSync,
 	SYNC_LEASE_MS,
@@ -26,6 +27,10 @@ import {
 	syncFailureUpdate,
 	type SyncProblem,
 } from "./sync-utils";
+
+import { drainOutbox } from "./two-way-run";
+import { noteProblems, readTwoWayConfig, twoWayReady } from "./two-way-store";
+import { writesToProvider } from "./two-way-utils";
 
 const logger = createLogger("external-sync");
 
@@ -193,6 +198,62 @@ export async function syncExternalAccount(
 		});
 		return { failed: problem.class };
 	}
+}
+
+/**
+ * "Sooner" for two-way sync (spec §6.8): opens one session for the account's outbox, under the sync lease, so it never
+ * runs beside a check. A paused, suspended or refused account does not run, and what it left waits. It changes nothing
+ * about the account's checks: a problem here is noted, and the regular check is what reports a broken sign-in. An
+ * account that is busy needs nothing: the check running now, or the next one, takes the rows.
+ */
+export async function writebackExternalAccount(
+	env: CloudflareEnv,
+	accountId: string,
+	options: Pick<SyncRunOptions, "now" | "budgetMs" | "limits"> = {},
+): Promise<void> {
+	const clock = options.now ?? (() => new Date());
+	if (!(await externalAccountTablesReady(env)) || !(await twoWayReady(env))) return;
+	const config = await readTwoWayConfig(env, accountId);
+	if (!writesToProvider(config.settings)) return;
+	const db = getDb(env);
+	const now = clock();
+	const lease = new Date(now.getTime() + SYNC_LEASE_MS);
+	const [account] = await db
+		.update(externalAccounts)
+		.set({ leaseUntil: lease })
+		.where(and(eq(externalAccounts.id, accountId), syncable(), leaseFree(now)))
+		.returning();
+	if (!account) return;
+	const started = Date.now();
+	const budgetMs = options.budgetMs ?? SYNC_RUN_BUDGET_MS;
+	const notes: string[] = [];
+	let more = false;
+	try {
+		if (await externalSyncRefusal(env, account)) return;
+		const session = await openSession(env, account, options.limits);
+		try {
+			more = await drainOutbox(env, session, account, config, {
+				clock,
+				outOfTime: () => Date.now() - started > budgetMs,
+				notes,
+			});
+		} finally {
+			await session.close().catch(() => undefined);
+		}
+	} catch (error) {
+		const problem = classify(error, account);
+		notes.push(`Kite could not reach the provider to apply your changes; it tries again: ${problem.message}`);
+		logger.warn("external.sync.writeback_failed", {
+			accountId,
+			class: problem.class,
+			// The error's name only: its message may carry server text.
+			error: error instanceof Error ? error.name : "unknown",
+		});
+	} finally {
+		await releaseLease(env, accountId, lease);
+		await noteProblems(env, accountId, notes, clock());
+	}
+	if (more) await env.AGENT_QUEUE?.send(externalWritebackMessage(accountId));
 }
 
 function classify(error: unknown, account: ExternalAccountRow): SyncProblem {

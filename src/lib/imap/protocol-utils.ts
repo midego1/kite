@@ -295,6 +295,18 @@ export function parseUidNext(lines: readonly string[]): number | null {
 	return parseResponseCodeNumber(lines, "UIDNEXT");
 }
 
+/**
+ * The `[HIGHESTMODSEQ n]` of a CONDSTORE server's EXAMINE or SELECT answer, as text (it may be a 63-bit number), or
+ * null when the server sent none (or `[NOMODSEQ]`).
+ */
+export function parseHighestModseq(lines: readonly string[]): string | null {
+	for (const line of lines) {
+		const value = /\[HIGHESTMODSEQ (\d+)\]/i.exec(line)?.[1];
+		if (value) return value;
+	}
+	return null;
+}
+
 function parseResponseCodeNumber(lines: readonly string[], code: "UIDVALIDITY" | "UIDNEXT"): number | null {
 	const pattern = new RegExp(`\\[${code} (\\d+)\\]`, "i");
 	for (const line of lines) {

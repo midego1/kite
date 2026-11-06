@@ -22,6 +22,7 @@ import { readIdentities } from "./identity-store";
 import { readSmtpVerified, writeSmtpVerified } from "./send-state";
 import { queueSyncNow } from "./sync";
 import { accountSwitches, isSwitchesOnly, restartJunkCursor } from "./switches";
+import { clearTwoWayMapping } from "./two-way-store";
 import { DEFAULT_SYNC_INTERVAL_MINUTES, parseSyncInterval } from "./sync-utils";
 import type { ExternalAccountInput, ExternalAccountView } from "./types";
 
@@ -456,7 +457,10 @@ async function reconnect(
 		current.imap.host === input.imap.host &&
 		current.imap.port === input.imap.port &&
 		current.username === input.username;
-	if (!sameInbox) await getDb(env).delete(externalAccountFolders).where(eq(externalAccountFolders.accountId, id));
+	if (!sameInbox) {
+		await getDb(env).delete(externalAccountFolders).where(eq(externalAccountFolders.accountId, id));
+		await clearTwoWayMapping(env, id);
+	}
 	await saveBaseline(env, id, test.baseline);
 	const sendProblem = await verifySending(env, id, input, password);
 	return {

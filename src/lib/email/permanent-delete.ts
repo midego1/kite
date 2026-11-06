@@ -5,6 +5,7 @@ import { runInChunks } from "@/db/chunk-utils";
 import { htmlBodyObjectKey } from "@/lib/email/bodies-utils";
 import { messageAttachmentKeys } from "@/lib/email/attachments";
 import { deleteUnreferencedObjects } from "@/lib/email/attachment-storage";
+import { recordKiteChange } from "@/lib/external-accounts/two-way-record";
 import { createAuditLogs } from "@/lib/mailboxes/audit";
 
 type DeletableMessage = {
@@ -32,6 +33,8 @@ export async function permanentlyDeleteMessages(
 ): Promise<number> {
 	if (rows.length === 0) return 0;
 	const ids = rows.map((row) => row.id);
+	// A person deleting it forever is "Delete in Kite"; the row must still exist to be looked up. Retention is not.
+	if (source !== "retention") await recordKiteChange(env, ids, { kind: "trash" });
 	const attachmentKeys = await messageAttachmentKeys(env, ids);
 	// Attachment rows cascade from the message.
 	await runInChunks(ids, (chunk) => db.delete(messages).where(inArray(messages.id, chunk)));

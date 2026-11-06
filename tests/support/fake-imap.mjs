@@ -4,7 +4,8 @@ import { createServer as createTlsServer, TLSSocket } from "node:tls";
 /**
  * A small in-process IMAP4rev1 server for tests: in-memory folders with UIDs, `CAPABILITY`, `STARTTLS`, `LOGIN`,
  * `AUTHENTICATE PLAIN` (with or without `SASL-IR`), `LIST`, `SELECT`/`EXAMINE`, `UID SEARCH ALL`,
- * `UID FETCH … BODY.PEEK[]`, `APPEND` (recorded in `appends`), `NOOP` and `LOGOUT`. It is hand-written so tests can inject failures: no STARTTLS,
+ * `UID FETCH … BODY.PEEK[]` and `… BODY.PEEK[HEADER.FIELDS (MESSAGE-ID)]`, `UID STORE`, `UID MOVE`, `UID COPY`,
+ * `UID EXPUNGE`, `EXPUNGE`, `APPEND` (recorded in `appends`), `NOOP` and `LOGOUT`. It is hand-written so tests can inject failures: no STARTTLS,
  * a STARTTLS response with injected bytes behind it, `LOGINDISABLED`, failed sign-ins. Every command is recorded with
  * whether the connection was encrypted at the time. Never point it at, or copy it from, a real provider.
  *
@@ -24,6 +25,9 @@ import { createServer as createTlsServer, TLSSocket } from "node:tls";
  * - `examineRefusals`: `{ [folder]: "NO [THROTTLED] …" }`, the tagged answer to SELECT or EXAMINE of that folder.
  * - `appendRefusal`: the tagged answer to every APPEND (`"NO [OVERQUOTA] …"`); APPEND to a missing folder is refused.
  * - `gmail`: advertise X-GM-EXT-1 and report each message's `labels` in FETCH when asked for X-GM-LABELS.
+ * - `move`, `uidplus`, `condstore`: advertise MOVE, UIDPLUS and CONDSTORE. Without `move` a `UID MOVE` is refused, without
+ *   `uidplus` a `UID EXPUNGE` is; `condstore` reports `[HIGHESTMODSEQ n]`, raised by every flag change.
+ * - `writeRefusals`: `{ MOVE?, COPY?, STORE?, EXPUNGE? }`, the tagged answer those commands get (`refuseWrite` sets it later).
  * - `users`: `{ [username]: password }`. `LOGIN` takes quoted strings or synchronizing literals.
  * - Misbehaviour: `hugeLiteral` (a FETCH announcing a 4 GB literal), `endlessLine` (a greeting that never ends),
  *   `slowLoris` (a greeting trickled one byte at a time, forever), `silent` (no greeting at all), `silentTls` (OK to
@@ -49,6 +53,8 @@ export async function startFakeImap(options = {}) {
 	let nextLoginAnswer = null;
 	// The caller's object itself, so a test can change it while the server runs.
 	const examineRefusals = options.examineRefusals ?? {};
+	const writeRefusals = options.writeRefusals ?? {};
+	let modseq = 1;
 
 	function addMessage(folder, message) {
 		if (!folders.has(folder)) folders.set(folder, { nextUid: 1, uidValidity: 1, messages: [] });
@@ -76,6 +82,35 @@ export async function startFakeImap(options = {}) {
 			vanishes: !!extra.vanishes,
 		});
 		return uid;
+	}
+
+	/** Takes a message out of a folder, as a client at the provider deleting or moving it would. */
+	function removeMessage(folder, uid) {
+		const entry = folders.get(folder);
+		entry.messages = entry.messages.filter((message) => message.uid !== uid);
+		modseq += 1;
+	}
+
+	/** Sets a message's flags, as a client at the provider would. */
+	function setFlags(folder, uid, flags) {
+		folders.get(folder).messages.find((message) => message.uid === uid).flags = flags;
+		modseq += 1;
+	}
+
+	/** The messages of a folder as the test sees them. */
+	function listMessages(folder) {
+		return (folders.get(folder)?.messages ?? []).map(({ uid, flags, raw }) => ({ uid, flags, raw: raw.toString() }));
+	}
+
+	/** Copies a message to another folder under its next UID. */
+	function copyInto(folder, message) {
+		if (!folders.has(folder)) folders.set(folder, { nextUid: 1, uidValidity: 1, messages: [] });
+		addMessage(folder, {
+			raw: message.raw,
+			flags: [...message.flags],
+			internalDate: message.internalDate,
+			labels: message.labels,
+		});
 	}
 
 	/** A new UIDVALIDITY renumbers the folder's messages from 1, as a server that rebuilt it would. */
@@ -128,6 +163,9 @@ export async function startFakeImap(options = {}) {
 			if (state.authenticated && options.specialUse) list.push("SPECIAL-USE");
 			if (state.authenticated && options.statusSize) list.push("STATUS=SIZE");
 			if (state.authenticated && options.gmail) list.push("X-GM-EXT-1");
+			if (state.authenticated && options.move) list.push("MOVE");
+			if (state.authenticated && options.uidplus) list.push("UIDPLUS");
+			if (state.authenticated && options.condstore) list.push("CONDSTORE");
 			return list.join(" ");
 		};
 		const send = (text) => state.socket.write(text);
@@ -264,13 +302,60 @@ export async function startFakeImap(options = {}) {
 				const entry = folders.get(folder);
 				if (!entry) return send(`${tag} NO [NONEXISTENT] No such folder\r\n`);
 				state.selected = folder;
+				state.readOnly = name === "EXAMINE";
+				const highest = options.condstore ? `* OK [HIGHESTMODSEQ ${modseq}] ok\r\n` : "";
 				return send(
-					`* ${entry.messages.length} EXISTS\r\n* OK [UIDVALIDITY ${entry.uidValidity}] ok\r\n${options.omitUidNext ? "" : `* OK [UIDNEXT ${entry.nextUid}] ok\r\n`}${tag} OK [READ-ONLY] done\r\n`,
+					`* ${entry.messages.length} EXISTS\r\n* OK [UIDVALIDITY ${entry.uidValidity}] ok\r\n${options.omitUidNext ? "" : `* OK [UIDNEXT ${entry.nextUid}] ok\r\n`}${highest}${tag} OK [${state.readOnly ? "READ-ONLY" : "READ-WRITE"}] done\r\n`,
 				);
 			}
 			const entry = state.selected ? folders.get(state.selected) : null;
+			if (name === "EXPUNGE" && entry) {
+				if (state.readOnly) return send(`${tag} NO read-only\r\n`);
+				entry.messages = entry.messages.filter((message) => !message.flags.includes("\\Deleted"));
+				return send(`${tag} OK done\r\n`);
+			}
 			if (name === "UID" && entry) {
 				const [sub, set, ...criteria] = args.split(" ");
+				const writing = ["STORE", "MOVE", "COPY", "EXPUNGE"].includes(sub.toUpperCase());
+				if (writing && state.readOnly) return send(`${tag} NO [READ-ONLY] the folder is read-only\r\n`);
+				if (writing && writeRefusals[sub.toUpperCase()]) return send(`${tag} ${writeRefusals[sub.toUpperCase()]}\r\n`);
+				const named = () => {
+					const wanted = uidSet(
+						set,
+						entry.messages.map((message) => message.uid),
+					);
+					return entry.messages.filter((message) => wanted.has(message.uid));
+				};
+				if (sub.toUpperCase() === "STORE") {
+					const change = /^([+-])FLAGS(?:\.SILENT)? \(([^)]*)\)/i.exec(criteria.join(" "));
+					if (!change) return send(`${tag} BAD bad store\r\n`);
+					const flags = change[2].split(" ").filter(Boolean);
+					for (const message of named())
+						message.flags =
+							change[1] === "+"
+								? [...new Set([...message.flags, ...flags])]
+								: message.flags.filter((flag) => !flags.includes(flag));
+					modseq += 1;
+					return send(`${tag} OK done\r\n`);
+				}
+				if (sub.toUpperCase() === "MOVE" || sub.toUpperCase() === "COPY") {
+					const moving = sub.toUpperCase() === "MOVE";
+					if (moving && !options.move) return send(`${tag} BAD MOVE not supported\r\n`);
+					const [target] = parseQuoted(criteria.join(" "));
+					if (!folders.has(target)) return send(`${tag} NO [TRYCREATE] No such folder\r\n`);
+					const chosen = named();
+					for (const message of chosen) copyInto(target, message);
+					if (moving) entry.messages = entry.messages.filter((message) => !chosen.includes(message));
+					modseq += 1;
+					return send(`${tag} OK done\r\n`);
+				}
+				if (sub.toUpperCase() === "EXPUNGE") {
+					if (!options.uidplus) return send(`${tag} BAD UID EXPUNGE not supported\r\n`);
+					const chosen = named().filter((message) => message.flags.includes("\\Deleted"));
+					entry.messages = entry.messages.filter((message) => !chosen.includes(message));
+					modseq += 1;
+					return send(`${tag} OK done\r\n`);
+				}
 				if (sub.toUpperCase() === "SEARCH") {
 					// `UID SEARCH ALL`, `UID SEARCH SINCE <date>`, or `UID SEARCH HEADER Message-ID "<…>"` matched against the raw header.
 					const since = set?.toUpperCase() === "SINCE" ? searchDay(criteria[0]) : null;
@@ -321,6 +406,13 @@ export async function startFakeImap(options = {}) {
 
 		function respondFetch(tag, args, entry, wanted) {
 			const withBody = /BODY/i.test(args);
+			const headerOnly = /HEADER\.FIELDS \(MESSAGE-ID\)/i.test(args);
+			const section = headerOnly ? "BODY[HEADER.FIELDS (MESSAGE-ID)]" : "BODY[]";
+			const content = (message) => {
+				if (!headerOnly) return message.raw;
+				const line = /^Message-ID:[^\r\n]*\r?\n/im.exec(message.raw.toString("latin1"))?.[0] ?? "";
+				return Buffer.from(`${line}\r\n`, "latin1");
+			};
 			let refused = false;
 			entry.messages.forEach((message, index) => {
 				if (!wanted.has(message.uid)) return;
@@ -333,14 +425,15 @@ export async function startFakeImap(options = {}) {
 				const size = message.size === null ? "" : ` RFC822.SIZE ${message.size ?? message.raw.length}`;
 				const attributes = `FLAGS (${message.flags.join(" ")}) INTERNALDATE "${message.internalDate}"${size}${labels}`;
 				if (!withBody) return send(`* ${index + 1} FETCH (UID ${message.uid} ${attributes})\r\n`);
+				const body = content(message);
 				if (options.attributesAfterLiteral) {
-					send(`* ${index + 1} FETCH (BODY[] {${message.raw.length}}\r\n`);
-					send(message.raw);
+					send(`* ${index + 1} FETCH (${section} {${body.length}}\r\n`);
+					send(body);
 					send(` UID ${message.uid} ${attributes})\r\n`);
 					return;
 				}
-				send(`* ${index + 1} FETCH (UID ${message.uid} ${attributes} BODY[] {${message.raw.length}}\r\n`);
-				send(message.raw);
+				send(`* ${index + 1} FETCH (UID ${message.uid} ${attributes} ${section} {${body.length}}\r\n`);
+				send(body);
 				send(")\r\n");
 			});
 			// As Gmail answers when a message cannot be read: the others are sent, the command fails.
@@ -377,6 +470,14 @@ export async function startFakeImap(options = {}) {
 		/** Connections the server still holds open. */
 		openConnections: () => connections.size,
 		bumpUidValidity,
+		removeMessage,
+		setFlags,
+		listMessages,
+		/** Sets (or, with null, clears) the tagged answer `UID MOVE`, `COPY`, `STORE` or `EXPUNGE` gets. */
+		refuseWrite(command, answer) {
+			if (answer) writeRefusals[command] = answer;
+			else delete writeRefusals[command];
+		},
 		failNextLogin() {
 			nextLoginFails = true;
 		},

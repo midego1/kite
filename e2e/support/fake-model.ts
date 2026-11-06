@@ -4,6 +4,7 @@ import {
 	COMPOSE_SYSTEM_MARKER,
 	DRAFT_SYSTEM_MARKER,
 	LINE_SUMMARY_SYSTEM_MARKER,
+	MESSAGE_TRANSLATION_MARKER,
 	REPAIR_MARKER,
 	SUMMARY_SYSTEM_MARKER,
 	SUMMARY_TRANSLATION_MARKER,
@@ -49,6 +50,7 @@ function classifyFakeRequest(messages: ChatMessage[]): FakeRequestKind {
 	if (system.includes(DRAFT_SYSTEM_MARKER)) return "draft";
 	if (system.includes(COMPOSE_SYSTEM_MARKER)) return "compose";
 	if (system.includes(SUMMARY_TRANSLATION_MARKER)) return "summary_translation";
+	if (system.includes(MESSAGE_TRANSLATION_MARKER)) return "message_translation";
 	if (system.includes(SUMMARY_SYSTEM_MARKER)) return "summary";
 	if (system.includes(LINE_SUMMARY_SYSTEM_MARKER)) return "line_summary";
 	return "other";
@@ -242,7 +244,8 @@ export async function startFakeModel(options: FakeModelOptions = {}): Promise<Fa
 		const stream = body.stream === true;
 		const entry = record(request, path, { kind, scenario, emailId, stream, tools: recordedTools(body), body: parsed });
 		const scripted = kind === "other" ? chatScript.shift() : undefined;
-		const reply = scripted ?? scenarioReply(FAKE_SCENARIOS[scenario], kind, { callNumber, slowMs });
+		const prompt = kind === "message_translation" ? messages.map(messageText).join("\n") : "";
+		const reply = scripted ?? scenarioReply(FAKE_SCENARIOS[scenario], kind, { callNumber, slowMs, prompt });
 		if (reply.delayMs) await delay(reply.delayMs);
 		if (reply.status && reply.status >= 400)
 			return sendJson(response, reply.status, {

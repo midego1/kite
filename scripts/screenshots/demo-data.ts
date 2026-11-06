@@ -147,10 +147,30 @@ export const RTL_MAIL = [
 	},
 ];
 
+/** A message in Thai and what the translation shot shows for it, with the same markup. */
+export const THAI_MAIL = {
+	from: `"สมชาย ใจดี" <somchai@wingtip.test>`,
+	subject: "แผนการเดินทางเดือนหน้า",
+	html: `<p>สวัสดีครับ</p><p>ขอบคุณสำหรับการประชุมเมื่อวานนี้ นี่คือสิ่งที่เราตกลงกันไว้:</p><ul><li>ทีมของเราจะไปถึงกรุงเทพฯ ในวันจันทร์</li><li>โปรดส่งเอกสารให้เราก่อนวันศุกร์</li></ul><p>ด้วยความเคารพ<br>สมชาย</p>`,
+};
+export const THAI_MAIL_TRANSLATED = {
+	subject: "Travel plans for next month",
+	html: `<p>Hello,</p><p>Thank you for yesterday's meeting. This is what we agreed:</p><ul><li>Our team arrives in Bangkok on Monday.</li><li>Please send us the documents before Friday.</li></ul><p>With respect,<br>Somchai</p>`,
+};
+
 /** Delivers the right-to-left demo mail once, so the shot finds it in the Inbox. */
 export async function seedRtlMail(): Promise<void> {
+	await deliverOnce(RTL_MAIL);
+}
+
+/** Delivers the Thai demo mail once. */
+export async function seedThaiMail(): Promise<void> {
+	await deliverOnce([THAI_MAIL]);
+}
+
+async function deliverOnce(mails: readonly { from: string; subject: string; html: string }[]): Promise<void> {
 	const api = await apiContext(STORAGE_STATE);
-	for (const mail of RTL_MAIL) {
+	for (const mail of mails) {
 		const found = await api.get(`/api/messages?${new URLSearchParams({ q: mail.subject, limit: "20" })}`);
 		const { messages: existing } = (await found.json()) as { messages: { subject?: string }[] };
 		if (existing.some((message) => message.subject === mail.subject)) continue;

@@ -54,6 +54,9 @@ import {
 import { useOpenMessageBody } from "./use-open-message-body";
 import { useAssistantOpen } from "@/components/agent/assistant-open-state";
 import { useMessageContentScroll } from "./use-message-content-scroll";
+import { MessageTranslationBar } from "@/components/messages/message-translation-bar";
+import { translationAvailability } from "@/components/messages/message-translation-utils";
+import { useMessageTranslation } from "@/components/messages/use-message-translation";
 import { SummarizeButton, ThreadSummaryCard } from "@/components/messages/thread-summary-card";
 import { useThreadSummary } from "@/components/messages/use-thread-summary";
 import { showsCurrentSummary } from "@/components/messages/thread-summary-utils";
@@ -78,6 +81,12 @@ export default function MessageDetailPage() {
 	const { scrollRef, handleScroll } = useMessageContentScroll(messageId, loading);
 	const summary = useThreadSummary(messageId, "thread");
 	const hideTriageSummary = showsCurrentSummary(summary.state, summary.hidden);
+	const threadTranslationState = translationAvailability(summary.state);
+	const translation = useMessageTranslation({
+		messageId,
+		body: data?.message?.id === messageId ? { subject: data.message.subject, ...data.body } : null,
+		availability: translationAvailability(summary.state, data?.message),
+	});
 
 	useEffect(() => {
 		let cancelled = false;
@@ -120,6 +129,8 @@ export default function MessageDetailPage() {
 	// Prepared before the early returns so the body is memoized, not sanitized again on every render.
 	const {
 		body: readerBody,
+		shownBody,
+		shownText,
 		ownAddress,
 		ownAddresses,
 		cloudAttachmentResult,
@@ -127,14 +138,14 @@ export default function MessageDetailPage() {
 		blockRemoteImages,
 		alwaysLoadRemoteImages,
 		showRemoteImages,
-	} = useOpenMessageBody(data, messageMailbox);
+	} = useOpenMessageBody(data, messageMailbox, translation.shown);
 	const [conversationView] = useConversationView();
 
 	if (loading) {
 		return <MessageDetailSkeleton />;
 	}
 
-	if (!data?.message || !readerBody) {
+	if (!data?.message || !readerBody || !shownBody) {
 		return <p className="px-6 py-4 text-sm text-neutral-500">{data?.error ?? "Message not found"}</p>;
 	}
 
@@ -152,7 +163,7 @@ export default function MessageDetailPage() {
 	const bccEntries = splitEmailAddressList(message.bccAddr);
 	// The thread may or may not list the open message itself.
 	const threadSize = new Set([message.id, ...thread.messages.map((threadMessage) => threadMessage.id)]).size;
-	const bodyDisplay = readerBody.display;
+	const bodyDisplay = shownBody.display;
 	const printSource = { ...currentThreadMessage, blockRemoteImages };
 	// In conversation view the toolbar prints the whole conversation; each message's own menu prints just that one.
 	const printConversation = conversationView && threadSize > 1;
@@ -192,6 +203,7 @@ export default function MessageDetailPage() {
 					messageMeta={message}
 					bodyHtml={body?.htmlBody}
 					onSummarizeMessage={summary.summarizeMessage}
+					translate={translation.menu}
 					print={print}
 				/>
 				<AssistantButton testId="assistant-button-reader" />
@@ -206,7 +218,7 @@ export default function MessageDetailPage() {
 				{!message.read && <MarkAsRead messageId={message.id} />}
 
 				<ReaderThreadHeader
-					subject={message.subject ?? "(no subject)"}
+					subject={translation.shown?.subject ?? message.subject ?? "(no subject)"}
 					count={threadSize}
 					range={getThreadDateRange([
 						message.createdAt,
@@ -254,6 +266,7 @@ export default function MessageDetailPage() {
 					hideTriageSummary={hideTriageSummary}
 					remoteImagesShownIds={remoteImagesShownIds}
 					onShowRemoteImages={showThreadRemoteImages}
+					translationAvailability={threadTranslationState}
 				/>
 				{/* Every message of the conversation is a section under a hairline, as in Zero's reader. */}
 				<article className="border-t border-neutral-200 px-4 py-6 sm:px-7">
@@ -348,21 +361,23 @@ export default function MessageDetailPage() {
 										!thread.messages.some((threadMessage) => threadMessage.id !== message.id)
 									}
 									remoteImagesShown={!blockRemoteImages}
+									translate={translation.menu}
 								/>
 							</div>
 						</div>
 						<div className="prose mt-1 max-w-none text-neutral-900">
-							{readerBody.blockedRemoteImages > 0 && <RemoteImagesNotice onShow={showRemoteImages} />}
+							<MessageTranslationBar controller={translation} />
+							{shownBody.blockedRemoteImages > 0 && <RemoteImagesNotice onShow={showRemoteImages} />}
 							<EmailBody
 								key={message.id}
-								html={readerBody.html}
-								colours={readerBody.colours}
-								quotedHtml={readerBody.quotedHtml}
-								quotedColours={readerBody.quotedColours}
+								html={shownBody.html}
+								colours={shownBody.colours}
+								quotedHtml={shownBody.quotedHtml}
+								quotedColours={shownBody.quotedColours}
 								className="email-body mx-auto"
 								fallback={
 									<pre dir="auto" className="reading-text whitespace-pre-wrap text-sm text mx-auto">
-										<LinkifiedText text={cloudAttachmentResult.content} />
+										<LinkifiedText text={shownText} />
 									</pre>
 								}
 							/>
@@ -447,6 +462,7 @@ export default function MessageDetailPage() {
 					hideTriageSummary={hideTriageSummary}
 					remoteImagesShownIds={remoteImagesShownIds}
 					onShowRemoteImages={showThreadRemoteImages}
+					translationAvailability={threadTranslationState}
 				/>
 				<MessageAttachmentViewer
 					attachment={previewAttachment}

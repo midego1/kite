@@ -8,6 +8,7 @@ import { getDatabaseSize } from "@/lib/db/size";
 import { insertRow, selectRow, selectRows } from "@/lib/db/pending-columns";
 import { parseImportDestination } from "./destination";
 import { openImportSession } from "./imap";
+import { importSignInGuard, SignInLimitError } from "./sign-in-limit";
 import {
 	IMPORT_CONFIRMED_NOTE,
 	carriedImportNote,
@@ -23,6 +24,7 @@ import {
 	closeFoldersOfEndedJob,
 	enqueueImportJob,
 	finishJob,
+	deferForSignInLimit,
 	recordRunError,
 	releaseImportLease,
 } from "./job-end";
@@ -361,7 +363,9 @@ export async function processImportJob(
 			await finishJob(env, job, hold, "failed", source.refused);
 			return;
 		}
-		const session = await openImportSession(env, source);
+		// A failed sign-in counts against the owner's limit like the form's, so jobs cannot be used to try passwords
+		// without end. A run the limit refuses waits for it (it keeps its attempts) instead of failing.
+		const session = await openImportSession(env, source, undefined, importSignInGuard(env, job.userId));
 		run = {
 			env,
 			ctx,
@@ -398,7 +402,9 @@ export async function processImportJob(
 		if (handedOn) await enqueueImportJob(env, job.id);
 	} catch (error) {
 		await closeSource();
-		await recordRunError(env, { ...job, total: run?.total ?? job.total }, hold, error);
+		if (error instanceof SignInLimitError)
+			await deferForSignInLimit(env, job, hold, { message: error.message, retryAfterSeconds: error.retryAfterSeconds });
+		else await recordRunError(env, { ...job, total: run?.total ?? job.total }, hold, error);
 	} finally {
 		// The heartbeat outlives the source connection, so the lease cannot run out while the socket is still open.
 		await closeSource();

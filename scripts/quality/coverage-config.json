@@ -1,5 +1,10 @@
 {
 	"gated": [
+		"src/lib/agent/translation/detect-language-utils.ts",
+		"src/lib/agent/translation/segment-utils.ts",
+		"src/lib/agent/translation/prompt-utils.ts",
+		"src/components/messages/message-translation-utils.ts",
+		"src/components/messages/translate-target-utils.ts",
 		"src/lib/alerts/active-utils.ts",
 		"src/lib/app-badge-utils.ts",
 		"src/lib/boot/report-utils.ts",
@@ -11,6 +16,8 @@
 		"src/lib/import/size-guard-utils.ts",
 		"src/lib/import/folder-size-utils.ts",
 		"src/lib/import/message-hints-utils.ts",
+		"src/lib/import/sign-in-limit-utils.ts",
+		"src/lib/import/capped-fetch-utils.ts",
 		"src/lib/alerts/webhook-utils.ts",
 		"src/lib/email/bodies-utils.ts",
 		"src/lib/email/provider-headers-utils.ts",
@@ -106,6 +113,7 @@
 		"src/lib/agent/chat-spend-utils.ts",
 		"src/lib/agent/compose-prompt-utils.ts",
 		"src/lib/agent/compose-output-utils.ts",
+		"src/lib/agent/reference-patterns-utils.ts",
 		"src/lib/agent/ai-error-utils.ts",
 		"src/lib/agent/mailbox-ai-utils.ts",
 		"src/lib/agent/ai-failure-report-utils.ts",

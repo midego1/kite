@@ -18,12 +18,14 @@ import { rootDirection, withRootDirection } from "@/lib/email/root-direction-uti
  *
  * The work is bounded. The parser's cost per tag grows with the elements still open, and browsers stop nesting at the
  * same 512 levels, so past `MAX_OPEN_ELEMENTS` the sanitizer stops parsing, closes what it opened and keeps the rest
- * as plain text, as it does past `MAX_TAG_ATTRIBUTES` attributes on one tag. `MAX_SANITIZED_HTML_CHARS` is above the
- * largest body a message can hold, so only output that grew while it was escaped reaches it; what fits is kept, closed
- * the same way.
+ * as plain text, as it does past `MAX_TAG_ATTRIBUTES` attributes or `MAX_TAG_ENTITIES` entities on one tag. The parser
+ * holds a tag's attributes until the tag ends, and keeps a heap node per entity in a value. `MAX_SANITIZED_HTML_CHARS`
+ * is above the largest body a message can hold, so only output that grew while it was escaped reaches it: attributes
+ * that do not fit are left out, and what fits of the rest is kept, closed the same way.
  */
 const MAX_OPEN_ELEMENTS = 512;
 const MAX_TAG_ATTRIBUTES = 1_024;
+const MAX_TAG_ENTITIES = 256 * 1024;
 const MAX_SANITIZED_HTML_CHARS = 26_000_000;
 /**
  * How much output waits to be joined. A string grown with `+=` or a global replace keeps a heap node per piece until it
@@ -215,27 +217,34 @@ function createOutput() {
 			if (pieces.length >= OUTPUT_PIECES || pieceChars >= OUTPUT_PIECE_CHARS) join();
 		},
 		isBlank: () => blank,
-		isFull: () => length >= MAX_SANITIZED_HTML_CHARS,
+		chars: () => length,
 		toString: join,
 	};
 }
 
-/** The escaped attribute value, or null when escaping takes it past the output limit. */
-function boundedAttribute(value: string): string | null {
+/** The escaped attribute value, or null when it takes more than `budget` characters. */
+function boundedAttribute(value: string, budget: number): string | null {
+	if (value.length > budget) return null;
 	const escaped = createOutput();
 	for (let start = 0; start < value.length; start += ESCAPE_SLICE_CHARS) {
 		escaped.add(escapeAttribute(value.slice(start, start + ESCAPE_SLICE_CHARS)));
-		if (escaped.isFull()) return null;
+		if (escaped.chars() > budget) return null;
 	}
 	return escaped.toString();
 }
 
-function openTag(tag: string, attributes: Record<string, string>): string {
+/** The tag with the attributes that fit in `budget` characters, in order; the others are left out. */
+function openTag(tag: string, attributes: Record<string, string>, budget: number): string {
 	let markup = `<${tag}`;
+	let left = budget - markup.length - 1;
 	for (const [name, value] of Object.entries(attributes)) {
 		if (!isAllowedAttribute(tag, name, value)) continue;
-		const escaped = boundedAttribute(value);
-		if (escaped !== null) markup += ` ${name}="${escaped}"`;
+		const escaped = boundedAttribute(value, left);
+		if (escaped === null) continue;
+		const attribute = ` ${name}="${escaped}"`;
+		if (attribute.length > left) continue;
+		markup += attribute;
+		left -= attribute.length;
 	}
 	return `${markup}>`;
 }
@@ -243,12 +252,14 @@ function openTag(tag: string, attributes: Record<string, string>): string {
 export function sanitizeStoredEmailHtml(html: string | null | undefined): string | null {
 	if (!html) return null;
 	const output = createOutput();
+	const remaining = () => MAX_SANITIZED_HTML_CHARS - output.chars();
 	// Everything the parser holds open, and the stored elements among them, innermost last.
 	let depth = 0;
 	const open: string[] = [];
 	// Depth inside a dropped element; the tokenizer reports every open tag with a matching close.
 	let dropped = 0;
 	let attributeCount = 0;
+	let entityCount = 0;
 	let stopped = false;
 	const stop = () => {
 		stopped = true;
@@ -265,6 +276,7 @@ export function sanitizeStoredEmailHtml(html: string | null | undefined): string
 			onopentag(name, attributes) {
 				if (stopped) return;
 				attributeCount = 0;
+				entityCount = 0;
 				depth += 1;
 				if (depth > MAX_OPEN_ELEMENTS) {
 					stop();
@@ -279,9 +291,9 @@ export function sanitizeStoredEmailHtml(html: string | null | undefined): string
 					root[name] = attributes.dir ?? "";
 				}
 				if (!STORED_TAGS.has(name)) return;
-				output.add(openTag(name, attributes));
+				output.add(openTag(name, attributes, remaining()));
 				if (!VOID_TAGS.has(name)) open.push(name);
-				if (output.isFull()) stop();
+				if (remaining() <= 0) stop();
 			},
 			onclosetag(name) {
 				if (stopped) return;
@@ -299,16 +311,23 @@ export function sanitizeStoredEmailHtml(html: string | null | undefined): string
 				if (stopped || dropped > 0) return;
 				for (let start = 0; start < text.length && !stopped; start += ESCAPE_SLICE_CHARS) {
 					output.add(escapeText(text.slice(start, start + ESCAPE_SLICE_CHARS)));
-					if (output.isFull()) stop();
+					if (remaining() <= 0) stop();
 				}
 			},
 		},
 		{ decodeEntities: true, lowerCaseTags: true, lowerCaseAttributeNames: true },
 	);
+	// Entities in an attribute value reach no handler, and the value only arrives once it ends.
+	const readAttributeEntity = parser.onattribentity.bind(parser);
+	parser.onattribentity = (codePoint) => {
+		readAttributeEntity(codePoint);
+		entityCount += 1;
+		if (entityCount > MAX_TAG_ENTITIES) stop();
+	};
 	parser.write(html);
 	if (stopped) {
 		while (open.length > 0) output.add(`</${open.pop()}>`);
-		if (dropped === 0 && !output.isFull()) {
+		if (dropped === 0 && remaining() > 0) {
 			output.add(
 				`<div style="white-space: pre-wrap">${escapeText(htmlToReadableText(html.slice(parser.endIndex + 1)))}</div>`,
 			);

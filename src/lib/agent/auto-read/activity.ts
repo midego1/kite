@@ -14,6 +14,7 @@ import { moduleActionOwner } from "./module-actions-utils";
 
 const ACTION_LIMIT = 100;
 const SKIPPED_JOB_LIMIT = 20;
+const LINE_JOB_LIMIT = 20;
 const SKIPPED_JOB_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 const drafts = alias(messages, "draft");
 
@@ -123,6 +124,30 @@ export async function listAgentActivity(
 		)
 		.orderBy(desc(agentJobs.createdAt))
 		.limit(SKIPPED_JOB_LIMIT);
+	// One-line summary jobs skip routinely (short mail, newsletters), so they are listed apart from the messages
+	// automatic reading did not read, with the failures among them.
+	const lineJobs = await db
+		.select({
+			id: agentJobs.id,
+			status: agentJobs.status,
+			reason: agentJobs.reason,
+			reviewerUserId: agentJobs.reviewerUserId,
+			sourceMessageId: agentJobs.sourceMessageId,
+			subject: messages.subject,
+			createdAt: agentJobs.createdAt,
+		})
+		.from(agentJobs)
+		.leftJoin(messages, eq(messages.id, agentJobs.sourceMessageId))
+		.where(
+			and(
+				eq(agentJobs.mailboxId, mailboxId),
+				eq(agentJobs.kind, "line_summary"),
+				or(eq(agentJobs.status, "skipped"), eq(agentJobs.status, "failed")),
+				gte(agentJobs.createdAt, new Date(now.getTime() - SKIPPED_JOB_WINDOW_MS)),
+			),
+		)
+		.orderBy(desc(agentJobs.createdAt))
+		.limit(LINE_JOB_LIMIT);
 	const activity = rows.map((row) => toActivityAction(row.action, now));
 	const targets = await moduleTargets(env, viewer, viewer.timeZone || "UTC", activity);
 	return {
@@ -137,5 +162,11 @@ export async function listAgentActivity(
 			};
 		}),
 		skippedJobs: skippedJobs.map((job) => ({ ...job, createdAt: job.createdAt.toISOString() })),
+		lineJobs: lineJobs.map(({ reviewerUserId, ...job }) => ({
+			...job,
+			// Only the reviewer's own failed job can be retried (the retry route checks the same).
+			canRetry: job.status === "failed" && reviewerUserId === viewer.userId,
+			createdAt: job.createdAt.toISOString(),
+		})),
 	};
 }

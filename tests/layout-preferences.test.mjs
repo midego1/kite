@@ -114,6 +114,15 @@ test("a layout maps to the browser storage the views read", () => {
 		["kite-column-width:message-list-height:user-1", "300"],
 	]);
 	assert.deepEqual(layoutStorageEntries({}, "user-1"), []);
+	// Each choice stands alone, and turning one off or emptying it is a value too.
+	assert.deepEqual(layoutStorageEntries({ conversationView: true }, "user-1"), [["kite-conversation-view", "on"]]);
+	assert.deepEqual(layoutStorageEntries({ translateTo: "th" }, "user-1"), [["kite-translate-to", "th"]]);
+	assert.deepEqual(layoutStorageEntries({ translateNever: [] }, "user-1"), [["kite-translate-never", ""]]);
+	assert.deepEqual(layoutStorageEntries({ density: "default" }, "user-1"), [["kite-message-density", "default"]]);
+	assert.deepEqual(layoutStorageEntries({ listHeight: 300 }, "user-1"), [
+		["kite-column-width:message-list-height", "300"],
+		["kite-column-width:message-list-height:user-1", "300"],
+	]);
 });
 
 test("withoutKeys leaves out choices made here and not saved yet", () => {

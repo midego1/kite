@@ -75,6 +75,28 @@ const SHOTS: Shot[] = [
 		},
 	},
 	{
+		// Admin overview → Database with two updates waiting (the status is faked, no migration is pending in the demo).
+		name: "2026-11-06-update-database-light",
+		theme: "light",
+		viewport: { width: 1000, height: 900 },
+		open: async (page) => {
+			await page.route("**/api/admin/migrations", (route) =>
+				route.fulfill({
+					json: {
+						ready: false,
+						unknown: [],
+						pending: ["0091_add_mailbox_ai_disabled.sql", "0092_add_mailbox_ai_disabled_at.sql"],
+					},
+				}),
+			);
+			await page.goto("/admin");
+			const panel = page.getByRole("region", { name: "Pending database updates" });
+			await expect(panel).toBeVisible();
+			await panel.scrollIntoViewIfNeeded();
+			return panel;
+		},
+	},
+	{
 		// Settings → Connected accounts → Connect account: Mail goes to → New mailbox for this account.
 		name: "2026-11-05-new-mailbox-light",
 		theme: "light",

@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.11.06.0] - 2026-11-06
+
+### Changed
+
+- The pending database updates on the admin overview are now listed in words (for example "Add mailbox AI disabled at") next to the file name, above the Update database button.
+
+  ![The admin overview listing two waiting database updates in words, with the safety backup note and the Update database button](/changelog/2026-11-06-update-database-light.webp)
+
 ## [2026.11.05.3] - 2026-11-05
 
 ### Fixed

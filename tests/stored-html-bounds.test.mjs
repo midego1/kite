@@ -162,11 +162,14 @@ test("cut output stays balanced and inert", () => {
 	}
 });
 
-test("too many attributes on one tag keep the text before it", () => {
-	const names = Array.from({ length: MAX_TAG_ATTRIBUTES }, (_, index) => `a${index}=1`).join(" ");
-	assert.equal(sanitizeStoredEmailHtml(`<p>one</p><a ${names}>two</a>`), "<p>one</p><a>two</a>");
-	const stored = sanitizeStoredEmailHtml(`<p>one</p><a ${names} b=1>two</a>`);
-	assert.match(stored, /^<p>one<\/p><div style="white-space: pre-wrap">/);
+test("too many attributes on one tag leave out its attributes only", () => {
+	const names = Array.from({ length: MAX_TAG_ATTRIBUTES - 1 }, (_, index) => `data-a${index}="1"`).join(" ");
+	const atLimit = `<p>one</p><a ${names} title="x">two</a><a title="y">three</a>`;
+	assert.equal(sanitizeStoredEmailHtml(atLimit), atLimit);
+	assert.equal(
+		sanitizeStoredEmailHtml(`<p>one</p><a ${names} title="x" class="z">two</a><a title="y">three</a>`),
+		'<p>one</p><a>two</a><a title="y">three</a>',
+	);
 });
 
 test("output past its limit is cut and stays balanced", () => {
@@ -198,26 +201,41 @@ test("attributes share the output limit, and those that do not fit are left out"
 	assert.equal(sanitizeStoredEmailHtml(`<p title="${exact}x">x</p>`), "<p>x</p>");
 });
 
-test("entities in one tag are limited and the rest stays as text", () => {
+test("too many entities on one tag leave out its attributes only", () => {
 	const entities = "&lt;".repeat(MAX_TAG_ENTITIES);
+	const atLimit = `<p>one</p><a title="${entities}">two</a>`;
+	assert.equal(sanitizeStoredEmailHtml(atLimit), atLimit);
 	assert.equal(
-		sanitizeStoredEmailHtml(`<p>one</p><a title="${entities}">two</a>`),
-		`<p>one</p><a title="${"&lt;".repeat(MAX_TAG_ENTITIES)}">two</a>`,
+		sanitizeStoredEmailHtml(`<p>one</p><a title="${entities}&lt;" href="/x">two</a><a title="y">three</a>`),
+		'<p>one</p><a>two</a><a title="y">three</a>',
 	);
 	const half = "&lt;".repeat(MAX_TAG_ENTITIES / 2 + 1);
-	assert.match(
-		sanitizeStoredEmailHtml(`<p>one</p><a title="${half}" class="${half}">two</a><a>three</a>`),
-		/^<p>one<\/p><div style="white-space: pre-wrap">/,
+	assert.equal(sanitizeStoredEmailHtml(`<a title="${half}" class="${half}">two</a>`), "<a>two</a>");
+	assert.equal(sanitizeStoredEmailHtml(`<div><zz y="${entities}&lt;">two</zz></div>`), "<div>two</div>");
+	// A cut value never reaches the next tag, and an unsafe value is not kept in part.
+	assert.equal(
+		sanitizeStoredEmailHtml(`<a href="javascript:${entities}&lt;">one</a><a title="y">two</a>`),
+		'<a>one</a><a title="y">two</a>',
 	);
-	const cut = sanitizeStoredEmailHtml(`<div><zz y="${entities}&lt;">two</zz>`);
-	assert.match(cut, /^<div><\/div><div style="white-space: pre-wrap">/);
-	assert.equal(unbalanced(cut), "");
-	assert.deepEqual(findActiveContent(cut, parse), []);
 	// Each tag starts afresh, and text entities do not count.
 	const perTag = `<a title="${entities}">a</a>`.repeat(2);
 	assert.equal(sanitizeStoredEmailHtml(perTag), perTag);
 	const text = `<p>${entities}${entities}</p>`;
 	assert.equal(sanitizeStoredEmailHtml(text), text);
+});
+
+test("a dropped element at the nesting limit stays dropped", () => {
+	const open = "<div>".repeat(MAX_OPEN_ELEMENTS);
+	const close = "</div>".repeat(MAX_OPEN_ELEMENTS);
+	for (const tag of ["style", "title", "svg", "script"]) {
+		assert.equal(sanitizeStoredEmailHtml(`${open}<${tag}>gone</${tag}>`), `${open}${close}`, tag);
+	}
+});
+
+test("output that reaches its limit while the parser finishes is closed too", () => {
+	const stored = sanitizeStoredEmailHtml(`<div>${"x".repeat(MAX_SANITIZED_HTML_CHARS - 10)}&`);
+	assert.ok(stored.endsWith("&amp;</div>"));
+	assert.equal(unbalanced(stored), "");
 });
 
 test("long values are escaped and checked like short ones", () => {

@@ -4,9 +4,10 @@ import { importSchemas } from "./schemas";
 
 /**
  * One import run, kept just under the 15-minute wall-clock limit of a queue invocation: the platform ends it there
- * anyway, so an earlier timeout would only report an error while the run carried on. A run starts no new chunk after
- * its four-minute budget (`RUN_TIME_BUDGET_MS`), and one IMAP command may take up to ten minutes (`imapLimits`), which
- * together fit. The run's lease is renewed by its own heartbeat, so it does not bound this.
+ * anyway, so an earlier timeout would only report an error while the run carried on. A run starts no new chunk and no
+ * new command of a folder search after its four-minute budget (`RUN_TIME_BUDGET_MS`), and one IMAP command may take up
+ * to ten minutes (`imapLimits`), which together fit. The run's lease is renewed by its own heartbeat, so it does not
+ * bound this.
  */
 const IMPORT_RUN_TIMEOUT_MS = 14 * 60_000;
 

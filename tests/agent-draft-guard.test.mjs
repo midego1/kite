@@ -85,3 +85,13 @@ test("emphasis is stripped only at word boundaries, so file names, snake_case an
 	assert.equal(stripDraftMarkdown("A **bold** and __strong__ word."), "A bold and strong word.");
 	assert.equal(stripDraftMarkdown("Keep *these* and _those_.", { emphasis: false }), "Keep *these* and _those_.");
 });
+
+test("a long run of address characters is checked in linear time and a real address is still found", () => {
+	const started = Date.now();
+	for (const run of ["a".repeat(200_000), "a.".repeat(100_000), "a@".repeat(100_000), `${"a.".repeat(100_000)}@`]) {
+		assert.equal(collectThreadReferences([run]).addresses.size, 0);
+	}
+	const hidden = guardDraft(`${"x".repeat(5_000)} attacker@evil.test`, thread);
+	assert.equal(hidden.ok, false);
+	assert.ok(Date.now() - started < 3_000, `took ${Date.now() - started} ms`);
+});

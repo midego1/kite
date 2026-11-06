@@ -27,8 +27,9 @@ export type ImportJobRow = typeof importJobs.$inferSelect;
  */
 export const MESSAGES_PER_RUN = 200;
 /**
- * Time after which a run starts no new chunk. One IMAP command may then still take up to ten minutes (the longest
- * `imapLimits` allows), so the budget plus that command stays within the 14 minutes of `IMPORT_RUN_TIMEOUT_MS`.
+ * Time after which a run starts no new chunk and no new command of a folder search (`runDeadline`). One IMAP command
+ * may then still take up to ten minutes (the longest `imapLimits` allows), so the budget plus that command stays within
+ * the 14 minutes of `IMPORT_RUN_TIMEOUT_MS`.
  */
 const RUN_TIME_BUDGET_MS = 4 * 60_000;
 /**
@@ -107,7 +108,8 @@ export type ImportRun = {
 /** `done`: nothing left; `more`: enqueue the next invocation; `stopped`: cancelled, paused or out of the run. */
 export type ImportRunOutcome = "done" | "more" | "stopped";
 
-export const hasRunTime = (run: ImportRun) => Date.now() - run.startedAt < RUN_TIME_BUDGET_MS;
+export const runDeadline = (run: ImportRun) => run.startedAt + RUN_TIME_BUDGET_MS;
+export const hasRunTime = (run: ImportRun) => Date.now() < runDeadline(run);
 
 /**
  * Fetches `uids` in segments (`planSizedFetch`: at most 25 messages and 16 MB each, a bigger message alone), the next
@@ -340,7 +342,7 @@ export async function runFolderJob(run: ImportRun): Promise<ImportRunOutcome> {
 	const { job } = run;
 	parseImportDestination(job.destination);
 	await run.session.examine(job.folder);
-	const allUids = await run.session.searchUids();
+	const allUids = await run.session.searchUids({ deadline: runDeadline(run) });
 	run.total = job.maxMessages ? Math.min(job.maxMessages, allUids.length) : allUids.length;
 	let remaining = selectRemainingUids(allUids, job.cursorUid);
 	if (job.maxMessages) remaining = remaining.slice(0, Math.max(job.maxMessages - job.processed, 0));

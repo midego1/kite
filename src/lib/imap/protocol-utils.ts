@@ -8,7 +8,7 @@ const MB = 1024 * 1024;
 /**
  * The limits of one IMAP connection. A Worker isolate has 128 MB of memory, so on Workers a message may be at most
  * 36 MB (a message at Gmail's 25 MB attachment limit, base64-encoded) and a FETCH batch 48 MB; the Node server
- * allows 64 MB and 96 MB. A message above the limit fails its batch: the job retries and then fails with the reason.
+ * allows 64 MB and 96 MB. An import asks for sizes first and skips a message above the limit (the job names it); a message that still arrives above it fails its fetch with the reason.
  * Every command gets three minutes, extended by the bytes that keep arriving at 64 KB/s or more, up to ten minutes.
  */
 export function imapLimits(runtime: "node" | undefined): ImapLimits {

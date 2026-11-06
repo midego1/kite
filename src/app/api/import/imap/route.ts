@@ -9,6 +9,7 @@ import { readJsonBody } from "@/lib/http/request";
 import { getImportMessageUserId } from "@/lib/import/destination";
 import { fetchImapMessages, importServerProblem } from "@/lib/import/imap";
 import { importMessagesToMailbox } from "@/lib/import/service";
+import { importSignInGuard, SignInLimitError, signInLimitResponse } from "@/lib/import/sign-in-limit";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import type { ImapImportRequest } from "./types";
 import { parseImapImportRequest } from "./utils";
@@ -58,15 +59,28 @@ export const POST = withModule("import", async (request, { checkUser }) => {
 	}
 
 	try {
-		const { messages: rawMessages, total, nextOffset } = await fetchImapMessages(env, input);
+		const {
+			messages: rawMessages,
+			total,
+			nextOffset,
+			skipped,
+		} = await fetchImapMessages(env, input, importSignInGuard(env, user.id));
 		const result = await importMessagesToMailbox(env, {
 			userId: getImportMessageUserId(input.destination, user.id, access.mailbox.userId),
 			mailboxId: access.mailbox.id,
 			destination: input.destination,
 			messages: rawMessages,
 		});
-		return NextResponse.json({ ...result, total, nextOffset });
+		// A message left out for its size is skipped like one that failed to import, and named.
+		return NextResponse.json({
+			...result,
+			skipped: result.skipped + skipped.length,
+			errors: [...skipped, ...result.errors],
+			total,
+			nextOffset,
+		});
 	} catch (error) {
+		if (error instanceof SignInLimitError) return signInLimitResponse(error);
 		return NextResponse.json({ error: error instanceof Error ? error.message : "IMAP import failed" }, { status: 502 });
 	}
 });

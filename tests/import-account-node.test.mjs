@@ -752,10 +752,11 @@ test(
 		const second = gate();
 		t.after(() => second.open());
 		const inbox = Array.from({ length: 60 }, (_, index) => sampleMessage(index + 1, { subject: `Full ${index + 1}` }));
-		// The first FETCH answers at once; the prefetch of the second chunk stays open until the test lets it go.
+		// The first chunk (its sizes, then its messages) answers at once; the prefetch of the second chunk stays open
+		// until the test lets it go.
 		const server = await fake(t, {
 			folders: { INBOX: inbox },
-			fetchGate: (n) => (n === 0 ? Promise.resolve() : second.promise),
+			fetchGate: (n) => (n <= 1 ? Promise.resolve() : second.promise),
 		});
 		const { db, env, limits } = await setup(t, server);
 		const job = await startAccountJob(env, await planAccountImport(env, account));
@@ -770,7 +771,7 @@ test(
 		await until(() => state().status === "paused", "the database-full pause");
 		assert.equal(state().pause_reason, "database");
 		await sleep(300);
-		assert.equal(fetches(server), 2, "the prefetch is still open");
+		assert.equal(fetches(server), 3, "the prefetch is still open");
 		assert.notEqual(state().lease_until, null, "the open FETCH still holds the job");
 		second.open();
 		await run;

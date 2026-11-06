@@ -8,10 +8,11 @@ type BodyRenderer = { textMap: Map<unknown, TextEntry>; textTypes: Set<TextType>
 /**
  * What `limitBodyConversion` allows: `conversionCost` of every text part that is rendered in the other format too,
  * together. A text part beside an HTML part outside `multipart/alternative` is converted to HTML and the HTML to text,
- * and both end up in memory beside the sanitizer's input and output. 16 million leaves room in a 128 MB heap for the
- * raw message: about 12 MB of plain text, or 6 MB of HTML with spaces between its words and few entities.
+ * and both end up in memory beside the sanitizer's input and output. 12 million leaves room in a 128 MB heap for the
+ * raw message, with margin for what the costs below only approximate: about 11 MB of plain text, or 5 MB of HTML with
+ * spaces between its words and few entities.
  */
-const MAX_BODY_CONVERSION_COST = 16_000_000;
+const MAX_BODY_CONVERSION_COST = 12_000_000;
 /** What a conversion replaces costs a heap node or two each until the result is flattened. */
 const REPLACEMENT_COST = 8;
 const costs = (characters: string, cost: number) =>

@@ -35,7 +35,7 @@ await build({
 	logLevel: "silent",
 });
 const { parseRawMime } = await import(pathToFileURL(bundle).href);
-const MAX_BODY_CONVERSION_COST = 16_000_000;
+const MAX_BODY_CONVERSION_COST = 12_000_000;
 
 const messageHelpers = `
 const header = "From: a@example.com\\r\\nTo: b@example.com\\r\\nSubject: x\\r\\nMIME-Version: 1.0\\r\\n";
@@ -65,29 +65,34 @@ const shapes = {
 	longLinks: () => mixed(hello, text(lines("http://a.b/ ".repeat(50), 39_000))),
 	htmlBrackets: () => mixed(text("hi"), html(lines("<".repeat(158), 149_000))),
 	longHtmlBrackets: () => mixed(text("hi"), html(lines("<".repeat(600), 39_000))),
-	plainBesideHtml: () => mixed(html(lines("a".repeat(160), 37_000)), text(lines("b".repeat(160), 37_000))),
+	plainBesideHtml: () => mixed(html(lines("a".repeat(160), 33_000)), text(lines("b".repeat(160), 33_000))),
+	largerPlainBesideHtml: () => mixed(html(lines("a".repeat(160), 37_000)), text(lines("b".repeat(160), 37_000))),
 	alternativeBrackets: () => alternative(text(lines("<".repeat(52), 149_000)), hello),
-	underLimit: () => mixed(hello, text("x".repeat(15_900_000))),
+	underLimit: () => mixed(hello, text("x".repeat(11_900_000))),
 	spacedHtml: () => mixed(text("hi"), html("a ".repeat(2_000_000))),
 	returnsHtml: () => mixed(text("hi"), html("a\\r".repeat(3_000_000))),
 	wordsHtml: () => mixed(text("hi"), html("word12 ".repeat(1_500_000))),
 	separatorsHtml: () => mixed(text("hi"), html("\\u2028".repeat(5_000_000))),
 	tabsHtml: () => mixed(text("hi"), html("a\\t".repeat(7_900_000))),
-	spacedHtmlAtLimit: () => mixed(text("hi"), html("a ".repeat(1_599_000))),
-	returnsHtmlAtLimit: () => mixed(text("hi"), html("a\\r".repeat(1_599_000))),
-	wordsHtmlAtLimit: () => mixed(text("hi"), html("word12 ".repeat(1_065_000))),
-	separatorsHtmlAtLimit: () => mixed(text("hi"), html("\\u2028".repeat(1_599_000))),
+	spacedHtmlAtLimit: () => mixed(text("hi"), html("a ".repeat(1_199_000))),
+	returnsHtmlAtLimit: () => mixed(text("hi"), html("a\\r".repeat(1_199_000))),
+	wordsHtmlAtLimit: () => mixed(text("hi"), html("word12 ".repeat(799_000))),
+	separatorsHtmlAtLimit: () => mixed(text("hi"), html("\\u2028".repeat(1_199_000))),
 	placeholdersHtml: () => mixed(text("hi"), html("a\\u0001".repeat(2_000_000))),
 	onlyPlaceholdersHtml: () => mixed(text("hi"), html("\\u0001".repeat(4_000_000))),
 	referencesHtml: () => mixed(text("hi"), html("&amp;lt".repeat(1_200_000))),
 	unknownReferencesHtml: () => mixed(text("hi"), html("&amp;a;".repeat(1_300_000))),
 	numericReferencesHtml: () => mixed(text("hi"), html("&amp;#60;".repeat(1_000_000))),
 	shortReferencesHtml: () => mixed(text("hi"), html("&a;".repeat(2_000_000))),
-	placeholdersHtmlAtLimit: () => mixed(text("hi"), html("a\\u0001".repeat(1_599_000))),
-	referencesHtmlAtLimit: () => mixed(text("hi"), html("&amp;lt".repeat(516_000))),
-	unknownReferencesHtmlAtLimit: () => mixed(text("hi"), html("&amp;a;".repeat(516_000))),
-	numericReferencesHtmlAtLimit: () => mixed(text("hi"), html("&amp;#60;".repeat(484_000))),
-	spacedText: () => mixed(hello, text("word12 ".repeat(1_900_000))),
+	placeholdersHtmlAtLimit: () => mixed(text("hi"), html("a\\u0001".repeat(1_199_000))),
+	referencesHtmlAtLimit: () => mixed(text("hi"), html("&amp;lt".repeat(387_000))),
+	unknownReferencesHtmlAtLimit: () => mixed(text("hi"), html("&amp;a;".repeat(387_000))),
+	numericReferencesHtmlAtLimit: () => mixed(text("hi"), html("&amp;#60;".repeat(363_000))),
+	placeholderDigitsHtml: () => mixed(text("hi"), html("\\u00011a".repeat(1_410_000))),
+	closingReturnsHtml: () => mixed(text("hi"), html("/p\\r".repeat(1_410_000))),
+	doubledPlaceholdersHtml: () => mixed(text("hi"), html("xx\\u0001".repeat(1_450_000))),
+	placeholderPunctuationHtml: () => mixed(text("hi"), html("a\\u0001/-a".repeat(1_190_000))),
+	spacedText: () => mixed(hello, text("word12 ".repeat(1_600_000))),
 };
 
 const out = {};
@@ -118,7 +123,7 @@ test("large text and HTML parts are rendered within a 128 MB heap", () => {
 		timeout: 300_000,
 	});
 	const results = JSON.parse(output);
-	assert.equal(Object.keys(results).length, 30);
+	assert.equal(Object.keys(results).length, 35);
 	for (const [name, result] of Object.entries(results)) assert.ok(result.ms < 60_000, `${name}: ${result.ms} ms`);
 	// Over the limit: the parts keep to their own format.
 	assert.equal(results.brackets.html, "<p>hi</p>".length);
@@ -136,6 +141,10 @@ test("large text and HTML parts are rendered within a 128 MB heap", () => {
 		"unknownReferencesHtml",
 		"numericReferencesHtml",
 		"shortReferencesHtml",
+		"placeholderDigitsHtml",
+		"closingReturnsHtml",
+		"doubledPlaceholdersHtml",
+		"placeholderPunctuationHtml",
 	]) {
 		assert.equal(results[name].text, 2, name);
 	}
@@ -152,10 +161,12 @@ test("large text and HTML parts are rendered within a 128 MB heap", () => {
 	]) {
 		assert.ok(results[name].text > 2, name);
 	}
-	assert.ok(results.spacedText.html > 13_000_000);
-	assert.ok(results.plainBesideHtml.text > 11_800_000);
-	assert.ok(results.plainBesideHtml.html > 11_800_000);
-	assert.ok(results.underLimit.html > 15_900_000);
+	assert.ok(results.spacedText.html > 11_000_000);
+	assert.ok(results.plainBesideHtml.text > 10_500_000);
+	assert.ok(results.plainBesideHtml.html > 10_500_000);
+	assert.ok(results.underLimit.html > 11_900_000);
+	assert.ok(results.largerPlainBesideHtml.text < 6_100_000);
+	assert.ok(results.largerPlainBesideHtml.html < 6_100_000);
 	// multipart/alternative renders one representation of each format, as before.
 	assert.equal(results.alternativeBrackets.html, "<p>hi</p>".length);
 	assert.equal(results.alternativeBrackets.text, 149_000 * 53);

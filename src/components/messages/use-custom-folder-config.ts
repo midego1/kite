@@ -25,6 +25,6 @@ export function useCustomFolderConfig(folderId: string): MessageFolderConfig {
 			icon: Folder,
 			showRowBadge: false,
 		}),
-		[folderId, folderName],
+		[folderId, folderName, t],
 	);
 }

@@ -5,6 +5,7 @@ import {
 	loadShowFullRecipientAddresses,
 	updateShowFullRecipientAddresses,
 } from "./use-show-full-recipient-addresses-utils";
+import { t as translate } from "@/lib/i18n/translator";
 import { useT } from "@/lib/i18n/use-t";
 
 /** The signed-in user's choice for To, Cc, and Bcc. Default is the mailbox only. */
@@ -22,7 +23,7 @@ export function useShowFullRecipientAddresses() {
 			})
 			.catch((loadError) => {
 				if (cancelled) return;
-				setError(loadError instanceof Error ? loadError.message : t("Failed to load recipient address settings"));
+				setError(loadError instanceof Error ? loadError.message : translate("Failed to load recipient address settings"));
 			})
 			.finally(() => {
 				if (!cancelled) setIsLoading(false);
@@ -47,7 +48,7 @@ export function useShowFullRecipientAddresses() {
 				throw new Error(message);
 			}
 		},
-		[enabled],
+		[enabled, t],
 	);
 
 	return { enabled, error, isLoading, setEnabled };

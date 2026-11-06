@@ -88,7 +88,7 @@ export function useMessageReply({
 						description: t("The message you are writing is saved in Drafts."),
 						confirmLabel: t("Close and reply"),
 					}),
-		[inlineFor, open, placement],
+		[inlineFor, open, placement, t],
 	);
 
 	const reply = useCallback(
@@ -121,6 +121,7 @@ export function useMessageReply({
 			}
 		},
 		[
+			t,
 			mailboxId,
 			senderAddress,
 			ownAddress,
@@ -164,6 +165,7 @@ export function useMessageReply({
 			setPending(null);
 		}
 	}, [
+		t,
 		message,
 		messageMeta,
 		mailboxId,

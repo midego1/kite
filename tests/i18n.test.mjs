@@ -42,7 +42,7 @@ const sourceFiles = (dir) =>
 		.filter((entry) => entry.isFile() && /\.tsx?$/.test(entry.name) && !entry.name.endsWith(".d.ts"))
 		.map((entry) => join(entry.parentPath, entry.name));
 
-/** Every literal key passed to `t()` or `msg()`, and calls the catalog check could not read. */
+/** Every literal key passed to `t()`, `translate()` (an effect's `t`) or `msg()`, and calls the check could not read. */
 function scanSource() {
 	const keys = new Map();
 	const unreadable = [];
@@ -54,7 +54,7 @@ function scanSource() {
 			if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)) {
 				const name = node.expression.text;
 				const [key] = node.arguments;
-				if ((name === "t" || name === "msg") && key) {
+				if ((name === "t" || name === "translate" || name === "msg") && key) {
 					if (ts.isStringLiteralLike(key)) keys.set(key.text, relative(root, file));
 					else if (name === "msg" || ts.isTemplateExpression(key))
 						unreadable.push(`${relative(root, file)}: ${key.getText()}`);

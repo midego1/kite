@@ -59,7 +59,7 @@ export function UndoSendBar({ pending, onUndo, onExpire }: UndoSendBarProps) {
 		}
 		const timer = setTimeout(() => setNow(Date.now()), Math.min(250, remainingMs));
 		return () => clearTimeout(timer);
-	}, [failed, remainingMs, settle]);
+	}, [failed, remainingMs, settle, t]);
 
 	async function sendNow() {
 		setSendingNow(true);

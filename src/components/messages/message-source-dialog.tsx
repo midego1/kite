@@ -12,6 +12,7 @@ import {
 	fetchMessageSource,
 	summarizeMessageSource,
 } from "./message-source-utils";
+import { t as translate } from "@/lib/i18n/translator";
 import { useT } from "@/lib/i18n/use-t";
 
 export function MessageSourceDialog({ messageId, open, onOpenChange }: MessageSourceDialogProps) {
@@ -40,7 +41,7 @@ export function MessageSourceDialog({ messageId, open, onOpenChange }: MessageSo
 			})
 			.catch((reason) => {
 				if (!controller.signal.aborted)
-					setError(reason instanceof Error ? reason.message : t("Unable to load original message"));
+					setError(reason instanceof Error ? reason.message : translate("Unable to load original message"));
 			})
 			.finally(() => {
 				if (!controller.signal.aborted) setLoading(false);

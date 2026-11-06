@@ -35,7 +35,7 @@ export function InterfaceDirectionProvider({ children }: { children: React.React
 	const direction = useSyncExternalStore(subscribeToDocumentDirection, documentDirection, () => "ltr" as const);
 	const pathname = usePathname();
 
-	// eslint-disable-next-line react-hooks/exhaustive-deps -- a navigation is the moment to catch up, whatever it changed.
+	// A navigation is the moment to catch up, whatever it changed.
 	useLayoutEffect(applyStoredDirection, [pathname]);
 
 	useEffect(() => {

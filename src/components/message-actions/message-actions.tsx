@@ -137,7 +137,7 @@ export function MessageActions({
 			setError(deleteError instanceof PartialDeleteError ? deleteError.message : t("Could not delete message"));
 			setPendingAction(null);
 		}
-	}, [messageId, leaveReader]);
+	}, [messageId, leaveReader, t]);
 	const onTrashClick = () => (canDeleteForever ? void deleteForever() : void runAction("trash"));
 	const trashLabel = canDeleteForever ? t("Delete forever") : t("Move to trash");
 

@@ -65,6 +65,7 @@ import type { ComposeAttachmentPolicy } from "./attachment-policy-types";
 import type { InlineComposerActions } from "./inline-composer-types";
 import { responseError } from "./response-error-utils";
 import { useInlineSendLifecycle } from "./use-inline-send-lifecycle";
+import { t as translate } from "@/lib/i18n/translator";
 import { useT } from "@/lib/i18n/use-t";
 
 export function ComposeForm({
@@ -276,7 +277,7 @@ export function ComposeForm({
 			})
 			.catch((err) => {
 				if (cancelled) return;
-				const message = err instanceof Error ? err.message : t("Failed to load draft");
+				const message = err instanceof Error ? err.message : translate("Failed to load draft");
 				setToast({ type: "error", message });
 			})
 			.finally(() => {

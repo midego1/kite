@@ -24,7 +24,7 @@ export function setTranslator(next: Translator): void {
 
 /**
  * Translates outside a component, for helpers called while rendering. A component calls `useT()` instead, so a language
- * change draws it again.
+ * change draws it again; an effect that must not run again with a new language imports this one as `translate`.
  */
 export function t(key: string, values?: MessageValues): string {
 	return current.t(key, values);

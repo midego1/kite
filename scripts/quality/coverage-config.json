@@ -11,6 +11,8 @@
 		"src/lib/import/size-guard-utils.ts",
 		"src/lib/import/folder-size-utils.ts",
 		"src/lib/import/message-hints-utils.ts",
+		"src/lib/import/sign-in-limit-utils.ts",
+		"src/lib/import/capped-fetch-utils.ts",
 		"src/lib/alerts/webhook-utils.ts",
 		"src/lib/email/bodies-utils.ts",
 		"src/lib/email/flowed-text-utils.ts",

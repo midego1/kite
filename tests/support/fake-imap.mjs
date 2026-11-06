@@ -18,7 +18,7 @@ import { createServer as createTlsServer, TLSSocket } from "node:tls";
  * - `greetingCapabilities`: put `[CAPABILITY …]` in the greeting (default true).
  * - `specialUse`: advertise SPECIAL-USE and report `folderAttributes` (`{ [name]: ["\\Sent"] }`) in LIST.
  * - `statusSize`: advertise STATUS=SIZE. `delimiter`: the hierarchy delimiter (default `/`).
- * - `fetchDelayMs`: answer every UID FETCH that much later (a slow server, so a test can pause mid-run).
+ * - `fetchDelayMs`: answer every UID FETCH of message bodies that much later (a slow server, so a test can pause mid-run); attribute-only fetches (sizes) are answered at once.
  * - `fetchGate`: a promise, or a function from the FETCH's number (0, 1, …) to one; each UID FETCH is answered only once
  *   its promise resolves (a FETCH that outlasts a lease).
  * - `examineRefusals`: `{ [folder]: "NO [THROTTLED] …" }`, the tagged answer to SELECT or EXAMINE of that folder.
@@ -311,7 +311,7 @@ export async function startFakeImap(options = {}) {
 				gate.then(() => !state.socket.destroyed && respondFetch(tag, args, entry, wanted));
 				return;
 			}
-			if (options.fetchDelayMs) {
+			if (options.fetchDelayMs && /BODY/i.test(args)) {
 				const later = () => respondFetch(tag, args, entry, wanted);
 				setTimeout(() => !state.socket.destroyed && later(), options.fetchDelayMs);
 				return;

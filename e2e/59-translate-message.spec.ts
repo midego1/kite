@@ -4,7 +4,11 @@ import { useFakeProvider } from "./support/agent";
 import { createSharedMailbox, createSignedInAccount, okJson, selectMailbox, shareMailbox } from "./support/auto-read";
 import { readUsageRows } from "./support/ai-usage";
 import { startFakeModel } from "./support/fake-model";
-import { FAKE_TRANSLATED_SUBJECT, FAKE_TRANSLATION_PREFIX } from "./support/fake-model-scenarios";
+import {
+	FAKE_TRANSLATED_SUBJECT,
+	FAKE_TRANSLATION_PREFIX,
+	TRANSLATION_CUT_OFF_MARKER,
+} from "./support/fake-model-scenarios";
 import type { FakeModel, FakeRecordedRequest } from "./support/fake-model-types";
 import { apiContext, postInbound, uniqueToken, waitForMessage } from "./support/helpers";
 
@@ -199,6 +203,17 @@ test.describe("Translating a message", () => {
 			await expect(page.getByRole("heading", { name: english.subject })).toBeVisible();
 			await expect(more(page)).toBeVisible();
 			await expect(bar(page)).toHaveCount(0);
+			// Plainly in the language already: no request is spent on it.
+			await more(page).click();
+			await page.getByRole("button", { name: "Translate", exact: true }).click();
+			await expect(bar(page)).toContainText("This message is already in English.");
+			await expect(bar(page).getByRole("button", { name: "Try again" })).toHaveCount(0);
+			expect(translations()).toHaveLength(0);
+
+			// Too short to tell, so the menu asks the model.
+			const short = await deliver(account, { subject: "Hola", text: "Hola Sam, gracias." });
+			await page.goto(`/inbox/${short.id}`);
+			await expect(page.getByRole("heading", { name: short.subject })).toBeVisible();
 			await more(page).click();
 			await page.getByRole("button", { name: "Translate", exact: true }).click();
 			await expect(bar(page)).toContainText("Translated");
@@ -322,7 +337,7 @@ test.describe("Translating a message", () => {
 		try {
 			await page.goto(`/inbox/${message.id}`);
 			await bar(page).getByRole("button", { name: "Translate to English" }).click();
-			await expect(bar(page).locator("[data-translation-cut]")).toContainText("only the first part was translated");
+			await expect(bar(page).locator("[data-translation-cut]")).toContainText("not all of it was translated");
 			expect(translations()).toHaveLength(5);
 			await expect(frame(page).locator("p").first()).toContainText(FAKE_TRANSLATION_PREFIX);
 			await expect(frame(page).locator("p").last()).not.toContainText(FAKE_TRANSLATION_PREFIX);
@@ -349,6 +364,65 @@ test.describe("Translating a message", () => {
 			await bar(page).getByRole("button", { name: "Translate to English" }).click();
 			await expect(earlier).toContainText(`${FAKE_TRANSLATION_PREFIX} ${THAI}`);
 			await expect(page.getByRole("heading", { name: second.subject })).toBeVisible();
+		} finally {
+			await context.close();
+			await account.api.dispose();
+		}
+	});
+
+	test("a part whose answer does not fit stays in the original", async ({ browser }) => {
+		const account = await newAccount("translatecut");
+		const paragraphs = Array.from(
+			{ length: 400 },
+			(_, index) =>
+				`<p>${index > 200 ? TRANSLATION_CUT_OFF_MARKER : "ย่อหน้าปกติ"} ${index} ${"ข้อความยาวมาก ".repeat(4)}</p>`,
+		);
+		const message = await deliver(account, { text: THAI, html: paragraphs.join("") });
+		fake.setDefaultScenario("translation-cut-off");
+		const { context, page } = await signedInPage(browser, account);
+		try {
+			await page.goto(`/inbox/${message.id}`);
+			await bar(page).getByRole("button", { name: "Translate to English" }).click();
+			await expect(bar(page).locator("[data-translation-cut]")).toBeVisible();
+			await expect(frame(page).locator("p").first()).toContainText(FAKE_TRANSLATION_PREFIX);
+			await expect(frame(page).locator("p").last()).toContainText(TRANSLATION_CUT_OFF_MARKER);
+			await expect(frame(page).locator("p").last()).not.toContainText(FAKE_TRANSLATION_PREFIX);
+		} finally {
+			await context.close();
+			await account.api.dispose();
+		}
+	});
+
+	test("a language can be taken off the offer, and put back", async ({ browser }) => {
+		const account = await newAccount("translatenever");
+		const dutch =
+			"Hallo Sam, bedankt voor je bericht over het project. Wij hebben het rapport aan het einde van deze week klaar en ik kan het dan naar je sturen als je dat wel wilt.";
+		const first = await deliver(account, { subject: "Rapport", text: dutch });
+		const second = await deliver(account, { subject: "Rapport twee", text: dutch });
+		const { context, page } = await signedInPage(browser, account);
+		try {
+			await page.goto(`/inbox/${first.id}`);
+			await bar(page).getByRole("button", { name: "Don't offer for Dutch" }).click();
+			await expect(bar(page)).toHaveCount(0);
+			await expect
+				.poll(
+					async () =>
+						(await okJson<{ layout: { translateNever?: string[] } }>(await account.api.get("/api/settings/layout")))
+							.layout?.translateNever,
+				)
+				.toEqual(["nl"]);
+
+			await page.goto(`/inbox/${second.id}`);
+			await expect(page.getByRole("heading", { name: second.subject })).toBeVisible();
+			await expect(more(page)).toBeVisible();
+			await expect(bar(page)).toHaveCount(0);
+
+			// The menu still translates, and that is where the offer comes back.
+			await more(page).click();
+			await page.getByRole("button", { name: "Translate", exact: true }).click();
+			await bar(page).getByRole("button", { name: "Offer for Dutch again" }).click();
+			await page.reload();
+			await expect(bar(page)).toContainText("This message is in Dutch.");
 		} finally {
 			await context.close();
 			await account.api.dispose();

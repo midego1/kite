@@ -9,13 +9,14 @@ import type { MessageTranslationController, MessageTranslationInput } from "./me
 import {
 	offersTranslation,
 	readingLanguages,
+	toggledLanguage,
 	translationDisabledReason,
 	translationSample,
 	translationTarget,
 	translationUrl,
 } from "./message-translation-utils";
 import { summaryError } from "./thread-summary-utils";
-import { useTranslateTarget } from "./use-translate-target";
+import { useTranslateNever, useTranslateTarget } from "./use-translate-target";
 
 const FAILED = "Kite could not translate this. Try again.";
 
@@ -46,7 +47,9 @@ export function useMessageTranslation(input: MessageTranslationInput): MessageTr
 	const [failure, setFailure] = useState<AiErrorBody | null>(null);
 	const [blocked, setBlocked] = useState(false);
 	const [dismissed, setDismissed] = useState(false);
+	const [retryable, setRetryable] = useState(true);
 	const [chosen, setChosen] = useTranslateTarget();
+	const [never, setNever] = useTranslateNever();
 	const [reading] = useState(browserLanguages);
 	const shownKey = useRef(messageId);
 	const lastRequest = useRef<Requested | null>(null);
@@ -58,6 +61,7 @@ export function useMessageTranslation(input: MessageTranslationInput): MessageTr
 		setFailure(null);
 		setBlocked(false);
 		setDismissed(false);
+		setRetryable(true);
 	}
 	useEffect(() => {
 		shownKey.current = messageId;
@@ -79,6 +83,7 @@ export function useMessageTranslation(input: MessageTranslationInput): MessageTr
 			setBusy(requested.quoted ? "quoted" : "translate");
 			setError(null);
 			setFailure(null);
+			setRetryable(true);
 			lastRequest.current = requested;
 			try {
 				const kept = requested.quoted ? null : await keptTranslation(messageId, requested.target).catch(() => null);
@@ -98,6 +103,8 @@ export function useMessageTranslation(input: MessageTranslationInput): MessageTr
 					if (!current()) return;
 					setFailure(details);
 					setError(message);
+					// Already in that language, or moved away: asking again says the same.
+					setRetryable(response.status !== 409);
 					// A cap holds until tomorrow; the rate limit is over in a moment, and Try again stays.
 					if (response.status === 429 && details?.code !== "rate_limited") setBlocked(true);
 					return;
@@ -132,8 +139,12 @@ export function useMessageTranslation(input: MessageTranslationInput): MessageTr
 		// Another card may have changed the choice; this one still says what it shows.
 		pickerTarget: shown?.target ?? target,
 		chooseTarget,
-		offered: availability === "ready" && !dismissed && offersTranslation(detected, reading, target),
+		offered: availability === "ready" && !dismissed && offersTranslation(detected, [...reading, ...never], target),
 		dismiss: () => setDismissed(true),
+		neverOffered: !!detected && never.includes(detected),
+		toggleNeverOffered: () => {
+			if (detected) setNever(toggledLanguage(never, detected));
+		},
 		translation: off ? null : translation,
 		shown,
 		busy,
@@ -144,7 +155,7 @@ export function useMessageTranslation(input: MessageTranslationInput): MessageTr
 		translateQuoted: () => void request({ target: shown?.target ?? target, quoted: true }),
 		showOriginal: () => setShowing(false),
 		retry:
-			busy === null && !blocked
+			busy === null && !blocked && retryable
 				? () => {
 						if (lastRequest.current) void request(lastRequest.current);
 					}

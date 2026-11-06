@@ -73,6 +73,11 @@ export function translationDisabledReason(availability: TranslationAvailability)
 	return availability === "ai_off" ? MAILBOX_AI_OFF_TEXT : undefined;
 }
 
+/** The list with `language` in it or, when it was there, without it. */
+export function toggledLanguage(languages: readonly string[], language: string): string[] {
+	return languages.includes(language) ? languages.filter((code) => code !== language) : [...languages, language];
+}
+
 export function translationUrl(messageId: string, target?: string): string {
 	const url = `/api/messages/${encodeURIComponent(messageId)}/translation`;
 	return target ? `${url}?target=${encodeURIComponent(target)}` : url;

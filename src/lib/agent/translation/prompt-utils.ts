@@ -1,5 +1,6 @@
 import { MESSAGE_TRANSLATION_MARKER } from "../auto-read/request-markers";
-import { collectThreadReferences, type ThreadReferences } from "../auto-read/draft-guard-utils";
+import { findLinks, type LinkMatch } from "@/lib/email/linkify-utils";
+import { collectThreadReferences, normalizeUrl, type ThreadReferences } from "../auto-read/draft-guard-utils";
 import type { CheckedAnswer } from "../summaries/model-answer";
 import type { SummaryPrompt } from "../summaries/summary-types";
 import { extractJson, languageCode, languageName, unknownReferences } from "../summaries/summary-utils";
@@ -63,11 +64,38 @@ export function translationProblemText(error: string): string {
 	return PROBLEM_TEXT[error] ?? "it did not pass Kite's checks";
 }
 
-/** `text` without the links and addresses the message does not contain; line breaks and indentation stay. */
-function withoutInvented(text: string, references: ThreadReferences): string {
+/** Everything a translation may repeat: what the guards find, and what the reader itself would link. */
+export type LinkReferences = ThreadReferences & { links: Set<string> };
+
+const linkKey = (link: LinkMatch) => link.text.toLowerCase();
+
+export function linkReferences(texts: readonly (string | null | undefined)[]): LinkReferences {
+	const found = texts.flatMap((text) => (text ? findLinks(text) : []));
+	return { ...collectThreadReferences([...texts]), links: new Set(found.map(linkKey)) };
+}
+
+/** Whether the reader would link something the message does not contain. */
+export function isInventedLink(link: LinkMatch, references: LinkReferences): boolean {
+	if (references.links.has(linkKey(link))) return false;
+	return link.kind === "email"
+		? !references.addresses.has(linkKey(link))
+		: !references.urls.has(normalizeUrl(link.text));
+}
+
+function inventedIn(text: string, references: LinkReferences): string[] {
+	const links = findLinks(text).filter((link) => isInventedLink(link, references));
+	return [...unknownReferences(text, references), ...links.map((link) => link.text)];
+}
+
+/**
+ * `text` without the links and addresses the message does not contain, by the guards' patterns and by the reader's
+ * own (`findLinks`, which also links `pay@exämple.test`). Line breaks and indentation stay. It runs until nothing is
+ * left to remove, because taking one out can join what was around it.
+ */
+function withoutInvented(text: string, references: LinkReferences): string {
 	let result = text;
-	for (const value of unknownReferences(text, references))
-		result = result.split(` ${value}`).join("").split(value).join("");
+	for (let invented = inventedIn(result, references); invented.length; invented = inventedIn(result, references))
+		for (const value of invented) result = result.split(` ${value}`).join("").split(value).join("");
 	return result;
 }
 
@@ -84,8 +112,8 @@ function longestAllowed(source: string): number {
 type TranslationCheckContext = {
 	/** The pieces of this request, which the answer has to match one for one. */
 	sources: readonly string[];
-	/** All the text of the message, the only place a link or address may come from. */
-	references: readonly (string | null | undefined)[];
+	/** What the message contains, the only place a link or address may come from. */
+	references: LinkReferences;
 	/** Whether this request asked for the subject. */
 	subject: boolean;
 };
@@ -108,8 +136,7 @@ export function checkTranslationAnswer(
 	const pieces = value.segments;
 	if (!Array.isArray(pieces) || pieces.length !== context.sources.length)
 		return { ok: false, error: "the reply is not the same number of pieces" };
-	const references = collectThreadReferences([...context.references]);
-	const clean = (text: string) => withoutInvented(text.replace(UNSAFE_CHARACTERS, ""), references);
+	const clean = (text: string) => withoutInvented(text.replace(UNSAFE_CHARACTERS, ""), context.references);
 	const segments: string[] = [];
 	for (const [index, piece] of pieces.entries()) {
 		if (typeof piece !== "string") return { ok: false, error: "a piece is not text" };

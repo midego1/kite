@@ -1,5 +1,6 @@
 import { Parser } from "htmlparser2";
 import { EMAIL_PATTERN, URL_PATTERN } from "../auto-read/draft-guard-utils";
+import { findLinks, type LinkMatch } from "@/lib/email/linkify-utils";
 import { splitRepliedEmailContent } from "@/lib/email/reply-content-utils";
 import { sha256Prefix } from "../summaries/summary-utils";
 import type { TranslationPlan, TranslationSlot, TranslationSource } from "./translation-types";
@@ -28,7 +29,9 @@ const SKIPPED_TAGS = new Set([
 	"svg",
 	"math",
 ]);
-const HIDDEN_STYLE = /(?:^|;)\s*display\s*:\s*none/i;
+/** Text nobody sees: not worth paying for, and the usual place for instructions meant for a model. */
+const HIDDEN_STYLE =
+	/(?:^|;)\s*(?:display\s*:\s*none|visibility\s*:\s*hidden|font-size\s*:\s*0(?:[a-z%]+)?\s*(?:;|!|$))/i;
 const QUOTE_CLASSES = ["gmail_quote", "gmail_attr", "yahoo_quoted", "moz-cite-prefix"];
 const QUOTE_IDS = ["divRplyFwdMsg"];
 const WHOLE_LINE_LIST_ITEM = /^(\s*(?:[-•*]|\d{1,3}[.)])\s+)(.*)$/;
@@ -57,10 +60,14 @@ function isQuote(name: string, attributes: Record<string, string>): boolean {
 	);
 }
 
+function isHidden(attributes: Record<string, string>): boolean {
+	return "hidden" in attributes || HIDDEN_STYLE.test(attributes.style ?? "");
+}
+
 function frameOf(name: string, attributes: Record<string, string>, parent: Frame): Frame {
 	const notTranslated = attributes.translate === "no" || classesOf(attributes).includes("notranslate");
 	return {
-		skip: parent.skip || SKIPPED_TAGS.has(name) || notTranslated || HIDDEN_STYLE.test(attributes.style ?? ""),
+		skip: parent.skip || SKIPPED_TAGS.has(name) || notTranslated || isHidden(attributes),
 		quoted: parent.quoted || isQuote(name, attributes),
 		preformatted: parent.preformatted || name === "pre",
 	};
@@ -281,10 +288,82 @@ function replaceSlots(
 	return result + parsed.source.slice(cursor);
 }
 
+/** Whether two slots end up as one run of text with nothing between them: one was cut from the other. */
+function touches(first: TranslationSlot, second: TranslationSlot): boolean {
+	return first.end === second.start && !first.post && !second.pre;
+}
+
+/** The message's text with the pieces of one run put together again, the way the reader sees it. */
+export function sourceTexts(parsed: TranslationSource): string[] {
+	const texts: string[] = [];
+	parsed.slots.forEach((slot, index) => {
+		if (index && touches(parsed.slots[index - 1], slot)) texts[texts.length - 1] += slot.text;
+		else texts.push(slot.text);
+	});
+	return texts;
+}
+
+/** Takes the matched ranges out of the pieces of one joined run. */
+function withoutLinks(pieces: readonly string[], links: readonly LinkMatch[]): string[] {
+	let offset = 0;
+	return pieces.map((piece) => {
+		const start = offset;
+		offset += piece.length;
+		const removed = (at: number) => links.some((link) => start + at >= link.start && start + at < link.end);
+		return links.length
+			? piece
+					.split("")
+					.filter((_, at) => !removed(at))
+					.join("")
+			: piece;
+	});
+}
+
+/**
+ * The reader links text after the pieces are put back, so two neighbouring pieces that look harmless alone can join
+ * into a link, and they may have come from different requests. Each run of touching translated pieces is read as
+ * one text, and whatever `invented` refuses is taken out of the pieces it spans.
+ */
+export function withoutJoinedLinks(
+	parsed: TranslationSource,
+	segments: readonly (string | null)[],
+	invented: (link: LinkMatch) => boolean,
+): (string | null)[] {
+	const result = [...segments];
+	const present = (index: number) => result[index] !== null && result[index] !== undefined;
+	const piece = (index: number) => {
+		const text = result[index] as string;
+		return parsed.format === "text" ? text.trim() : text;
+	};
+	for (let first = 0; first < parsed.slots.length; first += 1) {
+		if (!present(first)) continue;
+		let last = first;
+		while (last + 1 < parsed.slots.length && present(last + 1) && touches(parsed.slots[last], parsed.slots[last + 1]))
+			last += 1;
+		if (last === first) continue;
+		const indexes = Array.from({ length: last - first + 1 }, (_, offset) => first + offset);
+		const pieces = indexes.map(piece);
+		const cleaned = withoutLinks(pieces, findLinks(pieces.join("")).filter(invented));
+		indexes.forEach((index, position) => {
+			result[index] = cleaned[position];
+		});
+		first = last;
+	}
+	return result;
+}
+
+/** Characters that take far more room translated than they do here: one Han character is about one English word. */
+const WIDE_SCRIPTS = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/gu;
+
+/** A piece's share of a request: its text, counting wide characters twice, and the JSON around it. */
+function pieceWeight(text: string): number {
+	return text.length + (text.match(WIDE_SCRIPTS)?.length ?? 0) + PIECE_OVERHEAD_CHARS;
+}
+
 /**
  * Groups slots, in the order given, into requests of at most `maxChars` each, and stops at `maxChunks`. Each piece
- * also counts for the JSON around it, or a table of 3,000 one-word cells would not fit one answer. Neighbouring
- * pieces stay together so a request reads as connected text.
+ * is weighed by what its answer will take (`pieceWeight`), or a table of 3,000 one-word cells or a long Chinese mail
+ * would not fit one answer. Neighbouring pieces stay together so a request reads as connected text.
  */
 export function planChunks(
 	slots: readonly TranslationSlot[],
@@ -295,7 +374,7 @@ export function planChunks(
 	let chunk: number[] = [];
 	let size = limits.reserved ?? 0;
 	for (const index of indexes) {
-		const length = slots[index].text.length + PIECE_OVERHEAD_CHARS;
+		const length = pieceWeight(slots[index].text);
 		if (chunk.length && size + length > limits.maxChars) {
 			chunks.push(chunk);
 			if (chunks.length === limits.maxChunks) return { chunks, cut: true };

@@ -34,7 +34,12 @@ export type MessageTranslationController = {
 	chooseTarget: (next: string) => void;
 	/** The bar offers a translation of this message. */
 	offered: boolean;
+	/** Waves the offer off for this message. */
 	dismiss: () => void;
+	/** This message's language is one the reader asked not to be offered. */
+	neverOffered: boolean;
+	/** Stops offering this message's language, or starts again. */
+	toggleNeverOffered: () => void;
 	translation: MessageTranslation | null;
 	/** The translation on screen; null while the original is. */
 	shown: MessageTranslation | null;

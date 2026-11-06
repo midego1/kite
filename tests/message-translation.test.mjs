@@ -36,10 +36,13 @@ await build({
 });
 const load = (name) => import(pathToFileURL(join(outDir, `${name}.mjs`)).href);
 const { detectMessageLanguage } = await load("detect");
-const { messageSlots, planChunks, rebuildMessage, slotsDigest } = await load("segment");
+const { messageSlots, planChunks, rebuildMessage, slotsDigest, sourceTexts, withoutJoinedLinks } =
+	await load("segment");
 const {
 	buildMessageTranslationPrompt,
 	checkTranslationAnswer,
+	isInventedLink,
+	linkReferences,
 	translationProblemText,
 	TRANSLATION_CHUNK_MAX_CHARS,
 	TRANSLATION_MAX_CHUNKS,
@@ -47,6 +50,7 @@ const {
 const {
 	offersTranslation,
 	readingLanguages,
+	toggledLanguage,
 	translatedFromLabel,
 	translationAvailability,
 	translationDisabledReason,
@@ -55,7 +59,8 @@ const {
 	translationTargets,
 	translationUrl,
 } = await load("client");
-const { readTranslateTarget, TRANSLATE_TO_STORAGE_KEY } = await load("target");
+const { parseTranslateNever, parseTranslateTarget, readTranslateChoice, TRANSLATE_TO_STORAGE_KEY } =
+	await load("target");
 const { translateLanguageOptions, translateLanguages } = await load("compose");
 const { translationQuerySchema, translationRequestSchema } = await load("schema");
 
@@ -204,9 +209,16 @@ test("the direction declared for the whole body follows the translation", () => 
 test("code, hidden text, styles and what asks not to be translated are left alone", () => {
 	const parsed = messageSlots({
 		htmlBody:
-			'<style>p { color: red }</style><title>Mail</title><p>Run <code>npm test</code> now</p><pre>keep\n  this</pre><div style="display:none">preheader</div><span translate="no">Acme</span><span class="brand notranslate">Kite</span><!-- note -->',
+			'<style>p { color: red }</style><title>Mail</title><p>Run <code>npm test</code> now</p><pre>keep\n  this</pre><div style="display:none">preheader</div><div style="color:red; VISIBILITY: hidden">invisible</div><span style="font-size:0">tiny</span><span style="font-size: 0px;">tiny</span><p hidden>attribute</p><span translate="no">Acme</span><span class="brand notranslate">Kite</span><!-- note -->',
 	});
 	assert.deepEqual(texts(parsed), ["Run", "now", "keep\n  this"]);
+});
+
+test("a small font is not a hidden one", () => {
+	const parsed = messageSlots({
+		htmlBody: '<span style="font-size:0.9em">kept</span><span style="font-size:10px">also</span>',
+	});
+	assert.deepEqual(texts(parsed), ["kept", "also"]);
 });
 
 test("pieces with no words to translate are not sent", () => {
@@ -371,6 +383,12 @@ test("long mail is planned into requests and stops at the cap", () => {
 		[2],
 	]);
 	assert.equal(TRANSLATION_CHUNK_MAX_CHARS * TRANSLATION_MAX_CHUNKS, 30_000);
+	// Chinese takes more room translated, so fewer characters go in one request.
+	const han = Array.from({ length: 4 }, () => ({ text: "汉".repeat(1_400) }));
+	const latin = Array.from({ length: 4 }, () => ({ text: "x".repeat(1_400) }));
+	const limits = { maxChars: 6_000, maxChunks: 5 };
+	assert.equal(planChunks(han, [0, 1, 2, 3], limits).chunks.length, 2);
+	assert.equal(planChunks(latin, [0, 1, 2, 3], limits).chunks.length, 1);
 	// A table of one-word cells does not fill one answer.
 	const cells = Array.from({ length: 3_000 }, () => ({ text: "Yes" }));
 	const plan = planChunks(
@@ -413,9 +431,9 @@ test("the prompt carries the mail as nonce-delimited data and no markup", () => 
 const check = (raw, overrides = {}) =>
 	checkTranslationAnswer(raw, {
 		sources: ["Hello", "world"],
-		references: ["Hello", "world"],
 		subject: true,
 		...overrides,
+		references: linkReferences(overrides.references ?? ["Hello", "world"]),
 	});
 
 test("a good answer passes with its language and subject", () => {
@@ -479,6 +497,66 @@ test("an injected link or address does not survive; the sender's own do", () => 
 	});
 	assert.deepEqual(kept.value.segments, [" a\n\n    b\n  c", "d"], "only the link goes");
 	assert.equal(result.value.subject, "Win at");
+});
+
+test("addresses only the reader's matcher links are caught too", () => {
+	const result = check(
+		JSON.stringify({ segments: ["Pay pay@exämple.test now", "Or pay@evil.рф and https://bücher.evil.test/x today"] }),
+		{ subject: false },
+	);
+	assert.deepEqual(result.value.segments, ["Pay now", "Or and today"]);
+	// The sender's own stay, whichever of the two recognises them.
+	const own = ["Mail ana@exämple.test or see https://real.example/a"];
+	const kept = check(JSON.stringify({ segments: ["Mail ana@exämple.test, zie https://real.example/a"] }), {
+		sources: ["x"],
+		references: own,
+		subject: false,
+	});
+	assert.equal(kept.value.segments[0], "Mail ana@exämple.test, zie https://real.example/a");
+});
+
+test("neighbouring pieces that join into a link lose it", () => {
+	const parsed = messageSlots({ htmlBody: `<p>${"一".repeat(2_990)}。${"二".repeat(2_000)}</p>` });
+	assert.equal(parsed.slots.length, 2);
+	assert.equal(parsed.slots[0].end, parsed.slots[1].start);
+	const references = linkReferences(sourceTexts(parsed));
+	const invented = (link) => isInventedLink(link, references);
+	assert.deepEqual(withoutJoinedLinks(parsed, ["See https://evil.exa", "mple/pay now"], invented), ["See ", " now"]);
+	assert.deepEqual(withoutJoinedLinks(parsed, ["Pay pay@evil", ".test now"], invented), ["Pay ", " now"]);
+	// Nothing to join: a piece not translated, or text that is no link.
+	assert.deepEqual(withoutJoinedLinks(parsed, ["https://evil.exa", null], invented), ["https://evil.exa", null]);
+	assert.deepEqual(withoutJoinedLinks(parsed, ["Hello ", "world"], invented), ["Hello ", "world"]);
+});
+
+test("a link the message does contain may come back joined", () => {
+	const parsed = messageSlots({ htmlBody: `<p>${"一".repeat(2_990)}。${"二".repeat(2_000)}</p>` });
+	assert.equal(sourceTexts(parsed).length, 1, "one run of the message");
+	const references = linkReferences(["Also https://real.example/one", ...sourceTexts(parsed)]);
+	const joined = withoutJoinedLinks(parsed, ["See https://real.", "example/one now"], (link) =>
+		isInventedLink(link, references),
+	);
+	assert.deepEqual(joined, ["See https://real.", "example/one now"]);
+});
+
+test("pieces separated by white space or a tag are not one run", () => {
+	const parsed = messageSlots({ htmlBody: "<p>one <b>two</b></p>" });
+	const invented = () => true;
+	assert.deepEqual(withoutJoinedLinks(parsed, ["https://evil.exa", "mple/pay"], invented), [
+		"https://evil.exa",
+		"mple/pay",
+	]);
+	assert.deepEqual(sourceTexts(parsed), ["one", "two"]);
+});
+
+test("plain text is read trimmed, as it is put back", () => {
+	const long = `${"一".repeat(2_990)}。${"二".repeat(2_000)}`;
+	const parsed = messageSlots({ textBody: long });
+	assert.equal(parsed.slots.length, 2);
+	const references = linkReferences(sourceTexts(parsed));
+	assert.deepEqual(
+		withoutJoinedLinks(parsed, ["See https://evil.exa ", " mple/pay"], (link) => isInventedLink(link, references)),
+		["See ", ""],
+	);
 });
 
 test("line breaks stay and characters that disguise text go", () => {
@@ -549,21 +627,25 @@ test("labels and URLs", () => {
 	assert.equal(translationUrl("m1", "th"), "/api/messages/m1/translation?target=th");
 });
 
-test("the remembered language reads safely", () => {
-	const storage = new Map();
+test("the remembered choices read safely", () => {
+	assert.equal(parseTranslateTarget(null), null);
+	assert.equal(parseTranslateTarget("th"), "th");
+	assert.equal(parseTranslateTarget("<script>"), null);
+	assert.deepEqual(parseTranslateNever(null), []);
+	assert.deepEqual(parseTranslateNever("en,th"), ["en", "th"]);
+	assert.deepEqual(parseTranslateNever("en,<b>,toolong"), ["en"]);
+	assert.deepEqual(toggledLanguage(["en"], "th"), ["en", "th"]);
+	assert.deepEqual(toggledLanguage(["en", "th"], "en"), ["th"]);
+	const storage = new Map([[TRANSLATE_TO_STORAGE_KEY, "th"]]);
 	globalThis.localStorage = { getItem: (key) => storage.get(key) ?? null };
 	try {
-		assert.equal(readTranslateTarget(), null);
-		storage.set(TRANSLATE_TO_STORAGE_KEY, "th");
-		assert.equal(readTranslateTarget(), "th");
-		storage.set(TRANSLATE_TO_STORAGE_KEY, "<script>");
-		assert.equal(readTranslateTarget(), null);
+		assert.equal(readTranslateChoice(TRANSLATE_TO_STORAGE_KEY), "th");
 		globalThis.localStorage = {
 			getItem: () => {
 				throw new Error("blocked");
 			},
 		};
-		assert.equal(readTranslateTarget(), null);
+		assert.equal(readTranslateChoice(TRANSLATE_TO_STORAGE_KEY), null);
 	} finally {
 		delete globalThis.localStorage;
 	}

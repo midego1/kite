@@ -249,6 +249,14 @@ export const FAKE_SCENARIOS: Record<string, FakeScenario> = {
 				),
 			}),
 	},
+	// The part with the marker does not fit its answer; the others translate.
+	"translation-cut-off": {
+		triage: () => json(benignTriage),
+		messageTranslation: (context) =>
+			(context.prompt ?? "").includes(TRANSLATION_CUT_OFF_MARKER)
+				? { content: '{"segments":["', finishReason: "length" }
+				: translateFromPrompt(context),
+	},
 	"hostile-wire-money": {
 		triage: () =>
 			json({
@@ -270,6 +278,8 @@ export const FAKE_SCENARIOS: Record<string, FakeScenario> = {
 	},
 };
 
+/** A piece with this in it gets a cut-off answer in the `translation-cut-off` scenario. */
+export const TRANSLATION_CUT_OFF_MARKER = "ย่อหน้ายาวเกิน";
 /** What the fake "translation" of a piece starts with; specs look for it. */
 export const FAKE_TRANSLATION_PREFIX = "EN:";
 export const FAKE_TRANSLATED_SUBJECT = "Translated subject";

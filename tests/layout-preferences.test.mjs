@@ -75,6 +75,12 @@ test("parseLayoutPatch needs a layout object with at least one valid choice", ()
 	assert.equal(parseLayoutPatch({ layout: { readingPane: "sideways" } }), null);
 	assert.equal(parseLayoutPatch({ readingPane: "none" }), null);
 	assert.equal(parseLayoutPatch(null), null);
+	assert.deepEqual(parseLayoutPatch({ layout: { translateNever: ["en", "<b>", 3] } }), { translateNever: ["en"] });
+	assert.deepEqual(
+		parseLayoutPatch({ layout: { translateNever: [] } }),
+		{ translateNever: [] },
+		"the last one removed",
+	);
 });
 
 test("a layout maps to the browser storage the views read", () => {
@@ -87,6 +93,7 @@ test("a layout maps to the browser storage the views read", () => {
 		fontScope: "everywhere",
 		interfaceDirection: "rtl",
 		translateTo: "th",
+		translateNever: ["en", "de"],
 		listWidth: 420,
 		listHeight: 300,
 	};
@@ -100,6 +107,7 @@ test("a layout maps to the browser storage the views read", () => {
 		["kite-font-scope", "everywhere"],
 		["kite-interface-direction", "rtl"],
 		["kite-translate-to", "th"],
+		["kite-translate-never", "en,de"],
 		["kite-column-width:message-list", "420"],
 		["kite-column-width:message-list:user-1", "420"],
 		["kite-column-width:message-list-height", "300"],

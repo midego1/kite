@@ -49,6 +49,15 @@ function Offer({ controller }: { controller: MessageTranslationController }) {
 			</button>
 			{!busy && <TargetPicker controller={controller} />}
 			<span className="flex-1" />
+			{detected && (
+				<button
+					type="button"
+					className="text-neutral-500 hover:text-neutral-900"
+					onClick={controller.toggleNeverOffered}
+				>
+					Don&apos;t offer for {languageName(detected)}
+				</button>
+			)}
 			<Tooltip label="Don't offer for this message">
 				<button
 					type="button"
@@ -98,7 +107,12 @@ function Notes({ controller }: { controller: MessageTranslationController }) {
 		<div className="w-full space-y-1 text-neutral-500" data-translation-notes>
 			<p>Written by AI{shown.model ? ` (${shown.model})` : ""}, may be wrong. Links stay as the sender wrote them.</p>
 			{shown.cut && (
-				<p data-translation-cut>This message is long, so only the first part was translated. The rest is unchanged.</p>
+				<p data-translation-cut>This message is long, so not all of it was translated. The rest is unchanged.</p>
+			)}
+			{controller.neverOffered && controller.detected && (
+				<button type="button" className={`${LINK} me-3`} onClick={controller.toggleNeverOffered}>
+					Offer for {languageName(controller.detected)} again
+				</button>
 			)}
 			{shown.quotedPending && (
 				<button

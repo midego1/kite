@@ -8,17 +8,27 @@ import { aiErrorHttpStatus, aiErrorMessage } from "../ai-error-utils";
 import { TRANSLATION_ANSWER_TOKENS } from "../output-budget-utils";
 import { checkedModelAnswer, SummaryRefusal } from "../summaries/model-answer";
 import { loadAnchor, unavailableReason, type Anchor } from "../summaries/service";
-import { isSummaryEligible, UNKNOWN_LANGUAGE } from "../summaries/summary-utils";
+import { isSummaryEligible, languageName, UNKNOWN_LANGUAGE } from "../summaries/summary-utils";
 import { detectMessageLanguage } from "./detect-language-utils";
 import {
 	buildMessageTranslationPrompt,
 	checkTranslationAnswer,
+	isInventedLink,
+	linkReferences,
 	SUBJECT_MAX_CHARS,
 	translationProblemText,
 	TRANSLATION_CHUNK_MAX_CHARS,
 	TRANSLATION_MAX_CHUNKS,
+	type LinkReferences,
 } from "./prompt-utils";
-import { messageSlots, planChunks, rebuildMessage, slotsDigest } from "./segment-utils";
+import {
+	messageSlots,
+	planChunks,
+	rebuildMessage,
+	slotsDigest,
+	sourceTexts,
+	withoutJoinedLinks,
+} from "./segment-utils";
 import { readMessageTranslation, saveMessageTranslation } from "./store";
 import type {
 	CheckedTranslation,
@@ -104,6 +114,7 @@ type TranslateInput = {
 	indexes: number[];
 	/** Asks for the subject in the first request. */
 	subject: string | null;
+	references: LinkReferences;
 };
 
 /** One request of a message's translation, with its answer checked against the pieces it carried. */
@@ -121,7 +132,7 @@ function translateChunk(input: TranslateInput, chunk: number[], subject: string 
 		check: (text) =>
 			checkTranslationAnswer(text, {
 				sources,
-				references: [parsed.subject, ...parsed.slots.map((slot) => slot.text)],
+				references: input.references,
 				subject: subject !== null,
 			}),
 		problemText: translationProblemText,
@@ -129,8 +140,9 @@ function translateChunk(input: TranslateInput, chunk: number[], subject: string 
 }
 
 /**
- * Translates the slots in `indexes`, in as many requests as the limits allow, a few at a time. Any failed request
- * fails the whole translation: half a message is not worth keeping, and the same request can be tried again.
+ * Translates the slots in `indexes`, in as many requests as the limits allow, a few at a time. A part whose answer
+ * did not fit stays in the original, like the end of a message past the cap, and the reader says so; asking again
+ * would not change that. Any other failure fails the whole translation, since the same request can be tried again.
  */
 async function translateSlots(input: TranslateInput) {
 	const { chunks } = planChunks(input.parsed.slots, input.indexes, {
@@ -140,20 +152,28 @@ async function translateSlots(input: TranslateInput) {
 	});
 	// A subject without a body still takes one request.
 	const parts = chunks.length ? chunks : [[]];
-	const answers: Awaited<ReturnType<typeof translateChunk>>[] = [];
+	let cutOff: unknown = null;
+	const attempt = (chunk: number[], subject: string | null) =>
+		translateChunk(input, chunk, subject).catch((error: unknown) => {
+			if (!(error instanceof SummaryRefusal) || error.code !== "cut_off") throw error;
+			cutOff = error;
+			return null;
+		});
+	const answers: Awaited<ReturnType<typeof attempt>>[] = [];
 	for (let at = 0; at < parts.length; at += TRANSLATION_CONCURRENCY) {
 		const batch = parts.slice(at, at + TRANSLATION_CONCURRENCY);
 		answers.push(
-			...(await Promise.all(
-				batch.map((chunk, offset) => translateChunk(input, chunk, at + offset === 0 ? input.subject : null)),
-			)),
+			...(await Promise.all(batch.map((chunk, offset) => attempt(chunk, at + offset === 0 ? input.subject : null)))),
 		);
 	}
+	const first = answers.find((answer) => answer !== null);
+	if (!first) throw cutOff;
 	const translated = new Map<number, string>();
 	parts.forEach((chunk, part) => {
-		chunk.forEach((index, position) => translated.set(index, answers[part].value.segments[position]));
+		const answer = answers[part];
+		if (answer) chunk.forEach((index, position) => translated.set(index, answer.value.segments[position]));
 	});
-	return { translated, first: answers[0].value, modelId: answers[0].modelId };
+	return { translated, first: first.value, subject: answers[0]?.value.subject ?? null, modelId: first.modelId };
 }
 
 /**
@@ -186,7 +206,11 @@ export async function createTranslation(
 		return request.quoted && slot.quoted && (valid.content.segments[index] ?? null) === null ? [index] : [];
 	});
 	if (valid && !wanted.length) return { translation: present(parsed, target, valid.content, valid.model) };
-	const { translated, first, modelId } = await translateSlots({
+	// Nothing to do when the message is plainly in that language already; when Kite is unsure, the model decides.
+	if (!valid && detected(parsed) === target)
+		throw new SummaryRefusal(409, `This message is already in ${languageName(target)}.`, "already_in_language");
+	const references = linkReferences([parsed.subject, ...sourceTexts(parsed)]);
+	const { translated, ...answer } = await translateSlots({
 		env,
 		user,
 		anchor,
@@ -194,11 +218,17 @@ export async function createTranslation(
 		target,
 		indexes: wanted,
 		subject: valid ? null : subject,
+		references,
 	});
+	const { first, modelId } = answer;
 	const content: StoredTranslation = {
 		from: valid?.content.from ?? (known(first.language) || detected(parsed)),
-		subject: valid ? valid.content.subject : first.subject,
-		segments: parsed.slots.map((_, index) => translated.get(index) ?? valid?.content.segments[index] ?? null),
+		subject: valid ? valid.content.subject : answer.subject,
+		segments: withoutJoinedLinks(
+			parsed,
+			parsed.slots.map((_, index) => translated.get(index) ?? valid?.content.segments[index] ?? null),
+			(link) => isInventedLink(link, references),
+		),
 	};
 	const saved = await saveMessageTranslation(env.DB, {
 		mailboxId: anchor.mailboxId,

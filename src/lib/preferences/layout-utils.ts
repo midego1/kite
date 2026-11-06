@@ -12,10 +12,22 @@ const EMAIL_FONTS = new Set(["original", "reader"]);
 const FONT_SCOPES = new Set(["text", "everywhere"]);
 const INTERFACE_DIRECTIONS = new Set(["auto", "ltr", "rtl"]);
 const LANGUAGE_CODE = /^[a-z]{2}$/;
+const MAX_LANGUAGES_NEVER_OFFERED = 40;
 
 function size(value: unknown, limits: { min: number; max: number }): number | undefined {
 	if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
 	return Math.round(Math.max(limits.min, Math.min(limits.max, value)));
+}
+
+function parseTranslationChoices(input: Record<string, unknown>): LayoutPreferences {
+	const layout: LayoutPreferences = {};
+	if (typeof input.translateTo === "string" && LANGUAGE_CODE.test(input.translateTo))
+		layout.translateTo = input.translateTo;
+	if (Array.isArray(input.translateNever))
+		layout.translateNever = input.translateNever
+			.filter((code): code is string => typeof code === "string" && LANGUAGE_CODE.test(code))
+			.slice(0, MAX_LANGUAGES_NEVER_OFFERED);
+	return layout;
 }
 
 function parseFontChoices(input: Record<string, unknown>): LayoutPreferences {
@@ -44,8 +56,7 @@ function parseLayoutPreferences(value: unknown): LayoutPreferences {
 	Object.assign(layout, parseFontChoices(input));
 	if (typeof input.interfaceDirection === "string" && INTERFACE_DIRECTIONS.has(input.interfaceDirection))
 		layout.interfaceDirection = input.interfaceDirection as LayoutPreferences["interfaceDirection"];
-	if (typeof input.translateTo === "string" && LANGUAGE_CODE.test(input.translateTo))
-		layout.translateTo = input.translateTo;
+	Object.assign(layout, parseTranslationChoices(input));
 	const listWidth = size(input.listWidth, LIST_WIDTH_LIMITS);
 	if (listWidth !== undefined) layout.listWidth = listWidth;
 	const listHeight = size(input.listHeight, LIST_HEIGHT_LIMITS);

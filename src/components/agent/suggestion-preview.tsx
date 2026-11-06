@@ -55,7 +55,9 @@ export function SuggestionPreviewRow({
 		window.clearTimeout(timer.current);
 		timer.current = window.setTimeout(() => {
 			if (kind) setVia(kind);
-			setOpen(next);
+			// A timer close gets the same cleanup as Escape: focus inside the preview goes back to the row.
+			if (next) setOpen(true);
+			else changeOpen(false);
 		}, delay);
 	};
 	useEffect(() => () => window.clearTimeout(timer.current), []);
@@ -71,7 +73,12 @@ export function SuggestionPreviewRow({
 			// Escape inside the preview must not drop focus: it goes back to the row.
 			if (content.current?.contains(document.activeElement)) {
 				ignoreFocusUntil.current = Date.now() + FOCUS_REOPEN_GUARD_MS;
-				row.current?.querySelector<HTMLElement>("a[href]")?.focus();
+				// The message link, else any other control of the row outside the preview (checkbox, Dismiss).
+				const outside = (selector: string) =>
+					Array.from(row.current?.querySelectorAll<HTMLElement>(selector) ?? []).find(
+						(control) => !content.current?.contains(control),
+					);
+				(outside("a[href]") ?? outside("button:not([disabled]), input:not([disabled])"))?.focus();
 			}
 			setEntered(false);
 		}

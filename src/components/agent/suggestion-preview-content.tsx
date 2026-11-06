@@ -1,11 +1,13 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { htmlToPlainText } from "@/components/compose/rich-text-utils";
 import { useSuggestionList } from "@/hooks/use-suggestion-list";
 import type { OpenSuggestion } from "@/hooks/open-suggestions-types";
+import { useCurrentUser } from "@/hooks/use-current-user";
 import { useT } from "@/lib/i18n/use-t";
 import { authFetch } from "@/lib/auth/client";
 import { getEmailAddress, getEmailDisplayName } from "@/lib/email/address";
@@ -17,15 +19,23 @@ import type { CardSuggestion } from "./suggestion-card-types";
 import { replyStatusText, summaryText, suggestionCardUrl } from "./suggestion-card-utils";
 import { bodyText, PREVIEW_DRAFT_CHARS, PREVIEW_EXCERPT_CHARS, previewExcerpt } from "./suggestion-preview-utils";
 
+/** How long the suggestion's details may take before the preview offers a retry. */
+const DETAILS_SLOW_MS = 6000;
+
 /** A message's stored text, read once per message for five minutes (the reader's own endpoint, no HTML kept). */
 function useMessageText(
 	messageId: string | null,
 	max: number = PREVIEW_EXCERPT_CHARS,
+	// A draft the user may have edited since: asked for again whenever a preview opens (the cached text shows meanwhile).
+	editable = false,
 ): { text: string | null; loading: boolean } {
+	// Per account, like the command center's cards, so text read for one account is never shown for another.
+	const userId = useCurrentUser()?.id ?? null;
 	const query = useQuery({
-		queryKey: ["suggestion-preview", "message", messageId],
-		enabled: Boolean(messageId),
+		queryKey: ["suggestion-preview", userId, "message", messageId],
+		enabled: Boolean(messageId) && Boolean(userId),
 		staleTime: 5 * 60_000,
+		refetchOnMount: editable ? "always" : false,
 		retry: false,
 		queryFn: async () => {
 			const response = await authFetch(`/api/messages/${encodeURIComponent(messageId!)}`);
@@ -57,6 +67,7 @@ function SuggestionBody({ suggestion, onChanged }: { suggestion: CardSuggestion;
 	const { text: draft } = useMessageText(
 		suggestion.kind === "reply" && suggestion.canReviewDraft ? suggestion.draftId : null,
 		PREVIEW_DRAFT_CHARS,
+		true,
 	);
 	if (suggestion.kind === "summary")
 		return (
@@ -111,6 +122,13 @@ export default function SuggestionPreviewContent({
 		suggestionCardUrl(suggestion.messageId, null),
 	);
 	const { text: excerpt, loading } = useMessageText(suggestion.messageId);
+	// The shared list has no error to show: when it has not answered after a while, say so and offer a retry.
+	const [slow, setSlow] = useState(false);
+	useEffect(() => {
+		if (data) return;
+		const timer = window.setTimeout(() => setSlow(true), DETAILS_SLOW_MS);
+		return () => window.clearTimeout(timer);
+	}, [data]);
 	const full = data?.suggestions?.find((item) => item.id === suggestion.id) ?? null;
 	const from = suggestion.message.from;
 	const href = suggestion.messageTarget.href;
@@ -146,6 +164,13 @@ export default function SuggestionPreviewContent({
 				<SuggestionBody suggestion={full} onChanged={changed} />
 			) : data ? (
 				<p className="mt-3 text-sm text-neutral-600">{t("This suggestion is no longer open.")}</p>
+			) : slow ? (
+				<div role="alert" className="mt-3 flex items-center justify-between gap-2 text-sm text-neutral-600">
+					<span>{t("Kite could not load the details.")}</span>
+					<Button size="sm" variant="outline" onClick={() => reload()}>
+						{t("Try again")}
+					</Button>
+				</div>
 			) : (
 				<div className="mt-3 h-16 animate-pulse rounded-lg bg-neutral-200/70" aria-hidden="true" />
 			)}

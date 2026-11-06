@@ -9,6 +9,7 @@ import { findPreset } from "@/lib/external-accounts/presets-utils";
 import { appendRecentErrors } from "@/lib/external-accounts/recent-errors";
 import { externalSyncRefusal } from "@/lib/external-accounts/sync-target";
 import { parseExternalRawKey } from "@/lib/external-accounts/sync-utils";
+import { recordFetchedMessage } from "@/lib/external-accounts/two-way-store";
 import { createLogger } from "@/lib/logger.mjs";
 import { externalAuthenticationResults } from "@/lib/spam/authentication-results-utils";
 import type { InboundQueueMessage, InboundQueueSource } from "@/lib/email/inbound";
@@ -100,8 +101,10 @@ async function deliverExternal(env: CloudflareEnv, payload: InboundQueueMessage,
 	}
 	const target = { mailboxId: account.mailboxId, userId: account.mailboxOwnerId };
 	const stored = await storedFromRaw(env, target.mailboxId, key);
+	const seen = { accountId: account.id, key, read: source.read === true, starred: source.starred === true };
 	if (stored) {
 		await recoverAgentWork(env, target, stored, undefined);
+		await recordFetchedMessage(env, { ...seen, messageId: stored });
 		return;
 	}
 	const refusal = await externalSyncRefusal(env, account);
@@ -135,9 +138,15 @@ async function deliverExternal(env: CloudflareEnv, payload: InboundQueueMessage,
 			junk: parseExternalRawKey(key)?.role === "junk",
 		},
 	});
-	if (outcome.delivered) return;
-	if (outcome.reason === "duplicate")
+	if (outcome.delivered) {
+		await recordFetchedMessage(env, { ...seen, messageId: outcome.messageId });
+		return;
+	}
+	if (outcome.reason === "duplicate") {
 		logger.info("external.sync.duplicate_dropped", { accountId: account.id, duplicateOf: outcome.duplicateOf });
+		// The same message at a new UID (a rebuilt folder, moved back into the Inbox): two-way sync follows it there.
+		await recordFetchedMessage(env, { ...seen, messageId: outcome.duplicateOf });
+	}
 	if (outcome.reason === "attachment_limit" || outcome.reason === "unparseable")
 		await noteOnAccount(env, account.id, `Kite did not deliver a message: ${outcome.detail}`);
 }

@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { index, integer, primaryKey, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
-import { mailboxes, users } from "./index";
+import { mailboxes, messages, users } from "./index";
 
 /**
  * Connected accounts (migration 0079, docs/specs/external-accounts.md §10.2): an IMAP account at another provider
@@ -170,4 +170,108 @@ export const externalAccountSendStates = sqliteTable("external_accounts", {
 export const messageExternalAccounts = sqliteTable("messages", {
 	id: text("id").primaryKey(),
 	externalAccountId: text("external_account_id"),
+	mailboxId: text("mailbox_id"),
+	direction: text("direction"),
+	rawR2Key: text("raw_r2_key"),
+	providerMessageId: text("provider_message_id"),
 });
+
+/**
+ * Migration 0093's per-account two-way settings (spec §6.8), a narrow view of `external_accounts` for the same reason
+ * as `externalAccountSendStates`. JSON, read through `readTwoWaySettings`; `{}` is everything off. It is the only
+ * two-way state a backup carries.
+ */
+export const externalAccountTwoWay = sqliteTable("external_accounts", {
+	id: text("id").primaryKey(),
+	mailboxId: text("mailbox_id"),
+	twoWay: text("two_way").notNull().default("{}"),
+});
+
+/**
+ * Two-way sync's working state per account (spec §6.8): what the server supports, where the last provider-to-Kite pass
+ * stood, and the baselines a setting turned on still needs. Not in backups; it rebuilds itself.
+ */
+export const externalTwoWayState = sqliteTable("external_two_way_state", {
+	accountId: text("account_id")
+		.primaryKey()
+		.references(() => externalAccounts.id, { onDelete: "cascade" }),
+	/** JSON `ProviderSupport`, or null until a server was asked. */
+	support: text("support"),
+	uidvalidity: integer("uidvalidity"),
+	/** Text: a modseq may not fit a JavaScript number. Null when the server offers none or the next pass must run. */
+	highestModseq: text("highest_modseq"),
+	existsCount: integer("exists_count"),
+	uidNext: integer("uid_next"),
+	/** The lowest UID the window may reach; it only rises, so an old row never re-enters with a stale state. */
+	lowUid: integer("low_uid").notNull().default(0),
+	lastPassAt: integer("last_pass_at", { mode: "timestamp" }),
+	/** The next pass only records what it finds: the setting was just turned on. */
+	goneBaseline: integer("gone_baseline", { mode: "boolean" }).notNull().default(true),
+	flagsBaseline: integer("flags_baseline", { mode: "boolean" }).notNull().default(true),
+	/** Older messages are linked from their raw keys, a page per check, until this is set. */
+	backfilled: integer("backfilled", { mode: "boolean" }).notNull().default(false),
+	/** The folder's answer could not be believed, so nothing is counted as gone; set while that lasts, told once. */
+	gonePaused: integer("gone_paused", { mode: "boolean" }).notNull().default(false),
+	/** When a write-back run was last queued, so a burst of actions queues one. */
+	kickedAt: integer("kicked_at", { mode: "timestamp" }),
+});
+
+/**
+ * Where a message Kite fetched sits at the provider (spec §6.8). `provider_read` and `provider_starred` are the last
+ * state seen there, what stops a change from coming back as a change; null means the row was never compared with the
+ * server yet. A row whose `uidvalidity` is not the folder's current one is inert. Not in backups.
+ */
+export const externalMessageRefs = sqliteTable(
+	"external_message_refs",
+	{
+		messageId: text("message_id")
+			.primaryKey()
+			.references(() => messages.id, { onDelete: "cascade" }),
+		accountId: text("account_id")
+			.notNull()
+			.references(() => externalAccounts.id, { onDelete: "cascade" }),
+		role: text("role", { enum: ["inbox", "junk"] }).notNull(),
+		uidvalidity: integer("uidvalidity").notNull(),
+		uid: integer("uid").notNull(),
+		state: text("state", { enum: ["present", "gone"] })
+			.notNull()
+			.default("present"),
+		providerRead: integer("provider_read", { mode: "boolean" }),
+		providerStarred: integer("provider_starred", { mode: "boolean" }),
+		/** When a session last found this UID absent; the next session looks it up by UID before anything happens. */
+		missingSince: integer("missing_since", { mode: "timestamp" }),
+	},
+	(t) => [index("external_message_refs_window_idx").on(t.accountId, t.role, t.state, t.uidvalidity, t.uid)],
+);
+
+/**
+ * The outbox of two-way sync (spec §6.8): what a user did in Kite and the provider has not seen yet. The id is
+ * `<message>:move` or `<message>:flags`, so a later change replaces an earlier one. No foreign key to `messages`, and
+ * the row keeps its own UID and Message-ID: Delete forever removes the message while its move is still to do. Not in
+ * backups: a restore must never replay actions on a real mailbox.
+ */
+export const externalProviderActions = sqliteTable(
+	"external_provider_actions",
+	{
+		id: text("id").primaryKey(),
+		accountId: text("account_id")
+			.notNull()
+			.references(() => externalAccounts.id, { onDelete: "cascade" }),
+		messageId: text("message_id").notNull(),
+		kind: text("kind", { enum: ["trash", "archive", "spam", "flags"] }).notNull(),
+		/** For `flags`: the wanted state; null leaves that flag alone. */
+		read: integer("read", { mode: "boolean" }),
+		starred: integer("starred", { mode: "boolean" }),
+		role: text("role", { enum: ["inbox", "junk"] }).notNull(),
+		uidvalidity: integer("uidvalidity").notNull(),
+		uid: integer("uid").notNull(),
+		rfcMessageId: text("rfc_message_id"),
+		/** How far a move without MOVE got: 1 copied, 2 also marked `\\Deleted`. A retry resumes there, never re-copies. */
+		step: integer("step").notNull().default(0),
+		/** When the user acted; last writer wins by this. */
+		createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+		attempts: integer("attempts").notNull().default(0),
+		nextAttemptAt: integer("next_attempt_at", { mode: "timestamp" }).notNull(),
+	},
+	(t) => [index("external_provider_actions_due_idx").on(t.accountId, t.nextAttemptAt)],
+);

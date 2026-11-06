@@ -434,6 +434,8 @@ function mime({ id, html, text = null, attachment = null }) {
 				"--mixed",
 				'Content-Type: text/plain; name="notes.txt"',
 				'Content-Disposition: attachment; filename="notes.txt"',
+				// Quoted-printable has no range in the raw, so the attachment is written as an object of its own.
+				"Content-Transfer-Encoding: quoted-printable",
 				"",
 				attachment,
 				"--mixed--",
@@ -496,7 +498,8 @@ test("the import offloads large HTML to the Mail store and keeps small HTML in t
 
 	// Read back, the imported message shows the HTML it was imported with.
 	const reader = await m.getMessageWithBodyForUser(env, user, htmlOnly.id);
-	assert.equal(reader.body.htmlBody, html);
+	assert.equal(reader.body.htmlBody, bucket.objects.get(htmlOnly.html_body_key));
+	assert.ok(reader.body.htmlBody.includes("Revenue grew in every region"));
 	assert.equal(reader.body.textBody, null);
 });
 

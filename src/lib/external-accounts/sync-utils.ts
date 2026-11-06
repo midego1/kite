@@ -184,22 +184,46 @@ export function parseExternalRawKey(key: string): { role: SyncFolderRole; uidVal
 
 /** Names a server without special-use attributes gives its Spam folder, compared in lower case. */
 const JUNK_NAMES = new Set(["junk", "spam", "junk e-mail", "junk email", "junk mail", "bulk mail"]);
+/** The same for its Trash folder. */
+const TRASH_NAMES = new Set(["trash", "deleted", "deleted items", "deleted messages", "bin"]);
+
+type ListedFolder = { name: string; delimiter: string | null; attributes: readonly string[] };
+
+/** The folder of a special-use role from a `LIST`, or null: never INBOX, never one that cannot be selected. */
+export function findMarkedFolder(listed: readonly ListedFolder[], attribute: string): string | null {
+	const wanted = attribute.toLowerCase();
+	return (
+		listed.find(
+			(entry) =>
+				entry.name.toUpperCase() !== "INBOX" &&
+				entry.attributes.some((flag) => flag.toLowerCase() === wanted) &&
+				!entry.attributes.some((flag) => flag.toLowerCase() === "\\noselect"),
+		)?.name ?? null
+	);
+}
+
+/** The account's Spam folder from its `LIST`; see `findRoleFolder`. */
+export function findJunkFolder(listed: readonly ListedFolder[]): string | null {
+	return findRoleFolder(listed, "\\Junk", JUNK_NAMES);
+}
+
+/** The account's Trash folder from its `LIST`; see `findRoleFolder`. */
+export function findTrashFolder(listed: readonly ListedFolder[]): string | null {
+	return findRoleFolder(listed, "\\Trash", TRASH_NAMES);
+}
 
 /**
- * The account's Spam folder from its `LIST`: the one marked `\Junk` (RFC 6154, Gmail's `[Gmail]/Spam`), otherwise one
- * named like a Spam folder at the top level or directly under INBOX (`INBOX.Junk`, as Dovecot and Courier name it),
- * the top level first. A user's own folder deeper down (`Projects/Spam`) never counts. Null when there is none;
- * INBOX is never it.
+ * The one folder marked with `attribute` (RFC 6154, Gmail's `[Gmail]/Spam`), otherwise one with one of `names` at the
+ * top level or directly under INBOX (`INBOX.Junk`, as Dovecot and Courier name it), the top level first. A user's own
+ * folder deeper down (`Projects/Spam`) never counts. Null when there is none; INBOX is never it.
  */
-export function findJunkFolder(
-	listed: readonly { name: string; delimiter: string | null; attributes: readonly string[] }[],
-): string | null {
+function findRoleFolder(listed: readonly ListedFolder[], attribute: string, names: ReadonlySet<string>): string | null {
+	const marked = findMarkedFolder(listed, attribute);
+	if (marked) return marked;
 	const usable = listed.filter(
 		(entry) =>
 			entry.name.toUpperCase() !== "INBOX" && !entry.attributes.some((flag) => flag.toLowerCase() === "\\noselect"),
 	);
-	const marked = usable.find((entry) => entry.attributes.some((flag) => flag.toLowerCase() === "\\junk"));
-	if (marked) return marked.name;
 	const named = usable
 		.map((entry) => {
 			const levels = entry.delimiter ? entry.name.split(entry.delimiter) : [entry.name];
@@ -212,8 +236,7 @@ export function findJunkFolder(
 		})
 		.filter(
 			(entry) =>
-				JUNK_NAMES.has(entry.last) &&
-				(entry.depth === 1 || (entry.depth === 2 && entry.first.toUpperCase() === "INBOX")),
+				names.has(entry.last) && (entry.depth === 1 || (entry.depth === 2 && entry.first.toUpperCase() === "INBOX")),
 		)
 		.sort((a, b) => a.depth - b.depth);
 	return named[0]?.name ?? null;
@@ -348,6 +371,22 @@ export type ExternalSyncMessage = { kind: "accounts.sync"; accountId: string };
 
 export function externalSyncMessage(accountId: string): ExternalSyncMessage {
 	return { kind: "accounts.sync", accountId };
+}
+
+/** "Do what waits at the provider" for one account (spec §6.8), on `AGENT_QUEUE` next to its checks. */
+export type ExternalWritebackMessage = { kind: "accounts.writeback"; accountId: string };
+
+export function externalWritebackMessage(accountId: string): ExternalWritebackMessage {
+	return { kind: "accounts.writeback", accountId };
+}
+
+export function isExternalWritebackMessage(body: unknown): body is ExternalWritebackMessage {
+	return (
+		typeof body === "object" &&
+		body !== null &&
+		(body as { kind?: unknown }).kind === "accounts.writeback" &&
+		typeof (body as { accountId?: unknown }).accountId === "string"
+	);
 }
 
 export function isExternalSyncMessage(body: unknown): body is ExternalSyncMessage {

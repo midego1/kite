@@ -11,6 +11,7 @@ interface CloudflareEnv {
 		| import("./src/lib/agent/writing-style").StyleBackfillMessage
 		| import("./src/lib/import/jobs").ImportJobQueueMessage
 		| import("./src/lib/external-accounts/sync-utils").ExternalSyncMessage
+		| import("./src/lib/external-accounts/sync-utils").ExternalWritebackMessage
 	>;
 	AI?: Ai;
 	AI_MODEL?: string;

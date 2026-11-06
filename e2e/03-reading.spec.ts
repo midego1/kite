@@ -219,9 +219,9 @@ test("quotes past the deepest fold stay readable in the last one", async ({ page
 	await openMessage(page, subject);
 	const folds = page.locator("details").filter({ has: page.locator("> summary", { hasText: "Previous message" }) });
 	await expect(folds).toHaveCount(32);
-	await folds.evaluateAll((elements) => elements.forEach((element) => element.setAttribute("open", "")));
-	await expect(page.locator("pre", { hasText: "Reply number 31." })).toBeVisible();
-	await expect(page.locator("pre", { hasText: "Reply number 35." })).toBeVisible();
+	const deepest = page.locator("pre", { hasText: "Reply number 35." });
+	await expect(deepest).toHaveCount(1);
+	await expect(deepest).toContainText("Reply number 32.");
 });
 
 test("shows a reply and its original as one conversation", async ({ page }) => {

@@ -4,8 +4,9 @@ import { useMemo, useState } from "react";
 import { mailboxSendableAddresses } from "@/components/compose/sender-options-utils";
 import type { MailboxOption } from "@/components/mailbox-provider";
 import { useLoadRemoteImages } from "@/components/messages/use-load-remote-images";
-import { useReaderBody } from "@/components/messages/use-reader-body";
+import { useReaderBody, useTranslatedReaderBody } from "@/components/messages/use-reader-body";
 import { useReaderFont } from "@/components/messages/use-reader-font";
+import type { MessageTranslation } from "@/lib/agent/translation/translation-types";
 import { extractOneTimeCode } from "@/lib/email/one-time-code-utils";
 import { extractCloudAttachments } from "./cloud-attachment-utils";
 import type { MessageDetailResponse } from "./types";
@@ -16,7 +17,11 @@ import { getOwnAddressForMessage } from "./utils";
  * the sanitizing, the cloud file links and the one-time code are worked out once per message and setting instead of
  * on every render while Kite starts.
  */
-export function useOpenMessageBody(data: MessageDetailResponse | null, mailbox: MailboxOption | null | undefined) {
+export function useOpenMessageBody(
+	data: MessageDetailResponse | null,
+	mailbox: MailboxOption | null | undefined,
+	translation: MessageTranslation | null = null,
+) {
 	const [alwaysLoadRemoteImages] = useLoadRemoteImages();
 	const readerFont = useReaderFont();
 	const [remoteImagesShownFor, setRemoteImagesShownFor] = useState<string | null>(null);
@@ -25,28 +30,37 @@ export function useOpenMessageBody(data: MessageDetailResponse | null, mailbox: 
 	const ownAddresses = mailbox ? mailboxSendableAddresses(mailbox) : [];
 	const ownAddress = message ? getOwnAddressForMessage(message, ownAddresses) : "";
 	const blockRemoteImages = !alwaysLoadRemoteImages && remoteImagesShownFor !== message?.id;
-	const body = useReaderBody(
-		message
-			? {
-					messageId: message.id,
-					textBody: data.body?.textBody,
-					htmlBody: data.body?.htmlBody,
-					snippet: message.snippet,
-					ownAddress,
-					attachments: data.attachments ?? [],
-					blockRemoteImages,
-					dropFontFamily: readerFont !== undefined,
-				}
-			: null,
-	);
+	const input = message
+		? {
+				messageId: message.id,
+				textBody: data.body?.textBody,
+				htmlBody: data.body?.htmlBody,
+				snippet: message.snippet,
+				ownAddress,
+				attachments: data.attachments ?? [],
+				blockRemoteImages,
+				dropFontFamily: readerFont !== undefined,
+			}
+		: null;
+	const body = useReaderBody(input);
+	const translatedBody = useTranslatedReaderBody(input, translation);
 	const latestContent = body?.display.latestContent ?? "";
+	const translatedContent = translatedBody ? translatedBody.display.latestContent : null;
 	const subject = message?.subject;
 	const cloudAttachmentResult = useMemo(() => extractCloudAttachments(latestContent), [latestContent]);
+	const translatedText = useMemo(
+		() => (translatedContent === null ? null : extractCloudAttachments(translatedContent).content),
+		[translatedContent],
+	);
 	// The same conservative extractor the server used for the notification, run
 	// on the displayed text so a code that slipped through delivery still copies.
 	const oneTimeCode = useMemo(() => extractOneTimeCode({ subject, text: latestContent }), [subject, latestContent]);
 	return {
 		body,
+		/** The body on screen: the translation while one is shown, else the same as `body`. */
+		shownBody: translatedBody ?? body,
+		/** The text of a plain-text body on screen. */
+		shownText: translatedText ?? cloudAttachmentResult.content,
 		ownAddress,
 		ownAddresses,
 		cloudAttachmentResult,

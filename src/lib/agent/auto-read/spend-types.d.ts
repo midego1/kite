@@ -3,8 +3,8 @@ import type { AgentModelRates } from "@/lib/agent/provider-types";
 import type { AiUsageDetails, AiUsageOutcome } from "@/lib/ai/usage-types";
 
 /**
- * Every source that reserves spend: automatic reading, chat steps, composer requests and the Summarize button and its
- * translations (the install cap covers all).
+ * Every source that reserves spend: automatic reading, chat steps, composer requests, the Summarize button and its
+ * translations, and the reader's Translate (the install cap covers all).
  */
 export type AutoSpendSource =
 	| "auto_triage"
@@ -13,6 +13,7 @@ export type AutoSpendSource =
 	| "compose"
 	| "summary"
 	| "summary_translation"
+	| "message_translation"
 	| "line_summary"
 	| "auto_triage_line";
 

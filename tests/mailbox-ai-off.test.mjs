@@ -242,7 +242,8 @@ test("turning it on stops queued jobs, expires suggestions and deletes stored su
 			('sugg-on', 'mailbox-on', 'email-on', 'user-1', 'summary', 'Lunch', ${at});
 		INSERT INTO ai_summaries (id, mailbox_id, kind, thread_key, message_id, text, coverage_digest, source, created_at, updated_at) VALUES
 			('line-off', 'mailbox-off', 'line', 'thread-off', 'email-off', 'Line ${MARKER}', 'x', 'line_job', ${at}, ${at}),
-			('line-on', 'mailbox-on', 'line', 'thread-on', 'email-on', 'Lunch at noon', 'x', 'line_job', ${at}, ${at});
+			('line-on', 'mailbox-on', 'line', 'thread-on', 'email-on', 'Lunch at noon', 'x', 'line_job', ${at}, ${at}),
+			('translation-off', 'mailbox-off', 'message_translation', 'thread-off', 'email-off', '{"segments":[]}', 'x', 'button', ${at}, ${at});
 	`);
 	assert.equal((await setAi("mailbox-off", true)).status, 200);
 	const job = (id) => database.db.prepare("SELECT status, reason FROM agent_jobs WHERE id = ?").get(id);

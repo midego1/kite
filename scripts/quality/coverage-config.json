@@ -1,5 +1,10 @@
 {
 	"gated": [
+		"src/lib/agent/translation/detect-language-utils.ts",
+		"src/lib/agent/translation/segment-utils.ts",
+		"src/lib/agent/translation/prompt-utils.ts",
+		"src/components/messages/message-translation-utils.ts",
+		"src/components/messages/translate-target-utils.ts",
 		"src/lib/alerts/active-utils.ts",
 		"src/lib/app-badge-utils.ts",
 		"src/lib/boot/report-utils.ts",

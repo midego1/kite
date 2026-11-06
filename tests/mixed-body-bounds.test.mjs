@@ -68,6 +68,16 @@ const shapes = {
 	plainBesideHtml: () => mixed(html(lines("a".repeat(160), 37_000)), text(lines("b".repeat(160), 37_000))),
 	alternativeBrackets: () => alternative(text(lines("<".repeat(52), 149_000)), hello),
 	underLimit: () => mixed(hello, text("x".repeat(15_900_000))),
+	spacedHtml: () => mixed(text("hi"), html("a ".repeat(2_000_000))),
+	returnsHtml: () => mixed(text("hi"), html("a\\r".repeat(3_000_000))),
+	wordsHtml: () => mixed(text("hi"), html("word12 ".repeat(1_500_000))),
+	separatorsHtml: () => mixed(text("hi"), html("\\u2028".repeat(5_000_000))),
+	tabsHtml: () => mixed(text("hi"), html("a\\t".repeat(7_900_000))),
+	spacedHtmlAtLimit: () => mixed(text("hi"), html("a ".repeat(1_599_000))),
+	returnsHtmlAtLimit: () => mixed(text("hi"), html("a\\r".repeat(1_599_000))),
+	wordsHtmlAtLimit: () => mixed(text("hi"), html("word12 ".repeat(1_065_000))),
+	separatorsHtmlAtLimit: () => mixed(text("hi"), html("\\u2028".repeat(1_599_000))),
+	spacedText: () => mixed(hello, text("word12 ".repeat(1_900_000))),
 };
 
 const out = {};
@@ -98,13 +108,20 @@ test("large text and HTML parts are rendered within a 128 MB heap", () => {
 		timeout: 300_000,
 	});
 	const results = JSON.parse(output);
-	assert.equal(Object.keys(results).length, 10);
+	assert.equal(Object.keys(results).length, 20);
 	for (const [name, result] of Object.entries(results)) assert.ok(result.ms < 60_000, `${name}: ${result.ms} ms`);
 	// Over the limit: the parts keep to their own format.
 	assert.equal(results.brackets.html, "<p>hi</p>".length);
 	assert.equal(results.links.html, "<p>hi</p>".length);
 	assert.equal(results.htmlBrackets.text, 2);
+	for (const name of ["spacedHtml", "returnsHtml", "wordsHtml", "separatorsHtml", "tabsHtml"]) {
+		assert.equal(results[name].text, 2, name);
+	}
 	// Under it: both bodies hold both parts.
+	for (const name of ["spacedHtmlAtLimit", "returnsHtmlAtLimit", "wordsHtmlAtLimit", "separatorsHtmlAtLimit"]) {
+		assert.ok(results[name].text > 2, name);
+	}
+	assert.ok(results.spacedText.html > 13_000_000);
 	assert.ok(results.plainBesideHtml.text > 11_800_000);
 	assert.ok(results.plainBesideHtml.html > 11_800_000);
 	assert.ok(results.underLimit.html > 15_900_000);
@@ -161,4 +178,17 @@ test("characters that get replaced count nine times", async () => {
 	const withLines = (extra) => `${"x".repeat(available - 9_001 + extra)}${"\n".repeat(1_000)}y`;
 	assert.notEqual((await render(withLines(0))).html, "<p>one</p>");
 	assert.equal((await render(withLines(1))).html, "<p>one</p>");
+});
+
+test("in HTML, a run of spaces and tabs counts once and line ends count nine times", async () => {
+	const render = async (body) => parseRawMime(parts.encode(parts.mixed(parts.text("hi"), parts.html(body))));
+	const textCost = "hi".length;
+	const available = MAX_BODY_CONVERSION_COST - textCost;
+	assert.ok((await render(`${"a".repeat(available - 8 - 1000)}${" \t".repeat(500)}`)).text.length > 2);
+	assert.equal((await render(`${"a".repeat(available - 8 - 999)}${" \t".repeat(500)}`)).text, "hi");
+	for (const character of ["\u2028", "\u2029"]) {
+		const count = Math.floor(available / 9);
+		assert.ok((await render(character.repeat(count))).text.length >= 2, character);
+		assert.equal((await render(character.repeat(count + 1))).text, "hi", character);
+	}
 });

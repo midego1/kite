@@ -9,31 +9,40 @@ type BodyRenderer = { textMap: Map<unknown, TextEntry>; textTypes: Set<TextType>
  * What `limitBodyConversion` allows: `conversionCost` of every text part that is rendered in the other format too,
  * together. A text part beside an HTML part outside `multipart/alternative` is converted to HTML and the HTML to text,
  * and both end up in memory beside the sanitizer's input and output. 16 million leaves room in a 128 MB heap for the
- * raw message: 12 MB of plain text and HTML in one `multipart/mixed` stays well under it.
+ * raw message: about 12 MB of plain text, or 6 MB of HTML with spaces between its words.
  */
 const MAX_BODY_CONVERSION_COST = 16_000_000;
-/** Characters a conversion replaces cost a heap node or two each until the result is flattened. */
-const REPLACED_CHARACTER_COST = 8;
+/** What a conversion replaces costs a heap node or two each until the result is flattened. */
+const REPLACEMENT_COST = 8;
 const REPLACED_CHARACTERS = new Set(Array.from("<>\"'?&\n", (character) => character.charCodeAt(0)));
+/** HTML going to text also has its line ends replaced, and each run of spaces and tabs. */
+const REPLACED_IN_HTML = new Set(Array.from("\r\u2028\u2029", (character) => character.charCodeAt(0)));
+const SPACE = 32;
+const TAB = 9;
 
-/** The size of a text part with its characters that get replaced on the way to the other format. */
-function conversionCost(text: string): number {
+/** The size of a text part with what gets replaced on the way to the other format. */
+function conversionCost(text: string, type: TextType): number {
 	let cost = text.length;
+	let inRun = false;
 	for (let index = 0; index < text.length; index += 1) {
-		if (REPLACED_CHARACTERS.has(text.charCodeAt(index))) cost += REPLACED_CHARACTER_COST;
+		const code = text.charCodeAt(index);
+		const blank = code === SPACE || code === TAB;
+		const replaced =
+			REPLACED_CHARACTERS.has(code) || (type === "html" && (REPLACED_IN_HTML.has(code) || (blank && !inRun)));
+		if (replaced) cost += REPLACEMENT_COST;
+		inRun = blank;
 	}
 	return cost;
-}
-
-function convertedText(entry: TextEntry): { value: unknown }[] {
-	if (entry.plain && entry.html) return [];
-	return entry.plain ?? entry.html ?? [];
 }
 
 function totalConversionCost(textMap: BodyRenderer["textMap"]): number {
 	let cost = 0;
 	for (const entry of textMap.values()) {
-		for (const { value } of convertedText(entry)) if (typeof value === "string") cost += conversionCost(value);
+		if (entry.plain && entry.html) continue;
+		const type = entry.plain ? "plain" : "html";
+		for (const { value } of entry[type] ?? []) {
+			if (typeof value === "string") cost += conversionCost(value, type);
+		}
 	}
 	return cost;
 }

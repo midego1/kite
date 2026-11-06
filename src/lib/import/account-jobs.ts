@@ -14,6 +14,7 @@ import {
 	addChunkResult,
 	fetchInChunks,
 	hasRunTime,
+	runDeadline,
 	importBatch,
 	recordChunk,
 	underLease,
@@ -217,7 +218,7 @@ async function runAccountFolder(
 	}
 	// A new UIDVALIDITY means the old UIDs mean nothing: start the folder over; dedupe skips what is in Kite.
 	const restart = folder.uidvalidity !== null && uidValidity !== null && uidValidity !== folder.uidvalidity;
-	const uids = await run.session.searchUids();
+	const uids = await run.session.searchUids({ deadline: runDeadline(run) });
 	const remaining = selectRemainingUids(uids, restart ? null : folder.cursorUid);
 	// Not while the job is cancelled, failed or paused: the run stops here instead of walking the later folders.
 	const opened = await updateFolder(run, folder, {

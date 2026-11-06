@@ -18,6 +18,8 @@ import {
 	WriteRequest,
 	type ComposeRun,
 } from "./write-with-kite-views";
+import { useT } from "@/lib/i18n/use-t";
+import { t } from "@/lib/i18n/translator";
 
 type Phase =
 	| { name: "ask" }
@@ -66,7 +68,7 @@ function panelSource(html: string, selection: WriteWithKitePanelProps["selection
 		sourceText: selection?.text ?? bodyText,
 		sourceHtml,
 		formatted: mode === "rewrite" && hasRichFormatting(sourceHtml),
-		target: selection ? "the selected text" : "your text",
+		target: selection ? ("selection" as const) : ("message" as const),
 	};
 }
 
@@ -87,7 +89,7 @@ function resultActions(
 ) {
 	const done = phase.name === "done" ? phase : null;
 	return {
-		insertLabel: state.mode === "write" ? "Insert" : state.changed ? "Insert below" : "Replace",
+		insertLabel: state.mode === "write" ? t("Insert") : state.changed ? t("Insert below") : t("Replace"),
 		text: done?.text ?? null,
 		below: state.changed,
 		offerBelow: !!done && state.formatted && !state.changed,
@@ -107,6 +109,7 @@ export default function WriteWithKitePanel({
 	selection,
 	onClose,
 }: WriteWithKitePanelProps) {
+	const t = useT();
 	const { mode, sourceText, sourceHtml, formatted, target } = panelSource(composer.html, selection);
 	const [phase, setPhase] = useState<Phase>({ name: "ask" });
 	const [last, setLast] = useState<ComposeRun | null>(null);
@@ -159,7 +162,7 @@ export default function WriteWithKitePanel({
 			(preview) => setPhase({ name: "running", preview }),
 		).catch((error: unknown) => ({
 			ok: false as const,
-			message: error instanceof Error ? error.message : "Kite could not write this.",
+			message: error instanceof Error ? error.message : t("Kite could not write this."),
 			error: null,
 		}));
 		if (abort.signal.aborted) return;
@@ -191,16 +194,16 @@ export default function WriteWithKitePanel({
 			ref={panel}
 			role="dialog"
 			aria-modal="true"
-			aria-label="Write with Kite"
+			aria-label={t("Write with Kite")}
 			onKeyDown={(event) => panelKeyDown(event, close)}
 			className="absolute bottom-full start-2 end-2 z-20 mb-1 max-h-[min(28rem,70vh)] space-y-2 overflow-y-auto rounded-xl border border-blue-100 bg-white p-3 text-sm shadow-lg"
 		>
 			<div className="flex items-center gap-2">
 				<Sparkles className="h-4 w-4 text-blue-600" />
-				<p className="flex-1 font-medium text-neutral-900">Write with Kite</p>
+				<p className="flex-1 font-medium text-neutral-900">{t("Write with Kite")}</p>
 				<button
 					type="button"
-					aria-label="Close"
+					aria-label={t("Close")}
 					onClick={close}
 					className="rounded-md p-1 text-neutral-500 hover:bg-neutral-100"
 				>
@@ -217,7 +220,9 @@ export default function WriteWithKitePanel({
 			{phase.name === "done" && <ComposePreview text={phase.text} warnings={phase.warnings} done />}
 			{changed && (
 				<p className="text-xs text-amber-700">
-					{selection ? "The selected text" : "Your message"} changed meanwhile, so Kite adds its text below instead.
+					{selection
+						? t("The selected text changed meanwhile, so Kite adds its text below instead.")
+						: t("Your message changed meanwhile, so Kite adds its text below instead.")}
 				</p>
 			)}
 			{/* The actions below already offer Try again. */}

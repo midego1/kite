@@ -35,6 +35,7 @@ import { createServer as createTlsServer, TLSSocket } from "node:tls";
  *   `slowLoris` (a greeting trickled one byte at a time, forever), `silent` (no greeting at all), `silentTls` (OK to
  *   STARTTLS, then no handshake), `secondChallenge` (a second `+` during AUTHENTICATE PLAIN), `untaggedFlood` (CAPABILITY answered by
  *   an endless stream of untagged lines of that many bytes each).
+ * - `searchRepeats`: every SEARCH answer is sent that many times. `searchDelayMs`: every SEARCH is answered that much later.
  * - `omitUidNext`: EXAMINE names no UIDNEXT. `strictEmptyFetch`: UID FETCH in an empty folder is answered BAD.
  * - `folders`: `{ [name]: [message, …] }`, each a raw message or `{ raw, flags, internalDate, size, uid, unfetchable,
  *   vanishes }` (an IMAP date-time string; `size: null` leaves RFC822.SIZE out; an `unfetchable` message makes a
@@ -362,15 +363,26 @@ export async function startFakeImap(options = {}) {
 					return send(`${tag} OK done\r\n`);
 				}
 				if (sub.toUpperCase() === "SEARCH") {
-					// `UID SEARCH ALL`, `UID SEARCH SINCE <date>`, or `UID SEARCH HEADER Message-ID "<…>"` matched against the raw header.
+					// `UID SEARCH ALL`, `UID SEARCH UID <set>`, `UID SEARCH SINCE <date>`, or `UID SEARCH HEADER Message-ID "<…>"` matched against the raw header.
 					const since = set?.toUpperCase() === "SINCE" ? searchDay(criteria[0]) : null;
+					const range =
+						set?.toUpperCase() === "UID"
+							? uidSet(
+									criteria[0],
+									entry.messages.map((message) => message.uid),
+								)
+							: null;
 					const header = /HEADER Message-ID "((?:[^"\\]|\\.)*)"/i.exec(args)?.[1];
 					const found = entry.messages.filter(
 						(message) =>
+							(range === null || range.has(message.uid)) &&
 							(since === null || messageDay(message.internalDate) >= since) &&
 							(!header || message.raw.toString("latin1").toLowerCase().includes(`message-id: ${header.toLowerCase()}`)),
 					);
-					return send(`* SEARCH ${found.map((message) => message.uid).join(" ")}\r\n${tag} OK done\r\n`);
+					const answer = `* SEARCH ${found.map((message) => message.uid).join(" ")}\r\n`;
+					const reply = `${answer.repeat(options.searchRepeats ?? 1)}${tag} OK done\r\n`;
+					if (options.searchDelayMs) return void setTimeout(() => send(reply), options.searchDelayMs);
+					return send(reply);
 				}
 				if (sub.toUpperCase() === "FETCH") {
 					if (options.strictEmptyFetch && entry.messages.length === 0)

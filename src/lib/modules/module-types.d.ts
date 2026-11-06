@@ -1,3 +1,4 @@
+import type { MessageKey } from "@/lib/i18n/i18n-types";
 export type ModuleId = "calendar" | "booking" | "templates" | "import" | "finance" | "drive";
 
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
@@ -25,7 +26,7 @@ export type ModuleNavPlacement =
 
 export type ModuleNavItem = {
 	id: string;
-	label: string;
+	label: MessageKey;
 	href: string;
 	/** Resolved by the client registry, so the manifest stays data. */
 	icon: string;
@@ -86,7 +87,7 @@ export type MessageSlotDeclaration = {
 	id: string;
 	slot: "message-menu";
 	order: number;
-	label: string;
+	label: MessageKey;
 	/** A lucide icon name, resolved by the client registry like `nav[].icon`. */
 	icon?: string;
 };
@@ -99,7 +100,7 @@ export type AttachmentSlotDeclaration = {
 	id: string;
 	slot: "attachment-menu";
 	order: number;
-	label: string;
+	label: MessageKey;
 	/** A lucide icon name, resolved by the client registry like `nav[].icon`. */
 	icon?: string;
 };

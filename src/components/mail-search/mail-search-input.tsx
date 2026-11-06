@@ -12,12 +12,14 @@ import type { ModuleSearchItem } from "@/lib/search/module-search-types";
 import { SearchDropdown } from "./search-dropdown";
 import { flattenSections, nextActiveIndex, searchItemKey } from "./search-dropdown-utils";
 import { useModuleSearch } from "./use-module-search";
+import { useT } from "@/lib/i18n/use-t";
 
 /**
  * The mail search. `panel` is the field inside the message list panel (Zero's "Search ⌘K"), always shown;
  * `header` is the top-bar pill that collapses to an icon on phones.
  */
 export function MailSearchInput({ variant = "header" }: { variant?: "header" | "panel" }) {
+	const t = useT();
 	const panel = variant === "panel";
 	const { input: query, setQuery } = useMailSearch();
 	const { openCommandPalette, shortcutsEnabled, shortcutsPreferenceLoading } = useShortcuts();
@@ -64,7 +66,7 @@ export function MailSearchInput({ variant = "header" }: { variant?: "header" | "
 				type="button"
 				onClick={() => setExpanded(true)}
 				hidden={panel}
-				aria-label="Search mail"
+				aria-label={t("Search mail")}
 				className={clsx(
 					"ms-auto flex h-10 w-10 shrink-0 items-center justify-center rounded-full hover:bg-neutral-200 md:hidden",
 					query ? "bg-blue-100 text-blue-700" : "text-neutral-600",
@@ -99,7 +101,7 @@ export function MailSearchInput({ variant = "header" }: { variant?: "header" | "
 						setClosedFor(null);
 						setQuery(event.target.value);
 					}}
-					placeholder={showShortcutHints ? "Search mail (press / to focus)" : "Search mail"}
+					placeholder={showShortcutHints ? t("Search mail (press / to focus)") : t("Search mail")}
 					className={searchPillInputClass}
 				/>
 				{query ? (
@@ -108,7 +110,7 @@ export function MailSearchInput({ variant = "header" }: { variant?: "header" | "
 						onMouseDown={(event) => event.preventDefault()}
 						onClick={() => setQuery("")}
 						className="rounded-full p-1 text-neutral-500 hover:bg-blue-100 hover:text-neutral-800"
-						aria-label="Clear search"
+						aria-label={t("Clear search")}
 					>
 						<X className="h-4 w-4" />
 					</button>
@@ -117,7 +119,7 @@ export function MailSearchInput({ variant = "header" }: { variant?: "header" | "
 						type="button"
 						onClick={openCommandPalette}
 						className="hidden sm:flex items-center gap-1 rounded-md bg-neutral-100 px-1.5 py-0.5 text-xs font-medium text-neutral-500 transition-colors hover:bg-neutral-200 hover:text-neutral-900"
-						title="Open Command Palette (⌘K)"
+						title={t("Open Command Palette (⌘K)")}
 					>
 						<span className="text-[11px] font-mono">⌘K</span>
 					</button>

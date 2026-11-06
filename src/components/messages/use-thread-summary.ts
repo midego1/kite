@@ -8,6 +8,7 @@ import { MAILBOXES_CHANGED_EVENT } from "@/components/mailbox-provider-utils";
 import type { AiErrorBody } from "@/lib/agent/ai-error-utils";
 import type { ThreadSummaryBusy, ThreadSummaryController } from "./thread-summary-types";
 import { blockedResetMs, canSummarize, summaryAnnouncement, summaryError, summaryUrl } from "./thread-summary-utils";
+import { t } from "@/lib/i18n/translator";
 
 function browserLanguage(): string | null {
 	return typeof navigator === "undefined" ? null : primaryLanguage(navigator.language);
@@ -128,7 +129,7 @@ export function useThreadSummary(messageId: string, defaultScope: SummaryScope):
 				setHidden(false);
 				setAnnouncement(summaryAnnouncement(kind, "done"));
 			} catch {
-				if (current()) setError("Kite could not summarize this. Try again.");
+				if (current()) setError(t("Kite could not summarize this. Try again."));
 			} finally {
 				if (current()) setBusy(null);
 			}

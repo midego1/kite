@@ -1,3 +1,4 @@
+import { msg } from "@/lib/i18n/translator";
 import type { ClientModuleData } from "../module-types";
 
 /** The slice of the import manifest that client code reads, so client bundles never carry the rest of it. */
@@ -7,7 +8,7 @@ export const importClientData: ClientModuleData = {
 	nav: [
 		{
 			id: "import.settings-nav",
-			label: "Import",
+			label: msg("Import"),
 			href: "/settings/import",
 			icon: "Download",
 			placement: "settings-nav",

@@ -3,16 +3,17 @@ import type { ExternalAccountView } from "@/lib/external-accounts/types";
 import type { OverviewData } from "@/app/(admin)/admin/overview-types";
 import type { AccountLine, AccountLinesInput, HealthLine, StatusChip, StatusChipsInput } from "./command-center-types";
 import { isolateDirection } from "@/lib/bidi-utils";
+import { currentLocale, formatOneDecimal, t } from "@/lib/i18n/translator";
 
 /** How many connected accounts the card lists before pointing at Settings. */
 const MAX_ACCOUNT_LINES = 4;
 
 /** The greeting for an hour of the day in the user's time zone. */
 export function greetingFor(hour: number): string {
-	if (hour < 5) return "Good night";
-	if (hour < 12) return "Good morning";
-	if (hour < 18) return "Good afternoon";
-	return "Good evening";
+	if (hour < 5) return t("Good night");
+	if (hour < 12) return t("Good morning");
+	if (hour < 18) return t("Good afternoon");
+	return t("Good evening");
 }
 
 /** The hour of `now` in `timeZone`; the device's hour when the zone is unknown to the runtime. */
@@ -27,7 +28,7 @@ export function hourIn(now: Date, timeZone: string): number {
 }
 
 /** "Saturday 31 October 2026", in the user's time zone and the browser's language; the same shape in every runtime. */
-export function dateLabel(now: Date, timeZone: string, locale?: string): string {
+export function dateLabel(now: Date, timeZone: string, locale = currentLocale()): string {
 	try {
 		const parts = new Intl.DateTimeFormat(locale, {
 			weekday: "long",
@@ -84,11 +85,14 @@ export function statusChips(input: StatusChipsInput): StatusChip[] {
 		caption: string,
 		href: string,
 		tone: StatusChip["tone"],
-	): StatusChip => ({ id, value, caption, label: `${value} ${caption}`, href, tone });
-	const chips = [chip("unread", input.unread, `unread in ${input.folderTitle}`, input.folderHref, "blue")];
-	if (input.screenerOn || input.held > 0) chips.push(chip("screener", input.held, "in Screener", "/screener", "amber"));
+	): StatusChip => ({ id, value, caption, label: t("{value} {caption}", { value, caption }), href, tone });
+	const chips = [
+		chip("unread", input.unread, t("unread in {folder}", { folder: input.folderTitle }), input.folderHref, "blue"),
+	];
+	if (input.screenerOn || input.held > 0)
+		chips.push(chip("screener", input.held, t("in Screener"), "/screener", "amber"));
 	if (input.forYouVisible && input.forYou !== null)
-		chips.push(chip("for-you", input.forYou, "For you", "/for-you", "violet"));
+		chips.push(chip("for-you", input.forYou, t("For you"), "/for-you", "violet"));
 	return chips;
 }
 
@@ -99,40 +103,45 @@ function relativeTime(iso: string | null | undefined, now: Date): string {
 	if (!Number.isFinite(at)) return "";
 	const seconds = Math.round((now.getTime() - at) / 1000);
 	if (seconds < 0) return "";
-	if (seconds < 60) return "just now";
+	if (seconds < 60) return t("just now");
 	const minutes = Math.round(seconds / 60);
-	if (minutes < 60) return `${minutes} min ago`;
+	if (minutes < 60) return t("{count} min ago", { count: minutes });
 	const hours = Math.round(minutes / 60);
-	if (hours < 24) return `${hours} h ago`;
+	if (hours < 24) return t("{count} h ago", { count: hours });
 	const days = Math.round(hours / 24);
-	return days === 1 ? "yesterday" : `${days} days ago`;
+	return days === 1 ? t("yesterday") : t("{count, plural, one {# day ago} other {# days ago}}", { count: days });
 }
 
 const CONNECTED_ACCOUNTS_HREF = "/settings/connected-accounts";
 
 function accountLine(account: ExternalAccountView, now: Date): AccountLine {
 	const base = { id: account.id, name: account.label || account.address, address: account.address };
-	const review = { label: "Review", href: CONNECTED_ACCOUNTS_HREF };
+	const review = { label: t("Review"), href: CONNECTED_ACCOUNTS_HREF };
 	switch (account.status) {
 		case "auth_failed":
 			return {
 				...base,
 				tone: "warn",
-				detail: "Sign-in failed",
-				action: { label: "Reconnect", href: CONNECTED_ACCOUNTS_HREF },
+				detail: t("Sign-in failed"),
+				action: { label: t("Reconnect"), href: CONNECTED_ACCOUNTS_HREF },
 			};
 		case "tls_failed":
-			return { ...base, tone: "warn", detail: "Certificate problem", action: review };
+			return { ...base, tone: "warn", detail: t("Certificate problem"), action: review };
 		case "error":
-			return { ...base, tone: "warn", detail: "Checking stopped", action: review };
+			return { ...base, tone: "warn", detail: t("Checking stopped"), action: review };
 		case "paused":
-			return { ...base, tone: "muted", detail: "Paused", action: null };
+			return { ...base, tone: "muted", detail: t("Paused"), action: null };
 		case "disabled":
-			return { ...base, tone: "muted", detail: "Off", action: null };
+			return { ...base, tone: "muted", detail: t("Off"), action: null };
 		default: {
-			if (account.sync.running) return { ...base, tone: "ok", detail: "Checking now", action: null };
+			if (account.sync.running) return { ...base, tone: "ok", detail: t("Checking now"), action: null };
 			const since = relativeTime(account.sync.lastSuccessAt, now);
-			return { ...base, tone: "ok", detail: since ? `Synced ${since}` : "Not checked yet", action: null };
+			return {
+				...base,
+				tone: "ok",
+				detail: since ? t("Synced {since}", { since }) : t("Not checked yet"),
+				action: null,
+			};
 		}
 	}
 }
@@ -151,8 +160,8 @@ export function attentionHref(href: string): string {
 
 /** Megabytes with one decimal below a gigabyte, gigabytes above. */
 function formatBytes(bytes: number): string {
-	if (bytes >= 1024 ** 3) return isolateDirection(`${(bytes / 1024 ** 3).toFixed(1)} GB`);
-	return isolateDirection(`${Math.max(1, Math.round(bytes / 1024 ** 2))} MB`);
+	if (bytes >= 1024 ** 3) return isolateDirection(t("{amount} GB", { amount: formatOneDecimal(bytes / 1024 ** 3) }));
+	return isolateDirection(t("{amount} MB", { amount: Math.max(1, Math.round(bytes / 1024 ** 2)) }));
 }
 
 /**
@@ -167,7 +176,7 @@ export function healthLines(data: OverviewData, now: Date): HealthLine[] {
 		const when = relativeTime(backups.lastSuccess.completedAt, now);
 		lines.push({
 			id: "backups",
-			text: `Backups healthy · last backup ${when || "finished"}`,
+			text: when ? t("Backups healthy · last backup {when}", { when }) : t("Backups healthy · last backup finished"),
 			detail: backups.lastSuccess.size ? formatBytes(backups.lastSuccess.size) : "",
 		});
 	}
@@ -177,8 +186,11 @@ export function healthLines(data: OverviewData, now: Date): HealthLine[] {
 		lines.push({
 			id: "database",
 			text: limitBytes
-				? `Database ${formatBytes(usedBytes)} of ${formatBytes(limitBytes)}`
-				: `Database ${formatBytes(usedBytes)}`,
+				? t("Database {usedBytes} of {limitBytes}", {
+						usedBytes: formatBytes(usedBytes),
+						limitBytes: formatBytes(limitBytes),
+					})
+				: t("Database {usedBytes}", { usedBytes: formatBytes(usedBytes) }),
 			detail: limitBytes ? `${Math.round((usedBytes / limitBytes) * 100)}%` : "",
 		});
 	}

@@ -12,6 +12,7 @@ import { useOpenSuggestions } from "@/hooks/use-open-suggestions";
 import type { ExternalAccountView } from "@/lib/external-accounts/types";
 import type { MessageFolderConfig } from "@/components/messages/types";
 import { canConnectAccounts, statusChipsInput } from "./command-center-utils";
+import { folderTitle } from "@/components/messages/utils";
 
 /**
  * Everything the command center shows, from data the mailbox loads anyway where it can: the session, the
@@ -38,7 +39,7 @@ export function useCommandCenterData(config: MessageFolderConfig) {
 
 	const chips = statusChipsInput({
 		unread: folderCount?.unread,
-		folderTitle: config.title,
+		folderTitle: folderTitle(config),
 		folderHref: config.hrefPrefix,
 		held: counts.folders.screener?.total,
 		screener: selectedMailbox?.screener,

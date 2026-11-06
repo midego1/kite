@@ -1,3 +1,6 @@
+import { INTERFACE_LANGUAGE_STORAGE_KEY, languageBootstrapExpression } from "@/lib/i18n/language-utils";
+import type { MessageKey } from "@/lib/i18n/i18n-types";
+import { msg } from "@/lib/i18n/translator";
 import type { LayoutInterfaceDirection } from "@/lib/preferences/layout-types";
 
 export type InterfaceDirection = "ltr" | "rtl";
@@ -7,30 +10,31 @@ export const DEFAULT_INTERFACE_DIRECTION: LayoutInterfaceDirection = "auto";
 /** Fired when the user picks a direction in this tab, which applies at once. */
 export const INTERFACE_DIRECTION_CHOSEN_EVENT = "kite:interface-direction-chosen";
 
-/**
- * Whether Automatic follows the browser language. Off until the interface is translated (ROADMAP milestone 1, item 5):
- * nobody should get a mirrored English interface unasked, so only an explicit Right to left mirrors today.
- * @public Exercised by the unit tests.
- */
-export const AUTOMATIC_FOLLOWS_BROWSER_LANGUAGE: boolean = false;
-
-export const INTERFACE_DIRECTION_OPTIONS: { value: LayoutInterfaceDirection; label: string; description: string }[] = [
+export const INTERFACE_DIRECTION_OPTIONS: {
+	value: LayoutInterfaceDirection;
+	label: MessageKey;
+	description: MessageKey;
+}[] = [
 	{
 		value: "auto",
-		label: "Automatic",
-		description: "Left to right for now. Follows your browser's language once Kite is translated.",
+		label: msg("direction|Automatic"),
+		description: msg("Follows the interface language: right to left for Arabic, left to right for the others."),
 	},
-	{ value: "ltr", label: "Left to right", description: "The menu on the left and text starting on the left." },
-	{ value: "rtl", label: "Right to left", description: "The menu on the right and text starting on the right." },
+	{
+		value: "ltr",
+		label: msg("Left to right"),
+		description: msg("The menu on the left and text starting on the left."),
+	},
+	{
+		value: "rtl",
+		label: msg("Right to left"),
+		description: msg("The menu on the right and text starting on the right."),
+	},
 ];
-
-/** The line under the setting while Automatic is chosen, so it does not promise more than it does today. */
-export const AUTOMATIC_DIRECTION_HINT = "Left to right until Kite is translated.";
 
 /**
  * Languages written right to left, unless a script subtag says otherwise (`sd-Deva`, `ar-Latn`), and any language
- * explicitly in an RTL script (`pa-Arab`). Only the browser's first language counts: someone who reads Arabic as a
- * second language keeps the interface they chose first.
+ * explicitly in an RTL script (`pa-Arab`).
  */
 const RTL_LANGUAGE =
 	/^(?:(?:ar|arc|ckb|dv|fa|he|iw|ji|ks|ps|sd|ug|ur|yi)(?:-(?!latn|deva|cyrl)|$)|[a-z]{2,3}-(?:arab|hebr)\b)/i;
@@ -44,13 +48,16 @@ export function parseInterfaceDirection(stored: string | null): LayoutInterfaceD
 	return stored === "ltr" || stored === "rtl" || stored === "auto" ? stored : DEFAULT_INTERFACE_DIRECTION;
 }
 
+/**
+ * Automatic follows the page's language, not the browser's: nobody gets a mirrored English interface unasked, and an
+ * explicit choice always wins. `language` is the resolved language (`pageLanguage`).
+ */
 export function resolveInterfaceDirection(
 	preference: LayoutInterfaceDirection,
 	language: string | null | undefined,
-	followLanguage = AUTOMATIC_FOLLOWS_BROWSER_LANGUAGE,
 ): InterfaceDirection {
 	if (preference !== "auto") return preference;
-	return followLanguage && isRtlLanguage(language) ? "rtl" : "ltr";
+	return isRtlLanguage(language) ? "rtl" : "ltr";
 }
 
 /** What `<html dir>` says right now; left to right on the server and before the bootstrap script. */
@@ -75,19 +82,19 @@ export function logicalArrowKey(key: string): string {
 }
 
 /**
- * Runs in <head> before paint, so the first frame is already mirrored (same approach as the theme). Blocked storage only
- * loses the stored choice. Keep it in sync with resolveInterfaceDirection above. @public Exercised by the unit tests.
+ * Runs in <head> before paint, so the first frame is already mirrored and `lang` is right (same approach as the theme).
+ * Blocked storage only loses the stored choices. Keep it in sync with pageLanguage and resolveInterfaceDirection.
  */
-export function directionBootstrapScript(followLanguage: boolean): string {
-	const automatic = followLanguage ? `saved !== "ltr" && ${RTL_LANGUAGE}.test(navigator.language || "")` : "false";
-	return `(() => {
-	let saved = null;
+export const interfaceDirectionBootstrapScript = `(() => {
+	let direction = null;
+	let language = null;
 	try {
-		saved = localStorage.getItem(${JSON.stringify(INTERFACE_DIRECTION_STORAGE_KEY)});
+		direction = localStorage.getItem(${JSON.stringify(INTERFACE_DIRECTION_STORAGE_KEY)});
+		language = localStorage.getItem(${JSON.stringify(INTERFACE_LANGUAGE_STORAGE_KEY)});
 	} catch {}
-	const rtl = saved === "rtl" || (${automatic});
+	const browser = navigator.language || "";
+	const resolved = ${languageBootstrapExpression("language", "browser", "location.pathname")};
+	const rtl = direction === "rtl" || (direction !== "ltr" && ${RTL_LANGUAGE}.test(resolved));
+	document.documentElement.lang = resolved;
 	document.documentElement.dir = rtl ? "rtl" : "ltr";
 })();`;
-}
-
-export const interfaceDirectionBootstrapScript = directionBootstrapScript(AUTOMATIC_FOLLOWS_BROWSER_LANGUAGE);

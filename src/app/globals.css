@@ -1628,3 +1628,8 @@ html[data-composer="docked-aside"] {
 	--kite-toast-bottom: auto;
 	--kite-toast-top: calc(1rem + env(safe-area-inset-top));
 }
+
+/* Letter spacing pulls Arabic's joined letters apart. */
+html[lang="ar"] [class*="tracking-"] {
+	letter-spacing: normal;
+}

@@ -4,7 +4,9 @@ import { bundleModules } from "./support/modules-bundle.mjs";
 
 const {
 	quoteImapString,
-	parseSearchUids,
+	collectSearchUids,
+	distinctUids,
+	planUidSearch,
 	getLiteralLength,
 	isTaggedCompletion,
 	isTaggedOk,
@@ -28,7 +30,7 @@ const {
 	hostImportMessageFromImap,
 } = await bundleModules("kite-imap-utils-", [
 	[
-		"quoteImapString, parseSearchUids, getLiteralLength, isTaggedCompletion, isTaggedOk, parseListMailboxName, parseFetchUid, parseCapabilities, parseGreeting, planStartTls, chooseAuthMethod, plainAuthToken, imapLoginArgument, imapLimits, parseFetchAttributes, parseInternalDate",
+		"quoteImapString, collectSearchUids, distinctUids, planUidSearch, getLiteralLength, isTaggedCompletion, isTaggedOk, parseListMailboxName, parseFetchUid, parseCapabilities, parseGreeting, planStartTls, chooseAuthMethod, plainAuthToken, imapLoginArgument, imapLimits, parseFetchAttributes, parseInternalDate",
 		"src/lib/imap/protocol-utils.ts",
 	],
 	[
@@ -45,12 +47,34 @@ test("quoteImapString escapes backslashes and quotes and refuses line breaks", (
 		assert.throws(() => quoteImapString(value), /line breaks/, JSON.stringify(value));
 });
 
-test("parseSearchUids reads the numbers of a SEARCH line and ignores anything else", () => {
-	assert.deepEqual(parseSearchUids("* SEARCH 4 9 12"), ["4", "9", "12"]);
-	assert.deepEqual(parseSearchUids("* search 7"), ["7"]);
-	assert.deepEqual(parseSearchUids("* SEARCH"), []);
-	assert.deepEqual(parseSearchUids("* SEARCH 4 x 5"), ["4", "5"]);
-	assert.deepEqual(parseSearchUids("A1 OK done"), []);
+test("collectSearchUids reads the numbers of SEARCH lines and ignores anything else", () => {
+	const read = (...lines) => {
+		const found = new Uint32Array(8);
+		return [...found.subarray(0, collectSearchUids(lines, found, 0))];
+	};
+	assert.deepEqual(read("* SEARCH 4 9 12"), [4, 9, 12]);
+	assert.deepEqual(read("* search 7"), [7]);
+	assert.deepEqual(read("* SEARCH"), []);
+	assert.deepEqual(read("* SEARCH 4 x 5", "* SEARCH  6\t7 "), [4, 5, 6, 7]);
+	assert.deepEqual(read("A1 OK done", "* SEARCHING 4"), []);
+	// Not UIDs: zero, past 32 bits, or digits with something after them.
+	assert.deepEqual(read("* SEARCH 0 4294967295 4294967296 99999999999999999999 7x 8"), [4294967295, 8]);
+});
+
+test("collectSearchUids keeps a range, continues from a count and stops at what the array holds", () => {
+	const found = new Uint32Array(3);
+	assert.equal(collectSearchUids(["* SEARCH 5 19 20 21"], found, 0, { from: 10, to: 20 }), 2);
+	assert.equal(collectSearchUids(["* SEARCH 5 30"], found, 2, { from: 21, to: null }), 3);
+	assert.deepEqual([...found], [19, 20, 30]);
+	const message = /The IMAP server listed more than 3 messages in one folder$/;
+	assert.throws(() => collectSearchUids(["* SEARCH 1 2 3 4"], new Uint32Array(3), 0), message);
+	// Saying one UID again and again is no way past it.
+	assert.throws(() => collectSearchUids(["* SEARCH 7 7 7 7"], new Uint32Array(3), 0), message);
+});
+
+test("distinctUids sorts as numbers and drops repeats", () => {
+	assert.deepEqual(distinctUids(Uint32Array.from([30, 9, 100, 9, 4294967295])), [9, 30, 100, 4294967295]);
+	assert.deepEqual(distinctUids(new Uint32Array(0)), []);
 });
 
 test("selectImapUidBatch walks back from the newest messages and reports the next offset", () => {
@@ -194,6 +218,8 @@ test("imapLimits keeps Workers inside an isolate's memory and gives the Node ser
 		assert.equal(limits.lineBytes, 8 * MB);
 		assert.equal(limits.commandResponseBytes, 32 * MB);
 		assert.equal(limits.commandResponseLines, 200_000);
+		// A folder's whole list, as strings of about 33 bytes, stays a part of what a run may hold.
+		assert.ok(limits.folderUids * 33 <= (limits === workers ? 34 * MB : 134 * MB));
 		assert.equal(limits.commandTimeoutMs, 180_000);
 		assert.equal(limits.commandMaxMs, 600_000);
 		// 96 MB at 4 Mbit/s (500 KB/s) takes about 197 s: more than the base timeout, inside what it earns and the cap.
@@ -301,4 +327,35 @@ test("IMAP messages carry their state into the direct and the background import"
 	);
 	assert.equal("receivedAt" in undated, false);
 	assert.equal(undated.starred, true);
+});
+
+test("planUidSearch asks for one line when it fits and for ranges when it might not", () => {
+	const MB = 1024 * 1024;
+	const lineBytes = 8 * MB;
+	const width = Math.floor(lineBytes / 12);
+	assert.equal(width, 699_050);
+	// What fits, or a folder that says nothing about its size.
+	assert.equal(planUidSearch({ exists: width, uidNext: 9_000_000 }, lineBytes), null);
+	assert.equal(planUidSearch({ exists: null, uidNext: 9_000_000 }, lineBytes), null);
+	assert.equal(planUidSearch({ exists: 2_000_000, uidNext: null }, lineBytes), null);
+
+	assert.deepEqual(planUidSearch({ exists: 1_000_000, uidNext: 2_000_000 }, lineBytes), [
+		{ from: 1, to: width },
+		{ from: width + 1, to: 2 * width },
+		{ from: 2 * width + 1, to: null },
+	]);
+	// Even a window of the longest UIDs stays inside the line limit.
+	assert.ok(`* SEARCH ${"4294967295 ".repeat(width)}`.length <= lineBytes);
+	// A window ends exactly at the last UID: nothing past it but `*`.
+	assert.deepEqual(planUidSearch({ exists: 30, uidNext: 41 }, 240), [
+		{ from: 1, to: 20 },
+		{ from: 21, to: null },
+	]);
+	// A server that overstates EXISTS on a nearly empty folder still gets one answer.
+	assert.deepEqual(planUidSearch({ exists: 30, uidNext: 1 }, 240), [{ from: 1, to: null }]);
+	// UIDs too sparse for the window cap, or a nonsense UIDNEXT, cost no thousands of round trips.
+	assert.equal(planUidSearch({ exists: 800_000, uidNext: 4_000_000_000 }, lineBytes), null);
+	assert.equal(planUidSearch({ exists: 800_000, uidNext: Number.MAX_SAFE_INTEGER }, lineBytes), null);
+	assert.equal(planUidSearch({ exists: 800_000, uidNext: 64 * width + 1 }, lineBytes)?.length, 64);
+	assert.equal(planUidSearch({ exists: 800_000, uidNext: 64 * width + 2 }, lineBytes), null);
 });

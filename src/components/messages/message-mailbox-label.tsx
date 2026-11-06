@@ -5,6 +5,7 @@ import { getMailboxAddress, getMailboxName } from "@/components/mailbox-selector
 import { Badge } from "@/components/ui/badge";
 import { getAvatarColorStyle } from "@/lib/avatar-colors";
 import { cn } from "@/lib/utils";
+import { useT } from "@/lib/i18n/use-t";
 
 /**
  * Which mailbox a row belongs to in the All mailboxes view: a neutral pill (the palette variables, so it
@@ -18,6 +19,7 @@ export function MessageMailboxLabel({
 	mailbox: MailboxOption | undefined;
 	className?: string;
 }) {
+	const t = useT();
 	if (!mailbox) return null;
 	const address = getMailboxAddress(mailbox);
 	return (
@@ -36,7 +38,7 @@ export function MessageMailboxLabel({
 				style={{ backgroundColor: getAvatarColorStyle(address).backgroundColor }}
 			/>
 			<span className="truncate">
-				<span className="sr-only">Mailbox: </span>
+				<span className="sr-only">{t("Mailbox:")} </span>
 				{getMailboxName(mailbox)}
 			</span>
 		</Badge>

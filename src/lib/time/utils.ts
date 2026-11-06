@@ -1,3 +1,4 @@
+import { currentLocale } from "@/lib/i18n/translator";
 import type { ZonedDay } from "./types";
 import { isolateDirection } from "@/lib/bidi-utils";
 
@@ -65,8 +66,11 @@ export function formatUserDateText(value: Date | string, options: Intl.DateTimeF
 	return new Intl.DateTimeFormat(undefined, { ...options, timeZone: getUserTimeZone() }).format(new Date(value));
 }
 
+/** On screen, in the interface language. */
 export function formatUserDate(value: Date | string, options: Intl.DateTimeFormatOptions): string {
-	return isolateDirection(formatUserDateText(value, options));
+	return isolateDirection(
+		new Intl.DateTimeFormat(currentLocale(), { ...options, timeZone: getUserTimeZone() }).format(new Date(value)),
+	);
 }
 
 export function formatUserDateTimeLocal(value: Date): string {

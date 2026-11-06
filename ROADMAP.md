@@ -58,7 +58,7 @@ Make the app usable for Arabic, Hebrew, Persian and Urdu mail and users.
    - The root `<html>` gets `dir` before first paint, with no layout flash.
    - The reading pane divider, sidebar, dropdowns, toasts and dialogs mirror correctly.
    - Test: e2e spec switches to RTL and checks the sidebar sits on the right, the divider still resizes, and the account menu opens in place.
-5. **Interface translations (foundation)**
+5. **Interface translations (foundation)** (see [Translations](docs/translations.md))
    - Introduce a small message catalog (no heavy dependency) with English as the source and one RTL language as the first translation.
    - Start with the shell: sidebar, account menu, message list, reader toolbar, composer.
    - Dates and times use `Intl` with the user's locale.

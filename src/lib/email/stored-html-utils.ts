@@ -18,10 +18,10 @@ import { rootDirection, withRootDirection } from "@/lib/email/root-direction-uti
  *
  * The work is bounded. The parser's cost per tag grows with the elements still open, and browsers stop nesting at the
  * same 512 levels, so past `MAX_OPEN_ELEMENTS` the sanitizer stops parsing, closes what it opened and keeps the rest
- * as plain text, as it does past `MAX_TAG_ATTRIBUTES` attributes or `MAX_TAG_ENTITIES` entities on one tag. The parser
- * holds a tag's attributes until the tag ends, and keeps a heap node per entity in a value. `MAX_SANITIZED_HTML_CHARS`
- * is above the largest body a message can hold, so only output that grew while it was escaped reaches it: attributes
- * that do not fit are left out, and what fits of the rest is kept, closed the same way.
+ * as plain text. A tag past `MAX_TAG_ATTRIBUTES` attributes or `MAX_TAG_ENTITIES` entities loses its attributes:
+ * `BoundedParser` holds no more of them, because the parser keeps them until the tag ends, with a heap node per entity
+ * in a value. `MAX_SANITIZED_HTML_CHARS` is above the largest body a message can hold, so only output that grew while
+ * it was escaped reaches it: attributes that do not fit are left out, and what fits of the rest is kept and closed.
  */
 const MAX_OPEN_ELEMENTS = 512;
 const MAX_TAG_ATTRIBUTES = 1_024;
@@ -196,6 +196,40 @@ function isAllowedAttribute(tag: string, name: string, value: string): boolean {
 	return true;
 }
 
+/** The parser, holding nothing more of a tag's attributes once the tag is past a limit. */
+class BoundedParser extends Parser {
+	private attributeCount = 0;
+	private entityCount = 0;
+
+	get attributesDropped(): boolean {
+		return this.attributeCount > MAX_TAG_ATTRIBUTES || this.entityCount > MAX_TAG_ENTITIES;
+	}
+
+	private get holdsNoMore(): boolean {
+		return this.attributeCount >= MAX_TAG_ATTRIBUTES || this.entityCount > MAX_TAG_ENTITIES;
+	}
+
+	onopentagname(start: number, endIndex: number): void {
+		this.attributeCount = 0;
+		this.entityCount = 0;
+		super.onopentagname(start, endIndex);
+	}
+
+	onattribdata(start: number, endIndex: number): void {
+		if (!this.holdsNoMore) super.onattribdata(start, endIndex);
+	}
+
+	onattribentity(codePoint: number): void {
+		this.entityCount += 1;
+		if (!this.holdsNoMore) super.onattribentity(codePoint);
+	}
+
+	onattribend(...end: Parameters<Parser["onattribend"]>): void {
+		this.attributeCount += 1;
+		if (this.attributeCount <= MAX_TAG_ATTRIBUTES) super.onattribend(...end);
+	}
+}
+
 function createOutput() {
 	let pieces: string[] = [];
 	let pieceChars = 0;
@@ -258,8 +292,6 @@ export function sanitizeStoredEmailHtml(html: string | null | undefined): string
 	const open: string[] = [];
 	// Depth inside a dropped element; the tokenizer reports every open tag with a matching close.
 	let dropped = 0;
-	let attributeCount = 0;
-	let entityCount = 0;
 	let stopped = false;
 	const stop = () => {
 		stopped = true;
@@ -267,31 +299,23 @@ export function sanitizeStoredEmailHtml(html: string | null | undefined): string
 	};
 	// The direction the mail declares on its own <html> and <body>, which are not stored; the first of each counts.
 	const root: { html?: string; body?: string } = {};
-	const parser = new Parser(
+	const parser = new BoundedParser(
 		{
-			onattribute() {
-				attributeCount += 1;
-				if (attributeCount > MAX_TAG_ATTRIBUTES) stop();
-			},
 			onopentag(name, attributes) {
 				if (stopped) return;
-				attributeCount = 0;
-				entityCount = 0;
 				depth += 1;
+				if (dropped > 0 || DROP_CONTENT_TAGS.has(name)) dropped += 1;
 				if (depth > MAX_OPEN_ELEMENTS) {
 					stop();
 					return;
 				}
-				if (dropped > 0 || DROP_CONTENT_TAGS.has(name)) {
-					dropped += 1;
-					return;
-				}
+				if (dropped > 0) return;
 				// Only a root tag that opens the mail counts: in a fragment, a later one is content, not a root.
 				if ((name === "html" || name === "body") && root[name] === undefined && output.isBlank()) {
 					root[name] = attributes.dir ?? "";
 				}
 				if (!STORED_TAGS.has(name)) return;
-				output.add(openTag(name, attributes, remaining()));
+				output.add(openTag(name, parser.attributesDropped ? {} : attributes, remaining()));
 				if (!VOID_TAGS.has(name)) open.push(name);
 				if (remaining() <= 0) stop();
 			},
@@ -317,14 +341,8 @@ export function sanitizeStoredEmailHtml(html: string | null | undefined): string
 		},
 		{ decodeEntities: true, lowerCaseTags: true, lowerCaseAttributeNames: true },
 	);
-	// Entities in an attribute value reach no handler, and the value only arrives once it ends.
-	const readAttributeEntity = parser.onattribentity.bind(parser);
-	parser.onattribentity = (codePoint) => {
-		readAttributeEntity(codePoint);
-		entityCount += 1;
-		if (entityCount > MAX_TAG_ENTITIES) stop();
-	};
 	parser.write(html);
+	if (!stopped) parser.end();
 	if (stopped) {
 		while (open.length > 0) output.add(`</${open.pop()}>`);
 		if (dropped === 0 && remaining() > 0) {
@@ -332,8 +350,6 @@ export function sanitizeStoredEmailHtml(html: string | null | undefined): string
 				`<div style="white-space: pre-wrap">${escapeText(htmlToReadableText(html.slice(parser.endIndex + 1)))}</div>`,
 			);
 		}
-	} else {
-		parser.end();
 	}
 	return withRootDirection(output.toString(), rootDirection(root.body, root.html));
 }

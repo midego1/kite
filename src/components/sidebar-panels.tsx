@@ -7,6 +7,7 @@ import { useSidebar } from "./sidebar-state";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup, usePanelRef } from "./ui/resizable";
 import { layoutPixels, pixelsPerPercent } from "./ui/resizable-utils";
 import { useSyncedPanel } from "./ui/use-synced-panel";
+import { useT } from "@/lib/i18n/use-t";
 
 /** The icon rail's width, which is the collapsed sidebar panel's size. */
 const RAIL_WIDTH = 72;
@@ -21,7 +22,8 @@ const SIDEBAR_PANEL_ID = "kite-sidebar-panel";
  * preferences the sidebar always used (`kite-column-width:sidebar`, `kite-sidebar-minimal`).
  */
 export function SidebarPanels({ sidebar, children }: { sidebar: ReactNode; children: ReactNode }) {
-	const { minimal, width, userId, setMinimal, setWidth } = useSidebar();
+	const t = useT();
+	const { minimal, width, userId, setMinimal, setWidth, menuOverResizeHandle } = useSidebar();
 	const rtl = useInterfaceDirection() === "rtl";
 	const panelRef = usePanelRef();
 	const changedByPanel = useSyncedPanel(panelRef, minimal, width);
@@ -63,7 +65,11 @@ export function SidebarPanels({ sidebar, children }: { sidebar: ReactNode; child
 			>
 				{sidebar}
 			</ResizablePanel>
-			<ResizableHandle aria-label={rtl ? "Resize right menu" : "Resize left menu"} className="bg-transparent" />
+			<ResizableHandle
+				aria-label={rtl ? t("Resize right menu") : t("Resize left menu")}
+				className="bg-transparent"
+				disabled={menuOverResizeHandle}
+			/>
 			<ResizablePanel id="kite-page-panel" minSize={PAGE_MIN_WIDTH}>
 				{children}
 			</ResizablePanel>

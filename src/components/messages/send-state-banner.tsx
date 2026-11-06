@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { authFetch } from "@/lib/auth/client";
 import type { Message } from "@/hooks/types";
 import { formatSendTime, getMessageSendLabel, getSendBannerActions } from "./send-state-utils";
+import { useT } from "@/lib/i18n/use-t";
+import { t } from "@/lib/i18n/translator";
 
 /** Takes the queued or failed message back into the author's Drafts; null when the server refused. */
 async function takeBackSend(messageId: string): Promise<string | null> {
@@ -18,7 +20,7 @@ async function takeBackSend(messageId: string): Promise<string | null> {
 	});
 	const data = (await response.json().catch(() => ({}))) as { draftId?: string; error?: string };
 	if (!response.ok || !data.draftId) {
-		toast.error(data.error ?? "Could not cancel the send");
+		toast.error(data.error ?? t("Could not cancel the send"));
 		return null;
 	}
 	window.dispatchEvent(new Event("kite:messages-changed"));
@@ -36,6 +38,7 @@ export function SendStateBanner({
 	message: Pick<Message, "id" | "sendState" | "createdAt">;
 	alignWide: boolean;
 }) {
+	const t = useT();
 	const router = useRouter();
 	const [pending, setPending] = useState(false);
 	const state = message.sendState;
@@ -56,25 +59,28 @@ export function SendStateBanner({
 			router.push(`/drafts/${draftId}`);
 			return;
 		}
-		toast.success(canCancel ? "Send cancelled. The message is back in Drafts." : "Moved to Drafts");
+		toast.success(canCancel ? t("Send cancelled. The message is back in Drafts.") : t("Moved to Drafts"));
 		router.push("/sent");
 	}
 
 	const alarming = failed || stuck;
 	const Icon = alarming ? CircleAlert : CalendarClock;
 	let text: string;
-	if (failed) text = state.error ? `This message was not sent: ${state.error}` : "This message was not sent.";
+	if (failed)
+		text = state.error
+			? t("This message was not sent: {error}", { error: state.error })
+			: t("This message was not sent.");
 	else if (stuck)
 		text = `${label.text}. It may or may not have been delivered. Move it to Drafts to edit it, and check with the recipient before sending it again.`;
 	else if (label.kind === "sending") text = "This message is being sent.";
 	else text = `This message is scheduled to be sent on ${formatSendTime(state.scheduledAt!)}.`;
 	const regionName = failed
-		? "Send failed"
+		? t("Send failed")
 		: stuck
-			? "Send stuck"
+			? t("Send stuck")
 			: label.kind === "sending"
-				? "Sending"
-				: "Scheduled send";
+				? t("Sending")
+				: t("Scheduled send");
 
 	return (
 		<div className={alignWide ? "px-3 sm:px-6 sm:ps-16" : "px-3 sm:px-6 sm:ps-10"}>
@@ -96,11 +102,11 @@ export function SendStateBanner({
 					<div className="flex gap-2">
 						{!stuck && (
 							<Button type="button" size="sm" disabled={pending} onClick={() => void takeBack(true)}>
-								{failed ? "Edit and resend" : "Edit"}
+								{failed ? t("Edit and resend") : t("Edit")}
 							</Button>
 						)}
 						<Button type="button" size="sm" variant="outline" disabled={pending} onClick={() => void takeBack(false)}>
-							{canCancel ? "Cancel send" : "Move to Drafts"}
+							{canCancel ? t("Cancel send") : t("Move to Drafts")}
 						</Button>
 					</div>
 				)}

@@ -13,6 +13,7 @@ import {
 	getReplyThreading,
 	hasAdditionalRecipients,
 } from "./utils";
+import { useT } from "@/lib/i18n/use-t";
 
 export type MessageReplyInput = Pick<
 	MessageActionsProps,
@@ -44,6 +45,7 @@ export function useMessageReply({
 	message,
 	messageMeta,
 }: MessageReplyInput) {
+	const t = useT();
 	const { openDraftComposer, open, placement, collapsed } = useCompose();
 	// In a reader on a wider screen replies open docked under the message; phones keep the full-screen composer.
 	const inlineHost = useInlineComposerHost();
@@ -82,11 +84,11 @@ export function useMessageReply({
 			!inlineFor || !open || placement !== "popup"
 				? Promise.resolve(true)
 				: requestConfirmation({
-						title: "Close the open message?",
-						description: "The message you are writing is saved in Drafts.",
-						confirmLabel: "Close and reply",
+						title: t("Close the open message?"),
+						description: t("The message you are writing is saved in Drafts."),
+						confirmLabel: t("Close and reply"),
 					}),
-		[inlineFor, open, placement],
+		[inlineFor, open, placement, t],
 	);
 
 	const reply = useCallback(
@@ -113,12 +115,13 @@ export function useMessageReply({
 				});
 				openDraftComposer(draftId, { inlineFor, kind: mode, source });
 			} catch (replyError) {
-				setError(replyError instanceof Error ? replyError.message : "Could not start reply");
+				setError(replyError instanceof Error ? replyError.message : t("Could not start reply"));
 			} finally {
 				setPending(null);
 			}
 		},
 		[
+			t,
 			mailboxId,
 			senderAddress,
 			ownAddress,
@@ -157,11 +160,12 @@ export function useMessageReply({
 			});
 			openDraftComposer(draftId, { inlineFor, kind: "forward", source });
 		} catch (forwardError) {
-			setError(forwardError instanceof Error ? forwardError.message : "Could not start forward");
+			setError(forwardError instanceof Error ? forwardError.message : t("Could not start forward"));
 		} finally {
 			setPending(null);
 		}
 	}, [
+		t,
 		message,
 		messageMeta,
 		mailboxId,

@@ -11,6 +11,7 @@ import { moduleNavItems } from "@/lib/modules/nav-utils";
 import { getUserTimeZone } from "@/lib/time/utils";
 import type { MessageFolderConfig } from "@/components/messages/types";
 import type { QuickAction } from "./command-center-types";
+import { folderTitle } from "@/components/messages/utils";
 import { accountLines, dateLabel, greetingFor, hourIn, statusChips } from "./command-center-utils";
 import { LazyCommandCenterAdminCard } from "./command-center-admin-card-lazy";
 import { CommandCenterAccountsCard } from "./command-center-accounts-card";
@@ -19,6 +20,7 @@ import { CommandCenterQuickActions } from "./command-center-quick-actions";
 import { CommandCenterStats } from "./command-center-stats";
 import { FloatingKite } from "./floating-kite";
 import { useCommandCenterData } from "./use-command-center-data";
+import { useT } from "@/lib/i18n/use-t";
 
 /** The modules shown as quick actions, at most. */
 const MAX_MODULE_ACTIONS = 4;
@@ -40,6 +42,7 @@ const CARD_GRID_CLASS = "grid items-start gap-4 @2xl:grid-cols-2 @2xl:[&>*:only-
  * sidebar's rows and "New email" button for the rows and tiles.
  */
 export function CommandCenter({ config }: { config: MessageFolderConfig }) {
+	const t = useT();
 	const data = useCommandCenterData(config);
 	const { openComposer } = useCompose();
 	// The modules' sidebar items, labels and icons only: their counts are the sidebar's business.
@@ -49,15 +52,16 @@ export function CommandCenter({ config }: { config: MessageFolderConfig }) {
 		const now = new Date();
 		const timeZone = getUserTimeZone();
 		return { greeting: greetingFor(hourIn(now, timeZone)), date: dateLabel(now, timeZone) };
-	}, []);
+		// eslint-disable-next-line react-hooks/exhaustive-deps -- a new language must read them again, whatever it changed.
+	}, [t]);
 	const now = new Date();
 	const chips = statusChips(data.chips);
 	const accounts = accountLines({ accounts: data.accounts, now });
 	const actions: QuickAction[] = [
-		{ id: "compose", label: "New email", icon: MailPlus, shortcut: "C", onSelect: openComposer },
+		{ id: "compose", label: t("New email"), icon: MailPlus, shortcut: "C", onSelect: openComposer },
 		{
 			id: "search",
-			label: "Search",
+			label: t("Search"),
 			icon: Search,
 			shortcut: "/",
 			onSelect: () => {
@@ -70,7 +74,7 @@ export function CommandCenter({ config }: { config: MessageFolderConfig }) {
 			.slice(0, MAX_MODULE_ACTIONS)
 			.map((item): QuickAction => ({
 				id: item.href,
-				label: item.label,
+				label: t(item.label),
 				icon: resolveNavIcon(item.icon),
 				href: item.href,
 			})),
@@ -116,7 +120,10 @@ export function CommandCenter({ config }: { config: MessageFolderConfig }) {
 			</div>
 
 			<p className={`mt-8 text-center text-xs text-neutral-500 ${data.countsLoading ? "invisible" : ""}`}>
-				Select a message to read · {data.unread > 0 ? `${data.unread} unread in ${config.title}` : "Nothing selected"}
+				{t("Select a message to read")} ·{" "}
+				{data.unread > 0
+					? t("{count} unread in {folder}", { count: data.unread, folder: folderTitle(config) })
+					: t("Nothing selected")}
 			</p>
 		</div>
 	);

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { htmlToPlainText } from "@/components/compose/rich-text-utils";
 import { useSuggestionList } from "@/hooks/use-suggestion-list";
 import type { OpenSuggestion } from "@/hooks/open-suggestions-types";
+import { useT } from "@/lib/i18n/use-t";
 import { authFetch } from "@/lib/auth/client";
 import { getEmailAddress, getEmailDisplayName } from "@/lib/email/address";
 import { isSameOriginPath } from "@/lib/modules/path-utils";
@@ -52,6 +53,7 @@ function Quote({ children, label, testId }: { children: string; label: string; t
 
 /** The suggestion's own content: the reader card's block for its kind, or the summary and title for the rest. */
 function SuggestionBody({ suggestion, onChanged }: { suggestion: CardSuggestion; onChanged: () => void }) {
+	const t = useT();
 	const { text: draft } = useMessageText(
 		suggestion.kind === "reply" && suggestion.canReviewDraft ? suggestion.draftId : null,
 		PREVIEW_DRAFT_CHARS,
@@ -70,7 +72,7 @@ function SuggestionBody({ suggestion, onChanged }: { suggestion: CardSuggestion;
 			className="mt-3 empty:hidden rounded-lg border border-indigo-400/50 bg-indigo-500/[0.04] p-3 text-sm"
 		>
 			{suggestion.kind === "reply" && draft && (
-				<Quote label="Drafted reply" testId="suggestion-preview-draft">
+				<Quote label={t("Drafted reply")} testId="suggestion-preview-draft">
 					{draft}
 				</Quote>
 			)}
@@ -104,6 +106,7 @@ export default function SuggestionPreviewContent({
 	mailbox: string | null;
 	onClose: () => void;
 }) {
+	const t = useT();
 	const { data, reload } = useSuggestionList<{ suggestions?: CardSuggestion[] }>(
 		suggestionCardUrl(suggestion.messageId, null),
 	);
@@ -120,7 +123,7 @@ export default function SuggestionPreviewContent({
 		<div data-suggestion-preview={suggestion.id}>
 			<div className="flex items-baseline gap-2">
 				<p dir="auto" className="min-w-0 truncate text-sm font-medium text-neutral-900">
-					{from ? getEmailDisplayName(from) : "Unknown sender"}
+					{from ? getEmailDisplayName(from) : t("Unknown sender")}
 				</p>
 				{from && getEmailDisplayName(from) !== getEmailAddress(from) && (
 					<p dir="ltr" className="min-w-0 truncate text-xs text-neutral-500">
@@ -130,10 +133,10 @@ export default function SuggestionPreviewContent({
 			</div>
 			{mailbox && <p className="truncate text-xs text-neutral-500">{mailbox}</p>}
 			<p dir="auto" className="mt-1 text-sm font-medium text-neutral-900">
-				{suggestion.message.subject || "(No subject)"}
+				{suggestion.message.subject || t("(no subject)")}
 			</p>
 			{excerpt ? (
-				<Quote label="Message" testId="suggestion-preview-excerpt">
+				<Quote label={t("Message")} testId="suggestion-preview-excerpt">
 					{excerpt}
 				</Quote>
 			) : (
@@ -142,7 +145,7 @@ export default function SuggestionPreviewContent({
 			{full ? (
 				<SuggestionBody suggestion={full} onChanged={changed} />
 			) : data ? (
-				<p className="mt-3 text-sm text-neutral-600">This suggestion is no longer open.</p>
+				<p className="mt-3 text-sm text-neutral-600">{t("This suggestion is no longer open.")}</p>
 			) : (
 				<div className="mt-3 h-16 animate-pulse rounded-lg bg-neutral-200/70" aria-hidden="true" />
 			)}
@@ -152,7 +155,7 @@ export default function SuggestionPreviewContent({
 						href={href}
 						className="text-xs font-medium text-blue-600 underline-offset-2 hover:underline focus-visible:underline focus-visible:outline-none"
 					>
-						Open message
+						{t("Open message")}
 					</Link>
 				) : (
 					<span />
@@ -166,7 +169,7 @@ export default function SuggestionPreviewContent({
 						);
 					}}
 				>
-					Dismiss
+					{t("Dismiss")}
 				</Button>
 			</div>
 		</div>

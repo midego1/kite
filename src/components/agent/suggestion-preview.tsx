@@ -3,6 +3,7 @@
 import dynamic from "next/dynamic";
 import { useEffect, useRef, useState, type HTMLAttributes } from "react";
 import * as Popover from "@radix-ui/react-popover";
+import { useT } from "@/lib/i18n/use-t";
 import type { OpenSuggestion } from "@/hooks/open-suggestions-types";
 import {
 	FOCUS_REOPEN_GUARD_MS,
@@ -34,6 +35,7 @@ export function SuggestionPreviewRow({
 	children,
 	...rest
 }: { suggestion: OpenSuggestion; mailbox?: string | null } & HTMLAttributes<HTMLLIElement>) {
+	const t = useT();
 	const [open, setOpen] = useState(false);
 	const timer = useRef<number | undefined>(undefined);
 	const row = useRef<HTMLLIElement>(null);
@@ -58,10 +60,13 @@ export function SuggestionPreviewRow({
 	}, [entered]);
 	const changeOpen = (next: boolean) => {
 		if (!next) {
+			// A pending open (from a focus a moment ago) must not undo this close.
+			window.clearTimeout(timer.current);
 			// Escape inside the preview must not drop focus: it goes back to the row.
-			ignoreFocusUntil.current = Date.now() + FOCUS_REOPEN_GUARD_MS;
-			if (content.current?.contains(document.activeElement))
+			if (content.current?.contains(document.activeElement)) {
+				ignoreFocusUntil.current = Date.now() + FOCUS_REOPEN_GUARD_MS;
 				row.current?.querySelector<HTMLElement>("a[href]")?.focus();
+			}
 			setEntered(false);
 		}
 		setOpen(next);
@@ -89,7 +94,8 @@ export function SuggestionPreviewRow({
 						// Only keyboard focus: a tap or click that focuses a control must not open it.
 						if (Date.now() < ignoreFocusUntil.current) return;
 						if (!(event.target instanceof HTMLElement) || !event.target.matches(":focus-visible")) return;
-						if (!open) setVia("key");
+						if (open) return;
+						setVia("key");
 						schedule(true, PREVIEW_OPEN_DELAY_MS / 2);
 					}}
 					onKeyDown={(event) => {
@@ -121,7 +127,7 @@ export function SuggestionPreviewRow({
 						onFocusOutside={(event) => {
 							if (event.target instanceof Node && row.current?.contains(event.target)) event.preventDefault();
 						}}
-						aria-label="Suggestion preview"
+						aria-label={t("Suggestion preview")}
 						data-suggestion-preview-popover
 						className="z-50 max-h-[var(--radix-popover-content-available-height)] w-[min(26rem,var(--radix-popover-content-available-width))] overflow-y-auto rounded-xl border border-neutral-200 bg-white p-4 text-start text-neutral-900 shadow-lg focus-visible:outline-none"
 					>

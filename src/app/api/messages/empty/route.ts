@@ -4,6 +4,7 @@ import { getDb } from "@/db";
 import { messages } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/cookies";
 import { getEnv } from "@/lib/cloudflare";
+import { recordDeletes } from "@/lib/external-accounts/two-way-record";
 import { permanentlyDeleteMessages } from "@/lib/email/permanent-delete";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { isPermanentDeleteFolder } from "../bulk/utils";
@@ -39,6 +40,9 @@ export async function POST(request: Request) {
 		.from(messages)
 		.where(inFolder)
 		.limit(EMPTY_FOLDER_BATCH_SIZE);
+	// Empty Trash sends nothing new: what a person deleted went to the provider then, and the rest got here by a rule or
+	// a filter. Empty Spam reaches it only for mail from the provider's own Spam folder.
+	if (payload.folder === "spam") await recordDeletes(env, user, batch);
 	const deleted = await permanentlyDeleteMessages(env, db, user.id, batch, "empty");
 	const [left] = await db.select({ n: count() }).from(messages).where(inFolder);
 

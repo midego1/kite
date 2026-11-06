@@ -7,6 +7,7 @@ import { CheckCircle2, CircleX, Database, ShieldCheck } from "lucide-react";
 import { Card, CardContent, CardTitleRow } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getMigrationStatus, pendingMigrationsTitle } from "./admin-update-card-utils";
+import { migrationLabel } from "./migration-label-utils";
 import type { MigrationStatusResponse } from "./admin-update-card-types";
 import { applyMigrations, useMigrationApply, type MigrationApplyState } from "./migration-apply";
 import { MigrationApplyButton, MigrationApplyProgress } from "./migration-progress";
@@ -40,10 +41,11 @@ function PendingMigrations({
 				<div className="min-w-0 flex-1">
 					<p className="font-medium">{pendingMigrationsTitle(names.length)}</p>
 					<p className="mt-1">{PENDING_BODY}</p>
-					<ol aria-label="Pending migrations" className="mt-3 space-y-1 font-mono text-xs text-amber-800">
+					<ol aria-label="Pending migrations" className="mt-3 space-y-1.5 text-sm text-amber-900">
 						{names.map((name) => (
-							<li key={name} className="break-all">
-								{name}
+							<li key={name} className="min-w-0">
+								{migrationLabel(name) !== name && <span className="block font-medium">{migrationLabel(name)}</span>}
+								<span className="block break-all font-mono text-xs text-amber-800">{name}</span>
 							</li>
 						))}
 					</ol>

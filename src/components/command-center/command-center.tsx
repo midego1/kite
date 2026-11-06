@@ -74,7 +74,7 @@ export function CommandCenter({ config }: { config: MessageFolderConfig }) {
 			.slice(0, MAX_MODULE_ACTIONS)
 			.map((item): QuickAction => ({
 				id: item.href,
-				label: item.label,
+				label: t(item.label),
 				icon: resolveNavIcon(item.icon),
 				href: item.href,
 			})),

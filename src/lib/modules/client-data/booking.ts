@@ -16,7 +16,7 @@ export const bookingClientData: ClientModuleData = {
 		},
 		{
 			id: "booking.account-menu",
-			label: "Booking",
+			label: msg("Booking"),
 			href: "/booking",
 			icon: "CalendarClock",
 			placement: "account-menu",

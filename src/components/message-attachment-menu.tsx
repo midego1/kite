@@ -73,7 +73,7 @@ export function MessageAttachmentMenu({
 								}}
 							>
 								{createElement(resolveNavIcon(slot.icon ?? ""), { className: "h-4 w-4 shrink-0" })}
-								{slot.label}
+								{t(slot.label)}
 							</button>
 						))}
 					</Popover.Content>

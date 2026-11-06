@@ -343,11 +343,11 @@ const SHOTS: Shot[] = [
 	...(
 		[
 			["2026-11-06-interface-dutch", "nl", "Accountmenu openen"],
-			["2026-11-06-interface-arabic", "ar", "فتح قائمة الحساب"],
+			["2026-11-06-interface-arabic", "ar", null],
 		] as const
 	).map(
 		([name, language, accountMenu]): Shot => ({
-			// The shell in a translated language, with the account menu open on the Language setting.
+			// The shell in a translated language: Dutch with the account menu open on Language, Arabic showing the mirror.
 			name,
 			theme: "light",
 			viewport: { width: 1280, height: 860 },
@@ -361,8 +361,12 @@ const SHOTS: Shot[] = [
 					language,
 				);
 				await page.goto("/inbox");
-				await page.getByRole("button", { name: accountMenu }).click();
-				await expect(page.getByRole("radiogroup").last()).toBeVisible();
+				await expect(page.locator("#kite-sidebar-panel")).toBeVisible();
+				await expect(page.locator("[data-message-row]").first()).toBeVisible();
+				if (accountMenu) {
+					await page.getByRole("button", { name: accountMenu }).click();
+					await expect(page.getByRole("radiogroup").last()).toBeVisible();
+				}
 				return page;
 			},
 		}),

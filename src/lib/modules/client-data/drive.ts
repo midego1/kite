@@ -37,7 +37,7 @@ export const driveClientData: ClientModuleData = {
 		},
 	],
 	attachmentSlots: [
-		{ id: "drive.save-attachment", slot: "attachment-menu", order: 30, label: "Save to Drive", icon: "HardDrive" },
+		{ id: "drive.save-attachment", slot: "attachment-menu", order: 30, label: msg("Save to Drive"), icon: "HardDrive" },
 	],
 	commands: [
 		{

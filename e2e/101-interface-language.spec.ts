@@ -88,7 +88,7 @@ test.describe("interface language", () => {
 		const first = await page.evaluate(() => (window as unknown as { __html: { atBody: string } }).__html.atBody);
 		expect(first).toBe("ar rtl");
 
-		await chooseLanguage(page, "فتح قائمة الحساب", "من اليسار إلى اليمين");
+		await chooseLanguage(page, "فتح قائمة الحساب", "من اليسار");
 		await expectHtml(page, "ar", "ltr");
 		await page.context().close();
 	});

@@ -31,7 +31,12 @@ const MARK_ICON: Record<CommandCenterTone, LucideIcon> = {
 export function CommandCenterAccountsCard({ accounts }: { accounts: AccountLine[] }) {
 	const t = useT();
 	return (
-		<CommandCenterCard title={t("Accounts")} icon={Link2} action={CONNECTED_ACCOUNTS} testId="command-center-accounts">
+		<CommandCenterCard
+			title={t("Accounts")}
+			icon={Link2}
+			action={{ ...CONNECTED_ACCOUNTS, label: t(CONNECTED_ACCOUNTS.label) }}
+			testId="command-center-accounts"
+		>
 			{accounts.length === 0 ? (
 				<CommandCenterEmpty icon={Link2} action={{ label: t("Connect an account"), href: CONNECTED_ACCOUNTS.href }}>
 					{t("Connect Gmail, iCloud or another account to read it here.")}

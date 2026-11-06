@@ -15,6 +15,9 @@ import type { ImapFetchedMessage, ImapLimits } from "./types";
 
 export type ImapConnectionOptions = Partial<ImapLimits>;
 
+/** The lines and bytes read so far in answer to one command. */
+type ResponseCount = { lines: number; bytes: number };
+
 const MB = 1024 * 1024;
 /** An APPEND literal is written in chunks of this size, each with its own deadline. */
 const APPEND_CHUNK_BYTES = 64 * 1024;
@@ -114,8 +117,9 @@ export class ImapConnection {
 		await this.write(`${tag} AUTHENTICATE PLAIN\r\n`);
 		let sent = false;
 		let cancelled = false;
+		const count = newResponseCount();
 		while (true) {
-			const line = await this.readLine();
+			const line = await this.readCountedLine(count);
 			if (line.startsWith("+") && !cancelled) {
 				// PLAIN is one response. A second challenge is cancelled (RFC 9051 §6.2.2), never answered again.
 				if (sent) cancelled = true;
@@ -152,8 +156,9 @@ export class ImapConnection {
 			pending = "";
 		}
 		await this.write(`${pending}\r\n`);
+		const count = newResponseCount();
 		while (true) {
-			const line = await this.readLine();
+			const line = await this.readCountedLine(count);
 			this.noteCapabilities(line);
 			if (isTaggedCompletion(line, tag)) {
 				if (!isTaggedOk(line, tag)) throw new Error(`IMAP sign-in failed: ${line.slice(tag.length + 1)}`);
@@ -164,8 +169,9 @@ export class ImapConnection {
 
 	/** Waits for the `+` that lets a synchronizing literal follow; a tagged answer instead ends the command. */
 	private async awaitContinuation(tag: string): Promise<void> {
+		const count = newResponseCount();
 		while (true) {
-			const line = await this.readLine();
+			const line = await this.readCountedLine(count);
 			if (line.startsWith("+")) return;
 			if (isTaggedCompletion(line, tag)) throw new Error(`IMAP sign-in failed: ${line.slice(tag.length + 1)}`);
 		}
@@ -176,20 +182,10 @@ export class ImapConnection {
 		const tag = this.nextTag();
 		await this.write(`${tag} ${command}\r\n`);
 		const lines: string[] = [];
-		let bytes = 0;
+		const count = newResponseCount();
 		while (true) {
-			const line = await this.readLine();
+			const line = await this.readCountedLine(count);
 			lines.push(line);
-			// The lines are kept until the command ends, so their total is capped, not only each line.
-			bytes += line.length + 2;
-			if (bytes > this.limits.commandResponseBytes)
-				throw new Error(
-					`The IMAP server sent more than ${Math.round(this.limits.commandResponseBytes / MB)} MB in answer to one command`,
-				);
-			if (lines.length > this.limits.commandResponseLines)
-				throw new Error(
-					`The IMAP server sent more than ${this.limits.commandResponseLines} lines in answer to one command`,
-				);
 			this.noteCapabilities(line);
 			if (isTaggedCompletion(line, tag)) {
 				if (!isTaggedOk(line, tag)) throw new Error(`${failure}: ${line.slice(tag.length + 1)}`);
@@ -206,8 +202,9 @@ export class ImapConnection {
 	async appendMessage(folder: string, flags: readonly string[], raw: Uint8Array): Promise<void> {
 		const tag = this.nextTag();
 		await this.write(`${tag} APPEND ${quoteImapString(folder)} (${flags.join(" ")}) {${raw.byteLength}}\r\n`);
+		const count = newResponseCount();
 		while (true) {
-			const line = await this.readLine();
+			const line = await this.readCountedLine(count);
 			if (line.startsWith("+")) break;
 			this.noteCapabilities(line);
 			if (isTaggedCompletion(line, tag)) throw new Error(`IMAP APPEND failed: ${line.slice(tag.length + 1)}`);
@@ -215,8 +212,9 @@ export class ImapConnection {
 		for (let offset = 0; offset < raw.byteLength; offset += APPEND_CHUNK_BYTES)
 			await this.writeBytes(raw.subarray(offset, offset + APPEND_CHUNK_BYTES));
 		await this.write("\r\n");
+		const answer = newResponseCount();
 		while (true) {
-			const line = await this.readLine();
+			const line = await this.readCountedLine(answer);
 			this.noteCapabilities(line);
 			if (isTaggedCompletion(line, tag)) {
 				if (!isTaggedOk(line, tag)) throw new Error(`IMAP APPEND failed: ${line.slice(tag.length + 1)}`);
@@ -351,6 +349,25 @@ export class ImapConnection {
 		}
 	}
 
+	/**
+	 * The next line of one command's answer. Lines may be kept until the command ends, or discarded while a server talks
+	 * past it, so their total is capped everywhere, not only each line and the deadline.
+	 */
+	private async readCountedLine(count: ResponseCount): Promise<string> {
+		const line = await this.readLine();
+		count.lines += 1;
+		count.bytes += line.length + 2;
+		if (count.bytes > this.limits.commandResponseBytes)
+			throw new Error(
+				`The IMAP server sent more than ${Math.round(this.limits.commandResponseBytes / MB)} MB in answer to one command`,
+			);
+		if (count.lines > this.limits.commandResponseLines)
+			throw new Error(
+				`The IMAP server sent more than ${this.limits.commandResponseLines} lines in answer to one command`,
+			);
+		return line;
+	}
+
 	private async readLine(): Promise<string> {
 		while (true) {
 			for (let index = Math.max(this.scanFrom, this.start); index < this.end - 1; index += 1) {
@@ -420,6 +437,8 @@ export class ImapConnection {
 		this.end += value.byteLength;
 	}
 }
+
+const newResponseCount = (): ResponseCount => ({ lines: 0, bytes: 0 });
 
 /** Adds a finished FETCH response that carried a UID and a body; flag-only responses are ignored. */
 function addFetchedMessage(

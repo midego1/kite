@@ -214,6 +214,43 @@ test("AUTHENTICATE PLAIN without SASL-IR sends the token after the continuation,
 	assert.deepEqual(signedIn.capabilities, ["IMAP4REV1", "IDLE"]);
 });
 
+test("a server that floods the sign-in and APPEND loops hits the same limit as any other command", async () => {
+	const token = Buffer.from("\0user\0secret").toString("base64");
+	const flood = "* OK still here\r\n".repeat(50);
+	const limits = { commandResponseLines: 20 };
+	const tooManyLines = /The IMAP server sent more than 20 lines in answer to one command$/;
+	const connection = async (script) => {
+		const { socket } = fakeSocket(script);
+		const imap = new ImapConnection(socket, limits);
+		await imap.readGreeting();
+		return imap;
+	};
+	await assert.rejects((await connection(() => flood)).authenticatePlain(token, true), tooManyLines);
+	await assert.rejects((await connection(() => flood)).authenticatePlain(token, false), tooManyLines);
+	await assert.rejects((await connection(() => flood)).login("user", "secret"), tooManyLines);
+	// Waiting for the `+` of a non-ASCII password's literal.
+	await assert.rejects((await connection(() => flood)).login("user", "sécret"), tooManyLines);
+	await assert.rejects((await connection(() => flood)).appendMessage("Sent", [], encoder.encode("x")), tooManyLines);
+	// After the literal, waiting for the tagged answer.
+	await assert.rejects(
+		(await connection((command) => (command.includes("APPEND") ? "+ go\r\n" : flood))).appendMessage(
+			"Sent",
+			[],
+			encoder.encode("x"),
+		),
+		tooManyLines,
+	);
+
+	const small = new ImapConnection(fakeSocket(() => flood).socket, { commandResponseBytes: 100 });
+	await small.readGreeting();
+	await assert.rejects(small.login("user", "secret"), /The IMAP server sent more than 0 MB in answer to one command$/);
+
+	// A normal sign-in between the limits still works, and the count starts over for each command.
+	const quiet = await connection((command, tag) => `${"* OK note\r\n".repeat(15)}${tag} OK\r\n`);
+	await quiet.login("user", "secret");
+	await quiet.command("NOOP");
+});
+
 test("a greeting other than OK or PREAUTH is refused, and PREAUTH is reported", async () => {
 	const bye = fakeSocket(() => "", "* BYE busy\r\n");
 	await assert.rejects(new ImapConnection(bye.socket).readGreeting(), /OK greeting/);

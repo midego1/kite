@@ -1,6 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { externalAccountFolders, type externalAccounts } from "@/db/schema/external-accounts";
+import { clearTwoWayMapping } from "./two-way-store";
 import type { ExternalAccountView } from "./types";
 
 /** The switches of an edit that need no sign-in: send-as (spec §7.4, §16.3) and syncing the Spam folder (§6.3). */
@@ -34,4 +35,10 @@ export async function restartJunkCursor(
 	await getDb(env)
 		.delete(externalAccountFolders)
 		.where(and(eq(externalAccountFolders.accountId, id), eq(externalAccountFolders.role, "junk")));
+}
+
+/** Another server or login is another mailbox: where Kite stood in the old one, and all it knew about it, goes. */
+export async function forgetInbox(env: CloudflareEnv, id: string): Promise<void> {
+	await getDb(env).delete(externalAccountFolders).where(eq(externalAccountFolders.accountId, id));
+	await clearTwoWayMapping(env, id);
 }

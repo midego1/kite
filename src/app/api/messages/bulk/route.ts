@@ -4,13 +4,14 @@ import { getDb, type AppDatabase } from "@/db";
 import { folders, messages } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/cookies";
 import { getEnv } from "@/lib/cloudflare";
+import { cancelKiteMoves, recordDeletes } from "@/lib/external-accounts/two-way-record";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { createAuditLogs } from "@/lib/mailboxes/audit";
 import { queryInChunks, runInChunks } from "@/db/chunk-utils";
 import type { MailboxAccessLevel } from "@/lib/mailboxes/types";
 import { permanentlyDeleteMessages } from "@/lib/email/permanent-delete";
 import { applySpamFeedback } from "@/lib/spam/feedback";
-import { reportPhishingBulk, reportSpamBulk, restoreMessageStates } from "./report";
+import { recordBulkMove, reportBulk, restoreMessageStates } from "./report";
 import {
 	SEND_PENDING_MOVE_MESSAGE,
 	SEND_PENDING_MOVE_REFUSED,
@@ -167,6 +168,7 @@ export async function POST(request: Request) {
 	}
 	if (payload.action === "restore") {
 		const superseded = await restoreMessageStates(env, db, restoreStates, selectedMessages, approvedMailbox);
+		await cancelKiteMoves(env, allowedMessageIds);
 		return NextResponse.json({ ok: true, ...(superseded > 0 ? { superseded } : {}), ...refusals });
 	}
 	if (payload.action === "delete") {
@@ -174,22 +176,22 @@ export async function POST(request: Request) {
 		const deletable = selectedMessages.filter(
 			(message) => allowedMessageIds.includes(message.id) && isPermanentlyDeletableStatus(message.status),
 		);
+		await recordDeletes(env, user, deletable);
 		const deleted = await permanentlyDeleteMessages(env, db, user.id, deletable, "bulk");
 		const skipped = allowedMessageIds.length - deleted;
 		// A partial delete is reported as an error by the client, so `moved` names the whole set only when it all went.
 		const moved = deleted === deletable.length ? deletable.map((message) => message.id) : [];
 		return NextResponse.json({ ok: true, deleted, skipped, moved, ...refusals });
 	}
-	if (payload.action === "spam")
-		return NextResponse.json({ ...(await reportSpamBulk(env, user, allowedMessageIds)), ...refusals });
-	if (payload.action === "phishing")
-		return NextResponse.json({ ...(await reportPhishingBulk(env, user, allowedMessageIds)), ...refusals });
+	if (payload.action === "spam" || payload.action === "phishing")
+		return NextResponse.json({ ...(await reportBulk(env, user, payload.action, allowedMessageIds)), ...refusals });
 	if (payload.action === "inbox") {
 		const spamMessageIds = selectedMessages
 			.filter((message) => message.status === "spam" && allowedMessageIds.includes(message.id))
 			.map((message) => message.id);
 		for (const messageId of spamMessageIds) await applySpamFeedback(env, user, messageId, "ham");
 		await updateInApprovedMailboxes(db, approvedMailbox, values);
+		await cancelKiteMoves(env, allowedMessageIds);
 		return NextResponse.json({ ok: true, moved: allowedMessageIds, ...refusals });
 	}
 
@@ -199,6 +201,7 @@ export async function POST(request: Request) {
 				.map((message) => ({ id: message.id, status: message.status, folderId: message.folderId ?? null }))
 		: undefined;
 	await updateInApprovedMailboxes(db, approvedMailbox, values);
+	await recordBulkMove(env, user, payload.action, selectedMessages, allowedMessageIds);
 	await createAuditLogs(
 		env,
 		allowedMessageIds.map((messageId) => ({

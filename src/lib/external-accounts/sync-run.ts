@@ -13,6 +13,7 @@ import { shortServerText } from "./connection-utils";
 import { assertMailServerHost } from "./host-guard";
 import type { ExternalAccountRow } from "./serialize-utils";
 import { externalSyncRefusal } from "./sync-target";
+import { runTwoWay } from "./two-way-run";
 import {
 	baselineLastUid,
 	commandCapMs,
@@ -71,7 +72,7 @@ export type RunOptions = {
 const LEASE_MARGIN_MS = 2 * 60_000;
 
 /** Signs in with the saved password, opened only for this run. */
-async function openSession(
+export async function openSession(
 	env: CloudflareEnv,
 	account: ExternalAccountRow,
 	limits: Partial<ImapLimits> | undefined,
@@ -173,6 +174,16 @@ class FolderConnection {
 	}
 }
 
+/** What a run may take: no IMAP command started inside the budget may run past the deadline, so it never outlives its lease. */
+export function runClock(env: CloudflareEnv, options: Pick<RunOptions, "budgetMs" | "lease" | "limits">): RunClock {
+	const started = Date.now();
+	const deadline = options.lease.getTime() - LEASE_MARGIN_MS;
+	const base = { ...imapLimits(env.KITE_RUNTIME), ...options.limits };
+	const commandCap = commandCapMs({ deadline, started, budgetMs: options.budgetMs, commandMaxMs: base.commandMaxMs });
+	const limits = { ...base, commandMaxMs: commandCap, commandTimeoutMs: Math.min(base.commandTimeoutMs, commandCap) };
+	return { limits, commandCap, started, deadline };
+}
+
 /** Thrown to end a run early, keeping the cursor where the last saved message left it. */
 class StopRun extends Error {}
 
@@ -192,19 +203,15 @@ export async function runSync(
 	/** Filled as the run goes, so a run that fails half way still has its notes recorded. */
 	outcome: RunOutcome = emptyOutcome(),
 ): Promise<RunOutcome> {
-	const started = Date.now();
-	const deadline = options.lease.getTime() - LEASE_MARGIN_MS;
-	const base = { ...imapLimits(env.KITE_RUNTIME), ...options.limits };
-	// No IMAP command started inside the budget may run past the deadline, so the run never outlives its lease.
-	const commandCap = commandCapMs({ deadline, started, budgetMs: options.budgetMs, commandMaxMs: base.commandMaxMs });
-	const limits = { ...base, commandMaxMs: commandCap, commandTimeoutMs: Math.min(base.commandTimeoutMs, commandCap) };
-	const clock: RunClock = { limits, commandCap, started, deadline };
-	const connection = await FolderConnection.open(env, account, limits);
+	const clock = runClock(env, options);
+	const connection = await FolderConnection.open(env, account, clock.limits);
 	try {
 		const inbox = await syncFolder(env, connection, account, options, outcome, clock);
 		// Only after a complete INBOX pass: a refused or unfinished one leaves the Spam folder for a later run.
 		if (account.syncJunk && inbox === "done" && !outcome.more && !outOfTime(options, clock))
 			await syncJunkFolder(env, connection, account, options, outcome, clock);
+		if (inbox === "done" && !outcome.more && !outOfTime(options, clock))
+			await twoWayPass(env, connection, account, options, outcome, clock);
 		return outcome;
 	} finally {
 		await connection.close();
@@ -245,6 +252,44 @@ async function syncJunkFolder(
 		});
 		const reason = error instanceof Error && error.message ? `: ${shortServerText(error.message)}` : "";
 		outcome.notes.push(`Kite could not check the Spam folder this time; the Inbox was checked${reason}`);
+	}
+}
+
+/**
+ * Two-way sync after the mail (spec §6.8). Like the Spam-folder pass, its problems never fail the check: new mail was
+ * checked, so a problem here is noted and what it left is tried again. Only what stops the account as a whole is
+ * passed on.
+ */
+async function twoWayPass(
+	env: CloudflareEnv,
+	connection: FolderConnection,
+	account: ExternalAccountRow,
+	options: RunOptions,
+	outcome: RunOutcome,
+	clock: RunClock,
+): Promise<void> {
+	try {
+		await assertMayDeliver(env, account);
+		await runTwoWay(env, () => connection.usable(), account, {
+			clock: options.clock,
+			outOfTime: () => outOfTime(options, clock),
+			notes: outcome.notes,
+		});
+	} catch (error) {
+		if (error instanceof StopRun) return;
+		if (error instanceof SyncRefusedError) throw error;
+		const problem = classifySyncError(error, {
+			refused: error instanceof MailServerRefusedError,
+			host: account.imapHost,
+		});
+		if (problem.class === "auth" || problem.class === "tls") throw error;
+		logger.warn("external.sync.two_way_failed", {
+			accountId: account.id,
+			// The error's name only: its message may carry server text.
+			error: error instanceof Error ? error.name : "unknown",
+		});
+		const reason = error instanceof Error && error.message ? `: ${shortServerText(error.message)}` : "";
+		outcome.notes.push(`Kite could not finish two-way sync this time; new mail was checked${reason}`);
 	}
 }
 

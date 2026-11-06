@@ -295,6 +295,18 @@ export function parseUidNext(lines: readonly string[]): number | null {
 	return parseResponseCodeNumber(lines, "UIDNEXT");
 }
 
+/**
+ * The `[HIGHESTMODSEQ n]` of a CONDSTORE server's EXAMINE or SELECT answer, as text (it may be a 63-bit number), or
+ * null when the server sent none (or `[NOMODSEQ]`).
+ */
+export function parseHighestModseq(lines: readonly string[]): string | null {
+	for (const line of lines) {
+		const value = /\[HIGHESTMODSEQ (\d+)\]/i.exec(line)?.[1];
+		if (value) return value;
+	}
+	return null;
+}
+
 function parseResponseCodeNumber(lines: readonly string[], code: "UIDVALIDITY" | "UIDNEXT"): number | null {
 	const pattern = new RegExp(`\\[${code} (\\d+)\\]`, "i");
 	for (const line of lines) {
@@ -339,6 +351,18 @@ export function parseFetchSummaries(lines: readonly string[]): ImapMessageSummar
 		if (uid) summaries.push({ uid: Number(uid), flags, internalDate, size });
 	}
 	return summaries;
+}
+
+/** The flags of a FETCH that asked for them, with each message's sequence number (how many sit before it in the folder). */
+export function parseFetchFlags(lines: readonly string[]): { seq: number; uid: number; flags: string[] }[] {
+	const answers: { seq: number; uid: number; flags: string[] }[] = [];
+	for (const line of lines) {
+		const seq = /^\* (\d+) FETCH \(/i.exec(line)?.[1];
+		if (!seq) continue;
+		const { uid, flags } = parseFetchAttributes(line);
+		if (uid) answers.push({ seq: Number(seq), uid: Number(uid), flags });
+	}
+	return answers;
 }
 
 /** An IMAP `date` for SEARCH SINCE (RFC 9051 §9: `27-Oct-2026`), in UTC. */

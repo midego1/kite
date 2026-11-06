@@ -6,6 +6,7 @@ import { storedChatActionState, undoTargets } from "../chat-actions-utils";
 import { AgentActionError } from "./action-error";
 import type { AgentActionRow } from "./actions-types";
 import { parseActionState } from "./actions-utils";
+import { cancelKiteMoves } from "@/lib/external-accounts/two-way-record";
 import { undoSpamReceipt } from "@/lib/spam/report-receipts";
 import { restoreMarkedSpam } from "./suggestion-effects";
 
@@ -54,6 +55,11 @@ async function restoreChanged(
 			.returning({ id: messages.id });
 		restored += updated.length;
 	}
+	// An undo takes back what still waits for the provider; a move that already ran stays where it went.
+	await cancelKiteMoves(
+		env,
+		targets.map(({ before }) => before.id),
+	);
 	if (targets.length > 0 && restored === 0) throw new AgentActionError(refusal, 409);
 	return { restored, total: targets.length };
 }

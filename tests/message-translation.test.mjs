@@ -17,6 +17,7 @@ await build({
 	entryPoints: {
 		detect: fileURLToPath(import.meta.resolve("../src/lib/agent/translation/detect-language-utils.ts")),
 		segment: fileURLToPath(import.meta.resolve("../src/lib/agent/translation/segment-utils.ts")),
+		linkify: fileURLToPath(import.meta.resolve("../src/lib/email/linkify-utils.ts")),
 		prompt: fileURLToPath(import.meta.resolve("../src/lib/agent/translation/prompt-utils.ts")),
 		client: fileURLToPath(import.meta.resolve("../src/components/messages/message-translation-utils.ts")),
 		target: fileURLToPath(import.meta.resolve("../src/components/messages/translate-target-utils.ts")),
@@ -36,6 +37,7 @@ await build({
 });
 const load = (name) => import(pathToFileURL(join(outDir, `${name}.mjs`)).href);
 const { detectMessageLanguage } = await load("detect");
+const { findLinks } = await load("linkify");
 const { messageSlots, planChunks, rebuildMessage, slotsDigest, sourceTexts, withoutJoinedLinks } =
 	await load("segment");
 const {
@@ -513,6 +515,61 @@ test("addresses only the reader's matcher links are caught too", () => {
 		subject: false,
 	});
 	assert.equal(kept.value.segments[0], "Mail ana@exämple.test, zie https://real.example/a");
+});
+
+test("no shape of link the reader makes gets through", () => {
+	const clean = (piece) =>
+		check(JSON.stringify({ segments: [`Go ${piece} now`, "x"] }), { subject: false }).value.segments[0];
+	const removed = [
+		"https://evil.example/a",
+		"http://evil.example/a?b=1&c=2#d",
+		"(https://evil.example/a).",
+		"[https://evil.example/a]",
+		"https://evil.example/a(b)",
+		"「https://evil.example/a」",
+		"www.evil.example",
+		"WWW.EVIL.EXAMPLE/A",
+		"pay@evil.example",
+		"pay.me+1@sub.evil.example",
+		"pay@xn--80ak6aa92e.xn--p1ai",
+		"pay@exämple.test",
+		"pay@evil.рф",
+		"https://bücher.evil.test",
+	];
+	for (const link of removed) assert.equal(/evil|exämple|xn--/i.test(clean(link)), false, link);
+	// The guards' patterns are the wider ones for these, which the reader does not link at all.
+	for (const piece of [
+		"https://paypal.test@evil.example/a",
+		`https://evil.example/${"a".repeat(2_100)}`,
+		"www.com",
+		"pay@-bad-.test",
+	]) {
+		assert.equal(findLinks(piece).length, 0, piece);
+		assert.equal(clean(piece), "Go now", piece);
+	}
+	assert.equal(clean("two words"), "Go two words now");
+	assert.equal(clean("ftp://files.example"), "Go ftp://files.example now", "not a link anywhere");
+	assert.equal(findLinks("pay@evil.1").length, 0);
+	// Where a link ends decides what is removed: the sentence around it stays.
+	const ends = [
+		["(https://real.example/a)", "https://real.example/a"],
+		["https://real.example/a(b)", "https://real.example/a(b)"],
+		["https://real.example/a))", "https://real.example/a"],
+		["https://real.example/a]}", "https://real.example/a"],
+		["https://real.example/a】。", "https://real.example/a"],
+		["https://real.example/a?!", "https://real.example/a"],
+		["pay_@real.example.", "pay_@real.example"],
+	];
+	for (const [text, link] of ends)
+		assert.deepEqual(
+			findLinks(text).map((match) => match.text),
+			[link],
+			text,
+		);
+	for (const text of ["https://", "https://[bad", "http://.example", "www.", "a@b.c-", "a@-b.test", "a@b.t1"])
+		assert.deepEqual(findLinks(text), [], text);
+	assert.equal(findLinks(`pay@${"a".repeat(300)}.test`).length, 0);
+	assert.equal(findLinks("https://.").length, 0);
 });
 
 test("neighbouring pieces that join into a link lose it", () => {

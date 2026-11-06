@@ -4,7 +4,9 @@ Kite's interface is available in English, Dutch and Arabic. Pick one under **Lan
 
 **Direction** on Automatic follows the interface language: Arabic reads right to left, the others left to right. An explicit Left to right or Right to left always wins.
 
-Translated so far: the sidebar, the account menu, the message list, the reader's toolbar and menus, the composer and the panel shown when no message is open. Settings, Admin, the sign-in pages and the modules' own pages are still English, and error messages that come from the server stay English. Mail itself is never translated by this (see [translating a message](assistant.md)). Dates, numbers and sizes use the interface language; in English they keep following the browser's locale, as they always did. Text that goes into a message you send, such as `Re:` or the line above a quote, stays as it was.
+Translated so far: the sidebar, the account menu, the message list, the reader's toolbar and menus, the composer and the panel shown when no message is open. Still English: Settings, Admin, the sign-in pages, the modules' own pages, the command palette, the keyboard shortcuts help, the assistant panel and error messages that come from the server. Someone whose browser is set to Arabic sees the sign-in pages mirrored, in English, until those pages are translated.
+
+This setting changes Kite's own text. The mail you read is not translated by it, and nor is what you write: text that goes into a message, such as `Re:` or the line above a quote, stays as it was. Dates, numbers and sizes use the interface language; in English they keep following the browser's locale, as they always did.
 
 The Arabic has not been reviewed by a native speaker yet. Corrections are welcome.
 

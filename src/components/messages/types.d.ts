@@ -5,7 +5,7 @@ import type { LucideIcon } from "lucide-react";
 import type { Dispatch, ReactNode, SetStateAction } from "react";
 import type { Message, MessageFolder } from "@/hooks/types";
 import type { BulkMessageAction } from "@/app/api/messages/bulk/types";
-import type { MessageListDensity } from "./reading-layout-types";
+import type { MessageListDensity, MessageListLabels } from "./reading-layout-types";
 import type { RowClickModifiers } from "./message-range-selection-utils";
 
 export type MessageFolderConfig = {
@@ -32,6 +32,8 @@ export type MessageListRowProps = {
 	/** "Select" is on, so every row shows its checkbox in place of the avatar. */
 	selecting?: boolean;
 	currentAccountName?: string;
+	/** How the row shows its connected account (and sizes the subject for its mailbox label); `compact` by default. */
+	labels?: MessageListLabels;
 	/** The row's mailbox in the All mailboxes view (`MessageMailboxLabel`). */
 	mailboxLabel?: ReactNode;
 	/** False for read-only shared mail: the row offers no archive, trash or swipe to archive. */

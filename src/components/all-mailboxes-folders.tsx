@@ -7,6 +7,8 @@ import { Select } from "@/components/ui/select";
 import { useFoldersByMailbox } from "@/components/messages/use-mailbox-folders";
 import type { MessageCounts } from "@/hooks/types";
 import { FolderNavItem } from "./folders/folder-nav-item";
+import { LabelDot } from "./messages/label-dot";
+import { useMailboxLabelColor } from "./messages/use-label-colors";
 import { ReorderableList } from "./reorderable-list";
 import type { FolderTarget } from "./use-all-mailboxes-nav";
 
@@ -22,6 +24,7 @@ export function AllMailboxesFolders({
 	minimal: boolean;
 }) {
 	const { viewMailboxes } = useSelectedMailbox();
+	const colorOf = useMailboxLabelColor();
 	const foldersByMailbox = useFoldersByMailbox(viewMailboxes.map((mailbox) => mailbox.id));
 	const groups = viewMailboxes
 		.map((mailbox) => ({ mailbox, folders: foldersByMailbox.get(mailbox.id) ?? [] }))
@@ -39,7 +42,10 @@ export function AllMailboxesFolders({
 			{groups.map(({ mailbox, folders }) => (
 				<div key={mailbox.id} role="group" aria-label={`${getMailboxName(mailbox)} folders`}>
 					{!minimal && (
-						<p className="truncate px-6 pb-0.5 pt-2 text-xs font-medium text-neutral-500">{getMailboxName(mailbox)}</p>
+						<p className="flex items-center gap-1.5 truncate px-6 pb-0.5 pt-2 text-xs font-medium text-neutral-500">
+							<LabelDot color={colorOf({ id: mailbox.id, address: getMailboxAddress(mailbox) }).value} />
+							<span className="truncate">{getMailboxName(mailbox)}</span>
+						</p>
 					)}
 					<ReorderableList
 						storageKey={`kite:nav:layout:folders:${mailbox.id}`}

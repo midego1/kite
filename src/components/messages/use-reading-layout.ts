@@ -7,15 +7,18 @@ import {
 } from "@/components/interface-direction-utils";
 import { queueLayoutSave } from "@/components/layout-preferences-client";
 import type { LayoutInterfaceDirection, LayoutPreferences } from "@/lib/preferences/layout-types";
-import type { MessageListDensity, ReadingPaneMode } from "./reading-layout-types";
+import type { MessageListDensity, MessageListLabels, ReadingPaneMode } from "./reading-layout-types";
 import {
 	DEFAULT_MESSAGE_DENSITY,
+	DEFAULT_MESSAGE_LABELS,
 	DEFAULT_READING_PANE_MODE,
 	LEGACY_TWO_COLUMN_STORAGE_KEY,
 	MESSAGE_DENSITY_STORAGE_KEY,
+	MESSAGE_LABELS_STORAGE_KEY,
 	READING_LAYOUT_CHANGE_EVENT as CHANGE_EVENT,
 	READING_PANE_STORAGE_KEY,
 	parseMessageListDensity,
+	parseMessageListLabels,
 	parseReadingPaneMode,
 } from "./reading-layout-utils";
 
@@ -41,6 +44,10 @@ export function readReadingPaneMode(): ReadingPaneMode {
 
 export function readMessageListDensity(): MessageListDensity {
 	return parseMessageListDensity(readItem(MESSAGE_DENSITY_STORAGE_KEY));
+}
+
+function readMessageListLabels(): MessageListLabels {
+	return parseMessageListLabels(readItem(MESSAGE_LABELS_STORAGE_KEY));
 }
 
 export function readInterfaceDirection(): LayoutInterfaceDirection {
@@ -82,6 +89,7 @@ function useStoredPreference<T extends string>(
 
 const readingPaneLayout = (readingPane: ReadingPaneMode): LayoutPreferences => ({ readingPane });
 const densityLayout = (density: MessageListDensity): LayoutPreferences => ({ density });
+const labelsLayout = (listLabels: MessageListLabels): LayoutPreferences => ({ listLabels });
 const interfaceDirectionLayout = (interfaceDirection: LayoutInterfaceDirection): LayoutPreferences => ({
 	interfaceDirection,
 });
@@ -106,6 +114,11 @@ export function useMessageListDensity(): [MessageListDensity, (next: MessageList
 		MESSAGE_DENSITY_STORAGE_KEY,
 		densityLayout,
 	);
+}
+
+/** How message list rows show their mailbox and connected account; remembered like the density. */
+export function useMessageListLabels(): [MessageListLabels, (next: MessageListLabels) => void] {
+	return useStoredPreference(DEFAULT_MESSAGE_LABELS, readMessageListLabels, MESSAGE_LABELS_STORAGE_KEY, labelsLayout);
 }
 
 /** Automatic, left to right or right to left; `InterfaceDirectionProvider` turns the choice into `<html dir>`. */

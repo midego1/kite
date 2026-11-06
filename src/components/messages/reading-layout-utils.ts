@@ -1,5 +1,6 @@
 import type {
 	MessageListDensity,
+	MessageListLabels,
 	MessageRowDensityStyle,
 	ReadingLayoutOption,
 	ReadingPaneMode,
@@ -9,11 +10,13 @@ export const READING_PANE_STORAGE_KEY = "kite-reading-pane";
 /** The on/off switch that preceded the reading pane setting; read once to migrate it. */
 export const LEGACY_TWO_COLUMN_STORAGE_KEY = "kite-two-column-reading";
 export const MESSAGE_DENSITY_STORAGE_KEY = "kite-message-density";
+export const MESSAGE_LABELS_STORAGE_KEY = "kite-message-labels";
 /** Fired after the reading pane or density changes in this tab, so every open list follows it. */
 export const READING_LAYOUT_CHANGE_EVENT = "kite:reading-layout-changed";
 
 export const DEFAULT_READING_PANE_MODE: ReadingPaneMode = "right";
 export const DEFAULT_MESSAGE_DENSITY: MessageListDensity = "default";
+export const DEFAULT_MESSAGE_LABELS: MessageListLabels = "compact";
 
 const READING_PANE_OPTIONS: ReadingLayoutOption<ReadingPaneMode>[] = [
 	{ value: "none", label: "No split", description: "The list fills the page and opening an email replaces it." },
@@ -25,6 +28,16 @@ export const MESSAGE_DENSITY_OPTIONS: ReadingLayoutOption<MessageListDensity>[] 
 	{ value: "default", label: "Default", description: "Balanced spacing with the sender and subject." },
 	{ value: "comfortable", label: "Comfortable", description: "More room around every email, with a preview line." },
 	{ value: "compact", label: "Compact", description: "Fit more emails on screen." },
+];
+
+export const MESSAGE_LABEL_OPTIONS: ReadingLayoutOption<MessageListLabels>[] = [
+	{
+		value: "compact",
+		label: "Compact",
+		description: "A small coloured square for the mailbox and a link icon for the connected account.",
+	},
+	{ value: "full", label: "Full", description: "The mailbox name and the connected account as text labels." },
+	{ value: "off", label: "Off", description: "No mailbox or account marker on rows." },
 ];
 
 /** The reading pane options as they read in the interface's direction: when mirrored, the reader opens left of the list. */
@@ -56,8 +69,16 @@ export function parseReadingPaneMode(stored: string | null, legacyTwoColumn: str
 	return DEFAULT_READING_PANE_MODE;
 }
 
+export function isMessageListLabels(value: unknown): value is MessageListLabels {
+	return value === "compact" || value === "full" || value === "off";
+}
+
 export function parseMessageListDensity(stored: string | null): MessageListDensity {
 	return isMessageListDensity(stored) ? stored : DEFAULT_MESSAGE_DENSITY;
+}
+
+export function parseMessageListLabels(stored: string | null): MessageListLabels {
+	return isMessageListLabels(stored) ? stored : DEFAULT_MESSAGE_LABELS;
 }
 
 /** Row spacing for the stacked rows of the list beside a reading pane. */

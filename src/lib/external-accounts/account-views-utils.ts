@@ -1,0 +1,68 @@
+import { viaChipText, viaSearchQuery } from "./via-utils";
+import type { ExternalAccountPresetId } from "./types";
+
+/**
+ * A connected account as a sidebar view: the Inbox filtered by `via:` to mail that came in through it. A view is a
+ * filter, not a mailbox; nothing is moved or stored for it.
+ */
+export type AccountViewEntry = {
+	id: string;
+	/** The mailbox the account delivers into, which the entry is listed under. */
+	mailboxId: string;
+	/** What the entry reads: the account's label, or its provider while the label is still the address. */
+	label: string;
+	address: string;
+	/** The mail search the view runs, `via:` and the address (what the reader's chip and a typed search also use). */
+	query: string;
+};
+
+/** The accounts of a `GET /api/external-accounts` answer, reduced to what a view needs; anything unexpected is none. */
+export function parseAccountViews(value: unknown): AccountViewEntry[] {
+	const list = value && typeof value === "object" ? (value as { accounts?: unknown }).accounts : undefined;
+	if (!Array.isArray(list)) return [];
+	return list.flatMap((item): AccountViewEntry[] => {
+		if (!item || typeof item !== "object") return [];
+		const { id, mailboxId, label, address, preset } = item as Record<string, unknown>;
+		if (typeof id !== "string" || typeof mailboxId !== "string" || typeof address !== "string" || !address) return [];
+		const via = {
+			address,
+			label: typeof label === "string" ? label : address,
+			preset: (typeof preset === "string" ? preset : "other") as ExternalAccountPresetId,
+		};
+		return [{ id, mailboxId, label: viaChipText(via), address, query: viaSearchQuery(via) }];
+	});
+}
+
+/** The entries that deliver into one of the mailboxes in view, in the order given. */
+export function accountViewsIn(
+	entries: readonly AccountViewEntry[],
+	mailboxIds: readonly string[],
+): AccountViewEntry[] {
+	const visible = new Set(mailboxIds);
+	return entries.filter((entry) => visible.has(entry.mailboxId));
+}
+
+/** Where an entry leads: the Inbox with the account in the address, so a new tab or a reload opens the same view. */
+export function accountViewHref(entry: Pick<AccountViewEntry, "address">): string {
+	return `/inbox?via=${encodeURIComponent(entry.address)}`;
+}
+
+/** The entry whose view is open: the Inbox (or a message opened from it) filtered to that account's address. */
+export function activeAccountView(
+	entries: readonly AccountViewEntry[],
+	view: string | null,
+	pathname: string,
+): AccountViewEntry | null {
+	if (!view || (pathname !== "/inbox" && !pathname.startsWith("/inbox/"))) return null;
+	const address = view.trim().toLowerCase();
+	return entries.find((entry) => entry.address.toLowerCase() === address) ?? null;
+}
+
+/**
+ * What the open view is called: the account's label (or provider) once the accounts are known, else the address the
+ * view was opened with, so a view opened from a link has a name from the first paint.
+ */
+export function openViewName(entries: readonly AccountViewEntry[] | undefined, view: string): string {
+	const address = view.trim().toLowerCase();
+	return entries?.find((entry) => entry.address.toLowerCase() === address)?.label ?? view;
+}

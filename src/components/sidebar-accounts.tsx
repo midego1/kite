@@ -6,6 +6,8 @@ import { useSelectedMailbox } from "@/components/mailbox-provider";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { cn } from "@/lib/utils";
 import { getMailboxAddress } from "./mailbox-selector-utils";
+import { LabelDot } from "./messages/label-dot";
+import { useMailboxLabelColor } from "./messages/use-label-colors";
 import { MailboxAvatar } from "./sidebar-mailbox-switcher";
 import { AllMailboxesSquare } from "./all-mailboxes-option";
 import { useSidebar } from "./sidebar-state";
@@ -48,6 +50,7 @@ export function SidebarAccounts() {
 	const { minimal } = useSidebar();
 	const user = useCurrentUser();
 	const router = useRouter();
+	const colorOf = useMailboxLabelColor();
 	if (minimal) {
 		return (
 			<div className="mb-3 flex flex-col items-center">
@@ -87,6 +90,11 @@ export function SidebarAccounts() {
 						)}
 					>
 						<MailboxAvatar mailbox={mailbox} className="h-7 w-7 rounded-md text-xs" />
+						{/* The colour of this mailbox's dot in the message list, so the dot is recognisable here. */}
+						<LabelDot
+							color={colorOf({ id: mailbox.id, address: getMailboxAddress(mailbox) }).value}
+							className="absolute -end-0.5 -top-0.5 ring-2 ring-[var(--background)]"
+						/>
 						{active && (
 							<span className="absolute -bottom-1 -end-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-blue-500 ring-2 ring-[var(--background)]">
 								<Check className="h-2.5 w-2.5 text-[#fff]" strokeWidth={3} />

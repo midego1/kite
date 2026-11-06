@@ -12,6 +12,8 @@ import { Separator } from "@/components/ui/separator";
 import { Tooltip } from "@/components/ui/tooltip";
 import { getEmptyFolderLabel } from "@/lib/messages/permanent-delete-utils";
 import { BulkMessageToolbar } from "./bulk-message-toolbar";
+import { useOpenAccountView } from "@/components/use-account-views";
+import { AccountViewTitle } from "./account-view-title";
 import { FolderHeading } from "./folder-heading";
 import type { MessageListHeaderProps } from "./message-list-header-types";
 import { MessageListChips } from "./message-list-chips";
@@ -92,10 +94,11 @@ export function MessageListHeader({
 	// Only a selection pane beside the list replaces the toolbar; compact styling alone (a phone) must not.
 	const bulk = selection.count > 0 && !selectionInPane;
 	const headerIcons = config.headerIcons ?? [];
+	const view = useOpenAccountView();
 	return (
 		<div className="@container shrink-0">
 			<div className="flex h-14 items-center gap-2 border-b border-neutral-200 px-3">
-				<FolderHeading title={config.title} nested={nested} />
+				<FolderHeading title={view ? `${view.label}, ${config.title}` : config.title} nested={nested} />
 				<SidebarToggleButton listVisible={listVisible} />
 				{(selecting.value || selection.count > 0) && (
 					<Tooltip label="Select all visible messages">
@@ -119,6 +122,8 @@ export function MessageListHeader({
 						hasDraftSelection={selection.hasDrafts}
 						hasPendingSendSelection={selection.hasPendingSend}
 					/>
+				) : view ? (
+					<AccountViewTitle view={view} folder={config.title} />
 				) : (
 					<p
 						aria-hidden="true"

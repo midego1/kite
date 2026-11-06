@@ -31,7 +31,7 @@ import {
 } from "./message-range-selection-utils";
 import { dispatchMessageCountsDelta } from "./message-list-row-actions-utils";
 import { useConversationView } from "./use-conversation-view";
-import { useMessageListDensity } from "./use-reading-layout";
+import { useMessageListDensity, useMessageListLabels } from "./use-reading-layout";
 import { useMessageListKeyboard } from "./use-message-list-keyboard";
 import type { MessageFolderPageProps, SelectedMessage } from "./types";
 import {
@@ -92,6 +92,7 @@ export function MessageFolderPage({
 	const [selecting, setSelecting] = useState(false);
 	const [conversationView] = useConversationView();
 	const [density] = useMessageListDensity();
+	const [labels] = useMessageListLabels();
 	const grouped = conversationView && config.folder !== "drafts";
 	const { messages, isLoading, total, limit, nextCursor, updateMessages } = useMessages(
 		config.folder,
@@ -489,9 +490,13 @@ export function MessageFolderPage({
 								density={density}
 								hoverActions={!isMobile}
 								currentAccountName={accountNameOf(message)}
+								labels={labels}
 								mailboxLabel={
-									access.showMailboxLabels ? (
-										<MessageMailboxLabel mailbox={access.mailboxOf(message.mailboxId)} />
+									access.showMailboxLabels && labels !== "off" ? (
+										<MessageMailboxLabel
+											mailbox={access.mailboxOf(message.mailboxId)}
+											variant={labels === "full" ? "full" : "compact"}
+										/>
 									) : null
 								}
 								canManage={access.canManage(message.mailboxId)}

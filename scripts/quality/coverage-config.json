@@ -54,6 +54,7 @@
 		"src/lib/migrations/pending-utils.ts",
 		"src/components/layout-preferences-utils.ts",
 		"src/lib/preferences/layout-utils.ts",
+		"src/lib/external-accounts/account-views-utils.ts",
 		"src/components/dns-skipped-banner-utils.ts",
 		"src/components/reload-flight-utils.ts",
 		"src/components/reload-return-utils.ts",

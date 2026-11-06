@@ -130,14 +130,14 @@ function StackedSubjectLine({ inlineStar, ...props }: RowViewProps & { inlineSta
 				className={clsx(
 					"reading-font min-w-0 flex-1 truncate text-sm",
 					// Keeps a few letters of the subject when the pill is wide: the pill shortens first.
-					props.mailboxLabel && "min-w-[4.5rem]",
+					props.mailboxLabel && props.labels === "full" && "min-w-[4.5rem]",
 					row.unread ? "text-neutral-700" : "text-neutral-500",
 				)}
 			>
 				{row.rowMessage.subject ?? "(no subject)"}
 			</span>
 			<SendStateBadge message={row.rowMessage} />
-			<ViaAccountChip message={row.rowMessage} />
+			{props.labels !== "off" && <ViaAccountChip message={row.rowMessage} compact={props.labels !== "full"} />}
 			<MessageRowBadges message={row.rowMessage} folder={config.folder} />
 			{inlineStar && row.starToggle && row.starred && (
 				<Icon
@@ -291,7 +291,9 @@ function WideMessageRow(props: RowViewProps) {
 			<span className="flex min-w-0 items-center gap-2 text-neutral-700">
 				{/* The overlay stretches the link over the whole row, so a click anywhere opens the message
 				while the row has one keyboard stop; the checkbox, star and hover actions sit above it. */}
-				<span className="min-w-[4.5rem] flex-1 truncate">
+				{/* Keeps a few letters of the subject when a text chip is wide: the chip shortens first. The small compact
+				markers need no such guard, and on a narrow list the subject gives way to them. */}
+				<span className={clsx("flex-1 truncate", props.labels === "full" ? "min-w-[4.5rem]" : "min-w-0")}>
 					<ScreenerRowControls message={row.rowMessage} />
 					<Link
 						href={row.href}
@@ -310,7 +312,7 @@ function WideMessageRow(props: RowViewProps) {
 					</Link>
 				</span>
 				<SendStateBadge message={row.rowMessage} />
-				<ViaAccountChip message={row.rowMessage} />
+				{props.labels !== "off" && <ViaAccountChip message={row.rowMessage} compact={props.labels !== "full"} />}
 				{props.mailboxLabel}
 			</span>
 			<span className="flex min-w-[96px] items-baseline justify-end gap-1.5 group-hover:opacity-0">

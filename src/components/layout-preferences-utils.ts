@@ -3,7 +3,12 @@ import { EMAIL_FONT_PREFERENCE, FONT_PREFERENCE, FONT_SCOPE_PREFERENCE } from ".
 import { columnWidthStorageKeys } from "./column-width-preferences";
 import { INTERFACE_DIRECTION_STORAGE_KEY } from "./interface-direction-utils";
 import { CONVERSATION_VIEW_STORAGE_KEY } from "./messages/conversation-view-utils";
-import { MESSAGE_DENSITY_STORAGE_KEY, READING_PANE_STORAGE_KEY } from "./messages/reading-layout-utils";
+import { LABEL_COLORS_STORAGE_KEY } from "./messages/label-colors-utils";
+import {
+	MESSAGE_DENSITY_STORAGE_KEY,
+	MESSAGE_LABELS_STORAGE_KEY,
+	READING_PANE_STORAGE_KEY,
+} from "./messages/reading-layout-utils";
 
 /** `off` keeps this browser's own layout: it neither loads the account's nor saves its own. */
 export const LAYOUT_SYNC_DEVICE_KEY = "kite-layout-sync";
@@ -12,17 +17,27 @@ export const LAYOUT_SYNC_CHANGE_EVENT = "kite:layout-sync-changed";
 /** Fired after the account's layout was written into this browser, for views that read sizes once. */
 export const LAYOUT_PREFERENCES_APPLIED_EVENT = "kite:layout-preferences-applied";
 
+/** The layout choices that are one word, with the browser storage key the views read each from. */
+const WORD_CHOICES: readonly (readonly [keyof LayoutPreferences, string])[] = [
+	["readingPane", READING_PANE_STORAGE_KEY],
+	["density", MESSAGE_DENSITY_STORAGE_KEY],
+	["listLabels", MESSAGE_LABELS_STORAGE_KEY],
+	["font", FONT_PREFERENCE.storageKey],
+	["emailFont", EMAIL_FONT_PREFERENCE.storageKey],
+	["fontScope", FONT_SCOPE_PREFERENCE.storageKey],
+	["interfaceDirection", INTERFACE_DIRECTION_STORAGE_KEY],
+];
+
 /** The browser storage entries that hold a layout, in the formats the views read. */
 export function layoutStorageEntries(layout: LayoutPreferences, userId: string): [string, string][] {
 	const entries: [string, string][] = [];
-	if (layout.readingPane) entries.push([READING_PANE_STORAGE_KEY, layout.readingPane]);
-	if (layout.density) entries.push([MESSAGE_DENSITY_STORAGE_KEY, layout.density]);
+	for (const [key, storageKey] of WORD_CHOICES) {
+		const choice = layout[key];
+		if (typeof choice === "string") entries.push([storageKey, choice]);
+	}
 	if (layout.conversationView !== undefined)
 		entries.push([CONVERSATION_VIEW_STORAGE_KEY, layout.conversationView ? "on" : "off"]);
-	if (layout.font) entries.push([FONT_PREFERENCE.storageKey, layout.font]);
-	if (layout.emailFont) entries.push([EMAIL_FONT_PREFERENCE.storageKey, layout.emailFont]);
-	if (layout.fontScope) entries.push([FONT_SCOPE_PREFERENCE.storageKey, layout.fontScope]);
-	if (layout.interfaceDirection) entries.push([INTERFACE_DIRECTION_STORAGE_KEY, layout.interfaceDirection]);
+	if (layout.labelColors) entries.push([LABEL_COLORS_STORAGE_KEY, JSON.stringify(layout.labelColors)]);
 	if (layout.listWidth !== undefined)
 		for (const key of columnWidthStorageKeys("message-list", userId)) entries.push([key, String(layout.listWidth)]);
 	if (layout.listHeight !== undefined)

@@ -17,7 +17,7 @@ import {
 	THAI_MAIL_TRANSLATED,
 	THREAD,
 } from "./demo-data";
-import { mockForYou } from "./demo-mocks";
+import { mockForYou, mockForYouPreview } from "./demo-mocks";
 import { sampleMessage, startFakeImap } from "../../tests/support/fake-imap.mjs";
 
 // Screenshots for the changelog (docs/releasing.md#screenshots-in-the-changelog), taken against the isolated,
@@ -63,6 +63,22 @@ async function openThaiMail(page: Page) {
 }
 
 const SHOTS: Shot[] = [
+	{
+		// The For you page with the hover preview of a reply suggestion open (demo suggestions and texts from demo-mocks).
+		name: "2026-11-06-for-you-preview-light",
+		theme: "light",
+		viewport: { width: 1280, height: 900 },
+		open: async (page) => {
+			await mockForYouPreview(page, await mockForYou(page));
+			await page.goto("/for-you");
+			const row = page.locator("[data-for-you-entry]").nth(2);
+			await row.hover({ position: { x: 14, y: 10 } });
+			const preview = page.locator("[data-suggestion-preview-popover]");
+			await expect(preview.locator("[data-preview-block]")).toBeVisible();
+			await expect(preview.getByTestId("suggestion-preview-draft")).toBeVisible();
+			return page;
+		},
+	},
 	{
 		// The home view with nothing open: the For you card with the newest suggestions (demo suggestions from demo-mocks).
 		name: "2026-11-06-command-center-for-you-light",

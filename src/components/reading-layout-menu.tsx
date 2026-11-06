@@ -5,19 +5,19 @@ import { Columns2, List, Rows2 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { KeyboardEvent } from "react";
 import { useInterfaceDirection } from "@/components/interface-direction-provider";
-import {
-	AUTOMATIC_DIRECTION_HINT,
-	INTERFACE_DIRECTION_OPTIONS,
-	logicalArrowKey,
-} from "@/components/interface-direction-utils";
+import { INTERFACE_DIRECTION_OPTIONS, logicalArrowKey } from "@/components/interface-direction-utils";
 import { MESSAGE_DENSITY_OPTIONS, readingPaneOptions } from "@/components/messages/reading-layout-utils";
 import {
 	useInterfaceDirectionPreference,
+	useInterfaceLanguagePreference,
 	useMessageListDensity,
 	useReadingPaneMode,
 } from "@/components/messages/use-reading-layout";
 import { saveMessageListVisible } from "@/components/messages/message-list-visibility-utils";
 import type { ReadingPaneMode } from "@/components/messages/reading-layout-types";
+import { INTERFACE_LANGUAGES } from "@/lib/i18n/language-utils";
+import type { LayoutInterfaceLanguage } from "@/lib/preferences/layout-types";
+import { useT } from "@/lib/i18n/use-t";
 import type { ReadingLayoutSegmentProps } from "./reading-layout-menu-types";
 
 const READING_PANE_ICONS: Record<ReadingPaneMode, LucideIcon> = { none: List, right: Columns2, below: Rows2 };
@@ -58,7 +58,17 @@ export function ReadingLayoutMenu() {
 	const [readingPane, setReadingPane] = useReadingPaneMode();
 	const [density, setDensity] = useMessageListDensity();
 	const [directionPreference, setDirectionPreference] = useInterfaceDirectionPreference();
+	const [languagePreference, setLanguagePreference] = useInterfaceLanguagePreference();
 	const rtl = useInterfaceDirection() === "rtl";
+	const t = useT();
+	const languageOptions: { value: LayoutInterfaceLanguage; label: string; description: string }[] = [
+		{
+			value: "auto",
+			label: t("language|Automatic"),
+			description: t("Follows your browser's language where a translation is finished."),
+		},
+		...INTERFACE_LANGUAGES.map(({ value, label }) => ({ value, label, description: label })),
+	];
 
 	return (
 		<div className="mt-3 space-y-3 border-t border-neutral-100 px-3 pt-3">
@@ -67,7 +77,7 @@ export function ReadingLayoutMenu() {
 					id="reading-pane-menu-label"
 					className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-neutral-500"
 				>
-					Reading pane
+					{t("Reading pane")}
 				</p>
 				<div
 					role="radiogroup"
@@ -81,15 +91,15 @@ export function ReadingLayoutMenu() {
 							<SegmentButton
 								key={option.value}
 								checked={readingPane === option.value}
-								label={option.label}
-								description={option.description}
+								label={t(option.label)}
+								description={t(option.description)}
 								onSelect={() => {
 									if (option.value !== "none") saveMessageListVisible(true);
 									setReadingPane(option.value);
 								}}
 							>
 								<Icon size={16} aria-hidden />
-								<span className="truncate">{option.label}</span>
+								<span className="truncate">{t(option.label)}</span>
 							</SegmentButton>
 						);
 					})}
@@ -97,7 +107,7 @@ export function ReadingLayoutMenu() {
 			</div>
 			<div>
 				<p id="density-menu-label" className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-neutral-500">
-					Density
+					{t("Density")}
 				</p>
 				<div
 					role="radiogroup"
@@ -109,11 +119,11 @@ export function ReadingLayoutMenu() {
 						<SegmentButton
 							key={option.value}
 							checked={density === option.value}
-							label={option.label}
-							description={option.description}
+							label={t(option.label)}
+							description={t(option.description)}
 							onSelect={() => setDensity(option.value)}
 						>
-							<span className="truncate">{option.label}</span>
+							<span className="truncate">{t(option.label)}</span>
 						</SegmentButton>
 					))}
 				</div>
@@ -123,7 +133,7 @@ export function ReadingLayoutMenu() {
 					id="interface-direction-menu-label"
 					className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-neutral-500"
 				>
-					Direction
+					{t("Direction")}
 				</p>
 				<div
 					role="radiogroup"
@@ -135,17 +145,42 @@ export function ReadingLayoutMenu() {
 						<SegmentButton
 							key={option.value}
 							checked={directionPreference === option.value}
-							label={option.label}
-							description={option.description}
+							label={t(option.label)}
+							description={t(option.description)}
 							onSelect={() => setDirectionPreference(option.value)}
 						>
-							<span className="truncate">{option.label}</span>
+							<span className="truncate">{t(option.label)}</span>
 						</SegmentButton>
 					))}
 				</div>
-				{directionPreference === "auto" && (
-					<p className="mt-1.5 text-[11px] text-neutral-500">{AUTOMATIC_DIRECTION_HINT}</p>
-				)}
+			</div>
+			<div>
+				<p
+					id="interface-language-menu-label"
+					className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-neutral-500"
+				>
+					{t("Language")}
+				</p>
+				<div
+					role="radiogroup"
+					aria-labelledby="interface-language-menu-label"
+					className="grid grid-cols-2 gap-1 rounded-xl bg-neutral-100 p-1"
+					onKeyDown={moveWithArrows}
+				>
+					{languageOptions.map((option) => (
+						<SegmentButton
+							key={option.value}
+							checked={languagePreference === option.value}
+							label={option.label}
+							description={option.description}
+							onSelect={() => setLanguagePreference(option.value)}
+						>
+							<span className="truncate" lang={option.value === "auto" ? undefined : option.value}>
+								{option.label}
+							</span>
+						</SegmentButton>
+					))}
+				</div>
 			</div>
 		</div>
 	);

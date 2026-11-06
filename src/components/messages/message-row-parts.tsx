@@ -9,6 +9,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import type { Message } from "@/hooks/types";
 import type { SuggestionCount } from "@/lib/agent/auto-read/suggestion-types";
 import { getMessageRowBadges } from "./message-row-badges-utils";
+import { useT } from "@/lib/i18n/use-t";
 
 type MessageRowStarProps = {
 	starred: boolean;
@@ -19,14 +20,15 @@ type MessageRowStarProps = {
 
 /** One name for both states, so assistive technology reads the state from `aria-pressed`. */
 export function MessageRowStar({ starred, compact, icon: Icon, onToggle }: MessageRowStarProps) {
+	const t = useT();
 	const iconColor = starred ? "fill-amber-400 text-amber-400" : compact ? "text-neutral-400" : "text-neutral-300";
 	return (
-		<Tooltip label={starred ? "Starred" : "Not starred"}>
+		<Tooltip label={starred ? t("Starred") : t("Not starred")}>
 			{compact ? (
 				<button
 					type="button"
 					onClick={onToggle}
-					aria-label="Star"
+					aria-label={t("Star")}
 					aria-pressed={starred}
 					className={clsx(
 						"rounded p-0.5 hover:bg-neutral-200",
@@ -42,7 +44,7 @@ export function MessageRowStar({ starred, compact, icon: Icon, onToggle }: Messa
 					size="sm"
 					className="relative z-10"
 					onClick={onToggle}
-					aria-label="Star"
+					aria-label={t("Star")}
 					aria-pressed={starred}
 				>
 					<Icon className={clsx("h-4 w-4", iconColor)} />
@@ -69,9 +71,10 @@ export function MessageRowParty({
 	className,
 	countClassName,
 }: MessageRowPartyProps) {
+	const t = useT();
 	return (
 		<span className={clsx(unread && "font-semibold", className)}>
-			{unread && <span className="sr-only">Unread </span>}
+			{unread && <span className="sr-only">{t("Unread")} </span>}
 			<span dir="auto" className="reading-font">
 				{party}
 			</span>
@@ -99,11 +102,12 @@ export function UnreadDot({ unread }: { unread: boolean }) {
 
 /** The paperclip beside a row's date when its message (or any message of its conversation) has an attachment. */
 export function AttachmentIndicator({ message }: { message: Pick<Message, "hasAttachments"> }) {
+	const t = useT();
 	if (!message.hasAttachments) return null;
 	return (
 		<span data-attachment-indicator className="inline-flex shrink-0 items-center self-center">
 			<Paperclip aria-hidden="true" className="h-3.5 w-3.5 text-neutral-500" />
-			<span className="sr-only">Has attachments</span>
+			<span className="sr-only">{t("Has attachments")}</span>
 		</span>
 	);
 }
@@ -134,10 +138,11 @@ export function MessageRowBadges({ message, folder }: { message: Message; folder
 
 /** The row's preview, or its one-line AI summary in its place with a small mark and the preview as the tooltip. */
 export function MessageRowPreview({ preview, line }: { preview: string; line?: string }) {
+	const t = useT();
 	if (!line) return <>{preview}</>;
 	return (
 		<span data-line-summary title={preview}>
-			<Sparkles aria-label="AI summary" className="me-1 inline h-3 w-3 align-[-1px] text-neutral-400" />
+			<Sparkles aria-label={t("AI summary")} className="me-1 inline h-3 w-3 align-[-1px] text-neutral-400" />
 			{line}
 		</span>
 	);

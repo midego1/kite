@@ -1,3 +1,4 @@
+import { INTERFACE_LANGUAGE_STORAGE_KEY } from "@/lib/i18n/language-utils";
 import type { LayoutPreferences } from "@/lib/preferences/layout-types";
 import { EMAIL_FONT_PREFERENCE, FONT_PREFERENCE, FONT_SCOPE_PREFERENCE } from "./appearance-preferences";
 import { columnWidthStorageKeys } from "./column-width-preferences";
@@ -29,6 +30,7 @@ const WORD_CHOICES: readonly (readonly [keyof LayoutPreferences, string])[] = [
 	["emailFont", EMAIL_FONT_PREFERENCE.storageKey],
 	["fontScope", FONT_SCOPE_PREFERENCE.storageKey],
 	["interfaceDirection", INTERFACE_DIRECTION_STORAGE_KEY],
+	["interfaceLanguage", INTERFACE_LANGUAGE_STORAGE_KEY],
 	["translateTo", TRANSLATE_TO_STORAGE_KEY],
 ];
 

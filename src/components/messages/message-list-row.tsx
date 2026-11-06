@@ -26,6 +26,8 @@ import { SwipeableRow } from "./swipeable-row";
 import type { MessageListRowProps } from "./types";
 import { useMessageListRow } from "./use-message-list-row";
 import { formatMessageListTimestamp, getMessagePartyClassName } from "./utils";
+import { useT } from "@/lib/i18n/use-t";
+import { t } from "@/lib/i18n/translator";
 
 type RowState = ReturnType<typeof useMessageListRow>;
 type RowViewProps = MessageListRowProps & { row: RowState };
@@ -41,8 +43,8 @@ function dragHandlers(row: RowState, dragMessageIds: string[]) {
 
 function rowCheckboxLabel({ config, row }: Pick<RowViewProps, "config" | "row">) {
 	return config.folder === "drafts"
-		? `Select draft ${row.rowMessage.subject ?? "(no subject)"}`
-		: `Select message from ${row.party}`;
+		? t("Select draft {subject}", { subject: row.rowMessage.subject ?? t("(no subject)") })
+		: t("Select message from {party}", { party: row.party });
 }
 
 /** The address whose avatar a row shows: the first recipient in Sent, otherwise the sender. */
@@ -368,6 +370,7 @@ function WideMessageRow(props: RowViewProps) {
 
 /** One message (or conversation) in a folder list; in the stacked list a swipe marks it read or archives it. */
 export function MessageListRow(props: MessageListRowProps) {
+	const t = useT();
 	const row = useMessageListRow(props);
 	const { compact = false, config } = props;
 	if (!compact || config.folder === "drafts") return <WideMessageRow {...props} row={row} />;
@@ -377,13 +380,13 @@ export function MessageListRow(props: MessageListRowProps) {
 		<SwipeableRow
 			role="listitem"
 			startAction={{
-				label: row.read ? "Mark unread" : "Mark read",
+				label: row.read ? t("Mark unread") : t("Mark read"),
 				icon: row.read ? Mail : MailOpen,
 				className: "bg-blue-600",
 				onTrigger: () => void row.runRowAction(row.read ? "unread" : "read"),
 			}}
 			endAction={{
-				label: "Archive",
+				label: t("Archive"),
 				icon: Archive,
 				className: "bg-emerald-600",
 				onTrigger: () => void row.runRowAction("archive"),

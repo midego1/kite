@@ -4,6 +4,7 @@ import { useRef, type KeyboardEvent } from "react";
 import { Check } from "lucide-react";
 import { logicalArrowKey } from "@/components/interface-direction-utils";
 import type { LayoutLabelColor } from "@/lib/preferences/layout-types";
+import { useT } from "@/lib/i18n/use-t";
 import { cn } from "@/lib/utils";
 import { LABEL_COLORS } from "./label-colors-utils";
 
@@ -31,10 +32,11 @@ export function LabelColorPicker({
 	onChange: (color: LayoutLabelColor | null) => void;
 	className?: string;
 }) {
+	const t = useT();
 	const refs = useRef<(HTMLButtonElement | null)[]>([]);
 	const options: { id: LayoutLabelColor | null; name: string; swatch: string | null }[] = [
 		{ id: null, name: defaultLabel, swatch: null },
-		...LABEL_COLORS.map((color) => ({ id: color.id, name: color.label, swatch: color.value })),
+		...LABEL_COLORS.map((color) => ({ id: color.id, name: t(color.label), swatch: color.value })),
 	];
 	const selected = Math.max(
 		0,

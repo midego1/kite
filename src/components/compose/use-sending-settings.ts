@@ -3,11 +3,14 @@
 import { useCallback, useEffect, useState } from "react";
 import type { SendingSettings } from "./use-sending-settings-types";
 import { loadSendingSettings, updateSendingSettings } from "./use-sending-settings-utils";
+import { t as translate } from "@/lib/i18n/translator";
+import { useT } from "@/lib/i18n/use-t";
 
 const DEFAULT_SETTINGS: SendingSettings = { previewEnabled: false, undoSeconds: 0 };
 
 /** The signed-in user's send preview and undo window. Both default to off. */
 export function useSendingSettings() {
+	const t = useT();
 	const [settings, setSettingsState] = useState<SendingSettings>(DEFAULT_SETTINGS);
 	const [isLoading, setIsLoading] = useState(true);
 	const [error, setError] = useState<string | null>(null);
@@ -19,7 +22,8 @@ export function useSendingSettings() {
 				if (!cancelled) setSettingsState(stored);
 			})
 			.catch((loadError) => {
-				if (!cancelled) setError(loadError instanceof Error ? loadError.message : "Failed to load sending settings");
+				if (!cancelled)
+					setError(loadError instanceof Error ? loadError.message : translate("Failed to load sending settings"));
 			})
 			.finally(() => {
 				if (!cancelled) setIsLoading(false);
@@ -38,12 +42,12 @@ export function useSendingSettings() {
 				setSettingsState(await updateSendingSettings(patch));
 			} catch (updateError) {
 				setSettingsState(previous);
-				const message = updateError instanceof Error ? updateError.message : "Failed to update sending settings";
+				const message = updateError instanceof Error ? updateError.message : t("Failed to update sending settings");
 				setError(message);
 				throw new Error(message);
 			}
 		},
-		[settings],
+		[settings, t],
 	);
 
 	return { settings, error, isLoading, update };

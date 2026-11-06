@@ -12,6 +12,7 @@ import { useAttachmentText } from "./use-attachment-text";
 import { acknowledgedUrl, useAttachmentRisk } from "./use-attachment-risk";
 import { useObjectUrl } from "./use-object-url";
 import { getAttachmentFileUrl, getAttachmentPreviewKind, getViewerUrls } from "./message-attachment-viewer-utils";
+import { useT } from "@/lib/i18n/use-t";
 
 export function MessageAttachmentViewer({
 	attachment,
@@ -20,6 +21,7 @@ export function MessageAttachmentViewer({
 	onOpenChange,
 	open,
 }: MessageAttachmentViewerProps) {
+	const t = useT();
 	// The viewer has no Trigger of its own, so focus goes back to the chip or menu button that opened it.
 	const returnFocus = useReturnFocus();
 	const previewKind = attachment ? getAttachmentPreviewKind(attachment) : "unsupported";
@@ -68,7 +70,9 @@ export function MessageAttachmentViewer({
 					{previewKind === "unsupported" && (
 						<div className="flex flex-col items-center gap-3 px-6 text-center">
 							<FileWarning className="h-10 w-10 text-neutral-400" />
-							<p className="text-sm text-neutral-600">This file type cannot be previewed safely in the browser.</p>
+							<p className="text-sm text-neutral-600">
+								{t("This file type cannot be previewed safely in the browser.")}
+							</p>
 						</div>
 					)}
 				</div>
@@ -96,6 +100,7 @@ function ViewerDownload({
 	downloadUrl: string;
 	riskUrl: string | null;
 }) {
+	const t = useT();
 	const { risk, loading } = useAttachmentRisk(riskUrl);
 	const flagged = !!risk && risk.level !== "ok";
 	const [acknowledged, setAcknowledged] = useState(false);
@@ -107,14 +112,14 @@ function ViewerDownload({
 					<Button asChild>
 						<a href={flagged ? acknowledgedUrl(downloadUrl) : downloadUrl} download={filename}>
 							<ArrowDownToLine className="h-4 w-4" />
-							Download
+							{t("Download")}
 						</a>
 					</Button>
 				) : (
 					// A local file's copy is still being made, the check is running, or the warning is not acknowledged yet.
 					<Button disabled>
 						<ArrowDownToLine className="h-4 w-4" />
-						Download
+						{t("Download")}
 					</Button>
 				)}
 			</div>

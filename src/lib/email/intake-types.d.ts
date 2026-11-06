@@ -13,6 +13,12 @@ export type IntakeInput = {
 	authenticationResults?: string | null;
 	/** The SMTP listener saw a private client address, so SPF (and DMARC through SPF) could not be checked. */
 	privateClient?: boolean;
+	/**
+	 * Where to store the raw message; a fresh key when absent. A key the same delivery always derives makes a repeat
+	 * idempotent: the object is overwritten and the queue skips a mailbox that already stored from it (`storedFromRaw`).
+	 * It must follow `inbound/<ms>-<id>.eml`, which the sweeper relies on, and carry no address.
+	 */
+	rawR2Key?: string;
 };
 
 export type IntakeActions = {

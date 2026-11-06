@@ -37,6 +37,7 @@ import type { MessageFolderPageProps, SelectedMessage } from "./types";
 import {
 	getPageRange,
 	ALL_MAILBOXES_LABEL,
+	folderTitle,
 	getMailboxAddress,
 	runBulkMessageAction,
 	runDraftListAction,
@@ -62,6 +63,7 @@ import { MessageMailboxLabel } from "./message-mailbox-label";
 import { useMessageAccess } from "./use-message-access";
 import { useEmailPageTitle } from "./use-email-page-title";
 import { groupListSections } from "./message-list-sections-utils";
+import { useT } from "@/lib/i18n/use-t";
 
 const pageSize = 25;
 
@@ -81,6 +83,7 @@ export function MessageFolderPage({
 	selection,
 	listVisible = true,
 }: MessageFolderPageProps) {
+	const t = useT();
 	const {
 		selectedMailbox,
 		allMailboxes,
@@ -130,7 +133,7 @@ export function MessageFolderPage({
 	const folderCount = config.folderId ? counts.customFolders[config.folderId] : counts.folders[config.folder];
 	const titleTotal = folderCount?.total ?? total;
 	const titleUnread = folderCount?.unread ?? 0;
-	const mailboxAddress = allMailboxes ? ALL_MAILBOXES_LABEL : getMailboxAddress(selectedMailbox);
+	const mailboxAddress = allMailboxes ? t(ALL_MAILBOXES_LABEL) : getMailboxAddress(selectedMailbox);
 	// Sent mail is shown as from the mailbox it went out from, which differs per row in All mailboxes.
 	const accountNameOf = (message: Message) => {
 		const mailbox = access.mailboxOf(message.mailboxId) ?? selectedMailbox;
@@ -187,7 +190,7 @@ export function MessageFolderPage({
 	}
 
 	useEmailPageTitle(
-		{ location: config.title, total: titleTotal, unread: titleUnread, emailAddress: mailboxAddress },
+		{ location: folderTitle(config), total: titleTotal, unread: titleUnread, emailAddress: mailboxAddress },
 		mailboxesLoading,
 	);
 
@@ -237,19 +240,19 @@ export function MessageFolderPage({
 		if (plan.targets.length === 0) return;
 		if (
 			!(await requestConfirmation({
-				title: `Empty ${permanentDeleteFolder === "trash" ? "Trash" : "Spam"}?`,
+				title: permanentDeleteFolder === "trash" ? t("Empty Trash?") : t("Empty Spam?"),
 				description: getEmptyFolderConfirmText(
 					permanentDeleteFolder,
 					plan.total,
 					allMailboxes ? plan.names : undefined,
 				),
-				confirmLabel: "Delete forever",
+				confirmLabel: t("Delete forever"),
 			}))
 		)
 			return;
 		setEmptyingFolder(true);
 		leaveOpenMessage();
-		const folderLabel = permanentDeleteFolder === "trash" ? "Trash" : "Spam";
+		const folderLabel = permanentDeleteFolder === "trash" ? t("Trash") : t("Spam");
 		const progress = showProgressToast(`Emptying ${folderLabel}`, plan.total);
 		try {
 			let deleted = 0;
@@ -287,9 +290,9 @@ export function MessageFolderPage({
 			const ids = expandSelectedIds(actionIds);
 			if (
 				!(await requestConfirmation({
-					title: "Delete forever?",
+					title: t("Delete forever?"),
 					description: getPermanentDeleteConfirmText(ids.length),
-					confirmLabel: "Delete forever",
+					confirmLabel: t("Delete forever"),
 				}))
 			)
 				return;
@@ -310,8 +313,11 @@ export function MessageFolderPage({
 				console.error(error);
 				progress.fail(
 					completed > 0
-						? `Deleted ${completed} of ${ids.length}. The rest could not be deleted; please try again.`
-						: "Could not delete the messages. Please try again.",
+						? t("Deleted {completed} of {length}. The rest could not be deleted; please try again.", {
+								completed,
+								length: ids.length,
+							})
+						: t("Could not delete the messages. Please try again."),
 				);
 			} finally {
 				setPendingBulkAction(false);
@@ -477,7 +483,7 @@ export function MessageFolderPage({
 					role="list"
 					// Takes the focus when the open message left and no row is next to it.
 					tabIndex={-1}
-					aria-label={config.title}
+					aria-label={folderTitle(config)}
 					className={clsx(
 						"outline-none",
 						compact || isMobile ? "flex flex-col gap-0.5 py-1.5" : "divide-y divide-neutral-100",
@@ -528,11 +534,11 @@ export function MessageFolderPage({
 					<div className="px-6 py-4">
 						{!hasActiveFilters && (
 							<p aria-hidden="true" className="font-script text-3xl text-blue-600">
-								All clear.
+								{t("All clear.")}
 							</p>
 						)}
 						<p className="text-sm text-neutral-500">
-							{hasActiveFilters ? "No messages match these filters" : config.emptyText}
+							{hasActiveFilters ? t("No messages match these filters") : t(config.emptyText)}
 						</p>
 					</div>
 				)}

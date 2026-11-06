@@ -1,3 +1,4 @@
+import { isInterfaceLanguageChoice } from "@/lib/i18n/language-utils";
 import type { LayoutLabelColor, LayoutLabelColors, LayoutPreferences } from "./layout-types";
 
 /** The sizes the resizable message list accepts (`message-split-layout.tsx`). */
@@ -94,6 +95,7 @@ function parseLayoutPreferences(value: unknown): LayoutPreferences {
 	const labelColors = parseLabelColors(input.labelColors);
 	if (labelColors) layout.labelColors = labelColors;
 	if (typeof input.conversationView === "boolean") layout.conversationView = input.conversationView;
+	if (isInterfaceLanguageChoice(input.interfaceLanguage)) layout.interfaceLanguage = input.interfaceLanguage;
 	Object.assign(layout, parseTranslationChoices(input));
 	const listWidth = size(input.listWidth, LIST_WIDTH_LIMITS);
 	if (listWidth !== undefined) layout.listWidth = listWidth;

@@ -2,6 +2,7 @@ import type { BulkMessageAction } from "@/app/api/messages/bulk/types";
 import type { ShortcutDefinition } from "@/components/shortcuts/types";
 import type { MessageDirection } from "@/hooks/types";
 import type { ReplyMode } from "./types";
+import { t } from "@/lib/i18n/translator";
 
 type MessageShortcutInput = {
 	status: string;
@@ -31,40 +32,40 @@ export function messageShortcuts({
 		if (status !== "archived") void runAction("archive");
 	};
 	const shortcuts: ShortcutDefinition[] = [
-		{ key: "e", label: "Archive Message", category: "Actions", action: archive },
-		{ key: "y", label: "Archive Message", category: "Actions", action: archive },
+		{ key: "e", label: t("Archive Message"), category: "Actions", action: archive },
+		{ key: "y", label: t("Archive Message"), category: "Actions", action: archive },
 		{
 			key: "#",
-			label: "Move to Trash",
+			label: t("Move to Trash"),
 			category: "Actions",
 			action: () => {
 				if (status !== "trash") void runAction("trash");
 			},
 		},
-		{ key: "r", label: "Reply to Message", category: "Composing", action: () => void handleReply("reply") },
+		{ key: "r", label: t("Reply to Message"), category: "Composing", action: () => void handleReply("reply") },
 		{
 			key: "a",
-			label: "Reply All",
+			label: t("Reply All"),
 			category: "Composing",
 			action: () => void handleReply(canReplyAll ? "replyAll" : "reply"),
 		},
-		{ key: "f", label: "Forward Message", category: "Composing", action: () => void forward() },
+		{ key: "f", label: t("Forward Message"), category: "Composing", action: () => void forward() },
 		{
 			key: "!",
-			label: "Report Spam",
+			label: t("Report Spam"),
 			category: "Actions",
 			action: () => {
 				if (status !== "spam" && direction === "inbound") void runAction("spam");
 			},
 		},
-		{ key: "u", label: "Back to List", category: "Navigation", action: back },
+		{ key: "u", label: t("Back to List"), category: "Navigation", action: back },
 	];
 	// Ctrl+P on Windows and Linux, Cmd+P on a Mac: the reader prints the message, not the app around it.
 	if (print)
 		shortcuts.push({
 			key: "p",
 			modifiers: ["meta", "ctrl"],
-			label: "Print Message",
+			label: t("Print Message"),
 			category: "Actions",
 			action: print,
 		});

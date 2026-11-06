@@ -3,6 +3,7 @@
 import { createElement, useMemo, useState, type ReactNode } from "react";
 import { resolveNavIcon } from "@/components/modules/client-registry";
 import type { MessageSlotContext, ModuleClient } from "@/components/modules/client-registry-types";
+import { useT } from "@/lib/i18n/use-t";
 import { useModules } from "@/components/modules/modules-context";
 import { useSlotEntries } from "@/components/modules/use-slot-entries";
 import { CLIENT_MODULES } from "@/lib/modules/client-data";
@@ -20,6 +21,7 @@ export function useMessageMenuSlots(
 	opened: boolean,
 	closeMenu: () => void,
 ): { items: ReactNode; overlays: ReactNode } {
+	const t = useT();
 	const { modules } = useModules();
 	const slots = useMemo(() => listMessageSlots(CLIENT_MODULES, modules, "message-menu"), [modules]);
 	const [everOpened, setEverOpened] = useState(opened);
@@ -44,7 +46,7 @@ export function useMessageMenuSlots(
 							}}
 						>
 							{createElement(resolveNavIcon(slot.icon ?? ""), { className: "h-4 w-4 shrink-0" })}
-							{slot.label}
+							{t(slot.label)}
 						</button>
 					))}
 					<hr className="my-1 border-neutral-100" />

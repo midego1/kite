@@ -1,6 +1,7 @@
 "use client";
 
 import { ArrowLeft } from "lucide-react";
+import { useT } from "@/lib/i18n/use-t";
 import { Tooltip } from "@/components/ui/tooltip";
 
 /**
@@ -14,12 +15,13 @@ export function AccountViewTitle({
 	view: { address: string; label: string; close: () => void };
 	folder: string;
 }) {
+	const t = useT();
 	return (
 		<div data-account-view-title={view.address} className="flex min-w-0 items-center gap-1">
-			<Tooltip label={`Back to ${folder}`}>
+			<Tooltip label={t("Back to {folder}", { folder })}>
 				<button
 					type="button"
-					aria-label={`Back to ${folder}`}
+					aria-label={t("Back to {folder}", { folder })}
 					onClick={view.close}
 					className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
 				>
@@ -27,7 +29,7 @@ export function AccountViewTitle({
 				</button>
 			</Tooltip>
 			<p
-				title={`Only mail that came in through ${view.address}`}
+				title={t("Only mail that came in through {address}", { address: view.address })}
 				className="min-w-0 truncate text-base font-medium text-neutral-900"
 			>
 				{view.label}

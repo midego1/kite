@@ -74,6 +74,13 @@ test("the labels choice for message list rows is kept only when it is one of the
 	assert.deepEqual(layoutStorageEntries({ listLabels: "full" }, "user-1"), [["kite-message-labels", "full"]]);
 });
 
+test("a stored language must be one Kite speaks", () => {
+	assert.deepEqual(parseStoredLayout('{"interfaceLanguage":"ar"}'), { interfaceLanguage: "ar" });
+	assert.deepEqual(parseStoredLayout('{"interfaceLanguage":"auto"}'), { interfaceLanguage: "auto" });
+	assert.deepEqual(parseStoredLayout('{"interfaceLanguage":"klingon"}'), {});
+	assert.deepEqual(parseStoredLayout('{"interfaceLanguage":7}'), {});
+});
+
 test("parseStoredLayout reads JSON text and anything else as empty", () => {
 	assert.deepEqual(parseStoredLayout('{"density":"comfortable"}'), { density: "comfortable" });
 	assert.deepEqual(parseStoredLayout("not json"), {});
@@ -104,6 +111,7 @@ test("a layout maps to the browser storage the views read", () => {
 		emailFont: "reader",
 		fontScope: "everywhere",
 		interfaceDirection: "rtl",
+		interfaceLanguage: "ar",
 		translateTo: "th",
 		translateNever: ["en", "de"],
 		listWidth: 420,
@@ -118,6 +126,7 @@ test("a layout maps to the browser storage the views read", () => {
 		["kite-email-font", "reader"],
 		["kite-font-scope", "everywhere"],
 		["kite-interface-direction", "rtl"],
+		["kite-interface-language", "ar"],
 		["kite-translate-to", "th"],
 		["kite-conversation-view", "off"],
 		["kite-label-colors", '{"mailboxes":{"box-1":"red"},"accounts":{"acc-1":"teal"}}'],

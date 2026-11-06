@@ -1,3 +1,5 @@
+import { msg } from "@/lib/i18n/translator";
+import type { MessageKey } from "@/lib/i18n/i18n-types";
 import type { LayoutLabelColor, LayoutLabelColors } from "@/lib/preferences/layout-types";
 
 export const LABEL_COLORS_STORAGE_KEY = "kite-label-colors";
@@ -7,15 +9,15 @@ export const LABEL_COLORS_STORAGE_KEY = "kite-label-colors";
  * at least 3:1 against every row background in light and dark (white to the selected row's grey, and the dark themes'
  * greys, Kite classic's selected row included), which `tests/label-colors.test.mjs` checks; the Kite and Classic palettes both stay inside those greys.
  */
-export const LABEL_COLORS: readonly { id: LayoutLabelColor; label: string; value: string }[] = [
-	{ id: "blue", label: "Blue", value: "#4a82f2" },
-	{ id: "purple", label: "Purple", value: "#9c69f4" },
-	{ id: "pink", label: "Pink", value: "#e64a92" },
-	{ id: "red", label: "Red", value: "#e65454" },
-	{ id: "orange", label: "Orange", value: "#e6570c" },
-	{ id: "amber", label: "Amber", value: "#c5710a" },
-	{ id: "green", label: "Green", value: "#1f9a46" },
-	{ id: "teal", label: "Teal", value: "#25958d" },
+export const LABEL_COLORS: readonly { id: LayoutLabelColor; label: MessageKey; value: string }[] = [
+	{ id: "blue", label: msg("Blue"), value: "#4a82f2" },
+	{ id: "purple", label: msg("Purple"), value: "#9c69f4" },
+	{ id: "pink", label: msg("Pink"), value: "#e64a92" },
+	{ id: "red", label: msg("Red"), value: "#e65454" },
+	{ id: "orange", label: msg("Orange"), value: "#e6570c" },
+	{ id: "amber", label: msg("Amber"), value: "#c5710a" },
+	{ id: "green", label: msg("Green"), value: "#1f9a46" },
+	{ id: "teal", label: msg("Teal"), value: "#25958d" },
 ];
 
 const VALUE_OF = new Map(LABEL_COLORS.map((color) => [color.id, color.value]));

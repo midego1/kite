@@ -42,22 +42,24 @@ import { useAccountViews } from "./use-account-views";
 import { SidebarScaffold } from "./sidebar-scaffold";
 import { SidebarMailboxSwitcher } from "./sidebar-mailbox-switcher";
 import { useSidebar } from "./sidebar-state";
+import { useT } from "@/lib/i18n/use-t";
+import { msg } from "@/lib/i18n/translator";
 
 const links = [
-	{ href: "/compose", label: "New email", icon: SquarePen, primary: true },
-	{ href: "/inbox", label: "Inbox", icon: Inbox, preloadMessages: true },
-	{ href: "/starred", label: "Starred", icon: Star, preloadMessages: true },
-	{ href: "/snoozed", label: "Snoozed", icon: Clock, preloadMessages: true },
-	{ href: "/sent", label: "Sent", icon: Send, preloadMessages: true },
-	{ href: "/drafts", label: "Drafts", icon: FileText, preloadMessages: true },
+	{ href: "/compose", label: msg("New email"), icon: SquarePen, primary: true },
+	{ href: "/inbox", label: msg("Inbox"), icon: Inbox, preloadMessages: true },
+	{ href: "/starred", label: msg("Starred"), icon: Star, preloadMessages: true },
+	{ href: "/snoozed", label: msg("Snoozed"), icon: Clock, preloadMessages: true },
+	{ href: "/sent", label: msg("Sent"), icon: Send, preloadMessages: true },
+	{ href: "/drafts", label: msg("Drafts"), icon: FileText, preloadMessages: true },
 	{
 		href: "/archived",
-		label: "Archived",
+		label: msg("Archived"),
 		icon: Archive,
 		preloadMessages: true,
 	},
-	{ href: "/spam", label: "Spam", icon: ShieldAlert, preloadMessages: true },
-	{ href: "/trash", label: "Trash", icon: Trash2, preloadMessages: true },
+	{ href: "/spam", label: msg("Spam"), icon: ShieldAlert, preloadMessages: true },
+	{ href: "/trash", label: msg("Trash"), icon: Trash2, preloadMessages: true },
 ];
 
 // Archived, Spam and Trash sit in the folding "Management" section.
@@ -101,6 +103,7 @@ export function DashboardNav({
 	/** Operational and setup notices, shown above Settings on wider screens. */
 	notices?: ReactNode;
 }) {
+	const t = useT();
 	const { minimal } = useSidebar();
 	const pathname = usePathname();
 	const [moreOpen, setMoreOpen] = useStoredState(MORE_OPEN_KEY, false);
@@ -121,7 +124,8 @@ export function DashboardNav({
 	const [folderColorPicked, setFolderColorPicked] = useState(false);
 	const [addingFolder, setAddingFolder] = useState(false);
 	const [folderDialogOpen, setFolderDialogOpen] = useState(false);
-	const linksWithCounts: NavLink[] = links.map((link): NavLink => {
+	const linksWithCounts: NavLink[] = links.map((entry): NavLink => {
+		const link = { ...entry, label: t(entry.label) };
 		if (link.href === "/inbox") {
 			// An account's view is the Inbox too; only the view's own row is highlighted then.
 			return {
@@ -266,7 +270,7 @@ export function DashboardNav({
 		>
 			<SidebarMailboxSwitcher />
 			{composeLink && <NavItem link={composeLink} />}
-			{minimal ? <hr className="mx-6 my-2 border-neutral-200/70" /> : <NavSectionLabel label="Core" />}
+			{minimal ? <hr className="mx-6 my-2 border-neutral-200/70" /> : <NavSectionLabel label={t("Core")} />}
 			<ReorderableList
 				storageKey="kite:nav:layout"
 				enabled={!minimal}
@@ -278,7 +282,9 @@ export function DashboardNav({
 					},
 					{
 						id: "more",
-						before: minimal ? undefined : <NavSectionHeader label="Management" open={moreOpen} onToggle={toggleMore} />,
+						before: minimal ? undefined : (
+							<NavSectionHeader label={t("Management")} open={moreOpen} onToggle={toggleMore} />
+						),
 						visibleIds: (ordered) =>
 							forYou.visibleIds(showAllMoreLinks ? ordered : ordered.filter((id) => isActiveHref(id))),
 						items: moreLinks.map((link) => ({ id: link.href!, node: <NavItem link={link} /> })),
@@ -288,7 +294,7 @@ export function DashboardNav({
 			{!minimal && <SidebarAccountViews entries={accountViews.entries} active={accountViews.active} />}
 			{minimal && <hr className="mx-6 my-2 border-neutral-200/70" />}
 			{!minimal && (
-				<NavSectionHeader label="Folders" open={foldersSectionOpen} onToggle={toggleFoldersSection}>
+				<NavSectionHeader label={t("Folders")} open={foldersSectionOpen} onToggle={toggleFoldersSection}>
 					{folderMailboxId && (
 						<Dialog
 							open={folderDialogOpen}
@@ -304,31 +310,31 @@ export function DashboardNav({
 								<button
 									type="button"
 									className="flex h-7 w-7 items-center justify-center rounded-lg text-neutral-500 hover:bg-blue-50 hover:text-blue-700"
-									aria-label="Create folder"
+									aria-label={t("Create folder")}
 								>
 									<Plus className="h-4 w-4" />
 								</button>
 							</DialogTrigger>
 							<DialogContent>
 								<DialogHeader>
-									<DialogTitle>Create folder</DialogTitle>
+									<DialogTitle>{t("Create folder")}</DialogTitle>
 									<DialogDescription>{folderTarget.description}</DialogDescription>
 								</DialogHeader>
 								<form onSubmit={createFolder} className="space-y-4">
 									<FolderMailboxField target={folderTarget} />
 									<div className="space-y-2">
-										<Label htmlFor="folderName">Folder name</Label>
+										<Label htmlFor="folderName">{t("Folder name")}</Label>
 										<Input
 											id="folderName"
 											value={newFolderName}
 											onChange={(event) => setNewFolderName(event.target.value)}
-											placeholder="Receipts"
+											placeholder={t("Receipts")}
 											autoFocus
 										/>
 									</div>
 									<div className="space-y-2">
-										<Label>Color</Label>
-										<div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Folder color">
+										<Label>{t("Color")}</Label>
+										<div className="flex flex-wrap gap-2" role="radiogroup" aria-label={t("Folder color")}>
 											{FOLDER_COLOR_OPTIONS.map((option) => (
 												<button
 													key={option.value}
@@ -352,7 +358,7 @@ export function DashboardNav({
 										</div>
 									</div>
 									<Button type="submit" disabled={addingFolder || !newFolderName.trim()}>
-										{addingFolder ? "Creating..." : "Create folder"}
+										{addingFolder ? t("Creating...") : t("Create folder")}
 									</Button>
 								</form>
 							</DialogContent>
@@ -363,7 +369,7 @@ export function DashboardNav({
 			{folderSection.groups && <AllMailboxesFolders customFolderCounts={counts.customFolders} minimal={minimal} />}
 			{folderSection.empty && (
 				<div className="mx-6 rounded-lg border border-dashed border-neutral-200 px-3 py-3 text-xs text-neutral-500">
-					No folders yet
+					{t("No folders yet")}
 				</div>
 			)}
 			{folderSection.list && (

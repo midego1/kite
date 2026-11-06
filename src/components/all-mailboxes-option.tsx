@@ -7,6 +7,7 @@ import { getMailboxAddress, getMailboxName } from "@/components/mailbox-selector
 import { sumMailboxCounts, visibleMailboxIds } from "@/lib/mailboxes/scope-utils";
 import type { MailboxCount } from "@/hooks/types";
 import { cn } from "@/lib/utils";
+import { useT } from "@/lib/i18n/use-t";
 
 /** The All mailboxes mark: the same footprint as a mailbox avatar. */
 function AllMailboxesIcon({ className }: { className?: string }) {
@@ -25,6 +26,7 @@ function AllMailboxesIcon({ className }: { className?: string }) {
 
 /** The first entry of the mailbox selector, offered once the user can open two or more mailboxes. */
 export function AllMailboxesOption({ counts, onSelect }: { counts: MailboxCount[]; onSelect: () => void }) {
+	const t = useT();
 	const { mailboxes, allMailboxes } = useSelectedMailbox();
 	if (mailboxes.length < 2) return null;
 	const { unread } = sumMailboxCounts(
@@ -44,8 +46,12 @@ export function AllMailboxesOption({ counts, onSelect }: { counts: MailboxCount[
 		>
 			<AllMailboxesIcon className="h-7 w-7" />
 			<span className="min-w-0 flex-1">
-				<span className="block truncate text-sm font-medium text-neutral-900">All mailboxes</span>
-				<span className="block truncate text-xs text-neutral-500">{mailboxes.length} mailboxes in one view</span>
+				<span className="block truncate text-sm font-medium text-neutral-900">{t("All mailboxes")}</span>
+				<span className="block truncate text-xs text-neutral-500">
+					{t("{count, plural, one {# mailbox in one view} other {# mailboxes in one view}}", {
+						count: mailboxes.length,
+					})}
+				</span>
 			</span>
 			{unread > 0 && (
 				<span className="rounded-full bg-blue-100 px-1.5 py-0.5 text-[11px] font-semibold text-blue-700">
@@ -62,15 +68,16 @@ export function AllMailboxesOption({ counts, onSelect }: { counts: MailboxCount[
  * hidden ones, so a new mailbox shows up by default; the last visible mailbox cannot be unchecked.
  */
 export function AllMailboxesFilter() {
+	const t = useT();
 	const { mailboxes, allMailboxes, hiddenMailboxIds, setHiddenMailboxIds } = useSelectedMailbox();
 	if (!allMailboxes) return null;
 	const ids = mailboxes.map((mailbox) => mailbox.id);
 	const visible = new Set(visibleMailboxIds(ids, hiddenMailboxIds));
 	return (
 		<fieldset className="mt-1 border-t border-neutral-100 px-1 pb-1 pt-2">
-			<legend className="sr-only">Show in All mailboxes</legend>
+			<legend className="sr-only">{t("Show in All mailboxes")}</legend>
 			<p aria-hidden className="px-1 pb-1 text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
-				Show in All mailboxes
+				{t("Show in All mailboxes")}
 			</p>
 			{mailboxes.map((mailbox) => {
 				const checked = visible.has(mailbox.id);
@@ -84,7 +91,7 @@ export function AllMailboxesFilter() {
 						<Checkbox
 							checked={checked}
 							disabled={last}
-							aria-label={`Show ${getMailboxAddress(mailbox)} in All mailboxes`}
+							aria-label={t("Show {mailbox} in All mailboxes", { mailbox: getMailboxAddress(mailbox) })}
 							onChange={(event) => {
 								setHiddenMailboxIds(ids.filter((id) => (id === mailbox.id ? !event.target.checked : !visible.has(id))));
 							}}
@@ -99,14 +106,15 @@ export function AllMailboxesFilter() {
 
 /** The All mailboxes square before the mailbox squares at the top of the sidebar, checked like them when on. */
 export function AllMailboxesSquare({ onSelect }: { onSelect: () => void }) {
+	const t = useT();
 	const { mailboxes, allMailboxes } = useSelectedMailbox();
 	if (mailboxes.length < 2) return null;
 	return (
 		// A title rather than a Tooltip, like the mailbox squares: the phone menu's first stop leaves Escape to the sheet.
 		<button
 			type="button"
-			title="All mailboxes"
-			aria-label="Open All mailboxes"
+			title={t("All mailboxes")}
+			aria-label={t("Open All mailboxes")}
 			aria-pressed={allMailboxes}
 			onClick={onSelect}
 			className={cn(

@@ -1,3 +1,4 @@
+import type { MessageKey } from "@/lib/i18n/i18n-types";
 import type { MessageFolderConfig } from "./types";
 
 /** Where an open message appears relative to the message list. */
@@ -10,6 +11,13 @@ export type MessageListDensity = "default" | "comfortable" | "compact";
 export type MessageListLabels = "compact" | "full" | "off";
 
 export type ReadingLayoutOption<T extends string> = {
+	value: T;
+	label: MessageKey;
+	description: MessageKey;
+};
+
+/** A choice of Settings → Inbox, whose text stays English until Settings is translated (`docs/translations.md`). */
+export type SettingsChoiceOption<T extends string> = {
 	value: T;
 	label: string;
 	description: string;

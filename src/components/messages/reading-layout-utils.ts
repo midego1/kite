@@ -3,8 +3,10 @@ import type {
 	MessageListLabels,
 	MessageRowDensityStyle,
 	ReadingLayoutOption,
+	SettingsChoiceOption,
 	ReadingPaneMode,
 } from "./reading-layout-types";
+import { msg } from "@/lib/i18n/translator";
 
 export const READING_PANE_STORAGE_KEY = "kite-reading-pane";
 /** The on/off switch that preceded the reading pane setting; read once to migrate it. */
@@ -19,18 +21,34 @@ export const DEFAULT_MESSAGE_DENSITY: MessageListDensity = "default";
 export const DEFAULT_MESSAGE_LABELS: MessageListLabels = "compact";
 
 const READING_PANE_OPTIONS: ReadingLayoutOption<ReadingPaneMode>[] = [
-	{ value: "none", label: "No split", description: "The list fills the page and opening an email replaces it." },
-	{ value: "right", label: "Right of inbox", description: "The list stays on the left and emails open beside it." },
-	{ value: "below", label: "Below inbox", description: "The list stays on top and emails open underneath it." },
+	{
+		value: "none",
+		label: msg("No split"),
+		description: msg("The list fills the page and opening an email replaces it."),
+	},
+	{
+		value: "right",
+		label: msg("Right of inbox"),
+		description: msg("The list stays on the left and emails open beside it."),
+	},
+	{
+		value: "below",
+		label: msg("Below inbox"),
+		description: msg("The list stays on top and emails open underneath it."),
+	},
 ];
 
 export const MESSAGE_DENSITY_OPTIONS: ReadingLayoutOption<MessageListDensity>[] = [
-	{ value: "default", label: "Default", description: "Balanced spacing with the sender and subject." },
-	{ value: "comfortable", label: "Comfortable", description: "More room around every email, with a preview line." },
-	{ value: "compact", label: "Compact", description: "Fit more emails on screen." },
+	{ value: "default", label: msg("Default"), description: msg("Balanced spacing with the sender and subject.") },
+	{
+		value: "comfortable",
+		label: msg("Comfortable"),
+		description: msg("More room around every email, with a preview line."),
+	},
+	{ value: "compact", label: msg("Compact"), description: msg("Fit more emails on screen.") },
 ];
 
-export const MESSAGE_LABEL_OPTIONS: ReadingLayoutOption<MessageListLabels>[] = [
+export const MESSAGE_LABEL_OPTIONS: SettingsChoiceOption<MessageListLabels>[] = [
 	{
 		value: "compact",
 		label: "Compact",
@@ -45,7 +63,11 @@ export function readingPaneOptions(rtl: boolean): ReadingLayoutOption<ReadingPan
 	if (!rtl) return READING_PANE_OPTIONS;
 	return READING_PANE_OPTIONS.map((option) =>
 		option.value === "right"
-			? { ...option, label: "Left of inbox", description: "The list stays on the right and emails open beside it." }
+			? {
+					...option,
+					label: msg("Left of inbox"),
+					description: msg("The list stays on the right and emails open beside it."),
+				}
 			: option,
 	);
 }

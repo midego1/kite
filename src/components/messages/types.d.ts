@@ -1,3 +1,4 @@
+import type { MessageKey } from "@/lib/i18n/i18n-types";
 import type { MouseEvent } from "react";
 import type { RowMessageIdsLookup } from "./open-row-context";
 import type { LucideIcon } from "lucide-react";
@@ -8,12 +9,13 @@ import type { BulkMessageAction } from "@/app/api/messages/bulk/types";
 import type { MessageListDensity, MessageListLabels } from "./reading-layout-types";
 import type { RowClickModifiers } from "./message-range-selection-utils";
 
-export type MessageFolderConfig = {
+/** A folder's name: a key for a built-in one, or what its owner typed for a custom one, which is never translated. */
+export type MessageFolderName = { folderId?: undefined; title: MessageKey } | { folderId: string; title: string };
+
+export type MessageFolderConfig = MessageFolderName & {
 	folder: MessageFolder;
-	title: string;
-	emptyText: string;
+	emptyText: MessageKey;
 	hrefPrefix: string;
-	folderId?: string;
 	icon: LucideIcon;
 	headerIcons?: LucideIcon[];
 	badgeVariant?: "default" | "secondary" | "outline";

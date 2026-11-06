@@ -24,6 +24,7 @@ import {
 	takeOpenedUnreadMessage,
 } from "./message-detail-navigation-utils";
 import { useConversationView } from "./use-conversation-view";
+import { useT } from "@/lib/i18n/use-t";
 
 const NavigationContext = createContext<MessageDetailNavigationContextValue | null>(null);
 
@@ -94,6 +95,7 @@ export function useMessageListHref(): string | null {
 }
 
 export function MessageDetailNavigation({ messageId, unread }: MessageDetailNavigationProps) {
+	const t = useT();
 	const context = useContext(NavigationContext);
 	const router = useRouter();
 	const viewHref = useViewHref();
@@ -113,24 +115,24 @@ export function MessageDetailNavigation({ messageId, unread }: MessageDetailNavi
 
 	return (
 		<div className="flex shrink-0 items-center gap-1 text-neutral-500">
-			<Tooltip label={shortcutsEnabled ? "Newer email (k)" : "Newer email"}>
+			<Tooltip label={shortcutsEnabled ? t("Newer email (k)") : t("Newer email")}>
 				<Button
 					type="button"
 					variant="ghost"
 					size="roundedSM"
-					aria-label="Newer email"
+					aria-label={t("Newer email")}
 					disabled={!previousId}
 					onClick={() => open(previousId)}
 				>
 					<ChevronLeft size={18} className="rtl:-scale-x-100" />
 				</Button>
 			</Tooltip>
-			<Tooltip label={shortcutsEnabled ? "Older email (j)" : "Older email"}>
+			<Tooltip label={shortcutsEnabled ? t("Older email (j)") : t("Older email")}>
 				<Button
 					type="button"
 					variant="ghost"
 					size="roundedSM"
-					aria-label="Older email"
+					aria-label={t("Older email")}
 					disabled={!nextId}
 					onClick={() => open(nextId)}
 				>

@@ -7,12 +7,14 @@ import { emailColoursAdapted } from "./email-html-frame-utils";
 import { QuotedEmailToggle } from "./quoted-email-toggle";
 import { useDarkTheme } from "./use-dark-theme";
 import type { EmailBodyProps } from "./email-body-types";
+import { useT } from "@/lib/i18n/use-t";
 
 /**
  * A message's body and its quoted history. In dark mode, when either one's colours were adapted, one small
  * "Original colours" button above the body shows the sender's colours in both.
  */
 export function EmailBody({ html, colours, quotedHtml, quotedColours, fallback, className }: EmailBodyProps) {
+	const t = useT();
 	const dark = useDarkTheme();
 	const [original, setOriginal] = useState(false);
 	const adapted =
@@ -29,7 +31,7 @@ export function EmailBody({ html, colours, quotedHtml, quotedColours, fallback, 
 						className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800"
 					>
 						<Sun className="h-3.5 w-3.5" aria-hidden="true" />
-						Original colours
+						{t("Original colours")}
 					</button>
 				</div>
 			)}

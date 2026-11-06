@@ -1,6 +1,7 @@
 import clsx from "clsx";
 import type { ModuleSearchItem, ModuleSearchSection } from "@/lib/search/module-search-types";
 import { searchItemKey } from "./search-dropdown-utils";
+import { useT } from "@/lib/i18n/use-t";
 
 type SearchDropdownProps = {
 	sections: readonly ModuleSearchSection[];
@@ -10,10 +11,11 @@ type SearchDropdownProps = {
 
 /** Results from the modules under the mail search field, one block per section. */
 export function SearchDropdown({ sections, activeKey, onPick }: SearchDropdownProps) {
+	const t = useT();
 	return (
 		<div
 			role="listbox"
-			aria-label="Search results"
+			aria-label={t("Search results")}
 			data-testid="search-dropdown"
 			className="absolute inset-x-0 top-full z-50 mt-1 max-h-96 overflow-y-auto rounded-xl border border-neutral-200 bg-white p-1.5 text-neutral-800 shadow-lg"
 		>

@@ -1,3 +1,5 @@
+import type { MessageKey } from "@/lib/i18n/i18n-types";
+import { msg, t } from "@/lib/i18n/translator";
 import { escapeHtml } from "./rich-text-utils";
 
 // The signature block `applyMailboxSignatureHtml` appends, and its pre-rename form.
@@ -103,12 +105,13 @@ export function parseComposeEvents(buffer: string): { events: ComposeStreamEvent
 	return { events, rest };
 }
 
-const WARNING_TEXT: Record<string, string> = {
-	removed_address: "An email address that is not in your text or the conversation was removed.",
-	removed_link: "A link that is not in your text or the conversation was removed.",
-	truncated: "The answer was too long and was shortened.",
+const WARNING_TEXT: Record<string, MessageKey> = {
+	removed_address: msg("An email address that is not in your text or the conversation was removed."),
+	removed_link: msg("A link that is not in your text or the conversation was removed."),
+	truncated: msg("The answer was too long and was shortened."),
 };
 
 export function warningText(warning: string): string {
-	return WARNING_TEXT[warning] ?? warning;
+	const known = WARNING_TEXT[warning];
+	return known ? t(known) : warning;
 }

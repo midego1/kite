@@ -5,6 +5,7 @@ import { MessageAttachmentViewer } from "@/components/message-attachment-viewer"
 import { ComposeAttachmentChip } from "./compose-attachment-chip";
 import type { ComposeAttachmentEntry, ComposeAttachmentListProps } from "./compose-attachment-types";
 import { attachmentNotice, attachmentNoticeText, entryAttachment, entryKey } from "./compose-attachment-utils";
+import { useT } from "@/lib/i18n/use-t";
 
 /**
  * The chips under the composer fields, for files stored on the draft (uploads, Forward) and for files not stored yet,
@@ -20,6 +21,7 @@ export function ComposeAttachmentList({
 	onRemoveStored,
 	onFocusFallback,
 }: ComposeAttachmentListProps) {
+	const t = useT();
 	const [viewing, setViewing] = useState<ComposeAttachmentEntry | null>(null);
 	const list = useRef<HTMLDivElement>(null);
 	// Where focus goes once a removed chip is gone: the next chip, else the previous one, else the Attach button.
@@ -73,7 +75,7 @@ export function ComposeAttachmentList({
 			<div
 				ref={list}
 				role="list"
-				aria-label="Attachments"
+				aria-label={t("Attachments")}
 				className="flex min-w-0 flex-nowrap gap-2 overflow-x-auto overflow-y-hidden px-3 py-2"
 			>
 				{entries.map((entry) => (

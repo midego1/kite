@@ -5,6 +5,7 @@ import { useOptionalMailSearch } from "@/components/mail-search/mail-search-cont
 import type { Message } from "@/hooks/types";
 import { viaChipText, viaChipTitle } from "@/lib/external-accounts/via-utils";
 import { cn } from "@/lib/utils";
+import { useT } from "@/lib/i18n/use-t";
 import { accountLabelColor } from "./label-colors-utils";
 import { useLabelColors } from "./use-label-colors";
 
@@ -27,6 +28,7 @@ export function ViaAccountChip({
 	compact?: boolean;
 	className?: string;
 }) {
+	const t = useT();
 	const search = useOptionalMailSearch();
 	const colors = useLabelColors();
 	const { via } = message;
@@ -41,8 +43,8 @@ export function ViaAccountChip({
 				role="img"
 				data-via-account={via.address}
 				data-label-variant="compact"
-				aria-label={`via ${text}`}
-				title={`via ${text}. ${title}`}
+				aria-label={t("via {text}", { text })}
+				title={t("via {text}. {title}", { text, title })}
 				className={cn("inline-flex h-4 w-3.5 shrink-0 items-center justify-center text-neutral-500", className)}
 			>
 				<Link2 aria-hidden="true" className="h-3.5 w-3.5" style={{ color: iconColor }} />
@@ -51,7 +53,7 @@ export function ViaAccountChip({
 	const content = (
 		<>
 			<Link2 aria-hidden="true" className="h-3 w-3 shrink-0" style={{ color: iconColor }} />
-			<span className="truncate">via {text}</span>
+			<span className="truncate">{t("via {text}", { text })}</span>
 		</>
 	);
 	if (filter && search)
@@ -59,8 +61,8 @@ export function ViaAccountChip({
 			<button
 				type="button"
 				data-via-account={via.address}
-				title={`${title}. Show all mail through this account`}
-				aria-label={`via ${text}: show all mail through ${via.address}`}
+				title={t("{title}. Show all mail through this account", { title })}
+				aria-label={t("via {text}: show all mail through {address}", { text, address: via.address })}
 				onClick={() => search.setView(via.address)}
 				className={cn(
 					chipClass,

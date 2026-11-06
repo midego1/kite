@@ -9,6 +9,7 @@ import type { FolderMoveTarget, FolderUsage } from "@/lib/folders/manage-types";
 import { FOLDER_MOVE_LABELS, FOLDER_MOVE_TARGETS, folderDeleteSummary } from "@/lib/folders/manage-utils";
 import type { CustomFolder } from "@/components/dashboard-nav-types";
 import { deleteFolderRequest, fetchFolderUsage, renameFolder } from "./folder-requests";
+import { useT } from "@/lib/i18n/use-t";
 
 type DialogProps = {
 	folder: CustomFolder;
@@ -29,6 +30,7 @@ export function DeleteFolderDialog(props: DialogProps & { onDeleted: () => void 
 }
 
 function RenameFolderBody({ folder, open, onOpenChange }: DialogProps) {
+	const t = useT();
 	const [name, setName] = useState(folder.name);
 	const [error, setError] = useState<string | null>(null);
 	const [saving, setSaving] = useState(false);
@@ -46,19 +48,19 @@ function RenameFolderBody({ folder, open, onOpenChange }: DialogProps) {
 		const result = await renameFolder(folder.id, next);
 		setSaving(false);
 		if (result.ok) onOpenChange(false);
-		else setError(result.status === 409 ? "A folder with that name already exists." : result.error);
+		else setError(result.status === 409 ? t("A folder with that name already exists.") : result.error);
 	}
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent overlayClassName={ABOVE_SHEET} className={ABOVE_SHEET}>
 				<DialogHeader>
-					<DialogTitle>Rename folder</DialogTitle>
-					<DialogDescription>Messages stay in the folder; only its name changes.</DialogDescription>
+					<DialogTitle>{t("Rename folder")}</DialogTitle>
+					<DialogDescription>{t("Messages stay in the folder; only its name changes.")}</DialogDescription>
 				</DialogHeader>
 				<form onSubmit={submit} className="space-y-4">
 					<div className="space-y-2">
-						<Label htmlFor="renameFolderName">Folder name</Label>
+						<Label htmlFor="renameFolderName">{t("Folder name")}</Label>
 						<Input
 							id="renameFolderName"
 							value={name}
@@ -77,10 +79,10 @@ function RenameFolderBody({ folder, open, onOpenChange }: DialogProps) {
 					</div>
 					<div className="flex justify-end gap-2">
 						<Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-							Cancel
+							{t("Cancel")}
 						</Button>
 						<Button type="submit" disabled={saving || !name.trim()}>
-							{saving ? "Saving..." : "Rename"}
+							{saving ? t("Saving...") : t("Rename")}
 						</Button>
 					</div>
 				</form>
@@ -90,6 +92,7 @@ function RenameFolderBody({ folder, open, onOpenChange }: DialogProps) {
 }
 
 function DeleteFolderBody({ folder, open, onOpenChange, onDeleted }: DialogProps & { onDeleted: () => void }) {
+	const t = useT();
 	const [usage, setUsage] = useState<FolderUsage | null>(null);
 	const [loadFailed, setLoadFailed] = useState(false);
 	const [moveTo, setMoveTo] = useState<FolderMoveTarget>("archive");
@@ -132,19 +135,19 @@ function DeleteFolderBody({ folder, open, onOpenChange, onDeleted }: DialogProps
 				className={`${ABOVE_SHEET} max-h-[calc(100vh-4rem)] overflow-y-auto`}
 			>
 				<DialogHeader>
-					<DialogTitle>Delete folder {folder.name}?</DialogTitle>
+					<DialogTitle>{t("Delete folder {name}?", { name: folder.name })}</DialogTitle>
 					<DialogDescription>
 						{usage
 							? folderDeleteSummary(usage)
 							: loadFailed
-								? "Could not check what is in this folder."
-								: "Checking..."}
+								? t("Could not check what is in this folder.")
+								: t("Checking...")}
 					</DialogDescription>
 				</DialogHeader>
 				<form onSubmit={confirm} className="space-y-4">
 					{usage && usage.messageCount > 0 && !importActive && (
 						<fieldset className="space-y-2">
-							<legend className="text-sm font-medium text-neutral-900">What happens to the messages</legend>
+							<legend className="text-sm font-medium text-neutral-900">{t("What happens to the messages")}</legend>
 							{FOLDER_MOVE_TARGETS.map((target) => (
 								<label key={target} className="flex cursor-pointer items-center gap-2 text-sm text-neutral-700">
 									<input
@@ -155,14 +158,14 @@ function DeleteFolderBody({ folder, open, onOpenChange, onDeleted }: DialogProps
 										onChange={() => setMoveTo(target)}
 										className="h-4 w-4 accent-blue-600"
 									/>
-									Move messages to {FOLDER_MOVE_LABELS[target]}
+									{t("Move messages to {target}", { target: t(FOLDER_MOVE_LABELS[target]) })}
 								</label>
 							))}
 						</fieldset>
 					)}
 					{importActive && (
 						<p role="alert" className="text-sm text-amber-700">
-							An import is still filing mail into this folder. Cancel or finish it on the Import page first.
+							{t("An import is still filing mail into this folder. Cancel or finish it on the Import page first.")}
 						</p>
 					)}
 					{error && (
@@ -172,10 +175,10 @@ function DeleteFolderBody({ folder, open, onOpenChange, onDeleted }: DialogProps
 					)}
 					<div className="flex justify-end gap-2">
 						<Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-							Cancel
+							{t("Cancel")}
 						</Button>
 						<Button type="submit" variant="destructive" disabled={!usage || importActive || deleting}>
-							{deleting ? "Deleting..." : "Delete folder"}
+							{deleting ? t("Deleting...") : t("Delete folder")}
 						</Button>
 					</div>
 				</form>

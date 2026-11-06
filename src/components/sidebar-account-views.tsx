@@ -9,6 +9,7 @@ import { LabelDot } from "@/components/messages/label-dot";
 import { accountLabelColor } from "@/components/messages/label-colors-utils";
 import { chooseLabelColor, useLabelColors, useMailboxLabelColor } from "@/components/messages/use-label-colors";
 import { accountViewHref, type AccountViewEntry } from "@/lib/external-accounts/account-views-utils";
+import { useT } from "@/lib/i18n/use-t";
 import { useStoredState } from "@/hooks/use-stored-state";
 import { NavItem } from "./components-nav";
 import { NavSectionHeader, useSectionOpen } from "./nav-section-header";
@@ -23,6 +24,7 @@ const ACCOUNTS_HINT_KEY = "kite:nav:accounts-hint-seen";
  * focus, opens the colour choice.
  */
 function AccountViewItem({ entry, active, onOpen }: { entry: AccountViewEntry; active: boolean; onOpen: () => void }) {
+	const t = useT();
 	const { setMobileOpen } = useSidebar();
 	const colors = useLabelColors();
 	const chosen = colors.accounts?.[entry.id];
@@ -32,7 +34,7 @@ function AccountViewItem({ entry, active, onOpen }: { entry: AccountViewEntry; a
 				link={{
 					href: accountViewHref(entry),
 					label: entry.label,
-					title: `Shows only mail that came in through ${entry.address}. Nothing is moved.`,
+					title: t("Shows only mail that came in through {address}. Nothing is moved.", { address: entry.address }),
 					icon: Link2,
 					iconColor: accountLabelColor(colors, entry.id) ?? undefined,
 					active,
@@ -48,7 +50,7 @@ function AccountViewItem({ entry, active, onOpen }: { entry: AccountViewEntry; a
 				<Popover.Trigger asChild>
 					<button
 						type="button"
-						aria-label={`Colour for ${entry.label}`}
+						aria-label={t("Colour for {name}", { name: entry.label })}
 						className="absolute end-1 top-1.5 flex h-6 w-6 items-center justify-center rounded-md bg-neutral-100 text-neutral-600 opacity-0 transition-opacity hover:bg-neutral-200 hover:text-neutral-900 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 group-hover/account:opacity-100 pointer-coarse:opacity-100 data-[state=open]:opacity-100 max-md:top-2.5 max-md:h-7 max-md:w-7"
 					>
 						<MoreHorizontal aria-hidden className="h-4 w-4" />
@@ -59,14 +61,14 @@ function AccountViewItem({ entry, active, onOpen }: { entry: AccountViewEntry; a
 						align="start"
 						sideOffset={4}
 						collisionPadding={8}
-						aria-label={`Colour for ${entry.label}`}
+						aria-label={t("Colour for {name}", { name: entry.label })}
 						className="z-[130] w-56 rounded-xl border border-neutral-200 bg-white p-3 shadow-lg"
 					>
-						<p className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">Icon colour</p>
+						<p className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">{t("Icon colour")}</p>
 						<LabelColorPicker
-							label={`Colour for ${entry.label}`}
+							label={t("Colour for {name}", { name: entry.label })}
 							value={chosen}
-							defaultLabel="No colour"
+							defaultLabel={t("No colour")}
 							defaultGlyph="–"
 							onChange={(color) => chooseLabelColor("accounts", entry.id, color)}
 						/>
@@ -90,6 +92,7 @@ export function SidebarAccountViews({
 	active: AccountViewEntry | null;
 }) {
 	const { allMailboxes, viewMailboxes } = useSelectedMailbox();
+	const t = useT();
 	const colorOf = useMailboxLabelColor();
 	const [open, toggle] = useSectionOpen("kite:nav:accounts-section-open");
 	const [hintSeen, setHintSeen] = useStoredState(ACCOUNTS_HINT_KEY, false);
@@ -99,22 +102,26 @@ export function SidebarAccountViews({
 		.filter((group) => group.entries.length > 0);
 	return (
 		<>
-			<NavSectionHeader label="Connected accounts" open={open} onToggle={toggle} />
+			<NavSectionHeader label={t("Connected accounts")} open={open} onToggle={toggle} />
 			{open && !hintSeen && (
 				<p data-accounts-hint className="mx-6 mb-0.5 text-xs leading-4 text-neutral-500">
-					Each shows only the mail that came in through that account. Nothing is moved.{" "}
+					{t("Each shows only the mail that came in through that account. Nothing is moved.")}{" "}
 					<button
 						type="button"
 						onClick={() => setHintSeen(true)}
 						className="font-medium text-neutral-700 underline hover:text-neutral-900"
 					>
-						Got it
+						{t("Got it")}
 					</button>
 				</p>
 			)}
 			{open &&
 				groups.map(({ mailbox, entries: group }) => (
-					<div key={mailbox.id} role="group" aria-label={`${getMailboxName(mailbox)} connected accounts`}>
+					<div
+						key={mailbox.id}
+						role="group"
+						aria-label={t("{name} connected accounts", { name: getMailboxName(mailbox) })}
+					>
 						{allMailboxes && (
 							<p className="flex items-center gap-1.5 truncate px-6 pb-0.5 pt-2 text-xs font-medium text-neutral-500">
 								<LabelDot color={colorOf(mailbox.id).value} />

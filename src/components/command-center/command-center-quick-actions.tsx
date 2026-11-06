@@ -5,6 +5,7 @@ import { Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { QuickAction } from "./command-center-types";
 import { COMMAND_CENTER_ICON_CLASS, COMMAND_CENTER_TILE_CLASS, CommandCenterCard } from "./command-center-card";
+import { useT } from "@/lib/i18n/use-t";
 
 /** A quick action is a tile: the icon in its circle, the label and, at the right, the key that does the same. */
 function QuickActionTile({ action }: { action: QuickAction }) {
@@ -43,8 +44,9 @@ function QuickActionTile({ action }: { action: QuickAction }) {
  * four across when the card has the row to itself (`wide`).
  */
 export function CommandCenterQuickActions({ actions, wide }: { actions: QuickAction[]; wide: boolean }) {
+	const t = useT();
 	return (
-		<CommandCenterCard title="Quick actions" icon={Zap} className={cn(wide && "@2xl:col-span-2")}>
+		<CommandCenterCard title={t("Quick actions")} icon={Zap} className={cn(wide && "@2xl:col-span-2")}>
 			<div className={cn("grid gap-2 @md:grid-cols-2", wide && "@2xl:grid-cols-4")}>
 				{actions.map((action) => (
 					<QuickActionTile key={action.id} action={action} />

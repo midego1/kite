@@ -13,16 +13,18 @@ import { AllMailboxesSquare } from "./all-mailboxes-option";
 import { useSidebar } from "./sidebar-state";
 import { RAIL_ICON_SIZE, RAIL_ITEM_CLASS, RAIL_TOOLTIP_CLASS } from "./sidebar-rail-utils";
 import { Tooltip } from "./ui/tooltip";
+import { useT } from "@/lib/i18n/use-t";
 
 /** Mailboxes shown as squares at the top of the sidebar; the rest stay in the switcher's list. */
 const MAX_MAILBOX_SQUARES = 4;
 
 function CollapseButton() {
+	const t = useT();
 	const { minimal, toggle, mobile, toggleInListHeader } = useSidebar();
 	// On phones the sidebar is a sheet with its own close button; a message list header carries the toggle itself
 	// while the sidebar is expanded (the icon rail always keeps its own Expand button).
 	if (mobile || (toggleInListHeader && !minimal)) return null;
-	const label = minimal ? "Expand menu" : "Collapse menu";
+	const label = minimal ? t("Expand menu") : t("Collapse menu");
 	return (
 		<Tooltip label={label} placement="right" className={minimal ? RAIL_TOOLTIP_CLASS : undefined}>
 			<button
@@ -46,6 +48,7 @@ function CollapseButton() {
  * bottom of the sidebar. In the icon rail only the collapse button stays.
  */
 export function SidebarAccounts() {
+	const t = useT();
 	const { selectedMailbox, setSelectedMailbox, mailboxes, allMailboxes, setAllMailboxes } = useSelectedMailbox();
 	const { minimal } = useSidebar();
 	const user = useCurrentUser();
@@ -76,7 +79,7 @@ export function SidebarAccounts() {
 						key={mailbox.id}
 						type="button"
 						title={getMailboxAddress(mailbox)}
-						aria-label={`Open ${getMailboxAddress(mailbox)}`}
+						aria-label={t("Open {mailbox}", { mailbox: getMailboxAddress(mailbox) })}
 						aria-pressed={active}
 						onClick={() => {
 							if (active) return;
@@ -107,8 +110,8 @@ export function SidebarAccounts() {
 				// A button, so the Admin menu's link stays the one link to Mailboxes on the page.
 				<button
 					type="button"
-					title="Add mailbox"
-					aria-label="Add mailbox"
+					title={t("Add mailbox")}
+					aria-label={t("Add mailbox")}
 					onClick={() => router.push("/mailboxes")}
 					className="flex h-8 w-8 items-center justify-center rounded-lg bg-neutral-100 text-neutral-500 hover:bg-neutral-200 hover:text-neutral-900"
 				>

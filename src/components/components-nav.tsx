@@ -1,3 +1,4 @@
+import { useT } from "@/lib/i18n/use-t";
 import Link from "next/link";
 import type { DragEvent, MouseEvent } from "react";
 import { useEffect, useState } from "react";
@@ -52,6 +53,7 @@ type Props = {
 	wrap?: boolean;
 };
 export function NavItem({ link, iconClassName, labelClassName, wrap }: Props) {
+	const t = useT();
 	const pathname = usePathname();
 	const router = useRouter();
 	const { openComposer } = useCompose();
@@ -125,7 +127,7 @@ export function NavItem({ link, iconClassName, labelClassName, wrap }: Props) {
 				}}
 				className={cn(!minimal && "ms-3", classes)}
 				// "Compose" stays in the name, which is what the shortcut help, tests and screen reader users know.
-				aria-label={`Compose ${(link.label ?? "").toLowerCase()}`}
+				aria-label={t("Compose new email")}
 				{...dropProps}
 			>
 				<Icon

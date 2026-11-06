@@ -4,6 +4,7 @@ import type { MailboxOption } from "@/components/mailbox-provider";
 import { getMailboxAddress, getMailboxName } from "@/components/mailbox-selector-utils";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { useT } from "@/lib/i18n/use-t";
 import { LabelDot } from "./label-dot";
 import { useMailboxLabelColor } from "./use-label-colors";
 
@@ -23,6 +24,7 @@ export function MessageMailboxLabel({
 	variant?: "compact" | "full";
 	className?: string;
 }) {
+	const t = useT();
 	const colorOf = useMailboxLabelColor();
 	if (!mailbox) return null;
 	const address = getMailboxAddress(mailbox);
@@ -34,8 +36,8 @@ export function MessageMailboxLabel({
 				role="img"
 				data-testid="message-mailbox-label"
 				data-label-variant="compact"
-				aria-label={`Mailbox: ${name}`}
-				title={`Mailbox: ${name === address ? address : `${name} (${address})`}`}
+				aria-label={`${t("Mailbox:")} ${name}`}
+				title={`${t("Mailbox:")} ${name === address ? address : `${name} (${address})`}`}
 				className={cn("relative z-10 inline-flex h-4 w-3.5 shrink-0 items-center justify-center", className)}
 			>
 				<LabelDot color={color} />
@@ -55,7 +57,7 @@ export function MessageMailboxLabel({
 		>
 			<LabelDot color={color} className="h-2 w-2 rounded-[2px] ring-0" />
 			<span className="truncate">
-				<span className="sr-only">Mailbox: </span>
+				<span className="sr-only">{t("Mailbox:")} </span>
 				{getMailboxName(mailbox)}
 			</span>
 		</Badge>

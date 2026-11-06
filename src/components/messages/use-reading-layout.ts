@@ -6,7 +6,16 @@ import {
 	parseInterfaceDirection,
 } from "@/components/interface-direction-utils";
 import { queueLayoutSave } from "@/components/layout-preferences-client";
-import type { LayoutInterfaceDirection, LayoutPreferences } from "@/lib/preferences/layout-types";
+import {
+	DEFAULT_INTERFACE_LANGUAGE,
+	INTERFACE_LANGUAGE_STORAGE_KEY,
+	parseInterfaceLanguage,
+} from "@/lib/i18n/language-utils";
+import type {
+	LayoutInterfaceDirection,
+	LayoutInterfaceLanguage,
+	LayoutPreferences,
+} from "@/lib/preferences/layout-types";
 import type { MessageListDensity, MessageListLabels, ReadingPaneMode } from "./reading-layout-types";
 import {
 	DEFAULT_MESSAGE_DENSITY,
@@ -54,6 +63,10 @@ export function readInterfaceDirection(): LayoutInterfaceDirection {
 	return parseInterfaceDirection(readItem(INTERFACE_DIRECTION_STORAGE_KEY));
 }
 
+export function readInterfaceLanguage(): LayoutInterfaceLanguage {
+	return parseInterfaceLanguage(readItem(INTERFACE_LANGUAGE_STORAGE_KEY));
+}
+
 function useStoredPreference<T extends string>(
 	fallback: T,
 	read: () => T,
@@ -92,6 +105,10 @@ const densityLayout = (density: MessageListDensity): LayoutPreferences => ({ den
 const labelsLayout = (listLabels: MessageListLabels): LayoutPreferences => ({ listLabels });
 const interfaceDirectionLayout = (interfaceDirection: LayoutInterfaceDirection): LayoutPreferences => ({
 	interfaceDirection,
+});
+
+const interfaceLanguageLayout = (interfaceLanguage: LayoutInterfaceLanguage): LayoutPreferences => ({
+	interfaceLanguage,
 });
 
 /**
@@ -134,6 +151,27 @@ export function useInterfaceDirectionPreference(): [
 	);
 	const choose = useCallback(
 		(next: LayoutInterfaceDirection) => {
+			update(next);
+			window.dispatchEvent(new Event(INTERFACE_DIRECTION_CHOSEN_EVENT));
+		},
+		[update],
+	);
+	return [value, choose];
+}
+
+/**
+ * Automatic or a language; `InterfaceLanguageSync` loads it. It also decides an Automatic direction, so a choice made
+ * here applies to the direction at once as well.
+ */
+export function useInterfaceLanguagePreference(): [LayoutInterfaceLanguage, (next: LayoutInterfaceLanguage) => void] {
+	const [value, update] = useStoredPreference(
+		DEFAULT_INTERFACE_LANGUAGE,
+		readInterfaceLanguage,
+		INTERFACE_LANGUAGE_STORAGE_KEY,
+		interfaceLanguageLayout,
+	);
+	const choose = useCallback(
+		(next: LayoutInterfaceLanguage) => {
 			update(next);
 			window.dispatchEvent(new Event(INTERFACE_DIRECTION_CHOSEN_EVENT));
 		},

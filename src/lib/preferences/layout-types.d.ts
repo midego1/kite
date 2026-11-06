@@ -10,6 +10,8 @@ export type LayoutEmailFont = "original" | "reader";
 export type LayoutFontScope = "text" | "everywhere";
 /** Which way the interface reads: `auto` follows the browser language (`interface-direction-utils.ts`). */
 export type LayoutInterfaceDirection = "auto" | "ltr" | "rtl";
+/** The interface language: `auto` follows the browser language (`src/lib/i18n/language-utils.ts`). */
+export type LayoutInterfaceLanguage = "auto" | "en" | "nl" | "ar";
 
 /** The colours a label dot or icon can be given (`LABEL_COLORS` in `src/components/messages/label-colors-utils.ts`). */
 export type LayoutLabelColor = "blue" | "purple" | "pink" | "red" | "orange" | "amber" | "green" | "teal";
@@ -37,6 +39,7 @@ export interface LayoutPreferences {
 	emailFont?: LayoutEmailFont;
 	fontScope?: LayoutFontScope;
 	interfaceDirection?: LayoutInterfaceDirection;
+	interfaceLanguage?: LayoutInterfaceLanguage;
 	/** The language the reader translates mail into, an ISO 639-1 code. */
 	translateTo?: string;
 	/** Languages the reader no longer offers to translate, as ISO 639-1 codes. */

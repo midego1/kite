@@ -1,0 +1,190 @@
+import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { rmSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import test, { after } from "node:test";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { build } from "esbuild";
+import { JSDOM } from "jsdom";
+import { makeBundleDirectory } from "./support/bundle-directory.mjs";
+import { XSS_PAYLOADS, findActiveContent } from "./fixtures/xss-payloads.mjs";
+
+// The sanitizer runs on every parsed message. The large cases run in a child process with a 128 MB heap, so a bound
+// that stops working shows up as a failed child instead of slowing the whole test run.
+const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+const directory = makeBundleDirectory("kite-stored-html-bounds-");
+after(() => rmSync(directory, { recursive: true, force: true }));
+
+const entry = join(directory, "entry.ts");
+writeFileSync(
+	entry,
+	`
+export { buildSnippet, parseRawMime } from "${root}/src/lib/email/parse";
+export { sanitizeStoredEmailHtml } from "${root}/src/lib/email/stored-html-utils";
+`,
+);
+const bundle = join(directory, "entry.mjs");
+await build({
+	entryPoints: [entry],
+	outfile: bundle,
+	bundle: true,
+	absWorkingDir: root,
+	platform: "node",
+	format: "esm",
+	target: "node22",
+	tsconfig: join(root, "tsconfig.json"),
+	packages: "external",
+	logLevel: "silent",
+});
+const { sanitizeStoredEmailHtml } = await import(pathToFileURL(bundle).href);
+const MAX_OPEN_ELEMENTS = 512;
+const MAX_TAG_ATTRIBUTES = 1_024;
+const MAX_SANITIZED_HTML_CHARS = 26_000_000;
+
+const worker = join(directory, "worker.mjs");
+writeFileSync(
+	worker,
+	`
+import { buildSnippet, parseRawMime } from ${JSON.stringify(pathToFileURL(bundle).href)};
+
+const header = "From: a@example.com\\r\\nTo: b@example.com\\r\\nSubject: x\\r\\nMIME-Version: 1.0\\r\\nContent-Type: text/html\\r\\n\\r\\n";
+const lines = (line, count) => (line + "\\r\\n").repeat(count);
+const shapes = {
+	openShort: () => lines("<b>", 149_000),
+	openLong: () => lines("<b>".repeat(18), 149_000),
+	openLarge: () => lines("<b>".repeat(198), 39_000),
+	openAttributes: () => lines("<a x=1>".repeat(22), 149_000),
+	openDivs: () => lines("<div>".repeat(130), 39_000),
+	closedDivs: () => lines("<div></div>".repeat(50), 40_000),
+	longDivs: () => lines("<div>" + "x".repeat(150) + "</div>", 149_000),
+	paragraphs: () => lines("<p>".repeat(100), 75_000),
+	listItems: () => lines("<li>".repeat(100), 56_000),
+	breaks: () => lines("<br>".repeat(38), 149_000),
+	ampersands: () => lines("&".repeat(150), 149_000),
+	entities: () => lines("&lt;".repeat(38), 149_000),
+	unmatchedCloses: () => "<b>".repeat(500) + lines("</i>".repeat(38), 149_000),
+	insideOpen: () => "<b>".repeat(500) + lines("<i></i>".repeat(22), 149_000),
+	roots: () => "x" + lines("<html>".repeat(26), 149_000),
+	distinctAttributes: () => "<a " + Array.from({ length: 2_000_000 }, (_, index) => "a" + index.toString(36) + "=1").join(" ") + ">x",
+	attributeEntities: () => '<a title="' + "&".repeat(23_000_000) + '">x',
+	attributeQuotes: () => "<a title='" + '"'.repeat(23_000_000) + "'>x",
+	urlSpaces: () => '<a href="' + " ".repeat(23_000_000) + 'x">x',
+};
+
+const out = {};
+for (const [name, body] of Object.entries(shapes)) {
+	const started = performance.now();
+	const parsed = await parseRawMime(new TextEncoder().encode(header + body()).buffer);
+	const snippet = buildSnippet(parsed.text, parsed.html);
+	out[name] = { html: parsed.html?.length ?? 0, snippet: snippet.length, ms: Math.round(performance.now() - started) };
+}
+console.log(JSON.stringify(out));
+`,
+);
+
+// Without coverage collection, which every child would inherit and which would have to fit in the same heap.
+const childEnv = Object.fromEntries(
+	Object.entries(process.env).filter(([name]) => name !== "NODE_V8_COVERAGE" && name !== "NODE_TEST_CONTEXT"),
+);
+
+test("large bodies of tags, text and attributes are sanitized within a 128 MB heap", () => {
+	const output = execFileSync(process.execPath, ["--max-old-space-size=128", worker], {
+		encoding: "utf8",
+		env: childEnv,
+		timeout: 300_000,
+	});
+	const results = JSON.parse(output);
+	assert.equal(Object.keys(results).length, 19);
+	for (const [name, result] of Object.entries(results)) {
+		assert.ok(result.ms < 60_000, `${name}: ${result.ms} ms`);
+		assert.ok(result.html <= MAX_SANITIZED_HTML_CHARS + 512 * 1024, `${name}: ${result.html} characters`);
+	}
+	// Balanced markup of this size stays whole.
+	assert.equal(results.closedDivs.html, 22_040_000);
+	assert.equal(results.longDivs.html, 149_000 * 162);
+});
+
+const parse = (html) => new JSDOM(html).window.document;
+
+/** The open tags left over when `html` is read as a stack of stored elements, or the first mismatch. */
+function unbalanced(html) {
+	const stack = [];
+	for (const [, close, name] of html.matchAll(/<(\/?)([a-z0-9]+)/g)) {
+		if (["br", "col", "hr", "img", "wbr"].includes(name)) continue;
+		if (!close) stack.push(name);
+		else if (stack.pop() !== name) return `</${name}>`;
+	}
+	return stack.join();
+}
+
+test("nesting at the limit keeps every element", () => {
+	const html = `${"<div>".repeat(MAX_OPEN_ELEMENTS)}text`;
+	assert.equal(sanitizeStoredEmailHtml(html), `${html}${"</div>".repeat(MAX_OPEN_ELEMENTS)}`);
+});
+
+test("nesting past the limit closes what was opened and keeps the rest as text", () => {
+	const html = `${"<div>".repeat(MAX_OPEN_ELEMENTS)}first<div>second<b>third</b><script>alert(1)</script>`;
+	assert.equal(
+		sanitizeStoredEmailHtml(html),
+		`${"<div>".repeat(MAX_OPEN_ELEMENTS)}first${"</div>".repeat(MAX_OPEN_ELEMENTS)}` +
+			'<div style="white-space: pre-wrap">second third  </div>',
+	);
+});
+
+test("the limit counts unstored and dropped elements, whose content stays dropped", () => {
+	const open = "<custom>".repeat(MAX_OPEN_ELEMENTS);
+	assert.equal(sanitizeStoredEmailHtml(`${open}<b>x`), '<div style="white-space: pre-wrap">x</div>');
+	assert.equal(sanitizeStoredEmailHtml(`<p>kept</p><svg>${"<g>".repeat(MAX_OPEN_ELEMENTS)}gone`), "<p>kept</p>");
+});
+
+test("cut output stays balanced and inert", () => {
+	const open = "<div><span>".repeat(Math.floor(MAX_OPEN_ELEMENTS / 2));
+	for (const payload of XSS_PAYLOADS) {
+		const stored = sanitizeStoredEmailHtml(`${open}<b>${payload}${payload}`);
+		assert.equal(unbalanced(stored), "", payload);
+		assert.deepEqual(findActiveContent(stored, parse), [], payload);
+		assert.equal(sanitizeStoredEmailHtml(stored), stored, payload);
+	}
+});
+
+test("too many attributes on one tag keep the text before it", () => {
+	const names = Array.from({ length: MAX_TAG_ATTRIBUTES }, (_, index) => `a${index}=1`).join(" ");
+	assert.equal(sanitizeStoredEmailHtml(`<p>one</p><a ${names}>two</a>`), "<p>one</p><a>two</a>");
+	const stored = sanitizeStoredEmailHtml(`<p>one</p><a ${names} b=1>two</a>`);
+	assert.match(stored, /^<p>one<\/p><div style="white-space: pre-wrap">/);
+});
+
+test("output past its limit is cut and stays balanced", () => {
+	const stored = sanitizeStoredEmailHtml(`<div><b>${"&".repeat(MAX_SANITIZED_HTML_CHARS / 4)}</b>after</div>`);
+	assert.ok(stored.length >= MAX_SANITIZED_HTML_CHARS);
+	assert.ok(stored.length < MAX_SANITIZED_HTML_CHARS + 512 * 1024);
+	assert.ok(stored.endsWith("&amp;</b></div>"));
+	const tags = sanitizeStoredEmailHtml(`<div>${"<p>".repeat(MAX_SANITIZED_HTML_CHARS / 2)}`);
+	assert.ok(tags.length < MAX_SANITIZED_HTML_CHARS + 100);
+	assert.ok(tags.endsWith("</p></div>"));
+});
+
+test("an attribute that outgrows the limit is left out", () => {
+	assert.equal(sanitizeStoredEmailHtml(`<a title="${"&".repeat(MAX_SANITIZED_HTML_CHARS / 2)}">x</a>`), "<a>x</a>");
+	const data = `data:image/png;base64,${"A".repeat(1_000_000)}`;
+	assert.equal(sanitizeStoredEmailHtml(`<img src="${data}">`), `<img src="${data}">`);
+});
+
+test("long values are escaped and checked like short ones", () => {
+	const long = '<&"é'.repeat(40_000);
+	const stored = sanitizeStoredEmailHtml(`<p title='${long}'>${long.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</p>`);
+	assert.equal(stored, `<p title="${"&lt;&amp;&quot;é".repeat(40_000)}">${'&lt;&amp;"é'.repeat(40_000)}</p>`);
+	const padding = " \t\n".repeat(100_000);
+	assert.equal(sanitizeStoredEmailHtml(`<a href="${padding}java${padding}script:alert(1)">x</a>`), "<a>x</a>");
+	assert.equal(sanitizeStoredEmailHtml(`<a href="${"a".repeat(500)}:x">x</a>`), "<a>x</a>");
+	assert.equal(sanitizeStoredEmailHtml(`<a href="${"a".repeat(500)}">x</a>`), `<a href="${"a".repeat(500)}">x</a>`);
+	assert.equal(sanitizeStoredEmailHtml('<a href="HTTP://a.b">x</a>'), '<a href="HTTP://a.b">x</a>');
+	assert.equal(sanitizeStoredEmailHtml('<a href=":x">x</a>'), '<a href=":x">x</a>');
+	assert.equal(sanitizeStoredEmailHtml('<a href="1a:x">x</a>'), '<a href="1a:x">x</a>');
+	assert.equal(sanitizeStoredEmailHtml('<a href="a+b.c-1:x">x</a>'), "<a>x</a>");
+});
+
+test("the root direction still needs a blank start", () => {
+	assert.equal(sanitizeStoredEmailHtml('  <html dir="rtl"><body>x</body></html>'), '<div dir="rtl">  x</div>');
+	assert.equal(sanitizeStoredEmailHtml('x<html dir="rtl">y'), "xy");
+});

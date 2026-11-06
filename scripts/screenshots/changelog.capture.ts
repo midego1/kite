@@ -115,6 +115,8 @@ async function seedCompactLabelsDemo(): Promise<void> {
 		await waitForMessage(api, subject);
 	}
 	await api.dispose();
+}
+
 /** A model for the shots that need the assistant: nothing it answers appears in them. */
 let demoModel: { fake: FakeModel; restore: () => Promise<void> } | null = null;
 

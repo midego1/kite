@@ -44,7 +44,7 @@ function PendingMigrations({
 					<ol aria-label="Pending migrations" className="mt-3 space-y-1.5 text-sm text-amber-900">
 						{names.map((name) => (
 							<li key={name} className="min-w-0">
-								<span className="block font-medium">{migrationLabel(name)}</span>
+								{migrationLabel(name) !== name && <span className="block font-medium">{migrationLabel(name)}</span>}
 								<span className="block break-all font-mono text-xs text-amber-800">{name}</span>
 							</li>
 						))}

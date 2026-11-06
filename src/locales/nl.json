@@ -306,7 +306,7 @@
 	"Open Command Palette (⌘K)": "Opdrachtenpalet openen (⌘K)",
 	"Open account menu": "Accountmenu openen",
 	"Open account menu, {name} {email}": "Accountmenu openen, {name} {email}",
-	"Open composer as modal": "Schrijfvenster gecentreerd openen",
+	"Open composer as modal": "Schrijfvenster als dialoogvenster openen",
 	"Open email assistant": "E-mailassistent openen",
 	"Open from {provider}": "Openen via {provider}",
 	"Open it only if you expected it from someone you trust.": "Open het alleen als je het verwachtte van iemand die je vertrouwt.",

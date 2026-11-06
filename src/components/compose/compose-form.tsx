@@ -946,10 +946,10 @@ export function ComposeForm({
 									label={
 										attachmentPolicy.cloudLinks
 											? t(
-													"Attach files (up to {maxMb} MB total). Files over {round} MB are sent as 30-day R2 download links.",
+													"Attach files (up to {maxMb} MB total). Files over {thresholdMb} MB are sent as 30-day R2 download links.",
 													{
 														maxMb: attachmentPolicy.maxMb,
-														round: Math.round(attachmentPolicy.cloudThresholdBytes / 1_000_000),
+														thresholdMb: Math.round(attachmentPolicy.cloudThresholdBytes / 1_000_000),
 													},
 												)
 											: t("Attach files (up to {maxMb} MB total)", { maxMb: attachmentPolicy.maxMb })

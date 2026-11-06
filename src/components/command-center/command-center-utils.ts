@@ -109,7 +109,7 @@ function relativeTime(iso: string | null | undefined, now: Date): string {
 	const hours = Math.round(minutes / 60);
 	if (hours < 24) return t("{count} h ago", { count: hours });
 	const days = Math.round(hours / 24);
-	return days === 1 ? t("yesterday") : t("{count} days ago", { count: days });
+	return days === 1 ? t("yesterday") : t("{count, plural, one {# day ago} other {# days ago}}", { count: days });
 }
 
 const CONNECTED_ACCOUNTS_HREF = "/settings/connected-accounts";

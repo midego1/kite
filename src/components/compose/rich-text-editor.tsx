@@ -401,7 +401,7 @@ export function RichTextEditor({
 							value={linkUrl}
 							onChange={(event) => setLinkUrl(event.target.value)}
 							onKeyDown={onLinkKeyDown}
-							placeholder={t("https://example.com")}
+							placeholder="https://example.com"
 							aria-label={t("Link address")}
 							className="h-8 w-64 rounded-md border border-neutral-200 px-2 text-sm outline-none focus:border-blue-400"
 						/>

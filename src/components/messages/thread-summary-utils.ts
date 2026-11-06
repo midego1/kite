@@ -1,6 +1,7 @@
 import { readAiErrorBody, type AiErrorBody } from "@/lib/agent/ai-error-utils";
 import type { SummaryScope, SummaryState } from "@/lib/agent/summaries/summary-types";
-import { languageName } from "@/lib/agent/summaries/summary-utils";
+import { shownLanguageName } from "./message-translation-utils";
+import { t } from "@/lib/i18n/translator";
 
 /** The summary route of a message, with the scope and the reader's language. */
 export function summaryUrl(messageId: string, scope: SummaryScope, language: string | null): string {
@@ -19,9 +20,9 @@ export function showsCurrentSummary(state: SummaryState | null, hidden: boolean)
 	return !hidden && !!state?.summary && !state.summary.stale;
 }
 
-/** "Translate to Dutch": the interface is English, so the language is named in English. */
+/** "Translate to Dutch", naming the language in the interface language. */
 export function translateLabel(language: string): string {
-	return `Translate to ${languageName(language)}`;
+	return t("Translate to {languageName}", { languageName: shownLanguageName(language) });
 }
 
 /** The summary as plain text for Copy: the overview, then one line per point. */
@@ -32,11 +33,25 @@ export function summaryCopyText(summary: Pick<NonNullable<SummaryState["summary"
 /** The error text of a failed summary request, from the route's `{ error }` body, with an AI failure's details. */
 export async function summaryError(
 	response: Response,
-	fallback = "Kite could not summarize this. Try again.",
+	fallback = t("Kite could not summarize this. Try again."),
 ): Promise<{ message: string; failure: AiErrorBody | null }> {
 	const body = (await response.json().catch(() => null)) as { error?: unknown } | null;
 	return {
 		message: typeof body?.error === "string" ? body.error : fallback,
 		failure: readAiErrorBody(body),
 	};
+}
+
+/** The per-minute AI request limit's window: a refusal for it lifts after this long (a spend cap lifts at 00:00 UTC). */
+const RATE_LIMIT_RESET_MS = 60_000;
+
+/** How long the Summarize button stays off after a 429 with this error code, or null when it stays off for the page. */
+export function blockedResetMs(code: string | null | undefined): number | null {
+	return code === "rate_limited" ? RATE_LIMIT_RESET_MS : null;
+}
+
+/** What a screen reader hears when a request starts or ends (the card's content swap alone is silent). */
+export function summaryAnnouncement(kind: "summarize" | "translate", phase: "started" | "done"): string {
+	if (kind === "translate") return phase === "started" ? t("Translating the summary") : t("Translation ready");
+	return phase === "started" ? t("Summarizing") : t("Summary ready");
 }

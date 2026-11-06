@@ -7,6 +7,7 @@ import { authFetch } from "@/lib/auth/client";
 import type { WriteWithKiteComposer, WriteWithKiteSelection } from "./write-with-kite-types";
 import { MAILBOX_AI_OFF_REASON, MAILBOX_AI_OFF_TEXT } from "@/lib/agent/mailbox-ai-utils";
 import { MAILBOXES_CHANGED_EVENT } from "@/components/mailbox-provider-utils";
+import { useT } from "@/lib/i18n/use-t";
 
 // The panel, its requests and HTML handling load only when the button is used.
 const WriteWithKitePanel = lazy(() => import("./write-with-kite-panel"));
@@ -49,6 +50,7 @@ export function WriteWithKite({
 	mailboxId: string | undefined;
 	composer: WriteWithKiteComposer;
 }) {
+	const t = useT();
 	// The composer's own mailbox (its From), not the sidebar's. The answer is kept per mailbox, so changing From hides
 	// the button until that mailbox's answer arrives.
 	const [checked, setChecked] = useState<{ mailboxId: string; available: boolean; aiOff?: boolean } | null>(null);
@@ -105,10 +107,10 @@ export function WriteWithKite({
 	// No AI for this mailbox: the button stays where people look for it and says why it does nothing.
 	if (aiOff)
 		return (
-			<Tooltip label={MAILBOX_AI_OFF_TEXT}>
+			<Tooltip label={t(MAILBOX_AI_OFF_TEXT)}>
 				<button
 					type="button"
-					aria-label={`Write with Kite: ${MAILBOX_AI_OFF_TEXT}`}
+					aria-label={t("Write with Kite: {reason}", { reason: t(MAILBOX_AI_OFF_TEXT) })}
 					aria-disabled="true"
 					data-testid="write-with-kite-ai-off"
 					onMouseDown={(event) => event.preventDefault()}
@@ -121,10 +123,10 @@ export function WriteWithKite({
 	if (!available) return null;
 	return (
 		<>
-			<Tooltip label={`Write with Kite (${shortcutLabel()})`}>
+			<Tooltip label={t("Write with Kite ({shortcutLabel})", { shortcutLabel: shortcutLabel() })}>
 				<button
 					type="button"
-					aria-label="Write with Kite"
+					aria-label={t("Write with Kite")}
 					aria-expanded={!!open}
 					onMouseDown={(event) => event.preventDefault()}
 					onClick={() => (open ? setOpen(null) : openPanel())}

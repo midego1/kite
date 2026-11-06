@@ -10,6 +10,7 @@ import { customFolderNavLink } from "@/components/dashboard-nav-utils";
 import { useSidebar } from "@/components/sidebar-state";
 import { cn } from "@/lib/utils";
 import { DeleteFolderDialog, RenameFolderDialog } from "./folder-dialogs";
+import { useT } from "@/lib/i18n/use-t";
 
 const ITEM_CLASS =
 	"flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm text-neutral-700 outline-none data-[disabled]:opacity-50 data-[highlighted]:bg-neutral-100";
@@ -28,6 +29,7 @@ export function FolderNavItem({
 	unread: number | undefined;
 	canManage: boolean;
 }) {
+	const t = useT();
 	const { minimal } = useSidebar();
 	const pathname = usePathname();
 	const router = useRouter();
@@ -55,7 +57,7 @@ export function FolderNavItem({
 					) : (
 						<button
 							type="button"
-							aria-label={`Folder options for ${folder.name}`}
+							aria-label={t("Folder options for {name}", { name: folder.name })}
 							className="absolute end-1 top-1.5 flex h-6 w-6 items-center justify-center rounded-md bg-neutral-100 text-neutral-600 opacity-0 transition-opacity hover:bg-neutral-200 hover:text-neutral-900 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 group-hover/folder:opacity-100 data-[state=open]:opacity-100 max-md:top-2.5 max-md:h-7 max-md:w-7"
 						>
 							<MoreHorizontal aria-hidden className="h-4 w-4" />
@@ -71,11 +73,11 @@ export function FolderNavItem({
 				>
 					<DropdownMenu.Item className={ITEM_CLASS} onSelect={() => setRenaming(true)}>
 						<Pencil aria-hidden className="h-4 w-4" />
-						Rename
+						{t("Rename")}
 					</DropdownMenu.Item>
 					<DropdownMenu.Item className={cn(ITEM_CLASS, "text-red-700")} onSelect={() => setDeleting(true)}>
 						<Trash2 aria-hidden className="h-4 w-4" />
-						Delete
+						{t("Delete")}
 					</DropdownMenu.Item>
 				</DropdownMenu.Content>
 			</DropdownMenu.Portal>

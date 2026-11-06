@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { Sheet, SheetContent, SheetTitle } from "./ui/sheet";
 import { useSidebar } from "./sidebar-state";
+import { useT } from "@/lib/i18n/use-t";
 
 // The sheet opens from the top bar's menu button, outside its Root, so focus goes back there on close.
 const menuButton = () => document.querySelector<HTMLElement>("[data-mobile-menu]");
@@ -14,6 +15,7 @@ const menuButton = () => document.querySelector<HTMLElement>("[data-mobile-menu]
  * (no portal), so the sidebar keeps its position in the page's reading order.
  */
 export function SidebarAside({ children, className }: { children: ReactNode; className?: string }) {
+	const t = useT();
 	const { mobile, mobileOpen, setMobileOpen } = useSidebar();
 
 	if (mobile)
@@ -27,7 +29,7 @@ export function SidebarAside({ children, className }: { children: ReactNode; cla
 					aria-describedby={undefined}
 					className="bg-[#f6f8fc]"
 				>
-					<SheetTitle className="sr-only">Menu</SheetTitle>
+					<SheetTitle className="sr-only">{t("Menu")}</SheetTitle>
 					<aside className={cn("h-full min-h-0 min-w-0", className)}>{children}</aside>
 				</SheetContent>
 			</Sheet>
@@ -41,6 +43,7 @@ export function SidebarAside({ children, className }: { children: ReactNode; cla
 }
 
 export function MobileMenuButton({ className }: { className?: string }) {
+	const t = useT();
 	const { mobile, mobileOpen, toggle } = useSidebar();
 	if (!mobile) return null;
 	return (
@@ -48,7 +51,7 @@ export function MobileMenuButton({ className }: { className?: string }) {
 			type="button"
 			data-mobile-menu
 			onClick={toggle}
-			aria-label="Open menu"
+			aria-label={t("Open menu")}
 			aria-expanded={mobileOpen}
 			className={cn(
 				"flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-neutral-600 hover:bg-neutral-200 md:hidden",

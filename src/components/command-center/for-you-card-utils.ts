@@ -2,6 +2,8 @@ import { getEmailDisplayName } from "@/lib/email/address";
 import { forYouVisible } from "@/lib/agent/auto-read/for-you-utils";
 import type { OpenSuggestion, SuggestionMailbox } from "@/hooks/open-suggestions-types";
 import { CLIENT_MODULES } from "@/lib/modules/client-data";
+import { msg, t } from "@/lib/i18n/translator";
+import type { MessageKey } from "@/lib/i18n/i18n-types";
 
 /**
  * The suggestions the card lists, at most; the rest is "n more" and the For you page.
@@ -10,15 +12,15 @@ import { CLIENT_MODULES } from "@/lib/modules/client-data";
 export const FOR_YOU_CARD_LIMIT = 4;
 
 /** How a kind reads in one row ("Reply", "Phishing"): the row chip's wording where there is one. */
-const CORE_KIND_LABELS: Readonly<Record<string, string>> = {
-	phishing: "Phishing",
-	reply: "Reply",
-	task: "Task",
-	receipt: "Receipt",
-	summary: "Summary",
-	label: "Label",
-	unsubscribe: "Unsubscribe",
-	follow_up: "Follow-up",
+const CORE_KIND_LABELS: Readonly<Record<string, MessageKey>> = {
+	phishing: msg("Phishing"),
+	reply: msg("Reply"),
+	task: msg("Task"),
+	receipt: msg("Receipt"),
+	summary: msg("Summary"),
+	label: msg("Label"),
+	unsubscribe: msg("Unsubscribe"),
+	follow_up: msg("Follow-up"),
 };
 
 const MODULE_KIND_LABELS: Readonly<Record<string, string>> = Object.fromEntries(
@@ -32,7 +34,8 @@ const MODULE_KIND_LABELS: Readonly<Record<string, string>> = Object.fromEntries(
  * @public Consumed by tests that check the labels.
  */
 export function forYouKindLabel(kind: string): string {
-	return MODULE_KIND_LABELS[kind] ?? CORE_KIND_LABELS[kind] ?? kind;
+	if (Object.hasOwn(MODULE_KIND_LABELS, kind)) return MODULE_KIND_LABELS[kind];
+	return Object.hasOwn(CORE_KIND_LABELS, kind) ? t(CORE_KIND_LABELS[kind]) : kind;
 }
 
 export type ForYouCardRow = {
@@ -69,7 +72,8 @@ export type ForYouCardView = {
  * suggestions of modules that are off for the user, reviewer-only kinds of other reviewers and mailboxes without
  * full access. The card is hidden until the list has arrived and while every mailbox in view has automatic
  * reading off, as the For you sidebar item is. The count is the list's own total when every mailbox it covers is
- * in view, else what the (200-row) list holds for the mailboxes in view.
+ * in view (always so for one mailbox, which the card asks for on its own), else what the shared (200-row) list
+ * holds for the mailboxes in view, which is exact below 200 open suggestions.
  */
 export function forYouCardView(
 	state: {
@@ -96,7 +100,7 @@ export function forYouCardView(
 		mailboxId: suggestion.mailboxId,
 		kind: suggestion.kind,
 		kindLabel: forYouKindLabel(suggestion.kind),
-		subject: suggestion.message.subject?.trim() || suggestion.title || "(No subject)",
+		subject: suggestion.message.subject?.trim() || suggestion.title || t("(no subject)"),
 		title: suggestion.title,
 		sender: suggestion.message.from ? getEmailDisplayName(suggestion.message.from) : "",
 		createdAt: suggestion.createdAt,

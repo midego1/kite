@@ -6,6 +6,7 @@ import { useState } from "react";
 import type { BulkMessageAction } from "@/app/api/messages/bulk/types";
 import { BulkMessageToolbar } from "./bulk-message-toolbar";
 import type { BulkMessageSelectionPaneProps } from "./types";
+import { useT } from "@/lib/i18n/use-t";
 
 export function BulkMessageSelectionPane({
 	folder,
@@ -13,6 +14,7 @@ export function BulkMessageSelectionPane({
 	onAction,
 	onClearSelection,
 }: BulkMessageSelectionPaneProps) {
+	const t = useT();
 	const [pending, setPending] = useState(false);
 	const hasUnreadSelection = selectedMessages.some((message) => !message.read);
 
@@ -33,8 +35,10 @@ export function BulkMessageSelectionPane({
 				<div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-blue-50 text-blue-700">
 					<CheckSquare2 className="h-6 w-6" />
 				</div>
-				<h2 className="mt-4 text-lg font-semibold text-neutral-900">{selectedMessages.length} selected</h2>
-				<p className="mt-1 text-sm text-neutral-500">Choose an action to apply to the selected emails.</p>
+				<h2 className="mt-4 text-lg font-semibold text-neutral-900">
+					{t("{count} selected", { count: selectedMessages.length })}
+				</h2>
+				<p className="mt-1 text-sm text-neutral-500">{t("Choose an action to apply to the selected emails.")}</p>
 				<div className="mt-5 rounded-xl border border-neutral-200 bg-white p-3 shadow-sm">
 					<BulkMessageToolbar
 						selectedCount={selectedMessages.length}

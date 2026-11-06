@@ -132,7 +132,7 @@ test("a row falls back to the title without a subject, the address without a nam
 		view.rows.map((row) => [row.subject, row.sender, row.href]),
 		[
 			["Draft x", "plain", null],
-			["(No subject)", "", "/inbox?message=m-y"],
+			["(no subject)", "", "/inbox?message=m-y"],
 		],
 	);
 });

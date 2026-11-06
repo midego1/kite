@@ -1,6 +1,8 @@
 import type { MessageAttachment } from "@/app/(dashboard)/inbox/[messageId]/types";
 import { getAttachmentFileUrl, getAttachmentPreviewKind } from "@/components/message-attachment-viewer-utils";
+import type { ComposeAttachmentPolicy } from "./attachment-policy-types";
 import type { ComposeAttachmentEntry, ComposeAttachmentNotice } from "./compose-attachment-types";
+import { t } from "@/lib/i18n/translator";
 
 /** Cloudflare's limit for a general email message, and the room kept for headers and the body (cloud-attachment-utils.ts). */
 const MESSAGE_LIMIT_BYTES = 5 * 1024 * 1024;
@@ -79,9 +81,32 @@ export function attachmentNotice(sizes: number[], cloudThresholdBytes: number): 
 	return total >= (MESSAGE_LIMIT_BYTES - MESSAGE_SAFETY_MARGIN_BYTES) * NEAR_BUDGET_SHARE ? "near-budget" : null;
 }
 
+/** What is wrong with adding files of `next` bytes to attachments of `current` bytes; null when they fit. */
+export function refusedAttachments(policy: ComposeAttachmentPolicy, current: number[], next: number[]): string | null {
+	const limit = policy.maxMb * 1_000_000;
+	const total = [...current, ...next].reduce((sum, size) => sum + size, 0);
+	if (current.length + next.length > 10) return t("A message can include at most 10 attachments");
+	if (next.some((size) => size > limit))
+		return t("Each attachment must be {maxMb} MB or smaller", { maxMb: policy.maxMb });
+	return total > limit ? t("Attachments must total {maxMb} MB or less", { maxMb: policy.maxMb }) : null;
+}
+
+export function attachFilesLabel(policy: ComposeAttachmentPolicy): string {
+	if (!policy.cloudLinks) return t("Attach files (up to {maxMb} MB total)", { maxMb: policy.maxMb });
+	return t("Attach files (up to {maxMb} MB total). Files over {thresholdMb} MB are sent as 30-day R2 download links.", {
+		maxMb: policy.maxMb,
+		thresholdMb: Math.round(policy.cloudThresholdBytes / 1_000_000),
+	});
+}
+
 export function attachmentNoticeText(notice: ComposeAttachmentNotice, cloudThresholdBytes: number): string {
 	const limit = `${Math.round(cloudThresholdBytes / 1_000_000)} MB`;
 	return notice === "links"
-		? `Cloudflare limits general email messages to 5 MiB including encoding, so files over ${limit} are sent as 30-day R2 download links.`
-		: "Cloudflare limits general email messages to 5 MiB including encoding. Together these files are close to that, so some may be sent as 30-day R2 download links.";
+		? t(
+				"Cloudflare limits general email messages to 5 MiB including encoding, so files over {limit} are sent as 30-day R2 download links.",
+				{ limit },
+			)
+		: t(
+				"Cloudflare limits general email messages to 5 MiB including encoding. Together these files are close to that, so some may be sent as 30-day R2 download links.",
+			);
 }

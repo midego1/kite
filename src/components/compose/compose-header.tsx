@@ -4,6 +4,8 @@ import { ChevronUp, Forward, Maximize2, Minimize2, Minus, Reply, SquareArrowOutU
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import type { ComposeThreading } from "./types";
+import { useT } from "@/lib/i18n/use-t";
+import { t } from "@/lib/i18n/translator";
 
 /** The composer's title: what it is writing, or that its draft is loading or saved. */
 export function composeTitle({
@@ -17,10 +19,10 @@ export function composeTitle({
 	subject: string;
 	draftId: string | null;
 }) {
-	if (loadingDraft) return "Loading draft";
-	if (threading?.inReplyTo) return "Reply";
-	if (/^fwd?:/i.test(subject)) return "Forward";
-	return draftId ? "Draft saved" : "New Message";
+	if (loadingDraft) return t("Loading draft");
+	if (threading?.inReplyTo) return t("Reply");
+	if (/^fwd?:/i.test(subject)) return t("Forward");
+	return draftId ? t("Draft saved") : t("New Message");
 }
 
 type ComposeHeaderProps = {
@@ -37,23 +39,24 @@ type ComposeHeaderProps = {
 
 /** Pop out and close for the reply docked in the reader; Zero's composer header is light, not a dark bar. */
 function InlineControls({ onPopOut, onClose }: Pick<ComposeHeaderProps, "onPopOut" | "onClose">) {
+	const t = useT();
 	return (
 		<div className="flex shrink-0 items-center gap-1">
-			<Tooltip label="Pop out">
+			<Tooltip label={t("Pop out")}>
 				<button
 					type="button"
 					onClick={onPopOut}
-					aria-label="Pop out composer"
+					aria-label={t("Pop out composer")}
 					className="rounded-md p-1.5 hover:bg-neutral-100 hover:text-neutral-900"
 				>
 					<SquareArrowOutUpRight className="h-4 w-4" />
 				</button>
 			</Tooltip>
-			<Tooltip label="Close (Esc); the draft is kept">
+			<Tooltip label={t("Close (Esc); the draft is kept")}>
 				<button
 					type="button"
 					onClick={onClose}
-					aria-label="Close composer"
+					aria-label={t("Close composer")}
 					className="rounded-md p-1.5 hover:bg-neutral-100 hover:text-neutral-900"
 				>
 					<X className="h-4 w-4" />
@@ -70,8 +73,9 @@ function PopupControls({
 	onToggleModal,
 	onClose,
 }: Pick<ComposeHeaderProps, "minimized" | "modalMode" | "onToggleMinimized" | "onToggleModal" | "onClose">) {
-	const minimizeLabel = minimized ? "Restore composer" : "Minimize composer";
-	const modalLabel = modalMode ? "Restore floating composer" : "Open composer as modal";
+	const t = useT();
+	const minimizeLabel = minimized ? t("Restore composer") : t("Minimize composer");
+	const modalLabel = modalMode ? t("Restore floating composer") : t("Open composer as modal");
 	return (
 		<div className="flex shrink-0 items-center gap-3 text-neutral-300 dark:text-neutral-600">
 			<button
@@ -95,7 +99,7 @@ function PopupControls({
 			<button
 				type="button"
 				onClick={onClose}
-				aria-label="Close composer"
+				aria-label={t("Close composer")}
 				className="rounded p-1 hover:bg-neutral-700 dark:hover:bg-neutral-200 hover:text-white"
 			>
 				<X className="h-4 w-4" />

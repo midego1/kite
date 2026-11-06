@@ -71,7 +71,14 @@ test("the card lists the newest suggestions of the mailbox in view, dismisses in
 			.poll(async () => (await readSuggestions(account.api, { status: "open" })).total)
 			.toBeGreaterThanOrEqual(3);
 
+		const scoped: string[] = [];
+		page.on("request", (request) => {
+			if (request.url().includes("/api/agent/suggestions?status=open&mailboxId=")) scoped.push(request.url());
+		});
 		await openInbox(page);
+		// One mailbox in view asks for its own list, so other mailboxes cannot fill the shared list's 200 rows.
+		await expect.poll(() => scoped.length).toBeGreaterThan(0);
+		expect(scoped.every((url) => url.endsWith(account.mailboxId))).toBe(true);
 		const entryFor = (subject: string) => entries(page).filter({ hasText: subject });
 		await expect(card(page)).toBeVisible();
 		await expect(card(page).getByRole("heading", { level: 3 })).toHaveText("For you");

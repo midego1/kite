@@ -6,6 +6,7 @@ import { authFetch } from "@/lib/auth/client";
 import { useCompose } from "./compose-context";
 import { UndoSendBar } from "./undo-send-bar";
 import type { PendingUndoSend } from "./undo-send-types";
+import { useT } from "@/lib/i18n/use-t";
 
 /*
  * Sending closes the composer, so the "Sending in …s" bar cannot belong to it: this module holds the bar of the
@@ -41,6 +42,7 @@ function clear(target: PendingUndoSend) {
 let undoing = false;
 
 export function UndoSendHost() {
+	const t = useT();
 	const { openDraftComposer } = useCompose();
 	const held = useSyncExternalStore(
 		subscribe,
@@ -62,15 +64,15 @@ export function UndoSendHost() {
 			const data = (await res.json()) as { draftId?: string; error?: string };
 			if (!res.ok || !data.draftId) {
 				if (res.status === 404 || res.status === 409) clear(target);
-				toast.error(data.error ?? "Could not undo send");
+				toast.error(data.error ?? t("Could not undo send"));
 				return;
 			}
 			clear(target);
 			openDraftComposer(data.draftId);
-			toast.success("Sending undone");
+			toast.success(t("Sending undone"));
 			window.dispatchEvent(new Event("kite:messages-changed"));
 		} catch {
-			toast.error("Could not undo send");
+			toast.error(t("Could not undo send"));
 		} finally {
 			undoing = false;
 		}

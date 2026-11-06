@@ -1,4 +1,5 @@
 import type { Message } from "@/hooks/types";
+import { t } from "@/lib/i18n/translator";
 
 export type ListSection = {
 	key: "pinned" | "primary" | "all";
@@ -17,9 +18,9 @@ export function groupListSections(messages: Message[], grouped: boolean): ListSe
 	if (!grouped) return [{ key: "all", label: null, messages, count: null }];
 	const pinned = messages.filter((message) => message.starred);
 	const rest = messages.filter((message) => !message.starred);
-	if (pinned.length === 0) return [{ key: "primary", label: "Primary", messages: rest, count: null }];
+	if (pinned.length === 0) return [{ key: "primary", label: t("Primary"), messages: rest, count: null }];
 	return [
-		{ key: "pinned", label: "Pinned", messages: pinned, count: pinned.length },
-		{ key: "primary", label: "Primary", messages: rest, count: null },
+		{ key: "pinned", label: t("Pinned"), messages: pinned, count: pinned.length },
+		{ key: "primary", label: t("Primary"), messages: rest, count: null },
 	];
 }

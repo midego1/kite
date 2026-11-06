@@ -1,3 +1,4 @@
+import { msg } from "@/lib/i18n/translator";
 import {
 	FileArchive,
 	FileCode,
@@ -22,7 +23,7 @@ export function getAttachmentVisual(attachment: Pick<MessageAttachment, "filenam
 		return {
 			icon: Image,
 			iconClassName: "bg-blue-50 text-blue-700",
-			label: "Image",
+			label: msg("file|Image"),
 			thumbnail: "image",
 		};
 	}
@@ -30,7 +31,7 @@ export function getAttachmentVisual(attachment: Pick<MessageAttachment, "filenam
 		return {
 			icon: FileVideoCamera,
 			iconClassName: "bg-rose-50 text-rose-700",
-			label: "Video",
+			label: msg("file|Video"),
 			thumbnail: "video",
 		};
 	}
@@ -38,7 +39,7 @@ export function getAttachmentVisual(attachment: Pick<MessageAttachment, "filenam
 		return {
 			icon: Music,
 			iconClassName: "bg-orange-50 text-orange-700",
-			label: "Audio",
+			label: msg("file|Audio"),
 			thumbnail: null,
 		};
 	}
@@ -46,7 +47,7 @@ export function getAttachmentVisual(attachment: Pick<MessageAttachment, "filenam
 		return {
 			icon: FileText,
 			iconClassName: "bg-red-50 text-red-700",
-			label: "PDF",
+			label: msg("file|PDF"),
 			thumbnail: null,
 		};
 	}
@@ -59,7 +60,7 @@ export function getAttachmentVisual(attachment: Pick<MessageAttachment, "filenam
 		return {
 			icon: FileSpreadsheet,
 			iconClassName: "bg-emerald-50 text-emerald-700",
-			label: "Spreadsheet",
+			label: msg("file|Spreadsheet"),
 			thumbnail: null,
 		};
 	}
@@ -67,7 +68,7 @@ export function getAttachmentVisual(attachment: Pick<MessageAttachment, "filenam
 		return {
 			icon: Presentation,
 			iconClassName: "bg-amber-50 text-amber-700",
-			label: "Presentation",
+			label: msg("file|Presentation"),
 			thumbnail: null,
 		};
 	}
@@ -80,7 +81,7 @@ export function getAttachmentVisual(attachment: Pick<MessageAttachment, "filenam
 		return {
 			icon: FileArchive,
 			iconClassName: "bg-violet-50 text-violet-700",
-			label: "Archive",
+			label: msg("file|Archive"),
 			thumbnail: null,
 		};
 	}
@@ -94,7 +95,7 @@ export function getAttachmentVisual(attachment: Pick<MessageAttachment, "filenam
 		return {
 			icon: FileCode,
 			iconClassName: "bg-cyan-50 text-cyan-700",
-			label: "Code",
+			label: msg("file|Code"),
 			thumbnail: null,
 		};
 	}
@@ -102,7 +103,7 @@ export function getAttachmentVisual(attachment: Pick<MessageAttachment, "filenam
 		return {
 			icon: FileType,
 			iconClassName: "bg-sky-50 text-sky-700",
-			label: "Document",
+			label: msg("file|Document"),
 			thumbnail: null,
 		};
 	}
@@ -110,7 +111,7 @@ export function getAttachmentVisual(attachment: Pick<MessageAttachment, "filenam
 	return {
 		icon: FileText,
 		iconClassName: "bg-neutral-100 text-neutral-600",
-		label: "File",
+		label: msg("file|File"),
 		thumbnail: null,
 	};
 }

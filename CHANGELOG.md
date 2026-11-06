@@ -6,6 +6,45 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.11.06.4] - 2026-11-06
+
+### Added
+
+- Kite now speaks Dutch: pick it under **Language** in the account menu, or leave Automatic on and a Dutch browser gets it by itself. Arabic is there as a draft you can choose, and it mirrors the interface. Settings, admin and public pages stay English for now. See [Translations](https://github.com/midego1/kite/blob/main/docs/translations.md).
+  ![The inbox in Dutch](/changelog/2026-11-06-interface-dutch.webp)
+  ![The inbox in Arabic, mirrored](/changelog/2026-11-06-interface-arabic.webp)
+- Activity lists the one-line summaries Kite did not write, with the reason in plain words and Try again for a failed one.
+
+### Fixed
+
+- Mail with very long chains of quoted replies is stored and opens normally. Quotes more than 32 levels deep stay together in the last fold.
+- Clearer Dutch wording: Unsubscribe is no longer the same word as Sign out, and the Booking, mark as read and composer labels read more naturally. Two Arabic texts are corrected as well, including the night-time greeting.
+- #150 Importing a folder of up to a million messages (four million when self-hosted) no longer stops because the server's list of messages is too long for one answer.
+- #243 Mail received through Resend now also reaches a mailbox that is named only in the message's delivery trail, such as mail from a mailing list or a forward, and a retried delivery no longer leaves a second copy in the mailbox.
+- Summaries no longer show links, addresses or web domains that the conversation does not contain, even when they are written as a bare domain or as "name (at) domain".
+- The Summarize button turns on again by itself a minute after the AI request limit, and screen readers now hear when a summary or translation is ready, why the button is off, and keep their place after Hide.
+
+### Security
+
+- #150 A mail server now has the same limit during sign-in as in any other step of an import, and one folder's list of messages has a limit of its own.
+
+## [2026.11.06.3] - 2026-11-06
+
+### Added
+
+- The reader can translate a message for you. When Kite sees mail in a language you don't read, a quiet bar offers **Translate**; it is also in the message's **More** menu. The formatting and links stay, **Show original** switches back, and replies still quote the original.
+  ![A Thai message with the bar that offers to translate it into English](/changelog/2026-11-06-translate-message-light.webp)
+  ![The same message in English, with its list in place and "Translated from Thai · Show original" above it](/changelog/2026-11-06-translated-message-light.webp)
+
+### Fixed
+
+- One very large message no longer makes an import fail. Kite skips it, names it in the import's problems and imports the rest. Big messages are also read in smaller groups, so imports use less memory.
+- #244 On self-hosted installs with many stored files, the daily clean-up of old raw mail and storage moves no longer re-scan every file for each page they list.
+
+### Security
+
+- Importing mail from another server now stops after repeated failed sign-ins: ten in ten minutes, or five at the same server. Kite tells you how long to wait. Sign-ins that work, such as measuring a big folder in many steps, are never limited. See [Mail import](https://github.com/midego1/kite/blob/main/docs/modules.md#failed-sign-ins-and-oversized-messages).
+
 ## [2026.11.06.2] - 2026-11-06
 
 ### Fixed

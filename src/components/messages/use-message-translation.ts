@@ -17,8 +17,9 @@ import {
 } from "./message-translation-utils";
 import { summaryError } from "./thread-summary-utils";
 import { useTranslateNever, useTranslateTarget } from "./use-translate-target";
+import { msg, t } from "@/lib/i18n/translator";
 
-const FAILED = "Kite could not translate this. Try again.";
+const FAILED = msg("Kite could not translate this. Try again.");
 
 function browserLanguages(): string[] {
 	if (typeof navigator === "undefined") return [];
@@ -101,7 +102,7 @@ export function useMessageTranslation(input: MessageTranslationInput): MessageTr
 					body: JSON.stringify(requested),
 				});
 				if (!response.ok) {
-					const { message, failure: details } = await summaryError(response, FAILED);
+					const { message, failure: details } = await summaryError(response, t(FAILED));
 					if (!current()) return;
 					setFailure(details);
 					setError(message);
@@ -116,7 +117,7 @@ export function useMessageTranslation(input: MessageTranslationInput): MessageTr
 				setTranslation(state.translation);
 				setShowing(!!state.translation);
 			} catch {
-				if (current()) setError(FAILED);
+				if (current()) setError(t(FAILED));
 			} finally {
 				if (current()) setBusy(null);
 			}
@@ -169,7 +170,7 @@ export function useMessageTranslation(input: MessageTranslationInput): MessageTr
 			availability === "hidden"
 				? undefined
 				: {
-						label: shown ? "Show untranslated" : "Translate",
+						label: shown ? t("Show untranslated") : t("Translate"),
 						disabledReason: translationDisabledReason(availability),
 						onSelect: () => (shown ? setShowing(false) : translate()),
 					},

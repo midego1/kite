@@ -87,6 +87,23 @@ test("stores received HTML without active content and the reader keeps it inert"
 	expect(await page.evaluate(() => (window as unknown as { __pwned?: boolean }).__pwned)).toBeUndefined();
 });
 
+test("HTML nested past the limit stays readable as text", async ({ page }) => {
+	const api = await apiContext(STORAGE_STATE);
+	const subject = `Deep markup ${uniqueToken()}`;
+	await deliverInbound(api, {
+		from: `"Layout Sender" <layout@outside.test>`,
+		to: SUPPORT_ADDRESS,
+		subject,
+		html: `${"<div>".repeat(600)}<p>Near the start</p><p>Near the end</p>`,
+	});
+	await api.dispose();
+
+	await page.goto("/inbox");
+	await openMessage(page, subject);
+	const body = page.frameLocator('iframe[title="Message body"]');
+	await expect(body.getByText("Near the end")).toBeVisible();
+});
+
 test("a draft written outside the composer is sanitized before the editor renders it", async ({ page }) => {
 	const api = await apiContext(STORAGE_STATE);
 	const { mailboxes } = (await (await api.get("/api/mailboxes")).json()) as {
@@ -202,6 +219,26 @@ test("your own reply does not make a read conversation unread", async () => {
 		})
 		.toBe("2/0");
 	await api.dispose();
+});
+
+test("quotes past the deepest fold stay readable in the last one", async ({ page }) => {
+	const api = await apiContext(STORAGE_STATE);
+	const subject = `Long thread ${uniqueToken()}`;
+	await deliverInbound(api, {
+		from: `"Thread Starter" <starter@outside.test>`,
+		to: SUPPORT_ADDRESS,
+		subject,
+		text: Array.from({ length: 36 }, (_, level) => `${"> ".repeat(level)}Reply number ${level}.`).join("\n"),
+	});
+	await api.dispose();
+
+	await page.goto("/inbox");
+	await openMessage(page, subject);
+	const folds = page.locator("details").filter({ has: page.locator("> summary", { hasText: "Previous message" }) });
+	await expect(folds).toHaveCount(32);
+	const deepest = page.locator("pre", { hasText: "Reply number 35." });
+	await expect(deepest).toHaveCount(1);
+	await expect(deepest).toContainText("Reply number 32.");
 });
 
 test("shows a reply and its original as one conversation", async ({ page }) => {

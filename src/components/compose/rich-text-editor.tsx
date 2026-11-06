@@ -31,21 +31,24 @@ import {
 } from "./rich-text-direction-utils";
 import type { ParagraphDirection } from "./rich-text-direction-utils";
 import type { RichTextEditorProps, ToolbarCommand } from "./rich-text-editor-types";
+import { useT } from "@/lib/i18n/use-t";
+import type { MessageKey } from "@/lib/i18n/i18n-types";
+import { msg } from "@/lib/i18n/translator";
 
 const COMMANDS: ToolbarCommand[] = [
-	{ command: "bold", label: "Bold (⌘B)", icon: Bold },
-	{ command: "italic", label: "Italic (⌘I)", icon: Italic },
-	{ command: "underline", label: "Underline (⌘U)", icon: Underline },
-	{ command: "strikeThrough", label: "Strikethrough", icon: Strikethrough },
-	{ command: "insertUnorderedList", label: "Bulleted list", icon: List },
-	{ command: "insertOrderedList", label: "Numbered list", icon: ListOrdered },
-	{ command: "formatBlock", label: "Quote", icon: Quote, value: "blockquote" },
+	{ command: "bold", label: msg("Bold (⌘B)"), icon: Bold },
+	{ command: "italic", label: msg("Italic (⌘I)"), icon: Italic },
+	{ command: "underline", label: msg("Underline (⌘U)"), icon: Underline },
+	{ command: "strikeThrough", label: msg("Strikethrough"), icon: Strikethrough },
+	{ command: "insertUnorderedList", label: msg("Bulleted list"), icon: List },
+	{ command: "insertOrderedList", label: msg("Numbered list"), icon: ListOrdered },
+	{ command: "formatBlock", label: msg("Quote"), icon: Quote, value: "blockquote" },
 ];
 
-const DIRECTIONS: Record<ParagraphDirection, { name: string; icon: ToolbarCommand["icon"] }> = {
-	auto: { name: "automatic", icon: Pilcrow },
-	rtl: { name: "right to left", icon: PilcrowLeft },
-	ltr: { name: "left to right", icon: PilcrowRight },
+const DIRECTIONS: Record<ParagraphDirection, { name: MessageKey; icon: ToolbarCommand["icon"] }> = {
+	auto: { name: msg("paragraph|automatic"), icon: Pilcrow },
+	rtl: { name: msg("right to left"), icon: PilcrowLeft },
+	ltr: { name: msg("left to right"), icon: PilcrowRight },
 };
 
 /** How many characters of the editor's text come before a selection point. */
@@ -101,6 +104,7 @@ export function RichTextEditor({
 	toolbarEnd,
 	footerContent,
 }: RichTextEditorProps) {
+	const t = useT();
 	const editorRef = useRef<HTMLDivElement | null>(null);
 	const [active, setActive] = useState<Record<string, boolean>>({});
 	const [direction, setDirection] = useState<ParagraphDirection>("auto");
@@ -267,7 +271,10 @@ export function RichTextEditor({
 	}
 
 	const DirectionIcon = DIRECTIONS[direction].icon;
-	const directionLabel = `Paragraph direction: ${DIRECTIONS[direction].name}. Switch to ${DIRECTIONS[nextParagraphDirection(direction)].name}`;
+	const directionLabel = t("Paragraph direction: {current}. Switch to {next}", {
+		current: t(DIRECTIONS[direction].name),
+		next: t(DIRECTIONS[nextParagraphDirection(direction)].name),
+	});
 
 	return (
 		<div className={cn("flex min-h-0 flex-1 flex-col", className)}>
@@ -277,7 +284,7 @@ export function RichTextEditor({
 					id={id}
 					role="textbox"
 					aria-multiline="true"
-					aria-label="Message body"
+					aria-label={t("Message body")}
 					contentEditable={!disabled}
 					suppressContentEditableWarning
 					data-placeholder={placeholder}
@@ -297,9 +304,9 @@ export function RichTextEditor({
 							type="button"
 							onClick={() => setShowQuoted((open) => !open)}
 							aria-expanded={showQuoted}
-							aria-label={showQuoted ? "Hide quoted text" : "Show quoted text"}
+							aria-label={showQuoted ? t("Hide quoted text") : t("Show quoted text")}
 							className="rounded-full border border-neutral-200 bg-neutral-100 px-2 text-xs leading-5 text-neutral-500 hover:bg-neutral-200"
-							title={showQuoted ? "Hide quoted text" : "Show quoted text"}
+							title={showQuoted ? t("Hide quoted text") : t("Show quoted text")}
 						>
 							•••
 						</button>
@@ -316,10 +323,10 @@ export function RichTextEditor({
 			<div className="relative flex items-center gap-0.5 border-t border-neutral-100 px-4 py-3">
 				{toolbarStart}
 				{COMMANDS.map((item) => (
-					<Tooltip key={item.command} label={item.label}>
+					<Tooltip key={item.command} label={t(item.label)}>
 						<button
 							type="button"
-							aria-label={item.label}
+							aria-label={t(item.label)}
 							aria-pressed={!!active[item.command]}
 							disabled={disabled}
 							onMouseDown={(event) => event.preventDefault()}
@@ -346,10 +353,10 @@ export function RichTextEditor({
 						<span className="sr-only">{directionLabel}</span>
 					</button>
 				</Tooltip>
-				<Tooltip label="Insert link (⌘K)">
+				<Tooltip label={t("Insert link (⌘K)")}>
 					<button
 						type="button"
-						aria-label="Insert link"
+						aria-label={t("Insert link")}
 						disabled={disabled}
 						onMouseDown={(event) => event.preventDefault()}
 						onClick={openLink}
@@ -358,10 +365,10 @@ export function RichTextEditor({
 						<Link2 className="h-4 w-4" />
 					</button>
 				</Tooltip>
-				<Tooltip label="Clear formatting">
+				<Tooltip label={t("Clear formatting")}>
 					<button
 						type="button"
-						aria-label="Clear formatting"
+						aria-label={t("Clear formatting")}
 						disabled={disabled}
 						onMouseDown={(event) => event.preventDefault()}
 						onClick={() => run("removeFormat")}
@@ -396,7 +403,7 @@ export function RichTextEditor({
 							onChange={(event) => setLinkUrl(event.target.value)}
 							onKeyDown={onLinkKeyDown}
 							placeholder="https://example.com"
-							aria-label="Link address"
+							aria-label={t("Link address")}
 							className="h-8 w-64 rounded-md border border-neutral-200 px-2 text-sm outline-none focus:border-blue-400"
 						/>
 						<button
@@ -404,7 +411,7 @@ export function RichTextEditor({
 							onClick={applyLink}
 							className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
 						>
-							Apply
+							{t("Apply")}
 						</button>
 					</div>
 				)}

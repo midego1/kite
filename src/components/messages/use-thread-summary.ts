@@ -7,7 +7,8 @@ import { useKeyChanged } from "@/hooks/use-synced-state";
 import { MAILBOXES_CHANGED_EVENT } from "@/components/mailbox-provider-utils";
 import type { AiErrorBody } from "@/lib/agent/ai-error-utils";
 import type { ThreadSummaryBusy, ThreadSummaryController } from "./thread-summary-types";
-import { canSummarize, summaryError, summaryUrl } from "./thread-summary-utils";
+import { blockedResetMs, canSummarize, summaryAnnouncement, summaryError, summaryUrl } from "./thread-summary-utils";
+import { t } from "@/lib/i18n/translator";
 
 function browserLanguage(): string | null {
 	return typeof navigator === "undefined" ? null : primaryLanguage(navigator.language);
@@ -51,6 +52,9 @@ export function useThreadSummary(messageId: string, defaultScope: SummaryScope):
 		translateTo?: string;
 	} | null>(null);
 	const [blocked, setBlocked] = useState<string | null>(null);
+	// When the block lifts by itself (the rate limit's), in milliseconds from now.
+	const [blockResetMs, setBlockResetMs] = useState<number | null>(null);
+	const [announcement, setAnnouncement] = useState("");
 	const [hidden, setHidden] = useState(false);
 	const [language] = useState(browserLanguage);
 	const [refresh, refetch] = useRefreshSignal();
@@ -63,8 +67,17 @@ export function useThreadSummary(messageId: string, defaultScope: SummaryScope):
 		setError(null);
 		setFailure(null);
 		setBlocked(null);
+		setBlockResetMs(null);
+		setAnnouncement("");
 		setHidden(false);
 	}
+
+	// A rate-limit refusal lifts after the limit's window; a spend cap stays until the reader moves on.
+	useEffect(() => {
+		if (!blocked || blockResetMs === null) return;
+		const timer = setTimeout(() => setBlocked(null), blockResetMs);
+		return () => clearTimeout(timer);
+	}, [blocked, blockResetMs]);
 
 	useEffect(() => {
 		shownKey.current = `${messageId}:${scope}`;
@@ -85,6 +98,7 @@ export function useThreadSummary(messageId: string, defaultScope: SummaryScope):
 			const key = `${messageId}:${body.scope}`;
 			const current = () => shownKey.current === key;
 			setBusy(kind);
+			setAnnouncement(summaryAnnouncement(kind, "started"));
 			setError(null);
 			setFailure(null);
 			lastRequest.current = { kind, ...body };
@@ -99,7 +113,11 @@ export function useThreadSummary(messageId: string, defaultScope: SummaryScope):
 					const { message, failure: details } = await summaryError(response);
 					if (!current()) return;
 					setFailure(details);
-					if (response.status === 429) setBlocked(message);
+					setAnnouncement("");
+					if (response.status === 429) {
+						setBlocked(message);
+						setBlockResetMs(blockedResetMs(details?.code));
+					}
 					// The conversation changed under the request: show what is there now, with Summarize again.
 					if (response.status === 409) refetch();
 					setError(message);
@@ -109,8 +127,9 @@ export function useThreadSummary(messageId: string, defaultScope: SummaryScope):
 				if (!current()) return;
 				setState(next);
 				setHidden(false);
+				setAnnouncement(summaryAnnouncement(kind, "done"));
 			} catch {
-				if (current()) setError("Kite could not summarize this. Try again.");
+				if (current()) setError(t("Kite could not summarize this. Try again."));
 			} finally {
 				if (current()) setBusy(null);
 			}
@@ -136,6 +155,7 @@ export function useThreadSummary(messageId: string, defaultScope: SummaryScope):
 		error,
 		failure,
 		blocked,
+		announcement,
 		hidden,
 		language,
 		summarize,
@@ -150,6 +170,10 @@ export function useThreadSummary(messageId: string, defaultScope: SummaryScope):
 						if (last?.scope === scope) void post(last.kind, { scope: last.scope, translateTo: last.translateTo });
 					}
 				: undefined,
-		hide: () => setHidden(true),
+		hide: () => {
+			setHidden(true);
+			// The Hide button is about to disappear; keyboard focus goes back to where the card came from.
+			document.querySelector<HTMLElement>("[data-summarize-button]")?.focus();
+		},
 	};
 }

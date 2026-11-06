@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.11.06.5] - 2026-11-06
+
+### Fixed
+
+- Very large HTML mail with unclosed or endlessly nested tags is stored and opens normally. The part Kite cannot lay out shows as plain text, and the original message stays available.
+- Very large mail with separate text and HTML parts is stored and opens normally. Above a size almost no mail reaches, the two are kept apart instead of being merged into one body, and the original message stays available.
+
 ## [2026.11.06.4] - 2026-11-06
 
 ### Added

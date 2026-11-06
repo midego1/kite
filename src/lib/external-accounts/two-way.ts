@@ -29,6 +29,8 @@ const PROBLEMS_SHOWN = 5;
  * running right now, a server that does not answer); a choice that needs the answer is then refused rather than guessed.
  */
 async function askServer(env: CloudflareEnv, account: ExternalAccountRow, now: Date): Promise<ProviderSupport | null> {
+	// Refused here too, so a settings page opened on a paused account never counts as a connection attempt.
+	if (!account.secret || !account.syncEnabled || account.suspendedAt || account.status !== "active") return null;
 	try {
 		await recordConnectionTest(env, account.userId, {
 			host: account.imapHost,

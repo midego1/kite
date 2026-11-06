@@ -447,10 +447,11 @@ async function tellOpenTabs(
 	account: Pick<ExternalAccountRow, "userId" | "mailboxId">,
 	messageId: string,
 ) {
-	const users = await getMailboxNotificationUserIds(env, account.mailboxId, account.userId);
-	await notifyUsersOfNewMessage(env, users, { type: "message_summary", mailboxId: account.mailboxId, messageId }).catch(
-		() => undefined,
-	);
+	await getMailboxNotificationUserIds(env, account.mailboxId, account.userId)
+		.then((users) =>
+			notifyUsersOfNewMessage(env, users, { type: "message_summary", mailboxId: account.mailboxId, messageId }),
+		)
+		.catch(() => undefined);
 }
 
 /** Runs one pass over the window and records where it stands. */

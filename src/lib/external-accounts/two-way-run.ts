@@ -95,8 +95,10 @@ async function readFactsApart(session: ImapSession, uids: readonly number[]) {
 				refused.add(some[0]);
 				return new Map();
 			}
-			const parts = await Promise.all(some.map((uid) => [uid]).map(read));
-			return new Map(parts.flatMap((part) => [...part]));
+			// One at a time: a connection runs one command, and an IMAP answer has no way to say whose it is.
+			const facts = new Map<number, ProviderFact>();
+			for (const uid of some) for (const [key, fact] of await read([uid])) facts.set(key, fact);
+			return facts;
 		}
 	};
 	return { facts: await read(uids), refused };
@@ -161,7 +163,12 @@ async function writeBatch(
 		lastPassAt: config.state?.lastPassAt ?? null,
 	});
 	counts.refused += plan.mismatched.length;
-	await finishMoved(env, [...plan.missing, ...plan.mismatched]);
+	await finishMoved(env, [...plan.missing.filter((row) => row.kind !== "flags"), ...plan.mismatched]);
+	// A flag change for a message that left: only the change is over. The message leaving is the pass's to find.
+	await deleteActions(
+		env,
+		plan.missing.filter((row) => row.kind === "flags").map((row) => row.id),
+	);
 	const stored = new Set<string>();
 	const storeFailed = async ({ change, flag, rows: group }: StoreGroup) => {
 		for (const row of await eachSucceeding(group, (uids) => session.storeFlags(uids, change, [flag]), failures))

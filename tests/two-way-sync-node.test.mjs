@@ -534,12 +534,13 @@ test("a message the server will not read waits and retries; the rest of its batc
 	const { server, env, accountId, setTwoWay, arrive, message, actions, has, db } = await start(t);
 	await setTwoWay({ kiteDelete: "trash" });
 	await arrive("readable");
+	await arrive("also readable");
 	const bad = server.addMessage("INBOX", {
 		raw: sampleMessage(3, { subject: "unreadable", messageId: "<unreadable@example.org>" }),
 		unfetchable: true,
 	});
 	db.db.exec("UPDATE external_accounts SET next_sync_at = 0");
-	await recordKiteChange(env, [message("readable").id], { kind: "trash" });
+	await recordKiteChange(env, [message("readable").id, message("also readable").id], { kind: "trash" });
 	db.db
 		.prepare(
 			"INSERT INTO external_provider_actions (id, account_id, message_id, kind, role, uidvalidity, uid, created_at, next_attempt_at) VALUES ('x:move', ?, 'x', 'trash', 'inbox', 1, ?, 1, 1)",
@@ -547,9 +548,23 @@ test("a message the server will not read waits and retries; the rest of its batc
 		.run(accountId, bad);
 	await writebackExternalAccount(env, accountId);
 	assert.equal(has("Trash", "readable"), true);
+	assert.equal(has("Trash", "also readable"), true);
 	assert.equal(has("INBOX", "unreadable"), true);
 	assert.equal(actions().length, 1, "refused is not gone: it stays and retries");
 	assert.equal(actions()[0].attempts, 1);
+});
+
+test("a flag change for a message deleted at the provider still lets the deletion reach Kite", async (t) => {
+	const { server, env, accountId, setTwoWay, arrive, check, message, actions } = await start(t);
+	await setTwoWay({ kiteFlags: true, providerGone: "trash" });
+	const uid = await arrive("read here, deleted there");
+	await check();
+	await recordKiteChange(env, [message("read here, deleted there").id], { kind: "flags", read: true });
+	server.removeMessage("INBOX", uid);
+	await writebackExternalAccount(env, accountId);
+	assert.deepEqual(actions(), []);
+	await check();
+	assert.equal(message("read here, deleted there").status, "trash");
 });
 
 test("one refused message does not hold back the rest of its batch", async (t) => {

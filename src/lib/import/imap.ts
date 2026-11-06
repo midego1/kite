@@ -1,16 +1,16 @@
 import { openImapSession } from "@/lib/imap/session";
 import { IMAP_PORTS, imapLimits } from "@/lib/imap/protocol-utils";
 import { mailHostPolicy, mailServerHostProblem } from "@/lib/net/host-guard-utils";
-import { fetchWithinSizeCap } from "./capped-fetch";
+import { fetchSegment, planSizedFetch } from "./capped-fetch";
 import type { SignInGuard } from "./sign-in-limit";
 import type { ImportMessageInput } from "./types";
 import type { ImapImportInput } from "./imap-types";
-import { chunk, imapSecurity, importMessageFromImap, selectImapUidBatch } from "./imap-utils";
+import { imapSecurity, importMessageFromImap, selectImapUidBatch } from "./imap-utils";
 import { planAccountFolders } from "./folder-mapping-utils";
 import type { PlannedImportFolder } from "./folder-mapping-types";
 
-/** Messages fetched per UID FETCH command. */
-const FETCH_CHUNK_SIZE = 25;
+/** Message bytes one request of the direct import route holds; it answers with the rest as `nextOffset`. */
+const DIRECT_IMPORT_BYTES = 32 * 1024 * 1024;
 
 type ImapImportEnv = Parameters<typeof openImapSession>[0];
 type ImapAccount = Pick<ImapImportInput, "host" | "port" | "secure" | "username" | "password">;
@@ -32,7 +32,7 @@ export function openImportSession(env: ImapImportEnv, input: ImapAccount, signal
 			},
 			{ signal },
 		);
-	return guard ? guard(input, open) : open();
+	return guard ? guard(input, open, signal) : open();
 }
 
 /** Why the import form's server is refused before anything connects (a local host, a port other than 993 or 143). */
@@ -62,16 +62,27 @@ export async function fetchImapMessages(
 		const messages: ImportMessageInput[] = [];
 		const skipped: string[] = [];
 		const limits = imapLimits(env.KITE_RUNTIME);
-		for (const uids of chunk(batch.uids, FETCH_CHUNK_SIZE)) {
+		// Newest first, so that stopping early (the byte budget) leaves one contiguous older rest for `nextOffset`.
+		const newestFirst = [...batch.uids].reverse();
+		let held = 0;
+		let consumed = 0;
+		for (const segment of await planSizedFetch(session, newestFirst, limits.literalBytes, input.folder)) {
 			// A message above the size limit is left out and named, instead of failing the whole batch.
-			const capped = await fetchWithinSizeCap(session, uids, {}, limits, input.folder);
-			skipped.push(...capped.skipped);
-			for (const uid of uids) {
-				const message = capped.fetched.get(uid);
-				if (message) messages.push(importMessageFromImap(`${input.folder}-${uid}.eml`, message));
+			skipped.push(...segment.skipped);
+			const fetched = await fetchSegment(session, segment, {});
+			for (const uid of segment.uids) {
+				const message = fetched.get(uid);
+				if (!message) continue;
+				held += message.raw.byteLength;
+				messages.push(importMessageFromImap(`${input.folder}-${uid}.eml`, message));
 			}
+			consumed += segment.uids.length;
+			if (held >= DIRECT_IMPORT_BYTES) break;
 		}
-		return { messages, total: batch.total, nextOffset: batch.nextOffset, skipped };
+		// What was not reached is older than what was: the next request starts after the messages that were.
+		const first = (batch.nextOffset ?? batch.total) - batch.uids.length;
+		const nextOffset = consumed < batch.uids.length ? first + consumed : batch.nextOffset;
+		return { messages: messages.reverse(), total: batch.total, nextOffset, skipped };
 	} finally {
 		await session.close();
 	}

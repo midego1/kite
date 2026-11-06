@@ -19,45 +19,67 @@ export type FetchPlanLimits = {
 
 export type OversizedMessage = { uid: string; size: number };
 
-export type FetchPlan = {
-	/** The UIDs to fetch, in the order given, grouped so no group is above the message or byte limits. */
-	batches: string[][];
-	/** Messages above `messageBytes`: never fetched, so a batch is not lost to one huge message. */
+/**
+ * One fetch that is also one unit of work: the messages are fetched, written, and only then is the next segment
+ * fetched, so at most one segment (plus one being prefetched, see `canPrefetch`) is held in memory.
+ */
+export type FetchSegment = {
+	/** Every UID the segment covers, in the order given, the oversized ones included (they count as skipped). */
+	uids: string[];
+	/** The UIDs to fetch: `uids` without the oversized ones. May be empty. */
+	fetch: string[];
+	/** The bytes the fetched messages are expected to weigh. */
+	weight: number;
+	/** Messages above `messageBytes`: never fetched, so one huge message cannot fail the batch. */
 	oversized: OversizedMessage[];
 };
 
 /**
- * Splits `uids` into fetches by their RFC822.SIZE (`sizes`, by UID): messages above the cap are set aside, the rest are
- * grouped up to `batchMessages` and `batchBytes`. A UID the server gave no size for is fetched as if it weighed 1 MB.
+ * Splits `uids` into segments by their RFC822.SIZE (`sizes`, by UID), in order: messages above the cap are set aside
+ * inside the segment they sit in, the rest are grouped up to `batchMessages` and `batchBytes` (a message up to the
+ * cap that does not fit with the others gets a segment of its own). A UID the server gave no size for is planned as
+ * if it weighed 1 MB.
  */
-export function planFetchBatches(
+export function planFetchSegments(
 	uids: readonly string[],
 	sizes: ReadonlyMap<string, number | null>,
 	limits: FetchPlanLimits,
-): FetchPlan {
+): FetchSegment[] {
 	const maxBytes = limits.batchBytes ?? FETCH_BATCH_BYTES;
 	const maxMessages = limits.batchMessages ?? FETCH_BATCH_MESSAGES;
-	const batches: string[][] = [];
-	const oversized: OversizedMessage[] = [];
-	let current: string[] = [];
-	let currentBytes = 0;
+	const segments: FetchSegment[] = [];
+	let current: FetchSegment | null = null;
 	for (const uid of uids) {
 		const size = sizes.get(uid) ?? null;
-		if (size !== null && size > limits.messageBytes) {
-			oversized.push({ uid, size });
-			continue;
+		const oversized = size !== null && size > limits.messageBytes;
+		const weight = oversized ? 0 : (size ?? UNKNOWN_SIZE_BYTES);
+		if (
+			current &&
+			!oversized &&
+			current.fetch.length &&
+			(current.fetch.length >= maxMessages || current.weight + weight > maxBytes)
+		)
+			current = null;
+		if (!current) {
+			current = { uids: [], fetch: [], weight: 0, oversized: [] };
+			segments.push(current);
 		}
-		const weight = size ?? UNKNOWN_SIZE_BYTES;
-		if (current.length && (current.length >= maxMessages || currentBytes + weight > maxBytes)) {
-			batches.push(current);
-			current = [];
-			currentBytes = 0;
+		current.uids.push(uid);
+		if (oversized) current.oversized.push({ uid, size });
+		else {
+			current.fetch.push(uid);
+			current.weight += weight;
 		}
-		current.push(uid);
-		currentBytes += weight;
 	}
-	if (current.length) batches.push(current);
-	return { batches, oversized };
+	return segments;
+}
+
+/** The most that may be fetched or waiting to be written at once: a segment and the one prefetched behind it. */
+const IN_FLIGHT_BYTES = 2 * FETCH_BATCH_BYTES;
+
+/** Whether the next segment may be fetched while the current one is written, without passing `IN_FLIGHT_BYTES`. */
+export function canPrefetch(current: Pick<FetchSegment, "weight">, next: Pick<FetchSegment, "weight">): boolean {
+	return current.weight + next.weight <= IN_FLIGHT_BYTES;
 }
 
 function megabytes(bytes: number): string {

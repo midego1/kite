@@ -38,7 +38,9 @@ const {
 	SIGN_IN_FAILURES_PER_SERVER,
 	SIGN_IN_FAILURES_PER_USER,
 	SIGN_IN_WINDOW_MS,
-	planFetchBatches,
+	planFetchSegments,
+	canPrefetch,
+	isAuthRefusal,
 	oversizedNote,
 } = await import(pathToFileURL(join(outDir, "entry.mjs")).href);
 
@@ -120,35 +122,77 @@ test("the refusal says how long to wait in plain words", () => {
 	assert.match(signInLimitMessage(600), /try again in 10 minutes/);
 });
 
-test("batches of messages are cut by count and by bytes, in order", () => {
+test("segments are cut by count and by bytes, in order, and each stays within the byte budget", () => {
 	const uids = Array.from({ length: 10 }, (_, index) => String(index + 1));
 	const sizes = new Map(uids.map((uid) => [uid, 5 * MB]));
-	const plan = planFetchBatches(uids, sizes, { messageBytes: 36 * MB, batchBytes: 16 * MB, batchMessages: 25 });
-	assert.deepEqual(plan.batches, [["1", "2", "3"], ["4", "5", "6"], ["7", "8", "9"], ["10"]]);
-	assert.deepEqual(plan.oversized, []);
-	const byCount = planFetchBatches(uids, new Map(), { messageBytes: 36 * MB, batchMessages: 4 });
+	const segments = planFetchSegments(uids, sizes, { messageBytes: 36 * MB, batchBytes: 16 * MB, batchMessages: 25 });
 	assert.deepEqual(
-		byCount.batches.map((batch) => batch.length),
+		segments.map((segment) => segment.fetch),
+		[["1", "2", "3"], ["4", "5", "6"], ["7", "8", "9"], ["10"]],
+	);
+	assert.ok(segments.every((segment) => segment.weight <= 16 * MB));
+	const byCount = planFetchSegments(uids, new Map(), { messageBytes: 36 * MB, batchMessages: 4 });
+	assert.deepEqual(
+		byCount.map((segment) => segment.fetch.length),
 		[4, 4, 2],
 	);
 });
 
-test("a message above the cap is set aside and never fails the batch; one at the cap is fetched alone", () => {
+test("25 messages of 15 MB are 25 segments, never one chunk held together", () => {
+	const uids = Array.from({ length: 25 }, (_, index) => String(index + 1));
+	const sizes = new Map(uids.map((uid) => [uid, 15 * MB]));
+	const segments = planFetchSegments(uids, sizes, { messageBytes: 36 * MB });
+	assert.equal(segments.length, 25);
+	assert.ok(segments.every((segment) => segment.weight <= 16 * MB));
+	// A segment and the one prefetched behind it stay within two budgets.
+	assert.equal(canPrefetch(segments[0], segments[1]), true);
+	assert.equal(canPrefetch({ weight: 36 * MB }, { weight: 1 * MB }), false);
+	assert.equal(canPrefetch({ weight: 20 * MB }, { weight: 20 * MB }), false);
+});
+
+test("a message above the cap stays in its segment's UIDs but is not fetched; the others are", () => {
 	const sizes = new Map([
 		["1", 1000],
 		["2", 40 * MB],
 		["3", 36 * MB],
 		["4", 2000],
 	]);
-	const plan = planFetchBatches(["1", "2", "3", "4"], sizes, { messageBytes: 36 * MB });
-	assert.deepEqual(plan.oversized, [{ uid: "2", size: 40 * MB }]);
-	assert.deepEqual(plan.batches, [["1"], ["3"], ["4"]]);
+	const segments = planFetchSegments(["1", "2", "3", "4"], sizes, { messageBytes: 36 * MB });
+	assert.deepEqual(
+		segments.map((segment) => segment.uids),
+		[["1", "2"], ["3"], ["4"]],
+	);
+	assert.deepEqual(
+		segments.map((segment) => segment.fetch),
+		[["1"], ["3"], ["4"]],
+	);
+	assert.deepEqual(segments[0].oversized, [{ uid: "2", size: 40 * MB }]);
+	// UIDs in order and each exactly once, so the cursor can follow the segments.
+	assert.deepEqual(
+		segments.flatMap((segment) => segment.uids),
+		["1", "2", "3", "4"],
+	);
+});
+
+test("only oversized messages make a segment with nothing to fetch", () => {
+	const segments = planFetchSegments(["1"], new Map([["1", 99 * MB]]), { messageBytes: 36 * MB });
+	assert.equal(segments.length, 1);
+	assert.deepEqual(segments[0].fetch, []);
+	assert.equal(segments[0].weight, 0);
 });
 
 test("a message without a stated size is fetched, assumed to weigh 1 MB", () => {
-	const plan = planFetchBatches(["1", "2"], new Map([["1", null]]), { messageBytes: 36 * MB, batchBytes: 1 * MB });
-	assert.deepEqual(plan.batches, [["1"], ["2"]]);
-	assert.deepEqual(plan.oversized, []);
+	const segments = planFetchSegments(["1", "2"], new Map([["1", null]]), { messageBytes: 36 * MB, batchBytes: 1 * MB });
+	assert.deepEqual(
+		segments.map((segment) => segment.fetch),
+		[["1"], ["2"]],
+	);
+});
+
+test("a server's refusal of the login is told from a cut connection", () => {
+	assert.equal(isAuthRefusal(new Error("IMAP sign-in failed: A0002 NO [AUTHENTICATIONFAILED] bad")), true);
+	assert.equal(isAuthRefusal(new Error("The connection was closed")), false);
+	assert.equal(isAuthRefusal("sign-in failed"), false);
 });
 
 test("a skipped message is named with its folder, UID and size", () => {

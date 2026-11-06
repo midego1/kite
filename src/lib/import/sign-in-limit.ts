@@ -4,6 +4,7 @@ import { auditLogs } from "@/db/schema";
 import { newId } from "@/lib/ids";
 import {
 	evaluateSignInAttempts,
+	isAuthRefusal,
 	SIGN_IN_ATTEMPT_ACTION,
 	SIGN_IN_ROWS_READ,
 	SIGN_IN_WINDOW_MS,
@@ -23,7 +24,11 @@ export class SignInLimitError extends Error {
 /**
  * Runs the sign-in of `open` for the server `server` names. See `importSignInGuard`.
  */
-export type SignInGuard = <T>(server: { host: string; port: number }, open: () => Promise<T>) => Promise<T>;
+export type SignInGuard = <T>(
+	server: { host: string; port: number },
+	open: () => Promise<T>,
+	signal?: AbortSignal,
+) => Promise<T>;
 
 /**
  * The limit on signing in to a server the user names (the import form, the folder lists, the plan and the size steps,
@@ -37,7 +42,7 @@ export type SignInGuard = <T>(server: { host: string; port: number }, open: () =
  * when the row cannot be written or counted the sign-in is refused rather than allowed unchecked.
  */
 export function importSignInGuard(env: CloudflareEnv, userId: string): SignInGuard {
-	return async (server, open) => {
+	return async (server, open, signal) => {
 		const serverKey = signInServerKey(server.host, server.port);
 		const db = getDb(env);
 		const id = newId("aud");
@@ -89,8 +94,10 @@ export function importSignInGuard(env: CloudflareEnv, userId: string): SignInGua
 		try {
 			session = await open();
 		} catch (error) {
-			// A request that was cancelled never reached the server's answer: that is not a failed sign-in.
-			if (error instanceof Error && error.name === "AbortError") await released();
+			// A request that was cancelled before the server answered is not a failed sign-in: closing the socket makes
+			// the pending read fail with a plain error, so the signal says. A refusal the server had already sent stays.
+			if ((signal?.aborted || (error instanceof Error && error.name === "AbortError")) && !isAuthRefusal(error))
+				await released();
 			throw error;
 		}
 		await released();

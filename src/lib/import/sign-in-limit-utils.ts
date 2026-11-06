@@ -54,3 +54,12 @@ export function signInLimitMessage(retryAfterSeconds: number): string {
 	const wait = minutes <= 1 ? "a minute" : `${minutes} minutes`;
 	return `Too many failed sign-ins to mail servers. Check the user name and password, then try again in ${wait}.`;
 }
+
+/**
+ * Whether the server itself refused the login (as opposed to a connection that was cut). An aborted request that
+ * already met this refusal stays a failed sign-in, so aborting cannot erase a wrong password from the count.
+ */
+export function isAuthRefusal(error: unknown): boolean {
+	const message = error instanceof Error ? error.message : "";
+	return /sign-in failed|AUTHENTICATIONFAILED|AUTHORIZATIONFAILED|invalid credentials|LOGIN failed/i.test(message);
+}

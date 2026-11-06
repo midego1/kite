@@ -13,8 +13,10 @@ after(() => rmSync(directory, { recursive: true, force: true }));
 /** The IMAP session and the module host are replaced; everything else in the job code is real and runs on SQLite. */
 const stubs = {
 	"./imap": `
+		import { SignInLimitError } from "@/lib/import/sign-in-limit";
 		export async function openImportSession() {
 			const fake = globalThis.__fakeImport;
+			if (fake.openLimit) throw new SignInLimitError(fake.openLimit);
 			if (fake.openError) throw new Error(fake.openError);
 			fake.opened += 1;
 			return {
@@ -22,13 +24,17 @@ const stubs = {
 				searchUids: async () => fake.uids.map(String),
 				fetchUidSizes: async (uids) =>
 					uids.map((uid) => ({ uid: Number(uid), flags: [], internalDate: null, size: fake.sizes?.[uid] ?? 20 })),
-				fetchMessages: async (uids) =>
-					new Map(
+				fetchMessages: async (uids) => {
+					// What a fetch holds from the moment it is asked for until the import of its messages has finished.
+					for (const uid of uids) fake.held += fake.sizes?.[uid] ?? 20;
+					fake.peak = Math.max(fake.peak, fake.held);
+					return new Map(
 						uids.map((uid) => [
 							uid,
 							{ raw: new TextEncoder().encode("Subject: x\\r\\n\\r\\nbody"), flags: [], internalDate: null, size: null },
 						]),
-					),
+					);
+				},
 				close: async () => undefined,
 			};
 		}
@@ -39,6 +45,7 @@ const stubs = {
 				importMessages: async (_ctx, request) => {
 					const fake = globalThis.__fakeImport;
 					fake.batches.push(request.messages.length);
+					for (const message of request.messages) fake.held -= fake.sizes?.[/-(\\d+)\\.eml$/.exec(message.filename)[1]] ?? 20;
 					fake.afterBatch?.();
 					return { imported: request.messages.length, skipped: 0, failed: 0, errors: [] };
 				},
@@ -76,7 +83,11 @@ await build({
 					path: args.path,
 					namespace: "stub",
 				}));
-				build.onLoad({ filter: /.*/, namespace: "stub" }, (args) => ({ contents: stubs[args.path], loader: "js" }));
+				build.onLoad({ filter: /.*/, namespace: "stub" }, (args) => ({
+					contents: stubs[args.path],
+					loader: "js",
+					resolveDir: root,
+				}));
 			},
 		},
 	],
@@ -111,7 +122,16 @@ async function fixture(t, ratio) {
 		env.D1_MAX_BYTES = String(Math.ceil(used / value));
 	};
 	setRatio(ratio);
-	globalThis.__fakeImport = { uids: [], opened: 0, batches: [], openError: null, afterBatch: null };
+	globalThis.__fakeImport = {
+		uids: [],
+		opened: 0,
+		batches: [],
+		openError: null,
+		openLimit: 0,
+		afterBatch: null,
+		held: 0,
+		peak: 0,
+	};
 	t.after(() => delete globalThis.__fakeImport);
 	return { env, database, used, setRatio };
 }
@@ -208,6 +228,51 @@ test("a message above the size limit is skipped and named, and the rest of its b
 	assert.equal(done.imported, 2);
 	assert.equal(done.skipped, 1);
 	assert.deepEqual(JSON.parse(done.errors), ["INBOX: skipped message 2, 200 MB is over the 36 MB limit"]);
+});
+
+test("25 messages of 15 MB are written one segment at a time: what is held stays within two segments", async (t) => {
+	const { env, database } = await fixture(t, 0.3);
+	const MB = 1024 * 1024;
+	globalThis.__fakeImport.uids = Array.from({ length: 25 }, (_, index) => index + 1);
+	globalThis.__fakeImport.sizes = Object.fromEntries(globalThis.__fakeImport.uids.map((uid) => [uid, 15 * MB]));
+	const job = await createImportJob(env, jobFields);
+	await processImportJob(env, job.id, ctx);
+	const done = row(database, job.id);
+	assert.equal(done.status, "completed");
+	assert.equal(done.imported, 25);
+	assert.deepEqual(globalThis.__fakeImport.batches, Array(25).fill(1));
+	// Before: all 25 (375 MB) were fetched into one chunk and written together.
+	assert.ok(globalThis.__fakeImport.peak >= 15 * MB, "the measurement sees what a fetch holds");
+	assert.ok(globalThis.__fakeImport.peak <= 32 * MB, `held ${globalThis.__fakeImport.peak / MB} MB at most`);
+});
+
+test("a run refused by the sign-in limit keeps its attempts and password and is queued again after the wait", async (t) => {
+	const { env, database } = await fixture(t, 0.3);
+	const sent = [];
+	env.AGENT_QUEUE = { send: async (message, options) => void sent.push({ message, options }) };
+	globalThis.__fakeImport.uids = [1, 2, 3];
+	globalThis.__fakeImport.openLimit = 540;
+	const job = await createImportJob(env, jobFields);
+	await processImportJob(env, job.id, ctx);
+	const waiting = row(database, job.id);
+	assert.equal(waiting.status, "running");
+	assert.equal(waiting.attempts, 0);
+	assert.equal(waiting.lease_until, null);
+	assert.notEqual(waiting.password, "");
+	assert.match(waiting.last_error, /Too many failed sign-ins/);
+	assert.deepEqual(sent.at(-1), { message: { kind: "import.imap", jobId: job.id }, options: { delaySeconds: 541 } });
+	// Repeated refusals never use up the job's five attempts.
+	for (let round = 0; round < 6; round += 1) {
+		database.db.prepare("UPDATE import_jobs SET lease_until = NULL WHERE id = ?").run(job.id);
+		await processImportJob(env, job.id, ctx);
+	}
+	assert.equal(row(database, job.id).status, "running");
+	assert.equal(row(database, job.id).attempts, 0);
+	// When the limit has room, the job goes on and completes.
+	globalThis.__fakeImport.openLimit = 0;
+	database.db.prepare("UPDATE import_jobs SET lease_until = NULL WHERE id = ?").run(job.id);
+	await processImportJob(env, job.id, ctx);
+	assert.equal(row(database, job.id).status, "completed");
 });
 
 test("even a confirmed import pauses at 98% of the limit", async (t) => {

@@ -1,35 +1,41 @@
 import type { ImapSession } from "@/lib/imap/session";
-import type { ImapFetchedMessage, ImapLimits } from "@/lib/imap/types";
-import { oversizedNote, planFetchBatches } from "./capped-fetch-utils";
+import type { ImapFetchedMessage } from "@/lib/imap/types";
+import { oversizedNote, planFetchSegments, type FetchSegment } from "./capped-fetch-utils";
 
-export type CappedFetch = {
-	fetched: Map<string, ImapFetchedMessage>;
-	/** One line per message left out for its size, naming the folder, the UID and the size. */
-	skipped: string[];
-};
+/** UIDs per size query, which keeps the command line short. */
+const SIZE_QUERY_UIDS = 100;
+
+/** A segment with the lines that name its oversized messages, ready to be fetched, written and noted. */
+export type PlannedSegment = FetchSegment & { skipped: string[] };
 
 /**
- * Fetches `uids` the way an import needs them: the sizes first (`UID FETCH … (UID RFC822.SIZE)`, about 40 bytes of answer
- * per message), then only messages within the connection's message limit, in groups that fit in memory. A message above
- * the limit is not fetched, so it cannot fail the whole batch (and, retried, the job): it is named in `skipped`, and
- * the caller counts the UID as skipped because it is missing from `fetched`.
+ * Plans how to fetch `uids` for an import: the sizes first (`UID FETCH … (UID RFC822.SIZE)`, about 40 bytes of answer
+ * per message, no bodies), then segments (`planFetchSegments`) whose messages are within the connection's message limit
+ * and together small enough to hold in memory. A message above the limit is not fetched, so it cannot fail the whole
+ * batch (and, retried, the job): it is named in its segment's `skipped`, and the caller counts the UID as skipped because
+ * it is missing from what the segment fetched. `messageBytes` is `ImapLimits.literalBytes`.
  */
-export async function fetchWithinSizeCap(
+export async function planSizedFetch(
 	session: ImapSession,
 	uids: string[],
-	options: { gmailLabels?: boolean },
-	limits: Pick<ImapLimits, "literalBytes">,
+	messageBytes: number,
 	folder: string,
-): Promise<CappedFetch> {
-	const fetched = new Map<string, ImapFetchedMessage>();
-	if (uids.length === 0) return { fetched, skipped: [] };
+): Promise<PlannedSegment[]> {
 	const sizes = new Map<string, number | null>();
-	for (const summary of await session.fetchUidSizes(uids)) sizes.set(String(summary.uid), summary.size);
-	const plan = planFetchBatches(uids, sizes, { messageBytes: limits.literalBytes });
-	for (const batch of plan.batches)
-		for (const [uid, message] of await session.fetchMessages(batch, options)) fetched.set(uid, message);
-	return {
-		fetched,
-		skipped: plan.oversized.map((message) => oversizedNote(folder, message, limits.literalBytes)),
-	};
+	for (let index = 0; index < uids.length; index += SIZE_QUERY_UIDS)
+		for (const summary of await session.fetchUidSizes(uids.slice(index, index + SIZE_QUERY_UIDS)))
+			sizes.set(String(summary.uid), summary.size);
+	return planFetchSegments(uids, sizes, { messageBytes }).map((segment) => ({
+		...segment,
+		skipped: segment.oversized.map((message) => oversizedNote(folder, message, messageBytes)),
+	}));
+}
+
+/** Fetches the messages of one planned segment (nothing when it holds only oversized ones). */
+export async function fetchSegment(
+	session: ImapSession,
+	segment: Pick<FetchSegment, "fetch">,
+	options: { gmailLabels?: boolean },
+): Promise<Map<string, ImapFetchedMessage>> {
+	return segment.fetch.length ? session.fetchMessages(segment.fetch, options) : new Map();
 }

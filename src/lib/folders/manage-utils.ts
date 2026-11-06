@@ -1,3 +1,4 @@
+import type { MessageKey } from "@/lib/i18n/i18n-types";
 import { msg, t } from "@/lib/i18n/translator";
 import type { FolderMoveTarget } from "./manage-types";
 
@@ -9,7 +10,7 @@ export const FOLDER_MOVE_MAX_BATCHES = 2_000;
 
 export const FOLDER_MOVE_TARGETS: readonly FolderMoveTarget[] = ["archive", "inbox"];
 
-export const FOLDER_MOVE_LABELS: Record<FolderMoveTarget, string> = {
+export const FOLDER_MOVE_LABELS: Record<FolderMoveTarget, MessageKey> = {
 	archive: msg("folder|Archive"),
 	inbox: msg("Inbox"),
 };

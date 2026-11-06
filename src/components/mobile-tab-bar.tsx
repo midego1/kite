@@ -14,6 +14,7 @@ import {
 	WalletCards,
 	type LucideIcon,
 } from "lucide-react";
+import type { MessageKey } from "@/lib/i18n/i18n-types";
 import { msg } from "@/lib/i18n/translator";
 import { useT } from "@/lib/i18n/use-t";
 import { cn } from "@/lib/utils";
@@ -27,14 +28,14 @@ import { useSidebar } from "./sidebar-state";
 import { hidesMobileTabBar, mobileActiveTabId, mobilePrimaryTabIds, type MobileTabId } from "./mobile-tab-bar-utils";
 
 /** `name` is the accessible name where the label is shortened to fit a 320 px tab ("Money Watch" would be cut off). */
-type TabMeta = { label: string; name?: string; icon: LucideIcon; href?: string };
+type TabMeta = { label: MessageKey; name?: string; icon: LucideIcon; href?: string };
 
 const TAB_META: Record<MobileTabId, TabMeta> = {
 	mail: { label: msg("Mail"), icon: Inbox, href: "/inbox" },
 	"for-you": { label: msg("For you"), icon: Sparkles, href: "/for-you" },
 	calendar: { label: msg("Calendar"), icon: CalendarDays, href: "/calendar" },
-	drive: { label: "Drive", icon: HardDrive, href: "/drive" },
-	finance: { label: "Money", name: "Money Watch", icon: WalletCards, href: "/finance" },
+	drive: { label: msg("Drive"), icon: HardDrive, href: "/drive" },
+	finance: { label: msg("Money"), name: "Money Watch", icon: WalletCards, href: "/finance" },
 	starred: { label: msg("Starred"), icon: Star, href: "/starred" },
 	sent: { label: msg("Sent"), icon: Send, href: "/sent" },
 	drafts: { label: msg("Drafts"), icon: FileText, href: "/drafts" },

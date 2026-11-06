@@ -32,6 +32,7 @@ import {
 import type { ParagraphDirection } from "./rich-text-direction-utils";
 import type { RichTextEditorProps, ToolbarCommand } from "./rich-text-editor-types";
 import { useT } from "@/lib/i18n/use-t";
+import type { MessageKey } from "@/lib/i18n/i18n-types";
 import { msg } from "@/lib/i18n/translator";
 
 const COMMANDS: ToolbarCommand[] = [
@@ -44,7 +45,7 @@ const COMMANDS: ToolbarCommand[] = [
 	{ command: "formatBlock", label: msg("Quote"), icon: Quote, value: "blockquote" },
 ];
 
-const DIRECTIONS: Record<ParagraphDirection, { name: string; icon: ToolbarCommand["icon"] }> = {
+const DIRECTIONS: Record<ParagraphDirection, { name: MessageKey; icon: ToolbarCommand["icon"] }> = {
 	auto: { name: msg("paragraph|automatic"), icon: Pilcrow },
 	rtl: { name: msg("right to left"), icon: PilcrowLeft },
 	ltr: { name: msg("left to right"), icon: PilcrowRight },

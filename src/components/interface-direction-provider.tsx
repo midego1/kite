@@ -4,7 +4,7 @@ import { DirectionProvider, useDirection } from "@radix-ui/react-direction";
 import { usePathname } from "next/navigation";
 import { useEffect, useLayoutEffect, useSyncExternalStore } from "react";
 import { readInterfaceDirection, readInterfaceLanguage } from "@/components/messages/use-reading-layout";
-import { resolveInterfaceLanguage } from "@/lib/i18n/language-utils";
+import { pageLanguage } from "@/lib/i18n/language-utils";
 import {
 	documentDirection,
 	type InterfaceDirection,
@@ -18,8 +18,8 @@ function subscribeToDocumentDirection(onChange: () => void) {
 	return () => observer.disconnect();
 }
 
-function applyStoredDirection() {
-	const language = resolveInterfaceLanguage(readInterfaceLanguage(), navigator.language);
+function applyStoredDirection(pathname: string) {
+	const language = pageLanguage(readInterfaceLanguage(), navigator.language, pathname);
 	document.documentElement.dir = resolveInterfaceDirection(readInterfaceDirection(), language);
 }
 
@@ -36,12 +36,13 @@ export function InterfaceDirectionProvider({ children }: { children: React.React
 	const pathname = usePathname();
 
 	// A navigation is the moment to catch up, whatever it changed.
-	useLayoutEffect(applyStoredDirection, [pathname]);
+	useLayoutEffect(() => applyStoredDirection(pathname), [pathname]);
 
 	useEffect(() => {
-		window.addEventListener(INTERFACE_DIRECTION_CHOSEN_EVENT, applyStoredDirection);
-		return () => window.removeEventListener(INTERFACE_DIRECTION_CHOSEN_EVENT, applyStoredDirection);
-	}, []);
+		const onChosen = () => applyStoredDirection(pathname);
+		window.addEventListener(INTERFACE_DIRECTION_CHOSEN_EVENT, onChosen);
+		return () => window.removeEventListener(INTERFACE_DIRECTION_CHOSEN_EVENT, onChosen);
+	}, [pathname]);
 
 	return <DirectionProvider dir={direction}>{children}</DirectionProvider>;
 }

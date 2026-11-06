@@ -1,4 +1,4 @@
-import type { MessageValues, Translator } from "./i18n-types";
+import type { MessageKey, MessageValues, TranslationKey, Translator } from "./i18n-types";
 import { createTranslator } from "./translator-utils";
 
 const ENGLISH = createTranslator("en", undefined, {});
@@ -26,7 +26,7 @@ export function setTranslator(next: Translator): void {
  * Translates outside a component, for helpers called while rendering. A component calls `useT()` instead, so a language
  * change draws it again; an effect that must not run again with a new language imports this one as `translate`.
  */
-export function t(key: string, values?: MessageValues): string {
+export function t<K extends string>(key: TranslationKey<K>, values?: MessageValues): string {
 	return current.t(key, values);
 }
 
@@ -34,7 +34,7 @@ export function t(key: string, values?: MessageValues): string {
  * Marks a string in a table as translatable without translating it yet: the table stays a constant and whoever draws
  * the entry calls `t(entry.label)`. The catalog check finds strings through this mark.
  */
-export const msg = <T extends string>(key: T): T => key;
+export const msg = (key: string): MessageKey => key as MessageKey;
 
 /** The locale for `Intl` and `toLocale*` calls; undefined (the browser's own) in English. */
 export const currentLocale = (): string | undefined => current.locale;

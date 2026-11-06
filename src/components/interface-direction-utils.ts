@@ -1,4 +1,5 @@
 import { INTERFACE_LANGUAGE_STORAGE_KEY, languageBootstrapExpression } from "@/lib/i18n/language-utils";
+import type { MessageKey } from "@/lib/i18n/i18n-types";
 import { msg } from "@/lib/i18n/translator";
 import type { LayoutInterfaceDirection } from "@/lib/preferences/layout-types";
 
@@ -9,7 +10,11 @@ export const DEFAULT_INTERFACE_DIRECTION: LayoutInterfaceDirection = "auto";
 /** Fired when the user picks a direction in this tab, which applies at once. */
 export const INTERFACE_DIRECTION_CHOSEN_EVENT = "kite:interface-direction-chosen";
 
-export const INTERFACE_DIRECTION_OPTIONS: { value: LayoutInterfaceDirection; label: string; description: string }[] = [
+export const INTERFACE_DIRECTION_OPTIONS: {
+	value: LayoutInterfaceDirection;
+	label: MessageKey;
+	description: MessageKey;
+}[] = [
 	{
 		value: "auto",
 		label: msg("direction|Automatic"),
@@ -44,8 +49,8 @@ export function parseInterfaceDirection(stored: string | null): LayoutInterfaceD
 }
 
 /**
- * Automatic follows the interface language, not the browser's: nobody gets a mirrored English interface unasked, and an
- * explicit choice always wins. `language` is the resolved interface language (`resolveInterfaceLanguage`).
+ * Automatic follows the page's language, not the browser's: nobody gets a mirrored English interface unasked, and an
+ * explicit choice always wins. `language` is the resolved language (`pageLanguage`).
  */
 export function resolveInterfaceDirection(
 	preference: LayoutInterfaceDirection,
@@ -78,8 +83,7 @@ export function logicalArrowKey(key: string): string {
 
 /**
  * Runs in <head> before paint, so the first frame is already mirrored and `lang` is right (same approach as the theme).
- * Blocked storage only loses the stored choices. Keep it in sync with resolveInterfaceLanguage and
- * resolveInterfaceDirection.
+ * Blocked storage only loses the stored choices. Keep it in sync with pageLanguage and resolveInterfaceDirection.
  */
 export const interfaceDirectionBootstrapScript = `(() => {
 	let direction = null;
@@ -89,7 +93,7 @@ export const interfaceDirectionBootstrapScript = `(() => {
 		language = localStorage.getItem(${JSON.stringify(INTERFACE_LANGUAGE_STORAGE_KEY)});
 	} catch {}
 	const browser = navigator.language || "";
-	const resolved = ${languageBootstrapExpression("language", "browser")};
+	const resolved = ${languageBootstrapExpression("language", "browser", "location.pathname")};
 	const rtl = direction === "rtl" || (direction !== "ltr" && ${RTL_LANGUAGE}.test(resolved));
 	document.documentElement.lang = resolved;
 	document.documentElement.dir = rtl ? "rtl" : "ltr";

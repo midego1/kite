@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync, rmSync } from "node:fs";
-import { dirname, join, relative } from "node:path";
+import { dirname, join, relative, sep } from "node:path";
 import test, { after } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { build } from "esbuild";
@@ -42,13 +42,20 @@ const sourceFiles = (dir) =>
 		.filter((entry) => entry.isFile() && /\.tsx?$/.test(entry.name) && !entry.name.endsWith(".d.ts"))
 		.map((entry) => join(entry.parentPath, entry.name));
 
-/** Every literal key passed to `t()`, `translate()` (an effect's `t`) or `msg()`, and calls the check could not read. */
+/**
+ * Every literal key passed to `t()`, `translate()` (an effect's `t`) or `msg()`, calls the check could not read and casts
+ * to `MessageKey`. A key held in a table is written with `msg()`; the type of `t` makes that the only way in, so an
+ * expression here or a cast elsewhere is the only way around the check.
+ */
 function scanSource() {
 	const keys = new Map();
 	const unreadable = [];
+	const casts = [];
 	for (const file of sourceFiles(join(root, "src"))) {
 		const text = readFileSync(file, "utf8");
 		if (!text.includes("@/lib/i18n/")) continue;
+		if (/\bas (?:unknown as )?MessageKey\b/.test(text) && !file.includes(`src${sep}lib${sep}i18n${sep}`))
+			casts.push(relative(root, file));
 		const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 		const visit = (node) => {
 			if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)) {
@@ -56,18 +63,86 @@ function scanSource() {
 				const [key] = node.arguments;
 				if ((name === "t" || name === "translate" || name === "msg") && key) {
 					if (ts.isStringLiteralLike(key)) keys.set(key.text, relative(root, file));
-					else if (name === "msg" || ts.isTemplateExpression(key))
-						unreadable.push(`${relative(root, file)}: ${key.getText()}`);
+					else if (name === "msg" || !isTableKey(key)) unreadable.push(`${relative(root, file)}: ${key.getText()}`);
 				}
 			}
 			ts.forEachChild(node, visit);
 		};
 		visit(source);
 	}
-	return { keys, unreadable };
+	return { keys, unreadable, casts };
 }
 
-const { keys, unreadable } = scanSource();
+/** A name or a table entry, which can only be a `MessageKey`; anything else may hide a string the check cannot read. */
+function isTableKey(node) {
+	return ts.isIdentifier(node) || ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node);
+}
+
+const { keys, unreadable, casts } = scanSource();
+
+/** How many type errors a snippet using `t` has, against the real types. */
+function typeErrors(lines) {
+	const file = join(root, "src/lib/i18n/key-gate.ts");
+	const text = `import type { MessageKey, Translate } from "./i18n-types";
+declare const t: Translate;
+declare const plain: string;
+declare const key: MessageKey;
+declare const table: { label: string };
+declare const marked: { label: MessageKey };
+${lines}`;
+	const options = {
+		strict: true,
+		noEmit: true,
+		skipLibCheck: true,
+		types: [],
+		target: ts.ScriptTarget.ESNext,
+		module: ts.ModuleKind.ESNext,
+		moduleResolution: ts.ModuleResolutionKind.Bundler,
+	};
+	const host = ts.createCompilerHost(options);
+	const { fileExists, getSourceFile, readFile } = host;
+	host.fileExists = (name) => name === file || fileExists(name);
+	host.readFile = (name) => (name === file ? text : readFile(name));
+	host.getSourceFile = (name, ...rest) =>
+		name === file ? ts.createSourceFile(name, text, ts.ScriptTarget.ESNext) : getSourceFile(name, ...rest);
+	const program = ts.createProgram([file], options, host);
+	return program.getSemanticDiagnostics(program.getSourceFile(file)).length;
+}
+
+/** The loader on its own, with fresh state, and the translator it drives. */
+let loaders = 0;
+async function freshLoader() {
+	loaders += 1;
+	const outfile = join(outDir, `loader-${loaders}.mjs`);
+	await build({
+		stdin: {
+			contents: `export * from "./src/lib/i18n/language-loader.ts";
+				export { currentLocale, t } from "./src/lib/i18n/translator.ts";`,
+			resolveDir: root,
+			loader: "ts",
+		},
+		absWorkingDir: root,
+		outfile,
+		bundle: true,
+		sourcemap: "inline",
+		platform: "node",
+		format: "esm",
+		target: "node22",
+		tsconfig: join(root, "tsconfig.json"),
+		logLevel: "silent",
+	});
+	globalThis.document = { documentElement: { lang: "" } };
+	return import(pathToFileURL(outfile).href);
+}
+
+function deferred() {
+	let resolve, reject;
+	const promise = new Promise((done, fail) => ((resolve = done), (reject = fail)));
+	return { promise, resolve, reject };
+}
+
+const DUTCH = { Inbox: "Dutch inbox" };
+const ARABIC = { Inbox: "Arabic inbox" };
 
 const formats = (language) => ({
 	plural: new Intl.PluralRules(language),
@@ -114,11 +189,13 @@ test("a key the catalog lacks falls back to English, and context prefixes never 
 	assert.equal(createTranslator("en", undefined, {}).t("folder|Archive"), "Archive");
 });
 
-test("Automatic takes the browser language when Kite speaks it, English otherwise", () => {
+test("Automatic takes Dutch from the browser; Arabic, still a draft, only by choice", () => {
 	for (const [preference, browser, expected] of [
 		["auto", "nl-BE", "nl"],
-		["auto", "AR-eg", "ar"],
+		["auto", "NL", "nl"],
 		["auto", "nl_NL", "nl"],
+		["auto", "ar", "en"],
+		["auto", "AR-eg", "en"],
 		["auto", "en-GB", "en"],
 		["auto", "he-IL", "en"],
 		["auto", "", "en"],
@@ -139,8 +216,125 @@ test("dates keep the browser's locale in English and its region within a transla
 	assert.equal(languages.interfaceLocale("ar", "ar-AE"), "ar-AE");
 });
 
-test("every call is one the catalog check can read", () => {
+test("a browser tag Intl refuses is normalised, or falls back to the plain language", () => {
+	assert.equal(languages.interfaceLocale("nl", "nl_NL"), "nl-NL");
+	assert.equal(languages.interfaceLocale("nl", "nl_be"), "nl-BE");
+	assert.equal(languages.interfaceLocale("nl", "nl-!!"), "nl");
+	assert.doesNotThrow(() => createTranslator("nl", languages.interfaceLocale("nl", "nl_NL"), {}));
+});
+
+test("public pages stay English whatever the setting says; signed-in pages follow it", () => {
+	for (const path of [
+		"/",
+		"/login",
+		"/register",
+		"/setup",
+		"/onboarding",
+		"/forgot-password",
+		"/reset-password",
+		"/book/ada",
+		"/book/ada/intro",
+		"/c/ada",
+		"/d/token",
+	]) {
+		assert.equal(languages.isUntranslatedPage(path), true, path);
+		assert.equal(languages.pageLanguage("ar", "ar", path), "en", path);
+	}
+	for (const path of ["/inbox", "/inbox/msg_1", "/settings", "/drive", "/calendar", "/books", "/data", "/compose"]) {
+		assert.equal(languages.isUntranslatedPage(path), false, path);
+		assert.equal(languages.pageLanguage("ar", "en", path), "ar", path);
+	}
+});
+
+test("a catalog that fails leaves English, never a stuck mailbox, and the next try works", async () => {
+	const loader = await freshLoader();
+	let notified = 0;
+	loader.subscribeToLanguageLoad(() => (notified += 1));
+	const loading = deferred();
+	const applied = loader.applyInterfaceLanguage("nl", "en", "/inbox", () => loading.promise);
+	assert.equal(loader.isInterfaceLanguageReady(), false, "the mailbox waits for the first catalog");
+	assert.equal(document.documentElement.lang, "nl");
+	loading.reject(new Error("chunk gone"));
+	await applied;
+	assert.equal(loader.isInterfaceLanguageReady(), true);
+	assert.equal(notified, 2);
+	assert.equal(loader.t("Inbox"), "Inbox");
+
+	await loader.applyInterfaceLanguage("nl", "en", "/inbox", async () => DUTCH);
+	assert.equal(loader.t("Inbox"), "Dutch inbox");
+});
+
+test("a loader or a browser tag that throws cannot hold the mailbox back", async () => {
+	const throwing = await freshLoader();
+	await throwing.applyInterfaceLanguage("nl", "en", "/inbox", () => {
+		throw new Error("no chunk");
+	});
+	assert.equal(throwing.isInterfaceLanguageReady(), true);
+
+	const badTag = await freshLoader();
+	await badTag.applyInterfaceLanguage("auto", "nl_NL", "/inbox", async () => DUTCH);
+	assert.equal(badTag.isInterfaceLanguageReady(), true);
+	assert.equal(badTag.t("Inbox"), "Dutch inbox");
+	assert.equal(badTag.currentLocale(), "nl-NL");
+});
+
+test("the last choice wins when catalogs arrive out of order", async () => {
+	const loader = await freshLoader();
+	const dutch = deferred();
+	const arabic = deferred();
+	const first = loader.applyInterfaceLanguage("nl", "en", "/inbox", () => dutch.promise);
+	const second = loader.applyInterfaceLanguage("ar", "en", "/inbox", () => arabic.promise);
+	arabic.resolve(ARABIC);
+	await second;
+	assert.equal(loader.t("Inbox"), "Arabic inbox");
+	assert.equal(loader.isInterfaceLanguageReady(), false, "the first load has not settled");
+	dutch.resolve(DUTCH);
+	await first;
+	assert.equal(loader.t("Inbox"), "Arabic inbox");
+	assert.equal(loader.isInterfaceLanguageReady(), true);
+
+	const late = deferred();
+	const pending = loader.applyInterfaceLanguage("nl", "en", "/inbox", () => late.promise);
+	await loader.applyInterfaceLanguage("en", "en", "/inbox");
+	late.resolve(DUTCH);
+	await pending;
+	assert.equal(loader.t("Inbox"), "Inbox");
+	assert.equal(document.documentElement.lang, "en");
+});
+
+test("a later switch never takes the page down, and a public page loads nothing", async () => {
+	const loader = await freshLoader();
+	await loader.applyInterfaceLanguage("en", "en", "/inbox");
+	const later = deferred();
+	const pending = loader.applyInterfaceLanguage("nl", "en", "/inbox", () => later.promise);
+	assert.equal(loader.isInterfaceLanguageReady(), true);
+	later.resolve(DUTCH);
+	await pending;
+
+	const load = () => assert.fail("a public page fetched a catalog");
+	await loader.applyInterfaceLanguage("ar", "ar", "/login", load);
+	assert.equal(document.documentElement.lang, "en");
+	assert.equal(loader.t("Inbox"), "Inbox");
+
+	const signedIn = deferred();
+	const arriving = loader.applyInterfaceLanguage("ar", "ar", "/inbox", () => signedIn.promise);
+	assert.equal(loader.isInterfaceLanguageReady(), false, "arriving from a public page is a first load");
+	signedIn.resolve(ARABIC);
+	await arriving;
+	assert.equal(loader.isInterfaceLanguageReady(), true);
+	assert.equal(loader.t("Inbox"), "Arabic inbox");
+});
+
+test("t takes a literal or a msg() key; a plain string does not compile", () => {
+	assert.equal(typeErrors(`t("Literal"); t("{n} new", { n: 1 }); t(key); t(marked.label);`), 0);
+	assert.equal(typeErrors("t(plain);"), 1);
+	assert.equal(typeErrors("t(table.label);"), 1);
+	assert.equal(typeErrors("t(`Template ${plain}`);"), 1);
+});
+
+test("every call is one the catalog check can read, and nothing casts around it", () => {
 	assert.deepEqual(unreadable, []);
+	assert.deepEqual(casts, []);
 	for (const key of keys.keys()) assert.ok(describeMessage(key), `malformed source string: ${key}`);
 });
 

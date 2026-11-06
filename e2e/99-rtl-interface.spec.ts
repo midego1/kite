@@ -3,7 +3,8 @@ import { DOMAIN, STORAGE_STATE, SUPPORT_ADDRESS } from "./support/constants";
 import { apiContext, deliverInbound, openMessage, setSendingSettings, signIn, uniqueToken } from "./support/helpers";
 
 // The interface direction setting (ROADMAP milestone 1): Left to right and Right to left are stored like the reading
-// layout, Automatic follows the interface language, and <html dir> is right before the first paint. A mirrored interface keeps every drag, key and floating window on the correct side; a left-to-right one is
+// layout, Automatic follows the interface language (Arabic only when chosen, e2e/101-interface-language), and <html dir>
+// is right before the first paint. A mirrored interface keeps every drag, key and floating window on the correct side; a left-to-right one is
 // untouched, and a change from elsewhere never throws away what is being typed.
 
 const DIRECTION_KEY = "kite-interface-direction";
@@ -171,23 +172,18 @@ test.describe("the setting", () => {
 		expect(menu.y + menu.height).toBeLessThanOrEqual(trigger.y + 1);
 	});
 
-	test("Automatic mirrors only an Arabic interface, whatever else the browser reads, and a choice wins", async ({
+	test("Automatic stays left to right in every browser language, and only an explicit choice mirrors", async ({
 		browser,
 	}) => {
-		for (const [locale, direction] of [
-			["ar-EG", "rtl"],
-			["he", "ltr"],
-			["fa-IR", "ltr"],
-			["nl-NL", "ltr"],
-		] as const) {
+		for (const locale of ["ar-EG", "he", "fa-IR", "nl-NL"]) {
 			const context = await browser.newContext({ locale, storageState: STORAGE_STATE });
 			const page = await context.newPage();
 			await page.addInitScript(() => localStorage.setItem("kite-layout-sync", "off"));
 			await watchFirstPaintDirection(page);
 			await page.goto("/inbox");
 			await expect(page.locator(SIDEBAR)).toBeVisible();
-			expect((await firstPaintDirection(page)).atBody, locale).toBe(direction);
-			await expectDirection(page, direction);
+			expect((await firstPaintDirection(page)).atBody, locale).toBe("ltr");
+			await expectDirection(page, "ltr");
 			await context.close();
 		}
 		for (const choice of ["ltr", "rtl"] as const) {
@@ -201,9 +197,9 @@ test.describe("the setting", () => {
 		}
 	});
 
-	test("signed-out pages follow the same rule: a browser language or a choice made here", async ({ browser }) => {
+	test("signed-out pages stay left to right unless this browser chose otherwise", async ({ browser }) => {
 		const signedOut = { cookies: [], origins: [] };
-		const context = await browser.newContext({ locale: "fr-FR", storageState: signedOut });
+		const context = await browser.newContext({ locale: "ar-EG", storageState: signedOut });
 		const page = await context.newPage();
 		await page.goto("/login");
 		await expect(page.getByRole("button", { name: /sign in/i }).first()).toBeVisible();

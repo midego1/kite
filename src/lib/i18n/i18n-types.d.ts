@@ -4,7 +4,13 @@ export type MessageValues = Record<string, string | number>;
 /** A translation catalog: the English source string (with its `context|` prefix, if any) to its translation. */
 export type MessageCatalog = Record<string, string>;
 
-export type Translate = (key: string, values?: MessageValues) => string;
+/** A string marked with `msg()`, which the catalog check can see; only a literal or one of these can be translated. */
+export type MessageKey = string & { readonly __messageKey: true };
+
+/** `K` when it is a literal or a `MessageKey`; a plain `string` asks for a `MessageKey`, so it does not compile. */
+export type TranslationKey<K extends string> = K & (string extends K ? MessageKey : K);
+
+export type Translate = <K extends string>(key: TranslationKey<K>, values?: MessageValues) => string;
 
 export type InterfaceLanguage = "en" | "nl" | "ar";
 

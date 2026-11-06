@@ -5,6 +5,7 @@ import { useMemo } from "react";
 import { useSelectedMailbox } from "@/components/mailbox-provider";
 import { useFoldersByMailbox } from "./use-mailbox-folders";
 import type { MessageFolderConfig } from "./types";
+import { msg } from "@/lib/i18n/translator";
 import { useT } from "@/lib/i18n/use-t";
 
 export function useCustomFolderConfig(folderId: string): MessageFolderConfig {
@@ -20,11 +21,11 @@ export function useCustomFolderConfig(folderId: string): MessageFolderConfig {
 			folder: "inbox",
 			folderId,
 			title: folderName,
-			emptyText: t("No emails in this folder"),
+			emptyText: msg("No emails in this folder"),
 			hrefPrefix: `/folders/${folderId}`,
 			icon: Folder,
 			showRowBadge: false,
 		}),
-		[folderId, folderName, t],
+		[folderId, folderName],
 	);
 }

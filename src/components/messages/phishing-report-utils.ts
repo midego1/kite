@@ -1,4 +1,5 @@
 import type { PhishingReport } from "@/lib/spam/phishing-report-types";
+import type { MessageKey } from "@/lib/i18n/i18n-types";
 import { msg, t } from "@/lib/i18n/translator";
 
 export function phishingConfirmCopy(count: number) {
@@ -16,7 +17,7 @@ export function phishingConfirmCopy(count: number) {
 	};
 }
 
-const KEPT_BECAUSE: Record<NonNullable<PhishingReport["notBlocked"]>, string> = {
+const KEPT_BECAUSE: Record<NonNullable<PhishingReport["notBlocked"]>, MessageKey> = {
 	no_sender: msg("Reported as phishing. The sender was not blocked because it has no sender address."),
 	trusted_contact: msg(
 		"Reported as phishing. The sender was not blocked because you saved or wrote to that address, and the sender may be forged.",

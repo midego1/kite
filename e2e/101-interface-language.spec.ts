@@ -1,8 +1,9 @@
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import { STORAGE_STATE } from "./support/constants";
 
-// The Language setting (ROADMAP milestone 1): Automatic follows the browser, a choice is stored like the reading layout
-// and a language's catalog is fetched only by someone reading it. Automatic direction follows the language.
+// The Language setting (ROADMAP milestone 1): Automatic takes Dutch from the browser, Arabic needs a choice while it is an
+// unreviewed draft, a choice is stored like the reading layout and a language's catalog is fetched only by someone reading
+// it. Automatic direction follows the language, and public pages stay English and left to right.
 
 const LANGUAGE_KEY = "kite-interface-language";
 const SIDEBAR = "#kite-sidebar-panel";
@@ -107,10 +108,10 @@ test.describe("interface language", () => {
 		}
 	});
 
-	test("Automatic follows the browser language, and one Kite does not speak stays English", async ({ browser }) => {
+	test("Automatic takes Dutch from the browser; Arabic and languages Kite lacks stay English", async ({ browser }) => {
 		for (const [locale, sent, lang, dir] of [
 			["nl-BE", "Verzonden", "nl", "ltr"],
-			["ar-EG", "المُرسَلة", "ar", "rtl"],
+			["ar-EG", "Sent", "en", "ltr"],
 			["he-IL", "Sent", "en", "ltr"],
 			["fr-FR", "Sent", "en", "ltr"],
 		] as const) {
@@ -120,6 +121,20 @@ test.describe("interface language", () => {
 			await expectHtml(page, lang, dir);
 			await page.context().close();
 		}
+	});
+
+	test("public pages stay English and left to right for someone who chose Arabic", async ({ browser }) => {
+		const page = await openBrowser(browser, "ar-EG", "ar");
+		await page.goto("/login");
+		await expectHtml(page, "en", "ltr");
+		await page.goto("/d/no-such-link");
+		await expectHtml(page, "en", "ltr");
+		await page.goto("/book/no-such-user");
+		await expectHtml(page, "en", "ltr");
+		await page.goto("/inbox");
+		await expect(nav(page, "المُرسَلة")).toBeVisible();
+		await expectHtml(page, "ar", "rtl");
+		await page.context().close();
 	});
 
 	test("English downloads no catalog, and an Arabic reader fetches only theirs", async ({ browser }) => {

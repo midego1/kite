@@ -182,7 +182,7 @@ function ThreadAttachmentChip({
 			<button
 				type="button"
 				onClick={() => onReview(attachment)}
-				title={t("{filename} · {label}", { filename: attachment.filename, label: visual.label })}
+				title={t("{filename} · {label}", { filename: attachment.filename, label: t(visual.label) })}
 				className={className}
 			>
 				{content}
@@ -191,7 +191,7 @@ function ThreadAttachmentChip({
 	return (
 		<a
 			href={`/api/messages/${messageId}/attachments/${attachment.id}`}
-			title={t("{filename} · {label}", { filename: attachment.filename, label: visual.label })}
+			title={t("{filename} · {label}", { filename: attachment.filename, label: t(visual.label) })}
 			className={className}
 		>
 			{content}

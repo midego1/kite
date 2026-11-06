@@ -99,7 +99,7 @@ export function ComposeAttachmentChip({ entry, draftId, onPreview, onRemove }: C
 								size: formatAttachmentSize(attachment.size),
 							})
 				}
-				title={t("{filename} · {label}", { filename: attachment.filename, label: visual.label })}
+				title={t("{filename} · {label}", { filename: attachment.filename, label: t(visual.label) })}
 				className="flex h-full min-w-0 flex-1 items-center gap-2 rounded-s-lg ps-1.5 pe-1 text-start outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
 			>
 				{thumbnail && !thumbnailFailed ? (

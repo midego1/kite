@@ -6,7 +6,7 @@ import { getEmailDisplayName, splitEmailAddressList } from "@/lib/email/address"
 import { formatUserDate, getUserTimeZone, zonedDateFields } from "@/lib/time/utils";
 import type { MailboxOption } from "@/components/mailbox-provider";
 import type { EmailPageTitleInput } from "./types";
-import type { MessageFolderConfig } from "./types";
+import type { MessageFolderConfig, MessageFolderName } from "./types";
 import type { PageRange } from "./types";
 import type { BulkMessageAction, BulkMessageResponse, PermanentDeleteFolder } from "@/app/api/messages/bulk/types";
 import { SEND_PENDING_MOVE_MESSAGE, SEND_PENDING_MOVE_REFUSED } from "@/lib/messages/send-state-utils";
@@ -83,8 +83,8 @@ export function getMailboxAddress(
 }
 
 /** A folder's name on screen; a custom folder's is the name its owner typed, which is never translated. */
-export function folderTitle(config: Pick<MessageFolderConfig, "folderId" | "title">): string {
-	return config.folderId ? config.title : t(config.title);
+export function folderTitle(config: MessageFolderName): string {
+	return config.folderId === undefined ? t(config.title) : config.title;
 }
 
 export function getEmailPageTitleCount(total: number, unread: number): number {

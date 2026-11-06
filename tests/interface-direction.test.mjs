@@ -89,7 +89,7 @@ test("Automatic follows the interface language and an explicit choice wins", () 
 });
 
 /** The bootstrap script as the browser runs it, in a sandbox. */
-function runBootstrap({ saved, savedLanguage = null, language, storageThrows = false }) {
+function runBootstrap({ saved, savedLanguage = null, language, storageThrows = false, pathname = "/inbox" }) {
 	const documentElement = { dir: "", lang: "" };
 	const stored = {
 		[direction.INTERFACE_DIRECTION_STORAGE_KEY]: saved,
@@ -98,6 +98,7 @@ function runBootstrap({ saved, savedLanguage = null, language, storageThrows = f
 	const sandbox = {
 		document: { documentElement },
 		navigator: { language },
+		location: { pathname },
 		localStorage: {
 			getItem: (key) => {
 				if (storageThrows) throw new Error("blocked");
@@ -113,23 +114,38 @@ test("the bootstrap script agrees with the helpers it must stay in sync with", (
 	for (const saved of [null, "auto", "ltr", "rtl", "sideways"])
 		for (const savedLanguage of [null, "auto", "en", "nl", "ar", "klingon"])
 			for (const [language] of [...LANGUAGES, ["nl-BE"], ["AR-eg"], ["fr_CA"]]) {
-				const resolved = languages.resolveInterfaceLanguage(languages.parseInterfaceLanguage(savedLanguage), language);
-				const expected = direction.resolveInterfaceDirection(direction.parseInterfaceDirection(saved), resolved);
-				const root = runBootstrap({ saved, savedLanguage, language });
-				assert.equal(root.dir, expected, `${saved} ${savedLanguage} ${language}`);
-				assert.equal(root.lang, resolved, `${saved} ${savedLanguage} ${language}`);
+				for (const pathname of ["/inbox", "/login", "/book/ada", "/d/token", "/"]) {
+					const label = `${saved} ${savedLanguage} ${language} ${pathname}`;
+					const resolved = languages.pageLanguage(languages.parseInterfaceLanguage(savedLanguage), language, pathname);
+					const expected = direction.resolveInterfaceDirection(direction.parseInterfaceDirection(saved), resolved);
+					const root = runBootstrap({ saved, savedLanguage, language, pathname });
+					assert.equal(root.dir, expected, label);
+					assert.equal(root.lang, resolved, label);
+				}
 			}
 });
 
 test("with storage blocked the bootstrap script still answers", () => {
-	assert.equal(runBootstrap({ language: "ar", storageThrows: true }).dir, "rtl");
+	assert.equal(runBootstrap({ language: "nl", storageThrows: true }).lang, "nl");
 	assert.equal(runBootstrap({ language: "en", storageThrows: true }).dir, "ltr");
 });
 
-test("a right-to-left browser language Kite does not speak keeps English left to right", () => {
-	const root = runBootstrap({ language: "he-IL" });
+test("no browser language mirrors the interface: Arabic is only for someone who chooses it", () => {
+	for (const language of ["ar-EG", "he-IL", "fa-IR"]) {
+		const root = runBootstrap({ language });
+		assert.equal(root.lang, "en", language);
+		assert.equal(root.dir, "ltr", language);
+	}
+	const chosen = runBootstrap({ language: "en-US", savedLanguage: "ar" });
+	assert.equal(chosen.lang, "ar");
+	assert.equal(chosen.dir, "rtl");
+});
+
+test("a public page stays English and left to right, unless this browser chose a direction", () => {
+	const root = runBootstrap({ language: "ar", savedLanguage: "ar", pathname: "/book/ada" });
 	assert.equal(root.lang, "en");
 	assert.equal(root.dir, "ltr");
+	assert.equal(runBootstrap({ language: "en", saved: "rtl", pathname: "/login" }).dir, "rtl");
 });
 
 test("drags, swipes and arrow keys read along the document's direction", () => {

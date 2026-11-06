@@ -51,8 +51,8 @@ export function readingPaneOptions(rtl: boolean): ReadingLayoutOption<ReadingPan
 		option.value === "right"
 			? {
 					...option,
-					label: t("Left of inbox"),
-					description: t("The list stays on the right and emails open beside it."),
+					label: msg("Left of inbox"),
+					description: msg("The list stays on the right and emails open beside it."),
 				}
 			: option,
 	);

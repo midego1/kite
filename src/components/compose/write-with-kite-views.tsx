@@ -5,11 +5,12 @@ import { Button } from "@/components/ui/button";
 import type { ComposeAction } from "@/lib/agent/compose-types";
 import { translateLanguages, warningText } from "./write-with-kite-utils";
 import { useT } from "@/lib/i18n/use-t";
+import type { MessageKey } from "@/lib/i18n/i18n-types";
 import { msg } from "@/lib/i18n/translator";
 
 export type ComposeRun = { action?: ComposeAction; instruction?: string; language?: string };
 
-const ACTIONS: { action: ComposeAction; label: string }[] = [
+const ACTIONS: { action: ComposeAction; label: MessageKey }[] = [
 	{ action: "shorter", label: msg("Shorter") },
 	{ action: "longer", label: msg("Longer") },
 	{ action: "formal", label: msg("More formal") },

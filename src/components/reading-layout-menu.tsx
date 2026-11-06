@@ -62,7 +62,11 @@ export function ReadingLayoutMenu() {
 	const rtl = useInterfaceDirection() === "rtl";
 	const t = useT();
 	const languageOptions: { value: LayoutInterfaceLanguage; label: string; description: string }[] = [
-		{ value: "auto", label: t("language|Automatic"), description: t("Follows your browser's language.") },
+		{
+			value: "auto",
+			label: t("language|Automatic"),
+			description: t("Follows your browser's language where a translation is finished."),
+		},
 		...INTERFACE_LANGUAGES.map(({ value, label }) => ({ value, label, description: label })),
 	];
 

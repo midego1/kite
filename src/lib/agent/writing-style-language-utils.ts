@@ -10,7 +10,7 @@ export const LANGUAGE_NAMES: Record<Exclude<StyleLanguage, "other">, string> = {
 };
 
 // About forty of each language's most frequent words, chosen to overlap little with the others.
-const STOP_WORDS: Record<Exclude<StyleLanguage, "other">, string[]> = {
+export const STOP_WORDS: Record<Exclude<StyleLanguage, "other">, string[]> = {
 	en: "the and to of a in is that for it you with on as are this be at have was but not your we can will from they or if would there about what so my me our an all just know do".split(
 		" ",
 	),
@@ -28,25 +28,30 @@ const STOP_WORDS: Record<Exclude<StyleLanguage, "other">, string[]> = {
 	),
 };
 
-const LANGUAGES = Object.keys(STOP_WORDS) as Exclude<StyleLanguage, "other">[];
-const SETS = Object.fromEntries(LANGUAGES.map((language) => [language, new Set(STOP_WORDS[language])])) as Record<
-	Exclude<StyleLanguage, "other">,
-	Set<string>
->;
+const SETS = Object.fromEntries(
+	Object.entries(STOP_WORDS).map(([language, words]) => [language, new Set(words)]),
+) as Record<Exclude<StyleLanguage, "other">, Set<string>>;
 export const MIN_LANGUAGE_WORDS = 20;
 
 /**
- * The language of a message from a stop-word count, or null for fewer than 20 words. The language with the most
- * stop words wins when they make up at least 15% of the words and it leads the runner-up clearly; else `other`.
+ * The language with the most stop words, when they make up at least 15% of the words and it leads the runner-up
+ * clearly; else null.
  */
+export function leadingLanguage<T extends string>(
+	words: readonly string[],
+	sets: Readonly<Record<T, ReadonlySet<string>>>,
+): T | null {
+	const lower = words.map((word) => word.toLowerCase());
+	const scores = (Object.keys(sets) as T[])
+		.map((language) => ({ language, hits: lower.filter((word) => sets[language].has(word)).length }))
+		.sort((a, b) => b.hits - a.hits);
+	const [best, second] = scores;
+	if (best.hits < words.length * 0.15 || best.hits < second.hits * 1.5) return null;
+	return best.language;
+}
+
+/** The language of a message from a stop-word count (`leadingLanguage`), or null for fewer than 20 words. */
 export function detectLanguage(words: readonly string[]): StyleLanguage | null {
 	if (words.length < MIN_LANGUAGE_WORDS) return null;
-	const lower = words.map((word) => word.toLowerCase());
-	const scores = LANGUAGES.map((language) => ({
-		language,
-		hits: lower.filter((word) => SETS[language].has(word)).length,
-	})).sort((a, b) => b.hits - a.hits);
-	const [best, second] = scores;
-	if (best.hits < words.length * 0.15 || best.hits < second.hits * 1.5) return "other";
-	return best.language;
+	return leadingLanguage(words, SETS) ?? "other";
 }

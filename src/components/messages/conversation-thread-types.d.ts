@@ -1,4 +1,5 @@
 import type { ThreadMessage } from "@/hooks/types";
+import type { TranslationAvailability } from "./message-translation-types";
 
 export type ConversationThreadProps = {
 	/** The message the reader is currently viewing; it is rendered by the page, not here. */
@@ -21,6 +22,8 @@ export type ConversationThreadProps = {
 	/** Messages whose remote images the reader was asked to show; kept by the page so Print follows them too. */
 	remoteImagesShownIds: ReadonlySet<string>;
 	onShowRemoteImages: (messageId: string) => void;
+	/** Whether the messages of this mailbox can be translated right now. */
+	translationAvailability?: TranslationAvailability;
 };
 
 export type ConversationMessageCardProps = {
@@ -33,6 +36,7 @@ export type ConversationMessageCardProps = {
 	showFullRecipientAddresses?: boolean;
 	remoteImagesShown: boolean;
 	onShowRemoteImages: () => void;
+	translationAvailability?: TranslationAvailability;
 };
 
 export type UseMessageThreadResult = {

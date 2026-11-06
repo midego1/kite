@@ -24,6 +24,7 @@ import { useBulkSelectionAccess } from "./use-bulk-selection-access";
 import { supportsPermanentDelete } from "@/lib/messages/permanent-delete-utils";
 import type { BulkMessageAction } from "@/app/api/messages/bulk/types";
 import type { BulkMessageToolbarProps } from "./types";
+import { useT } from "@/lib/i18n/use-t";
 
 const menuItemClass =
 	"flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm text-neutral-700 outline-none data-[disabled]:opacity-50 data-[highlighted]:bg-neutral-100";
@@ -33,11 +34,12 @@ const menuContentClass =
 
 /** Shown in the move menu instead of folders when the selection spans mailboxes. */
 function CrossMailboxFolderHint({ show }: { show: boolean }) {
+	const t = useT();
 	if (!show) return null;
 	return (
 		<>
 			<DropdownMenu.Separator className="my-1 h-px bg-neutral-100" />
-			<p className="px-3 py-2 text-xs text-neutral-500">Select mail from one mailbox to move it to a folder.</p>
+			<p className="px-3 py-2 text-xs text-neutral-500">{t("Select mail from one mailbox to move it to a folder.")}</p>
 		</>
 	);
 }
@@ -53,20 +55,29 @@ function DraftSelectionToolbar({
 	onClearSelection,
 	pending,
 }: Pick<BulkMessageToolbarProps, "selectedCount" | "hideSelectedCount" | "onAction" | "onClearSelection" | "pending">) {
+	const t = useT();
 	return (
 		<div className="flex min-w-0 items-center gap-2 text-neutral-600 w-full">
 			{!hideSelectedCount && (
-				<span className="me-2 text-sm font-medium text-neutral-800">{selectedCount} selected</span>
+				<span className="me-2 text-sm font-medium text-neutral-800">
+					{t("{count} selected", { count: selectedCount })}
+				</span>
 			)}
 			<span className="flex-1 md:hidden" />
-			<Tooltip label="Delete">
-				<Button variant="ghost" size="sm" onClick={() => onAction("trash")} disabled={pending} aria-label="Delete">
+			<Tooltip label={t("Delete")}>
+				<Button variant="ghost" size="sm" onClick={() => onAction("trash")} disabled={pending} aria-label={t("Delete")}>
 					<Trash2 className="h-4 w-4" />
 				</Button>
 			</Tooltip>
 			<span className="flex-1 max-md:hidden" />
-			<Tooltip label="Clear selection">
-				<Button variant="ghost" size="sm" onClick={onClearSelection} disabled={pending} aria-label="Clear selection">
+			<Tooltip label={t("Clear selection")}>
+				<Button
+					variant="ghost"
+					size="sm"
+					onClick={onClearSelection}
+					disabled={pending}
+					aria-label={t("Clear selection")}
+				>
 					<X className="h-4 w-4" />
 				</Button>
 			</Tooltip>
@@ -97,33 +108,34 @@ function MailSelectionToolbar({
 	hasDraftSelection,
 	hasPendingSendSelection,
 }: BulkMessageToolbarProps) {
+	const t = useT();
 	// In archived, spam and trash the usual button would be a no-op, so it becomes the way back to the inbox.
 	const archive =
 		folder === "archived"
-			? { action: "inbox", label: "Unarchive", Icon: ArchiveRestore }
-			: { action: "archive", label: "Archive", Icon: Archive };
+			? { action: "inbox", label: t("Unarchive"), Icon: ArchiveRestore }
+			: { action: "archive", label: t("Archive"), Icon: Archive };
 	const spam =
 		folder === "spam"
-			? { action: "inbox", label: "Not spam", Icon: ShieldCheck }
-			: { action: "spam", label: "Report spam", Icon: ShieldAlert };
+			? { action: "inbox", label: t("Not spam"), Icon: ShieldCheck }
+			: { action: "spam", label: t("Report spam"), Icon: ShieldAlert };
 	const trash =
 		folder === "trash"
-			? { action: "inbox", label: "Restore", Icon: Undo2 }
+			? { action: "inbox", label: t("Restore"), Icon: Undo2 }
 			: { action: "trash", label: "Delete", Icon: Trash2 };
 	// Trash and Spam also offer the irreversible delete; the page confirms before running it.
 	const canDeleteForever = supportsPermanentDelete(folder);
 	const moveOptions = [
-		{ value: "inbox", label: "Inbox", Icon: Inbox, hidden: folder === "inbox" },
-		{ value: "archive", label: "Archived", Icon: Archive, hidden: folder === "archived" },
-		{ value: "spam", label: "Spam", Icon: ShieldAlert, hidden: folder === "spam" },
-		{ value: "trash", label: "Trash", Icon: Trash2, hidden: folder === "trash" },
+		{ value: "inbox", label: t("Inbox"), Icon: Inbox, hidden: folder === "inbox" },
+		{ value: "archive", label: t("Archived"), Icon: Archive, hidden: folder === "archived" },
+		{ value: "spam", label: t("Spam"), Icon: ShieldAlert, hidden: folder === "spam" },
+		{ value: "trash", label: t("Trash"), Icon: Trash2, hidden: folder === "trash" },
 	].filter((option) => !option.hidden);
 	// Only received mail can be reported; the server skips anything else.
 	const canReportPhishing = folder !== "sent" && folder !== "drafts";
 	const phishingItem = canReportPhishing && (
 		<DropdownMenu.Item className={`${menuItemClass} text-red-600`} onSelect={() => onAction("phishing")}>
 			<ShieldX className="h-4 w-4" />
-			Report phishing
+			{t("Report phishing")}
 		</DropdownMenu.Item>
 	);
 	const { folders, spansMailboxes, manageDisabled: accessDisabled } = useBulkSelectionAccess(mailboxIds, pending);
@@ -133,7 +145,9 @@ function MailSelectionToolbar({
 	return (
 		<div className="flex min-w-0 items-center gap-2 text-neutral-600 w-full">
 			{!hideSelectedCount && (
-				<span className="me-2 text-sm font-medium text-neutral-800">{selectedCount} selected</span>
+				<span className="me-2 text-sm font-medium text-neutral-800">
+					{t("{count} selected", { count: selectedCount })}
+				</span>
 			)}
 			<span className="flex-1 md:hidden" />
 			<Tooltip label={archive.label} className="max-md:hidden">
@@ -170,33 +184,33 @@ function MailSelectionToolbar({
 				</Button>
 			</Tooltip>
 			{canDeleteForever && (
-				<Tooltip label="Delete forever">
+				<Tooltip label={t("Delete forever")}>
 					<Button
 						variant="ghost"
 						size="sm"
 						className="text-red-600 hover:text-red-700"
 						onClick={() => onAction("delete")}
 						disabled={manageDisabled}
-						aria-label="Delete forever"
+						aria-label={t("Delete forever")}
 					>
 						<Trash2 className="h-4 w-4" />
 					</Button>
 				</Tooltip>
 			)}
-			<Tooltip label={hasUnreadSelection ? "Mark as read" : "Mark as unread"}>
+			<Tooltip label={hasUnreadSelection ? t("Mark as read") : t("Mark as unread")}>
 				<Button
 					variant="ghost"
 					size="sm"
 					onClick={() => onAction(hasUnreadSelection ? "read" : "unread")}
 					disabled={pending}
-					aria-label={hasUnreadSelection ? "Mark as read" : "Mark as unread"}
+					aria-label={hasUnreadSelection ? t("Mark as read") : t("Mark as unread")}
 				>
 					{hasUnreadSelection ? <MailOpen className="h-4 w-4" /> : <Mail className="h-4 w-4" />}
 				</Button>
 			</Tooltip>
 			<span className="flex-1 max-md:hidden" />
 			<DropdownMenu.Root>
-				<Tooltip label="Move selected messages" className="max-md:hidden">
+				<Tooltip label={t("Move selected messages")} className="max-md:hidden">
 					<DropdownMenu.Trigger asChild>
 						<Button
 							variant="ghost"
@@ -205,7 +219,7 @@ function MailSelectionToolbar({
 							disabled={manageDisabled}
 						>
 							<FolderInput className="h-4 w-4" />
-							Move to
+							{t("Move to")}
 							<ChevronDown className="h-3.5 w-3.5 text-neutral-500" />
 						</Button>
 					</DropdownMenu.Trigger>
@@ -227,7 +241,7 @@ function MailSelectionToolbar({
 						{folders.length > 0 && (
 							<>
 								<DropdownMenu.Separator className="my-1 h-px bg-neutral-100" />
-								<DropdownMenu.Label className={menuLabelClass}>Folders</DropdownMenu.Label>
+								<DropdownMenu.Label className={menuLabelClass}>{t("Folders")}</DropdownMenu.Label>
 								{folders.map((item) => (
 									<DropdownMenu.Item
 										key={item.id}
@@ -243,14 +257,20 @@ function MailSelectionToolbar({
 					</DropdownMenu.Content>
 				</DropdownMenu.Portal>
 			</DropdownMenu.Root>
-			<Tooltip label="Clear selection" className="max-md:hidden">
-				<Button variant="ghost" size="sm" onClick={onClearSelection} disabled={pending} aria-label="Clear selection">
+			<Tooltip label={t("Clear selection")} className="max-md:hidden">
+				<Button
+					variant="ghost"
+					size="sm"
+					onClick={onClearSelection}
+					disabled={pending}
+					aria-label={t("Clear selection")}
+				>
 					<X className="h-4 w-4" />
 				</Button>
 			</Tooltip>
 			<DropdownMenu.Root>
 				<DropdownMenu.Trigger asChild>
-					<Button variant="ghost" size="sm" className="md:hidden" disabled={pending} aria-label="More actions">
+					<Button variant="ghost" size="sm" className="md:hidden" disabled={pending} aria-label={t("More actions")}>
 						<MoreVertical className="h-4 w-4" />
 					</Button>
 				</DropdownMenu.Trigger>
@@ -280,13 +300,13 @@ function MailSelectionToolbar({
 						{canDeleteForever && (
 							<DropdownMenu.Item className={`${menuItemClass} text-red-600`} onSelect={() => onAction("delete")}>
 								<Trash2 className="h-4 w-4" />
-								Delete forever
+								{t("Delete forever")}
 							</DropdownMenu.Item>
 						)}
 						<DropdownMenu.Separator className="my-1 h-px bg-neutral-100" />
 						<DropdownMenu.Item className={menuItemClass} onSelect={onClearSelection}>
 							<X className="h-4 w-4" />
-							Clear selection
+							{t("Clear selection")}
 						</DropdownMenu.Item>
 					</DropdownMenu.Content>
 				</DropdownMenu.Portal>

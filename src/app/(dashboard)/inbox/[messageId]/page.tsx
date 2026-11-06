@@ -57,8 +57,10 @@ import { useMessageContentScroll } from "./use-message-content-scroll";
 import { SummarizeButton, ThreadSummaryCard } from "@/components/messages/thread-summary-card";
 import { useThreadSummary } from "@/components/messages/use-thread-summary";
 import { showsCurrentSummary } from "@/components/messages/thread-summary-utils";
+import { useT } from "@/lib/i18n/use-t";
 
 export default function MessageDetailPage() {
+	const t = useT();
 	const params = useParams<{ messageId: string }>();
 	const { selectedMailbox, mailboxes } = useSelectedMailbox();
 	const messageId = params.messageId;
@@ -135,7 +137,7 @@ export default function MessageDetailPage() {
 	}
 
 	if (!data?.message || !readerBody) {
-		return <p className="px-6 py-4 text-sm text-neutral-500">{data?.error ?? "Message not found"}</p>;
+		return <p className="px-6 py-4 text-sm text-neutral-500">{data?.error ?? t("Message not found")}</p>;
 	}
 
 	const { message, body, attachments = [] } = data;
@@ -292,7 +294,7 @@ export default function MessageDetailPage() {
 										</span>
 									</p>
 									<p className="text-xs text-neutral-500">
-										to{" "}
+										{t("to")}{" "}
 										<RecipientList
 											entries={toEntries}
 											mailboxId={message.mailboxId}
@@ -301,7 +303,7 @@ export default function MessageDetailPage() {
 									</p>
 									{ccEntries.length > 0 && (
 										<p className="text-xs text-neutral-500">
-											cc{" "}
+											{t("cc")}{" "}
 											<RecipientList
 												entries={ccEntries}
 												mailboxId={message.mailboxId}
@@ -311,7 +313,7 @@ export default function MessageDetailPage() {
 									)}
 									{bccEntries.length > 0 && (
 										<p className="text-xs text-neutral-500">
-											bcc{" "}
+											{t("bcc")}{" "}
 											<RecipientList
 												entries={bccEntries}
 												mailboxId={message.mailboxId}
@@ -376,7 +378,7 @@ export default function MessageDetailPage() {
 						{cloudAttachmentResult.attachments.length > 0 && (
 							<section className="mt-6">
 								<h2 className="mb-2 text-sm text-neutral-500">
-									Cloud files ({cloudAttachmentResult.attachments.length})
+									{t("Cloud files ({count})", { count: cloudAttachmentResult.attachments.length })}
 								</h2>
 								<div className="grid gap-2 sm:grid-cols-2">
 									{cloudAttachmentResult.attachments.map((attachment) => (
@@ -392,10 +394,12 @@ export default function MessageDetailPage() {
 												<span className="block truncate text-sm font-medium text-neutral-900">
 													{attachment.filename}
 												</span>
-												<span className="block text-xs text-neutral-500">Open from {attachment.provider}</span>
+												<span className="block text-xs text-neutral-500">
+													{t("Open from {provider}", { provider: attachment.provider })}
+												</span>
 											</span>
 											<ExternalLink className="h-4 w-4 shrink-0 text-neutral-400" aria-hidden="true" />
-											<span className="sr-only"> (opens in a new tab)</span>
+											<span className="sr-only"> {t("(opens in a new tab)")}</span>
 										</a>
 									))}
 								</div>
@@ -403,7 +407,9 @@ export default function MessageDetailPage() {
 						)}
 						{attachments.length > 0 && (
 							<section className="mt-6">
-								<h2 className="mb-2 text-sm text-neutral-500">Attachments ({attachments.length})</h2>
+								<h2 className="mb-2 text-sm text-neutral-500">
+									{t("Attachments ({count})", { count: attachments.length })}
+								</h2>
 								<div className="flex flex-wrap gap-2">
 									{attachments.map((attachment) => (
 										<MessageAttachmentCard

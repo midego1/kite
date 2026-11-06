@@ -9,6 +9,7 @@ import type { MessageCounts } from "@/hooks/types";
 import { FolderNavItem } from "./folders/folder-nav-item";
 import { ReorderableList } from "./reorderable-list";
 import type { FolderTarget } from "./use-all-mailboxes-nav";
+import { useT } from "@/lib/i18n/use-t";
 
 /**
  * User folders in the All mailboxes view: each mailbox's folders under its name, each group in its
@@ -21,6 +22,7 @@ export function AllMailboxesFolders({
 	customFolderCounts: MessageCounts["customFolders"];
 	minimal: boolean;
 }) {
+	const t = useT();
 	const { viewMailboxes } = useSelectedMailbox();
 	const foldersByMailbox = useFoldersByMailbox(viewMailboxes.map((mailbox) => mailbox.id));
 	const groups = viewMailboxes
@@ -30,14 +32,14 @@ export function AllMailboxesFolders({
 	if (groups.length === 0) {
 		return minimal ? null : (
 			<div className="mx-6 rounded-lg border border-dashed border-neutral-200 px-3 py-3 text-xs text-neutral-500">
-				No folders yet
+				{t("No folders yet")}
 			</div>
 		);
 	}
 	return (
 		<>
 			{groups.map(({ mailbox, folders }) => (
-				<div key={mailbox.id} role="group" aria-label={`${getMailboxName(mailbox)} folders`}>
+				<div key={mailbox.id} role="group" aria-label={t("{mailbox} folders", { mailbox: getMailboxName(mailbox) })}>
 					{!minimal && (
 						<p className="truncate px-6 pb-0.5 pt-2 text-xs font-medium text-neutral-500">{getMailboxName(mailbox)}</p>
 					)}
@@ -68,10 +70,11 @@ export function AllMailboxesFolders({
 
 /** The create-folder dialog's mailbox picker, shown in All mailboxes only. */
 export function FolderMailboxField({ target }: { target: FolderTarget }) {
+	const t = useT();
 	if (target.choices.length === 0) return null;
 	return (
 		<div className="space-y-2">
-			<Label htmlFor="folderMailbox">Mailbox</Label>
+			<Label htmlFor="folderMailbox">{t("Mailbox")}</Label>
 			<Select id="folderMailbox" value={target.mailboxId ?? ""} onChange={(event) => target.choose(event.target.value)}>
 				{target.choices.map((mailbox) => (
 					<option key={mailbox.id} value={mailbox.id}>

@@ -12,8 +12,10 @@ import {
 	CommandCenterEmpty,
 	CommandCenterPill,
 } from "./command-center-card";
+import { useT } from "@/lib/i18n/use-t";
+import { msg } from "@/lib/i18n/translator";
 
-const CONNECTED_ACCOUNTS = { label: "Connected accounts", href: "/settings/connected-accounts" };
+const CONNECTED_ACCOUNTS = { label: msg("Connected accounts"), href: "/settings/connected-accounts" };
 
 /** The mark before an account: a check when it syncs, a warning when it needs the owner, a dash when it is paused or off. */
 const MARK_ICON: Record<CommandCenterTone, LucideIcon> = {
@@ -27,11 +29,12 @@ const MARK_ICON: Record<CommandCenterTone, LucideIcon> = {
  * other one with a pill saying when it last synced; an offer to connect one when there is none.
  */
 export function CommandCenterAccountsCard({ accounts }: { accounts: AccountLine[] }) {
+	const t = useT();
 	return (
-		<CommandCenterCard title="Accounts" icon={Link2} action={CONNECTED_ACCOUNTS} testId="command-center-accounts">
+		<CommandCenterCard title={t("Accounts")} icon={Link2} action={CONNECTED_ACCOUNTS} testId="command-center-accounts">
 			{accounts.length === 0 ? (
-				<CommandCenterEmpty icon={Link2} action={{ label: "Connect an account", href: CONNECTED_ACCOUNTS.href }}>
-					Connect Gmail, iCloud or another account to read it here.
+				<CommandCenterEmpty icon={Link2} action={{ label: t("Connect an account"), href: CONNECTED_ACCOUNTS.href }}>
+					{t("Connect Gmail, iCloud or another account to read it here.")}
 				</CommandCenterEmpty>
 			) : (
 				<ul className={COMMAND_CENTER_LIST_CLASS}>

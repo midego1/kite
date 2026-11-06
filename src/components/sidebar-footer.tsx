@@ -11,8 +11,10 @@ import type { ReactNode } from "react";
 import { Keyboard, LifeBuoy, Palette, Settings, type LucideIcon } from "lucide-react";
 import { SOURCE_CODE_URL } from "@/lib/source-code";
 import { useStylePreference } from "./use-style-preference";
+import { useT } from "@/lib/i18n/use-t";
 
 function StyleToggle() {
+	const t = useT();
 	const [style, saveStyle] = useStylePreference();
 	const lavender = style === "lavender";
 	return (
@@ -25,7 +27,7 @@ function StyleToggle() {
 		>
 			<span className="flex items-center gap-1.5">
 				<Palette className="w-3.5 h-3.5 text-neutral-400" />
-				Kite classic
+				{t("Kite classic")}
 			</span>
 			<span
 				aria-hidden
@@ -62,6 +64,7 @@ function FooterLink({ href, icon: Icon, label }: { href: string; icon: LucideIco
 
 /** Settings and Support pinned under the menu, as in Zero, then the style switch, shortcuts and version. */
 export function SidebarFooter({ extra, notices }: { extra?: ReactNode; notices?: ReactNode }) {
+	const t = useT();
 	const { minimal } = useSidebar();
 	const { openHelpModal, shortcutsEnabled, shortcutsPreferenceLoading } = useShortcuts();
 	const [changelogOpen, setChangelogOpen] = useState(false);
@@ -79,8 +82,8 @@ export function SidebarFooter({ extra, notices }: { extra?: ReactNode; notices?:
 	return (
 		<div className="flex flex-col gap-px pt-2">
 			{notices}
-			<FooterLink href="/settings/account" icon={Settings} label="Settings" />
-			<FooterLink href={`${SOURCE_CODE_URL}/issues`} icon={LifeBuoy} label="Support" />
+			<FooterLink href="/settings/account" icon={Settings} label={t("Settings")} />
+			<FooterLink href={`${SOURCE_CODE_URL}/issues`} icon={LifeBuoy} label={t("Support")} />
 			{extra}
 			<div className="mt-2 flex flex-col gap-1">
 				<StyleToggle />
@@ -92,7 +95,7 @@ export function SidebarFooter({ extra, notices }: { extra?: ReactNode; notices?:
 					>
 						<span className="flex items-center gap-1.5">
 							<Keyboard className="w-3.5 h-3.5 text-neutral-400" />
-							Shortcuts
+							{t("Shortcuts")}
 						</span>
 						<kbd className="px-1.5 py-0.5 font-mono text-[10px] bg-white border border-neutral-200 rounded text-neutral-500 shadow-2xs">
 							?
@@ -103,16 +106,16 @@ export function SidebarFooter({ extra, notices }: { extra?: ReactNode; notices?:
 					<button
 						type="button"
 						onClick={() => setChangelogOpen(true)}
-						title="What's new in Kite"
+						title={t("What's new in Kite")}
 						className="rounded text-start text-neutral-500 underline-offset-2 hover:underline hover:text-neutral-700"
 					>
-						Updated {updatedLabel ?? "…"}
+						{t("Updated {when}", { when: updatedLabel ?? "…" })}
 					</button>
 					{" · Kite v"}
 					{BUILD_VERSION_LABEL}
 					{" · "}
 					<a href={SOURCE_CODE_URL} target="_blank" className="hover:underline text-neutral-500" rel="noreferrer">
-						Source code
+						{t("Source code")}
 					</a>
 				</p>
 			</div>

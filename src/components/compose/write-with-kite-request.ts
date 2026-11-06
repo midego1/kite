@@ -1,6 +1,7 @@
 import { readAiErrorBody, type AiErrorBody } from "@/lib/agent/ai-error-utils";
 import { authFetch } from "@/lib/auth/client";
 import { parseComposeEvents } from "./write-with-kite-utils";
+import { t } from "@/lib/i18n/translator";
 
 export type ComposeAnswer =
 	{ ok: true; text: string; warnings: string[] } | { ok: false; message: string; error?: AiErrorBody | null };
@@ -22,12 +23,16 @@ export async function streamCompose(
 	});
 	if (!response.ok || !response.body) {
 		const data = (await response.json().catch(() => ({}))) as { error?: string };
-		return { ok: false, message: data.error || "Kite could not write this. Try again.", error: readAiErrorBody(data) };
+		return {
+			ok: false,
+			message: data.error || t("Kite could not write this. Try again."),
+			error: readAiErrorBody(data),
+		};
 	}
 	const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
 	let buffer = "";
 	let preview = "";
-	let answer: ComposeAnswer = { ok: false, message: "Kite stopped before it finished. Try again." };
+	let answer: ComposeAnswer = { ok: false, message: t("Kite stopped before it finished. Try again.") };
 	for (;;) {
 		const { value, done } = await reader.read();
 		if (done) return answer;

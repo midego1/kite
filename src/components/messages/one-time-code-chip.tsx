@@ -3,6 +3,7 @@
 import clsx from "clsx";
 import { requestCopyCode } from "@/components/copy-code-host-utils";
 import type { OneTimeCodeChipProps } from "./one-time-code-chip-types";
+import { useT } from "@/lib/i18n/use-t";
 
 /**
  * Small copy-code chip for the message reader: shows the one-time code the
@@ -10,6 +11,7 @@ import type { OneTimeCodeChipProps } from "./one-time-code-chip-types";
  * on request. Renders nothing without a code.
  */
 export function OneTimeCodeChip({ code, alignWide }: OneTimeCodeChipProps) {
+	const t = useT();
 	if (!code) return null;
 	return (
 		<div className={clsx(alignWide ? "sm:ps-16" : "sm:ps-10", "flex items-center gap-2 px-3 pb-2 sm:px-6")}>
@@ -21,7 +23,7 @@ export function OneTimeCodeChip({ code, alignWide }: OneTimeCodeChipProps) {
 				onClick={() => requestCopyCode(code)}
 				className="rounded-full border border-neutral-200 bg-white px-3 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-100"
 			>
-				Copy code
+				{t("Copy code")}
 			</button>
 		</div>
 	);

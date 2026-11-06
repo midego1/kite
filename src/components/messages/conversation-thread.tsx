@@ -30,6 +30,7 @@ import clsx from "clsx";
 import { LinkifiedText } from "./linkified-text";
 import { useReaderBody } from "./use-reader-body";
 import { SuggestionCard } from "../agent/suggestion-card";
+import { useT } from "@/lib/i18n/use-t";
 
 /**
  * The other messages in a conversation, ordered oldest to newest and collapsed
@@ -52,6 +53,7 @@ export function ConversationThread({
 	remoteImagesShownIds,
 	onShowRemoteImages,
 }: ConversationThreadProps) {
+	const t = useT();
 	const slice = partitionThread(messages, currentMessageId, position, latestMessagesFirst);
 	// The reader mounts one thread above the message and one below; only the upper one carries the card.
 	const card =
@@ -68,14 +70,17 @@ export function ConversationThread({
 	const lastMessage = slice.at(-1)!;
 	const middleMessages = slice.slice(1, -1);
 	const collapsed = !expandedAll && middleMessages.length > 0;
-	const collapsedLabel = `${middleMessages.length} ${position === "before" ? "older" : "newer"} message${middleMessages.length === 1 ? "" : "s"}`;
+	const collapsedLabel =
+		position === "before"
+			? t("{count, plural, one {# older message} other {# older messages}}", { count: middleMessages.length })
+			: t("{count, plural, one {# newer message} other {# newer messages}}", { count: middleMessages.length });
 
 	return (
 		<>
 			{card}
 			<section
 				aria-label={
-					position === "before" ? "Earlier messages in this conversation" : "Later messages in this conversation"
+					position === "before" ? t("Earlier messages in this conversation") : t("Later messages in this conversation")
 				}
 				className={cn(position === (latestMessagesFirst ? "before" : "after") ? "pb-6" : "")}
 			>
@@ -99,8 +104,8 @@ export function ConversationThread({
 								<button
 									type="button"
 									onClick={() => onExpandedAllChange(true)}
-									aria-label={`Expand ${collapsedLabel}`}
-									title={`Expand ${collapsedLabel}`}
+									aria-label={t("Expand {collapsedLabel}", { collapsedLabel })}
+									title={t("Expand {collapsedLabel}", { collapsedLabel })}
 									className="inline-flex h-6 w-6 items-center justify-center rounded-full text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
 								>
 									<ChevronsUpDown className="h-4 w-4" />
@@ -156,6 +161,7 @@ function ThreadAttachmentChip({
 	attachment: MessageAttachment;
 	onReview: (attachment: MessageAttachment) => void;
 }) {
+	const t = useT();
 	const visual = getAttachmentVisual(attachment);
 	const Icon = visual.icon;
 	const iconColor = visual.iconClassName
@@ -176,7 +182,7 @@ function ThreadAttachmentChip({
 			<button
 				type="button"
 				onClick={() => onReview(attachment)}
-				title={`${attachment.filename} · ${visual.label}`}
+				title={t("{filename} · {label}", { filename: attachment.filename, label: visual.label })}
 				className={className}
 			>
 				{content}
@@ -185,7 +191,7 @@ function ThreadAttachmentChip({
 	return (
 		<a
 			href={`/api/messages/${messageId}/attachments/${attachment.id}`}
-			title={`${attachment.filename} · ${visual.label}`}
+			title={t("{filename} · {label}", { filename: attachment.filename, label: visual.label })}
 			className={className}
 		>
 			{content}
@@ -204,6 +210,7 @@ export function ConversationMessageCard({
 	remoteImagesShown,
 	onShowRemoteImages,
 }: ConversationMessageCardProps) {
+	const t = useT();
 	const [locallyExpanded, setLocallyExpanded] = useState(defaultExpanded);
 	const [locallyRead, setLocallyRead] = useSyncedState(message.read);
 	const [alwaysLoadRemoteImages] = useLoadRemoteImages();
@@ -274,7 +281,7 @@ export function ConversationMessageCard({
 									{expanded && <span className="text-xs ms-1 opacity-50 font-normal">&lt;{senderEmail}&gt;</span>}
 								</span>
 								{expanded && recipients && (
-									<span className="text-xs font-normal text-neutral-500">to {recipients}</span>
+									<span className="text-xs font-normal text-neutral-500">{t("to {recipients}", { recipients })}</span>
 								)}
 							</div>
 							{!expanded && (
@@ -285,7 +292,7 @@ export function ConversationMessageCard({
 										"reading-font block truncate text-start text-[13px]",
 									)}
 								>
-									{message.snippet || "No preview"}
+									{message.snippet || t("No preview")}
 								</span>
 							)}
 						</span>
@@ -295,7 +302,12 @@ export function ConversationMessageCard({
 					>
 						<ViaAccountChip message={message} filter className="font-medium" />
 						{attachments.length > 0 && (
-							<Paperclip className="h-3.5 w-3.5" aria-label={`${attachments.length} attachments`} />
+							<Paperclip
+								className="h-3.5 w-3.5"
+								aria-label={t("{count, plural, one {# attachment} other {# attachments}}", {
+									count: attachments.length,
+								})}
+							/>
 						)}
 						{formatUserDate(message.createdAt, {
 							month: "short",

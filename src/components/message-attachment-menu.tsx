@@ -9,6 +9,7 @@ import { useModules } from "@/components/modules/modules-context";
 import { useSlotEntries } from "@/components/modules/use-slot-entries";
 import { CLIENT_MODULES } from "@/lib/modules/client-data";
 import { listAttachmentSlots } from "@/lib/modules/composer-slot-utils";
+import { useT } from "@/lib/i18n/use-t";
 
 const pickAttachmentSlot = (client: ModuleClient, slotId: string) => client.attachmentSlots?.[slotId];
 
@@ -29,6 +30,7 @@ export function MessageAttachmentMenu({
 	attachmentId,
 	filename,
 }: AttachmentSlotContext & { filename: string }) {
+	const t = useT();
 	const { modules } = useModules();
 	const slots = useMemo(() => listAttachmentSlots(CLIENT_MODULES, modules, "attachment-menu"), [modules]);
 	const [open, setOpen] = useState(false);
@@ -45,7 +47,7 @@ export function MessageAttachmentMenu({
 				<Popover.Trigger asChild>
 					<button
 						type="button"
-						aria-label={`More actions for ${filename}`}
+						aria-label={t("More actions for {filename}", { filename })}
 						className="absolute end-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
 					>
 						<MoreVertical className="h-4 w-4" />
@@ -56,10 +58,10 @@ export function MessageAttachmentMenu({
 						align="end"
 						sideOffset={4}
 						collisionPadding={8}
-						aria-label={`Actions for ${filename}`}
+						aria-label={t("Actions for {filename}", { filename })}
 						className="z-50 w-54 rounded-xl border border-neutral-200 bg-white p-2 shadow-lg"
 					>
-						{ready.length === 0 && <p className="px-3 py-2 text-sm text-neutral-500">Loading…</p>}
+						{ready.length === 0 && <p className="px-3 py-2 text-sm text-neutral-500">{t("Loading…")}</p>}
 						{ready.map(({ slot }) => (
 							<button
 								key={slot.id}

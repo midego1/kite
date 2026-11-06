@@ -16,6 +16,7 @@ import { useSidebar } from "./sidebar-state";
 import { AllMailboxesFilter, AllMailboxesOption } from "./all-mailboxes-option";
 import { ALL_MAILBOXES_LABEL } from "./messages/utils";
 import { documentDirection } from "@/components/interface-direction-utils";
+import { useT } from "@/lib/i18n/use-t";
 
 export function MailboxAvatar({ mailbox, className }: { mailbox: MailboxOption; className?: string }) {
 	const [failed, setFailed] = useState(false);
@@ -65,6 +66,7 @@ function menuAnchor(button: HTMLElement): MenuAnchor {
 
 /** Switches the active mailbox from the top of the sidebar, without opening the account menu. */
 export function SidebarMailboxSwitcher() {
+	const t = useT();
 	const { selectedMailbox, setSelectedMailbox, mailboxes, allMailboxes, setAllMailboxes, viewMailboxes } =
 		useSelectedMailbox();
 	const { minimal } = useSidebar();
@@ -112,15 +114,19 @@ export function SidebarMailboxSwitcher() {
 				onClick={toggleMenu}
 				aria-haspopup="dialog"
 				aria-expanded={open}
-				aria-label={`Switch mailbox, current: ${allMailboxes ? ALL_MAILBOXES_LABEL : getMailboxAddress(selectedMailbox)}`}
+				aria-label={t("Switch mailbox, current: {value}", {
+					value: allMailboxes ? t(ALL_MAILBOXES_LABEL) : getMailboxAddress(selectedMailbox),
+				})}
 				className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-start transition-colors hover:bg-neutral-200/60 max-md:min-h-11"
 			>
 				<span className="min-w-0 flex-1">
 					<span className="block truncate text-[15px] font-medium text-neutral-900">
-						{allMailboxes ? ALL_MAILBOXES_LABEL : getMailboxName(selectedMailbox)}
+						{allMailboxes ? t(ALL_MAILBOXES_LABEL) : getMailboxName(selectedMailbox)}
 					</span>
 					<span className="block truncate text-sm text-neutral-500">
-						{allMailboxes ? `${viewMailboxes.length} mailboxes` : getMailboxAddress(selectedMailbox)}
+						{allMailboxes
+							? t("{count, plural, one {# mailbox} other {# mailboxes}}", { count: viewMailboxes.length })
+							: getMailboxAddress(selectedMailbox)}
 					</span>
 				</span>
 				<ChevronsUpDown className="h-4 w-4 shrink-0 text-neutral-400" />
@@ -137,9 +143,9 @@ export function SidebarMailboxSwitcher() {
 							"z-[200] max-h-[70vh] overflow-y-auto rounded-xl border border-neutral-200 bg-white p-1.5 shadow-xl shadow-neutral-900/15",
 						)}
 						role="dialog"
-						aria-label="Switch mailbox"
+						aria-label={t("Switch mailbox")}
 					>
-						<div role="listbox" aria-label="Mailboxes">
+						<div role="listbox" aria-label={t("Mailboxes")}>
 							<AllMailboxesOption
 								counts={counts.mailboxes}
 								onSelect={() => {
@@ -175,7 +181,7 @@ export function SidebarMailboxSwitcher() {
 											<span className="flex items-center gap-1.5 truncate text-sm font-medium text-neutral-900">
 												{getMailboxName(mailbox)}
 												{mailbox.type === "shared" && (
-													<UsersRound className="h-3.5 w-3.5 shrink-0 text-blue-600" aria-label="Shared inbox" />
+													<UsersRound className="h-3.5 w-3.5 shrink-0 text-blue-600" aria-label={t("Shared inbox")} />
 												)}
 											</span>
 											<span className="block truncate text-xs text-neutral-500">{getMailboxAddress(mailbox)}</span>
@@ -199,7 +205,7 @@ export function SidebarMailboxSwitcher() {
 								className="mt-1 flex items-center gap-2.5 border-t border-neutral-100 px-2 pb-1 pt-2.5 text-sm text-neutral-600 hover:text-neutral-900"
 							>
 								<Settings2 className="h-4 w-4" />
-								Manage mailboxes
+								{t("Manage mailboxes")}
 							</Link>
 						)}
 					</div>,

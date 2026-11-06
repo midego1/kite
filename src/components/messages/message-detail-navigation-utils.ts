@@ -1,6 +1,7 @@
 import type { ShortcutDefinition } from "@/components/shortcuts/types";
 import type { MessageNavigationEntry } from "@/app/api/messages/navigation/types";
 import type { MessageDetailNavigationState } from "./message-detail-navigation-types";
+import { t } from "@/lib/i18n/translator";
 
 const openedUnreadKey = "kite-navigation-opened-unread";
 
@@ -38,7 +39,7 @@ export function getMessageDetailNavigationState(
 /** The reader's j and k, Gmail's keys: j for the older email below in the list, k for the newer one above. */
 export function readerNavigationShortcuts(open: (direction: "older" | "newer") => void): ShortcutDefinition[] {
 	return [
-		{ key: "j", label: "Older email", category: "Navigation", action: () => open("older") },
-		{ key: "k", label: "Newer email", category: "Navigation", action: () => open("newer") },
+		{ key: "j", label: t("Older email"), category: "Navigation", action: () => open("older") },
+		{ key: "k", label: t("Newer email"), category: "Navigation", action: () => open("newer") },
 	];
 }

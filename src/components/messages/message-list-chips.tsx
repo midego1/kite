@@ -7,6 +7,7 @@ import { FilterChip } from "@/components/ui/filter-chip";
 import { Tooltip } from "@/components/ui/tooltip";
 import type { MessageListHeaderProps } from "./message-list-header-types";
 import { hasSearchTerm, toggleSearchTerm, withoutChipTerms, type ChipSearchTerm } from "./message-list-chips-utils";
+import { useT } from "@/lib/i18n/use-t";
 
 type Chip = {
 	key: string;
@@ -23,14 +24,14 @@ function ChipButton({ chip }: { chip: Chip }) {
 			active={chip.active}
 			icon={chip.icon}
 			fillIcon={chip.key === "all"}
-			label={chip.label}
+			label={t(chip.label)}
 			iconOnly={!chip.active}
 			href={chip.href}
 			onClick={chip.onClick}
 			className={chip.active ? "min-w-0 max-w-60 flex-1" : undefined}
 		/>
 	);
-	return chip.active ? control : <Tooltip label={chip.label}>{control}</Tooltip>;
+	return chip.active ? control : <Tooltip label={t(chip.label)}>{control}</Tooltip>;
 }
 
 /**
@@ -43,6 +44,7 @@ export function MessageListChips({
 	filter,
 	screenerVisible,
 }: Pick<MessageListHeaderProps, "config" | "filter"> & { screenerVisible: boolean }) {
+	const t = useT();
 	const { input: query, setQuery } = useMailSearch();
 	const unread = filter?.value === "unread";
 	const term = (value: ChipSearchTerm) => hasSearchTerm(query, value);
@@ -51,7 +53,7 @@ export function MessageListChips({
 	const chips: Chip[] = [
 		{
 			key: "all",
-			label: inbox ? "Primary" : "All mail",
+			label: inbox ? t("Primary") : t("All mail"),
 			icon: Zap,
 			active: !unread && !anyTerm,
 			onClick: () => {
@@ -63,7 +65,7 @@ export function MessageListChips({
 	if (filter)
 		chips.push({
 			key: "unread",
-			label: "Unread",
+			label: t("Unread"),
 			icon: Mail,
 			active: unread,
 			onClick: () => filter.onChange(unread ? "all" : "unread"),
@@ -71,26 +73,26 @@ export function MessageListChips({
 	chips.push(
 		{
 			key: "attachments",
-			label: "Attachments",
+			label: t("Attachments"),
 			icon: Paperclip,
 			active: term("has:attachment"),
 			onClick: () => setQuery(toggleSearchTerm(query, "has:attachment")),
 		},
 		{
 			key: "starred",
-			label: "Starred",
+			label: t("Starred"),
 			icon: Star,
 			active: term("is:starred"),
 			onClick: () => setQuery(toggleSearchTerm(query, "is:starred")),
 		},
 	);
 	if (inbox) {
-		chips.push({ key: "snoozed", label: "Snoozed", icon: Clock, active: false, href: "/snoozed" });
+		chips.push({ key: "snoozed", label: t("Snoozed"), icon: Clock, active: false, href: "/snoozed" });
 		if (screenerVisible)
-			chips.push({ key: "screener", label: "Screener", icon: UserCheck, active: false, href: "/screener" });
+			chips.push({ key: "screener", label: t("Screener"), icon: UserCheck, active: false, href: "/screener" });
 	}
 	return (
-		<div role="group" aria-label="Show" className="flex items-center gap-2">
+		<div role="group" aria-label={t("Show")} className="flex items-center gap-2">
 			{chips.map((chip) => (
 				<ChipButton key={chip.key} chip={chip} />
 			))}

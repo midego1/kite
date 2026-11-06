@@ -1,3 +1,4 @@
+import { msg } from "@/lib/i18n/translator";
 import type { ClientModuleData } from "../module-types";
 
 /** Why a `subscription` card was offered, by reason code; the manifest's reason texts include these. */
@@ -40,7 +41,7 @@ export const financeClientData: ClientModuleData = {
 	nav: [
 		{
 			id: "finance.subscriptions",
-			label: "Subscriptions",
+			label: msg("Subscriptions"),
 			href: "/finance",
 			icon: "WalletCards",
 			placement: "sidebar",

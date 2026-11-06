@@ -1,13 +1,14 @@
 import { authFetch } from "@/lib/auth/client";
 import type { ComposeAttachment, ComposeDraft, ComposeThreading, DraftResponse } from "./types";
 import { isolateDirection } from "@/lib/bidi-utils";
+import { t } from "@/lib/i18n/translator";
 
 export async function fetchDraft(draftId: string): Promise<ComposeDraft> {
 	const res = await authFetch(`/api/drafts/${draftId}`);
 	const json = (await res.json()) as DraftResponse;
 
 	if (!res.ok || !json.draft) {
-		throw new Error(json.error ?? "Failed to load draft");
+		throw new Error(json.error ?? t("Failed to load draft"));
 	}
 
 	return json.draft;

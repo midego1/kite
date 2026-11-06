@@ -14,6 +14,8 @@ import {
 	WalletCards,
 	type LucideIcon,
 } from "lucide-react";
+import { msg } from "@/lib/i18n/translator";
+import { useT } from "@/lib/i18n/use-t";
 import { cn } from "@/lib/utils";
 import { useMessageCounts } from "@/hooks/use-message-counts";
 import { useOpenSuggestions } from "@/hooks/use-open-suggestions";
@@ -28,15 +30,15 @@ import { hidesMobileTabBar, mobileActiveTabId, mobilePrimaryTabIds, type MobileT
 type TabMeta = { label: string; name?: string; icon: LucideIcon; href?: string };
 
 const TAB_META: Record<MobileTabId, TabMeta> = {
-	mail: { label: "Mail", icon: Inbox, href: "/inbox" },
-	"for-you": { label: "For you", icon: Sparkles, href: "/for-you" },
-	calendar: { label: "Calendar", icon: CalendarDays, href: "/calendar" },
+	mail: { label: msg("Mail"), icon: Inbox, href: "/inbox" },
+	"for-you": { label: msg("For you"), icon: Sparkles, href: "/for-you" },
+	calendar: { label: msg("Calendar"), icon: CalendarDays, href: "/calendar" },
 	drive: { label: "Drive", icon: HardDrive, href: "/drive" },
 	finance: { label: "Money", name: "Money Watch", icon: WalletCards, href: "/finance" },
-	starred: { label: "Starred", icon: Star, href: "/starred" },
-	sent: { label: "Sent", icon: Send, href: "/sent" },
-	drafts: { label: "Drafts", icon: FileText, href: "/drafts" },
-	more: { label: "More", icon: Menu },
+	starred: { label: msg("Starred"), icon: Star, href: "/starred" },
+	sent: { label: msg("Sent"), icon: Send, href: "/sent" },
+	drafts: { label: msg("Drafts"), icon: FileText, href: "/drafts" },
+	more: { label: msg("More"), icon: Menu },
 };
 
 /**
@@ -45,6 +47,7 @@ const TAB_META: Record<MobileTabId, TabMeta> = {
  * hide it, because they keep their own Back button and need the room (unless an unfolded screen still shows the list beside the reader). From `md` up the sidebar takes over.
  */
 export function MobileTabBar() {
+	const t = useT();
 	const pathname = usePathname();
 	const { mobile, mobileOpen, toggle } = useSidebar();
 	const { modules } = useModules();
@@ -64,7 +67,7 @@ export function MobileTabBar() {
 
 	return (
 		<nav
-			aria-label="Primary"
+			aria-label={t("Primary")}
 			className="shrink-0 border-t border-neutral-200 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md md:hidden"
 		>
 			<div className="mx-auto flex h-[3.75rem] w-full max-w-lg items-stretch gap-0.5 px-1">
@@ -96,7 +99,7 @@ export function MobileTabBar() {
 									</span>
 								)}
 							</span>
-							<span className="max-w-full truncate">{meta.label}</span>
+							<span className="max-w-full truncate">{t(meta.label)}</span>
 							{badge > 0 && (
 								<span className="sr-only">
 									, {badge} {id === "for-you" ? "open suggestions" : "unread"}
@@ -111,7 +114,7 @@ export function MobileTabBar() {
 								key={id}
 								type="button"
 								onClick={toggle}
-								aria-label="More navigation"
+								aria-label={t("More navigation")}
 								aria-haspopup="dialog"
 								aria-expanded={mobileOpen}
 								className={className}

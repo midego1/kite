@@ -34,6 +34,7 @@ import { LIST_HEIGHT, LIST_WIDTH, foldHingeStyle, foldListBounds, useFoldSplit }
 import { getSelectionToolbarFolder } from "./utils";
 import type { BulkSelectionAction, MessageListVisibility, MessageSplitLayoutProps, SelectedMessage } from "./types";
 import { BootStep } from "@/components/boot-step";
+import { useT } from "@/lib/i18n/use-t";
 
 // The list and the reader are separate rounded panels on the page background, a few pixels apart.
 const PANEL_CLASS = "rounded-xl border border-neutral-200 shadow-xs";
@@ -93,6 +94,7 @@ function useUpdateReader(
  * message is opened.
  */
 export function MessageSplitLayout({ children, config }: MessageSplitLayoutProps) {
+	const t = useT();
 	const pathname = usePathname();
 	const [selectedMessages, setSelectedMessages] = useState<SelectedMessage[]>([]);
 	const [listWidth, setListWidth] = useState(LIST_WIDTH.fallback);
@@ -240,7 +242,7 @@ export function MessageSplitLayout({ children, config }: MessageSplitLayoutProps
 		singleColumn: !split,
 		stacked: below,
 		backHref: config.hrefPrefix,
-		backLabel: config.title,
+		backLabel: folderTitle(config),
 	};
 
 	const detail = (
@@ -340,7 +342,7 @@ export function MessageSplitLayout({ children, config }: MessageSplitLayoutProps
 					</aside>
 				</ResizablePanel>
 				<ResizableHandle
-					aria-label={below ? "Resize message list height" : "Resize message list"}
+					aria-label={below ? t("Resize message list height") : t("Resize message list")}
 					// A hidden list has no handle: it is not a tab stop, and arrow keys cannot drag the list back open.
 					disabled={handleOff}
 					aria-hidden={handleOff ? true : undefined}

@@ -1,3 +1,5 @@
+import { msg } from "@/lib/i18n/translator";
+
 /** Undo windows a user can pick for composer sends; 0 turns undo off. */
 export const UNDO_SEND_SECONDS_OPTIONS = [0, 5, 10, 20, 30] as const;
 
@@ -10,7 +12,7 @@ export function isUndoSendSeconds(value: unknown): value is UndoSendSeconds {
 /** How far in the past a requested send time may be before it is refused, to absorb clock skew. */
 const PAST_SCHEDULE_TOLERANCE_MS = 60_000;
 
-export const PAST_SCHEDULE_MESSAGE = "That send time has already passed. Pick a later time.";
+export const PAST_SCHEDULE_MESSAGE = msg("That send time has already passed. Pick a later time.");
 
 /**
  * Whether a requested send time has already passed. The outbound queue sends a

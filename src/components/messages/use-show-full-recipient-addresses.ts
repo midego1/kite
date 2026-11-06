@@ -5,9 +5,11 @@ import {
 	loadShowFullRecipientAddresses,
 	updateShowFullRecipientAddresses,
 } from "./use-show-full-recipient-addresses-utils";
+import { useT } from "@/lib/i18n/use-t";
 
 /** The signed-in user's choice for To, Cc, and Bcc. Default is the mailbox only. */
 export function useShowFullRecipientAddresses() {
+	const t = useT();
 	const [enabled, setEnabledState] = useState(false);
 	const [isLoading, setIsLoading] = useState(true);
 	const [error, setError] = useState<string | null>(null);
@@ -20,7 +22,7 @@ export function useShowFullRecipientAddresses() {
 			})
 			.catch((loadError) => {
 				if (cancelled) return;
-				setError(loadError instanceof Error ? loadError.message : "Failed to load recipient address settings");
+				setError(loadError instanceof Error ? loadError.message : t("Failed to load recipient address settings"));
 			})
 			.finally(() => {
 				if (!cancelled) setIsLoading(false);
@@ -40,7 +42,7 @@ export function useShowFullRecipientAddresses() {
 			} catch (updateError) {
 				setEnabledState(previous);
 				const message =
-					updateError instanceof Error ? updateError.message : "Failed to update recipient address settings";
+					updateError instanceof Error ? updateError.message : t("Failed to update recipient address settings");
 				setError(message);
 				throw new Error(message);
 			}

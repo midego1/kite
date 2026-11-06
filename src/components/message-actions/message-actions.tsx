@@ -54,6 +54,7 @@ import {
 	runSingleMessageAction,
 } from "./utils";
 import { requestConfirmation } from "@/components/ui/confirm-dialog-utils";
+import { useT } from "@/lib/i18n/use-t";
 
 export function MessageActions({
 	messageId,
@@ -73,6 +74,7 @@ export function MessageActions({
 	onSummarizeMessage,
 	print,
 }: MessageActionsProps) {
+	const t = useT();
 	const router = useRouter();
 	const isMobile = useIsMobile();
 	const { shortcutsEnabled } = useShortcuts();
@@ -119,9 +121,9 @@ export function MessageActions({
 	const deleteForever = useCallback(async () => {
 		if (
 			!(await requestConfirmation({
-				title: "Delete forever?",
+				title: t("Delete forever?"),
 				description: getPermanentDeleteConfirmText(1),
-				confirmLabel: "Delete forever",
+				confirmLabel: t("Delete forever"),
 			}))
 		)
 			return;
@@ -132,12 +134,12 @@ export function MessageActions({
 			await runSingleMessageAction(messageId, "delete");
 			leaveReader();
 		} catch (deleteError) {
-			setError(deleteError instanceof PartialDeleteError ? deleteError.message : "Could not delete message");
+			setError(deleteError instanceof PartialDeleteError ? deleteError.message : t("Could not delete message"));
 			setPendingAction(null);
 		}
 	}, [messageId, leaveReader]);
 	const onTrashClick = () => (canDeleteForever ? void deleteForever() : void runAction("trash"));
-	const trashLabel = canDeleteForever ? "Delete forever" : "Move to trash";
+	const trashLabel = canDeleteForever ? t("Delete forever") : t("Move to trash");
 
 	const replyActions = useMessageReply({
 		mailboxId,
@@ -210,7 +212,7 @@ export function MessageActions({
 			await runSingleMessageAction(messageId, "trash", undefined, rowMessageIds(messageId));
 			leaveReader();
 		} catch (blockError) {
-			setError(blockError instanceof Error ? blockError.message : "Could not block contact");
+			setError(blockError instanceof Error ? blockError.message : t("Could not block contact"));
 		} finally {
 			setPendingAction(null);
 		}
@@ -238,7 +240,7 @@ export function MessageActions({
 						type="button"
 						variant="ghost"
 						size="roundedSM"
-						aria-label="Reply"
+						aria-label={t("Reply")}
 						disabled={disabled}
 						onClick={() => handleReply("reply")}
 					>
@@ -256,7 +258,7 @@ export function MessageActions({
 					<Button
 						variant="ghost"
 						size="roundedSM"
-						aria-label="Report spam"
+						aria-label={t("Report spam")}
 						disabled={manageDisabled || status === "spam" || direction !== "inbound"}
 						onClick={() => runAction("spam")}
 					>
@@ -277,14 +279,14 @@ export function MessageActions({
 							onClick={() => handleReply("replyAll")}
 						>
 							<ReplyAll size={iconSize} className="rtl:-scale-x-100" />
-							Reply all
+							{t("Reply all")}
 						</Button>
 					)}
-					<Tooltip label={shortcutsEnabled ? "Archive (e)" : "Archive"}>
+					<Tooltip label={shortcutsEnabled ? t("Archive (e)") : t("Archive")}>
 						<Button
 							variant="ghost"
 							size="roundedSM"
-							aria-label={shortcutsEnabled ? "Archive (e)" : "Archive"}
+							aria-label={shortcutsEnabled ? t("Archive (e)") : t("Archive")}
 							disabled={manageDisabled || status === "archived"}
 							onClick={() => runAction("archive")}
 						>
@@ -304,22 +306,22 @@ export function MessageActions({
 						iconSize={iconSize}
 						onAction={(action, folderId) => void runAction(action, folderId)}
 					/>
-					<Tooltip label={shortcutsEnabled ? "Report spam (!)" : "Report spam"}>
+					<Tooltip label={shortcutsEnabled ? t("Report spam (!)") : t("Report spam")}>
 						<Button
 							variant="ghost"
 							size="roundedSM"
-							aria-label={shortcutsEnabled ? "Report spam (!)" : "Report spam"}
+							aria-label={shortcutsEnabled ? t("Report spam (!)") : t("Report spam")}
 							disabled={manageDisabled || status === "spam" || direction !== "inbound"}
 							onClick={() => runAction("spam")}
 						>
 							<ShieldAlert size={iconSize} />
 						</Button>
 					</Tooltip>
-					<Tooltip label={read ? "Mark as unread" : "Mark as read"}>
+					<Tooltip label={read ? t("Mark as unread") : t("Mark as read")}>
 						<Button
 							variant="ghost"
 							size="roundedSM"
-							aria-label={read ? "Mark as unread" : "Mark as read"}
+							aria-label={read ? t("Mark as unread") : t("Mark as read")}
 							disabled={disabled}
 							onClick={() => runAction(markAction)}
 						>
@@ -335,9 +337,9 @@ export function MessageActions({
 					setMoreOpen(open);
 				}}
 			>
-				<Tooltip label={moreOpen ? null : "More actions"}>
+				<Tooltip label={moreOpen ? null : t("More actions")}>
 					<Popover.Trigger asChild>
-						<Button type="button" variant="ghost" size="roundedSM" aria-label="More actions" disabled={disabled}>
+						<Button type="button" variant="ghost" size="roundedSM" aria-label={t("More actions")} disabled={disabled}>
 							<MoreVertical size={iconSize} />
 						</Button>
 					</Popover.Trigger>
@@ -347,7 +349,7 @@ export function MessageActions({
 						align="end"
 						sideOffset={4}
 						collisionPadding={8}
-						aria-label="More actions"
+						aria-label={t("More actions")}
 						className="z-50 max-h-(--radix-popover-content-available-height) w-54 overflow-y-auto rounded-xl border border-neutral-200 bg-white p-2 shadow-lg has-[[data-snooze-expanded=true]]:w-72"
 					>
 						{isMobile && (
@@ -359,7 +361,7 @@ export function MessageActions({
 									onClick={() => void runAction("archive")}
 								>
 									<Archive className="h-4 w-4" />
-									Archive
+									{t("Archive")}
 								</button>
 								{canReplyAll && (
 									<button
@@ -371,7 +373,7 @@ export function MessageActions({
 										}}
 									>
 										<ReplyAll className="h-4 w-4 rtl:-scale-x-100" />
-										Reply all
+										{t("Reply all")}
 									</button>
 								)}
 								{canForward && (
@@ -384,7 +386,7 @@ export function MessageActions({
 										}}
 									>
 										<Forward className="h-4 w-4 rtl:-scale-x-100" />
-										Forward
+										{t("Forward")}
 									</button>
 								)}
 								<button
@@ -393,7 +395,7 @@ export function MessageActions({
 									onClick={() => void runAction(markAction)}
 								>
 									{read ? <Mail className="h-4 w-4" /> : <MailOpen className="h-4 w-4" />}
-									{read ? "Mark as unread" : "Mark as read"}
+									{read ? t("Mark as unread") : t("Mark as read")}
 								</button>
 								<hr className="my-1 border-neutral-100" />
 							</>
@@ -415,7 +417,7 @@ export function MessageActions({
 									onClick={() => void onUnsubscribe()}
 								>
 									<BellOff className="h-4 w-4 shrink-0" />
-									Unsubscribe
+									{t("Unsubscribe")}
 								</button>
 								<button
 									type="button"
@@ -423,7 +425,7 @@ export function MessageActions({
 									onClick={() => void onBlockContact()}
 								>
 									<Ban className="h-4 w-4" />
-									Block contact
+									{t("Block contact")}
 								</button>
 								<ReportPhishingItem onSelect={() => void reportPhishing()} />
 								<hr className="my-1 border-neutral-100" />
@@ -439,7 +441,7 @@ export function MessageActions({
 								}}
 							>
 								<Sparkles className="h-4 w-4" />
-								Summarize this message
+								{t("Summarize this message")}
 							</button>
 						)}
 						<button
@@ -451,12 +453,12 @@ export function MessageActions({
 							}}
 						>
 							<FileCode2 className="h-4 w-4" />
-							Show original
+							{t("Show original")}
 						</button>
 						<PrintMenuItems print={print} onSelect={() => setMoreOpen(false)} />
 						<hr className="my-1 border-neutral-100" />
 						{moduleSlots.items}
-						<p className="mt-1 px-3 pb-1 pt-2 text-sm font-medium text-neutral-500">Move to</p>
+						<p className="mt-1 px-3 pb-1 pt-2 text-sm font-medium text-neutral-500">{t("Move to")}</p>
 						{moveActions.map((item) => (
 							<button
 								key={item.action}
@@ -472,12 +474,12 @@ export function MessageActions({
 				</Popover.Portal>
 			</Popover.Root>
 			{!isMobile && (
-				<Tooltip label={canDeleteForever ? "Delete forever" : shortcutsEnabled ? "Delete (#)" : "Delete"}>
+				<Tooltip label={canDeleteForever ? t("Delete forever") : shortcutsEnabled ? t("Delete (#)") : "Delete"}>
 					<Button
 						variant="ghost"
 						size="roundedSM"
 						data-tone="danger"
-						aria-label={canDeleteForever ? trashLabel : shortcutsEnabled ? "Move to trash (#)" : "Move to trash"}
+						aria-label={canDeleteForever ? trashLabel : shortcutsEnabled ? t("Move to trash (#)") : t("Move to trash")}
 						disabled={manageDisabled}
 						onClick={onTrashClick}
 						className={canDeleteForever ? "text-red-600 hover:text-red-700" : undefined}

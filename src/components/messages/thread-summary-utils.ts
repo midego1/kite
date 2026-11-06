@@ -1,6 +1,7 @@
 import { readAiErrorBody, type AiErrorBody } from "@/lib/agent/ai-error-utils";
 import type { SummaryScope, SummaryState } from "@/lib/agent/summaries/summary-types";
 import { languageName } from "@/lib/agent/summaries/summary-utils";
+import { t } from "@/lib/i18n/translator";
 
 /** The summary route of a message, with the scope and the reader's language. */
 export function summaryUrl(messageId: string, scope: SummaryScope, language: string | null): string {
@@ -21,7 +22,7 @@ export function showsCurrentSummary(state: SummaryState | null, hidden: boolean)
 
 /** "Translate to Dutch": the interface is English, so the language is named in English. */
 export function translateLabel(language: string): string {
-	return `Translate to ${languageName(language)}`;
+	return t("Translate to {languageName}", { languageName: languageName(language) });
 }
 
 /** The summary as plain text for Copy: the overview, then one line per point. */
@@ -33,7 +34,7 @@ export function summaryCopyText(summary: Pick<NonNullable<SummaryState["summary"
 export async function summaryError(response: Response): Promise<{ message: string; failure: AiErrorBody | null }> {
 	const body = (await response.json().catch(() => null)) as { error?: unknown } | null;
 	return {
-		message: typeof body?.error === "string" ? body.error : "Kite could not summarize this. Try again.",
+		message: typeof body?.error === "string" ? body.error : t("Kite could not summarize this. Try again."),
 		failure: readAiErrorBody(body),
 	};
 }

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { formatUserDate } from "@/lib/time/utils";
 import { buildPreviewDocument, formatPreviewAttachments } from "./send-preview-utils";
 import type { SendPreviewProps } from "./send-preview-types";
+import { useT } from "@/lib/i18n/use-t";
 
 export function SendPreview({
 	from,
@@ -18,6 +19,7 @@ export function SendPreview({
 	onCancel,
 	onConfirm,
 }: SendPreviewProps) {
+	const t = useT();
 	const frame = useRef<HTMLIFrameElement | null>(null);
 	const confirmButton = useRef<HTMLButtonElement | null>(null);
 	const [frameHeight, setFrameHeight] = useState(240);
@@ -43,39 +45,39 @@ export function SendPreview({
 			className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4"
 			role="dialog"
 			aria-modal="true"
-			aria-label="Preview email before sending"
+			aria-label={t("Preview email before sending")}
 		>
 			<div className="flex max-h-[calc(100vh-4rem)] w-full max-w-3xl flex-col overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-lg">
 				<div className="border-b border-neutral-100 p-5">
-					<h2 className="text-lg font-semibold">{scheduledAt ? "Preview and schedule" : "Preview and send"}</h2>
+					<h2 className="text-lg font-semibold">{scheduledAt ? t("Preview and schedule") : t("Preview and send")}</h2>
 					<dl className="mt-3 grid grid-cols-[5rem_1fr] gap-x-2 gap-y-1 text-sm break-words">
-						<dt className="text-neutral-500">From</dt>
+						<dt className="text-neutral-500">{t("From")}</dt>
 						<dd>{from}</dd>
-						<dt className="text-neutral-500">To</dt>
+						<dt className="text-neutral-500">{t("To")}</dt>
 						<dd>{to}</dd>
 						{cc && (
 							<>
-								<dt className="text-neutral-500">Cc</dt>
+								<dt className="text-neutral-500">{t("Cc")}</dt>
 								<dd>{cc}</dd>
 							</>
 						)}
 						{bcc && (
 							<>
-								<dt className="text-neutral-500">Bcc</dt>
+								<dt className="text-neutral-500">{t("Bcc")}</dt>
 								<dd>{bcc}</dd>
 							</>
 						)}
-						<dt className="text-neutral-500">Subject</dt>
-						<dd>{subject || <span className="text-neutral-500">(no subject)</span>}</dd>
+						<dt className="text-neutral-500">{t("Subject")}</dt>
+						<dd>{subject || <span className="text-neutral-500">{t("(no subject)")}</span>}</dd>
 						{scheduledAt && (
 							<>
-								<dt className="text-neutral-500">Send at</dt>
+								<dt className="text-neutral-500">{t("Send at")}</dt>
 								<dd>{formatUserDate(scheduledAt.toISOString(), { dateStyle: "medium", timeStyle: "short" })}</dd>
 							</>
 						)}
 						{attachments && (
 							<>
-								<dt className="text-neutral-500">Files</dt>
+								<dt className="text-neutral-500">{t("Files")}</dt>
 								<dd>{attachments}</dd>
 							</>
 						)}
@@ -85,7 +87,7 @@ export function SendPreview({
 					{/* allow-same-origin without allow-scripts: nothing in the message runs, but the frame can be measured. */}
 					<iframe
 						ref={frame}
-						title="Message preview"
+						title={t("Message preview")}
 						sandbox="allow-same-origin"
 						srcDoc={document}
 						onLoad={measure}
@@ -94,10 +96,10 @@ export function SendPreview({
 					/>
 				</div>
 				<div className="flex items-center justify-between gap-3 border-t border-neutral-100 p-4">
-					<p className="text-xs text-neutral-500">Mail clients render messages slightly differently.</p>
+					<p className="text-xs text-neutral-500">{t("Mail clients render messages slightly differently.")}</p>
 					<div className="flex gap-3">
 						<button type="button" className="rounded-lg border px-4 py-2 text-sm" onClick={onCancel} disabled={busy}>
-							Keep editing
+							{t("Keep editing")}
 						</button>
 						<button
 							ref={confirmButton}
@@ -106,7 +108,7 @@ export function SendPreview({
 							onClick={onConfirm}
 							disabled={busy}
 						>
-							{busy ? "Sending…" : scheduledAt ? "Confirm and schedule" : "Confirm and send"}
+							{busy ? t("Sending…") : scheduledAt ? t("Confirm and schedule") : t("Confirm and send")}
 						</button>
 					</div>
 				</div>

@@ -5,6 +5,7 @@ import { ArrowUpRight, Mail, Sparkles, UserCheck, type LucideIcon } from "lucide
 import { cn } from "@/lib/utils";
 import type { StatusChip } from "./command-center-types";
 import { COMMAND_CENTER_ICON_CLASS } from "./command-center-card";
+import { useT } from "@/lib/i18n/use-t";
 
 /** The counts' icons: the sidebar's own for the Screener and For you, an envelope for the folder's unread mail. */
 const CHIP_ICON: Record<StatusChip["id"], LucideIcon> = {
@@ -19,8 +20,9 @@ const CHIP_ICON: Record<StatusChip["id"], LucideIcon> = {
  * say the tile can be clicked. The unread tile keeps its place while the counts load so the row never jumps.
  */
 export function CommandCenterStats({ chips, countsLoading }: { chips: StatusChip[]; countsLoading: boolean }) {
+	const t = useT();
 	return (
-		<div role="group" aria-label="Right now" className="grid grid-cols-[repeat(auto-fit,minmax(11rem,1fr))] gap-3">
+		<div role="group" aria-label={t("Right now")} className="grid grid-cols-[repeat(auto-fit,minmax(11rem,1fr))] gap-3">
 			{chips.map((chip) => {
 				const Icon = CHIP_ICON[chip.id];
 				return (

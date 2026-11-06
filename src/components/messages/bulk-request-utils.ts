@@ -1,4 +1,5 @@
 import type { BulkMessageResponse } from "@/app/api/messages/bulk/types";
+import { t } from "@/lib/i18n/translator";
 
 /** The code the bulk endpoint answers (409, nothing changed) when a Delete or Trash would delete drafts. */
 const DRAFTS_NEED_CONFIRMATION = "DRAFTS_NEED_CONFIRMATION";
@@ -12,9 +13,10 @@ export function draftsNeedingConfirmation(status: number, body: BulkMessageRespo
 /** The question asked before a Delete or Trash deletes drafts, which never go to Trash and can't be restored. */
 export function draftDeletionConfirmation(count: number) {
 	return {
-		title: count === 1 ? "Delete a draft permanently?" : `Delete ${count} drafts permanently?`,
-		description:
+		title: count === 1 ? t("Delete a draft permanently?") : t("Delete {count} drafts permanently?", { count }),
+		description: t(
 			"Drafts don't go to Trash, where everyone with access to the mailbox would see them. Deleted drafts and their attachments can't be restored; the rest of the selection goes to Trash as usual.",
+		),
 		confirmLabel: "Delete",
 	};
 }

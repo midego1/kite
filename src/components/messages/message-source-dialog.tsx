@@ -12,8 +12,10 @@ import {
 	fetchMessageSource,
 	summarizeMessageSource,
 } from "./message-source-utils";
+import { useT } from "@/lib/i18n/use-t";
 
 export function MessageSourceDialog({ messageId, open, onOpenChange }: MessageSourceDialogProps) {
+	const t = useT();
 	const [source, setSource] = useState<string | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [loading, setLoading] = useState(open);
@@ -38,7 +40,7 @@ export function MessageSourceDialog({ messageId, open, onOpenChange }: MessageSo
 			})
 			.catch((reason) => {
 				if (!controller.signal.aborted)
-					setError(reason instanceof Error ? reason.message : "Unable to load original message");
+					setError(reason instanceof Error ? reason.message : t("Unable to load original message"));
 			})
 			.finally(() => {
 				if (!controller.signal.aborted) setLoading(false);
@@ -50,13 +52,15 @@ export function MessageSourceDialog({ messageId, open, onOpenChange }: MessageSo
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent className="max-h-[90vh] w-[min(960px,calc(100vw-32px))] overflow-y-auto">
 				<DialogHeader>
-					<DialogTitle>Original Message</DialogTitle>
-					<DialogDescription>Message details and full source, including headers and MIME body.</DialogDescription>
+					<DialogTitle>{t("Original Message")}</DialogTitle>
+					<DialogDescription>
+						{t("Message details and full source, including headers and MIME body.")}
+					</DialogDescription>
 				</DialogHeader>
 				{loading && (
 					<div className="flex items-center gap-2 text-sm text-neutral-500">
 						<LoaderCircle className="h-4 w-4 animate-spin" />
-						Loading source…
+						{t("Loading source…")}
 					</div>
 				)}
 				{error && <p className="text-sm text-neutral-600">{error}</p>}
@@ -82,7 +86,7 @@ export function MessageSourceDialog({ messageId, open, onOpenChange }: MessageSo
 											label === "Message ID" && value ? "break-all text-green-700" : "break-words text-neutral-900"
 										}
 									>
-										{value || "Unavailable"}
+										{value || t("Unavailable")}
 									</span>
 								</div>
 							))}
@@ -98,12 +102,12 @@ export function MessageSourceDialog({ messageId, open, onOpenChange }: MessageSo
 											{result?.status === "PASS" && (
 												<CheckCircle2
 													className="h-4 w-4 shrink-0 text-green-600"
-													aria-label={`${method.toUpperCase()} passed`}
+													aria-label={t("{method} passed", { method: method.toUpperCase() })}
 												/>
 											)}
 											{result
 												? `${result.status}${result.detail ? ` ${result.detail}` : ""}`
-												: "No result in message headers"}
+												: t("No result in message headers")}
 										</span>
 									</div>
 								);
@@ -118,12 +122,12 @@ export function MessageSourceDialog({ messageId, open, onOpenChange }: MessageSo
 								onClick={() => downloadMessageSource(source, messageId)}
 							>
 								<Download className="h-4 w-4" />
-								Download Original
+								{t("Download Original")}
 							</Button>
 							<div className="flex items-center gap-2">
 								{copyError && (
 									<span role="alert" className="text-xs text-red-600">
-										Could not copy
+										{t("Could not copy")}
 									</span>
 								)}
 								<Button
@@ -142,7 +146,7 @@ export function MessageSourceDialog({ messageId, open, onOpenChange }: MessageSo
 									}}
 								>
 									<Copy className="h-4 w-4" />
-									{copied ? "Copied" : "Copy to clipboard"}
+									{copied ? t("Copied") : t("Copy to clipboard")}
 								</Button>
 							</div>
 						</div>

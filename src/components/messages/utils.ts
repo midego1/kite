@@ -16,18 +16,19 @@ import { offerUndoForMove } from "./undo-utils";
 import { announceMessagesLeftView, bulkActionLeftView } from "./left-view-utils";
 import { requestConfirmation } from "@/components/ui/confirm-dialog-utils";
 import type { EmptyFolderResponse } from "@/app/api/messages/empty/types";
+import { msg, t } from "@/lib/i18n/translator";
 
 export function getMessageParty(message: Message, folder: MessageFolderConfig["folder"], currentAccountName?: string) {
-	if (folder === "drafts") return "Draft";
+	if (folder === "drafts") return t("Draft");
 	if (folder === "sent") return formatRecipientSummary(message.toAddr, message.toContactName);
 	if (message.direction === "outbound" && currentAccountName) return currentAccountName;
-	return message.fromContactName ?? (message.fromAddr ? getEmailDisplayName(message.fromAddr) : "Unknown sender");
+	return message.fromContactName ?? (message.fromAddr ? getEmailDisplayName(message.fromAddr) : t("Unknown sender"));
 }
 
 /** "Maya Chen, +2" for a multi-recipient message, or just the one name. */
 export function formatRecipientSummary(toAddr: string, firstContactName?: string | null): string {
 	const entries = splitEmailAddressList(toAddr);
-	if (entries.length === 0) return "No recipient";
+	if (entries.length === 0) return t("No recipient");
 	const first = firstContactName ?? getEmailDisplayName(entries[0]);
 	return entries.length > 1 ? `${first}, +${entries.length - 1}` : first;
 }
@@ -46,8 +47,8 @@ export function isMessageListRowUnread(message: Message): boolean {
 }
 
 export function getMessagePreview(message: Message, folder: MessageFolderConfig["folder"]) {
-	if (folder === "drafts") return message.snippet || message.toAddr || "No content";
-	return message.snippet || "No preview";
+	if (folder === "drafts") return message.snippet || message.toAddr || t("No content");
+	return message.snippet || t("No preview");
 }
 
 export function formatMessageListTimestamp(createdAt: string): string {
@@ -72,7 +73,7 @@ export function getPageRange(offset: number, count: number, total: number): Page
 }
 
 /** How the All mailboxes view names itself where a single mailbox would show its address. */
-export const ALL_MAILBOXES_LABEL = "All mailboxes";
+export const ALL_MAILBOXES_LABEL = msg("All mailboxes");
 
 export function getMailboxAddress(
 	mailbox: Pick<MailboxOption, "localPart" | "hostname"> | null | undefined,
@@ -81,12 +82,17 @@ export function getMailboxAddress(
 	return `${mailbox.localPart}@${mailbox.hostname}`;
 }
 
+/** A folder's name on screen; a custom folder's is the name its owner typed, which is never translated. */
+export function folderTitle(config: Pick<MessageFolderConfig, "folderId" | "title">): string {
+	return config.folderId ? config.title : t(config.title);
+}
+
 export function getEmailPageTitleCount(total: number, unread: number): number {
 	return unread > 0 ? unread : total;
 }
 
 export function formatEmailPageTitle({ location, total, unread, emailAddress }: EmailPageTitleInput): string {
-	if (location === "Inbox") return unread > 0 ? `Inbox (${unread})` : "Inbox";
+	if (location === t("Inbox")) return unread > 0 ? t("Inbox ({unread})", { unread }) : location;
 	const count = getEmailPageTitleCount(total, unread);
 	const suffix = emailAddress ? ` - ${emailAddress}` : "";
 	return `${location} (${count})${suffix}`;
@@ -109,7 +115,7 @@ export async function runBulkMessageAction(messageIds: string[], action: string,
 	if (!response.ok) {
 		const refused = (await response.json().catch(() => null)) as BulkMessageResponse | null;
 		throw new Error(
-			refused?.code === SEND_PENDING_MOVE_REFUSED ? SEND_PENDING_MOVE_MESSAGE : "Unable to update selected messages",
+			refused?.code === SEND_PENDING_MOVE_REFUSED ? SEND_PENDING_MOVE_MESSAGE : t("Unable to update selected messages"),
 		);
 	}
 	const data = (await response.json().catch(() => null)) as BulkMessageResponse | null;
@@ -134,8 +140,8 @@ export async function runDraftListAction(draftIds: string[], action: string) {
 	if (action === "read" || action === "unread") return runBulkMessageAction(draftIds, action);
 	if (action !== "trash" && action !== "delete") throw new Error("Drafts can only be sent or deleted");
 	const confirmed = await requestConfirmation({
-		title: draftIds.length === 1 ? "Delete this draft?" : `Delete ${draftIds.length} drafts?`,
-		description: "Deleted drafts and their attachments are removed at once. This can't be undone.",
+		title: draftIds.length === 1 ? t("Delete this draft?") : t("Delete {count} drafts?", { count: draftIds.length }),
+		description: t("Deleted drafts and their attachments are removed at once. This can't be undone."),
 		confirmLabel: "Delete",
 	});
 	if (!confirmed) return LIST_ACTION_CANCELLED;
@@ -194,7 +200,7 @@ export async function emptyMessageFolder(
 			body: JSON.stringify({ mailboxId, folder }),
 		});
 		const data = (await response.json().catch(() => ({}))) as EmptyFolderResponse;
-		if (!response.ok) throw new Error(data.error ?? "Unable to empty folder");
+		if (!response.ok) throw new Error(data.error ?? t("Unable to empty folder"));
 		deletedTotal += data.deleted ?? 0;
 		onProgress?.(deletedTotal, deletedTotal + (data.remaining ?? 0));
 		if (!data.remaining || !data.deleted) break;

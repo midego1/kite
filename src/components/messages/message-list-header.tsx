@@ -16,6 +16,7 @@ import { FolderHeading } from "./folder-heading";
 import type { MessageListHeaderProps } from "./message-list-header-types";
 import { MessageListChips } from "./message-list-chips";
 import { getSelectionToolbarFolder } from "./utils";
+import { useT } from "@/lib/i18n/use-t";
 
 function EmptyFolderButton({
 	emptyFolder,
@@ -24,6 +25,7 @@ function EmptyFolderButton({
 	emptyFolder: NonNullable<MessageListHeaderProps["emptyFolder"]>;
 	compact: boolean;
 }) {
+	const t = useT();
 	const label = getEmptyFolderLabel(emptyFolder.folder);
 	return (
 		<Tooltip label={label}>
@@ -37,7 +39,7 @@ function EmptyFolderButton({
 				className="gap-1.5 text-xs font-medium text-red-600 hover:text-red-700"
 			>
 				<Trash2 className="h-4 w-4" />
-				{!compact && <span className="max-md:hidden">{emptyFolder.emptying ? "Emptying…" : label}</span>}
+				{!compact && <span className="max-md:hidden">{emptyFolder.emptying ? t("Emptying…") : label}</span>}
 			</Button>
 		</Tooltip>
 	);
@@ -48,6 +50,7 @@ function EmptyFolderButton({
  * tells the sidebar header to drop its own button while it is here; the collapsed rail keeps its Expand button.
  */
 function SidebarToggleButton({ listVisible }: { listVisible: boolean }) {
+	const t = useT();
 	const { minimal, mobile, toggle, setToggleInListHeader } = useSidebar();
 	// A hidden list panel stays mounted, so it must not claim a toggle nobody can see.
 	const shown = !minimal && !mobile && listVisible;
@@ -57,12 +60,12 @@ function SidebarToggleButton({ listVisible }: { listVisible: boolean }) {
 	}, [shown, setToggleInListHeader]);
 	if (!shown) return null;
 	return (
-		<Tooltip label="Collapse menu">
+		<Tooltip label={t("Collapse menu")}>
 			<Button
 				type="button"
 				variant="ghost"
 				size="sm"
-				aria-label="Collapse menu"
+				aria-label={t("Collapse menu")}
 				onClick={toggle}
 				className="h-8 w-8 shrink-0 p-0 text-neutral-500 hover:text-neutral-900 max-md:hidden"
 			>
@@ -89,21 +92,22 @@ export function MessageListHeader({
 	screenerVisible,
 	listVisible,
 }: MessageListHeaderProps) {
+	const t = useT();
 	// Only a selection pane beside the list replaces the toolbar; compact styling alone (a phone) must not.
 	const bulk = selection.count > 0 && !selectionInPane;
 	const headerIcons = config.headerIcons ?? [];
 	return (
 		<div className="@container shrink-0">
 			<div className="flex h-14 items-center gap-2 border-b border-neutral-200 px-3">
-				<FolderHeading title={config.title} nested={nested} />
+				<FolderHeading title={folderTitle(config)} nested={nested} />
 				<SidebarToggleButton listVisible={listVisible} />
 				{(selecting.value || selection.count > 0) && (
-					<Tooltip label="Select all visible messages">
+					<Tooltip label={t("Select all visible messages")}>
 						<Checkbox
 							checked={selection.allVisible}
 							disabled={selection.disabled}
 							onChange={(event) => selection.toggleAll(event.target.checked)}
-							aria-label="Select all visible messages"
+							aria-label={t("Select all visible messages")}
 						/>
 					</Tooltip>
 				)}
@@ -122,22 +126,22 @@ export function MessageListHeader({
 				) : (
 					<p
 						aria-hidden="true"
-						title={config.title}
+						title={folderTitle(config)}
 						className="min-w-0 truncate text-base font-medium text-neutral-900"
 					>
-						{config.title}
+						{folderTitle(config)}
 					</p>
 				)}
 				{!bulk && (
 					<div className="ms-auto flex shrink-0 items-center gap-1">
 						{emptyFolder && <EmptyFolderButton emptyFolder={emptyFolder} compact={compact} />}
 						{!compact && headerIcons.map((Icon, index) => <Icon key={index} className="h-4 w-4 text-neutral-500" />)}
-						<Tooltip label="Select messages">
+						<Tooltip label={t("Select messages")}>
 							<Button
 								type="button"
 								variant="ghost"
 								size="sm"
-								aria-label="Select"
+								aria-label={t("Select")}
 								aria-pressed={selecting.value}
 								onClick={() => selecting.onChange(!selecting.value)}
 								className={clsx(
@@ -146,14 +150,14 @@ export function MessageListHeader({
 								)}
 							>
 								<Check className="h-4 w-4" />
-								<span className="@max-[20rem]:hidden">Select</span>
+								<span className="@max-[20rem]:hidden">{t("Select")}</span>
 							</Button>
 						</Tooltip>
 						<Separator orientation="vertical" className="mx-1 h-4" />
-						<Tooltip label="List settings">
+						<Tooltip label={t("List settings")}>
 							<Link
 								href="/settings/inbox"
-								aria-label="List settings"
+								aria-label={t("List settings")}
 								className="flex h-8 w-8 items-center justify-center rounded-lg text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
 							>
 								<SlidersHorizontal className="h-4 w-4" />

@@ -1,3 +1,4 @@
+import { msg } from "@/lib/i18n/translator";
 import type { ClientModuleData } from "../module-types";
 
 const KEYWORDS = ["drive", "files", "folders", "documents", "upload", "storage", "share"];
@@ -9,7 +10,7 @@ export const driveClientData: ClientModuleData = {
 	nav: [
 		{
 			id: "drive.mailbox-selector",
-			label: "Drive",
+			label: msg("Drive"),
 			href: "/drive",
 			icon: "HardDrive",
 			placement: "mailbox-selector",
@@ -17,7 +18,7 @@ export const driveClientData: ClientModuleData = {
 		},
 		{
 			id: "drive.files",
-			label: "Drive",
+			label: msg("Drive"),
 			href: "/drive",
 			icon: "HardDrive",
 			placement: "sidebar",
@@ -26,7 +27,7 @@ export const driveClientData: ClientModuleData = {
 		},
 		{
 			id: "drive.settings",
-			label: "Drive",
+			label: msg("Drive"),
 			href: "/drive/settings",
 			icon: "HardDrive",
 			placement: "admin-nav",

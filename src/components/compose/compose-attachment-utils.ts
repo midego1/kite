@@ -1,6 +1,7 @@
 import type { MessageAttachment } from "@/app/(dashboard)/inbox/[messageId]/types";
 import { getAttachmentFileUrl, getAttachmentPreviewKind } from "@/components/message-attachment-viewer-utils";
 import type { ComposeAttachmentEntry, ComposeAttachmentNotice } from "./compose-attachment-types";
+import { t } from "@/lib/i18n/translator";
 
 /** Cloudflare's limit for a general email message, and the room kept for headers and the body (cloud-attachment-utils.ts). */
 const MESSAGE_LIMIT_BYTES = 5 * 1024 * 1024;
@@ -82,6 +83,11 @@ export function attachmentNotice(sizes: number[], cloudThresholdBytes: number): 
 export function attachmentNoticeText(notice: ComposeAttachmentNotice, cloudThresholdBytes: number): string {
 	const limit = `${Math.round(cloudThresholdBytes / 1_000_000)} MB`;
 	return notice === "links"
-		? `Cloudflare limits general email messages to 5 MiB including encoding, so files over ${limit} are sent as 30-day R2 download links.`
-		: "Cloudflare limits general email messages to 5 MiB including encoding. Together these files are close to that, so some may be sent as 30-day R2 download links.";
+		? t(
+				"Cloudflare limits general email messages to 5 MiB including encoding, so files over {limit} are sent as 30-day R2 download links.",
+				{ limit },
+			)
+		: t(
+				"Cloudflare limits general email messages to 5 MiB including encoding. Together these files are close to that, so some may be sent as 30-day R2 download links.",
+			);
 }

@@ -73,7 +73,7 @@ export function ReadingLayoutMenu() {
 					id="reading-pane-menu-label"
 					className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-neutral-500"
 				>
-					Reading pane
+					{t("Reading pane")}
 				</p>
 				<div
 					role="radiogroup"
@@ -87,15 +87,15 @@ export function ReadingLayoutMenu() {
 							<SegmentButton
 								key={option.value}
 								checked={readingPane === option.value}
-								label={option.label}
-								description={option.description}
+								label={t(option.label)}
+								description={t(option.description)}
 								onSelect={() => {
 									if (option.value !== "none") saveMessageListVisible(true);
 									setReadingPane(option.value);
 								}}
 							>
 								<Icon size={16} aria-hidden />
-								<span className="truncate">{option.label}</span>
+								<span className="truncate">{t(option.label)}</span>
 							</SegmentButton>
 						);
 					})}
@@ -103,7 +103,7 @@ export function ReadingLayoutMenu() {
 			</div>
 			<div>
 				<p id="density-menu-label" className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-neutral-500">
-					Density
+					{t("Density")}
 				</p>
 				<div
 					role="radiogroup"
@@ -115,11 +115,11 @@ export function ReadingLayoutMenu() {
 						<SegmentButton
 							key={option.value}
 							checked={density === option.value}
-							label={option.label}
-							description={option.description}
+							label={t(option.label)}
+							description={t(option.description)}
 							onSelect={() => setDensity(option.value)}
 						>
-							<span className="truncate">{option.label}</span>
+							<span className="truncate">{t(option.label)}</span>
 						</SegmentButton>
 					))}
 				</div>
@@ -129,7 +129,7 @@ export function ReadingLayoutMenu() {
 					id="interface-direction-menu-label"
 					className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-neutral-500"
 				>
-					Direction
+					{t("Direction")}
 				</p>
 				<div
 					role="radiogroup"

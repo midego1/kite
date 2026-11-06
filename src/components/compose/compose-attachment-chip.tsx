@@ -18,6 +18,7 @@ import {
 	storedThumbnailUrl,
 } from "./compose-attachment-utils";
 import { formatAttachmentSize } from "./utils";
+import { useT } from "@/lib/i18n/use-t";
 
 const ITEM_CLASS =
 	"flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm text-neutral-700 outline-none data-[disabled]:opacity-50 data-[highlighted]:bg-neutral-100";
@@ -42,6 +43,7 @@ async function downloadLocalFile(file: File) {
  * the rest, like the reader's attachment cards.
  */
 export function ComposeAttachmentChip({ entry, draftId, onPreview, onRemove }: ComposeAttachmentChipProps) {
+	const t = useT();
 	const attachment = entryAttachment(entry, draftId);
 	const visual = getAttachmentVisual(attachment);
 	const Icon = visual.icon;
@@ -86,8 +88,18 @@ export function ComposeAttachmentChip({ entry, draftId, onPreview, onRemove }: C
 			<button
 				type="button"
 				onClick={open}
-				aria-label={`${previewable ? "Preview" : "Download"} ${attachment.filename}, ${formatAttachmentSize(attachment.size)}`}
-				title={`${attachment.filename} · ${visual.label}`}
+				aria-label={
+					previewable
+						? t("Preview {filename}, {size}", {
+								filename: attachment.filename,
+								size: formatAttachmentSize(attachment.size),
+							})
+						: t("Download {filename}, {size}", {
+								filename: attachment.filename,
+								size: formatAttachmentSize(attachment.size),
+							})
+				}
+				title={t("{filename} · {label}", { filename: attachment.filename, label: visual.label })}
 				className="flex h-full min-w-0 flex-1 items-center gap-2 rounded-s-lg ps-1.5 pe-1 text-start outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
 			>
 				{thumbnail && !thumbnailFailed ? (
@@ -110,7 +122,7 @@ export function ComposeAttachmentChip({ entry, draftId, onPreview, onRemove }: C
 			</button>
 			<DropdownMenu.Root>
 				<DropdownMenu.Trigger
-					aria-label={`More actions for ${attachment.filename}`}
+					aria-label={t("More actions for {filename}", { filename: attachment.filename })}
 					className="me-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-neutral-500 outline-none hover:bg-neutral-200 hover:text-neutral-900 focus-visible:ring-2 focus-visible:ring-blue-600 data-[state=open]:bg-neutral-200"
 				>
 					<MoreVertical className="h-4 w-4" aria-hidden="true" />
@@ -120,7 +132,7 @@ export function ComposeAttachmentChip({ entry, draftId, onPreview, onRemove }: C
 						align="end"
 						sideOffset={4}
 						collisionPadding={8}
-						aria-label={`Actions for ${attachment.filename}`}
+						aria-label={t("Actions for {filename}", { filename: attachment.filename })}
 						onCloseAutoFocus={() => {
 							if (!previewAfterClose.current) return;
 							previewAfterClose.current = false;
@@ -136,7 +148,7 @@ export function ComposeAttachmentChip({ entry, draftId, onPreview, onRemove }: C
 								}}
 							>
 								<Eye className="h-4 w-4 shrink-0" aria-hidden="true" />
-								Preview
+								{t("Preview")}
 							</DropdownMenu.Item>
 						)}
 						<DropdownMenu.Item
@@ -147,12 +159,12 @@ export function ComposeAttachmentChip({ entry, draftId, onPreview, onRemove }: C
 							}}
 						>
 							<ArrowDownToLine className="h-4 w-4 shrink-0" aria-hidden="true" />
-							Download
+							{t("Download")}
 						</DropdownMenu.Item>
 						<DropdownMenu.Separator className="my-1 h-px bg-neutral-100" />
 						<DropdownMenu.Item className={ITEM_CLASS} onSelect={() => onRemove(entry)}>
 							<Trash2 className="h-4 w-4 shrink-0" aria-hidden="true" />
-							Remove
+							{t("Remove")}
 						</DropdownMenu.Item>
 					</DropdownMenu.Content>
 				</DropdownMenu.Portal>

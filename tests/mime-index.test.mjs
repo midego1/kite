@@ -7,6 +7,7 @@ import { build } from "esbuild";
 import PostalMime from "postal-mime";
 import { makeBundleDirectory } from "./support/bundle-directory.mjs";
 import { FIXTURES, base64, largeFixture, pseudoRandomBytes } from "./fixtures/mime/fixtures.mjs";
+import storedOffsets from "./fixtures/mime/stored-offsets.json" with { type: "json" };
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const directory = makeBundleDirectory("kite-mime-index-test-");
@@ -44,7 +45,7 @@ const encoder = new TextEncoder();
 
 /** postal-mime with the options `parseRawMime` uses (`src/lib/email/parse.ts`). */
 async function postalAttachments(raw) {
-	const email = await PostalMime.parse(raw, { maxNestingDepth: 20, forceRfc822Attachments: true });
+	const email = await PostalMime.parse(raw, { maxNestingDepth: 20, maxPartCount: 1000, forceRfc822Attachments: true });
 	return email.attachments.map((attachment) => ({
 		...attachment,
 		content:
@@ -79,6 +80,74 @@ for (const fixture of FIXTURES) {
 		assert.equal(usedParts.size, matches.length, "a part is used once");
 	});
 }
+
+test("index: ranges recorded on postal-mime 2.7 are found again, byte for byte", async () => {
+	assert.ok(Object.keys(storedOffsets).length >= 10);
+	for (const [name, rows] of Object.entries(storedOffsets)) {
+		const raw = encoder.encode(FIXTURES.find((fixture) => fixture.name === name).raw);
+		const attachments = await postalAttachments(raw);
+		const parts = m.indexMimeParts(raw);
+		const { matches } = m.matchAttachmentsToParts(raw, attachments, parts);
+		for (const [index, offset, length, encoding] of rows) {
+			const { part } = matches.find((match) => match.attachmentIndex === index);
+			assert.deepEqual([part.bodyOffset, part.bodyLength, part.transferEncoding], [offset, length, encoding], name);
+			const decoded = m.decodePart(raw.subarray(offset, offset + length), encoding);
+			assert.deepEqual(decoded, attachments[index].content, name);
+		}
+	}
+});
+
+/** The parts of a multipart, `boundary` b, ahead of a base64 part that has to stay findable behind them. */
+const behind = (declared, first) =>
+	encoder.encode(
+		[
+			"From: a@example.com",
+			`Content-Type: multipart/mixed; boundary="${declared}"`,
+			"",
+			first,
+			"--b",
+			"Content-Type: application/pdf",
+			"Content-Transfer-Encoding: base64",
+			"Content-Disposition: attachment; filename=a.pdf",
+			"",
+			"QUFBQUFB",
+			"--b--",
+			"",
+		].join("\r\n"),
+	);
+
+for (const [name, raw] of Object.entries({
+	"trailing whitespace in the boundary parameter": behind("b ", "--b\r\nContent-Type: text/plain\r\n\r\nhi"),
+	"carriage returns before a delimiter's line feed": behind("b", "--b\r\r\nContent-Type: text/plain\r\n\r\nhi"),
+	"a non-field line ends a part's headers": behind("b", "--b\r\nContent-Type: text/plain\r\nNo field here\r\nhi"),
+	"the first Content-Type of a part": behind(
+		"b",
+		"--b\r\nContent-Type: text/plain\r\nContent-Type: multipart/mixed; boundary=c\r\n\r\nhi",
+	),
+	"a nested multipart reusing the outer boundary": behind(
+		"b",
+		'--b\r\nContent-Type: multipart/mixed; boundary="b"\r\n\r\nnested',
+	),
+})) {
+	test(`index: follows postal-mime 4.x: ${name}`, async () => {
+		const attachments = await postalAttachments(raw);
+		assert.equal(attachments.length, 1);
+		const { matches, unmatched } = m.matchAttachmentsToParts(raw, attachments, m.indexMimeParts(raw));
+		assert.deepEqual(unmatched, []);
+		assert.deepEqual(m.decodePart(rangeOf(raw, matches[0].part), "base64"), attachments[0].content);
+	});
+}
+
+test("index: a base64 body padded on every line is left unmatched, never matched wrongly", async () => {
+	// postal-mime 4.x starts a new group after padding; the index's decoder, which serves stored ranges, skips padding.
+	const raw = encoder.encode(
+		"From: a@example.com\r\nContent-Type: multipart/mixed; boundary=b\r\n\r\n--b\r\nContent-Type: application/pdf\r\nContent-Transfer-Encoding: base64\r\nContent-Disposition: attachment; filename=a.pdf\r\n\r\nQQ==\r\nQQ==\r\n--b--\r\n",
+	);
+	const attachments = await postalAttachments(raw);
+	assert.deepEqual([...attachments[0].content], [65, 65]);
+	const { unmatched } = m.matchAttachmentsToParts(raw, attachments, m.indexMimeParts(raw));
+	assert.deepEqual(unmatched, [0]);
+});
 
 test("index: part metadata reads names, dispositions, content ids and folded headers", () => {
 	const nested = FIXTURES.find((fixture) => fixture.name.startsWith("related inside"));

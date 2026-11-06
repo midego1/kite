@@ -2,6 +2,7 @@ import { and, asc, count, eq, inArray, isNull, lt, lte, ne, or } from "drizzle-o
 import { getDb } from "@/db";
 import { users } from "@/db/schema";
 import { externalAccounts } from "@/db/schema/external-accounts";
+import type { ImapSession } from "@/lib/imap/session";
 import type { ImapLimits } from "@/lib/imap/types";
 import { createLogger } from "@/lib/logger.mjs";
 import { recordMetric } from "@/lib/metrics.mjs";
@@ -12,12 +13,15 @@ import { externalAccountTablesReady } from "./errors";
 import { appendRecentErrors } from "./recent-errors";
 import { readInstallState } from "./settings";
 import type { ExternalAccountRow } from "./serialize-utils";
-import { emptyOutcome, runSync, SyncRefusedError, type RunOutcome } from "./sync-run";
+import { emptyOutcome, openSession, runClock, runSync, SyncRefusedError, type RunOutcome } from "./sync-run";
 import { externalSyncRefusal } from "./sync-target";
 import {
 	CHECK_NOW_COOLDOWN_MS,
 	classifySyncError,
 	externalSyncMessage,
+	externalWritebackMessage,
+	isExternalSyncMessage,
+	isExternalWritebackMessage,
 	isSyncStateChange,
 	nextRegularSync,
 	SYNC_LEASE_MS,
@@ -26,6 +30,10 @@ import {
 	syncFailureUpdate,
 	type SyncProblem,
 } from "./sync-utils";
+
+import { drainOutbox } from "./two-way-run";
+import { hasDueActions } from "./two-way-outbox";
+import { noteProblems, readTwoWayConfig, twoWayReady } from "./two-way-store";
 
 const logger = createLogger("external-sync");
 
@@ -91,7 +99,7 @@ export async function planExternalSync(env: CloudflareEnv, now = new Date()): Pr
 	return claimed.length;
 }
 
-export type SyncRunOptions = {
+type SyncRunOptions = {
 	now?: () => Date;
 	/** For the jitter of the backoff; tests pin it. */
 	random?: () => number;
@@ -100,13 +108,13 @@ export type SyncRunOptions = {
 	limits?: Partial<ImapLimits>;
 };
 
-export type SyncRunResult =
+type SyncRunResult =
 	| { skipped: "migration_pending" | "removed" | "not_syncing" | "not_allowed" | "busy" }
 	| { delivered: number; skipped: number; more: boolean }
 	| { failed: SyncProblem["class"] };
 
 /**
- * One sync run of one account (spec §6.3): checks again that the account may be used, takes its lease, signs in,
+ * @public Exercised by the unit tests. One sync run of one account (spec §6.3): checks again that the account may be used, takes its lease, signs in,
  * examines INBOX and hands every new message to the inbound pipeline through the Mail store and `INBOUND_QUEUE`.
  * Never throws for the account's own problems; they become its state (§6.5).
  */
@@ -193,6 +201,91 @@ export async function syncExternalAccount(
 		});
 		return { failed: problem.class };
 	}
+}
+
+/**
+ * Runs `work` in a short session of its own beside the regular checks: under the sync lease, so never next to one, and
+ * with the run's command cap. Only a healthy account gets one: paused, suspended, refused, signed out, or failing and
+ * waiting out its backoff all answer null, and so does a lease someone else holds. A problem is thrown to the caller
+ * and changes nothing about the account's checks; the regular check is what reports a broken sign-in.
+ */
+export async function withAccountSession<T>(
+	env: CloudflareEnv,
+	accountId: string,
+	options: Pick<SyncRunOptions, "now" | "budgetMs" | "limits">,
+	work: (session: ImapSession, account: ExternalAccountRow, outOfTime: () => boolean) => Promise<T>,
+): Promise<T | null> {
+	const now = (options.now ?? (() => new Date()))();
+	const lease = new Date(now.getTime() + SYNC_LEASE_MS);
+	const [account] = await getDb(env)
+		.update(externalAccounts)
+		.set({ leaseUntil: lease })
+		.where(
+			and(
+				eq(externalAccounts.id, accountId),
+				syncable(),
+				leaseFree(now),
+				eq(externalAccounts.status, "active"),
+				eq(externalAccounts.consecutiveFailures, 0),
+			),
+		)
+		.returning();
+	if (!account) return null;
+	try {
+		if (await externalSyncRefusal(env, account)) return null;
+		const budgetMs = options.budgetMs ?? SYNC_RUN_BUDGET_MS;
+		const clock = runClock(env, { budgetMs, lease, limits: options.limits });
+		const session = await openSession(env, account, clock.limits);
+		try {
+			return await work(session, account, () => Date.now() - clock.started > budgetMs);
+		} finally {
+			await session.close().catch(() => undefined);
+		}
+	} finally {
+		await releaseLease(env, accountId, lease);
+	}
+}
+
+/**
+ * @public Exercised by the unit tests. "Sooner" for two-way sync (spec §6.8): one session for the account's outbox. An
+ * account that gets no session needs nothing: the check running now, or a later one, takes the rows.
+ */
+export async function writebackExternalAccount(
+	env: CloudflareEnv,
+	accountId: string,
+	options: Pick<SyncRunOptions, "now" | "budgetMs" | "limits"> = {},
+): Promise<void> {
+	const clock = options.now ?? (() => new Date());
+	if (!(await externalAccountTablesReady(env)) || !(await twoWayReady(env))) return;
+	// Asked by what is due, not by the settings: a move half done finishes after they are turned off.
+	if (!(await hasDueActions(env, accountId, clock()))) return;
+	const config = await readTwoWayConfig(env, accountId);
+	const notes: string[] = [];
+	let more: boolean | null = false;
+	try {
+		more = await withAccountSession(env, accountId, options, (session, account, outOfTime) =>
+			drainOutbox(env, session, account, config, { clock, outOfTime, notes }),
+		);
+	} catch (error) {
+		const problem = classifySyncError(error, { refused: error instanceof MailServerRefusedError });
+		notes.push(`Kite could not reach the provider to apply your changes; it tries again: ${problem.message}`);
+		logger.warn("external.sync.writeback_failed", {
+			accountId,
+			class: problem.class,
+			// The error's name only: its message may carry server text.
+			error: error instanceof Error ? error.name : "unknown",
+		});
+	}
+	await noteProblems(env, accountId, notes, clock());
+	if (more) await env.AGENT_QUEUE?.send(externalWritebackMessage(accountId));
+}
+
+/** A queue message of connected-account sync, whichever kind: handled and true, or false when it is something else. */
+export async function processExternalAccountMessage(env: CloudflareEnv, body: unknown): Promise<boolean> {
+	if (isExternalSyncMessage(body)) await syncExternalAccount(env, body.accountId);
+	else if (isExternalWritebackMessage(body)) await writebackExternalAccount(env, body.accountId);
+	else return false;
+	return true;
 }
 
 function classify(error: unknown, account: ExternalAccountRow): SyncProblem {

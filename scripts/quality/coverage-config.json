@@ -206,6 +206,7 @@
 		"src/lib/external-accounts/presets-utils.ts",
 		"src/lib/external-accounts/serialize-utils.ts",
 		"src/lib/external-accounts/sync-utils.ts",
+		"src/lib/external-accounts/two-way-utils.ts",
 		"src/lib/external-accounts/via-utils.ts",
 		"src/components/connected-accounts-banner-utils.ts",
 		"src/lib/external-accounts/identity-utils.ts",

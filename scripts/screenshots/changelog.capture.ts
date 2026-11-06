@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test, type Browser, type Locator, type Page } from "@playwright/test";
 import sharp from "sharp";
-import { STORAGE_STATE } from "../../e2e/support/constants";
+import { ADMIN, STORAGE_STATE } from "../../e2e/support/constants";
 import { useFakeProvider as connectFakeProvider } from "../../e2e/support/agent";
 import { startFakeModel } from "../../e2e/support/fake-model";
 import type { FakeModel } from "../../e2e/support/fake-model-types";
@@ -42,6 +42,7 @@ type Shot = {
 
 /** Demo mail source for the import screenshot: a fake IMAP server on 127.0.0.1 with invented folders and sizes. */
 let demoImap: Awaited<ReturnType<typeof startFakeImap>> | null = null;
+let demoTwoWay: Awaited<ReturnType<typeof startFakeImap>> | null = null;
 const demoFolder = (count: number, bytes: number, label: string) =>
 	Array.from({ length: count }, (_, index) => ({ raw: sampleMessage(index + 1, { subject: `${label} ${index + 1}` }), size: bytes }));
 
@@ -101,6 +102,56 @@ const SHOTS: Shot[] = [
 		},
 	},
 	{
+		// Settings → Connected accounts → Two-way sync: the choices per direction, with a demo account at the fake server.
+		name: "2026-11-06-two-way-sync-light",
+		theme: "light",
+		viewport: { width: 1100, height: 1100 },
+		open: async (page) => {
+			demoTwoWay ??= await startFakeImap({
+				authPlain: true,
+				specialUse: true,
+				move: true,
+				uidplus: true,
+				users: { "demo.account@example.test": "app-password" },
+				folders: { INBOX: [], Trash: [], Junk: [], Archive: [] },
+				folderAttributes: { Trash: ["\\Trash"], Junk: ["\\Junk"], Archive: ["\\Archive"] },
+			});
+			await page.goto("/settings/connected-accounts");
+			await page.evaluate(
+				async ({ port, kitePassword }) => {
+					const { mailboxes } = (await (await fetch("/api/mailboxes")).json()) as { mailboxes: { id: string }[] };
+					const response = await fetch("/api/external-accounts", {
+						method: "POST",
+						headers: { "Content-Type": "application/json" },
+						body: JSON.stringify({
+							address: "demo.account@example.test",
+							preset: "other",
+							mailboxId: mailboxes[0].id,
+							imap: { host: "127.0.0.1", port, security: "starttls" },
+							password: "app-password",
+							kitePassword,
+						}),
+					});
+					// Connected on an earlier try of this shot is as good.
+					if (!response.ok && response.status !== 409) throw new Error(await response.text());
+				},
+				{ port: demoTwoWay.port, kitePassword: ADMIN.password },
+			);
+			await page.reload();
+			const panel = page.locator('[data-account-two-way="demo.account@example.test"]');
+			await panel.getByRole("button", { name: "Two-way sync" }).click();
+			const choose = async (name: string, label: string) => {
+				await panel.getByRole("combobox", { name, exact: true }).click();
+				await page.getByRole("listbox").getByRole("option", { name: label, exact: true }).click();
+			};
+			await choose("Delete in Kite", "Move to the provider's Trash");
+			await choose("Read, unread and star in Kite", "On");
+			await choose("Deleted or moved out of the Inbox", "Move to Kite's Trash");
+			await expect(panel.getByRole("combobox", { name: "Deleted or moved out of the Inbox" })).toHaveText(/Kite's Trash/);
+			return panel;
+		},
+	},
+	{
 		// Settings → Import → IMAP → Whole account: each folder's size and the totals the import adds.
 		name: "2026-11-05-import-sizes-light",
 		theme: "light",
@@ -139,6 +190,28 @@ const SHOTS: Shot[] = [
 				hide("#imap-mode", "div.space-y-2");
 			});
 			return page.locator("form").filter({ has: table });
+		},
+	},
+	{
+		// Admin overview → Database with two updates waiting (the status is faked, no migration is pending in the demo).
+		name: "2026-11-06-update-database-light",
+		theme: "light",
+		viewport: { width: 1000, height: 900 },
+		open: async (page) => {
+			await page.route("**/api/admin/migrations", (route) =>
+				route.fulfill({
+					json: {
+						ready: false,
+						unknown: [],
+						pending: ["0091_add_mailbox_ai_disabled.sql", "0092_add_mailbox_ai_disabled_at.sql"],
+					},
+				}),
+			);
+			await page.goto("/admin");
+			const panel = page.getByRole("region", { name: "Pending database updates" });
+			await expect(panel).toBeVisible();
+			await panel.scrollIntoViewIfNeeded();
+			return panel;
 		},
 	},
 	{
@@ -439,6 +512,8 @@ test.describe("changelog screenshots", () => {
 		await demoModel?.restore();
 		await demoModel?.fake.close();
 		demoModel = null;
+		await demoTwoWay?.close();
+		demoTwoWay = null;
 	});
 
 	for (const shot of SHOTS) {

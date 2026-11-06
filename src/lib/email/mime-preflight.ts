@@ -17,8 +17,9 @@ export const MIME_LIMITS = {
 	/**
 	 * Line feeds in the decoded text of parts read as text (body parts and calendar parts, see `readsAsText`). postal-mime
 	 * normalizes line endings there, about 64 bytes of heap per CRLF while it runs (2 million exhaust a 128 MB heap), and
-	 * the text then goes through the sanitizer and the snippet: 150,000 lines of 78 characters, as text, HTML or both, fit
-	 * a 64 MB heap, which leaves a Worker's 128 MB room for the raw message and its decoded parts. A base64 or
+	 * the text then goes through the sanitizer and the snippet: 150,000 lines of 78 ordinary characters, as text, HTML or
+	 * both, fit a 64 MB heap, which leaves a Worker's 128 MB room for the raw message and its decoded parts. What other
+	 * lines cost is bounded where they are read (`stored-html-utils.ts`, `reply-content-utils.ts`, `mime-body-utils.ts`). A base64 or
 	 * quoted-printable text part counts after decoding: 18 MB of decoded CRLFs fit in a 25 MB message on far fewer raw
 	 * lines. Every other part (attachments and attached messages, however many lines they have) is one range of the
 	 * message to postal-mime 4.x and costs nothing per line. Measurements: #245.

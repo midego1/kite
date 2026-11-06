@@ -29,7 +29,9 @@ async function openInbox(page: Page) {
 const nav = (page: Page, name: string) => page.locator(SIDEBAR).getByRole("link", { name, exact: true });
 
 async function chooseLanguage(page: Page, menu: string, language: string) {
-	await page.getByRole("button", { name: menu }).click();
+	const account = page.getByRole("button", { name: menu });
+	await expect(account).toBeVisible({ timeout: 45_000 });
+	await account.click();
 	await page.getByRole("radio", { name: language, exact: true }).click();
 	await page.keyboard.press("Escape");
 }

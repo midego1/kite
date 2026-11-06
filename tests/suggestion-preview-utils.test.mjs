@@ -45,9 +45,9 @@ test("the excerpt is plain text: quotes, signatures and blank runs go, and it is
 });
 
 test("a body reads as its stored text, else as the text of its (capped) HTML", () => {
-	const toText = (html) => html.replace(/<[^>]+>/g, "");
+	const toText = (html) => `text of ${html}`;
 	assert.equal(bodyText({ textBody: "plain", htmlBody: "<p>html</p>" }, toText), "plain");
-	assert.equal(bodyText({ textBody: "  ", htmlBody: "<p>html</p>" }, toText), "html");
+	assert.equal(bodyText({ textBody: "  ", htmlBody: "<p>html</p>" }, toText), "text of <p>html</p>");
 	assert.equal(bodyText({ textBody: null, htmlBody: null }, toText), "");
 	assert.equal(bodyText(null, toText), "");
 	const seen = [];

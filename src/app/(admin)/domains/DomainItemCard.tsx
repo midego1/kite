@@ -67,6 +67,7 @@ export default function DomainItemCard({
 							))}
 						<span className="flex-1" />
 						<button
+							type="button"
 							onClick={() => onToggleDns(item.id)}
 							className="flex cursor-pointer items-center gap-0.5 text-xs text-blue-600 hover:text-blue-800"
 						>

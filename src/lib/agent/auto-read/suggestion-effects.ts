@@ -3,6 +3,7 @@ import { getDb } from "@/db";
 import { messages } from "@/db/schema";
 import { agentSuggestions } from "@/db/schema/agent-auto-read";
 import type { SessionUser } from "@/lib/auth/types";
+import { cancelKiteMoves } from "@/lib/external-accounts/two-way-record";
 import { undoSpamReceipt } from "@/lib/spam/report-receipts";
 import { updateMessageStatusForUser } from "@/lib/user";
 import { AgentActionError } from "./action-error";
@@ -67,6 +68,7 @@ export async function restoreMarkedSpam(env: CloudflareEnv, row: AgentActionRow)
 		.where(and(eq(messages.id, row.messageId), eq(messages.status, "spam")))
 		.returning({ id: messages.id });
 	if (restored.length === 0) throw new AgentActionError("The message was moved again, so Kite left it", 409);
+	await cancelKiteMoves(env, [row.messageId]);
 	if (!row.suggestionId) return;
 	await db
 		.update(agentSuggestions)

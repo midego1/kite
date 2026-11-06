@@ -4,21 +4,22 @@ import { importJobs } from "@/db/schema/import-jobs";
 import { getDatabaseSize } from "@/lib/db/size";
 import { createLogger } from "@/lib/logger.mjs";
 import type { ImapFetchedMessage } from "@/lib/imap/types";
+import { imapLimits } from "@/lib/imap/protocol-utils";
 import type { ImapSession } from "@/lib/imap/session";
 import { moduleHost } from "@/lib/modules/host";
 import type { CapabilityCallContext } from "@/lib/modules/module-types";
 import type { HostImportMessage, HostImportResult } from "@/lib/modules/host-types";
 import { encodeRawMime } from "@/lib/email/module-import-utils";
+import { fetchSegment, planSizedFetch, type PlannedSegment } from "./capped-fetch";
+import { canPrefetch } from "./capped-fetch-utils";
 import { getImportMessageUserId, parseImportDestination } from "./destination";
-import { chunk, hostImportMessageFromImap, selectRemainingUids } from "./imap-utils";
+import { hostImportMessageFromImap, selectRemainingUids } from "./imap-utils";
 import { importPauseNote } from "./size-guard-utils";
 
 const logger = createLogger("import");
 
 export type ImportJobRow = typeof importJobs.$inferSelect;
 
-/** Messages fetched per IMAP round trip. */
-const FETCH_CHUNK_SIZE = 25;
 /**
  * Work per queue invocation. Each message costs a handful of D1/R2 calls, so this
  * keeps one invocation well inside the Workers subrequest and wall-time limits;
@@ -109,32 +110,44 @@ export type ImportRunOutcome = "done" | "more" | "stopped";
 export const hasRunTime = (run: ImportRun) => Date.now() - run.startedAt < RUN_TIME_BUDGET_MS;
 
 /**
- * Fetches `uids` in chunks, the next one from IMAP while the current one is written to D1/R2, until the time budget
- * runs out. `onChunk` returns false to stop (the job was cancelled or paused). Returns how many UIDs were handled, or
+ * Fetches `uids` in segments (`planSizedFetch`: at most 25 messages and 16 MB each, a bigger message alone), the next
+ * one from IMAP while the current one is written to D1/R2 (only when both together stay within the memory budget),
+ * until the time budget runs out. A segment is fetched whole and written before the one after it is held, so a chunk
+ * of big messages is never accumulated. A message above the connection's size limit is not fetched: it is missing from
+ * what `onChunk` gets, so the caller counts it as skipped, and the job's problems name it (`folderName` names the
+ * folder). `onChunk` returns false to stop (the job was cancelled or paused). Returns how many UIDs were handled, or
  * null when it stopped.
  */
 export async function fetchInChunks(
 	run: ImportRun,
 	uids: number[],
-	options: { gmailLabels?: boolean },
+	options: { gmailLabels?: boolean; folderName: string },
 	onChunk: (uids: number[], fetched: Map<string, ImapFetchedMessage>) => Promise<boolean>,
 ): Promise<number | null> {
-	const chunks = chunk(uids, FETCH_CHUNK_SIZE);
-	const fetchChunk = (part: number[]) => run.session.fetchMessages(part.map(String), options);
+	const limits = imapLimits(run.env.KITE_RUNTIME);
+	const segments = uids.length
+		? await planSizedFetch(run.session, uids.map(String), limits.literalBytes, options.folderName)
+		: [];
+	const fetchOne = (segment: PlannedSegment) => fetchSegment(run.session, segment, options);
+	let prefetched = segments.length ? fetchOne(segments[0]) : null;
 	let handled = 0;
-	let nextFetch = chunks.length ? fetchChunk(chunks[0]) : null;
-	for (let index = 0; index < chunks.length; index += 1) {
-		const fetched = await nextFetch!;
-		nextFetch = hasRunTime(run) && index + 1 < chunks.length ? fetchChunk(chunks[index + 1]) : null;
-		nextFetch?.catch(() => undefined);
+	for (let index = 0; index < segments.length; index += 1) {
+		const segment = segments[index];
+		const fetched = await (prefetched ?? fetchOne(segment));
+		const next = segments[index + 1];
+		// The next segment is fetched while this one is written, unless both together would be too much to hold.
+		prefetched = next && hasRunTime(run) && canPrefetch(segment, next) ? fetchOne(next) : null;
+		prefetched?.catch(() => undefined);
+		if (segment.skipped.length) run.errors = [...run.errors, ...segment.skipped].slice(-MAX_STORED_ERRORS);
+		const chunkUids = segment.uids.map(Number);
 		// Another run holds the job now: nothing of this chunk is written.
-		if (run.hold.lost || !(await onChunk(chunks[index], fetched))) {
-			await nextFetch?.catch(() => undefined);
+		if (run.hold.lost || !(await onChunk(chunkUids, fetched))) {
+			await prefetched?.catch(() => undefined);
 			return null;
 		}
-		handled += chunks[index].length;
-		run.budget -= chunks[index].length;
-		if (!nextFetch) break;
+		handled += chunkUids.length;
+		run.budget -= chunkUids.length;
+		if (!prefetched && !hasRunTime(run)) break;
 	}
 	return handled;
 }
@@ -332,17 +345,22 @@ export async function runFolderJob(run: ImportRun): Promise<ImportRunOutcome> {
 	let remaining = selectRemainingUids(allUids, job.cursorUid);
 	if (job.maxMessages) remaining = remaining.slice(0, Math.max(job.maxMessages - job.processed, 0));
 	let cursorUid = job.cursorUid;
-	const handled = await fetchInChunks(run, remaining.slice(0, run.budget), {}, async (uids, fetched) => {
-		const batch: HostImportMessage[] = [];
-		for (const uid of uids) {
-			const message = fetched.get(String(uid));
-			if (message) batch.push(hostImportMessageFromImap(`${job.folder}-${uid}.eml`, message, encodeRawMime));
-		}
-		const result = await importBatch(run, job.destination, batch);
-		addChunkResult(run, uids.length, { ...result, missing: uids.length - batch.length });
-		cursorUid = uids[uids.length - 1];
-		return recordChunk(run, { ...run.progress, cursorUid, total: run.total, errors: run.errors });
-	});
+	const handled = await fetchInChunks(
+		run,
+		remaining.slice(0, run.budget),
+		{ folderName: job.folder },
+		async (uids, fetched) => {
+			const batch: HostImportMessage[] = [];
+			for (const uid of uids) {
+				const message = fetched.get(String(uid));
+				if (message) batch.push(hostImportMessageFromImap(`${job.folder}-${uid}.eml`, message, encodeRawMime));
+			}
+			const result = await importBatch(run, job.destination, batch);
+			addChunkResult(run, uids.length, { ...result, missing: uids.length - batch.length });
+			cursorUid = uids[uids.length - 1];
+			return recordChunk(run, { ...run.progress, cursorUid, total: run.total, errors: run.errors });
+		},
+	);
 	if (handled === null) return "stopped";
 	return handled >= remaining.length ? "done" : "more";
 }

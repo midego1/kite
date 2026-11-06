@@ -1,10 +1,19 @@
-import { bytesStartWith, MIME_LIMITS, onlyBlankBytes, parseStructuredHeader } from "./mime-preflight";
+import {
+	BASE64_VALUES,
+	bytesStartWith,
+	continuesHeaders,
+	decodeHeaderLine,
+	MIME_LIMITS,
+	onlyBlankBytes,
+	readPartFields,
+	usableBoundary,
+} from "./mime-preflight";
 import type { MimeAttachmentMatches, MimePartIndex, MimeTransferEncoding } from "./mime-index-types";
 
 /**
  * A byte-range index of a raw message's leaf parts, so an attachment can be served from the stored `.eml` instead of
  * a second, decoded copy (`docs/specs/attachments-once.md`). The scan follows postal-mime's reading of the structure
- * (line based, CR dropped before LF, boundaries matched innermost first, transport padding allowed after a delimiter)
+ * (line based, CR dropped before LF, boundaries matched outermost first, transport padding allowed after a delimiter)
  * but nothing trusts it: `matchAttachmentsToParts` only pairs an attachment with a part whose decoded bytes equal
  * what postal-mime produced, so a part the scan reads wrongly is simply left unmatched.
  */
@@ -57,9 +66,9 @@ function decodeWithCharset(bytes: Uint8Array, charset: string): string {
  * @public Exercised by the unit tests.
  */
 export function mimeParameter(params: [string, string][], name: string): string | null {
-	const plain = params.filter(([key]) => key === name).at(-1);
+	const plain = params.find(([key]) => key === name);
 	if (plain) return plain[1];
-	const extended = params.filter(([key]) => key === `${name}*`).at(-1);
+	const extended = params.find(([key]) => key === `${name}*`);
 	const segments = params
 		.map(([key, value]) => ({ match: key.match(/^(.+)\*(\d+)(\*?)$/), value }))
 		.filter((entry) => entry.match?.[1] === name)
@@ -81,45 +90,23 @@ export function mimeParameter(params: [string, string][], name: string): string 
 	return text;
 }
 
-function transferEncodingOf(value: string | null): MimeTransferEncoding | null {
-	const token =
-		(value ?? "")
-			.trim()
-			.toLowerCase()
-			.split(/[^\w-]/)[0] ?? "";
+function transferEncodingOf(token: string): MimeTransferEncoding | null {
 	if (token === "base64") return "base64";
 	return token === "" || token === "7bit" || token === "8bit" || token === "binary" ? "identity" : null;
 }
 
-/** What a header block says, read the way postal-mime's `processHeaders` does (folded lines join the one above). */
+/** What a header block says, read the way `readPartFields` models postal-mime's `processHeaders`. */
 function describeHeaders(lines: string[]): PartFields {
-	const fields: string[] = [];
-	for (const line of lines) {
-		if (fields.length && /^\s/.test(line)) fields[fields.length - 1] += `\n${line}`;
-		else fields.push(line);
-	}
-	const values = new Map<string, string>();
-	let encoding: string | null = null;
-	for (const field of fields) {
-		const normalized = field.replace(/\s+/g, " ");
-		const colon = normalized.indexOf(":");
-		if (colon < 0) continue;
-		const name = normalized.slice(0, colon).trim().toLowerCase();
-		const value = normalized.slice(colon + 1).trim();
-		if (name === "content-transfer-encoding") encoding ??= value;
-		else if (name === "content-id") values.set(name, values.get(name) ?? value);
-		else values.set(name, value);
-	}
-	const type = parseStructuredHeader(values.get("content-type") ?? "");
-	const disposition = parseStructuredHeader(values.get("content-disposition") ?? "");
-	const contentType = /^[^/\s]+\/[^/\s]+$/.test(type.value) ? type.value : "text/plain";
-	const boundary = contentType.startsWith("multipart/") ? mimeParameter(type.params, "boundary") : null;
+	const fields = readPartFields(lines);
+	const boundary = fields.multipart ? usableBoundary(mimeParameter(fields.type.params, "boundary")) : "";
+	const type = fields.multipart && !boundary ? "text/plain" : fields.type.value;
+	const { disposition } = fields;
 	return {
-		contentType,
-		transferEncoding: transferEncodingOf(encoding),
+		contentType: /^[^/\s]+\/[^/\s]+$/.test(type) ? type : "text/plain",
+		transferEncoding: transferEncodingOf(fields.transferEncoding),
 		disposition: disposition.value === "attachment" || disposition.value === "inline" ? disposition.value : null,
-		filename: mimeParameter(disposition.params, "filename") ?? mimeParameter(type.params, "name"),
-		contentId: values.get("content-id") || null,
+		filename: mimeParameter(disposition.params, "filename") ?? mimeParameter(fields.type.params, "name"),
+		contentId: fields.contentId,
 		boundary: boundary ? encoder.encode(boundary) : null,
 	};
 }
@@ -144,7 +131,8 @@ class MimeIndexScan {
 		for (let start = 0; start < bytes.length;) {
 			const newline = bytes.indexOf(NEWLINE, start);
 			const lineEnd = newline === -1 ? bytes.length : newline;
-			const end = lineEnd > start && bytes[lineEnd - 1] === CARRIAGE_RETURN ? lineEnd - 1 : lineEnd;
+			let end = lineEnd;
+			while (end > start && bytes[end - 1] === CARRIAGE_RETURN) end--;
 			const next = newline === -1 ? bytes.length : newline + 1;
 			if (!this.line(start, end, next)) return this.parts;
 			start = next;
@@ -174,16 +162,22 @@ class MimeIndexScan {
 			else {
 				this.headerBytes += end - start;
 				if (this.headerBytes > MAX_HEADER_BYTES) return false;
-				this.headerLines.push(utf8.decode(bytes.subarray(start, end)));
+				const line = decodeHeaderLine(bytes.subarray(start, end));
+				if (continuesHeaders(line)) this.headerLines.push(line);
+				else {
+					// The headers ended above this line: it is the body's first, or a boundary they declared.
+					this.endHeaders(start);
+					return this.line(start, end, next);
+				}
 			}
 		}
 		this.previousEnd = end;
 		return true;
 	}
 
-	/** The open multipart a line delimits, innermost first, and whether it closes it. */
+	/** The open multipart a line delimits, outermost first, and whether it closes it. */
 	private delimiter(start: number, end: number): { index: number; close: boolean } | null {
-		for (let index = this.boundaries.length - 1; index >= 0; index--) {
+		for (let index = 0; index < this.boundaries.length; index++) {
 			const boundary = this.boundaries[index];
 			if (!bytesStartWith(this.bytes, start + 2, end, boundary)) continue;
 			let rest = start + 2 + boundary.length;
@@ -228,13 +222,6 @@ function toBytes(value: ArrayBuffer | Uint8Array): Uint8Array {
 export function indexMimeParts(raw: ArrayBuffer | Uint8Array): MimePartIndex[] {
 	return new MimeIndexScan(toBytes(raw)).run();
 }
-
-const BASE64_VALUES = (() => {
-	const table = new Int8Array(256).fill(-1);
-	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-	for (let index = 0; index < alphabet.length; index++) table[alphabet.charCodeAt(index)] = index;
-	return table;
-})();
 
 /**
  * Base64 as mail carries it: every byte outside the alphabet (line breaks, spaces, `=` padding) is skipped, and a

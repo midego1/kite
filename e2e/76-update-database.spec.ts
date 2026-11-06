@@ -27,7 +27,10 @@ test("the primary admin sees the pending migrations, the safety backup and a pro
 	const panel = page.getByRole("region", { name: "Pending database updates" });
 	await expect(panel).toBeVisible();
 	await expect(panel).toContainText("2 database updates are waiting");
-	await expect(panel.getByRole("list", { name: "Pending migrations" }).getByRole("listitem")).toHaveText(NAMES);
+	await expect(panel.getByRole("list", { name: "Pending migrations" }).getByRole("listitem")).toHaveText([
+		/^Add column\s*0101_add_column\.sql$/,
+		/^Add table\s*0102_add_table\.sql$/,
+	]);
 	await expect(panel).toContainText("Kite saves a safety backup of the database when there is data to save");
 	await expect(panel.getByRole("link", { name: "Backups" })).toHaveAttribute("href", "/backups");
 

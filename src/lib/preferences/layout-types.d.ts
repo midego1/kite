@@ -37,6 +37,10 @@ export interface LayoutPreferences {
 	emailFont?: LayoutEmailFont;
 	fontScope?: LayoutFontScope;
 	interfaceDirection?: LayoutInterfaceDirection;
+	/** The language the reader translates mail into, an ISO 639-1 code. */
+	translateTo?: string;
+	/** Languages the reader no longer offers to translate, as ISO 639-1 codes. */
+	translateNever?: string[];
 }
 
 /** What `GET` and `PATCH /api/settings/layout` answer. */

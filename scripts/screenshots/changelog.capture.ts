@@ -3,9 +3,21 @@ import path from "node:path";
 import { expect, test, type Browser, type Locator, type Page } from "@playwright/test";
 import sharp from "sharp";
 import { ADMIN, STORAGE_STATE } from "../../e2e/support/constants";
+import { useFakeProvider as connectFakeProvider } from "../../e2e/support/agent";
+import { startFakeModel } from "../../e2e/support/fake-model";
+import type { FakeModel } from "../../e2e/support/fake-model-types";
 import { apiContext, postInbound, waitForMessage } from "../../e2e/support/helpers";
 import { turnScreenerOff } from "../../e2e/support/screener";
-import { RTL_MAIL, seedDemoData, seedPagedMail, seedRtlMail, THREAD } from "./demo-data";
+import {
+	RTL_MAIL,
+	seedDemoData,
+	seedPagedMail,
+	seedRtlMail,
+	seedThaiMail,
+	THAI_MAIL,
+	THAI_MAIL_TRANSLATED,
+	THREAD,
+} from "./demo-data";
 import { sampleMessage, startFakeImap } from "../../tests/support/fake-imap.mjs";
 
 // Screenshots for the changelog (docs/releasing.md#screenshots-in-the-changelog), taken against the isolated,
@@ -31,6 +43,7 @@ type Shot = {
 
 /** Demo mail source for the import screenshot: a fake IMAP server on 127.0.0.1 with invented folders and sizes. */
 let demoImap: Awaited<ReturnType<typeof startFakeImap>> | null = null;
+let demoTwoWay: Awaited<ReturnType<typeof startFakeImap>> | null = null;
 const demoFolder = (count: number, bytes: number, label: string) =>
 	Array.from({ length: count }, (_, index) => ({ raw: sampleMessage(index + 1, { subject: `${label} ${index + 1}` }), size: bytes }));
 
@@ -102,11 +115,24 @@ async function seedCompactLabelsDemo(): Promise<void> {
 		await waitForMessage(api, subject);
 	}
 	await api.dispose();
+/** A model for the shots that need the assistant: nothing it answers appears in them. */
+let demoModel: { fake: FakeModel; restore: () => Promise<void> } | null = null;
+
+async function openThaiMail(page: Page) {
+	if (!demoModel) {
+		const api = await apiContext(STORAGE_STATE);
+		const fake = await startFakeModel();
+		demoModel = { fake, restore: await connectFakeProvider(api, fake) };
+	}
+	await seedThaiMail();
+	await page.goto("/inbox");
+	await page.getByRole("main").getByText(THAI_MAIL.subject, { exact: true }).first().click();
+	await expect(page.getByTestId("translation-bar")).toContainText("This message is in Thai.");
 }
 
 const SHOTS: Shot[] = [
 	{
-		// All mailboxes with compact labels: a dot per mailbox, a link icon for mail through a connected account, and
+		// All mailboxes with compact labels: a square per mailbox, a link icon for mail through a connected account, and
 		// the account as a view in the sidebar.
 		name: "2026-11-06-compact-labels-light",
 		theme: "light",
@@ -122,6 +148,95 @@ const SHOTS: Shot[] = [
 			await rows.filter({ hasText: "Offsite agenda and travel details" }).first().getByRole("link").first().click();
 			await expect(page.getByRole("button", { name: /^via Gmail: show all mail through/ })).toBeVisible();
 			return page;
+		},
+	},
+	{
+		// The quiet bar above a message in a language the reader does not read.
+		name: "2026-11-06-translate-message-light",
+		theme: "light",
+		viewport: { width: 1280, height: 700 },
+		open: async (page) => {
+			await openThaiMail(page);
+			return page.locator("[data-reader-scroll]");
+		},
+	},
+	{
+		// The same message translated, with an answer written here so the picture reads as real English.
+		name: "2026-11-06-translated-message-light",
+		theme: "light",
+		viewport: { width: 1280, height: 700 },
+		open: async (page) => {
+			await page.route("**/api/messages/*/translation?*", (route) =>
+				route.fulfill({
+					json: {
+						translation: {
+							target: "en",
+							sourceLanguage: "th",
+							subject: THAI_MAIL_TRANSLATED.subject,
+							html: THAI_MAIL_TRANSLATED.html,
+							text: null,
+							cut: false,
+							quotedPending: false,
+							model: "demo-model",
+						},
+					},
+				}),
+			);
+			await openThaiMail(page);
+			await page.getByRole("button", { name: "Translate to English" }).click();
+			await expect(page.getByTestId("translation-bar")).toContainText("Translated from Thai");
+			await expect(page.frameLocator('iframe[title="Message body"]').last().getByText("Bangkok")).toBeVisible();
+			return page.locator("[data-reader-scroll]");
+		},
+	},
+	{
+		// Settings → Connected accounts → Two-way sync: the choices per direction, with a demo account at the fake server.
+		name: "2026-11-06-two-way-sync-light",
+		theme: "light",
+		viewport: { width: 1100, height: 1100 },
+		open: async (page) => {
+			demoTwoWay ??= await startFakeImap({
+				authPlain: true,
+				specialUse: true,
+				move: true,
+				uidplus: true,
+				users: { "demo.account@example.test": "app-password" },
+				folders: { INBOX: [], Trash: [], Junk: [], Archive: [] },
+				folderAttributes: { Trash: ["\\Trash"], Junk: ["\\Junk"], Archive: ["\\Archive"] },
+			});
+			await page.goto("/settings/connected-accounts");
+			await page.evaluate(
+				async ({ port, kitePassword }) => {
+					const { mailboxes } = (await (await fetch("/api/mailboxes")).json()) as { mailboxes: { id: string }[] };
+					const response = await fetch("/api/external-accounts", {
+						method: "POST",
+						headers: { "Content-Type": "application/json" },
+						body: JSON.stringify({
+							address: "demo.account@example.test",
+							preset: "other",
+							mailboxId: mailboxes[0].id,
+							imap: { host: "127.0.0.1", port, security: "starttls" },
+							password: "app-password",
+							kitePassword,
+						}),
+					});
+					// Connected on an earlier try of this shot is as good.
+					if (!response.ok && response.status !== 409) throw new Error(await response.text());
+				},
+				{ port: demoTwoWay.port, kitePassword: ADMIN.password },
+			);
+			await page.reload();
+			const panel = page.locator('[data-account-two-way="demo.account@example.test"]');
+			await panel.getByRole("button", { name: "Two-way sync" }).click();
+			const choose = async (name: string, label: string) => {
+				await panel.getByRole("combobox", { name, exact: true }).click();
+				await page.getByRole("listbox").getByRole("option", { name: label, exact: true }).click();
+			};
+			await choose("Delete in Kite", "Move to the provider's Trash");
+			await choose("Read, unread and star in Kite", "On");
+			await choose("Deleted or moved out of the Inbox", "Move to Kite's Trash");
+			await expect(panel.getByRole("combobox", { name: "Deleted or moved out of the Inbox" })).toHaveText(/Kite's Trash/);
+			return panel;
 		},
 	},
 	{
@@ -163,6 +278,28 @@ const SHOTS: Shot[] = [
 				hide("#imap-mode", "div.space-y-2");
 			});
 			return page.locator("form").filter({ has: table });
+		},
+	},
+	{
+		// Admin overview → Database with two updates waiting (the status is faked, no migration is pending in the demo).
+		name: "2026-11-06-update-database-light",
+		theme: "light",
+		viewport: { width: 1000, height: 900 },
+		open: async (page) => {
+			await page.route("**/api/admin/migrations", (route) =>
+				route.fulfill({
+					json: {
+						ready: false,
+						unknown: [],
+						pending: ["0091_add_mailbox_ai_disabled.sql", "0092_add_mailbox_ai_disabled_at.sql"],
+					},
+				}),
+			);
+			await page.goto("/admin");
+			const panel = page.getByRole("region", { name: "Pending database updates" });
+			await expect(panel).toBeVisible();
+			await panel.scrollIntoViewIfNeeded();
+			return panel;
 		},
 	},
 	{
@@ -462,6 +599,11 @@ test.describe("changelog screenshots", () => {
 		demoImap = null;
 		await demoGmail?.close();
 		demoGmail = null;
+		await demoModel?.restore();
+		await demoModel?.fake.close();
+		demoModel = null;
+		await demoTwoWay?.close();
+		demoTwoWay = null;
 	});
 
 	for (const shot of SHOTS) {

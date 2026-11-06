@@ -76,10 +76,15 @@ export function formatPostalAddressList(addresses: Address[] | undefined, fallba
 	return mailboxes.map((mailbox) => formatEmailAddress(mailbox.address, mailbox.name)).join(", ");
 }
 
+/** A parsed header value without the whitespace it was folded with: postal-mime keeps runs of it, tabs included. */
+export function collapseFoldingSpace(value: string): string {
+	return value.replace(/[ \t]+/g, " ");
+}
+
 function getPostalMailboxes(address: Address | undefined): Mailbox[] {
 	if (!address) return [];
-	if ("address" in address && address.address) return [address];
-	return address.group ?? [];
+	const mailboxes = "address" in address && address.address ? [address] : (address.group ?? []);
+	return mailboxes.map((mailbox) => ({ ...mailbox, name: collapseFoldingSpace(mailbox.name) }));
 }
 
 /**

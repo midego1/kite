@@ -32,13 +32,21 @@ export type AiErrorCode = (typeof AI_ERROR_CODES)[number];
 
 /** The feature a request belongs to, as logs and the admin list name it. */
 export type AiFeature =
-	"chat" | "compose" | "summary" | "summary_translation" | "auto_triage" | "auto_draft" | "line_summary";
+	| "chat"
+	| "compose"
+	| "summary"
+	| "summary_translation"
+	| "message_translation"
+	| "auto_triage"
+	| "auto_draft"
+	| "line_summary";
 
 export const AI_FEATURE_LABELS: Record<AiFeature, string> = {
 	chat: "Assistant chat",
 	compose: "Write with Kite",
 	summary: "Summary",
 	summary_translation: "Summary translation",
+	message_translation: "Message translation",
 	auto_triage: "Automatic reading",
 	auto_draft: "Agent draft",
 	line_summary: "One-line summary",

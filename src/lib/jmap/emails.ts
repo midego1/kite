@@ -22,6 +22,7 @@ import { getEmailState } from "./state";
 import { unescapePointerToken } from "./pointer-utils";
 import { listAccessibleMailboxIdSet, listJmapMailboxes } from "./access";
 import { emailWriteAccess, refuseDraftMove } from "./email-access";
+import { destroyEmails, recordEmailUpdate } from "./email-destroy";
 import { deleteUpload, readUpload, storeRawDraftMime } from "./blobs";
 import type {
 	Comparator,
@@ -364,8 +365,6 @@ export const emailSet: JmapMethodHandler = async (ctx, args) => {
 	const notCreated: Record<string, unknown> = {};
 	const updated: Record<string, null> = {};
 	const notUpdated: Record<string, unknown> = {};
-	const destroyed: string[] = [];
-	const notDestroyed: Record<string, unknown> = {};
 
 	for (const [creationId, value] of Object.entries((args.create ?? {}) as Record<string, Record<string, unknown>>)) {
 		const result = await createDraft(ctx, value, writable);
@@ -410,29 +409,19 @@ export const emailSet: JmapMethodHandler = async (ctx, args) => {
 			if (move.folderId !== undefined) set.folderId = move.folderId;
 		}
 		if (Object.keys(set).length) await ctx.db.update(messages).set(set).where(eq(messages.id, id));
+		await recordEmailUpdate(ctx.env, ctx.auth.user, row, set);
 		updated[id] = null;
 	}
 
 	// JMAP destroy is permanent; Kite keeps a trash, so destroy moves there
 	// and a second destroy from Trash deletes the row.
 	const destroyIds = (args.destroy ?? []) as string[];
-	const destroyRows = await loadMessages(ctx, destroyIds);
-	const destroyById = new Map(destroyRows.map((row) => [row.id, row]));
-	for (const id of destroyIds) {
-		const row = destroyById.get(id);
-		if (!row || !row.mailboxId) {
-			notDestroyed[id] = { type: "notFound" };
-			continue;
-		}
-		if (!canChange(row, row.mailboxId)) {
-			notDestroyed[id] = { type: "forbidden" };
-			continue;
-		}
-		if (row.status === "trash" || row.status === "draft")
-			await deleteMessageWithObjects(ctx.env, ctx.db, row.id, row.rawR2Key);
-		else await ctx.db.update(messages).set({ status: "trash", folderId: null }).where(eq(messages.id, id));
-		destroyed.push(id);
-	}
+	const { destroyed, notDestroyed } = await destroyEmails(
+		ctx,
+		await loadMessages(ctx, destroyIds),
+		destroyIds,
+		canChange,
+	);
 
 	return {
 		accountId: ctx.accountId,

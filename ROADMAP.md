@@ -72,9 +72,11 @@ Make the app usable for Arabic, Hebrew, Persian and Urdu mail and users.
 
 ## Milestone 3: Admin and deploy polish
 
-1. **Clear "Update database" action**: when migrations are pending, the admin overview shows a prominent button (not a small link) with the list of migrations and the automatic backup that runs first. Non-primary admins see who can run it.
-2. **No lost clicks during hydration**: buttons that start server actions are disabled until the page is interactive, so an early click is never silently ignored. Test: e2e clicks immediately after navigation.
-3. **Layout preferences follow the account**: reading layout, density, list width and conversation view are saved to the account (with `localStorage` as the cache), so they carry over to other devices.
+All three items have shipped. A fourth pass added readable names for the waiting updates and `tests/button-type-guard.test.mjs`.
+
+1. **Clear "Update database" action (shipped in [#201](https://github.com/midego1/kite/pull/201), [#232](https://github.com/midego1/kite/pull/232))**: when migrations are pending, the admin overview shows a prominent button (not a small link) with the list of migrations and the automatic backup that runs first. Non-primary admins see who can run it.
+2. **No lost clicks during hydration (shipped in [#203](https://github.com/midego1/kite/pull/203))**: buttons that start server actions are disabled until the page is interactive, so an early click is never silently ignored. Test: e2e clicks immediately after navigation.
+3. **Layout preferences follow the account (shipped in [#208](https://github.com/midego1/kite/pull/208))**: reading layout, density, list width and conversation view are saved to the account (with `localStorage` as the cache), so they carry over to other devices.
 
 ## Milestone 4: Security hardening
 
@@ -136,7 +138,7 @@ Google treats full Gmail access (`https://mail.google.com/`) as a restricted sco
    - Admin settings take the client ID and secret of the install's own app registration, with setup steps in `docs/providers.md`.
    - Test: unit tests for the XOAUTH2 string and token refresh; manual check against a real test account, since CI has no provider credentials.
 
-**Not planned: two-way sync.** Mirroring reads, moves and deletes back to the provider needs conflict handling, an always-open IMAP connection that Workers cannot hold, and per-provider quirks, for little gain once new mail arrives and replies go out from the right address.
+**Two-way sync is opt-in and bounded.** Mirroring reads, moves and deletes back to the provider is a per-account choice ([Two-way sync](docs/external-accounts.md#two-way-sync), since November 2026): it polls like the rest of sync, needs no always-open connection, and stops at the settings it lists instead of mirroring every folder.
 
 ## Milestone 7: Drive and storage
 

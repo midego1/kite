@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { createReadStream, createWriteStream } from "node:fs";
 import { mkdir, open, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import { Readable } from "node:stream";
 import { finished, pipeline } from "node:stream/promises";
+import { entrySortKey, listLimit, listStart, mayHoldKeys } from "./file-bucket-utils";
 
 /**
  * The R2 bucket API over a directory. Objects are files under `root`; the
@@ -192,17 +193,18 @@ export class FileBucket {
 		}
 	}
 
-	/** Keys in lexical order, as R2 lists them; `cursor` is the last key of the previous page, `startAfter` any key. */
+	/**
+	 * Keys in lexical order, as R2 lists them; `cursor` is the last key of the previous page, `startAfter` any key.
+	 * The walk visits directories in key order and skips subtrees outside the prefix or before the start key, so a
+	 * page reads only the directories on its way and stops after `limit` keys, however many objects the bucket holds.
+	 */
 	async list(options?: { prefix?: string; cursor?: string; startAfter?: string; limit?: number }) {
 		const prefix = options?.prefix ?? "";
-		const limit = Math.min(Math.max(options?.limit ?? 1000, 1), 1000);
-		const after = [options?.cursor, options?.startAfter].reduce<string>(
-			(latest, key) => (key && key > latest ? key : latest),
-			"",
-		);
-		const keys = (await this.walkKeys(this.root))
-			.filter((key) => key.startsWith(prefix) && (!after || key > after))
-			.sort();
+		const limit = listLimit(options?.limit);
+		const after = listStart(options?.cursor, options?.startAfter);
+		// One key past the page tells whether it is truncated.
+		const keys: string[] = [];
+		await this.collectKeys(this.root, "", prefix, after, limit + 1, keys);
 		const page = keys.slice(0, limit);
 		const objects = [];
 		for (const key of page) {
@@ -213,23 +215,34 @@ export class FileBucket {
 		return { objects, truncated, cursor: truncated ? page.at(-1) : undefined, delimitedPrefixes: [] as string[] };
 	}
 
-	private async walkKeys(directory: string): Promise<string[]> {
+	/** Appends keys under `directory` (whose keys start with `keyPrefix`) in order until `keys` holds `max`. */
+	private async collectKeys(
+		directory: string,
+		keyPrefix: string,
+		prefix: string,
+		after: string,
+		max: number,
+		keys: string[],
+	): Promise<void> {
 		let entries;
 		try {
 			entries = await readdir(directory, { withFileTypes: true });
 		} catch {
-			return [];
+			return;
 		}
-		const keys: string[] = [];
+		const candidates = [];
 		for (const entry of entries) {
-			const full = join(directory, entry.name);
-			if (entry.isDirectory()) {
-				if (full !== join(this.root, MULTIPART_DIRECTORY)) keys.push(...(await this.walkKeys(full)));
-			} else if (!entry.name.endsWith(".meta.json") && !entry.name.endsWith(".partial")) {
-				keys.push(relative(this.root, full).split(sep).join("/"));
-			}
+			const isDirectory = entry.isDirectory();
+			if (isDirectory ? directory === this.root && entry.name === MULTIPART_DIRECTORY : isSidecar(entry.name)) continue;
+			const path = keyPrefix + entrySortKey(entry.name, isDirectory);
+			if (mayHoldKeys(path, isDirectory, prefix, after)) candidates.push({ name: entry.name, isDirectory, path });
 		}
-		return keys;
+		candidates.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+		for (const entry of candidates) {
+			if (keys.length >= max) return;
+			if (entry.isDirectory) await this.collectKeys(join(directory, entry.name), entry.path, prefix, after, max, keys);
+			else keys.push(entry.path);
+		}
 	}
 
 	private multipartDirectory(uploadId: string) {
@@ -340,6 +353,10 @@ async function withObjectLock<T>(path: string, run: () => Promise<T>): Promise<T
 type UploadMeta = { key: string; httpMetadata?: StoredMeta["httpMetadata"] };
 
 const MULTIPART_DIRECTORY = ".multipart";
+
+function isSidecar(name: string) {
+	return name.endsWith(".meta.json") || name.endsWith(".partial");
+}
 const MAX_PARTS = 10_000;
 
 function partEtag(partNumber: number, size: number): string {

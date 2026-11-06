@@ -8,7 +8,7 @@ const MB = 1024 * 1024;
 /**
  * The limits of one IMAP connection. A Worker isolate has 128 MB of memory, so on Workers a message may be at most
  * 36 MB (a message at Gmail's 25 MB attachment limit, base64-encoded) and a FETCH batch 48 MB; the Node server
- * allows 64 MB and 96 MB. A message above the limit fails its batch: the job retries and then fails with the reason.
+ * allows 64 MB and 96 MB. An import asks for sizes first and skips a message above the limit (the job names it); a message that still arrives above it fails its fetch with the reason.
  * Every command gets three minutes, extended by the bytes that keep arriving at 64 KB/s or more, up to ten minutes.
  */
 export function imapLimits(runtime: "node" | undefined): ImapLimits {
@@ -295,6 +295,18 @@ export function parseUidNext(lines: readonly string[]): number | null {
 	return parseResponseCodeNumber(lines, "UIDNEXT");
 }
 
+/**
+ * The `[HIGHESTMODSEQ n]` of a CONDSTORE server's EXAMINE or SELECT answer, as text (it may be a 63-bit number), or
+ * null when the server sent none (or `[NOMODSEQ]`).
+ */
+export function parseHighestModseq(lines: readonly string[]): string | null {
+	for (const line of lines) {
+		const value = /\[HIGHESTMODSEQ (\d+)\]/i.exec(line)?.[1];
+		if (value) return value;
+	}
+	return null;
+}
+
 function parseResponseCodeNumber(lines: readonly string[], code: "UIDVALIDITY" | "UIDNEXT"): number | null {
 	const pattern = new RegExp(`\\[${code} (\\d+)\\]`, "i");
 	for (const line of lines) {
@@ -339,6 +351,18 @@ export function parseFetchSummaries(lines: readonly string[]): ImapMessageSummar
 		if (uid) summaries.push({ uid: Number(uid), flags, internalDate, size });
 	}
 	return summaries;
+}
+
+/** The flags of a FETCH that asked for them, with each message's sequence number (how many sit before it in the folder). */
+export function parseFetchFlags(lines: readonly string[]): { seq: number; uid: number; flags: string[] }[] {
+	const answers: { seq: number; uid: number; flags: string[] }[] = [];
+	for (const line of lines) {
+		const seq = /^\* (\d+) FETCH \(/i.exec(line)?.[1];
+		if (!seq) continue;
+		const { uid, flags } = parseFetchAttributes(line);
+		if (uid) answers.push({ seq: Number(seq), uid: Number(uid), flags });
+	}
+	return answers;
 }
 
 /** An IMAP `date` for SEARCH SINCE (RFC 9051 §9: `27-Oct-2026`), in UTC. */

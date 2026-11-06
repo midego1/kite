@@ -229,18 +229,18 @@ export class ImapConnection {
 	 * Fetches several messages with a single UID FETCH round trip, with their flags, INTERNALDATE and size.
 	 * BODY.PEEK[] returns the full RFC 822 source without setting \Seen on the source server. A server may put
 	 * the attributes before or after the literal, so the text of the whole response is read before it is parsed.
+	 * With `messageIdHeader`, `raw` is only the message's Message-ID header (a check before writing at the source).
 	 */
 	async fetchMessages(
 		uids: string[],
-		options: { gmailLabels?: boolean } = {},
+		options: { gmailLabels?: boolean; messageIdHeader?: boolean } = {},
 	): Promise<Map<string, ImapFetchedMessage>> {
 		const result = new Map<string, ImapFetchedMessage>();
 		if (uids.length === 0) return result;
 		const tag = this.nextTag();
 		const labels = options.gmailLabels ? " X-GM-LABELS" : "";
-		await this.write(
-			`${tag} UID FETCH ${uids.join(",")} (UID FLAGS INTERNALDATE RFC822.SIZE${labels} BODY.PEEK[])\r\n`,
-		);
+		const section = options.messageIdHeader ? "BODY.PEEK[HEADER.FIELDS (MESSAGE-ID)]" : "BODY.PEEK[]";
+		await this.write(`${tag} UID FETCH ${uids.join(",")} (UID FLAGS INTERNALDATE RFC822.SIZE${labels} ${section})\r\n`);
 		let response: { text: string; raw: ArrayBuffer | null } | null = null;
 		let batchBytes = 0;
 

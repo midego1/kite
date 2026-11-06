@@ -17,6 +17,7 @@ import type { ExternalAccountView } from "@/lib/external-accounts/types";
 import { AccountFormDialog } from "./account-form-dialog";
 import { AccountSending } from "./account-sending";
 import { AccountSpamSync } from "./account-spam-sync";
+import { AccountTwoWay } from "./account-two-way";
 import { ForwardingGuide } from "./forwarding-guide";
 import type { ForwardingProviderId } from "./forwarding-guide-utils";
 import type { ConnectedAccountsState } from "./connected-accounts-types";
@@ -276,6 +277,7 @@ function AccountDetails({
 			{hint && <p className="text-xs text-[#8a4b0a] dark:text-[#d4a35a]">{hint}</p>}
 			<AccountSending account={account} usable={usable} onChanged={onChanged} />
 			<AccountSpamSync account={account} usable={usable} onChanged={onChanged} />
+			<AccountTwoWay account={account} usable={usable} />
 			{syncText && (
 				<p className="text-xs text-neutral-600" data-sync-status>
 					{syncText}

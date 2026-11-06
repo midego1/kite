@@ -158,6 +158,7 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/external-accounts/[id]`                                | DELETE, PATCH          | [source](../src/app/api/external-accounts/[id]/route.ts)                                |
 | `/api/external-accounts/[id]/sync`                           | POST                   | [source](../src/app/api/external-accounts/[id]/sync/route.ts)                           |
 | `/api/external-accounts/[id]/test`                           | POST                   | [source](../src/app/api/external-accounts/[id]/test/route.ts)                           |
+| `/api/external-accounts/[id]/two-way`                        | GET, PUT               | [source](../src/app/api/external-accounts/[id]/two-way/route.ts)                        |
 | `/api/external-accounts/attention`                           | GET                    | [source](../src/app/api/external-accounts/attention/route.ts)                           |
 | `/api/external-accounts/detect`                              | GET                    | [source](../src/app/api/external-accounts/detect/route.ts)                              |
 | `/api/external-accounts`                                     | GET, POST              | [source](../src/app/api/external-accounts/route.ts)                                     |
@@ -198,6 +199,7 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/messages/[messageId]/status`                           | POST                   | [source](../src/app/api/messages/[messageId]/status/route.ts)                           |
 | `/api/messages/[messageId]/summary`                          | GET, POST              | [source](../src/app/api/messages/[messageId]/summary/route.ts)                          |
 | `/api/messages/[messageId]/thread`                           | GET                    | [source](../src/app/api/messages/[messageId]/thread/route.ts)                           |
+| `/api/messages/[messageId]/translation`                      | GET, POST              | [source](../src/app/api/messages/[messageId]/translation/route.ts)                      |
 | `/api/messages/bulk`                                         | POST                   | [source](../src/app/api/messages/bulk/route.ts)                                         |
 | `/api/messages/counts`                                       | GET                    | [source](../src/app/api/messages/counts/route.ts)                                       |
 | `/api/messages/empty`                                        | POST                   | [source](../src/app/api/messages/empty/route.ts)                                        |

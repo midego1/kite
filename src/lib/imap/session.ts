@@ -11,10 +11,12 @@ import {
 	parseListMailboxName,
 	parseStatusLine,
 	parseExists,
+	parseHighestModseq,
 	parseUidNext,
 	parseUidValidity,
 	type ImapListedMailbox,
 	type ImapMessageSummary,
+	parseFetchFlags,
 	parseFetchSummaries,
 	parseSearchUids,
 	plainAuthToken,
@@ -23,11 +25,25 @@ import {
 } from "./protocol-utils";
 import type { ImapFetchedMessage, ImapLogin } from "./types";
 
+/** What opening a folder said; a field is null when the server did not say it. */
+type ImapFolderState = {
+	uidValidity: number | null;
+	uidNext: number | null;
+	exists: number | null;
+	/** CONDSTORE's `HIGHESTMODSEQ`: changes whenever a flag in the folder does. */
+	highestModseq: string | null;
+};
+
 export type ImapSession = {
 	/** The capabilities the server announced after sign-in (upper-case), such as `X-GM-EXT-1` on Gmail. */
 	readonly capabilities: readonly string[];
-	/** Opens `folder` read-only; `uidValidity`, `uidNext` and `exists` are null when the server did not say. */
-	examine(folder: string): Promise<{ uidValidity: number | null; uidNext: number | null; exists: number | null }>;
+	/** Opens `folder` read-only. */
+	examine(folder: string): Promise<ImapFolderState>;
+	/**
+	 * Opens `folder` read-write, the only command that lets a session change anything; refused when the server opens
+	 * it read-only. Only two-way sync (spec §6.8) calls it, and only when the account's owner turned that on.
+	 */
+	select(folder: string): Promise<ImapFolderState>;
 	searchUids(): Promise<string[]>;
 	/** The UIDs of the open folder's messages received on or after `date`'s day (`UID SEARCH SINCE`). */
 	searchUidsSince(date: Date): Promise<number[]>;
@@ -43,7 +59,24 @@ export type ImapSession = {
 	 * server has no STATUS=SIZE.
 	 */
 	fetchSizes(fromSeq: number, toSeq: number): Promise<ImapMessageSummary[]>;
-	fetchMessages(uids: string[], options?: { gmailLabels?: boolean }): Promise<Map<string, ImapFetchedMessage>>;
+	/** UID and size only of these UIDs (`UID FETCH n,m (UID RFC822.SIZE)`, no bodies); a size is null when the server left it out. */
+	fetchUidSizes(uids: string[]): Promise<ImapMessageSummary[]>;
+	/** Flags alone (`UID FETCH n:m (UID FLAGS)`) of the open folder's messages from `fromUid` to `toUid`. */
+	fetchFlags(fromUid: number, toUid: number): Promise<ReturnType<typeof parseFetchFlags>>;
+	/** The same for exactly these UIDs (`UID FETCH a,b,c (UID FLAGS)`), which a server answers one by one. */
+	fetchFlagsOf(uids: readonly number[]): Promise<ReturnType<typeof parseFetchFlags>>;
+	fetchMessages(
+		uids: string[],
+		options?: { gmailLabels?: boolean; messageIdHeader?: boolean },
+	): Promise<Map<string, ImapFetchedMessage>>;
+	/** Adds (`+`) or removes (`-`) `flags` on the open folder's messages, without untagged answers. */
+	storeFlags(uids: readonly number[], change: "+" | "-", flags: readonly string[]): Promise<void>;
+	/** `UID MOVE` to `folder` (its name as LIST returned it); needs the MOVE capability. */
+	moveMessages(uids: readonly number[], folder: string): Promise<void>;
+	/** `UID COPY` to `folder`. */
+	copyMessages(uids: readonly number[], folder: string): Promise<void>;
+	/** `UID EXPUNGE` of exactly `uids` (UIDPLUS); a plain EXPUNGE, which takes other clients' messages too, has no method. */
+	expungeMessages(uids: readonly number[]): Promise<void>;
 	listMailboxNames(): Promise<string[]>;
 	/**
 	 * Every mailbox with its attributes, asking for special-use attributes (`LIST "" "*" RETURN (SPECIAL-USE)`)
@@ -87,13 +120,24 @@ export async function openImapSession(
 		await imap.close();
 		throw error;
 	}
+	const folderState = (lines: readonly string[]): ImapFolderState => ({
+		uidValidity: parseUidValidity(lines),
+		uidNext: parseUidNext(lines),
+		exists: parseExists(lines),
+		highestModseq: parseHighestModseq(lines),
+	});
 	return {
 		get capabilities() {
 			return imap.capabilities;
 		},
 		async examine(folder) {
-			const lines = await imap.command(`EXAMINE ${quoteImapString(folder)}`);
-			return { uidValidity: parseUidValidity(lines), uidNext: parseUidNext(lines), exists: parseExists(lines) };
+			return folderState(await imap.command(`EXAMINE ${quoteImapString(folder)}`));
+		},
+		async select(folder) {
+			const lines = await imap.command(`SELECT ${quoteImapString(folder)}`);
+			if (lines.some((line) => /\[READ-ONLY\]/i.test(line)))
+				throw new Error("IMAP SELECT failed: the server opened the folder read-only");
+			return folderState(lines);
 		},
 		async searchUids() {
 			const lines = await imap.command("UID SEARCH ALL");
@@ -115,7 +159,30 @@ export async function openImapSession(
 			const lines = await imap.command(`FETCH ${from}:${to} (UID RFC822.SIZE)`);
 			return parseFetchSummaries(lines);
 		},
+		async fetchUidSizes(uids) {
+			if (uids.length === 0) return [];
+			const lines = await imap.command(`UID FETCH ${uids.join(",")} (UID RFC822.SIZE)`);
+			return parseFetchSummaries(lines);
+		},
+		async fetchFlags(fromUid, toUid) {
+			return parseFetchFlags(await imap.command(`UID FETCH ${fromUid}:${toUid} (UID FLAGS)`));
+		},
+		async fetchFlagsOf(uids) {
+			return parseFetchFlags(await imap.command(`UID FETCH ${uids.join(",")} (UID FLAGS)`));
+		},
 		fetchMessages: (uids, options) => imap.fetchMessages(uids, options),
+		async storeFlags(uids, change, flags) {
+			await imap.command(`UID STORE ${uids.join(",")} ${change}FLAGS.SILENT (${flags.join(" ")})`, "IMAP STORE failed");
+		},
+		async moveMessages(uids, folder) {
+			await imap.command(`UID MOVE ${uids.join(",")} ${quoteImapString(folder)}`, "IMAP MOVE failed");
+		},
+		async copyMessages(uids, folder) {
+			await imap.command(`UID COPY ${uids.join(",")} ${quoteImapString(folder)}`, "IMAP COPY failed");
+		},
+		async expungeMessages(uids) {
+			await imap.command(`UID EXPUNGE ${uids.join(",")}`, "IMAP EXPUNGE failed");
+		},
 		async listMailboxes() {
 			const extended = imap.capabilities.some((name) => name === "SPECIAL-USE" || name === "LIST-EXTENDED");
 			const lines = await imap.command(extended ? 'LIST "" "*" RETURN (SPECIAL-USE)' : 'LIST "" "*"');

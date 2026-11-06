@@ -6,6 +6,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.11.06.2] - 2026-11-06
+
+### Fixed
+
+- Forwarded messages with a large attachment, and long text files sent as attachments, now arrive instead of being refused.
+- Attached messages and files sent without encoding now keep their exact contents, and quoted replies in plain-text mail wrap correctly.
+
+## [2026.11.06.1] - 2026-11-06
+
+### Added
+
+- Connected accounts can now stay in step both ways: choose per account what Delete, Archive, Spam, read and star do at the provider, and what Kite does when mail is deleted or read there. Everything is off until you turn it on in [Settings → Connected accounts](/settings/connected-accounts), and nothing is ever deleted permanently.
+  ![The two-way sync settings of a connected account, with a choice per action in each direction](/changelog/2026-11-06-two-way-sync-light.webp)
+
+### Changed
+
+- This needs a database update applied from the Admin overview before two-way sync can be turned on.
+
+## [2026.11.06.0] - 2026-11-06
+
+### Changed
+
+- The pending database updates on the admin overview are now listed in words (for example "Add mailbox AI disabled at") next to the file name, above the Update database button.
+
+  ![The admin overview listing two waiting database updates in words, with the safety backup note and the Update database button](/changelog/2026-11-06-update-database-light.webp)
+
 ## [2026.11.05.3] - 2026-11-05
 
 ### Fixed

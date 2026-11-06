@@ -28,9 +28,9 @@ const base64Lines = (count) => ("QUFB".repeat(19) + "\\r\\n").repeat(count);
 const pdfPart = (boundary) =>
 	\`--\${boundary}\\r\\nContent-Type: application/pdf\\r\\nContent-Transfer-Encoding: base64\\r\\nContent-Disposition: attachment; filename=a.pdf\\r\\n\\r\\n\` +
 	base64Lines(340000);
-// A forwarded message is one leaf part to postal-mime, read line by line even where its own body is base64: these
-// exhaust a 128 MB heap, so their lines count however the inner message is encoded.
+// A forwarded message is one leaf part to postal-mime, a range of the raw message however many lines it has.
 const forwardedMessage = (inner) => header + multipart("b") + "--b\\r\\nContent-Type: message/rfc822\\r\\n\\r\\n" + header + inner + "--b--\\r\\n";
+const decodedLineFeeds = () => Buffer.from("\\r\\n".repeat(9_000_000)).toString("base64").replace(/(.{76})/g, "$1\\r\\n");
 const hostile = {
 	blankLines: () => header + "\\r\\n" + "\\r\\n".repeat(512 * 1024),
 	shortLines: () => header + "\\r\\n" + "a\\r\\n".repeat(262144),
@@ -41,11 +41,24 @@ const hostile = {
 	fakeBoundaryLines: () => header + "\\r\\n--x\\r\\n" + "a\\r\\n".repeat(262144),
 	// Lines in a part's header block count too.
 	partHeaderLines: () => header + multipart("b") + "--b\\r\\n" + "X-A: 1\\r\\n".repeat(262144),
-	forwardedBase64Body: () => forwardedMessage("Content-Type: application/pdf\\r\\nContent-Transfer-Encoding: base64\\r\\n\\r\\n" + base64Lines(340000)),
-	forwardedMultipartBase64: () => forwardedMessage(multipart("i") + pdfPart("i") + "--i--\\r\\n"),
-	// A text attachment costs postal-mime what a text body does.
-	textAttachment: () =>
-		header + multipart("b") + "--b\\r\\nContent-Type: text/csv\\r\\nContent-Disposition: attachment; filename=a.csv\\r\\n\\r\\n" + "a,b\\r\\n".repeat(262144) + "--b--\\r\\n",
+	// Text decoded from a part: no raw line shows these line feeds, and they exhaust a 128 MB heap all the same.
+	base64Text: () => header + "Content-Transfer-Encoding: base64\\r\\n\\r\\n" + decodedLineFeeds(),
+	base64Html: () => header + "Content-Type: text/html\\r\\nContent-Transfer-Encoding: base64\\r\\n\\r\\n" + decodedLineFeeds(),
+	base64Calendar: () =>
+		header + multipart("b") + "--b\\r\\nContent-Type: text/calendar\\r\\nContent-Disposition: attachment\\r\\nContent-Transfer-Encoding: base64\\r\\n\\r\\n" + decodedLineFeeds() + "\\r\\n--b--\\r\\n",
+	quotedPrintableText: () => header + "Content-Transfer-Encoding: quoted-printable\\r\\n\\r\\n" + "=0D=0A".repeat(4_000_000) + "\\r\\n",
+	// Reads postal-mime 4.x settled that a scan could take for an attachment or a base64 body.
+	xBase64Text: () => header + "Content-Transfer-Encoding: x-base64\\r\\n\\r\\n" + "a\\r\\n".repeat(300000),
+	firstDispositionWins: () => header + "Content-Disposition: inline\\r\\nContent-Disposition: attachment\\r\\n\\r\\n" + "a\\r\\n".repeat(300000),
+	firstTypeWins: () => header + "Content-Type: text/plain\\r\\nContent-Type: application/pdf\\r\\n\\r\\n" + "a\\r\\n".repeat(300000),
+	nonFieldEndsHeaders: () => header + "Not a field\\r\\nContent-Type: application/pdf\\r\\n\\r\\n" + "a\\r\\n".repeat(300000),
+	nonAsciiBoundary: () => header + 'Content-Type: multipart/mixed; boundary="bé"\\r\\n\\r\\n--bé\\r\\nContent-Type: application/pdf\\r\\n\\r\\n' + "a\\r\\n".repeat(300000),
+	boundaryOuterFirst: () =>
+		header +
+		multipart("b") +
+		'--b\\r\\nContent-Type: multipart/mixed; boundary="b"\\r\\n\\r\\n--b\\r\\nContent-Type: text/plain\\r\\n\\r\\n' +
+		"a\\r\\n".repeat(300000) +
+		"--b--\\r\\n",
 	// Re-review of #237: shapes where a scan that read the structure differently from postal-mime exempted lines
 	// postal-mime reads as text.
 	// 1. A boundary parameter next to another parameter whose value says "boundary", under a base64 top level.
@@ -146,6 +159,30 @@ await (async () => {
 const folded = header + 'Content-Type: multipart/mixed;\\r\\n\\tboundary="f"\\r\\n\\r\\n' + pdfPart("f") + "--f--\\r\\n";
 out.ok.folded = (await parseRawMime(encoder.encode(folded).buffer)).attachments.length;
 })();
+// #245's table: every shape that exhausted a 128 MB heap on postal-mime 2.7, or was refused for fear of it.
+await (async () => {
+out.ok.textBody = (await parseRawMime(encoder.encode(header + "\\r\\n" + ("a".repeat(78) + "\\r\\n").repeat(100000)).buffer)).text.length;
+})();
+await (async () => {
+out.ok.textBodyAtLimit = (await parseRawMime(encoder.encode(header + "\\r\\n" + "a\\r\\n".repeat(150000)).buffer)).text.length;
+})();
+await (async () => {
+const csv = header + multipart("b") + "--b\\r\\nContent-Type: text/csv\\r\\nContent-Disposition: attachment; filename=a.csv\\r\\n\\r\\n" + "a,b\\r\\n".repeat(262144) + "--b--\\r\\n";
+out.ok.textAttachment = (await parseRawMime(encoder.encode(csv).buffer)).attachments.map((a) => a.content.byteLength);
+})();
+await (async () => {
+const lines = header + multipart("b") + "--b\\r\\nContent-Type: text/plain\\r\\nContent-Disposition: attachment; filename=a.log\\r\\n\\r\\n" + "a\\r\\n".repeat(1_000_000) + "--b--\\r\\n";
+out.ok.millionLineAttachment = (await parseRawMime(encoder.encode(lines).buffer)).attachments.map((a) => a.content.byteLength);
+})();
+await (async () => {
+const forward = forwardedMessage("Content-Type: application/pdf\\r\\nContent-Transfer-Encoding: base64\\r\\n\\r\\n" + base64Lines(300000));
+const parsed = await parseRawMime(encoder.encode(forward).buffer);
+out.ok.forwardedBase64Body = [parsed.attachments.map((a) => a.type), await inboundAttachmentLimitReasonFromRaw(encoder.encode(forward).buffer)];
+})();
+await (async () => {
+const forward = forwardedMessage(multipart("i") + pdfPart("i") + "--i--\\r\\n");
+out.ok.forwardedMultipartBase64 = (await parseRawMime(encoder.encode(forward).buffer)).attachments.map((a) => a.type);
+})();
 // A forwarded message whose part is itself base64 (as some clients send it) is decoded in chunks.
 await (async () => {
 const encodedForward =
@@ -242,6 +279,12 @@ test("hostile MIME is refused cheaply and legitimate mail still parses, inside a
 	}
 	assert.ok(out.slowestMs < 5000, `the slowest hostile message took ${Math.round(out.slowestMs)} ms`);
 	assert.equal(out.ok.attachments, 1);
+	assert.equal(out.ok.textBody, 7_900_000);
+	assert.equal(out.ok.textBodyAtLimit, 300_000);
+	assert.deepEqual(out.ok.textAttachment, [262144 * 5 - 2]);
+	assert.deepEqual(out.ok.millionLineAttachment, [3_000_000 - 2]);
+	assert.deepEqual(out.ok.forwardedBase64Body, [["message/rfc822"], null]);
+	assert.deepEqual(out.ok.forwardedMultipartBase64, ["message/rfc822"]);
 	assert.ok(out.ok.flowedBytes > 2_300_000);
 	// About 0.3 s; the quadratic decoder took about 23 s. The margin is for a loaded CI runner.
 	assert.ok(out.ok.flowedMs < 3000, `39,000 flowed lines took ${Math.round(out.ok.flowedMs)} ms`);

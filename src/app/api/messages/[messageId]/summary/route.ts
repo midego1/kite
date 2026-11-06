@@ -3,23 +3,13 @@ import { hasValidSessionMutationOrigin } from "@/lib/auth/origin";
 import { getEnv } from "@/lib/cloudflare";
 import { reportAiErrorClass } from "@/lib/agent/ai-errors";
 import { allowAgentRequest } from "@/lib/agent/rate-limit";
-import { createSummary, getSummaryState, SummaryRefusal } from "@/lib/agent/summaries/service";
+import { NO_STORE, refused } from "@/lib/agent/summaries/model-answer";
+import { createSummary, getSummaryState } from "@/lib/agent/summaries/service";
 import { primaryLanguage } from "@/lib/agent/summaries/summary-utils";
 import { readJsonBody } from "@/lib/http/request";
 import { summaryQuerySchema, summaryRequestSchema } from "./schema";
 
 type RouteParams = { params: Promise<{ messageId: string }> };
-
-const NO_STORE = { "Cache-Control": "no-store" };
-
-function refused(error: unknown) {
-	if (error instanceof SummaryRefusal)
-		return Response.json(
-			{ error: error.message, code: error.code, ...(error.details ? { details: error.details } : {}) },
-			{ status: error.status, headers: NO_STORE },
-		);
-	throw error;
-}
 
 /** The cached summary of a conversation or message for this user, whether it is out of date, and its translation. */
 export async function GET(request: Request, { params }: RouteParams) {

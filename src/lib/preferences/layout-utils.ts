@@ -37,6 +37,8 @@ const CHOICES: readonly (readonly [keyof LayoutPreferences, ReadonlySet<string>]
 	["fontScope", FONT_SCOPES],
 	["interfaceDirection", INTERFACE_DIRECTIONS],
 ];
+const LANGUAGE_CODE = /^[a-z]{2}$/;
+const MAX_LANGUAGES_NEVER_OFFERED = 40;
 
 function size(value: unknown, limits: { min: number; max: number }): number | undefined {
 	if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
@@ -66,6 +68,17 @@ function parseLabelColors(value: unknown): LayoutLabelColors | undefined {
 	return colors;
 }
 
+function parseTranslationChoices(input: Record<string, unknown>): LayoutPreferences {
+	const layout: LayoutPreferences = {};
+	if (typeof input.translateTo === "string" && LANGUAGE_CODE.test(input.translateTo))
+		layout.translateTo = input.translateTo;
+	if (Array.isArray(input.translateNever))
+		layout.translateNever = input.translateNever
+			.filter((code): code is string => typeof code === "string" && LANGUAGE_CODE.test(code))
+			.slice(0, MAX_LANGUAGES_NEVER_OFFERED);
+	return layout;
+}
+
 /**
  * Keeps only well-formed choices, clamping sizes into range. Used on stored JSON and on what a client
  * sends, so an old or hand-edited value can never break a layout.
@@ -81,6 +94,7 @@ function parseLayoutPreferences(value: unknown): LayoutPreferences {
 	const labelColors = parseLabelColors(input.labelColors);
 	if (labelColors) layout.labelColors = labelColors;
 	if (typeof input.conversationView === "boolean") layout.conversationView = input.conversationView;
+	Object.assign(layout, parseTranslationChoices(input));
 	const listWidth = size(input.listWidth, LIST_WIDTH_LIMITS);
 	if (listWidth !== undefined) layout.listWidth = listWidth;
 	const listHeight = size(input.listHeight, LIST_HEIGHT_LIMITS);

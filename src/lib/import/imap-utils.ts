@@ -34,6 +34,7 @@ export function selectRemainingUids(allUids: string[], cursorUid: number | null)
 		.sort((a, b) => b - a);
 }
 
+/** @public Exercised by the unit tests. */
 export function chunk<T>(values: T[], size: number): T[][] {
 	const chunks: T[][] = [];
 	for (let index = 0; index < values.length; index += size) chunks.push(values.slice(index, index + size));

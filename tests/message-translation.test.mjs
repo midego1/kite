@@ -628,6 +628,36 @@ test("taking one link out can join another, and that goes too", () => {
 	assert.equal(cleaned.join("").includes("evil.test"), false, cleaned.join(""));
 });
 
+test("no link survives in what is actually put back", () => {
+	const long = `${"一".repeat(2_990)}。${"二".repeat(2_000)}`;
+	const cases = [
+		// Trimming a piece joins what removing a link left.
+		["text", ["Pay https:// www.", "x.y evil.test/pay now"]],
+		["text", ["Pay https://\n", "\nevil.test/pay"]],
+		["text", [" https://", " evil.test/pay "]],
+		["text", ["Pay https://evil.test/a ", " https://evil.test/b"]],
+		["html", ["Pay https:// www.", "x.y evil.test/pay now"]],
+		["html", ["Pay https://", "evil.test/pay now"]],
+		["html", ["pay@", "evil.test now"]],
+	];
+	for (const [format, segments] of cases) {
+		const parsed = messageSlots(format === "text" ? { textBody: long } : { htmlBody: `<p>${long}</p>` });
+		assert.equal(parsed.slots.length, 2);
+		const references = linkReferences(sourceTexts(parsed));
+		const cleaned = withoutJoinedLinks(parsed, segments, (link) => isInventedLink(link, references));
+		const rebuilt = rebuildMessage(parsed, cleaned);
+		const text = format === "text" ? rebuilt : new JSDOM(rebuilt).window.document.body.textContent;
+		assert.deepEqual(findLinks(text), [], `${format}: ${JSON.stringify(segments)} -> ${JSON.stringify(cleaned)}`);
+	}
+});
+
+test("what the check stores is what the rebuild writes", () => {
+	const parsed = messageSlots({ textBody: `${"一".repeat(2_990)}。${"二".repeat(2_000)}` });
+	const cleaned = withoutJoinedLinks(parsed, [" one ", " two "], () => false);
+	assert.deepEqual(cleaned, ["one", "two"]);
+	assert.equal(rebuildMessage(parsed, cleaned), rebuildMessage(parsed, [" one ", " two "]));
+});
+
 test("a tag ends the text a link can run through", () => {
 	const parsed = messageSlots({ htmlBody: "<p>one<b>two</b>three</p>" });
 	const segments = ["https://", "evil.test/pay", "more"];
@@ -683,7 +713,7 @@ test("plain text is read trimmed, as it is put back", () => {
 	const references = linkReferences(sourceTexts(parsed));
 	assert.deepEqual(
 		withoutJoinedLinks(parsed, ["See https://evil.exa ", " mple/pay"], (link) => isInventedLink(link, references)),
-		["See ", ""],
+		["See", ""],
 	);
 });
 

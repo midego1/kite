@@ -31,11 +31,15 @@ export function offersTranslation(detected: string | null, reading: readonly str
 	return !!detected && detected !== target && !reading.includes(detected);
 }
 
+/** The readable text of HTML before its quoted history. */
+function newHtmlText(html: string): string {
+	const quote = html.search(QUOTE_START);
+	return htmlToReadableText(quote >= 0 ? html.slice(0, quote) : html);
+}
+
 /** The text the local detection reads: the subject and the message's own words, without its quoted history. */
 export function translationSample(body: TranslationBody): string {
-	const html = body.htmlBody ?? "";
-	const quote = html.search(QUOTE_START);
-	const text = body.textBody?.trim() ? body.textBody : htmlToReadableText(quote >= 0 ? html.slice(0, quote) : html);
+	const text = body.textBody?.trim() ? body.textBody : newHtmlText(body.htmlBody ?? "");
 	return `${body.subject ?? ""}\n${getLatestEmailContent(text)}`;
 }
 

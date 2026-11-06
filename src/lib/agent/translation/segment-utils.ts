@@ -260,12 +260,7 @@ function escapeHtml(text: string): string {
  * it becomes `auto`, or Arabic turned into English would stay aligned to the right.
  */
 export function rebuildMessage(parsed: TranslationSource, segments: readonly (string | null)[]): string {
-	if (parsed.format === "text")
-		return replaceSlots(
-			parsed,
-			segments.map((segment) => segment?.trim() ?? null),
-			(text) => text,
-		);
+	if (parsed.format === "text") return replaceSlots(parsed, segments, (text) => text);
 	const rebuilt = replaceSlots(parsed, segments, escapeHtml);
 	return segments.some((segment) => segment !== null && segment !== undefined)
 		? rebuilt.replace(ROOT_DIRECTION, '<div dir="auto">')
@@ -273,10 +268,12 @@ export function rebuildMessage(parsed: TranslationSource, segments: readonly (st
 }
 
 /**
- * A translation keeps a space at its edge only where the original had none: Thai and Chinese run pieces together
- * that English has to separate ("Please click " + "here"). Plain text has no pieces to separate.
+ * A piece as it goes into the message, the one place that decides this, so the link check reads exactly what the
+ * rebuild writes. A translation keeps a space at its edge only where the original had none: Thai and Chinese run
+ * pieces together that English has to separate ("Please click " + "here"). Plain text has no pieces to separate.
  */
-function spaced(slot: TranslationSlot, translated: string): string {
+function shownPiece(parsed: TranslationSource, slot: TranslationSlot, translated: string): string {
+	if (parsed.format === "text") return translated.trim();
 	const start = slot.pre ? translated.trimStart() : translated;
 	return slot.post ? start.trimEnd() : start;
 }
@@ -291,7 +288,8 @@ function replaceSlots(
 	parsed.slots.forEach((slot, index) => {
 		const translated = segments[index];
 		if (translated === null || translated === undefined) return;
-		result += parsed.source.slice(cursor, slot.start) + encode(slot.pre + spaced(slot, translated) + slot.post);
+		result +=
+			parsed.source.slice(cursor, slot.start) + encode(slot.pre + shownPiece(parsed, slot, translated) + slot.post);
 		cursor = slot.end;
 	});
 	return result + parsed.source.slice(cursor);
@@ -325,7 +323,7 @@ function textRuns(parsed: TranslationSource, segments: readonly (string | null)[
 		cursor = slot.end;
 		const translated = segments[index];
 		if (translated === null || translated === undefined) return fixed(parsed.source.slice(slot.start, slot.end));
-		const shown = spaced(slot, html ? translated : translated.trim());
+		const shown = shownPiece(parsed, slot, translated);
 		runs[runs.length - 1].push(
 			{ text: slot.pre, index: null },
 			{ text: shown, index },
@@ -376,7 +374,11 @@ export function withoutJoinedLinks(
 	for (let run of textRuns(parsed, segments)) {
 		if (!run.some((part) => part.index !== null)) continue;
 		for (;;) {
-			const cleaned = withoutLinks(run, findLinks(run.map((part) => part.text).join("")).filter(invented));
+			// Read again as the rebuild would write it: trimming a piece can join what the removal left.
+			const cleaned = withoutLinks(run, findLinks(run.map((part) => part.text).join("")).filter(invented)).map(
+				(part) =>
+					part.index === null ? part : { ...part, text: shownPiece(parsed, parsed.slots[part.index], part.text) },
+			);
 			if (cleaned.every((part, position) => part.text === run[position].text)) break;
 			run = cleaned;
 		}

@@ -25,7 +25,7 @@ import {
 import type { ImapFetchedMessage, ImapLogin } from "./types";
 
 /** What opening a folder said; a field is null when the server did not say it. */
-export type ImapFolderState = {
+type ImapFolderState = {
 	uidValidity: number | null;
 	uidNext: number | null;
 	exists: number | null;

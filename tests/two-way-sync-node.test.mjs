@@ -530,6 +530,28 @@ test("a refused move stays queued, shows in the account's problems, retries, and
 	assert.equal(has("INBOX", "fine too"), true);
 });
 
+test("a message the server will not read waits and retries; the rest of its batch goes", async (t) => {
+	const { server, env, accountId, setTwoWay, arrive, message, actions, has, db } = await start(t);
+	await setTwoWay({ kiteDelete: "trash" });
+	await arrive("readable");
+	const bad = server.addMessage("INBOX", {
+		raw: sampleMessage(3, { subject: "unreadable", messageId: "<unreadable@example.org>" }),
+		unfetchable: true,
+	});
+	db.db.exec("UPDATE external_accounts SET next_sync_at = 0");
+	await recordKiteChange(env, [message("readable").id], { kind: "trash" });
+	db.db
+		.prepare(
+			"INSERT INTO external_provider_actions (id, account_id, message_id, kind, role, uidvalidity, uid, created_at, next_attempt_at) VALUES ('x:move', ?, 'x', 'trash', 'inbox', 1, ?, 1, 1)",
+		)
+		.run(accountId, bad);
+	await writebackExternalAccount(env, accountId);
+	assert.equal(has("Trash", "readable"), true);
+	assert.equal(has("INBOX", "unreadable"), true);
+	assert.equal(actions().length, 1, "refused is not gone: it stays and retries");
+	assert.equal(actions()[0].attempts, 1);
+});
+
 test("one refused message does not hold back the rest of its batch", async (t) => {
 	const { server, env, accountId, setTwoWay, arrive, message, actions, has } = await start(t);
 	await setTwoWay({ kiteDelete: "trash" });
@@ -685,6 +707,18 @@ test("shared mailboxes: a member's action counts, and mail left behind in an old
 	await updateExternalAccount(env, owner, accountId, { mailboxId: "mailbox-b" });
 	await updateMessageStatusForUser(env, { id: "other", role: "user" }, message("left behind").id, "trash");
 	assert.deepEqual(actions(), []);
+});
+
+test("a paused or suspended account's password is not used to ask the server", async (t) => {
+	const { server, db, env, accountId } = await start(t);
+	await updateExternalAccount(env, owner, accountId, { syncEnabled: false });
+	const signIns = () => server.commands.filter((command) => /AUTHENTICATE/.test(command.line)).length;
+	const before = signIns();
+	assert.equal((await readTwoWayView(env, owner, accountId)).support, null);
+	await updateExternalAccount(env, owner, accountId, { syncEnabled: true });
+	db.db.prepare("UPDATE external_accounts SET suspended_at = ?").run(1);
+	assert.equal((await readTwoWayView(env, owner, accountId)).support, null);
+	assert.equal(signIns(), before);
 });
 
 test("only the account's owner reads or changes its settings", async (t) => {

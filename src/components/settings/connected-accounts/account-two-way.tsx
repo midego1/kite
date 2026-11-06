@@ -50,13 +50,11 @@ function TwoWayFields({
 	usable,
 	saving,
 	onSave,
-	providerLabel,
 }: {
 	view: TwoWayView;
 	usable: boolean;
 	saving: boolean;
 	onSave: (settings: TwoWaySettings) => void;
-	providerLabel: string;
 }) {
 	const { settings, support } = view;
 	const offered = offeredMoves(support);
@@ -71,21 +69,21 @@ function TwoWayFields({
 					label="Delete in Kite"
 					value={settings.kiteDelete}
 					disabled={disabled}
-					options={[NOTHING, ...(offered.trash ? [{ value: "trash", label: `Move to ${providerLabel} Trash` }] : [])]}
+					options={[NOTHING, ...(offered.trash ? [{ value: "trash", label: "Move to the provider's Trash" }] : [])]}
 					onChange={(value) => set({ kiteDelete: value as TwoWaySettings["kiteDelete"] })}
 				/>
 				<Setting
 					label="Archive in Kite"
 					value={settings.kiteArchive}
 					disabled={disabled}
-					options={[NOTHING, ...(offered.archive ? [{ value: "archive", label: `Archive at ${providerLabel}` }] : [])]}
+					options={[NOTHING, ...(offered.archive ? [{ value: "archive", label: "Archive at the provider" }] : [])]}
 					onChange={(value) => set({ kiteArchive: value as TwoWaySettings["kiteArchive"] })}
 				/>
 				<Setting
 					label="Move to Spam in Kite"
 					value={settings.kiteSpam}
 					disabled={disabled}
-					options={[NOTHING, ...(offered.spam ? [{ value: "spam", label: `Move to ${providerLabel} Spam` }] : [])]}
+					options={[NOTHING, ...(offered.spam ? [{ value: "spam", label: "Move to the provider's Spam" }] : [])]}
 					onChange={(value) => set({ kiteSpam: value as TwoWaySettings["kiteSpam"] })}
 				/>
 				<Setting
@@ -97,7 +95,7 @@ function TwoWayFields({
 				/>
 			</fieldset>
 			<fieldset className="space-y-2">
-				<legend className="text-xs font-medium text-neutral-800">When something changes at {providerLabel}</legend>
+				<legend className="text-xs font-medium text-neutral-800">When something changes at the provider</legend>
 				<Setting
 					label="Deleted or moved out of the Inbox"
 					value={settings.providerGone}
@@ -188,13 +186,7 @@ export function AccountTwoWay({ account, usable }: { account: ExternalAccountVie
 			{view && !open && <p className="text-xs text-neutral-500">{twoWaySummary(view.settings)}</p>}
 			{open && !view && !error && <p className="text-xs text-neutral-500">Asking the server what it supports…</p>}
 			{open && view && (
-				<TwoWayFields
-					view={view}
-					usable={usable}
-					saving={saving}
-					onSave={(settings) => void save(settings)}
-					providerLabel={account.presetLabel}
-				/>
+				<TwoWayFields view={view} usable={usable} saving={saving} onSave={(settings) => void save(settings)} />
 			)}
 			{error && (
 				<p role="alert" className="text-xs text-red-600">

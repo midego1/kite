@@ -1,3 +1,4 @@
+import { connectRefusal } from "./access";
 import { recordConnectionTest, auditExternalAccount } from "./audit";
 import { ExternalAccountRefusal } from "./errors";
 import type { ExternalAccountRow } from "./serialize-utils";
@@ -25,11 +26,13 @@ const PROBLEMS_SHOWN = 5;
 
 /**
  * Asks the account's server what it supports, for the settings: a short read-only session with the saved password,
- * limited like a connection test. Null when it cannot be asked (no password, a signed-out account, a server that does
- * not answer); a choice that needs the answer is then refused rather than guessed.
+ * limited like a connection test. Null when it cannot be asked (no password, a paused or suspended account, a server
+ * that does not answer); a choice that needs the answer is then refused rather than guessed.
  */
 async function askServer(env: CloudflareEnv, account: ExternalAccountRow, now: Date): Promise<ProviderSupport | null> {
-	if (!account.secret) return null;
+	// Pausing means no sign-in at all, and a suspended account's password may not be used; the same for a refused owner.
+	if (!account.secret || !account.syncEnabled || account.suspendedAt || account.status === "paused") return null;
+	if (await connectRefusal(env, account.userId)) return null;
 	try {
 		await recordConnectionTest(env, account.userId, {
 			host: account.imapHost,

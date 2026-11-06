@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 import type { AppDatabase } from "@/db";
 import { folders, messages } from "@/db/schema";
 import type { SessionUser } from "@/lib/auth/types";
+import { recordKiteChange } from "@/lib/external-accounts/two-way-record";
 import { applySpamFeedbackWithReceipt } from "@/lib/spam/feedback";
 import { reportPhishingWithUndo } from "@/lib/spam/phishing-report";
 import { undoSpamReceipt } from "@/lib/spam/report-receipts";
@@ -11,7 +12,7 @@ const trainingUndoFlag = (undo: MessageRestoreState[]) =>
 	undo.some((state) => !state.receiptId) ? { trainingUndoUnavailable: true } : {};
 
 /** Reports each message as spam; the response carries where each was and the receipt that lets Undo take the training back. */
-export async function reportSpamBulk(
+async function reportSpamBulk(
 	env: CloudflareEnv,
 	user: SessionUser,
 	messageIds: readonly string[],
@@ -30,7 +31,7 @@ export async function reportSpamBulk(
 	return { ok: true, undo, moved: undo.map((state) => state.id), ...trainingUndoFlag(undo) };
 }
 
-export async function reportPhishingBulk(
+async function reportPhishingBulk(
 	env: CloudflareEnv,
 	user: SessionUser,
 	messageIds: readonly string[],
@@ -44,6 +45,18 @@ export async function reportPhishingBulk(
 		moved: undo.map((state) => state.id),
 		...trainingUndoFlag(undo),
 	};
+}
+
+/** A spam or phishing report: what actually moved to Spam is what two-way sync may carry to the provider. */
+export async function reportBulk(
+	env: CloudflareEnv,
+	user: SessionUser,
+	action: "spam" | "phishing",
+	messageIds: readonly string[],
+): Promise<BulkMessageResponse> {
+	const report = await (action === "spam" ? reportSpamBulk : reportPhishingBulk)(env, user, messageIds);
+	await recordKiteChange(env, report.moved ?? [], { kind: "spam" });
+	return report;
 }
 
 /**

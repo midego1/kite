@@ -11,7 +11,7 @@ import { queryInChunks, runInChunks } from "@/db/chunk-utils";
 import type { MailboxAccessLevel } from "@/lib/mailboxes/types";
 import { permanentlyDeleteMessages } from "@/lib/email/permanent-delete";
 import { applySpamFeedback } from "@/lib/spam/feedback";
-import { reportPhishingBulk, reportSpamBulk, restoreMessageStates } from "./report";
+import { reportBulk, restoreMessageStates } from "./report";
 import {
 	SEND_PENDING_MOVE_MESSAGE,
 	SEND_PENDING_MOVE_REFUSED,
@@ -190,12 +190,8 @@ export async function POST(request: Request) {
 		const moved = deleted === deletable.length ? deletable.map((message) => message.id) : [];
 		return NextResponse.json({ ok: true, deleted, skipped, moved, ...refusals });
 	}
-	if (payload.action === "spam" || payload.action === "phishing") {
-		const report = payload.action === "spam" ? reportSpamBulk : reportPhishingBulk;
-		const result = await report(env, user, allowedMessageIds);
-		await recordKiteChange(env, result.moved ?? [], { kind: "spam" });
-		return NextResponse.json({ ...result, ...refusals });
-	}
+	if (payload.action === "spam" || payload.action === "phishing")
+		return NextResponse.json({ ...(await reportBulk(env, user, payload.action, allowedMessageIds)), ...refusals });
 	if (payload.action === "inbox") {
 		const spamMessageIds = selectedMessages
 			.filter((message) => message.status === "spam" && allowedMessageIds.includes(message.id))

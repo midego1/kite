@@ -29,6 +29,7 @@ const MASS_GONE_MIN = 50;
 /** How long a server's answers are trusted before the settings ask it again. */
 export const SUPPORT_MAX_AGE_MS = 24 * 60 * 60_000;
 
+/** @public Exercised by the unit tests. */
 export const TWO_WAY_OFF: TwoWaySettings = {
 	kiteDelete: "nothing",
 	kiteArchive: "nothing",
@@ -165,6 +166,7 @@ export type OutboxPlan = {
 	cancels: string[];
 };
 
+/** @public Exercised by the unit tests. */
 export const moveActionId = (messageId: string) => `${messageId}:move`;
 export const flagsActionId = (messageId: string) => `${messageId}:flags`;
 
@@ -231,7 +233,7 @@ export type WritebackPlan = {
 };
 
 /**
- * Whether a provider change beats a Kite action still waiting (last writer wins by time): the provider differs from
+ * @public Exercised by the unit tests. Whether a provider change beats a Kite action still waiting (last writer wins by time): the provider differs from
  * what Kite last saw, and the action is from before the last pass, so the provider's change is provably the newer one.
  * An action after the last pass wins: the provider's change has no time of its own and cannot be proven later.
  */
@@ -411,6 +413,53 @@ export function resolveFlagChange(
 		dropped.push(field);
 	}
 	return { kite, dropped };
+}
+
+/** The working state a pass reads; missing on an account that never ran one. */
+type PassState = {
+	uidvalidity: number | null;
+	lowUid: number;
+	lastPassAt: Date | null;
+	goneBaseline: boolean;
+	flagsBaseline: boolean;
+	heldGone: number;
+};
+
+/** What a pass starts from: the window's floor (back to 0 in a rebuilt folder), and what it only records this time. */
+export function planPass(settings: TwoWaySettings, state: PassState | null, uidValidity: number) {
+	const syncGone = settings.providerGone === "trash";
+	return {
+		syncGone,
+		syncFlags: settings.providerFlags,
+		adoptGone: syncGone && (state?.goneBaseline ?? true),
+		adoptFlags: settings.providerFlags && (state?.flagsBaseline ?? true),
+		heldGone: state?.heldGone ?? 0,
+		lowUid: state?.uidvalidity === uidValidity ? state.lowUid : 0,
+		lastPassAt: state?.lastPassAt ?? null,
+	};
+}
+
+/**
+ * What a finished pass leaves for the next one. A pass that stopped early must run again whatever the server says, so
+ * its modseq is not kept. A baseline still owed for a setting that is off stays owed.
+ */
+export function passResult(
+	pass: ReturnType<typeof planPass>,
+	state: PassState | null,
+	inbox: { uidValidity: number; highestModseq: string | null; exists: number | null; uidNext: number | null },
+	outcome: { plan: ReconcilePlan; windowFull: boolean; backfilled: boolean; refs: readonly WindowRef[] },
+) {
+	const { plan, windowFull, backfilled, refs } = outcome;
+	return {
+		uidvalidity: inbox.uidValidity,
+		highestModseq: plan.truncated || plan.held || !backfilled ? null : inbox.highestModseq,
+		existsCount: inbox.exists,
+		uidNext: inbox.uidNext,
+		lowUid: windowFull ? refs[refs.length - 1].uid : pass.lowUid,
+		goneBaseline: (state?.goneBaseline ?? true) && !pass.adoptGone,
+		flagsBaseline: (state?.flagsBaseline ?? true) && !pass.adoptFlags,
+		heldGone: plan.held,
+	};
 }
 
 /** The state the last pass left, as far as skipping the next one goes. */

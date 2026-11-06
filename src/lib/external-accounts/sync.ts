@@ -19,6 +19,8 @@ import {
 	classifySyncError,
 	externalSyncMessage,
 	externalWritebackMessage,
+	isExternalSyncMessage,
+	isExternalWritebackMessage,
 	isSyncStateChange,
 	nextRegularSync,
 	SYNC_LEASE_MS,
@@ -96,7 +98,7 @@ export async function planExternalSync(env: CloudflareEnv, now = new Date()): Pr
 	return claimed.length;
 }
 
-export type SyncRunOptions = {
+type SyncRunOptions = {
 	now?: () => Date;
 	/** For the jitter of the backoff; tests pin it. */
 	random?: () => number;
@@ -105,13 +107,13 @@ export type SyncRunOptions = {
 	limits?: Partial<ImapLimits>;
 };
 
-export type SyncRunResult =
+type SyncRunResult =
 	| { skipped: "migration_pending" | "removed" | "not_syncing" | "not_allowed" | "busy" }
 	| { delivered: number; skipped: number; more: boolean }
 	| { failed: SyncProblem["class"] };
 
 /**
- * One sync run of one account (spec §6.3): checks again that the account may be used, takes its lease, signs in,
+ * @public Exercised by the unit tests. One sync run of one account (spec §6.3): checks again that the account may be used, takes its lease, signs in,
  * examines INBOX and hands every new message to the inbound pipeline through the Mail store and `INBOUND_QUEUE`.
  * Never throws for the account's own problems; they become its state (§6.5).
  */
@@ -201,7 +203,7 @@ export async function syncExternalAccount(
 }
 
 /**
- * "Sooner" for two-way sync (spec §6.8): opens one session for the account's outbox, under the sync lease, so it never
+ * @public Exercised by the unit tests. "Sooner" for two-way sync (spec §6.8): opens one session for the account's outbox, under the sync lease, so it never
  * runs beside a check. A paused, suspended or refused account does not run, and what it left waits. It changes nothing
  * about the account's checks: a problem here is noted, and the regular check is what reports a broken sign-in. An
  * account that is busy needs nothing: the check running now, or the next one, takes the rows.
@@ -254,6 +256,14 @@ export async function writebackExternalAccount(
 		await noteProblems(env, accountId, notes, clock());
 	}
 	if (more) await env.AGENT_QUEUE?.send(externalWritebackMessage(accountId));
+}
+
+/** A queue message of connected-account sync, whichever kind: handled and true, or false when it is something else. */
+export async function processExternalAccountMessage(env: CloudflareEnv, body: unknown): Promise<boolean> {
+	if (isExternalSyncMessage(body)) await syncExternalAccount(env, body.accountId);
+	else if (isExternalWritebackMessage(body)) await writebackExternalAccount(env, body.accountId);
+	else return false;
+	return true;
 }
 
 function classify(error: unknown, account: ExternalAccountRow): SyncProblem {

@@ -1,12 +1,12 @@
 # Connected accounts
 
-A connected account is a mail account at another provider (Gmail, Google Workspace, iCloud Mail, Yahoo Mail, AOL Mail, Fastmail or any other IMAP provider) whose sign-in Kite keeps, so you can bring its mail into Kite without typing the password each time. Kite only reads from the account; it never deletes, moves or marks anything there.
+A connected account is a mail account at another provider (Gmail, Google Workspace, iCloud Mail, Yahoo Mail, AOL Mail, Fastmail or any other IMAP provider) whose sign-in Kite keeps, so you can bring its mail into Kite without typing the password each time. By default Kite only reads from the account and never deletes, moves or marks anything there; [two-way sync](#two-way-sync) is a choice you make per account.
 
 A connected account does three things:
 
 - **New mail arrives in Kite.** Kite checks the account's Inbox every few minutes and delivers what arrived since you connected it into the account's mailbox (see [New mail](#new-mail)).
 - **Existing mail can be imported.** **Import mail** copies the account's existing mail into Kite in the background (see [Importing a whole account](modules.md#importing-a-whole-account)).
-- **You can [send as its address](#send-as-the-accounts-address)** from the composer, through the provider's own mail server. That is the only thing Kite ever writes at the provider: the provider keeps the sent message, and Kite may save a copy in its Sent folder.
+- **You can [send as its address](#send-as-the-accounts-address)** from the composer, through the provider's own mail server. With two-way sync off that is the only thing Kite ever writes at the provider: the provider keeps the sent message, and Kite may save a copy in its Sent folder.
 
 You do not have to connect an account to get its mail into Kite: [forwarding](#forward-mail-to-kite-instead) at the provider needs no password in Kite and delivers each message the moment it arrives. It is the way for Outlook.com, Hotmail and Microsoft 365, which cannot be connected yet.
 
@@ -37,7 +37,7 @@ Every 5 minutes (or the interval you chose) Kite signs in, looks at the account'
 - A message Kite already has from this account, from an import or from sending it in Kite (the same Message-ID, for example one you imported, or one moved back into the Inbox at the provider) is not stored again. Mail that reached Kite any other way is not compared, so a forged copy sent to your Kite address cannot hide the real message; mail you also forward from the provider to Kite arrives twice.
 - New mail belongs to the mailbox it goes to. In a shared mailbox it is the mailbox owner's, like mail the mailbox receives: their spam training, rules and webhooks apply, whoever connected the account. So when you connect your account to a mailbox someone else owns, **their** webhooks are told about your synced mail (sender, recipients, subject and the account's id) and yours are not.
 - If Kite may not bring in mail for a while (your permission or connected accounts turned off), messages it had already fetched are fetched again once that changes, so nothing is lost.
-- Kite checks only the Inbox (and the Spam folder, [when you turn that on](#the-spam-folder)), and only fetches each message once. Deleting, moving or reading a message at the provider afterwards changes nothing in Kite, and nothing you do in Kite changes the provider. A message deleted at the provider before Kite's next check never arrives. A message larger than 25 MB, or one the provider will not send, is skipped and named in the account's problems; the messages after it still arrive.
+- Kite checks only the Inbox (and the Spam folder, [when you turn that on](#the-spam-folder)), and only fetches each message once. Unless you turn on [two-way sync](#two-way-sync), deleting, moving or reading a message at the provider afterwards changes nothing in Kite, and nothing you do in Kite changes the provider. A message deleted at the provider before Kite's next check never arrives. A message larger than 25 MB, or one the provider will not send, is skipped and named in the account's problems; the messages after it still arrive.
 - If the provider rebuilds the Inbox (its UIDVALIDITY changes), Kite checks the last two days again and keeps only what it does not have yet; the account notes "The provider reset the Inbox; Kite checked the last two days again."
 
 On each account, **Check now** checks at once (at most once a minute), and **Pause** stops checking until you choose **Resume**. The account says when it was last checked and when the next check is due. For mail the moment it arrives, [forward](#forward-mail-to-kite-instead) instead of connecting (doing both brings every message in twice).
@@ -51,6 +51,39 @@ On each account, **Check now** checks at once (at most once a minute), and **Pau
 - A message moved out of the provider's Spam folder into its Inbox after Kite fetched it is not fetched again (Kite already has it), and stays in Kite's Spam.
 - If the provider has no folder Kite can recognise as its Spam folder, only the Inbox is checked. If the provider renames its Spam folder, Kite finds the new one and starts it afresh.
 - The Inbox always comes first. A Spam folder the provider will not open, or any other problem with it, never stops new Inbox mail: the check still counts as working and the account's recent problems say "Kite could not check the Spam folder this time; the Inbox was checked". Only a sign-in or certificate that stops working fails the check, as it would for the Inbox. When a check stops early (you may no longer bring in mail, or there is more Inbox mail than one check takes), the Spam folder waits for a later check.
+
+## Two-way sync
+
+Out of the box a connected account is one-way: Kite fetches each new message once. **Two-way sync** on the account (**Settings → Connected accounts**, under the account) lets you choose what else stays in step, per direction. Everything is off until you turn it on, and only the account's owner can change it.
+
+| When you… | Choices |
+| --- | --- |
+| **Delete in Kite** | Nothing · Move to the provider's Trash |
+| **Archive in Kite** | Nothing · Archive at the provider |
+| **Move to Spam in Kite** | Nothing · Move to the provider's Spam |
+| **Read, unread and star in Kite** | Off · On |
+
+| When at the provider a message is… | Choices |
+| --- | --- |
+| **Deleted or moved out of the Inbox** | Nothing · Move to Kite's Trash |
+| **Read, unread or starred** | Off · On |
+
+- **Nothing is ever deleted permanently.** Delete in Kite, including **Delete forever** and **Empty Trash**, moves the message to the provider's Trash, and the provider empties that itself (Gmail after 30 days). A message that left at the provider goes to Kite's Trash, where it is kept like anything else you throw away.
+- **Which servers.** Kite asks the server what it can do, and a choice it cannot carry out is not offered. Moving needs the server's MOVE command, or UIDPLUS as a fallback (a copy, then removing exactly that message); a server with neither gets no moves at all. Trash and Spam are the folders the server marks as such, or the usual names at the top level. Archive needs a folder marked Archive; on Gmail and Google Workspace it takes the message out of the Inbox and keeps it in All Mail. Read, unread and star work everywhere.
+- **Only mail Kite fetched from this account**, found by the message's number at the provider and checked against its Message-ID. If the two do not agree, Kite leaves the message alone and says so in the problems. Mail you **imported** is not touched: an import does not record where a message came from precisely enough. Sent mail is not touched either.
+- **Only what you do, from when you turn it on.** Mailbox rules, the spam filter, the Screener, Kite's automatic Trash cleanup and deleting a Kite folder stay in Kite: mail Kite moved by itself stays where it is at the provider. Anyone who can manage a shared mailbox acts on its mail like you do, and the settings of the account's owner decide what reaches the provider. Mail left behind in a mailbox the account no longer delivers to stays out of it.
+- **When it happens.** A change in Kite is queued, and reaches the provider about a minute later or at the next check, in batches, with one connection per account. An **Undo** within that minute cancels it. A failed change is tried again up to six times over a few hours; waiting changes and recent problems show under **Two-way sync**. While the account is paused, or its sign-in does not work, changes wait. Turning a setting off drops what waits for it.
+- **From the provider to Kite** happens at each regular check, so within the account's interval. It compares **the newest 5,000 Inbox messages Kite fetched** and makes at most 500 changes per check; the rest follow at the next check. Older messages stay as they are. The Spam folder is not compared, so a provider emptying its own Spam folder changes nothing in Kite.
+- **The first check after turning it on only looks.** Whatever changed at the provider before that stays as it is in Kite, so turning this on does not move your old mail to Trash.
+- **A sudden mass disappearance waits one check.** When 50 or more messages and at least half of the compared ones vanish at once, Kite waits for the next check to confirm it and says so in the problems.
+- **Both sides changed?** The last one wins. A provider does not say when a flag changed, only that it did since the last check, so a change you make in Kite after that check wins over one found at the provider, and a change at the provider beats a Kite change that was already waiting before that check.
+
+What it does not do:
+
+- **Gmail's archive looks like a delete.** Over IMAP both simply take the message out of the Inbox, so with **Deleted or moved out of the Inbox** on, archiving in Gmail also moves the message to Kite's Trash.
+- **Restoring does not travel.** Restoring a message in Kite, or an Undo after the minute, leaves the provider's copy where it went; moving a message back into the Inbox at the provider does not take it out of Kite's Trash.
+- **Kite's folders and snooze stay in Kite**, and so does marking a message as not spam.
+- If the provider rebuilds its Inbox (a new UIDVALIDITY), waiting changes are dropped and named in the problems, nothing is moved, and the last two days are matched again.
 
 ## Which account mail came through
 

@@ -266,7 +266,7 @@ async function twoWayPass(
 ): Promise<void> {
 	try {
 		await assertMayDeliver(env, account);
-		await runTwoWay(env, await connection.usable(), account, {
+		await runTwoWay(env, () => connection.usable(), account, {
 			clock: options.clock,
 			outOfTime: () => outOfTime(options, clock),
 			notes: outcome.notes,

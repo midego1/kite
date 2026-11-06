@@ -9,8 +9,6 @@ import { resolveThreadId } from "@/lib/email/threading";
 import { storeMessageAttachments } from "@/lib/email/attachments";
 import { deleteMessageWithObjects } from "@/lib/email/message-cleanup";
 import { canOffloadHtmlBodies, loadMessageBodies } from "@/lib/email/bodies";
-import { recordKiteChange } from "@/lib/external-accounts/two-way-record";
-import { kiteMove } from "@/lib/external-accounts/two-way-utils";
 import { SCREENING_STATUS } from "@/lib/screener/screener-utils";
 import { visibleDraftsCondition } from "@/lib/messages/mailbox-scope";
 import { messageColumnsWithoutBodies, withStoredBodies } from "@/lib/messages/body-batches";
@@ -24,6 +22,7 @@ import { getEmailState } from "./state";
 import { unescapePointerToken } from "./pointer-utils";
 import { listAccessibleMailboxIdSet, listJmapMailboxes } from "./access";
 import { emailWriteAccess, refuseDraftMove } from "./email-access";
+import { destroyEmails, recordEmailUpdate } from "./email-destroy";
 import { deleteUpload, readUpload, storeRawDraftMime } from "./blobs";
 import type {
 	Comparator,
@@ -366,8 +365,6 @@ export const emailSet: JmapMethodHandler = async (ctx, args) => {
 	const notCreated: Record<string, unknown> = {};
 	const updated: Record<string, null> = {};
 	const notUpdated: Record<string, unknown> = {};
-	const destroyed: string[] = [];
-	const notDestroyed: Record<string, unknown> = {};
 
 	for (const [creationId, value] of Object.entries((args.create ?? {}) as Record<string, Record<string, unknown>>)) {
 		const result = await createDraft(ctx, value, writable);
@@ -412,37 +409,19 @@ export const emailSet: JmapMethodHandler = async (ctx, args) => {
 			if (move.folderId !== undefined) set.folderId = move.folderId;
 		}
 		if (Object.keys(set).length) await ctx.db.update(messages).set(set).where(eq(messages.id, id));
-		if (set.read !== undefined || set.starred !== undefined)
-			await recordKiteChange(ctx.env, [id], { kind: "flags", read: set.read, starred: set.starred });
-		if (set.status !== undefined && set.status !== row.status)
-			await recordKiteChange(ctx.env, [id], kiteMove(set.status));
+		await recordEmailUpdate(ctx.env, id, row.status, set);
 		updated[id] = null;
 	}
 
 	// JMAP destroy is permanent; Kite keeps a trash, so destroy moves there
 	// and a second destroy from Trash deletes the row.
 	const destroyIds = (args.destroy ?? []) as string[];
-	const destroyRows = await loadMessages(ctx, destroyIds);
-	const destroyById = new Map(destroyRows.map((row) => [row.id, row]));
-	for (const id of destroyIds) {
-		const row = destroyById.get(id);
-		if (!row || !row.mailboxId) {
-			notDestroyed[id] = { type: "notFound" };
-			continue;
-		}
-		if (!canChange(row, row.mailboxId)) {
-			notDestroyed[id] = { type: "forbidden" };
-			continue;
-		}
-		if (row.status === "trash" || row.status === "draft") {
-			await recordKiteChange(ctx.env, [row.id], { kind: "trash" });
-			await deleteMessageWithObjects(ctx.env, ctx.db, row.id, row.rawR2Key);
-		} else {
-			await ctx.db.update(messages).set({ status: "trash", folderId: null }).where(eq(messages.id, id));
-			await recordKiteChange(ctx.env, [id], { kind: "trash" });
-		}
-		destroyed.push(id);
-	}
+	const { destroyed, notDestroyed } = await destroyEmails(
+		ctx,
+		await loadMessages(ctx, destroyIds),
+		destroyIds,
+		canChange,
+	);
 
 	return {
 		accountId: ctx.accountId,

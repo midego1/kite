@@ -4,17 +4,19 @@ import type { ImapSession } from "@/lib/imap/session";
 import { shortServerText } from "./connection-utils";
 import { auditExternalAccount } from "./audit";
 import type { ExternalAccountRow } from "./serialize-utils";
-import { sourceFlags } from "./sync-utils";
+import { externalWritebackMessage, sourceFlags } from "./sync-utils";
 import {
-	applyReconcile,
 	deleteActions,
 	failActions,
 	finishFlags,
 	finishMoved,
-	junkFolderName,
-	linkFetchedMessages,
 	readDueActions,
 	readPendingActions,
+} from "./two-way-outbox";
+import {
+	applyReconcile,
+	junkFolderName,
+	linkFetchedMessages,
 	readRfcMessageIds,
 	readSupport,
 	readTwoWayConfig,
@@ -30,6 +32,8 @@ import {
 	actionAllowed,
 	moveTarget,
 	nothingChanged,
+	passResult,
+	planPass,
 	planProviderSupport,
 	planReconcile,
 	planWriteback,
@@ -38,6 +42,7 @@ import {
 	resolveFlagChange,
 	sameMessageId,
 	WRITEBACK_BATCH,
+	WRITEBACK_DELAY_SECONDS,
 	WRITEBACK_ROWS_PER_RUN,
 	writesToProvider,
 	type FlagChange,
@@ -73,6 +78,28 @@ async function readFacts(session: ImapSession, uids: readonly number[]): Promise
 		facts.set(Number(uid), { messageId, ...flags });
 	}
 	return facts;
+}
+
+/**
+ * `readFacts` that survives a message the server will not read (Gmail answers NO for the whole command): the rest are
+ * read one by one, and the UIDs it refused are returned apart, because "refused" is not "gone".
+ */
+async function readFactsApart(session: ImapSession, uids: readonly number[]) {
+	const refused = new Set<number>();
+	const read = async (some: readonly number[]): Promise<Map<number, ProviderFact>> => {
+		try {
+			return await readFacts(session, some);
+		} catch (error) {
+			if (!(error instanceof Error) || !/^IMAP fetch failed:/.test(error.message)) throw error;
+			if (some.length === 1) {
+				refused.add(some[0]);
+				return new Map();
+			}
+			const parts = await Promise.all(some.map((uid) => [uid]).map(read));
+			return new Map(parts.flatMap((part) => [...part]));
+		}
+	};
+	return { facts: await read(uids), refused };
 }
 
 /** Runs `write` on all rows, then message by message after a refusal, so one bad message cannot hold back the rest. */
@@ -122,11 +149,14 @@ async function writeBatch(
 	},
 ): Promise<void> {
 	const { config, support, sourceFolder, failures, counts } = context;
-	const facts = await readFacts(
+	const { facts, refused } = await readFactsApart(
 		session,
 		rows.map((row) => row.uid),
 	);
-	const plan = planWriteback(rows, facts, {
+	for (const row of rows)
+		if (refused.has(row.uid)) failures.set(row.id, { row, reason: "The server would not show the message" });
+	const readable = rows.filter((row) => !refused.has(row.uid));
+	const plan = planWriteback(readable, facts, {
 		providerFlags: config.settings.providerFlags,
 		lastPassAt: config.state?.lastPassAt ?? null,
 	});
@@ -266,11 +296,13 @@ async function verifiedChanges(env: CloudflareEnv, session: ImapSession, changes
 	const good: FlagChange[] = [];
 	const mismatched: string[] = [];
 	for (const chunk of chunkArray(changes, WRITEBACK_BATCH)) {
-		const facts = await readFacts(
+		const { facts, refused } = await readFactsApart(
 			session,
 			chunk.map((change) => change.uid),
 		);
 		for (const change of chunk) {
+			// A message the server will not read now stays as it is, and the next pass sees the change again.
+			if (refused.has(change.uid)) continue;
 			const fact = facts.get(change.uid);
 			if (fact && sameMessageId(stored.get(change.messageId), fact.messageId)) good.push(change);
 			else mismatched.push(change.messageId);
@@ -310,66 +342,39 @@ async function applyPlan(
 	return kite.length;
 }
 
-/**
- * The provider-to-Kite pass of a regular check (spec §6.8), read-only at the provider: `EXAMINE INBOX`, then the flags
- * of the newest tracked messages. A UIDVALIDITY the rows do not carry leaves them out by itself, so a rebuilt folder
- * moves nothing. Skipped when CONDSTORE shows nothing moved since the last pass.
- */
-export async function reconcileInbox(
+/** Runs one pass over the window and records where it stands, unless nothing can have changed. */
+async function comparePass(
 	env: CloudflareEnv,
 	session: ImapSession,
 	account: Pick<ExternalAccountRow, "id" | "userId" | "mailboxId">,
 	{ settings, state }: TwoWayConfig,
-	run: TwoWayRun,
-): Promise<void> {
-	const inbox = await session.examine("INBOX");
-	if (inbox.uidValidity === null) return;
-	const now = run.clock();
-	const backfilled = state?.backfilled || (await linkFetchedMessages(env, account.id));
-	const lowUid = state?.uidvalidity === inbox.uidValidity ? (state?.lowUid ?? 0) : 0;
-	const syncGone = settings.providerGone === "trash";
-	const marks = {
-		uidvalidity: inbox.uidValidity,
-		highestModseq: inbox.highestModseq,
-		existsCount: inbox.exists,
-		uidNext: inbox.uidNext,
-	};
-	if (state?.backfilled && !state.heldGone && nothingChanged(state, inbox)) {
-		await updateTwoWayState(env, account.id, { lastPassAt: now });
-		return;
-	}
-	const refs = await readWindow(env, account.id, inbox.uidValidity, lowUid);
+	inbox: Awaited<ReturnType<ImapSession["examine"]>> & { uidValidity: number },
+	context: { run: TwoWayRun; backfilled: boolean; now: Date },
+) {
+	const { run, backfilled, now } = context;
+	const pass = planPass(settings, state, inbox.uidValidity);
+	const refs = await readWindow(env, account.id, inbox.uidValidity, pass.lowUid);
 	const pending = await readPendingActions(env, account.id);
-	// A server may refuse a FETCH in an empty folder, and there is nothing to ask then.
-	const seen = await readWindowFlags(session, refs, inbox.exists === 0);
-	const adoptGone = syncGone && (state?.goneBaseline ?? true);
-	const adoptFlags = settings.providerFlags && (state?.flagsBaseline ?? true);
 	const plan = planReconcile({
+		...pass,
 		refs,
-		seen,
-		syncGone,
-		syncFlags: settings.providerFlags,
-		adoptGone,
-		adoptFlags,
+		// A server may refuse a FETCH in an empty folder, and there is nothing to ask then.
+		seen: await readWindowFlags(session, refs, inbox.exists === 0),
 		pendingMoves: pending.moves,
-		heldGone: state?.heldGone ?? 0,
 	});
-	const lastPassAt = state?.lastPassAt ?? null;
-	const changed = await applyPlan(env, session, account, plan, { lastPassAt, flags: pending.flags, run });
+	const changed = await applyPlan(env, session, account, plan, {
+		lastPassAt: pass.lastPassAt,
+		flags: pending.flags,
+		run,
+	});
 	if (plan.held)
 		run.notes.push(
 			`${plural(plan.held, "message")} left the Inbox at once at the provider. Kite waits for the next check before moving them to Trash.`,
 		);
 	await updateTwoWayState(env, account.id, {
-		...marks,
-		// A pass that stopped early must run again, whatever the server says then.
-		highestModseq: plan.truncated || plan.held || !backfilled ? null : inbox.highestModseq,
-		lowUid: refs.length === RECONCILE_WINDOW ? refs[refs.length - 1].uid : lowUid,
+		...passResult(pass, state, inbox, { plan, windowFull: refs.length === RECONCILE_WINDOW, backfilled, refs }),
 		lastPassAt: now,
-		goneBaseline: (state?.goneBaseline ?? true) && !adoptGone,
-		flagsBaseline: (state?.flagsBaseline ?? true) && !adoptFlags,
 		backfilled,
-		heldGone: plan.held,
 	});
 	if (changed || plan.gone.length)
 		await auditExternalAccount(env, {
@@ -381,15 +386,47 @@ export async function reconcileInbox(
 		});
 }
 
-/** Both directions of a regular check, after new mail; a no-op unless the owner turned something on. */
-export async function runTwoWay(
+/**
+ * The provider-to-Kite pass of a regular check (spec §6.8), read-only at the provider: `EXAMINE INBOX`, then the flags
+ * of the newest tracked messages. A UIDVALIDITY the rows do not carry leaves them out by itself, so a rebuilt folder
+ * moves nothing. Skipped when CONDSTORE shows nothing moved since the last pass.
+ */
+async function reconcileInbox(
 	env: CloudflareEnv,
 	session: ImapSession,
+	account: Pick<ExternalAccountRow, "id" | "userId" | "mailboxId">,
+	config: TwoWayConfig,
+	run: TwoWayRun,
+): Promise<void> {
+	const inbox = await session.examine("INBOX");
+	const { uidValidity } = inbox;
+	if (uidValidity === null) return;
+	const now = run.clock();
+	const { state } = config;
+	const backfilled = state?.backfilled || (await linkFetchedMessages(env, account.id));
+	if (state?.backfilled && !state.heldGone && nothingChanged(state, inbox))
+		return updateTwoWayState(env, account.id, { lastPassAt: now });
+	await comparePass(env, session, account, config, { ...inbox, uidValidity }, { run, backfilled, now });
+}
+
+/**
+ * Both directions of a regular check, after new mail. `session` is asked for only when the owner turned something on,
+ * because the run's connection may first need replacing.
+ */
+export async function runTwoWay(
+	env: CloudflareEnv,
+	session: () => Promise<ImapSession>,
 	account: Pick<ExternalAccountRow, "id" | "userId" | "mailboxId">,
 	run: TwoWayRun,
 ): Promise<void> {
 	if (!(await twoWayReady(env))) return;
 	const config = await readTwoWayConfig(env, account.id);
-	if (writesToProvider(config.settings)) await drainOutbox(env, session, account, config, run);
-	if (readsFromProvider(config.settings) && !run.outOfTime()) await reconcileInbox(env, session, account, config, run);
+	if (writesToProvider(config.settings)) {
+		const more = await drainOutbox(env, await session(), account, config, run);
+		// After this run gives the lease back.
+		if (more)
+			await env.AGENT_QUEUE?.send(externalWritebackMessage(account.id), { delaySeconds: WRITEBACK_DELAY_SECONDS });
+	}
+	if (readsFromProvider(config.settings) && !run.outOfTime())
+		await reconcileInbox(env, await session(), account, config, run);
 }

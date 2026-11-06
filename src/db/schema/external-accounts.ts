@@ -182,7 +182,6 @@ export const messageExternalAccounts = sqliteTable("messages", {
  */
 export const externalAccountTwoWay = sqliteTable("external_accounts", {
 	id: text("id").primaryKey(),
-	userId: text("user_id"),
 	mailboxId: text("mailbox_id"),
 	twoWay: text("two_way").notNull().default("{}"),
 });

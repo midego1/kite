@@ -1,19 +1,11 @@
-import { getDb } from "@/db";
-import { externalMessageRefs } from "@/db/schema/external-accounts";
 import { createLogger } from "@/lib/logger.mjs";
-import { claimKick, loadChangeTargets, twoWayReady, writeOutbox } from "./two-way-store";
+import { claimKick, writeOutbox } from "./two-way-outbox";
+import { loadChangeTargets, twoWayReady } from "./two-way-store";
 import type { KiteChange } from "./two-way-types";
-import { planOutbox, WRITEBACK_DELAY_SECONDS, WRITEBACK_KICK_MS, type OutboxPlan } from "./two-way-utils";
+import { planOutbox, WRITEBACK_DELAY_SECONDS, WRITEBACK_KICK_MS } from "./two-way-utils";
 import { externalWritebackMessage } from "./sync-utils";
 
 const logger = createLogger("external-sync");
-
-/** A message acted on before the mapping knew it gets its row now, so the run that follows has the row to finish. */
-async function linkActedOn(env: CloudflareEnv, plan: OutboxPlan): Promise<void> {
-	const db = getDb(env);
-	for (const { messageId, accountId, role, uidvalidity, uid } of plan.writes)
-		await db.insert(externalMessageRefs).values({ messageId, accountId, role, uidvalidity, uid }).onConflictDoNothing();
-}
 
 /**
  * A user just did this to these messages in Kite (spec §6.8). The only way anything reaches the outbox: called from
@@ -34,7 +26,6 @@ export async function recordKiteChange(
 		const plan = planOutbox(await loadChangeTargets(env, messageIds), change);
 		await writeOutbox(env, plan, now);
 		if (!plan.writes.length) return;
-		await linkActedOn(env, plan);
 		await kickWriteback(env, new Set(plan.writes.map((row) => row.accountId)), now);
 	} catch (error) {
 		logger.warn("external.two_way.record_failed", {

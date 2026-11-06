@@ -1,6 +1,7 @@
 import { chunkArray } from "@/db/chunk-utils";
 import { parseRawHeaders } from "@/lib/email/raw-headers";
 import type { ImapSession } from "@/lib/imap/session";
+import { getMailboxNotificationUserIds, notifyUsersOfNewMessage } from "@/lib/realtime/utils";
 import { shortServerText } from "./connection-utils";
 import { auditExternalAccount } from "./audit";
 import type { ExternalAccountRow } from "./serialize-utils";
@@ -12,6 +13,7 @@ import {
 	finishMoved,
 	readDueActions,
 	readPendingActions,
+	saveStep,
 } from "./two-way-outbox";
 import {
 	applyReconcile,
@@ -30,6 +32,8 @@ import {
 import type { ProviderSupport } from "./two-way-types";
 import {
 	actionAllowed,
+	isLastAttempt,
+	judgeAnswer,
 	moveTarget,
 	nothingChanged,
 	passResult,
@@ -42,7 +46,7 @@ import {
 	resolveFlagChange,
 	sameMessageId,
 	WRITEBACK_BATCH,
-	WRITEBACK_DELAY_SECONDS,
+	WRITEBACK_KICK_DELAY_SECONDS,
 	WRITEBACK_ROWS_PER_RUN,
 	writesToProvider,
 	type FlagChange,
@@ -54,6 +58,8 @@ import {
 
 /** What a pass needs from the run around it. */
 export type TwoWayRun = { clock: () => Date; outOfTime: () => boolean; notes: string[] };
+
+type Failures = Map<string, { row: OutboxRow; reason: string }>;
 
 const plural = (count: number, one: string, many = `${one}s`) => (count === 1 ? `1 ${one}` : `${count} ${many}`);
 
@@ -108,8 +114,9 @@ async function readFactsApart(session: ImapSession, uids: readonly number[]) {
 async function eachSucceeding(
 	rows: readonly OutboxRow[],
 	write: (uids: number[]) => Promise<void>,
-	failures: Map<string, { row: OutboxRow; reason: string }>,
+	failures: Failures,
 ): Promise<OutboxRow[]> {
+	if (!rows.length) return [];
 	try {
 		await write(rows.map((row) => row.uid));
 		return [...rows];
@@ -126,15 +133,62 @@ async function eachSucceeding(
 }
 
 /**
- * Moves messages out of the open folder. `UID MOVE` where offered. Otherwise the fallback RFC 6851 names: copy, then
- * remove exactly those UIDs, only after the copy answered OK. No other expunge exists in this code, so nothing but a
- * message that was copied first can ever leave a folder.
+ * The fallback RFC 6851 names where the server has no MOVE: copy, mark deleted, then remove exactly those UIDs. Each
+ * step is recorded as it lands, so a retry does only what is left and never copies twice, and nothing leaves the
+ * folder unless its copy answered OK. No other expunge exists in this code.
  */
-async function moveUids(session: ImapSession, support: ProviderSupport, uids: number[], folder: string) {
-	if (support.moveMethod === "move") return session.moveMessages(uids, folder);
-	await session.copyMessages(uids, folder);
-	await session.storeFlags(uids, "+", ["\\Deleted"]);
-	await session.expungeMessages(uids);
+async function moveByCopy(
+	env: CloudflareEnv,
+	session: ImapSession,
+	rows: readonly OutboxRow[],
+	folder: string,
+	failures: Failures,
+): Promise<OutboxRow[]> {
+	const copied = await eachSucceeding(
+		rows.filter((row) => row.step < 1),
+		(uids) => session.copyMessages(uids, folder),
+		failures,
+	);
+	await saveStep(env, copied, 1);
+	const marked = await eachSucceeding(
+		rows.filter((row) => row.step === 1),
+		(uids) => session.storeFlags(uids, "+", ["\\Deleted"]),
+		failures,
+	);
+	await saveStep(env, marked, 2);
+	return eachSucceeding(
+		rows.filter((row) => row.step === 2),
+		(uids) => session.expungeMessages(uids),
+		failures,
+	);
+}
+
+/** Giving up on a move that got as far as the mark: the message stays, and must not stay marked for another client. */
+async function clearAbandonedMarks(session: ImapSession, rows: readonly OutboxRow[], failures: Failures) {
+	const abandoned = rows.filter((row) => row.step >= 2 && failures.has(row.id) && isLastAttempt(row.attempts));
+	if (!abandoned.length) return;
+	await session
+		.storeFlags(
+			abandoned.map((row) => row.uid),
+			"-",
+			["\\Deleted"],
+		)
+		.catch((error: unknown) => {
+			if (!isRefusal(error)) throw error;
+		});
+}
+
+/** Moves one kind of row to its folder, and returns the rows that left. */
+async function moveRows(
+	env: CloudflareEnv,
+	session: ImapSession,
+	support: ProviderSupport,
+	rows: readonly OutboxRow[],
+	target: string,
+	failures: Failures,
+) {
+	if (support.moveMethod !== "move") return moveByCopy(env, session, rows, target, failures);
+	return eachSucceeding(rows, (uids) => session.moveMessages(uids, target), failures);
 }
 
 /** One batch of one folder: read what is at the UIDs, then flags, then moves, recording each result as it lands. */
@@ -146,7 +200,7 @@ async function writeBatch(
 		config: TwoWayConfig;
 		support: ProviderSupport | null;
 		sourceFolder: string;
-		failures: Map<string, { row: OutboxRow; reason: string }>;
+		failures: Failures;
 		counts: { moved: number; flagged: number; refused: number; unsupported: number };
 	},
 ): Promise<void> {
@@ -188,13 +242,11 @@ async function writeBatch(
 			);
 			continue;
 		}
-		const done =
-			target === sourceFolder
-				? group
-				: await eachSucceeding(group, (uids) => moveUids(session, support, uids, target), failures);
+		const done = target === sourceFolder ? group : await moveRows(env, session, support, group, target, failures);
 		await finishMoved(env, done);
 		counts.moved += done.length;
 	}
+	await clearAbandonedMarks(session, readable, failures);
 }
 
 /** Flags go first in the folder, because a move gives its message another UID. */
@@ -205,7 +257,7 @@ function noteOutcome(
 	run: TwoWayRun,
 	stale: number,
 	counts: { refused: number; unsupported: number },
-	failures: Map<string, { row: OutboxRow; reason: string }>,
+	failures: Failures,
 	gaveUp: number,
 ) {
 	if (stale)
@@ -237,7 +289,8 @@ export async function drainOutbox(
 	const now = run.clock();
 	const due = await readDueActions(env, account.id, now, WRITEBACK_ROWS_PER_RUN + 1);
 	const batch = due.slice(0, WRITEBACK_ROWS_PER_RUN);
-	const wanted = batch.filter((row) => actionAllowed(config.settings, row.kind));
+	// A move half done finishes even with its setting off, or its copy and deleted mark would stay behind.
+	const wanted = batch.filter((row) => row.step > 0 || actionAllowed(config.settings, row.kind));
 	await deleteActions(
 		env,
 		batch.filter((row) => !wanted.includes(row)).map((row) => row.id),
@@ -248,7 +301,7 @@ export async function drainOutbox(
 		support = planProviderSupport(session.capabilities, await session.listMailboxes(), now);
 		await saveSupport(env, account.id, support);
 	}
-	const failures = new Map<string, { row: OutboxRow; reason: string }>();
+	const failures: Failures = new Map();
 	const counts = { moved: 0, flagged: 0, refused: 0, unsupported: 0 };
 	const context = { config, support, sourceFolder: "", failures, counts };
 	let stale = 0;
@@ -285,13 +338,44 @@ export async function drainOutbox(
 	return due.length > WRITEBACK_ROWS_PER_RUN || run.outOfTime();
 }
 
-/** What the provider holds now for the tracked range, by UID. */
+/** What the provider answers for the tracked range: every line, and the flags by UID. */
 async function readWindowFlags(session: ImapSession, refs: readonly { uid: number }[], empty: boolean) {
 	const seen = new Map<number, { read: boolean; starred: boolean }>();
-	if (empty || !refs.length) return seen;
-	for (const entry of await session.fetchFlags(refs[refs.length - 1].uid, refs[0].uid))
-		seen.set(entry.uid, sourceFlags(entry.flags));
-	return seen;
+	// A server may refuse a FETCH in an empty folder, and there is nothing to ask then.
+	if (empty || !refs.length) return { seen, answered: [] };
+	const answered = await session.fetchFlags(refs[refs.length - 1].uid, refs[0].uid);
+	for (const entry of answered) seen.set(entry.uid, sourceFlags(entry.flags));
+	return { seen, answered };
+}
+
+/**
+ * The second look at what a previous session found missing: each UID asked for by name, in small batches. Gone is what
+ * this answer does not hold either; `found` is what it does.
+ */
+async function confirmGone(session: ImapSession, candidates: ReconcilePlan["candidates"]) {
+	const gone: string[] = [];
+	const found: string[] = [];
+	for (const chunk of chunkArray(candidates, WRITEBACK_BATCH)) {
+		const present = new Set(
+			(await session.fetchFlagsOf(chunk.map((candidate) => candidate.uid))).map((entry) => entry.uid),
+		);
+		for (const { messageId, uid } of chunk) (present.has(uid) ? found : gone).push(messageId);
+	}
+	return { gone, found };
+}
+
+const DISTRUST_TEXT: Record<NonNullable<ReturnType<typeof judgeAnswer>>, string> = {
+	empty_folder: "The provider shows an empty Inbox",
+	far_below: "The provider shows far fewer Inbox messages than Kite tracks",
+	partial: "The provider's answer about the Inbox looks incomplete",
+};
+
+/** Says once per episode that deletes from the provider are paused, not at every check. */
+function notePause(run: TwoWayRun, distrust: ReturnType<typeof judgeAnswer>, alreadyPaused: boolean) {
+	if (distrust && !alreadyPaused)
+		run.notes.push(
+			`${DISTRUST_TEXT[distrust]}, so Kite moves nothing to Trash until that clears. If you emptied it yourself, turn "Deleted or moved out of the Inbox" off and on to start over.`,
+		);
 }
 
 /** The flag changes whose UID still holds the stored message; the rest are left alone and their rows retired. */
@@ -318,14 +402,20 @@ async function verifiedChanges(env: CloudflareEnv, session: ImapSession, changes
 	return { good, mismatched };
 }
 
-/** Applies a pass's plan: flag changes settled by last writer, then everything in one batch. */
+/** Applies a pass's plan: what is really gone, flag changes settled by last writer, then everything in one batch. */
 async function applyPlan(
 	env: CloudflareEnv,
 	session: ImapSession,
 	account: Pick<ExternalAccountRow, "id" | "mailboxId">,
 	plan: ReconcilePlan,
-	context: { lastPassAt: Date | null; flags: Awaited<ReturnType<typeof readPendingActions>>["flags"]; run: TwoWayRun },
+	context: {
+		lastPassAt: Date | null;
+		flags: Awaited<ReturnType<typeof readPendingActions>>["flags"];
+		run: TwoWayRun;
+		now: Date;
+	},
 ) {
+	const { gone, found } = await confirmGone(session, plan.candidates);
 	const { good, mismatched } = await verifiedChanges(env, session, plan.flagChanges);
 	if (mismatched.length)
 		context.run.notes.push(
@@ -341,15 +431,29 @@ async function applyPlan(
 	await applyReconcile(env, {
 		accountId: account.id,
 		mailboxId: account.mailboxId,
-		plan: { ...plan, silentlyGone: [...plan.silentlyGone, ...mismatched] },
+		plan: { ...plan, found: [...plan.found, ...found], silentlyGone: [...plan.silentlyGone, ...mismatched] },
+		gone,
+		now: context.now,
 		applied: good,
 		kite,
 		dropped,
 	});
-	return kite.length;
+	return { flagged: kite.length, trashed: gone.length, changed: kite[0]?.messageId ?? gone[0] };
 }
 
-/** Runs one pass over the window and records where it stands, unless nothing can have changed. */
+/** The open tabs refetch their lists, as after a row's summary arrived; a change here reaches them without new mail. */
+async function tellOpenTabs(
+	env: CloudflareEnv,
+	account: Pick<ExternalAccountRow, "userId" | "mailboxId">,
+	messageId: string,
+) {
+	const users = await getMailboxNotificationUserIds(env, account.mailboxId, account.userId);
+	await notifyUsersOfNewMessage(env, users, { type: "message_summary", mailboxId: account.mailboxId, messageId }).catch(
+		() => undefined,
+	);
+}
+
+/** Runs one pass over the window and records where it stands. */
 async function comparePass(
 	env: CloudflareEnv,
 	session: ImapSession,
@@ -362,35 +466,37 @@ async function comparePass(
 	const pass = planPass(settings, state, inbox.uidValidity);
 	const refs = await readWindow(env, account.id, inbox.uidValidity, pass.lowUid);
 	const pending = await readPendingActions(env, account.id);
-	const plan = planReconcile({
-		...pass,
-		refs,
-		// A server may refuse a FETCH in an empty folder, and there is nothing to ask then.
-		seen: await readWindowFlags(session, refs, inbox.exists === 0),
-		pendingMoves: pending.moves,
+	const { seen, answered } = await readWindowFlags(session, refs, inbox.exists === 0);
+	const distrust = judgeAnswer({
+		exists: inbox.exists,
+		uidNext: inbox.uidNext,
+		tracked: refs.length,
+		high: refs[0]?.uid ?? 0,
+		answered,
 	});
-	const changed = await applyPlan(env, session, account, plan, {
+	const plan = planReconcile({ ...pass, refs, seen, believed: !distrust, pendingMoves: pending.moves });
+	const applied = await applyPlan(env, session, account, plan, {
 		lastPassAt: pass.lastPassAt,
 		flags: pending.flags,
 		run,
+		now,
 	});
-	if (plan.held)
-		run.notes.push(
-			`${plural(plan.held, "message")} left the Inbox at once at the provider. Kite waits for the next check before moving them to Trash.`,
-		);
+	notePause(run, distrust, !!state?.gonePaused);
+	const lowUid = refs.length === RECONCILE_WINDOW ? refs[refs.length - 1].uid : pass.lowUid;
 	await updateTwoWayState(env, account.id, {
-		...passResult(pass, state, inbox, { plan, windowFull: refs.length === RECONCILE_WINDOW, backfilled, refs }),
+		...passResult(pass, state, inbox, { plan, distrust, lowUid, backfilled }),
 		lastPassAt: now,
 		backfilled,
 	});
-	if (changed || plan.gone.length)
-		await auditExternalAccount(env, {
-			actorUserId: null,
-			targetUserId: account.userId,
-			action: "external_account.two_way_received",
-			mailboxId: account.mailboxId,
-			metadata: { accountId: account.id, flagged: changed, trashed: plan.gone.length },
-		});
+	if (!applied.changed) return;
+	await auditExternalAccount(env, {
+		actorUserId: null,
+		targetUserId: account.userId,
+		action: "external_account.two_way_received",
+		mailboxId: account.mailboxId,
+		metadata: { accountId: account.id, flagged: applied.flagged, trashed: applied.trashed },
+	});
+	await tellOpenTabs(env, account, applied.changed);
 }
 
 /**
@@ -411,7 +517,7 @@ async function reconcileInbox(
 	const now = run.clock();
 	const { state } = config;
 	const backfilled = state?.backfilled || (await linkFetchedMessages(env, account.id));
-	if (state?.backfilled && !state.heldGone && nothingChanged(state, inbox))
+	if (state?.backfilled && !state.gonePaused && nothingChanged(state, inbox))
 		return updateTwoWayState(env, account.id, { lastPassAt: now });
 	await comparePass(env, session, account, config, { ...inbox, uidValidity }, { run, backfilled, now });
 }
@@ -432,7 +538,7 @@ export async function runTwoWay(
 		const more = await drainOutbox(env, await session(), account, config, run);
 		// After this run gives the lease back.
 		if (more)
-			await env.AGENT_QUEUE?.send(externalWritebackMessage(account.id), { delaySeconds: WRITEBACK_DELAY_SECONDS });
+			await env.AGENT_QUEUE?.send(externalWritebackMessage(account.id), { delaySeconds: WRITEBACK_KICK_DELAY_SECONDS });
 	}
 	if (readsFromProvider(config.settings) && !run.outOfTime())
 		await reconcileInbox(env, await session(), account, config, run);

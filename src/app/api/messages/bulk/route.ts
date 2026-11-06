@@ -4,23 +4,21 @@ import { getDb, type AppDatabase } from "@/db";
 import { folders, messages } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/cookies";
 import { getEnv } from "@/lib/cloudflare";
-import { recordKiteChange } from "@/lib/external-accounts/two-way-record";
+import { cancelKiteMoves, recordDeletes } from "@/lib/external-accounts/two-way-record";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { createAuditLogs } from "@/lib/mailboxes/audit";
 import { queryInChunks, runInChunks } from "@/db/chunk-utils";
 import type { MailboxAccessLevel } from "@/lib/mailboxes/types";
 import { permanentlyDeleteMessages } from "@/lib/email/permanent-delete";
 import { applySpamFeedback } from "@/lib/spam/feedback";
-import { reportBulk, restoreMessageStates } from "./report";
+import { recordBulkMove, reportBulk, restoreMessageStates } from "./report";
 import {
 	SEND_PENDING_MOVE_MESSAGE,
 	SEND_PENDING_MOVE_REFUSED,
 	isMoveRefusedWhileSending,
 } from "@/lib/messages/send-state-utils";
 import { draftCounts, draftsOnlyResponse, settleDrafts } from "./drafts";
-import type { KiteChange } from "@/lib/external-accounts/two-way-types";
-import { kiteMove } from "@/lib/external-accounts/two-way-utils";
-import type { BulkMessageAction, BulkMessagePayload } from "./types";
+import type { BulkMessagePayload } from "./types";
 import {
 	getReadValueForBulkAction,
 	getStatusForBulkAction,
@@ -47,12 +45,6 @@ async function updateInApprovedMailboxes(
 				.set(values)
 				.where(and(eq(messages.mailboxId, mailboxId), inArray(messages.id, chunk))),
 		);
-}
-
-/** What a plain bulk action is for two-way sync. */
-function bulkChange(action: BulkMessageAction): KiteChange {
-	if (action === "read" || action === "unread") return { kind: "flags", read: action === "read" };
-	return kiteMove(getStatusForBulkAction(action) ?? "");
 }
 
 export async function POST(request: Request) {
@@ -176,7 +168,7 @@ export async function POST(request: Request) {
 	}
 	if (payload.action === "restore") {
 		const superseded = await restoreMessageStates(env, db, restoreStates, selectedMessages, approvedMailbox);
-		await recordKiteChange(env, allowedMessageIds, { kind: "other" });
+		await cancelKiteMoves(env, allowedMessageIds);
 		return NextResponse.json({ ok: true, ...(superseded > 0 ? { superseded } : {}), ...refusals });
 	}
 	if (payload.action === "delete") {
@@ -184,6 +176,7 @@ export async function POST(request: Request) {
 		const deletable = selectedMessages.filter(
 			(message) => allowedMessageIds.includes(message.id) && isPermanentlyDeletableStatus(message.status),
 		);
+		await recordDeletes(env, user, deletable);
 		const deleted = await permanentlyDeleteMessages(env, db, user.id, deletable, "bulk");
 		const skipped = allowedMessageIds.length - deleted;
 		// A partial delete is reported as an error by the client, so `moved` names the whole set only when it all went.
@@ -198,7 +191,7 @@ export async function POST(request: Request) {
 			.map((message) => message.id);
 		for (const messageId of spamMessageIds) await applySpamFeedback(env, user, messageId, "ham");
 		await updateInApprovedMailboxes(db, approvedMailbox, values);
-		await recordKiteChange(env, allowedMessageIds, { kind: "other" });
+		await cancelKiteMoves(env, allowedMessageIds);
 		return NextResponse.json({ ok: true, moved: allowedMessageIds, ...refusals });
 	}
 
@@ -208,7 +201,7 @@ export async function POST(request: Request) {
 				.map((message) => ({ id: message.id, status: message.status, folderId: message.folderId ?? null }))
 		: undefined;
 	await updateInApprovedMailboxes(db, approvedMailbox, values);
-	await recordKiteChange(env, allowedMessageIds, bulkChange(payload.action));
+	await recordBulkMove(env, user, payload.action, selectedMessages, allowedMessageIds);
 	await createAuditLogs(
 		env,
 		allowedMessageIds.map((messageId) => ({

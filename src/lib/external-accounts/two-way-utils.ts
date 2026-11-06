@@ -20,12 +20,14 @@ export const WRITEBACK_ROWS_PER_RUN = 200;
 export const WRITEBACK_BATCH = 50;
 /** Tries before a change is given up on. */
 const WRITEBACK_MAX_ATTEMPTS = 6;
-/** How long after an action its run starts: an Undo wins, and a burst goes out together. */
+/** How long an action waits before any run takes it: an Undo wins, and a burst goes out together. */
 export const WRITEBACK_DELAY_SECONDS = 60;
+/** How long the queued run waits: just past the delay, so what it came for is due when it arrives. */
+export const WRITEBACK_KICK_DELAY_SECONDS = WRITEBACK_DELAY_SECONDS + 5;
 /** At most one queued write-back per account in this time. */
 export const WRITEBACK_KICK_MS = 60_000;
-/** A disappearance this large, and at least half the window, waits for a second check to agree. */
-const MASS_GONE_MIN = 50;
+/** From this many tracked messages on, an Inbox holding under half of them is not believed. */
+const FAR_BELOW_MIN_TRACKED = 10;
 /** How long a server's answers are trusted before the settings ask it again. */
 export const SUPPORT_MAX_AGE_MS = 24 * 60 * 60_000;
 
@@ -124,15 +126,17 @@ export function twoWaySupportProblem(settings: TwoWaySettings, support: Provider
 	return null;
 }
 
-/** Whether the stored Message-ID and the one at the provider name the same message; none on both sides is no conflict. */
+/** Whether the stored Message-ID and the one at the provider name the same message; a missing one proves nothing. */
 export function sameMessageId(stored: string | null | undefined, atProvider: string | null | undefined): boolean {
-	return normalizeMessageId(stored) === normalizeMessageId(atProvider);
+	const id = normalizeMessageId(stored);
+	return id !== null && id === normalizeMessageId(atProvider);
 }
 
 /** A message a user acted on, as the outbox needs it. */
 export type ChangeTarget = {
 	messageId: string;
 	accountId: string;
+	mailboxId: string | null;
 	settings: TwoWaySettings;
 	/** The message's mailbox is still the account's: the account owner's settings speak only for that mail. */
 	inAccountMailbox: boolean;
@@ -191,7 +195,12 @@ export function planOutbox(targets: readonly ChangeTarget[], change: KiteChange)
 				rfcMessageId,
 				...place,
 			});
-		} else if (change.kind !== "other" && usable && actionAllowed(settings, change.kind)) {
+		} else if (
+			change.kind !== "other" &&
+			usable &&
+			actionAllowed(settings, change.kind) &&
+			(!change.junkOnly || place.role === "junk")
+		) {
 			plan.writes.push({
 				id: moveActionId(messageId),
 				accountId,
@@ -211,6 +220,7 @@ export function planOutbox(targets: readonly ChangeTarget[], change: KiteChange)
 export type OutboxRow = OutboxPlan["writes"][number] & {
 	createdAt: Date;
 	attempts: number;
+	step: number;
 	providerRead: boolean | null;
 	providerStarred: boolean | null;
 };
@@ -305,6 +315,8 @@ export type WindowRef = {
 	uid: number;
 	providerRead: boolean | null;
 	providerStarred: boolean | null;
+	/** An earlier session found this UID absent. */
+	missing: boolean;
 };
 
 /** A flag change seen at the provider: the changed fields, and everything the provider holds now. */
@@ -320,6 +332,8 @@ export type ReconcileInput = {
 	refs: readonly WindowRef[];
 	/** What `UID FETCH … (UID FLAGS)` found, by UID. */
 	seen: ReadonlyMap<number, { read: boolean; starred: boolean }>;
+	/** Whether that answer may be read as "what is not here has left" (`judgeAnswer`). */
+	believed: boolean;
 	syncGone: boolean;
 	syncFlags: boolean;
 	/** The setting was just turned on: this pass only records what it finds. */
@@ -327,8 +341,6 @@ export type ReconcileInput = {
 	adoptFlags: boolean;
 	/** Messages with a move waiting: they are leaving because of Kite, or Kite will move them itself. */
 	pendingMoves: ReadonlySet<string>;
-	/** How many the last pass held back. */
-	heldGone: number;
 	maxChanges?: number;
 };
 
@@ -336,51 +348,86 @@ export type ReconcilePlan = {
 	/** Rows whose last-seen state becomes what the provider holds, with no change in Kite. */
 	baselines: { messageId: string; read: boolean; starred: boolean }[];
 	flagChanges: FlagChange[];
-	/** Left the Inbox since the last pass: to Kite's Trash. */
-	gone: string[];
+	/** Absent for the first time: noted, and looked up by UID in the next session. */
+	newlyMissing: string[];
+	/** Absent again, in a later session: looked up by UID now, and gone only if that finds nothing. */
+	candidates: { messageId: string; uid: number }[];
+	/** Noted as absent earlier, and here after all. */
+	found: string[];
 	/** Not there, and nothing to do about it: left before anyone asked, or was never compared. */
 	silentlyGone: string[];
-	/** Held back as a suspiciously large disappearance; 0 when not. */
-	held: number;
 	/** The pass stopped at its limit, so the next one must run whatever the server says. */
 	truncated: boolean;
 };
 
 /**
- * What one provider-to-Kite pass concludes. A message absent from the answer has left the Inbox; a row never compared
- * with the server, or a pass that only takes a baseline, changes nothing in Kite. A disappearance of `MASS_GONE_MIN` or
- * more and at least half the window waits for a second pass to say the same, so a server hiccup showing an empty Inbox
- * costs nothing.
+ * Why a folder's answer cannot be read as "what is not here has left", or null when it can. An empty Inbox, or one
+ * holding far fewer messages than Kite tracks, is more often a provider's hiccup than a user's work, and either way the
+ * cost of waiting is small. The answer's own count is checked against EXISTS: the messages before the first one answered
+ * (its sequence number says how many), those answered, and those after the range (at most the UIDs above it) must add
+ * up to what the folder holds, so a capped or cut answer shows.
+ */
+export function judgeAnswer(input: {
+	exists: number | null;
+	uidNext: number | null;
+	tracked: number;
+	high: number;
+	answered: readonly { seq: number }[];
+}): "empty_folder" | "far_below" | "partial" | null {
+	const { exists, uidNext, tracked, high, answered } = input;
+	if (!tracked) return null;
+	if (exists === null) return "partial";
+	if (exists === 0) return "empty_folder";
+	if (tracked >= FAR_BELOW_MIN_TRACKED && exists * 2 < tracked) return "far_below";
+	if (!answered.length) return "partial";
+	const before = Math.min(...answered.map((entry) => entry.seq)) - 1;
+	const after = Math.max((uidNext ?? 0) - 1 - high, 0);
+	return before + answered.length + after < exists ? "partial" : null;
+}
+
+/** What a pass concludes per message, before the second look at what is missing. */
+function planRef(ref: WindowRef, input: ReconcileInput, plan: ReconcilePlan) {
+	const found = input.seen.get(ref.uid);
+	if (!found) {
+		if (input.pendingMoves.has(ref.messageId) || !input.believed) return;
+		const counts = input.syncGone && !input.adoptGone && ref.providerRead !== null;
+		if (!counts) plan.silentlyGone.push(ref.messageId);
+		else if (ref.missing) plan.candidates.push({ messageId: ref.messageId, uid: ref.uid });
+		else plan.newlyMissing.push(ref.messageId);
+		return;
+	}
+	if (ref.missing) plan.found.push(ref.messageId);
+	if (ref.providerRead === null || ref.providerStarred === null || input.adoptFlags) {
+		plan.baselines.push({ messageId: ref.messageId, ...found });
+		return;
+	}
+	if (!input.syncFlags) return;
+	const read = found.read !== ref.providerRead ? { read: found.read } : {};
+	const starred = found.starred !== ref.providerStarred ? { starred: found.starred } : {};
+	if ("read" in read || "starred" in starred)
+		plan.flagChanges.push({ messageId: ref.messageId, uid: ref.uid, ...read, ...starred, provider: found });
+}
+
+/**
+ * What one provider-to-Kite pass concludes. A message absent from a believed answer is noted; only an absence seen by
+ * an earlier session as well becomes a candidate, and a candidate is gone only once `UID FETCH` of its own UID finds
+ * nothing either. A row never compared with the server, or a pass that only takes a baseline, changes nothing in Kite.
  */
 export function planReconcile(input: ReconcileInput): ReconcilePlan {
-	const { refs, seen, syncGone, syncFlags, adoptGone, adoptFlags, pendingMoves, heldGone } = input;
-	const plan: ReconcilePlan = { baselines: [], flagChanges: [], gone: [], silentlyGone: [], held: 0, truncated: false };
-	for (const ref of refs) {
-		const found = seen.get(ref.uid);
-		if (!found) {
-			if (pendingMoves.has(ref.messageId)) continue;
-			const moved = syncGone && !adoptGone && ref.providerRead !== null;
-			(moved ? plan.gone : plan.silentlyGone).push(ref.messageId);
-			continue;
-		}
-		if (ref.providerRead === null || ref.providerStarred === null || adoptFlags) {
-			plan.baselines.push({ messageId: ref.messageId, ...found });
-			continue;
-		}
-		if (!syncFlags) continue;
-		const read = found.read !== ref.providerRead ? { read: found.read } : {};
-		const starred = found.starred !== ref.providerStarred ? { starred: found.starred } : {};
-		if ("read" in read || "starred" in starred)
-			plan.flagChanges.push({ messageId: ref.messageId, uid: ref.uid, ...read, ...starred, provider: found });
-	}
-	if (plan.gone.length >= MASS_GONE_MIN && plan.gone.length * 2 >= refs.length && heldGone === 0) {
-		plan.held = plan.gone.length;
-		plan.gone = [];
-	}
+	const plan: ReconcilePlan = {
+		baselines: [],
+		flagChanges: [],
+		newlyMissing: [],
+		candidates: [],
+		found: [],
+		silentlyGone: [],
+		truncated: false,
+	};
+	for (const ref of input.refs) planRef(ref, input, plan);
 	const max = input.maxChanges ?? RECONCILE_MAX_CHANGES;
-	plan.truncated = plan.gone.length + plan.flagChanges.length > max;
-	plan.gone = plan.gone.slice(0, max);
-	plan.flagChanges = plan.flagChanges.slice(0, Math.max(max - plan.gone.length, 0));
+	plan.truncated = plan.candidates.length + plan.flagChanges.length > max;
+	plan.candidates = plan.candidates.slice(0, max);
+	plan.flagChanges = plan.flagChanges.slice(0, Math.max(max - plan.candidates.length, 0));
 	return plan;
 }
 
@@ -422,7 +469,6 @@ type PassState = {
 	lastPassAt: Date | null;
 	goneBaseline: boolean;
 	flagsBaseline: boolean;
-	heldGone: number;
 };
 
 /** What a pass starts from: the window's floor (back to 0 in a rebuilt folder), and what it only records this time. */
@@ -433,32 +479,32 @@ export function planPass(settings: TwoWaySettings, state: PassState | null, uidV
 		syncFlags: settings.providerFlags,
 		adoptGone: syncGone && (state?.goneBaseline ?? true),
 		adoptFlags: settings.providerFlags && (state?.flagsBaseline ?? true),
-		heldGone: state?.heldGone ?? 0,
 		lowUid: state?.uidvalidity === uidValidity ? state.lowUid : 0,
 		lastPassAt: state?.lastPassAt ?? null,
 	};
 }
 
 /**
- * What a finished pass leaves for the next one. A pass that stopped early must run again whatever the server says, so
- * its modseq is not kept. A baseline still owed for a setting that is off stays owed.
+ * What a finished pass leaves for the next one. A pass with anything left to look at must run again whatever the server
+ * says, so its modseq is not kept. A baseline still owed stays owed when the answer could not be believed.
  */
 export function passResult(
 	pass: ReturnType<typeof planPass>,
 	state: PassState | null,
 	inbox: { uidValidity: number; highestModseq: string | null; exists: number | null; uidNext: number | null },
-	outcome: { plan: ReconcilePlan; windowFull: boolean; backfilled: boolean; refs: readonly WindowRef[] },
+	outcome: { plan: ReconcilePlan; distrust: string | null; lowUid: number; backfilled: boolean },
 ) {
-	const { plan, windowFull, backfilled, refs } = outcome;
+	const { plan, distrust, lowUid, backfilled } = outcome;
+	const unsettled = plan.truncated || distrust || !backfilled || plan.newlyMissing.length || plan.candidates.length;
 	return {
 		uidvalidity: inbox.uidValidity,
-		highestModseq: plan.truncated || plan.held || !backfilled ? null : inbox.highestModseq,
+		highestModseq: unsettled ? null : inbox.highestModseq,
 		existsCount: inbox.exists,
 		uidNext: inbox.uidNext,
-		lowUid: windowFull ? refs[refs.length - 1].uid : pass.lowUid,
-		goneBaseline: (state?.goneBaseline ?? true) && !pass.adoptGone,
-		flagsBaseline: (state?.flagsBaseline ?? true) && !pass.adoptFlags,
-		heldGone: plan.held,
+		lowUid,
+		goneBaseline: (state?.goneBaseline ?? true) && (!pass.adoptGone || !!distrust),
+		flagsBaseline: (state?.flagsBaseline ?? true) && (!pass.adoptFlags || !!distrust),
+		gonePaused: !!distrust,
 	};
 }
 

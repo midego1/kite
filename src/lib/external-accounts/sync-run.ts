@@ -174,6 +174,16 @@ class FolderConnection {
 	}
 }
 
+/** What a run may take: no IMAP command started inside the budget may run past the deadline, so it never outlives its lease. */
+export function runClock(env: CloudflareEnv, options: Pick<RunOptions, "budgetMs" | "lease" | "limits">): RunClock {
+	const started = Date.now();
+	const deadline = options.lease.getTime() - LEASE_MARGIN_MS;
+	const base = { ...imapLimits(env.KITE_RUNTIME), ...options.limits };
+	const commandCap = commandCapMs({ deadline, started, budgetMs: options.budgetMs, commandMaxMs: base.commandMaxMs });
+	const limits = { ...base, commandMaxMs: commandCap, commandTimeoutMs: Math.min(base.commandTimeoutMs, commandCap) };
+	return { limits, commandCap, started, deadline };
+}
+
 /** Thrown to end a run early, keeping the cursor where the last saved message left it. */
 class StopRun extends Error {}
 
@@ -193,14 +203,8 @@ export async function runSync(
 	/** Filled as the run goes, so a run that fails half way still has its notes recorded. */
 	outcome: RunOutcome = emptyOutcome(),
 ): Promise<RunOutcome> {
-	const started = Date.now();
-	const deadline = options.lease.getTime() - LEASE_MARGIN_MS;
-	const base = { ...imapLimits(env.KITE_RUNTIME), ...options.limits };
-	// No IMAP command started inside the budget may run past the deadline, so the run never outlives its lease.
-	const commandCap = commandCapMs({ deadline, started, budgetMs: options.budgetMs, commandMaxMs: base.commandMaxMs });
-	const limits = { ...base, commandMaxMs: commandCap, commandTimeoutMs: Math.min(base.commandTimeoutMs, commandCap) };
-	const clock: RunClock = { limits, commandCap, started, deadline };
-	const connection = await FolderConnection.open(env, account, limits);
+	const clock = runClock(env, options);
+	const connection = await FolderConnection.open(env, account, clock.limits);
 	try {
 		const inbox = await syncFolder(env, connection, account, options, outcome, clock);
 		// Only after a complete INBOX pass: a refused or unfinished one leaves the Spam folder for a later run.

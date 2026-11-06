@@ -34,6 +34,6 @@ export async function POST(_request: Request, { params }: { params: Promise<{ me
 
 	const starred = !message.starred;
 	await db.update(messages).set({ starred }).where(eq(messages.id, message.id));
-	await recordKiteChange(env, [message.id], { kind: "flags", starred });
+	await recordKiteChange(env, user, [message.id], { kind: "flags", starred });
 	return NextResponse.json({ starred });
 }

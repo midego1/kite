@@ -8,6 +8,7 @@ import { bundleModules } from "./support/modules-bundle.mjs";
 const {
 	actionAllowed,
 	flagsActionId,
+	judgeAnswer,
 	kiteMove,
 	moveActionId,
 	moveTarget,
@@ -28,7 +29,7 @@ const {
 	writesToProvider,
 } = await bundleModules("kite-two-way-utils-", [
 	[
-		"actionAllowed, flagsActionId, kiteMove, moveActionId, moveTarget, nothingChanged, parseTwoWayInput, planOutbox, planProviderSupport, planReconcile, planWriteback, providerIsNewer, readTwoWaySettings, readsFromProvider, resolveFlagChange, sameMessageId, TWO_WAY_OFF, twoWaySupportProblem, writebackRetryMs, writesToProvider",
+		"actionAllowed, flagsActionId, judgeAnswer, kiteMove, moveActionId, moveTarget, nothingChanged, parseTwoWayInput, planOutbox, planProviderSupport, planReconcile, planWriteback, providerIsNewer, readTwoWaySettings, readsFromProvider, resolveFlagChange, sameMessageId, TWO_WAY_OFF, twoWaySupportProblem, writebackRetryMs, writesToProvider",
 		"src/lib/external-accounts/two-way-utils.ts",
 	],
 ]);
@@ -111,7 +112,7 @@ test("the Message-ID check tolerates brackets, not another message", () => {
 	assert.equal(sameMessageId("<a@b>", "a@b"), true);
 	assert.equal(sameMessageId(" <a@b> ", "<a@b>"), true);
 	assert.equal(sameMessageId("<a@b>", "<c@b>"), false);
-	assert.equal(sameMessageId(null, null), true);
+	assert.equal(sameMessageId(null, null), false, "a message without a Message-ID proves nothing");
 	assert.equal(sameMessageId("<a@b>", null), false);
 	assert.equal(sameMessageId(null, "<a@b>"), false);
 });
@@ -119,6 +120,7 @@ test("the Message-ID check tolerates brackets, not another message", () => {
 const target = (overrides = {}) => ({
 	messageId: "m1",
 	accountId: "a1",
+	mailboxId: "b1",
 	settings: { ...TWO_WAY_OFF, kiteDelete: "trash", kiteFlags: true },
 	inAccountMailbox: true,
 	rfcMessageId: "<a@b>",
@@ -141,6 +143,13 @@ test("an action becomes an outbox row only with its setting on, for mail in the 
 	assert.equal(flags.starred, true);
 });
 
+test("a delete out of Kite's Spam counts only for mail from the provider's Spam folder", () => {
+	const inbox = target();
+	const junk = target({ place: { role: "junk", uidvalidity: 7, uid: 42 } });
+	assert.equal(planOutbox([inbox], { kind: "trash", junkOnly: true }).writes.length, 0);
+	assert.equal(planOutbox([junk], { kind: "trash", junkOnly: true }).writes.length, 1);
+});
+
 test("any other move cancels a move still waiting, so an Undo wins", () => {
 	assert.deepEqual(planOutbox([target()], { kind: "other" }), { writes: [], cancels: [moveActionId("m1")] });
 });
@@ -158,6 +167,7 @@ const row = (overrides = {}) => ({
 	rfcMessageId: "<a@b>",
 	createdAt: new Date("2026-11-06T11:58:00Z"),
 	attempts: 0,
+	step: 0,
 	providerRead: false,
 	providerStarred: false,
 	...overrides,
@@ -275,18 +285,19 @@ const ref = (uid, overrides = {}) => ({
 	uid,
 	providerRead: false,
 	providerStarred: false,
+	missing: false,
 	...overrides,
 });
 const reconcile = (overrides = {}) =>
 	planReconcile({
 		refs: [],
 		seen: new Map(),
+		believed: true,
 		syncGone: true,
 		syncFlags: true,
 		adoptGone: false,
 		adoptFlags: false,
 		pendingMoves: new Set(),
-		heldGone: 0,
 		...overrides,
 	});
 const flags = (read = false, starred = false) => ({ read, starred });
@@ -299,7 +310,8 @@ test("a pass finds what left and what changed, and nothing else", () => {
 			[3, flags(false, true)],
 		]),
 	});
-	assert.deepEqual(plan.gone, ["m1"]);
+	assert.deepEqual(plan.newlyMissing, ["m1"], "absent for the first time is only noted");
+	assert.deepEqual(plan.candidates, []);
 	assert.deepEqual(plan.flagChanges, [
 		{ messageId: "m2", uid: 2, read: true, provider: { read: true, starred: false } },
 	]);
@@ -313,7 +325,7 @@ test("a baseline records what is there and changes nothing in Kite", () => {
 		adoptGone: true,
 		adoptFlags: true,
 	});
-	assert.deepEqual(plan.gone, []);
+	assert.deepEqual(plan.newlyMissing, []);
 	assert.deepEqual(plan.silentlyGone, ["m1"]);
 	assert.deepEqual(plan.flagChanges, []);
 	assert.deepEqual(plan.baselines, [{ messageId: "m2", read: true, starred: false }]);
@@ -327,14 +339,14 @@ test("a row never compared with the server is adopted, even outside a baseline",
 		],
 		seen: new Map([[2, flags(true, true)]]),
 	});
-	assert.deepEqual(plan.gone, []);
+	assert.deepEqual(plan.newlyMissing, []);
 	assert.deepEqual(plan.silentlyGone, ["m1"]);
 	assert.deepEqual(plan.baselines, [{ messageId: "m2", read: true, starred: true }]);
 });
 
 test("a message with a move waiting is never counted as gone: that is Kite's own move", () => {
 	const plan = reconcile({ refs: [ref(1)], pendingMoves: new Set(["m1"]) });
-	assert.deepEqual(plan.gone, []);
+	assert.deepEqual(plan.newlyMissing, []);
 	assert.deepEqual(plan.silentlyGone, []);
 });
 
@@ -342,37 +354,57 @@ test("with a direction off, that direction changes nothing", () => {
 	const onlyGone = reconcile({ refs: [ref(1)], seen: new Map([[1, flags(true)]]), syncFlags: false });
 	assert.deepEqual(onlyGone.flagChanges, []);
 	const onlyFlags = reconcile({ refs: [ref(1)], syncGone: false });
-	assert.deepEqual(onlyFlags.gone, []);
+	assert.deepEqual(onlyFlags.newlyMissing, []);
 	assert.deepEqual(onlyFlags.silentlyGone, ["m1"]);
 });
 
-test("a mass disappearance waits one check; a small one, or one the next check agrees with, goes through", () => {
-	const refs = Array.from({ length: 80 }, (_, index) => ref(index + 1));
-	const first = reconcile({ refs });
-	assert.equal(first.held, 80);
-	assert.deepEqual(first.gone, []);
-	const second = reconcile({ refs, heldGone: 80 });
-	assert.equal(second.held, 0);
-	assert.equal(second.gone.length, 80);
-	const small = reconcile({ refs: refs.slice(0, 49) });
-	assert.equal(small.held, 0);
-	assert.equal(small.gone.length, 49);
-	const partial = reconcile({
-		refs,
-		seen: new Map(refs.slice(0, 30).map((entry) => [entry.uid, flags()])),
+test("only a second session's absence makes a candidate, and being seen again takes the note back", () => {
+	const second = reconcile({
+		refs: [ref(1, { missing: true }), ref(2, { missing: true })],
+		seen: new Map([[2, flags()]]),
 	});
-	assert.equal(partial.held, 50, "half the window and at least fifty");
-	const fewOfMany = reconcile({
-		refs,
-		seen: new Map(refs.slice(0, 50).map((entry) => [entry.uid, flags()])),
+	assert.deepEqual(second.candidates, [{ messageId: "m1", uid: 1 }]);
+	assert.deepEqual(second.newlyMissing, []);
+	assert.deepEqual(second.found, ["m2"]);
+});
+
+test("an answer that is not believed says nothing about what is absent; flags still count", () => {
+	const plan = reconcile({
+		refs: [ref(1), ref(2, { missing: true }), ref(3, { providerRead: null, providerStarred: null }), ref(4)],
+		seen: new Map([[4, flags(true)]]),
+		believed: false,
 	});
-	assert.equal(fewOfMany.held, 0);
+	assert.deepEqual(plan.newlyMissing, []);
+	assert.deepEqual(plan.candidates, []);
+	assert.deepEqual(plan.silentlyGone, []);
+	assert.equal(plan.flagChanges.length, 1);
+});
+
+const answer = (from, count) => Array.from({ length: count }, (_, index) => ({ seq: from + index }));
+
+test("the answer's count must add up to EXISTS", () => {
+	const judge = (overrides) =>
+		judgeAnswer({ exists: 100, uidNext: 101, tracked: 100, high: 100, answered: answer(1, 100), ...overrides });
+	assert.equal(judge({}), null);
+	assert.equal(judge({ exists: 0, answered: [] }), "empty_folder", "49 tracked and EXISTS 0 trashes nothing");
+	assert.equal(judge({ exists: 0, tracked: 1, answered: [] }), "empty_folder");
+	assert.equal(judge({ exists: 40, answered: answer(1, 40) }), "far_below");
+	assert.equal(judge({ exists: 3, tracked: 9, answered: answer(1, 3) }), null, "a small Inbox may really shrink");
+	assert.equal(judge({ exists: 60, tracked: 100, answered: answer(1, 60) }), null);
+	assert.equal(judge({ exists: null }), "partial");
+	assert.equal(judge({ answered: [] }), "partial", "an empty answer from a folder that is not empty");
+	assert.equal(judge({ answered: answer(1, 30) }), "partial", "a cap");
+	assert.equal(judge({ answered: answer(1, 99) }), "partial", "one line short");
+	assert.equal(judge({ answered: answer(11, 90) }), null, "ten older messages sit before the range");
+	assert.equal(judge({ exists: 103, uidNext: 104, answered: answer(1, 100) }), null, "new mail after the range");
+	assert.equal(judge({ exists: 103, uidNext: null, answered: answer(1, 100) }), "partial");
+	assert.equal(judge({ tracked: 0, exists: 0, answered: [] }), null, "nothing tracked, nothing to judge");
 });
 
 test("a pass stops at its limit and says so, so the next one runs", () => {
 	const refs = Array.from({ length: 10 }, (_, index) => ref(index + 1));
-	const plan = reconcile({ refs, maxChanges: 3 });
-	assert.equal(plan.gone.length, 3);
+	const plan = reconcile({ refs: refs.map((entry) => ({ ...entry, missing: true })), maxChanges: 3 });
+	assert.equal(plan.candidates.length, 3);
 	assert.equal(plan.truncated, true);
 });
 

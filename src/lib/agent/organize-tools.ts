@@ -56,6 +56,7 @@ async function setRead(context: AgentToolContext, rows: readonly MessageRow[], r
 		);
 	await recordKiteChange(
 		context.env,
+		context.user,
 		rows.map((row) => row.id),
 		{ kind: "flags", read },
 	);

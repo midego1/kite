@@ -1,9 +1,8 @@
-import { connectRefusal } from "./access";
 import { recordConnectionTest, auditExternalAccount } from "./audit";
 import { ExternalAccountRefusal } from "./errors";
 import type { ExternalAccountRow } from "./serialize-utils";
 import { assertAllowed, ownAccount, type AccountActor } from "./service";
-import { openSession } from "./sync-run";
+import { withAccountSession } from "./sync";
 import {
 	countPendingActions,
 	readRecentProblems,
@@ -25,14 +24,11 @@ import {
 const PROBLEMS_SHOWN = 5;
 
 /**
- * Asks the account's server what it supports, for the settings: a short read-only session with the saved password,
- * limited like a connection test. Null when it cannot be asked (no password, a paused or suspended account, a server
- * that does not answer); a choice that needs the answer is then refused rather than guessed.
+ * Asks the account's server what it supports, for the settings: a short read-only session under the sync lease, limited
+ * like a connection test. Null when it cannot be asked (no password, a paused, suspended or failing account, a check
+ * running right now, a server that does not answer); a choice that needs the answer is then refused rather than guessed.
  */
 async function askServer(env: CloudflareEnv, account: ExternalAccountRow, now: Date): Promise<ProviderSupport | null> {
-	// Pausing means no sign-in at all, and a suspended account's password may not be used; the same for a refused owner.
-	if (!account.secret || !account.syncEnabled || account.suspendedAt || account.status === "paused") return null;
-	if (await connectRefusal(env, account.userId)) return null;
 	try {
 		await recordConnectionTest(env, account.userId, {
 			host: account.imapHost,
@@ -40,14 +36,11 @@ async function askServer(env: CloudflareEnv, account: ExternalAccountRow, now: D
 			preset: account.preset,
 			accountId: account.id,
 		});
-		const session = await openSession(env, account, undefined);
-		try {
+		return await withAccountSession(env, account.id, {}, async (session) => {
 			const support = planProviderSupport(session.capabilities, await session.listMailboxes(), now);
 			await saveSupport(env, account.id, support);
 			return support;
-		} finally {
-			await session.close().catch(() => undefined);
-		}
+		});
 	} catch {
 		return null;
 	}

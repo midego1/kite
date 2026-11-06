@@ -2,11 +2,13 @@ import { and, eq } from "drizzle-orm";
 import type { AppDatabase } from "@/db";
 import { folders, messages } from "@/db/schema";
 import type { SessionUser } from "@/lib/auth/types";
-import { recordKiteChange } from "@/lib/external-accounts/two-way-record";
+import { recordDeletes, recordKiteChange } from "@/lib/external-accounts/two-way-record";
+import { kiteMove } from "@/lib/external-accounts/two-way-utils";
 import { applySpamFeedbackWithReceipt } from "@/lib/spam/feedback";
 import { reportPhishingWithUndo } from "@/lib/spam/phishing-report";
 import { undoSpamReceipt } from "@/lib/spam/report-receipts";
-import type { BulkMessageResponse, MessageRestoreState } from "./types";
+import type { BulkMessageAction, BulkMessageResponse, MessageRestoreState } from "./types";
+import { getStatusForBulkAction } from "./utils";
 
 const trainingUndoFlag = (undo: MessageRestoreState[]) =>
 	undo.some((state) => !state.receiptId) ? { trainingUndoUnavailable: true } : {};
@@ -55,8 +57,28 @@ export async function reportBulk(
 	messageIds: readonly string[],
 ): Promise<BulkMessageResponse> {
 	const report = await (action === "spam" ? reportSpamBulk : reportPhishingBulk)(env, user, messageIds);
-	await recordKiteChange(env, report.moved ?? [], { kind: "spam" });
+	await recordKiteChange(env, user, report.moved ?? [], { kind: "spam" });
 	return report;
+}
+
+/** A plain bulk action, for two-way sync: read state, a delete from wherever each message was, or another move. */
+export async function recordBulkMove(
+	env: CloudflareEnv,
+	user: SessionUser,
+	action: BulkMessageAction,
+	selected: readonly { id: string; status: string }[],
+	allowedIds: readonly string[],
+): Promise<void> {
+	if (action === "read" || action === "unread")
+		return recordKiteChange(env, user, allowedIds, { kind: "flags", read: action === "read" });
+	if (action !== "trash")
+		return recordKiteChange(env, user, allowedIds, kiteMove(getStatusForBulkAction(action) ?? ""));
+	const allowed = new Set(allowedIds);
+	await recordDeletes(
+		env,
+		user,
+		selected.filter((message) => allowed.has(message.id)),
+	);
 }
 
 /**

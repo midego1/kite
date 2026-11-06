@@ -16,6 +16,7 @@ import {
 	parseUidValidity,
 	type ImapListedMailbox,
 	type ImapMessageSummary,
+	parseFetchFlags,
 	parseFetchSummaries,
 	parseSearchUids,
 	plainAuthToken,
@@ -59,7 +60,9 @@ export type ImapSession = {
 	 */
 	fetchSizes(fromSeq: number, toSeq: number): Promise<ImapMessageSummary[]>;
 	/** Flags alone (`UID FETCH n:m (UID FLAGS)`) of the open folder's messages from `fromUid` to `toUid`. */
-	fetchFlags(fromUid: number, toUid: number): Promise<ImapMessageSummary[]>;
+	fetchFlags(fromUid: number, toUid: number): Promise<ReturnType<typeof parseFetchFlags>>;
+	/** The same for exactly these UIDs (`UID FETCH a,b,c (UID FLAGS)`), which a server answers one by one. */
+	fetchFlagsOf(uids: readonly number[]): Promise<ReturnType<typeof parseFetchFlags>>;
 	fetchMessages(
 		uids: string[],
 		options?: { gmailLabels?: boolean; messageIdHeader?: boolean },
@@ -155,8 +158,10 @@ export async function openImapSession(
 			return parseFetchSummaries(lines);
 		},
 		async fetchFlags(fromUid, toUid) {
-			const lines = await imap.command(`UID FETCH ${fromUid}:${toUid} (UID FLAGS)`);
-			return parseFetchSummaries(lines);
+			return parseFetchFlags(await imap.command(`UID FETCH ${fromUid}:${toUid} (UID FLAGS)`));
+		},
+		async fetchFlagsOf(uids) {
+			return parseFetchFlags(await imap.command(`UID FETCH ${uids.join(",")} (UID FLAGS)`));
 		},
 		fetchMessages: (uids, options) => imap.fetchMessages(uids, options),
 		async storeFlags(uids, change, flags) {

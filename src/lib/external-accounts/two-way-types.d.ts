@@ -37,4 +37,6 @@ export type TwoWayView = {
 };
 
 /** What a user just did to messages in Kite. `other` is any other move: it only cancels a waiting move. */
-export type KiteChange = { kind: ProviderMoveKind | "other" } | { kind: "flags"; read?: boolean; starred?: boolean };
+export type KiteChange =
+	/** `junkOnly`: a delete out of Kite's Spam, which reaches the provider only for mail from the provider's Spam folder. */
+	{ kind: ProviderMoveKind | "other"; junkOnly?: boolean } | { kind: "flags"; read?: boolean; starred?: boolean };

@@ -94,6 +94,12 @@ async function findMessage(api: APIRequestContext, subject: string, status: stri
 	return messages.find((message) => message.subject === subject) ?? null;
 }
 
+async function pendingChanges(api: APIRequestContext, id: string) {
+	const response = await api.get(`/api/external-accounts/${id}/two-way`);
+	expect(response.ok()).toBe(true);
+	return ((await response.json()) as { twoWay: { pending: number } }).twoWay.pending;
+}
+
 const bulk = (api: APIRequestContext, action: string, messageIds: string[]) =>
 	api.post("/api/messages/bulk", { data: { action, messageIds } });
 
@@ -176,11 +182,12 @@ test("each setting works both ways, and a trash move is a move, never an expunge
 		expect((await bulk(user.api, "spam", [await idOf(subjects.spam)])).ok()).toBe(true);
 		expect((await bulk(user.api, "read", [await idOf(subjects.read)])).ok()).toBe(true);
 		expect((await user.api.post(`/api/messages/${await idOf(subjects.starred)}/star`)).ok()).toBe(true);
-		fake.removeMessage("INBOX", uids.goneThere);
-		fake.setFlags("INBOX", uids.flagsThere, ["\\Seen", "\\Flagged"]);
-		await runCheck(user.api, admin, id);
 
-		expect(atProvider(fake, "Trash", subjects.deleted)).toBeTruthy();
+		// Inside the delay nothing has moved, even after a regular check; the queued run then does it by itself.
+		await runCheck(user.api, admin, id);
+		expect(atProvider(fake, "INBOX", subjects.deleted)).toBeTruthy();
+		await expect.poll(() => !!atProvider(fake, "Trash", subjects.deleted), { timeout: 120_000 }).toBe(true);
+
 		expect(atProvider(fake, "INBOX", subjects.deleted)).toBeUndefined();
 		expect(atProvider(fake, "Archive", subjects.archived)).toBeTruthy();
 		expect(atProvider(fake, "Junk", subjects.spam)).toBeTruthy();
@@ -190,9 +197,15 @@ test("each setting works both ways, and a trash move is a move, never an expunge
 		expect(lines.some((line) => /UID MOVE \d+ "Trash"/.test(line))).toBe(true);
 		expect(lines.some((line) => /EXPUNGE|\\Deleted/i.test(line))).toBe(false);
 
+		// From the provider: flags at the next check, a deletion only once a second session agrees.
+		fake.removeMessage("INBOX", uids.goneThere);
+		fake.setFlags("INBOX", uids.flagsThere, ["\\Seen", "\\Flagged"]);
+		await runCheck(user.api, admin, id);
+		expect(await findMessage(user.api, subjects.flagsThere, "received")).toMatchObject({ read: true, starred: true });
+		expect(await findMessage(user.api, subjects.goneThere, "received")).toBeTruthy();
+		await runCheck(user.api, admin, id);
 		await expect.poll(() => findMessage(user.api, subjects.goneThere, "trash")).toBeTruthy();
 		expect(await findMessage(user.api, subjects.goneThere, "trash")).toMatchObject({ status: "trash" });
-		expect(await findMessage(user.api, subjects.flagsThere, "received")).toMatchObject({ read: true, starred: true });
 
 		// What Kite did at the provider is not read back as a change, and what came from the provider does not go back.
 		const stored = fake.commands.length;
@@ -227,6 +240,8 @@ test("a provider that rebuilt its Inbox moves and trashes nothing", async () => 
 		expect((await bulk(user.api, "trash", [message.id])).ok()).toBe(true);
 		fake.bumpUidValidity("INBOX");
 		await runCheck(user.api, admin, id);
+		await expect.poll(() => pendingChanges(user.api, id), { timeout: 120_000 }).toBe(0);
+		await runCheck(user.api, admin, id);
 
 		expect(fake.listMessages("Trash")).toEqual([]);
 		expect(fake.commands.some((command) => /MOVE|EXPUNGE/i.test(command.line))).toBe(false);
@@ -253,7 +268,9 @@ test("a move the provider refuses stays waiting and shows in the account's probl
 		fake.refuseWrite("MOVE", "NO [OVERQUOTA] Trash is full");
 		const message = (await findMessage(user.api, subject, "received"))!;
 		expect((await bulk(user.api, "trash", [message.id])).ok()).toBe(true);
-		await runCheck(user.api, admin, id);
+		await expect
+			.poll(() => fake.commands.some((command) => /UID MOVE/.test(command.line)), { timeout: 120_000 })
+			.toBe(true);
 
 		const panel = await openTwoWay(page, address);
 		await expect(panel.locator("[data-two-way-pending]")).toContainText("1 change is waiting");

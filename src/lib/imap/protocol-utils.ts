@@ -353,6 +353,18 @@ export function parseFetchSummaries(lines: readonly string[]): ImapMessageSummar
 	return summaries;
 }
 
+/** The flags of a FETCH that asked for them, with each message's sequence number (how many sit before it in the folder). */
+export function parseFetchFlags(lines: readonly string[]): { seq: number; uid: number; flags: string[] }[] {
+	const answers: { seq: number; uid: number; flags: string[] }[] = [];
+	for (const line of lines) {
+		const seq = /^\* (\d+) FETCH \(/i.exec(line)?.[1];
+		if (!seq) continue;
+		const { uid, flags } = parseFetchAttributes(line);
+		if (uid) answers.push({ seq: Number(seq), uid: Number(uid), flags });
+	}
+	return answers;
+}
+
 /** An IMAP `date` for SEARCH SINCE (RFC 9051 §9: `27-Oct-2026`), in UTC. */
 export function imapSearchDate(date: Date): string {
 	const month = MONTHS[date.getUTCMonth()];

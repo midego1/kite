@@ -171,6 +171,7 @@ export const messageExternalAccounts = sqliteTable("messages", {
 	id: text("id").primaryKey(),
 	externalAccountId: text("external_account_id"),
 	mailboxId: text("mailbox_id"),
+	direction: text("direction"),
 	rawR2Key: text("raw_r2_key"),
 	providerMessageId: text("provider_message_id"),
 });
@@ -209,8 +210,8 @@ export const externalTwoWayState = sqliteTable("external_two_way_state", {
 	flagsBaseline: integer("flags_baseline", { mode: "boolean" }).notNull().default(true),
 	/** Older messages are linked from their raw keys, a page per check, until this is set. */
 	backfilled: integer("backfilled", { mode: "boolean" }).notNull().default(false),
-	/** How many messages the last pass held back as a suspiciously large disappearance; 0 when none. */
-	heldGone: integer("held_gone").notNull().default(0),
+	/** The folder's answer could not be believed, so nothing is counted as gone; set while that lasts, told once. */
+	gonePaused: integer("gone_paused", { mode: "boolean" }).notNull().default(false),
 	/** When a write-back run was last queued, so a burst of actions queues one. */
 	kickedAt: integer("kicked_at", { mode: "timestamp" }),
 });
@@ -237,6 +238,8 @@ export const externalMessageRefs = sqliteTable(
 			.default("present"),
 		providerRead: integer("provider_read", { mode: "boolean" }),
 		providerStarred: integer("provider_starred", { mode: "boolean" }),
+		/** When a session last found this UID absent; the next session looks it up by UID before anything happens. */
+		missingSince: integer("missing_since", { mode: "timestamp" }),
 	},
 	(t) => [index("external_message_refs_window_idx").on(t.accountId, t.role, t.state, t.uidvalidity, t.uid)],
 );
@@ -263,6 +266,8 @@ export const externalProviderActions = sqliteTable(
 		uidvalidity: integer("uidvalidity").notNull(),
 		uid: integer("uid").notNull(),
 		rfcMessageId: text("rfc_message_id"),
+		/** How far a move without MOVE got: 1 copied, 2 also marked `\\Deleted`. A retry resumes there, never re-copies. */
+		step: integer("step").notNull().default(0),
 		/** When the user acted; last writer wins by this. */
 		createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
 		attempts: integer("attempts").notNull().default(0),

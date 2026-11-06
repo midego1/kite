@@ -2,6 +2,7 @@ import { and, asc, count, eq, inArray, isNull, lt, lte, ne, or } from "drizzle-o
 import { getDb } from "@/db";
 import { users } from "@/db/schema";
 import { externalAccounts } from "@/db/schema/external-accounts";
+import type { ImapSession } from "@/lib/imap/session";
 import type { ImapLimits } from "@/lib/imap/types";
 import { createLogger } from "@/lib/logger.mjs";
 import { recordMetric } from "@/lib/metrics.mjs";
@@ -12,7 +13,7 @@ import { externalAccountTablesReady } from "./errors";
 import { appendRecentErrors } from "./recent-errors";
 import { readInstallState } from "./settings";
 import type { ExternalAccountRow } from "./serialize-utils";
-import { emptyOutcome, openSession, runSync, SyncRefusedError, type RunOutcome } from "./sync-run";
+import { emptyOutcome, openSession, runClock, runSync, SyncRefusedError, type RunOutcome } from "./sync-run";
 import { externalSyncRefusal } from "./sync-target";
 import {
 	CHECK_NOW_COOLDOWN_MS,
@@ -203,10 +204,51 @@ export async function syncExternalAccount(
 }
 
 /**
- * @public Exercised by the unit tests. "Sooner" for two-way sync (spec §6.8): opens one session for the account's outbox, under the sync lease, so it never
- * runs beside a check. A paused, suspended or refused account does not run, and what it left waits. It changes nothing
- * about the account's checks: a problem here is noted, and the regular check is what reports a broken sign-in. An
- * account that is busy needs nothing: the check running now, or the next one, takes the rows.
+ * Runs `work` in a short session of its own beside the regular checks: under the sync lease, so never next to one, and
+ * with the run's command cap. Only a healthy account gets one: paused, suspended, refused, signed out, or failing and
+ * waiting out its backoff all answer null, and so does a lease someone else holds. A problem is thrown to the caller
+ * and changes nothing about the account's checks; the regular check is what reports a broken sign-in.
+ */
+export async function withAccountSession<T>(
+	env: CloudflareEnv,
+	accountId: string,
+	options: Pick<SyncRunOptions, "now" | "budgetMs" | "limits">,
+	work: (session: ImapSession, account: ExternalAccountRow, outOfTime: () => boolean) => Promise<T>,
+): Promise<T | null> {
+	const now = (options.now ?? (() => new Date()))();
+	const lease = new Date(now.getTime() + SYNC_LEASE_MS);
+	const [account] = await getDb(env)
+		.update(externalAccounts)
+		.set({ leaseUntil: lease })
+		.where(
+			and(
+				eq(externalAccounts.id, accountId),
+				syncable(),
+				leaseFree(now),
+				eq(externalAccounts.status, "active"),
+				eq(externalAccounts.consecutiveFailures, 0),
+			),
+		)
+		.returning();
+	if (!account) return null;
+	try {
+		if (await externalSyncRefusal(env, account)) return null;
+		const budgetMs = options.budgetMs ?? SYNC_RUN_BUDGET_MS;
+		const clock = runClock(env, { budgetMs, lease, limits: options.limits });
+		const session = await openSession(env, account, clock.limits);
+		try {
+			return await work(session, account, () => Date.now() - clock.started > budgetMs);
+		} finally {
+			await session.close().catch(() => undefined);
+		}
+	} finally {
+		await releaseLease(env, accountId, lease);
+	}
+}
+
+/**
+ * @public Exercised by the unit tests. "Sooner" for two-way sync (spec §6.8): one session for the account's outbox. An
+ * account that gets no session needs nothing: the check running now, or a later one, takes the rows.
  */
 export async function writebackExternalAccount(
 	env: CloudflareEnv,
@@ -217,33 +259,14 @@ export async function writebackExternalAccount(
 	if (!(await externalAccountTablesReady(env)) || !(await twoWayReady(env))) return;
 	const config = await readTwoWayConfig(env, accountId);
 	if (!writesToProvider(config.settings)) return;
-	const db = getDb(env);
-	const now = clock();
-	const lease = new Date(now.getTime() + SYNC_LEASE_MS);
-	const [account] = await db
-		.update(externalAccounts)
-		.set({ leaseUntil: lease })
-		.where(and(eq(externalAccounts.id, accountId), syncable(), leaseFree(now)))
-		.returning();
-	if (!account) return;
-	const started = Date.now();
-	const budgetMs = options.budgetMs ?? SYNC_RUN_BUDGET_MS;
 	const notes: string[] = [];
-	let more = false;
+	let more: boolean | null = false;
 	try {
-		if (await externalSyncRefusal(env, account)) return;
-		const session = await openSession(env, account, options.limits);
-		try {
-			more = await drainOutbox(env, session, account, config, {
-				clock,
-				outOfTime: () => Date.now() - started > budgetMs,
-				notes,
-			});
-		} finally {
-			await session.close().catch(() => undefined);
-		}
+		more = await withAccountSession(env, accountId, options, (session, account, outOfTime) =>
+			drainOutbox(env, session, account, config, { clock, outOfTime, notes }),
+		);
 	} catch (error) {
-		const problem = classify(error, account);
+		const problem = classifySyncError(error, { refused: error instanceof MailServerRefusedError });
 		notes.push(`Kite could not reach the provider to apply your changes; it tries again: ${problem.message}`);
 		logger.warn("external.sync.writeback_failed", {
 			accountId,
@@ -251,10 +274,8 @@ export async function writebackExternalAccount(
 			// The error's name only: its message may carry server text.
 			error: error instanceof Error ? error.name : "unknown",
 		});
-	} finally {
-		await releaseLease(env, accountId, lease);
-		await noteProblems(env, accountId, notes, clock());
 	}
+	await noteProblems(env, accountId, notes, clock());
 	if (more) await env.AGENT_QUEUE?.send(externalWritebackMessage(accountId));
 }
 

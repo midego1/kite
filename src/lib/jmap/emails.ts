@@ -409,7 +409,7 @@ export const emailSet: JmapMethodHandler = async (ctx, args) => {
 			if (move.folderId !== undefined) set.folderId = move.folderId;
 		}
 		if (Object.keys(set).length) await ctx.db.update(messages).set(set).where(eq(messages.id, id));
-		await recordEmailUpdate(ctx.env, id, row.status, set);
+		await recordEmailUpdate(ctx.env, ctx.auth.user, row, set);
 		updated[id] = null;
 	}
 

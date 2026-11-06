@@ -28,6 +28,8 @@ import { createServer as createTlsServer, TLSSocket } from "node:tls";
  * - `move`, `uidplus`, `condstore`: advertise MOVE, UIDPLUS and CONDSTORE. Without `move` a `UID MOVE` is refused, without
  *   `uidplus` a `UID EXPUNGE` is; `condstore` reports `[HIGHESTMODSEQ n]`, raised by every flag change.
  * - `writeRefusals`: `{ MOVE?, COPY?, STORE?, EXPUNGE? }`, the tagged answer those commands get (`refuseWrite` sets it later).
+ * - `capFlagFetches(n)`, `dropFromFlagFetches(uids)` and `setExists(folder, n)` (methods) make a server that answers
+ *   attribute-only FETCHes short, or reports a wrong EXISTS, while its tagged answers stay OK.
  * - `users`: `{ [username]: password }`. `LOGIN` takes quoted strings or synchronizing literals.
  * - Misbehaviour: `hugeLiteral` (a FETCH announcing a 4 GB literal), `endlessLine` (a greeting that never ends),
  *   `slowLoris` (a greeting trickled one byte at a time, forever), `silent` (no greeting at all), `silentTls` (OK to
@@ -54,6 +56,9 @@ export async function startFakeImap(options = {}) {
 	// The caller's object itself, so a test can change it while the server runs.
 	const examineRefusals = options.examineRefusals ?? {};
 	const writeRefusals = options.writeRefusals ?? {};
+	let flagFetchCap = null;
+	let flagFetchDropped = new Set();
+	const existsOverride = new Map();
 	let modseq = 1;
 
 	function addMessage(folder, message) {
@@ -305,7 +310,7 @@ export async function startFakeImap(options = {}) {
 				state.readOnly = name === "EXAMINE";
 				const highest = options.condstore ? `* OK [HIGHESTMODSEQ ${modseq}] ok\r\n` : "";
 				return send(
-					`* ${entry.messages.length} EXISTS\r\n* OK [UIDVALIDITY ${entry.uidValidity}] ok\r\n${options.omitUidNext ? "" : `* OK [UIDNEXT ${entry.nextUid}] ok\r\n`}${highest}${tag} OK [${state.readOnly ? "READ-ONLY" : "READ-WRITE"}] done\r\n`,
+					`* ${existsOverride.get(folder) ?? entry.messages.length} EXISTS\r\n* OK [UIDVALIDITY ${entry.uidValidity}] ok\r\n${options.omitUidNext ? "" : `* OK [UIDNEXT ${entry.nextUid}] ok\r\n`}${highest}${tag} OK [${state.readOnly ? "READ-ONLY" : "READ-WRITE"}] done\r\n`,
 				);
 			}
 			const entry = state.selected ? folders.get(state.selected) : null;
@@ -414,8 +419,13 @@ export async function startFakeImap(options = {}) {
 				return Buffer.from(`${line}\r\n`, "latin1");
 			};
 			let refused = false;
+			let answered = 0;
 			entry.messages.forEach((message, index) => {
 				if (!wanted.has(message.uid)) return;
+				const ranged = /^\S+ \d+:\d+ /.test(args);
+				if (!withBody && ((ranged && flagFetchDropped.has(message.uid)) || answered >= (flagFetchCap ?? Infinity)))
+					return;
+				answered += 1;
 				if (withBody && message.vanishes) return;
 				if (withBody && message.unfetchable) {
 					refused = true;
@@ -473,6 +483,19 @@ export async function startFakeImap(options = {}) {
 		removeMessage,
 		setFlags,
 		listMessages,
+		/** At most `n` lines in every attribute-only FETCH, with a tagged OK; null ends it. */
+		capFlagFetches(n) {
+			flagFetchCap = n;
+		},
+		/** These UIDs are left out of attribute-only FETCHes of a range, with a tagged OK; asked for by name they answer. */
+		dropFromFlagFetches(uids) {
+			flagFetchDropped = new Set(uids);
+		},
+		/** The EXISTS a folder reports, whatever it holds; null ends it. */
+		setExists(folder, count) {
+			if (count === null) existsOverride.delete(folder);
+			else existsOverride.set(folder, count);
+		},
 		/** Sets (or, with null, clears) the tagged answer `UID MOVE`, `COPY`, `STORE` or `EXPUNGE` gets. */
 		refuseWrite(command, answer) {
 			if (answer) writeRefusals[command] = answer;

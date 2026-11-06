@@ -105,16 +105,21 @@ export async function saveTwoWaySettings(
 			...(goneOn ? { goneBaseline: true } : {}),
 			...(flagsOn ? { flagsBaseline: true } : {}),
 			highestModseq: null,
-			heldGone: 0,
+			gonePaused: false,
 		});
 	const dropped = (["trash", "archive", "spam", "flags"] as const).filter((kind) => {
 		const key = { trash: "kiteDelete", archive: "kiteArchive", spam: "kiteSpam", flags: "kiteFlags" } as const;
 		return before[key[kind]] !== settings[key[kind]] && (settings[key[kind]] === "nothing" || !settings[key[kind]]);
 	});
 	if (dropped.length)
-		await db
-			.delete(externalProviderActions)
-			.where(and(eq(externalProviderActions.accountId, accountId), inArray(externalProviderActions.kind, dropped)));
+		await db.delete(externalProviderActions).where(
+			and(
+				eq(externalProviderActions.accountId, accountId),
+				inArray(externalProviderActions.kind, dropped),
+				// A move half done goes on: stopping would leave its copy and its deleted mark behind.
+				eq(externalProviderActions.step, 0),
+			),
+		);
 }
 
 export async function countPendingActions(env: StoreEnv, accountId: string): Promise<number> {
@@ -166,7 +171,7 @@ export async function clearTwoWayMapping(env: StoreEnv, accountId: string): Prom
 		highestModseq: null,
 		uidvalidity: null,
 		lowUid: 0,
-		heldGone: 0,
+		gonePaused: false,
 	});
 }
 
@@ -181,7 +186,8 @@ const refFromKey = (key: string | null) => {
 /**
  * Records where a delivered message sits at the provider. Also re-points a message delivery dropped as a duplicate (a
  * rebuilt folder, a message moved back into the Inbox) at its new UID, but only one this account brought in: a
- * duplicate of an imported or sent message stays outside two-way sync.
+ * duplicate of an imported message, or of a sent one (send-as stamps the account on it, and a Cc to yourself comes back
+ * with the same Message-ID), stays outside two-way sync.
  */
 export async function recordFetchedMessage(
 	env: StoreEnv,
@@ -198,6 +204,7 @@ export async function recordFetchedMessage(
 			and(
 				eq(messageExternalAccounts.id, input.messageId),
 				eq(messageExternalAccounts.externalAccountId, input.accountId),
+				eq(messageExternalAccounts.direction, "inbound"),
 			),
 		)
 		.limit(1);
@@ -217,6 +224,7 @@ export async function loadChangeTargets(env: StoreEnv, messageIds: readonly stri
 			.select({
 				messageId: messageExternalAccounts.id,
 				mailboxId: messageExternalAccounts.mailboxId,
+				direction: messageExternalAccounts.direction,
 				rawR2Key: messageExternalAccounts.rawR2Key,
 				rfcMessageId: messageExternalAccounts.providerMessageId,
 				accountId: externalAccountTwoWay.id,
@@ -226,24 +234,42 @@ export async function loadChangeTargets(env: StoreEnv, messageIds: readonly stri
 				uidvalidity: externalMessageRefs.uidvalidity,
 				uid: externalMessageRefs.uid,
 				state: externalMessageRefs.state,
+				backfilled: externalTwoWayState.backfilled,
 			})
 			.from(messageExternalAccounts)
 			.innerJoin(externalAccountTwoWay, eq(externalAccountTwoWay.id, messageExternalAccounts.externalAccountId))
 			.leftJoin(externalMessageRefs, eq(externalMessageRefs.messageId, messageExternalAccounts.id))
+			.leftJoin(externalTwoWayState, eq(externalTwoWayState.accountId, externalAccountTwoWay.id))
 			.where(inArray(messageExternalAccounts.id, ids)),
 	);
-	return rows.map((row) => {
-		const known = row.state === null ? refFromKey(row.rawR2Key) : null;
-		const place = row.state === "present" ? { role: row.role!, uidvalidity: row.uidvalidity!, uid: row.uid! } : known;
-		return {
-			messageId: row.messageId,
-			accountId: row.accountId,
-			settings: readTwoWaySettings(row.twoWay),
-			inAccountMailbox: row.mailboxId === row.accountMailboxId,
-			rfcMessageId: row.rfcMessageId,
-			place,
-		};
-	});
+	return rows.map((row) => ({
+		messageId: row.messageId,
+		accountId: row.accountId,
+		mailboxId: row.mailboxId,
+		settings: readTwoWaySettings(row.twoWay),
+		inAccountMailbox: row.mailboxId === row.accountMailboxId,
+		rfcMessageId: row.rfcMessageId,
+		place: placeOf(row),
+	}));
+}
+
+/**
+ * Where a message sits at the provider. With no mapping row its raw key says, but only until the old messages were
+ * linked: after that a message without a row is one Kite stopped knowing (a reconnect to another login, whose UIDs mean
+ * something else), and sent mail is never placed at all.
+ */
+function placeOf(row: {
+	direction: string | null;
+	state: "present" | "gone" | null;
+	role: SyncFolderRole | null;
+	uidvalidity: number | null;
+	uid: number | null;
+	rawR2Key: string | null;
+	backfilled: boolean | null;
+}) {
+	if (row.direction !== "inbound") return null;
+	if (row.state === "present") return { role: row.role!, uidvalidity: row.uidvalidity!, uid: row.uid! };
+	return row.state === null && !row.backfilled ? refFromKey(row.rawR2Key) : null;
 }
 
 export function batchOf(db: ReturnType<typeof getDb>, statements: BatchItem<"sqlite">[]) {
@@ -251,7 +277,10 @@ export function batchOf(db: ReturnType<typeof getDb>, statements: BatchItem<"sql
 }
 
 export const refsGone = (db: ReturnType<typeof getDb>, messageIds: readonly string[]) =>
-	db.update(externalMessageRefs).set({ state: "gone" }).where(inJsonArray(externalMessageRefs.messageId, messageIds));
+	db
+		.update(externalMessageRefs)
+		.set({ state: "gone", missingSince: null })
+		.where(inJsonArray(externalMessageRefs.messageId, messageIds));
 
 type Baseline = { messageId: string; read: boolean | null; starred: boolean | null };
 
@@ -260,7 +289,9 @@ export function baselineStatements(db: ReturnType<typeof getDb>, baselines: read
 	const groups = new Map<string, string[]>();
 	for (const { messageId, read, starred } of baselines) {
 		const key = JSON.stringify([read, starred]);
-		groups.set(key, [...(groups.get(key) ?? []), messageId]);
+		const group = groups.get(key);
+		if (group) group.push(messageId);
+		else groups.set(key, [messageId]);
 	}
 	return [...groups].map(([key, ids]) => {
 		const [providerRead, providerStarred] = JSON.parse(key) as [boolean | null, boolean | null];
@@ -323,12 +354,13 @@ export async function readWindow(
 	uidvalidity: number,
 	lowUid: number,
 ): Promise<WindowRef[]> {
-	return getDb(env)
+	const rows = await getDb(env)
 		.select({
 			messageId: externalMessageRefs.messageId,
 			uid: externalMessageRefs.uid,
 			providerRead: externalMessageRefs.providerRead,
 			providerStarred: externalMessageRefs.providerStarred,
+			missingSince: externalMessageRefs.missingSince,
 		})
 		.from(externalMessageRefs)
 		.where(
@@ -342,6 +374,7 @@ export async function readWindow(
 		)
 		.orderBy(desc(externalMessageRefs.uid))
 		.limit(RECONCILE_WINDOW);
+	return rows.map(({ missingSince, ...row }) => ({ ...row, missing: missingSince !== null }));
 }
 
 /** The stored Message-IDs of these messages. */
@@ -390,7 +423,10 @@ export async function applyReconcile(
 	input: {
 		accountId: string;
 		mailboxId: string;
-		plan: Pick<ReconcilePlan, "baselines" | "gone" | "silentlyGone">;
+		plan: Pick<ReconcilePlan, "baselines" | "newlyMissing" | "found" | "silentlyGone">;
+		/** Confirmed absent in two sessions: to Kite's Trash. */
+		gone: readonly string[];
+		now: Date;
 		applied: readonly FlagChange[];
 		kite: readonly KiteFlagUpdate[];
 		/** Flag actions the provider beat, with the fields to take out of them. */
@@ -398,13 +434,13 @@ export async function applyReconcile(
 	},
 ): Promise<void> {
 	const db = getDb(env);
-	const { accountId, mailboxId, plan, applied, kite, dropped } = input;
-	const left = [...plan.gone, ...plan.silentlyGone];
+	const { accountId, mailboxId, plan, gone, now, applied, kite, dropped } = input;
+	const left = [...gone, ...plan.silentlyGone];
 	const baselines = [...plan.baselines, ...applied.map(({ messageId, provider }) => ({ messageId, ...provider }))];
 	const statements: unknown[] = [
 		...kiteFlagStatements(db, mailboxId, kite),
 		...baselineStatements(db, baselines),
-		...(plan.gone.length
+		...(gone.length
 			? [
 					db
 						.update(messages)
@@ -413,12 +449,28 @@ export async function applyReconcile(
 							and(
 								eq(messages.mailboxId, mailboxId),
 								inArray(messages.status, TRASHABLE),
-								inJsonArray(messages.id, plan.gone),
+								inJsonArray(messages.id, gone),
 							),
 						),
 				]
 			: []),
 		...(left.length ? [refsGone(db, left)] : []),
+		...(plan.newlyMissing.length
+			? [
+					db
+						.update(externalMessageRefs)
+						.set({ missingSince: now })
+						.where(inJsonArray(externalMessageRefs.messageId, plan.newlyMissing)),
+				]
+			: []),
+		...(plan.found.length
+			? [
+					db
+						.update(externalMessageRefs)
+						.set({ missingSince: null })
+						.where(inJsonArray(externalMessageRefs.messageId, plan.found)),
+				]
+			: []),
 		...dropped.flatMap(({ messageId, fields }) => [
 			db
 				.update(externalProviderActions)

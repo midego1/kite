@@ -4,7 +4,14 @@ import { getDb } from "@/db";
 import { chunkArray, inJsonArray } from "@/db/chunk-utils";
 import { externalMessageRefs, externalProviderActions, externalTwoWayState } from "@/db/schema/external-accounts";
 import { baselineStatements, batchOf, refsGone } from "./two-way-store";
-import { isLastAttempt, writebackRetryMs, type OutboxPlan, type OutboxRow, type PendingFlags } from "./two-way-utils";
+import {
+	isLastAttempt,
+	WRITEBACK_DELAY_SECONDS,
+	writebackRetryMs,
+	type OutboxPlan,
+	type OutboxRow,
+	type PendingFlags,
+} from "./two-way-utils";
 
 /**
  * The outbox of two-way sync (spec §6.8): written when a user acts, read and finished by the write-back. Finishing a
@@ -19,8 +26,13 @@ type StoreEnv = Pick<CloudflareEnv, "DB">;
  */
 export async function writeOutbox(env: StoreEnv, plan: OutboxPlan, now: Date): Promise<void> {
 	const db = getDb(env);
+	// Not due until the delay passed, whoever comes by first: that is what lets an Undo win against a regular check.
+	const dueAt = new Date(now.getTime() + WRITEBACK_DELAY_SECONDS * 1000);
+	// A move half done is left to finish: cancelling it would strand its copy and its deleted mark.
 	if (plan.cancels.length)
-		await db.delete(externalProviderActions).where(inJsonArray(externalProviderActions.id, plan.cancels));
+		await db
+			.delete(externalProviderActions)
+			.where(and(inJsonArray(externalProviderActions.id, plan.cancels), eq(externalProviderActions.step, 0)));
 	for (const chunk of chunkArray(plan.writes, 25)) {
 		const statements = chunk.flatMap((row) => [
 			db
@@ -35,9 +47,10 @@ export async function writeOutbox(env: StoreEnv, plan: OutboxPlan, now: Date): P
 				.onConflictDoNothing(),
 			db
 				.insert(externalProviderActions)
-				.values({ ...row, createdAt: now, nextAttemptAt: now })
+				.values({ ...row, createdAt: now, nextAttemptAt: dueAt })
 				.onConflictDoUpdate({
 					target: externalProviderActions.id,
+					setWhere: eq(externalProviderActions.step, 0),
 					set: {
 						kind: row.kind,
 						// A flag this action does not touch keeps what still waits for it.
@@ -45,7 +58,7 @@ export async function writeOutbox(env: StoreEnv, plan: OutboxPlan, now: Date): P
 						starred: sql`coalesce(excluded.starred, ${externalProviderActions.starred})`,
 						createdAt: now,
 						attempts: 0,
-						nextAttemptAt: now,
+						nextAttemptAt: dueAt,
 					},
 				}),
 		]);
@@ -85,6 +98,7 @@ export async function readDueActions(env: StoreEnv, accountId: string, now: Date
 			rfcMessageId: externalProviderActions.rfcMessageId,
 			createdAt: externalProviderActions.createdAt,
 			attempts: externalProviderActions.attempts,
+			step: externalProviderActions.step,
 			providerRead: externalMessageRefs.providerRead,
 			providerStarred: externalMessageRefs.providerStarred,
 		})
@@ -171,6 +185,21 @@ export async function finishFlags(
 			),
 		),
 	] as BatchItem<"sqlite">[]);
+}
+
+/** Records how far a move without MOVE got, so its retry resumes there. */
+export async function saveStep(env: StoreEnv, rows: readonly OutboxRow[], step: number): Promise<void> {
+	for (const row of rows) row.step = step;
+	if (rows.length)
+		await getDb(env)
+			.update(externalProviderActions)
+			.set({ step })
+			.where(
+				inJsonArray(
+					externalProviderActions.id,
+					rows.map((row) => row.id),
+				),
+			);
 }
 
 /** Counts a failed try per row and sets its retry; a row out of tries is dropped. Returns how many were. */

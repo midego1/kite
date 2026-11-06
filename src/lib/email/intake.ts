@@ -60,7 +60,7 @@ export async function intakeIncomingMail(
 		if (destination) await actions.forward?.(destination, marker);
 	}
 
-	const rawR2Key = `inbound/${Date.now()}-${newId()}.eml`;
+	const rawR2Key = input.rawR2Key ?? `inbound/${Date.now()}-${newId()}.eml`;
 	await env.BUCKET.put(rawR2Key, input.raw, {
 		httpMetadata: { contentType: "message/rfc822" },
 		customMetadata: { from: input.from, to: input.to },

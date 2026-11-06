@@ -5,6 +5,7 @@ import { normalizeEmailAddress } from "@/lib/email/address";
 import { inboundAttachmentLimitReasonFromRaw } from "@/lib/email/inbound-attachments";
 import { intakeIncomingMail } from "@/lib/email/intake";
 import { readProviderHeaderMap } from "@/lib/email/provider-headers-utils";
+import { providerRawKey, type ProviderDelivery } from "@/lib/email/provider-intake-utils";
 
 export const MAX_PROVIDER_MESSAGE_BYTES = 25 * 1024 * 1024;
 
@@ -19,6 +20,8 @@ export const MAX_PROVIDER_MESSAGE_BYTES = 25 * 1024 * 1024;
  * `authenticationResults` is the provider's own verdict (SES builds one from its receipt), never
  * the message's Authentication-Results headers, which may be the sender's. Resend passes neither, so its header
  * map is read from the message without any header that claims a verification.
+ * `delivery` names the provider's message: with it a repeat (a webhook retry, a second webhook for the same message)
+ * reaches each recipient's mailbox once. Without it every call delivers again.
  */
 export async function intakeProviderMail(
 	env: CloudflareEnv,
@@ -28,6 +31,7 @@ export async function intakeProviderMail(
 		raw: ArrayBuffer;
 		headers?: Record<string, string>;
 		authenticationResults?: string | null;
+		delivery?: ProviderDelivery | null;
 	},
 ): Promise<{ delivered: number; dropped: string | null }> {
 	if (input.raw.byteLength > MAX_PROVIDER_MESSAGE_BYTES)
@@ -51,6 +55,7 @@ export async function intakeProviderMail(
 				raw: input.raw,
 				headers,
 				authenticationResults: input.authenticationResults ?? null,
+				...(input.delivery ? { rawR2Key: await providerRawKey(input.delivery, recipient) } : {}),
 			},
 			{},
 		);

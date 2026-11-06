@@ -1,7 +1,9 @@
 const DRAFT_MAX_CHARS = 10_000;
 export const META_PREFIX =
 	/^(here is|here's|here are|i have drafted|i've drafted|i drafted|draft created|below is|sure[,!.]|certainly[,!.]|as an ai)/i;
-export const EMAIL_PATTERN = /[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)+/gi;
+// The local part is capped at the 64 characters an address may have, so a scan of a long run of address characters
+// stays linear; the domain labels are capped at 63 for the same reason.
+export const EMAIL_PATTERN = /[a-z0-9.!#$%&'*+/=?^_`{|}~-]{1,64}@[a-z0-9-]{1,63}(?:\.[a-z0-9-]{1,63})+/gi;
 export const URL_PATTERN = /\b(?:https?:\/\/|www\.)[^\s<>()[\]"'`]+/gi;
 const TRAILING_PUNCTUATION = /[.,;:!?]+$/;
 

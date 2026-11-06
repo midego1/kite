@@ -15,6 +15,7 @@ after(() => rmSync(outDir, { recursive: true, force: true }));
 await build({
 	entryPoints: {
 		utils: fileURLToPath(import.meta.resolve("../src/lib/agent/summaries/summary-utils.ts")),
+		patterns: fileURLToPath(import.meta.resolve("../src/lib/agent/reference-patterns-utils.ts")),
 		prompt: fileURLToPath(import.meta.resolve("../src/lib/agent/summaries/summary-prompt-utils.ts")),
 		client: fileURLToPath(import.meta.resolve("../src/components/messages/thread-summary-utils.ts")),
 		schema: fileURLToPath(import.meta.resolve("../src/app/api/messages/[messageId]/summary/schema.ts")),
@@ -22,6 +23,8 @@ await build({
 	outdir: outDir,
 	outExtension: { ".js": ".mjs" },
 	bundle: true,
+	// One shared copy of each module: two bundled copies make Node report the uncalled one as uncovered.
+	splitting: true,
 	sourcemap: "inline",
 	platform: "node",
 	format: "esm",
@@ -49,8 +52,17 @@ const {
 	summaryText,
 	summaryWindow,
 } = await load("prompt");
-const { canSummarize, showsCurrentSummary, summaryCopyText, summaryError, summaryUrl, translateLabel } =
-	await load("client");
+const {
+	blockedResetMs,
+	canSummarize,
+	showsCurrentSummary,
+	summaryAnnouncement,
+	summaryCopyText,
+	summaryError,
+	summaryUrl,
+	translateLabel,
+} = await load("client");
+const { OBFUSCATED_ADDRESS, bareDomainMatches } = await load("patterns");
 const { summaryQuerySchema, summaryRequestSchema } = await load("schema");
 
 const message = (index, overrides = {}) => ({
@@ -209,6 +221,83 @@ test("checked output is plain JSON-shaped text within the limits", () => {
 		{ label: "Decisions", text: "One" },
 		{ label: "Decisions", text: "Two" },
 	]);
+});
+
+test("bare domains and spelled-out addresses the messages do not contain are removed too", () => {
+	const references = summaryReferences([
+		message(1, {
+			text: "Pay at https://pay.example.com/i/1, docs on known.example.org/help or mail ann (at) known.nl",
+		}),
+	]);
+	const outcome = checkSummaryOutput(
+		JSON.stringify({
+			language: "en",
+			overview:
+				"Sam asks to pay at evil.test/pay, mail bob (at) evil (dot) test and see pay.example.com/other and known.example.org/help.",
+			points: [
+				{ label: "Asks", text: "Open evil.test/pay now" },
+				{ label: "Asks", text: "Write to bob [at] evil.test" },
+				{ label: "Next steps", text: "Mail ann (at) known (dot) nl" },
+				{ label: "Dates", text: "Friday, see Node.js and e.g. the plan" },
+			],
+		}),
+		{ references },
+	);
+	assert.equal(outcome.ok, true);
+	assert.equal(
+		outcome.summary.overview,
+		"Sam asks to pay at mail and see pay.example.com/other and known.example.org/help.",
+	);
+	assert.deepEqual(outcome.summary.points, [
+		{ label: "Next steps", text: "Mail ann (at) known (dot) nl" },
+		{ label: "Dates", text: "Friday, see Node.js and e.g. the plan" },
+	]);
+});
+
+test("the rate limit lifts by itself, a spend cap does not, and requests are announced", () => {
+	assert.equal(blockedResetMs("rate_limited"), 60_000);
+	for (const code of ["spend_cap", "provider_rate_limited", "timeout", null, undefined])
+		assert.equal(blockedResetMs(code), null, String(code));
+	assert.equal(summaryAnnouncement("summarize", "started"), "Summarizing");
+	assert.equal(summaryAnnouncement("summarize", "done"), "Summary ready");
+	assert.equal(summaryAnnouncement("translate", "done"), "Translation ready");
+});
+
+test("a long run of address characters in a message cannot stall the checks", () => {
+	const started = Date.now();
+	for (const run of ["a".repeat(200_000), "a.".repeat(100_000), "a.b-".repeat(50_000), `${"a".repeat(100_000)} (at `]) {
+		assert.equal([...run.matchAll(OBFUSCATED_ADDRESS)].length, 0);
+		assert.equal(bareDomainMatches(run).length, 0);
+		const outcome = checkSummaryOutput(JSON.stringify({ overview: "Sam asks for Friday." }), {
+			references: [run, `${run}@example.com`, message(1, { text: run }).text],
+		});
+		assert.equal(outcome.ok, true);
+	}
+	assert.ok(Date.now() - started < 3_000, `took ${Date.now() - started} ms`);
+});
+
+test("the domain of a known address is known, and a capitalised ending is a sentence, not a domain", () => {
+	const references = summaryReferences([
+		message(1, { text: "Invoice due.", from: "Acme <billing@acme.com>" }),
+		message(2, { text: "Or write bob (at) partner (dot) nl" }),
+	]);
+	const check = (overview) => checkSummaryOutput(JSON.stringify({ overview }), { references }).summary.overview;
+	assert.equal(check("Message from acme.com asks you to pay."), "Message from acme.com asks you to pay.");
+	assert.equal(check("See partner.nl for details."), "See partner.nl for details.");
+	assert.equal(
+		check("It is fine.No problem. At the end.In the end all agree."),
+		"It is fine.No problem. At the end.In the end all agree.",
+	);
+	// Lowercase and capital endings, and any ending with a path, are still domains.
+	assert.equal(check("Visit evil.com now."), "Visit now.");
+	assert.equal(check("Visit EVIL.COM now."), "Visit now.");
+	assert.equal(check("Visit evil.No/pay now."), "Visit now.");
+	// A capitalised ending only counts as a sentence after one lowercase word and when it is an English word.
+	assert.equal(check("Visit Evil.Com now."), "Visit now.");
+	assert.equal(check("Visit evil.Com now."), "Visit now.");
+	assert.equal(check("Log in at Paypal.Co today."), "Log in at today.");
+	assert.equal(check("Go to login.paypal.Com."), "Go to.");
+	assert.equal(check("Go to Evil.No now."), "Go to now.");
 });
 
 test("long texts are cut, the points stop at 1,200 characters and the language falls back to und", () => {

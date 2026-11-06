@@ -246,7 +246,7 @@ export function MailboxSelector({ initialUser, placement }: MailboxSelectorProps
 	const [inboxesOpen, setInboxesOpen] = useState(false);
 	const [browserAccounts, setBrowserAccounts] = useState<BrowserAccount[]>([]);
 	// In the sidebar the account sits at the bottom: the menu opens upward from where the button was.
-	const { minimal } = useSidebar();
+	const { minimal, setMenuOverResizeHandle } = useSidebar();
 
 	useEffect(() => {
 		if (!open) return;
@@ -263,6 +263,10 @@ export function MailboxSelector({ initialUser, placement }: MailboxSelectorProps
 	const { counts } = useMessageCounts(null, open);
 
 	useDismissible(open, () => setOpen(false), ref);
+	useEffect(() => {
+		setMenuOverResizeHandle(open);
+		return () => setMenuOverResizeHandle(false);
+	}, [open, setMenuOverResizeHandle]);
 	const { anchor, measure } = useMenuAnchor(open, ref);
 
 	const session = useAuthMe();

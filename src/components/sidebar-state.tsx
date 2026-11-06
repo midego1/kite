@@ -21,6 +21,8 @@ const SidebarContext = createContext<SidebarState>({
 	setMobileOpen: () => undefined,
 	toggleInListHeader: false,
 	setToggleInListHeader: () => undefined,
+	menuOverResizeHandle: false,
+	setMenuOverResizeHandle: () => undefined,
 });
 
 export function SidebarProvider({ children, expandedWidth = 260, mobileOverlay = false }: SidebarProviderProps) {
@@ -33,6 +35,7 @@ export function SidebarProvider({ children, expandedWidth = 260, mobileOverlay =
 	const mobile = useIsMobile();
 	const [mobileOpen, setMobileOpen] = useState(false);
 	const [toggleInListHeader, setToggleInListHeader] = useState(false);
+	const [menuOverResizeHandle, setMenuOverResizeHandle] = useState(false);
 	// Overlay layouts have no minified rail on phones: the menu is either fully shown over the page or hidden.
 	const overlay = mobileOverlay && mobile;
 
@@ -127,6 +130,8 @@ export function SidebarProvider({ children, expandedWidth = 260, mobileOverlay =
 				setMobileOpen,
 				toggleInListHeader,
 				setToggleInListHeader,
+				menuOverResizeHandle,
+				setMenuOverResizeHandle,
 			}}
 		>
 			<div

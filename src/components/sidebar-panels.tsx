@@ -23,7 +23,7 @@ const SIDEBAR_PANEL_ID = "kite-sidebar-panel";
  */
 export function SidebarPanels({ sidebar, children }: { sidebar: ReactNode; children: ReactNode }) {
 	const t = useT();
-	const { minimal, width, userId, setMinimal, setWidth } = useSidebar();
+	const { minimal, width, userId, setMinimal, setWidth, menuOverResizeHandle } = useSidebar();
 	const rtl = useInterfaceDirection() === "rtl";
 	const panelRef = usePanelRef();
 	const changedByPanel = useSyncedPanel(panelRef, minimal, width);
@@ -65,7 +65,11 @@ export function SidebarPanels({ sidebar, children }: { sidebar: ReactNode; child
 			>
 				{sidebar}
 			</ResizablePanel>
-			<ResizableHandle aria-label={rtl ? t("Resize right menu") : t("Resize left menu")} className="bg-transparent" />
+			<ResizableHandle
+				aria-label={rtl ? t("Resize right menu") : t("Resize left menu")}
+				className="bg-transparent"
+				disabled={menuOverResizeHandle}
+			/>
 			<ResizablePanel id="kite-page-panel" minSize={PAGE_MIN_WIDTH}>
 				{children}
 			</ResizablePanel>

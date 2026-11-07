@@ -645,6 +645,40 @@ const SHOTS: Shot[] = [
 			return panel.getByTestId("mailbox-ai-setting");
 		},
 	},
+	...(["dark"] as const).map(
+		(theme): Shot => ({
+			// A file dragged over the floating composer: the drop target stays up while the drag is held.
+			name: `2026-11-07-composer-drop-target-${theme}`,
+			theme,
+			viewport: { width: 1280, height: 800 },
+			open: async (page) => {
+				await page.goto("/inbox");
+				await page.getByRole("button", { name: "Compose" }).click();
+				const to = page.getByLabel("To", { exact: true });
+				await to.fill("lena@contoso.test");
+				await to.press("Enter");
+				await page.getByLabel("Subject").fill("Agenda for Thursday");
+				const body = page.getByRole("textbox", { name: "Message body" });
+				await body.fill("Hi Lena, the agenda is attached.");
+				const box = await body.boundingBox();
+				if (!box) throw new Error("the message body has no box");
+				const dragged = path.join(process.cwd(), "test-results", "agenda.pdf");
+				mkdirSync(path.dirname(dragged), { recursive: true });
+				writeFileSync(dragged, "%PDF-1.4\n");
+				const cdp = await page.context().newCDPSession(page);
+				for (const type of ["dragEnter", "dragOver"] as const) {
+					await cdp.send("Input.dispatchDragEvent", {
+						type,
+						x: box.x + box.width / 2,
+						y: box.y + box.height / 2,
+						data: { items: [], files: [dragged], dragOperationsMask: 1 },
+					});
+				}
+				await expect(page.getByText("Drop files to attach")).toBeVisible();
+				return page.locator("form").filter({ has: page.getByRole("button", { name: "Close composer" }) });
+			},
+		}),
+	),
 ];
 
 async function openPage(browser: Browser, { theme = "light", viewport }: Shot) {

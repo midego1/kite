@@ -13,7 +13,7 @@ import { encodeRawMime } from "@/lib/email/module-import-utils";
 import { fetchSegment, planSizedFetch, type PlannedSegment } from "./capped-fetch";
 import { canPrefetch } from "./capped-fetch-utils";
 import { getImportMessageUserId, parseImportDestination } from "./destination";
-import { hostImportMessageFromImap, selectRemainingUids } from "./imap-utils";
+import { HOST_IMPORT_GROUP_BYTES, groupByBytes, hostImportMessageFromImap, selectRemainingUids } from "./imap-utils";
 import { importPauseNote } from "./size-guard-utils";
 
 const logger = createLogger("import");
@@ -155,17 +155,40 @@ export async function fetchInChunks(
 }
 
 /** Imports one batch into `destination` through the module host, owned as the destination requires. */
-export function importBatch(
-	run: ImportRun,
-	destination: string,
-	messages: HostImportMessage[],
-): Promise<HostImportResult> {
+function importBatch(run: ImportRun, destination: string, messages: HostImportMessage[]): Promise<HostImportResult> {
 	return moduleHost.mail.importMessages(run.ctx, {
 		userId: getImportMessageUserId(parseImportDestination(destination), run.job.userId, run.mailbox.userId),
 		mailboxId: run.mailbox.id,
 		destination,
 		messages,
 	});
+}
+
+/** A fetched message waiting to be handed to the module host. */
+export type FetchedImport = { filename: string; fetched: ImapFetchedMessage };
+
+/**
+ * `importBatch` for fetched messages, a few megabytes per host call: each group is base64-encoded just before its
+ * call, so a chunk of big messages never has all of its encoded copies (and the host's decoded ones) alive at once.
+ */
+export async function importFetched(
+	run: ImportRun,
+	destination: string,
+	items: readonly FetchedImport[],
+): Promise<HostImportResult> {
+	const total: HostImportResult = { imported: 0, skipped: 0, failed: 0, errors: [] };
+	for (const group of groupByBytes(items, (item) => item.fetched.raw.byteLength, HOST_IMPORT_GROUP_BYTES)) {
+		const result = await importBatch(
+			run,
+			destination,
+			group.map(({ filename, fetched }) => hostImportMessageFromImap(filename, fetched, encodeRawMime)),
+		);
+		total.imported += result.imported;
+		total.skipped += result.skipped;
+		total.failed += result.failed;
+		total.errors.push(...result.errors);
+	}
+	return total;
 }
 
 /** Adds a chunk's outcome to the job's totals; a UID the server did not return counts as skipped. */
@@ -352,12 +375,12 @@ export async function runFolderJob(run: ImportRun): Promise<ImportRunOutcome> {
 		remaining.slice(0, run.budget),
 		{ folderName: job.folder },
 		async (uids, fetched) => {
-			const batch: HostImportMessage[] = [];
+			const batch: FetchedImport[] = [];
 			for (const uid of uids) {
 				const message = fetched.get(String(uid));
-				if (message) batch.push(hostImportMessageFromImap(`${job.folder}-${uid}.eml`, message, encodeRawMime));
+				if (message) batch.push({ filename: `${job.folder}-${uid}.eml`, fetched: message });
 			}
-			const result = await importBatch(run, job.destination, batch);
+			const result = await importFetched(run, job.destination, batch);
 			addChunkResult(run, uids.length, { ...result, missing: uids.length - batch.length });
 			cursorUid = uids[uids.length - 1];
 			return recordChunk(run, { ...run.progress, cursorUid, total: run.total, errors: run.errors });

@@ -24,6 +24,7 @@ const {
 	selectImapUidBatch,
 	selectRemainingUids,
 	chunk,
+	groupByBytes,
 	imapSecurity,
 	importFlagState,
 	importMessageFromImap,
@@ -34,7 +35,7 @@ const {
 		"src/lib/imap/protocol-utils.ts",
 	],
 	[
-		"selectImapUidBatch, selectRemainingUids, chunk, imapSecurity, importFlagState, importMessageFromImap, hostImportMessageFromImap",
+		"selectImapUidBatch, selectRemainingUids, chunk, groupByBytes, imapSecurity, importFlagState, importMessageFromImap, hostImportMessageFromImap",
 		"src/lib/import/imap-utils.ts",
 	],
 ]);
@@ -78,12 +79,12 @@ test("distinctUids sorts as numbers and drops repeats", () => {
 });
 
 test("selectImapUidBatch walks back from the newest messages and reports the next offset", () => {
-	const all = ["1", "2", "3", "4", "5"];
-	assert.deepEqual(selectImapUidBatch(all, 2, 0), { uids: ["4", "5"], total: 5, nextOffset: 2 });
-	assert.deepEqual(selectImapUidBatch(all, 2, 2), { uids: ["2", "3"], total: 5, nextOffset: 4 });
-	assert.deepEqual(selectImapUidBatch(all, 2, 4), { uids: ["1"], total: 5, nextOffset: null });
+	const all = [1, 2, 3, 4, 5];
+	assert.deepEqual(selectImapUidBatch(all, 2, 0), { uids: [4, 5], total: 5, nextOffset: 2 });
+	assert.deepEqual(selectImapUidBatch(all, 2, 2), { uids: [2, 3], total: 5, nextOffset: 4 });
+	assert.deepEqual(selectImapUidBatch(all, 2, 4), { uids: [1], total: 5, nextOffset: null });
 	assert.deepEqual(selectImapUidBatch(all, 10, 0), { uids: all, total: 5, nextOffset: null });
-	assert.deepEqual(selectImapUidBatch(all, 0, -3), { uids: ["5"], total: 5, nextOffset: 1 });
+	assert.deepEqual(selectImapUidBatch(all, 0, -3), { uids: [5], total: 5, nextOffset: 1 });
 });
 
 test("getLiteralLength reads a trailing literal size", () => {
@@ -111,9 +112,21 @@ test("parseFetchUid finds the UID in a FETCH line", () => {
 });
 
 test("selectRemainingUids keeps UIDs below the cursor, newest first, and drops junk", () => {
-	assert.deepEqual(selectRemainingUids(["3", "9", "5"], null), [9, 5, 3]);
-	assert.deepEqual(selectRemainingUids(["3", "9", "5"], 5), [3]);
-	assert.deepEqual(selectRemainingUids(["0", "-2", "x", "7"], null), [7]);
+	assert.deepEqual(selectRemainingUids([3, 9, 5], null), [9, 5, 3]);
+	assert.deepEqual(selectRemainingUids([3, 9, 5], 5), [3]);
+	assert.deepEqual(selectRemainingUids([0, -2, Number.NaN, 7], null), [7]);
+});
+
+test("groupByBytes keeps order, fills groups up to the limit and gives a bigger item its own group", () => {
+	const sizes = [3, 3, 3, 10, 1, 1];
+	assert.deepEqual(
+		groupByBytes(sizes, (size) => size, 6),
+		[[3, 3], [3], [10], [1, 1]],
+	);
+	assert.deepEqual(
+		groupByBytes([], (size) => size, 6),
+		[],
+	);
 });
 
 test("chunk splits a list into pieces of at most the size", () => {

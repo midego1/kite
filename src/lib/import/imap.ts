@@ -63,7 +63,7 @@ export async function fetchImapMessages(
 		const skipped: string[] = [];
 		const limits = imapLimits(env.KITE_RUNTIME);
 		// Newest first, so that stopping early (the byte budget) leaves one contiguous older rest for `nextOffset`.
-		const newestFirst = [...batch.uids].reverse();
+		const newestFirst = batch.uids.map(String).reverse();
 		let held = 0;
 		let consumed = 0;
 		for (const segment of await planSizedFetch(session, newestFirst, limits.literalBytes, input.folder)) {

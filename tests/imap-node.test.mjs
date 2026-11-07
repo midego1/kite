@@ -71,8 +71,8 @@ async function fake(t, options) {
 async function readInbox(session) {
 	await session.examine("INBOX");
 	const uids = await session.searchUids();
-	const fetched = await session.fetchMessages(uids);
-	return uids.map((uid) => new TextDecoder().decode(fetched.get(uid).raw));
+	const fetched = await session.fetchMessages(uids.map(String));
+	return uids.map((uid) => new TextDecoder().decode(fetched.get(String(uid)).raw));
 }
 
 const secretSentInPlainText = (server) =>
@@ -370,7 +370,7 @@ test("a folder too large for one SEARCH line is listed in UID ranges, without a 
 	await session.examine("INBOX");
 	assert.deepEqual(
 		await session.searchUids(),
-		messages.map(({ uid }) => String(uid)),
+		messages.map(({ uid }) => uid),
 	);
 	assert.deepEqual(
 		server.commands.filter(({ line }) => / SEARCH /.test(line)).map(({ line }) => line.replace(/^\S+ /, "")),
@@ -392,7 +392,7 @@ test("the highest UID a server answers below `n:*` is not listed twice", async (
 	const uids = await session.searchUids();
 	assert.deepEqual(
 		uids,
-		messages.slice(0, 30).map(({ uid }) => String(uid)),
+		messages.slice(0, 30).map(({ uid }) => uid),
 	);
 	assert.ok(server.commands.some(({ line }) => line.endsWith("UID SEARCH UID 41:*")));
 });
@@ -437,7 +437,7 @@ test("a UID a server says twice is listed once", async (t) => {
 	await session.examine("INBOX");
 	assert.deepEqual(
 		await session.searchUids(),
-		messages.map(({ uid }) => String(uid)),
+		messages.map(({ uid }) => uid),
 	);
 });
 
@@ -454,7 +454,7 @@ test("a search starts no new range after its deadline", async (t) => {
 	const fits = await openImapSession(nodeEnv(small), login());
 	t.after(() => fits.close());
 	await fits.examine("INBOX");
-	assert.deepEqual(await fits.searchUids({ deadline: 0 }), ["1"]);
+	assert.deepEqual(await fits.searchUids({ deadline: 0 }), [1]);
 });
 
 test("a folder that fits still gets one UID SEARCH ALL", async (t) => {
@@ -462,7 +462,7 @@ test("a folder that fits still gets one UID SEARCH ALL", async (t) => {
 	const session = await openImapSession(nodeEnv(server), login());
 	t.after(() => session.close());
 	await session.examine("INBOX");
-	assert.deepEqual(await session.searchUids(), ["1"]);
+	assert.deepEqual(await session.searchUids(), [1]);
 	assert.equal(server.commands.filter(({ line }) => /UID SEARCH ALL/.test(line)).length, 1);
 });
 

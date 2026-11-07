@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
+import { eq } from "drizzle-orm";
 import { z } from "zod";
+import { getDb } from "@/db";
+import { domains } from "@/db/schema";
 import { getEnv } from "@/lib/cloudflare";
 import { requireSessionUser } from "@/lib/api/auth";
 import { canManageDomains } from "@/lib/auth/admin";
@@ -65,6 +68,10 @@ export async function POST(request: Request, { params }: Params) {
 	const body = (await request.json().catch(() => ({}))) as { replaceMx?: boolean };
 	try {
 		await setupReceiving(env, domain, provider.data, originOf(env, request), { replaceMx: body.replaceMx === true });
+		// Resend mail is only taken for a domain that receives through Resend (`intakeProviderMail`): with the MX now
+		// pointing there, an API-only setup would otherwise lose every message with just a warning in the log.
+		if (provider.data === "resend" && domain.receivingProvider !== "resend")
+			await getDb(env).update(domains).set({ receivingProvider: "resend" }).where(eq(domains.id, domain.id));
 		return NextResponse.json({ ok: true }, { headers: noStore });
 	} catch (error) {
 		if (error instanceof MxConflictError)

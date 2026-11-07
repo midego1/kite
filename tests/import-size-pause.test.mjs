@@ -27,16 +27,17 @@ const stubs = {
 				},
 				fetchUidSizes: async (uids) =>
 					uids.map((uid) => ({ uid: Number(uid), flags: [], internalDate: null, size: fake.sizes?.[uid] ?? 20 })),
-				fetchMessages: async (uids) => {
-					// What a fetch holds from the moment it is asked for until the import of its messages has finished.
-					for (const uid of uids) fake.held += fake.sizes?.[uid] ?? 20;
-					fake.peak = Math.max(fake.peak, fake.held);
-					return new Map(
-						uids.map((uid) => [
-							uid,
-							{ raw: new TextEncoder().encode("Subject: x\\r\\n\\r\\nbody"), flags: [], internalDate: null, size: null },
-						]),
-					);
+				streamMessages: async (uids, _options, onMessage) => {
+					// What a run holds from the moment a message is read until the host call that carries it starts.
+					for (const uid of uids) {
+						fake.held += fake.sizes?.[uid] ?? 20;
+						fake.peak = Math.max(fake.peak, fake.held);
+						fake.events.push(\`read \${uid}\`);
+						const body = new Uint8Array(fake.rawBytes ?? 0);
+						const raw = new Uint8Array([...new TextEncoder().encode("Subject: x\\r\\n\\r\\nbody"), ...body]);
+						await onMessage(uid, { raw: raw.buffer, flags: [], internalDate: null, size: null });
+					}
+					fake.events.push("fetch done");
 				},
 				close: async () => undefined,
 			};
@@ -48,7 +49,9 @@ const stubs = {
 				importMessages: async (_ctx, request) => {
 					const fake = globalThis.__fakeImport;
 					fake.batches.push(request.messages.length);
+					fake.events.push(\`import \${request.messages.length}\`);
 					for (const message of request.messages) fake.held -= fake.sizes?.[/-(\\d+)\\.eml$/.exec(message.filename)[1]] ?? 20;
+					if (fake.hostDelayMs) await new Promise((resolve) => setTimeout(resolve, fake.hostDelayMs));
 					fake.afterBatch?.();
 					return { imported: request.messages.length, skipped: 0, failed: 0, errors: [] };
 				},
@@ -134,6 +137,7 @@ async function fixture(t, ratio) {
 		afterBatch: null,
 		held: 0,
 		peak: 0,
+		events: [],
 	};
 	t.after(() => delete globalThis.__fakeImport);
 	return { env, database, used, setRatio };
@@ -246,7 +250,7 @@ test("a message above the size limit is skipped and named, and the rest of its b
 	assert.deepEqual(JSON.parse(done.errors), ["INBOX: skipped message 2, 200 MB is over the 36 MB limit"]);
 });
 
-test("25 messages of 15 MB are written one segment at a time: what is held stays within two segments", async (t) => {
+test("25 messages of 15 MB are written one at a time: a run holds one of them, never a segment beside the next", async (t) => {
 	const { env, database } = await fixture(t, 0.3);
 	const MB = 1024 * 1024;
 	globalThis.__fakeImport.uids = Array.from({ length: 25 }, (_, index) => index + 1);
@@ -257,9 +261,31 @@ test("25 messages of 15 MB are written one segment at a time: what is held stays
 	assert.equal(done.status, "completed");
 	assert.equal(done.imported, 25);
 	assert.deepEqual(globalThis.__fakeImport.batches, Array(25).fill(1));
-	// Before: all 25 (375 MB) were fetched into one chunk and written together.
+	// Before: all 25 (375 MB) were fetched into one chunk and written together; then a segment and the next one (32 MB).
 	assert.ok(globalThis.__fakeImport.peak >= 15 * MB, "the measurement sees what a fetch holds");
-	assert.ok(globalThis.__fakeImport.peak <= 32 * MB, `held ${globalThis.__fakeImport.peak / MB} MB at most`);
+	assert.ok(globalThis.__fakeImport.peak <= 15 * MB, `held ${globalThis.__fakeImport.peak / MB} MB at most`);
+});
+
+test("a segment's messages are written while its FETCH is still being read, a few megabytes per host call", async (t) => {
+	const { env, database } = await fixture(t, 0.3);
+	const MB = 1024 * 1024;
+	const fake = globalThis.__fakeImport;
+	fake.uids = Array.from({ length: 16 }, (_, index) => index + 1);
+	// One segment of 16 messages of 1 MB (the 16 MB segment limit), each really 1 MB, so the 4 MB host groups fill up.
+	fake.sizes = Object.fromEntries(fake.uids.map((uid) => [uid, MB - 64]));
+	fake.rawBytes = MB - 64;
+	fake.hostDelayMs = 20;
+	const job = await createImportJob(env, jobFields);
+	await processImportJob(env, job.id, ctx);
+	const done = row(database, job.id);
+	assert.equal(done.status, "completed");
+	assert.equal(done.imported, 16);
+	assert.deepEqual(fake.batches, [4, 4, 4, 4]);
+	assert.equal(fake.events.filter((event) => event === "fetch done").length, 1, "one segment, one FETCH");
+	// The first group went to the host before the FETCH (newest first) had handed over every message.
+	assert.ok(fake.events.indexOf("import 4") < fake.events.indexOf("read 1"), fake.events.join(", "));
+	// At most the group being written, the group being filled and the message being read: well under the segment.
+	assert.ok(fake.peak <= 9 * MB, `held ${fake.peak / MB} MB at most`);
 });
 
 test("a run refused by the sign-in limit keeps its attempts and password and is queued again after the wait", async (t) => {

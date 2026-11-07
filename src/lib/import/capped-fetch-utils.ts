@@ -3,8 +3,9 @@ const MB = 1024 * 1024;
 /** Messages per UID FETCH, at most. */
 const FETCH_BATCH_MESSAGES = 25;
 /**
- * Bytes per UID FETCH, at most (a single message above it is fetched alone). A fetch is held in memory until it is
- * written, and a Workers isolate has 128 MB, so a batch of big messages is split instead of read together.
+ * Bytes per UID FETCH, at most (a single message above it is fetched alone). An import job writes a fetch's messages
+ * while it reads them, but the direct import route holds what it fetched, and a Workers isolate has 128 MB, so a
+ * batch of big messages is split instead of read together; a message that goes alone is never read beside another.
  */
 const FETCH_BATCH_BYTES = 16 * MB;
 
@@ -18,8 +19,8 @@ export type FetchPlanLimits = {
 export type OversizedMessage = { uid: string; size: number };
 
 /**
- * One fetch that is also one unit of work: the messages are fetched, written, and only then is the next segment
- * fetched, so at most one segment (plus one being prefetched, see `canPrefetch`) is held in memory.
+ * One fetch that is also one unit of work: the messages are fetched and written, the segment is saved, and only then
+ * is the next segment fetched.
  */
 export type FetchSegment = {
 	/** Every UID the segment covers, in the order given, the oversized ones included (they count as skipped). */
@@ -71,14 +72,6 @@ export function planFetchSegments(
 		}
 	}
 	return segments;
-}
-
-/** The most that may be fetched or waiting to be written at once: a segment and the one prefetched behind it. */
-const IN_FLIGHT_BYTES = 2 * FETCH_BATCH_BYTES;
-
-/** Whether the next segment may be fetched while the current one is written, without passing `IN_FLIGHT_BYTES`. */
-export function canPrefetch(current: Pick<FetchSegment, "weight">, next: Pick<FetchSegment, "weight">): boolean {
-	return current.weight + next.weight <= IN_FLIGHT_BYTES;
 }
 
 function megabytes(bytes: number): string {

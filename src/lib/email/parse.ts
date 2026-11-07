@@ -4,6 +4,7 @@ import { normalizeMessageId, parseMessageIdList } from "@/lib/email/threading";
 import { normalizeAttachmentContent } from "@/lib/email/attachment-content-utils";
 import { getLatestEmailContent, htmlToReadableText } from "@/lib/email/reply-content-utils";
 import { sanitizeStoredEmailHtml } from "@/lib/email/stored-html-utils";
+import { limitBodyConversion } from "@/lib/email/mime-body-utils";
 import { MIME_LIMITS, mimePreflightReason } from "@/lib/email/mime-preflight";
 import type { AttachmentContent } from "@/lib/email/attachment-types";
 
@@ -52,12 +53,14 @@ export async function parseRawMime(raw: ArrayBuffer): Promise<ParsedEmail> {
 	let email: Awaited<ReturnType<typeof PostalMime.parse>>;
 	try {
 		// forceRfc822Attachments keeps an attached message one leaf part, which is what the preflight models.
-		email = await PostalMime.parse(raw, {
+		const parser = new PostalMime({
 			maxNestingDepth: MIME_LIMITS.maxNestingDepth,
 			maxHeadersSize: MIME_LIMITS.maxTotalHeaderBytes,
 			maxPartCount: MIME_LIMITS.maxParts,
 			forceRfc822Attachments: true,
 		});
+		limitBodyConversion(parser);
+		email = await parser.parse(raw);
 	} catch (error) {
 		if (LIMIT_ERROR_CODES.has((error as PostalMimeError).code)) {
 			const { message } = error as PostalMimeError;

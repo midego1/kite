@@ -4,9 +4,9 @@ import type { ExternalAccountView } from "@/lib/external-accounts/types";
 /** How a row's mark or pill reads: fine, needs someone, or off. */
 export type CommandCenterTone = "ok" | "warn" | "muted";
 
-/** One of the counts at the top: unread mail, held senders, open suggestions. */
+/** One of the counts at the top: unread mail, held senders. */
 export type StatusChip = {
-	id: "unread" | "screener" | "for-you";
+	id: "unread" | "screener";
 	/** The number, drawn large. */
 	value: number;
 	/** What the number counts, under it: "unread in Inbox", "in Screener", "For you". */
@@ -14,7 +14,7 @@ export type StatusChip = {
 	/** The whole line, "12 unread in Inbox", for anything that reads the chip as text. */
 	label: string;
 	href: string;
-	tone: "blue" | "amber" | "violet";
+	tone: "blue" | "amber";
 };
 
 export type StatusChipsInput = {
@@ -25,9 +25,6 @@ export type StatusChipsInput = {
 	/** Messages the Screener holds, and whether the mailbox screens new senders. */
 	held: number;
 	screenerOn: boolean;
-	/** Open suggestions, null until known, and whether For you is shown at all. */
-	forYou: number | null;
-	forYouVisible: boolean;
 };
 
 export type AccountTone = CommandCenterTone;

@@ -6,6 +6,42 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.11.06.6] - 2026-11-06
+
+### Changed
+
+- The home view now shows what Kite found for you: the newest suggestions with their kind, subject and sender, a quick Dismiss and a link to For you. The count tile it replaces now sits in the card's header.
+  ![The command center with the For you card listing four suggestions](/changelog/2026-11-06-command-center-for-you-light.webp)
+
+## [2026.11.06.5] - 2026-11-06
+
+### Fixed
+
+- Very large HTML mail with unclosed or endlessly nested tags is stored and opens normally. The part Kite cannot lay out shows as plain text, and the original message stays available.
+- Very large mail with separate text and HTML parts is stored and opens normally. Above a size almost no mail reaches, the two are kept apart instead of being merged into one body, and the original message stays available.
+
+## [2026.11.06.4] - 2026-11-06
+
+### Added
+
+- Kite now speaks Dutch: pick it under **Language** in the account menu, or leave Automatic on and a Dutch browser gets it by itself. Arabic is there as a draft you can choose, and it mirrors the interface. Settings, admin and public pages stay English for now. See [Translations](https://github.com/midego1/kite/blob/main/docs/translations.md).
+  ![The inbox in Dutch](/changelog/2026-11-06-interface-dutch.webp)
+  ![The inbox in Arabic, mirrored](/changelog/2026-11-06-interface-arabic.webp)
+- Activity lists the one-line summaries Kite did not write, with the reason in plain words and Try again for a failed one.
+
+### Fixed
+
+- Mail with very long chains of quoted replies is stored and opens normally. Quotes more than 32 levels deep stay together in the last fold.
+- Clearer Dutch wording: Unsubscribe is no longer the same word as Sign out, and the Booking, mark as read and composer labels read more naturally. Two Arabic texts are corrected as well, including the night-time greeting.
+- #150 Importing a folder of up to a million messages (four million when self-hosted) no longer stops because the server's list of messages is too long for one answer.
+- #243 Mail received through Resend now also reaches a mailbox that is named only in the message's delivery trail, such as mail from a mailing list or a forward, and a retried delivery no longer leaves a second copy in the mailbox.
+- Summaries no longer show links, addresses or web domains that the conversation does not contain, even when they are written as a bare domain or as "name (at) domain".
+- The Summarize button turns on again by itself a minute after the AI request limit, and screen readers now hear when a summary or translation is ready, why the button is off, and keep their place after Hide.
+
+### Security
+
+- #150 A mail server now has the same limit during sign-in as in any other step of an import, and one folder's list of messages has a limit of its own.
+
 ## [2026.11.06.3] - 2026-11-06
 
 ### Added

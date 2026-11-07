@@ -137,7 +137,7 @@ const SUGGESTIONS: DemoSuggestion[] = [
 ];
 
 /** Automatic reading on for the shared mailbox, with a short list for the For you page and its sidebar count. */
-export async function mockForYou(page: Page): Promise<void> {
+export async function mockForYou(page: Page) {
 	const { mailboxes } = (await (await page.request.get("/api/mailboxes")).json()) as {
 		mailboxes: { id: string; address?: string; email?: string }[];
 	};
@@ -165,6 +165,66 @@ export async function mockForYou(page: Page): Promise<void> {
 			},
 		}),
 	);
+	return suggestions;
+}
+
+/** What the For you hover preview asks for per message, for the suggestions `mockForYou` lists: the card's details and the text. */
+export async function mockForYouPreview(
+	page: Page,
+	listed: { id: string; mailboxId: string; messageId: string; kind: string; title: string; createdAt: string }[],
+): Promise<void> {
+	const start = new Date();
+	start.setUTCDate(start.getUTCDate() + 6);
+	start.setUTCHours(10, 0, 0, 0);
+	const payloads: Record<string, Record<string, unknown>> = {
+		phishing: { reasons: ["displayed_link_mismatch", "spf_failed", "credential_request"] },
+		reply: { urgency: "none" },
+		calendar_invite: {
+			uid: "offsite-planning@adventure-works.test",
+			sequence: 0,
+			method: "REQUEST",
+			organizer: "tom@adventure-works.test",
+			start: start.toISOString(),
+			end: new Date(start.getTime() + 90 * 60_000).toISOString(),
+			tz: "UTC",
+			summary: "Offsite planning",
+			location: "Room 4",
+			repeats: false,
+			conflicts: [],
+			proposals: [],
+			organizerMatchesSender: true,
+			authPassed: true,
+		},
+	};
+	const texts: Record<string, string> = {
+		"demo-message-0":
+			"Your Wingtip account will be suspended within 24 hours unless you confirm your details. Sign in here to keep access.",
+		"demo-message-1":
+			"Hi,\n\nThanks for walking us through the new onboarding flow yesterday. Could the mailbox step suggest hello@ and support@ as starting points? Does Thursday afternoon work to pair on the welcome email?\n\nBest,\nLena",
+		"demo-message-2": "Hi, the offsite agenda is attached. Please book your travel before Friday so we get the group rate.",
+		"demo-message-3": "Offsite planning: Thursday 10:00 to 11:30 in Room 4. Please confirm.",
+		"demo-draft-1":
+			"Hi Lena,\n\nThursday afternoon works for me. Let's pair on the welcome email at 14:00, and I'll add hello@ and support@ as suggestions in the mailbox step.\n\nBest,\nDemo",
+	};
+	await page.route("**/api/agent/suggestions?*messageId=*", async (route) => {
+		const messageId = new URL(route.request().url()).searchParams.get("messageId") ?? "";
+		const suggestions = listed
+			.filter((item) => item.messageId === messageId)
+			.map((item) => ({
+				...item,
+				threadId: null,
+				status: "open",
+				payload: payloads[item.kind] ?? {},
+				draftId: item.kind === "reply" && messageId === "demo-message-1" ? "demo-draft-1" : null,
+				canReviewDraft: true,
+				model: item.kind === "calendar_invite" ? null : "claude-haiku-4-5",
+			}));
+		await route.fulfill({ json: { suggestions, total: suggestions.length, kindTotals: {}, mailboxes: [] } });
+	});
+	await page.route("**/api/messages/demo-*", (route) => {
+		const id = new URL(route.request().url()).pathname.split("/").pop() ?? "";
+		return route.fulfill({ json: { body: { textBody: texts[id] ?? "", htmlBody: null } } });
+	});
 }
 
 const USAGE_MODELS = [

@@ -29,7 +29,11 @@ These are names, written in Latin letters in every language and never translated
 | Reply, Reply all | Beantwoorden, Allen beantwoorden | رد، الرد على الكل | |
 | Forward | Doorsturen | إعادة توجيه | |
 | Attachment | Bijlage | مرفق | |
-| Composer | Opsteller | نافذة الكتابة | |
+| Composer | Schrijfvenster | نافذة الكتابة | |
+| Unsubscribe | Uitschrijven | إلغاء الاشتراك | Not "Afmelden", which is Sign out. |
+| Booking, Bookings | Afspraken | الحجز، الحجوزات | One Dutch word for the module and its pages. |
+| Mark as read, Mark as unread | Markeer als gelezen, Markeer als ongelezen | تعليم كمقروءة، تعليم كغير مقروءة | The same words on every mark action. |
+| Good night | Goedenacht | مساء الخير | A greeting on arrival; the usual Arabic phrase is a goodbye. |
 | Calendar | Agenda | التقويم | |
 | Money (phone tab, short for Money Watch) | Geld | المال | Its accessible name stays Money Watch. |
 | Sender, Recipient | Afzender, Ontvanger | مرسل، مستلم | |

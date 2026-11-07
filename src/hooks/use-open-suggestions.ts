@@ -3,11 +3,16 @@ import { useSuggestionList } from "./use-suggestion-list";
 
 /**
  * Open suggestions across the mailboxes where the user has full access, refreshed whenever a
- * suggestion or the mail changes. A failed refresh keeps the last list.
+ * suggestion or the mail changes. A failed refresh keeps the last list. With a `mailboxId` the list (and its limit of
+ * 200 rows and its total) is that mailbox's own, so other mailboxes cannot crowd it out; it answers 404, which
+ * leaves the list unloaded, for a mailbox without full access (so callers ask for it only with full access).
  */
-export function useOpenSuggestions(): OpenSuggestionsState & { reload: () => void } {
+export function useOpenSuggestions(mailboxId?: string, enabled = true): OpenSuggestionsState & { reload: () => void } {
 	const { data, reload } = useSuggestionList<Partial<Omit<OpenSuggestionsState, "loaded">>>(
-		"/api/agent/suggestions?status=open",
+		mailboxId
+			? `/api/agent/suggestions?status=open&mailboxId=${encodeURIComponent(mailboxId)}`
+			: "/api/agent/suggestions?status=open",
+		enabled,
 	);
 	const suggestions = data?.suggestions ?? [];
 	return {

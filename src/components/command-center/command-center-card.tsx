@@ -119,6 +119,7 @@ export function CommandCenterEmpty({
 export function CommandCenterCard({
 	title,
 	icon: Icon,
+	count,
 	action,
 	children,
 	testId,
@@ -126,6 +127,8 @@ export function CommandCenterCard({
 }: {
 	title: string;
 	icon?: LucideIcon;
+	/** A number after the title, such as the open suggestions in the For you card. */
+	count?: number;
 	action?: { label: string; href: string };
 	children: ReactNode;
 	testId?: string;
@@ -135,7 +138,16 @@ export function CommandCenterCard({
 		<section aria-label={title} data-testid={testId} className={cn(COMMAND_CENTER_CARD_CLASS, className)}>
 			<div className="mb-3 flex min-h-8 items-center gap-2.5">
 				{Icon && <CardIcon icon={Icon} />}
-				<h3 className="min-w-0 flex-1 truncate text-sm font-semibold text-neutral-900">{title}</h3>
+				<h3 className="min-w-0 truncate text-sm font-semibold text-neutral-900">{title}</h3>
+				{count !== undefined && (
+					<span
+						data-command-center-count
+						className="inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-neutral-200/70 px-1.5 text-xs font-medium tabular-nums text-neutral-700"
+					>
+						{count}
+					</span>
+				)}
+				<span className="flex-1" aria-hidden="true" />
 				{action && (
 					<Link href={action.href} className={COMMAND_CENTER_LINK_CLASS}>
 						{action.label}

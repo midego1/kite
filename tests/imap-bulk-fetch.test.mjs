@@ -415,3 +415,89 @@ test("fetchMessages returns flags, INTERNALDATE and size wherever the server put
 	assert.equal(second.size, null);
 	assert.equal(decoder.decode(second.raw), body);
 });
+
+/** A socket the test feeds by hand: `onWrite` sees each command, `send` enqueues server bytes. */
+function manualSocket(onWrite) {
+	let controller;
+	const readable = new ReadableStream({
+		start: (c) => {
+			controller = c;
+		},
+	});
+	const send = (text) => controller.enqueue(encoder.encode(text));
+	const writable = new WritableStream({
+		write(bytes) {
+			const command = decoder.decode(bytes);
+			onWrite(command, command.split(" ")[0], send);
+		},
+	});
+	send("* OK ready\r\n");
+	return { readable, writable, opened: Promise.resolve(), close: async () => undefined };
+}
+
+test("streamMessages hands each message over before the rest of the answer is read, and keeps none", async () => {
+	const body = (n) => `Subject: ${n}\r\n\r\nhello ${n}\r\n`;
+	let fetchTag = null;
+	let sendLater = null;
+	const socket = manualSocket((command, tag, send) => {
+		if (!command.includes("UID FETCH")) return send(`${tag} OK\r\n`);
+		fetchTag = tag;
+		sendLater = send;
+		// Only the first message for now: the rest comes once the first one has been handed over.
+		send(`* 1 FETCH (UID 10 FLAGS (\\Seen) BODY[] {${body(1).length}}\r\n${body(1)})\r\n* 2 FETCH (FLAGS ())\r\n`);
+	});
+	const imap = new ImapConnection(socket, { commandTimeoutMs: 2000 });
+	await imap.readGreeting();
+	const seen = [];
+	await imap.streamMessages(["10", "11"], {}, async (uid, message) => {
+		seen.push([uid, decoder.decode(message.raw), message.flags]);
+		if (uid === "10")
+			sendLater(`* 3 FETCH (BODY[] {${body(2).length}}\r\n${body(2)} UID 11)\r\n${fetchTag} OK done\r\n`);
+	});
+	assert.deepEqual(seen, [
+		["10", body(1), ["\\Seen"]],
+		["11", body(2), []],
+	]);
+});
+
+test("the time a streamed message takes to write does not count toward the command deadline", async () => {
+	const body = "Subject: slow\r\n\r\nx\r\n";
+	let rest = null;
+	const socket = manualSocket((command, tag, send) => {
+		if (!command.includes("UID FETCH")) return send(`${tag} OK\r\n`);
+		rest = () => send(`* 2 FETCH (UID 2 BODY[] {${body.length}}\r\n${body})\r\n${tag} OK done\r\n`);
+		send(`* 1 FETCH (UID 1 BODY[] {${body.length}}\r\n${body})\r\n`);
+	});
+	const imap = new ImapConnection(socket, { commandTimeoutMs: 150, commandMaxMs: 150 });
+	await imap.readGreeting();
+	const uids = [];
+	await imap.streamMessages(["1", "2"], {}, async (uid) => {
+		uids.push(uid);
+		if (uid !== "1") return;
+		// Three times the command's whole allowance, spent writing, not waiting for the server.
+		await new Promise((resolve) => setTimeout(resolve, 450));
+		// The server answers a little later, so the read after the write really waits on the deadline.
+		setTimeout(rest, 50);
+	});
+	assert.deepEqual(uids, ["1", "2"]);
+});
+
+test("a write that fails ends the streamed fetch with its error", async () => {
+	const body = "Subject: a\r\n\r\nx\r\n";
+	const { socket } = fakeSocket((command, tag) =>
+		command.includes("UID FETCH")
+			? `* 1 FETCH (UID 1 BODY[] {${body.length}}\r\n${body})\r\n* 2 FETCH (UID 2 BODY[] {${body.length}}\r\n${body})\r\n${tag} OK\r\n`
+			: `${tag} OK\r\n`,
+	);
+	const imap = new ImapConnection(socket);
+	await imap.readGreeting();
+	const uids = [];
+	await assert.rejects(
+		imap.streamMessages(["1", "2"], {}, async (uid) => {
+			uids.push(uid);
+			throw new Error("D1 is down");
+		}),
+		/D1 is down/,
+	);
+	assert.deepEqual(uids, ["1"]);
+});

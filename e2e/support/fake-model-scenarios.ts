@@ -70,6 +70,7 @@ const translationJson = {
 
 /** One-line summaries in the list (e2e/60-list-summaries.spec.ts): from the triage request, and from their own job. */
 export const LINE_FROM_TRIAGE = "Sam asks whether Tuesday at ten still works for the budget review.";
+export const LINE_ARABIC = "طلب عمر تأكيد موعد اجتماع الثلاثاء ومراجعة خطة التوظيف.";
 export const LINE_FROM_JOB = "A short note about the quarterly budget review and the slides it needs.";
 
 export const FAKE_SCENARIOS: Record<string, FakeScenario> = {
@@ -86,6 +87,10 @@ export const FAKE_SCENARIOS: Record<string, FakeScenario> = {
 				summary: "Sam asks about the budget review.",
 				oneLine: LINE_FROM_TRIAGE,
 			}),
+	},
+	"line-arabic": {
+		triage: () =>
+			json({ ...benignTriage, category: "fyi", summary: "Omar asks about the meeting.", oneLine: LINE_ARABIC }),
 	},
 	"summary-thread": {
 		triage: () => json(benignTriage),

@@ -139,6 +139,10 @@ const CASES = {
 		`--bé\r\nContent-Type: application/pdf\r\n\r\n${ten}`,
 	),
 	"a multipart without a boundary reads as text": message(["Content-Type: multipart/mixed"], ten),
+	"an empty multipart subtype is no multipart": message(
+		['Content-Type: multipart/; boundary="b"'],
+		`--b\r\nContent-Type: text/plain\r\n\r\n${ten}--b--\r\n`,
+	),
 	"a part of a digest defaults to message/rfc822": message(
 		['Content-Type: multipart/digest; boundary="d"'],
 		`--d\r\n\r\nFrom: p@list.example\r\n\r\n${ten}--d--\r\n`,
@@ -225,6 +229,7 @@ const TYPES = [
 	"message/rfc822",
 	"",
 	"multipart/mixed",
+	"multipart/; boundary=@",
 	"multipart/mixed; boundary=@",
 	'multipart/alternative; boundary="@"',
 	'multipart/related; boundary="@ "',
@@ -354,8 +359,16 @@ test("preflight stops at the limits postal-mime stops at", async () => {
 	assert.match(mimePreflightCounts(overLimit).reason, /too many lines/);
 
 	// Header bytes add up across the message, a line counting for at least 64 bytes, as postal-mime counts them.
+	// Each block here stays under the per-block limit, so only the 2 MiB total is at fault.
 	const block = `--b\r\n${"X-A: 1\r\n".repeat(600)}\r\n`;
 	const headers = new TextEncoder().encode(`From: a@b.example\r\n${multipart("b")}${block.repeat(70)}`);
-	assert.match(mimePreflightCounts(headers).reason, /header block/);
+	assert.match(mimePreflightCounts(headers).reason, /2 MiB in total/);
+	assert.doesNotMatch(mimePreflightCounts(headers).reason, /64 KiB/);
 	assert.equal((await parserReading(headers)).error, "EMAXHEADERSIZE");
+
+	// One block over 64 KiB names that limit, not the 2 MiB total it never reaches.
+	const oneBigBlock = new TextEncoder().encode(
+		`From: a@b.example\r\nX-A: ${"a".repeat(MIME_LIMITS.maxHeaderBytes)}\r\n\r\n`,
+	);
+	assert.match(mimePreflightCounts(oneBigBlock).reason, /64 KiB/);
 });

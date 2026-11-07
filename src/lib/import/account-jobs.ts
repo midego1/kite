@@ -5,7 +5,7 @@ import { folders as kiteFolders } from "@/db/schema";
 import { importJobFolders, importJobs } from "@/db/schema/import-jobs";
 import { newId } from "@/lib/ids";
 import { TooManyUidsError } from "@/lib/imap/protocol-utils";
-import type { HostImportResult } from "@/lib/modules/host-types";
+import type { ImapFetchedMessage } from "@/lib/imap/types";
 import { ensureImportFolder } from "./folders";
 import { GMAIL_LABELS_DESTINATION, gmailLabelDestination, isFolderRefusal } from "./folder-mapping-utils";
 import type { AccountFolderRequest } from "./folder-mapping-types";
@@ -15,8 +15,6 @@ import {
 	fetchInChunks,
 	hasRunTime,
 	runDeadline,
-	importFetched,
-	type FetchedImport,
 	recordChunk,
 	underLease,
 	type ImportRun,
@@ -242,52 +240,38 @@ async function runAccountFolder(
 	if (!opened) return "stopped";
 	run.total = jobTotal(folders);
 	const gmail = folder.destination === GMAIL_LABELS_DESTINATION;
+	// Counted per chunk: messages Gmail files nowhere Kite imports (drafts), and messages with more than one user label.
+	let drafts = 0;
+	let multiLabel = 0;
+	const place = async (_uid: number, message: ImapFetchedMessage): Promise<string | null> => {
+		if (!gmail) return folder.destination;
+		const target = gmailLabelDestination(message.labels ?? []);
+		if (target.userLabels > 1) multiLabel += 1;
+		if (!target.destination) {
+			drafts += 1;
+			return null;
+		}
+		return labelDestination(run, labelDestinations, target.destination);
+	};
 	const handled = await fetchInChunks(
 		run,
 		remaining.slice(0, run.budget),
 		{ gmailLabels: gmail, folderName: folder.sourceName },
-		async (part, fetched) => {
-			const groups = new Map<string, FetchedImport[]>();
-			let missing = 0;
-			let drafts = 0;
-			let multiLabel = 0;
-			for (const uid of part) {
-				const message = fetched.get(String(uid));
-				if (!message) {
-					missing += 1;
-					continue;
-				}
-				let destination = folder.destination;
-				if (gmail) {
-					const target = gmailLabelDestination(message.labels ?? []);
-					if (target.userLabels > 1) multiLabel += 1;
-					if (!target.destination) {
-						drafts += 1;
-						continue;
-					}
-					destination = await labelDestination(run, labelDestinations, target.destination);
-				}
-				const filename = `${folder.sourceName}-${uid}.eml`;
-				groups.set(destination, [...(groups.get(destination) ?? []), { filename, fetched: message }]);
-			}
-			const result: HostImportResult = { imported: 0, skipped: 0, failed: 0, errors: [] };
-			for (const [destination, messages] of groups) {
-				const batch = await importFetched(run, destination, messages);
-				result.imported += batch.imported;
-				result.skipped += batch.skipped;
-				result.failed += batch.failed;
-				result.errors.push(...batch.errors);
-			}
-			const skipped = result.skipped + result.failed + missing + drafts;
+		place,
+		async (part, result) => {
+			const missing = result.missing + drafts;
+			const labelled = multiLabel;
+			drafts = 0;
+			multiLabel = 0;
 			const saved = await updateFolder(run, folder, {
 				processed: folder.processed + part.length,
 				imported: folder.imported + result.imported,
-				skipped: folder.skipped + skipped,
-				multiLabel: folder.multiLabel + multiLabel,
+				skipped: folder.skipped + result.skipped + result.failed + missing,
+				multiLabel: folder.multiLabel + labelled,
 				cursorUid: part[part.length - 1],
 			});
 			if (!saved) return false;
-			addChunkResult(run, part.length, { ...result, missing: missing + drafts });
+			addChunkResult(run, part.length, { ...result, missing });
 			return recordChunk(run, { ...run.progress, cursorUid: null, total: run.total, errors: run.errors });
 		},
 	);

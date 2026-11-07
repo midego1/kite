@@ -76,6 +76,12 @@ export type ImapSession = {
 		uids: string[],
 		options?: { gmailLabels?: boolean; messageIdHeader?: boolean },
 	): Promise<Map<string, ImapFetchedMessage>>;
+	/** `fetchMessages` handing each message to `onMessage` as soon as it is read, holding none (`ImapConnection`). */
+	streamMessages(
+		uids: string[],
+		options: { gmailLabels?: boolean },
+		onMessage: (uid: string, message: ImapFetchedMessage) => Promise<void>,
+	): Promise<void>;
 	/** Adds (`+`) or removes (`-`) `flags` on the open folder's messages, without untagged answers. */
 	storeFlags(uids: readonly number[], change: "+" | "-", flags: readonly string[]): Promise<void>;
 	/** `UID MOVE` to `folder` (its name as LIST returned it); needs the MOVE capability. */
@@ -197,6 +203,7 @@ export async function openImapSession(
 			return parseFetchFlags(await imap.command(`UID FETCH ${uids.join(",")} (UID FLAGS)`));
 		},
 		fetchMessages: (uids, options) => imap.fetchMessages(uids, options),
+		streamMessages: (uids, options, onMessage) => imap.streamMessages(uids, options, onMessage),
 		async storeFlags(uids, change, flags) {
 			await imap.command(`UID STORE ${uids.join(",")} ${change}FLAGS.SILENT (${flags.join(" ")})`, "IMAP STORE failed");
 		},

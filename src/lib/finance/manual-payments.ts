@@ -26,6 +26,7 @@ function beforeOf(row: PaymentRow) {
 		vendorKey: row.vendorKey,
 		amountMinor: row.amountMinor,
 		currency: row.currency,
+		docRef: row.docRef,
 		documentAt: row.documentAt.toISOString(),
 		docType: row.docType,
 		status: row.status,

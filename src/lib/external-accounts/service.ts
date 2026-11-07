@@ -13,7 +13,7 @@ import { auditExternalAccount, recordConnectionTest } from "./audit";
 import { testImapConnection, testSmtpConnection, type ImapBaseline } from "./connection-test";
 import type { ConnectionProblem } from "./connection-utils";
 import { ExternalAccountRefusal, externalAccountTablesReady } from "./errors";
-import { assertMailServerHost } from "./host-guard";
+import { assertMailServerHost } from "@/lib/net/host-guard";
 import { AccountInputError, changesSignIn, parseAccountInput, passwordFrom } from "./input-utils";
 import { addressDomain, findPreset, presetTrustsAuthResults } from "./presets-utils";
 import { appendRecentErrors } from "./recent-errors";

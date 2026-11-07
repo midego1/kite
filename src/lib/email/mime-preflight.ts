@@ -221,7 +221,7 @@ export function readPartFields(lines: string[], defaultType = "text/plain"): Par
 	const rawType = fields.get("content-type") ?? defaultType;
 	const type = parseStructuredHeader(rawType);
 	const disposition = parseStructuredHeader(fields.get("content-disposition") ?? "");
-	const multipart = /^multipart\//i.test(type.value);
+	const multipart = /^multipart\/./i.test(type.value);
 	return {
 		rawType,
 		type,
@@ -335,8 +335,12 @@ class PreflightScan {
 	private headerLine(start: number, end: number) {
 		this.headerBytes += end - start;
 		this.totalHeaderBytes += Math.max(end - start, HEADER_LINE_MIN_COST);
-		if (this.headerBytes > MIME_LIMITS.maxHeaderBytes || this.totalHeaderBytes > MIME_LIMITS.maxTotalHeaderBytes) {
+		if (this.headerBytes > MIME_LIMITS.maxHeaderBytes) {
 			this.reason = "Message rejected: header block exceeds 64 KiB.";
+			return;
+		}
+		if (this.totalHeaderBytes > MIME_LIMITS.maxTotalHeaderBytes) {
+			this.reason = "Message rejected: header blocks exceed 2 MiB in total.";
 			return;
 		}
 		const line = decodeHeaderLine(this.bytes.subarray(start, end));

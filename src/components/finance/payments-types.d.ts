@@ -34,6 +34,8 @@ export type ScanState = {
 	status: "running" | "done" | "failed";
 	scanned: number;
 	recorded: number;
+	/** Messages that could not be read and were passed over. */
+	skipped: number;
 	startedAt: string;
 	finishedAt: string | null;
 };

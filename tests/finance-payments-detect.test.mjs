@@ -6,6 +6,7 @@ const detect = await loadFinance("detect-utils");
 const payments = await loadFinance("payment-utils");
 const list = await loadFinance("payment-list-utils");
 const model = await loadFinance("model-utils");
+const detectDocs = await loadFinance("document-utils");
 
 const RECEIVED = "2026-11-03T10:00:00.000Z";
 
@@ -87,7 +88,7 @@ test("a one-off Stripe receipt lands as paid, USD 500.00, from the merchant, on 
 		documentOn: "2026-11-02",
 		attachmentId: null,
 		modelFields: [],
-		docRef: "1114-6093",
+		docRef: "1114-6093:50000USD",
 		mailRef: null,
 	});
 });
@@ -406,4 +407,60 @@ test("an invoice and a payment naming the same number pair first, whatever amoun
 		docRef: "INV-2",
 	});
 	assert.deepEqual([...list.pairedEntryIds([nearer, discounted])], ["b"]);
+});
+
+test("review 2: a paid receipt that mentions an unpaid balance of zero or a condition stays paid", () => {
+	const paid = [
+		["Your receipt #R-2001", "Amount paid €40.00\nUnpaid balance: €0.00"],
+		[
+			"Payment received for invoice INV-77",
+			"Thank you. €40.00 received.\nIf you have not paid by direct debit, nothing else is needed.",
+		],
+		["Betalingsbewijs #R-2001", "Betaald bedrag: € 40,00\nOnbetaald saldo: € 0,00"],
+		[
+			"Betaling ontvangen voor factuur 2026-77",
+			"We ontvingen € 40,00.\nAls u nog niet betaald heeft via incasso, hoeft u niets te doen.",
+		],
+		["Zahlungsbestätigung #R-2001", "Bezahlter Betrag: 40,00 €\nNoch nicht bezahlt: 0,00 €"],
+		[
+			"Zahlung erhalten für Rechnung 2026-77",
+			"Wir haben 40,00 € erhalten.\nFalls Sie noch nicht bezahlt haben, ist nichts weiter zu tun.",
+		],
+		["Your receipt from Shop #R-2002", "Amount paid: €40.00\nKeep this receipt as a reminder of your order."],
+	];
+	for (const [subject, body] of paid) {
+		const found = run({ from: "billing@shop.example", fromName: "Shop", subject, body });
+		assert.deepEqual([found?.docType, found?.status], ["payment", "paid"], subject);
+	}
+});
+
+test("review 2: what says the money is still owed, in the subject or on a line of its own", () => {
+	const docs = detectDocs;
+	assert.equal(docs.subjectSaysOwed("Reminder: invoice 2026-1101"), true);
+	assert.equal(docs.subjectSaysOwed("Herinnering: factuur nog niet betaald"), true);
+	assert.equal(docs.subjectSaysOwed("Your receipt"), false);
+	assert.equal(docs.bodySaysOwed("Invoice 2026-77 has not been paid\nAmount due €50.00"), true);
+	assert.equal(docs.bodySaysOwed("Rechnung 2026-77 ist noch nicht bezahlt: 50,00 €"), true);
+	assert.equal(docs.bodySaysOwed("Unpaid balance: €0.00"), false);
+	assert.equal(docs.bodySaysOwed("If you have not paid yet, use the link"), false);
+	assert.equal(docs.bodySaysOwed("Amount paid €40.00\nInvoice 2026-77 not paid"), false, "a paid label wins");
+	assert.equal(docs.bodySaysOwed("Keep this as a reminder"), false);
+});
+
+test("review 2: partial refunds and instalments under one number are separate rows; invoices collapse", () => {
+	const refund = (amount) =>
+		run({ subject: "Refund for order #A12345", body: `We refunded €${amount} to your card. Order #A12345.` });
+	assert.equal(refund("20.00")?.docRef, "A12345:2000EUR");
+	assert.equal(refund("15.00")?.docRef, "A12345:1500EUR");
+	const instalment = (amount) =>
+		run({ subject: "Payment received for invoice INV-500", body: `Amount paid: €${amount}\nInvoice INV-500` });
+	assert.notEqual(instalment("100.00")?.docRef, instalment("200.00")?.docRef);
+	assert.equal(payments.rowReference("invoice", "INV-500", { minor: 30_000, currency: "EUR" }), "INV-500");
+	assert.equal(payments.rowReference("payment", null, { minor: 1, currency: "EUR" }), null);
+	assert.equal(payments.referenceNumber("INV-500:10000EUR"), "INV-500");
+	assert.equal(payments.referenceNumber(null), null);
+	// An instalment still settles its invoice by number.
+	const invoice = entry({ id: "inv", docType: "invoice", status: "open", amountMinor: 30_000, docRef: "INV-500" });
+	const first = entry({ id: "p1", docType: "payment", amountMinor: 10_000, docRef: "INV-500:10000EUR" });
+	assert.deepEqual([...list.pairedEntryIds([invoice, first])], ["inv"]);
 });

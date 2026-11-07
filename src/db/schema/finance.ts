@@ -143,6 +143,8 @@ export const financePaymentScans = sqliteTable("finance_payment_scans", {
 	cursorId: text("cursor_id"),
 	scanned: integer("scanned").notNull().default(0),
 	recorded: integer("recorded").notNull().default(0),
+	/** Messages that could not be read twice in a row and were passed over. */
+	skipped: integer("skipped").notNull().default(0),
 	leaseUntil: integer("lease_until", { mode: "timestamp" }),
 	startedAt: integer("started_at", { mode: "timestamp" }).notNull(),
 	updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),

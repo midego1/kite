@@ -418,6 +418,8 @@ test("review probe: the scan follows the live gate and the Screener", async (t) 
 		await scanPayments({ kind: "finance.scan", userId: "owner" }, cronContext());
 	const view = await listPaymentsView(viewOf(owner));
 	assert.equal(view.scan.status, "done");
+	// The unreadable message is from an undecided sender in this Inbox-mode mailbox, so the gate leaves it out unread.
+	assert.equal(view.scan.skipped, 0);
 	assert.deepEqual(
 		rows(db).map((row) => row.vendor),
 		["Oldco"],
@@ -430,4 +432,75 @@ test("the row names where a payment's mail came from", () => {
 	assert.equal(senderOf("stripe.com:kestrel-atlas"), "stripe.com");
 	assert.equal(senderOf("mail:friend.example@gmail.com"), "friend.example@gmail.com");
 	assert.equal(senderOf("manual:hosting-group"), null);
+});
+
+test("review 2: a page the gate leaves out entirely does not hold the scan", async (t) => {
+	const { db } = await setup(t);
+	const own = { ...INVOICE, from: "Me <me@example.com>", subject: "Invoice copy" };
+	for (let index = 0; index < 205; index++)
+		insertMessage(db, { ...own, subject: `Invoice INV-${8000 + index} copy` }, { daysAgo: 10 });
+	const real = insertMessage(db, { ...INVOICE, subject: "Invoice INV-9001 from Hosting Co" }, { daysAgo: 2 });
+	await startScan("owner");
+	for (let run = 0; run < 6 && (await listPaymentsView(viewOf(owner))).scan.status === "running"; run++)
+		await scanPayments({ kind: "finance.scan", userId: "owner" }, cronContext());
+	const { scan } = await listPaymentsView(viewOf(owner));
+	assert.equal(scan.status, "done");
+	assert.equal(scan.scanned, 206, "every row read counts, also the ones the gate left out");
+	assert.deepEqual(
+		rows(db).map((row) => row.message_id),
+		[real],
+	);
+});
+
+test("review 2: two partial refunds under one order number are two rows", async (t) => {
+	const { db } = await setup(t);
+	const refund = (amount) => ({
+		from: "Shop <support@shop.example>",
+		subject: "Your refund for order #A12345",
+		body: `We refunded €${amount} to your card. Order #A12345.`,
+	});
+	await recordStep(insertMessage(db, refund("20.00")), refund("20.00"));
+	await recordStep(insertMessage(db, refund("15.00")), refund("15.00"));
+	await recordStep(insertMessage(db, refund("15.00")), refund("15.00"));
+	assert.deepEqual(
+		rows(db).map((row) => [row.doc_type, row.amount_minor]),
+		[
+			["refund", 2_000],
+			["refund", 1_500],
+		],
+		"the same refund mailed twice still counts once",
+	);
+});
+
+test("review 2: a message that fails once is retried, one that keeps failing is counted as skipped", async (t) => {
+	const { db, env } = await setup(t);
+	const flaky = insertMessage(db, { ...INVOICE, subject: "Invoice INV-7101 from Hosting Co" }, { daysAgo: 3 });
+	const broken = insertMessage(db, { ...INVOICE, subject: "Invoice INV-7102 from Hosting Co" }, { daysAgo: 2 });
+	db.db.prepare("UPDATE messages SET raw_r2_key = 'raw/' || id WHERE id IN (?, ?)").run(flaky, broken);
+	let flakyCalls = 0;
+	env.BUCKET = {
+		get: async (key) => {
+			if (key === `raw/${flaky}` && flakyCalls++ === 0) throw new Error("storage hiccup");
+			if (key === `raw/${broken}`) throw new Error("storage unavailable");
+			return null;
+		},
+	};
+	await startScan("owner");
+	for (let run = 0; run < 5 && (await listPaymentsView(viewOf(owner))).scan.status === "running"; run++)
+		await scanPayments({ kind: "finance.scan", userId: "owner" }, cronContext());
+	const { scan } = await listPaymentsView(viewOf(owner));
+	assert.deepEqual([scan.status, scan.recorded, scan.skipped], ["done", 1, 1]);
+	assert.deepEqual(
+		rows(db).map((row) => row.message_id),
+		[flaky],
+	);
+});
+
+test("review 2: a database with an earlier draft of migration 0094 reads as an update pending", async (t) => {
+	const { db } = await setup(t);
+	db.db.exec(`DROP TABLE finance_payments;
+		CREATE TABLE finance_payments (id text PRIMARY KEY NOT NULL, user_id text NOT NULL, message_id text);`);
+	assert.equal((await listPaymentsView(viewOf(owner))).migrationPending, true);
+	const result = await invokeCapability("finance", "recordPayment", stepInput("message-x", STRIPE), stepContext());
+	assert.deepEqual(result.output, { suggestions: [], skipped: "migration_pending" });
 });

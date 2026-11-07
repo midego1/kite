@@ -21,7 +21,7 @@ import {
 	REFUND_PHRASES,
 	phraseRegex,
 } from "./keywords-utils";
-import { REMINDER_PHRASE, UNPAID_PHRASE } from "./payment-keywords-utils";
+import { PAID_LABEL, REMINDER_PHRASE, UNPAID_PHRASE } from "./payment-keywords-utils";
 import type { DocType } from "./types";
 
 export type StepAttachment = { id: string; contentType: string; filename: string | null; size: number };
@@ -53,10 +53,36 @@ const RANK: Record<string, number> = { refund: 0, credit: 1, payment: 2, invoice
  * @public Exercised by the bundled unit tests.
  */
 export function docTypeOfText(text: string): Exclude<DocType, "failed_payment"> | null {
-	const found = PRECEDENCE.find((entry) => entry.pattern.test(text))?.docType ?? null;
-	// "Has not been paid" and payment reminders match "paid" but ask for money: they are invoices.
-	if (found === "payment" && (UNPAID_PHRASE.test(text) || REMINDER_PHRASE.test(text))) return "invoice";
-	return found;
+	return PRECEDENCE.find((entry) => entry.pattern.test(text))?.docType ?? null;
+}
+
+const ZERO_AMOUNT = /(?<![\d.,])0(?:[.,]0{1,3})?(?![\d.,]*[1-9])/u;
+const CONDITIONAL = phraseRegex(["if", "unless", "als", "indien", "wenn", "falls", "sofern", "si", "sauf"]);
+
+/** A subject that says the money is still owed: "has not been paid", "nog niet betaald", or a payment reminder. */
+export function subjectSaysOwed(subject: string): boolean {
+	return UNPAID_PHRASE.test(subject) || REMINDER_PHRASE.test(subject);
+}
+
+/**
+ * A body that says the money is still owed: a line with unpaid wording that is neither a zero balance ("Unpaid
+ * balance: €0.00") nor a condition ("if you have not paid by direct debit"), and no paid label ("amount paid", "betaald
+ * bedrag", "bezahlter Betrag") holding an amount. Reminder words in a body are not enough: receipts say "keep this as a
+ * reminder".
+ */
+export function bodySaysOwed(body: string): boolean {
+	if (PAID_LABEL.test(body)) return false;
+	return body
+		.split("\n")
+		.some((line) => UNPAID_PHRASE.test(line) && !ZERO_AMOUNT.test(line) && !CONDITIONAL.test(line));
+}
+
+/** "Paid" wording that asks for money is an invoice: in the subject (unpaid or reminder words) or the body's own lines. */
+function owedType(
+	found: Exclude<DocType, "failed_payment"> | null,
+	owed: boolean,
+): Exclude<DocType, "failed_payment"> | null {
+	return found === "payment" && owed ? "invoice" : found;
 }
 
 /** The document type the attachment names suggest, by the same precedence.
@@ -183,11 +209,11 @@ export type DocumentClass = { docType: DocType; confident: boolean };
  */
 export function chooseDocType(input: Omit<ClassifyInput, "hasAmount" | "dates">): DocumentClass | null {
 	if (input.paymentFailed) return { docType: "failed_payment", confident: true };
-	const fromSubject = docTypeOfText(input.subject);
+	const fromSubject = owedType(docTypeOfText(input.subject), subjectSaysOwed(input.subject));
 	if (fromSubject) return { docType: fromSubject, confident: true };
 	const fromFiles = docTypeOfFilenames(input.attachments);
 	if (fromFiles) return { docType: fromFiles, confident: true };
-	const fromBody = docTypeOfText(input.excerpt);
+	const fromBody = owedType(docTypeOfText(input.excerpt), bodySaysOwed(input.excerpt));
 	return fromBody ? { docType: fromBody, confident: false } : null;
 }
 

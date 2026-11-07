@@ -99,7 +99,14 @@ export type HostBackfillMessage = {
 	attachments: { id: string; contentType: string; filename: string | null; size: number }[];
 };
 
-export type HostBackfillPage = { messages: HostBackfillMessage[]; next: { receivedAt: string; id: string } | null };
+export type HostBackfillPage = {
+	/** The rows that passed the triage gate. */
+	messages: HostBackfillMessage[];
+	/** How many rows were read, the gated-out ones included. */
+	read: number;
+	/** The cursor after the last row read (gated out or not), or null when the range is done. */
+	next: { receivedAt: string; id: string } | null;
+};
 
 export type HostSuggestion = {
 	id: string;

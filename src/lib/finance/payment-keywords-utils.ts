@@ -111,6 +111,19 @@ export const UNPAID_PHRASE = phraseRegex([
 	"pendiente de pago",
 ]);
 
+/** A label that says the amount next to it was paid: a receipt, even when it also mentions an unpaid balance. */
+export const PAID_LABEL = phraseRegex([
+	"amount paid",
+	"total paid",
+	"you paid",
+	"amount charged",
+	"betaald bedrag",
+	"bezahlter betrag",
+	"montant payé",
+	"importe pagado",
+	"total pagado",
+]);
+
 /** Payment reminders and dunning, which ask for money rather than confirm it: an open invoice, never a payment. */
 export const REMINDER_PHRASE = phraseRegex([
 	"reminder",

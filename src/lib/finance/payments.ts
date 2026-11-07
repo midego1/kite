@@ -12,15 +12,24 @@ const PAYMENT_TABLES = ["finance_payments", "finance_payment_scans"];
 
 const db = () => getDb(getEnv());
 
-/** Whether migration 0094 is applied (and 0063 before it); reads only `sqlite_master`. */
+/**
+ * Whether migration 0094 is applied (and 0063 before it); reads only `sqlite_master`. The columns added while 0094 was
+ * still a pull request are checked too, so a database that applied an earlier draft reads as not ready instead of
+ * failing every insert.
+ */
 export async function paymentTablesReady(): Promise<boolean> {
-	const row = await getEnv()
+	const { results } = await getEnv()
 		.DB.prepare(
-			`SELECT count(*) AS present FROM sqlite_master WHERE type = 'table' AND name IN (${PAYMENT_TABLES.map(() => "?").join(", ")})`,
+			`SELECT name, sql FROM sqlite_master WHERE type = 'table' AND name IN (${PAYMENT_TABLES.map(() => "?").join(", ")})`,
 		)
 		.bind(...PAYMENT_TABLES)
-		.first<{ present: number }>();
-	return Number(row?.present ?? 0) === PAYMENT_TABLES.length && (await financeTablesReady());
+		.all<{ name: string; sql: string | null }>();
+	const sqlOf = (name: string) => results.find((row) => row.name === name)?.sql ?? "";
+	return (
+		sqlOf("finance_payments").includes("`mail_ref`") &&
+		sqlOf("finance_payment_scans").includes("`skipped`") &&
+		(await financeTablesReady())
+	);
 }
 
 /** Runs a query on the payment tables; before migration 0094 it refuses with 409 instead of failing. */

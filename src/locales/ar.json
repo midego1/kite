@@ -2,6 +2,7 @@
 	"\"{invalid}\" is not a valid email address": "\"{invalid}\" ليس عنوان بريد إلكتروني صالحًا",
 	"(no subject)": "(بلا موضوع)",
 	"(opens in a new tab)": "(يُفتح في علامة تبويب جديدة)",
+	"{skipped, plural, one {# message} other {# messages}} could not be read.": "{skipped, plural, zero {لم تتعذّر قراءة أي رسالة} one {تعذّرت قراءة رسالة واحدة} two {تعذّرت قراءة رسالتين} few {تعذّرت قراءة # رسائل} many {تعذّرت قراءة # رسالة} other {تعذّرت قراءة # رسالة}}.",
 	"1 sender is now blocked.": "حُظر مرسل واحد الآن.",
 	"A folder with that name already exists.": "يوجد مجلد بهذا الاسم بالفعل.",
 	"A link that is not in your text or the conversation was removed.": "أُزيل رابط غير موجود في نصك أو في المحادثة.",

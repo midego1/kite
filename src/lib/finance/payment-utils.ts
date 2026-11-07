@@ -1,5 +1,5 @@
 import type { Analysis } from "./detect-utils";
-import { isDocumentAttachment } from "./document-utils";
+import { bodySaysOwed, isDocumentAttachment, subjectSaysOwed } from "./document-utils";
 import { SUBJECT_KEYWORD } from "./keywords-utils";
 import {
 	BRACKETED_NUMBER,
@@ -8,9 +8,7 @@ import {
 	MARKETING_PHRASE,
 	MONEY_LABEL,
 	PERCENT_OFF,
-	REMINDER_PHRASE,
 	REPLY_OR_FORWARD,
-	UNPAID_PHRASE,
 } from "./payment-keywords-utils";
 import { registrableDomain, senderAddress } from "./vendor-utils";
 import type { DetectStepInput, ModelField } from "./types";
@@ -127,7 +125,7 @@ export function detectPayment(
 	if (paymentScore(analysis, input, confident) < PAYMENT_WEIGHT) return null;
 	// A type the model filled may still be "paid" for a mail that says it was not.
 	const docType =
-		document.docType === "payment" && (UNPAID_PHRASE.test(text) || REMINDER_PHRASE.test(subject))
+		document.docType === "payment" && (subjectSaysOwed(subject) || bodySaysOwed(input.message.textExcerpt ?? ""))
 			? "invoice"
 			: document.docType;
 	return {
@@ -140,7 +138,7 @@ export function detectPayment(
 		documentOn: document.documentOn,
 		attachmentId: document.attachmentId,
 		modelFields: analysis.modelFields.filter((field) => ["vendor", "amount", "currency", "docType"].includes(field)),
-		docRef: documentReference(subject, text),
+		docRef: rowReference(docType, documentReference(subject, text), analysis.amount),
 		mailRef: messageReference(input.headers.messageId),
 	};
 }
@@ -156,6 +154,24 @@ export function documentReference(subject: string, text: string): string | null 
 	const code = numbered ? /[A-Z0-9][A-Z0-9-]{3,40}(?=\]?$)/iu.exec(numbered.trim())?.[0] : undefined;
 	return code ? code.toUpperCase().slice(0, MAX_REF) : null;
 }
+
+/**
+ * What a row's number dedupes on. An invoice collapses on its number alone, so a reminder is not a second invoice. A
+ * payment, refund or credit note often names the order or invoice it belongs to, and one order can have several
+ * (partial refunds, instalments), so its amount and currency are part of it: `A12345:1500EUR`.
+ * @public Exercised by the bundled unit tests.
+ */
+export function rowReference(
+	docType: PaymentDocType,
+	reference: string | null,
+	amount: { minor: number; currency: string },
+): string | null {
+	if (!reference) return null;
+	return docType === "invoice" ? reference : `${reference}:${amount.minor}${amount.currency}`;
+}
+
+/** The document number a row names, without the amount a payment's reference carries. */
+export const referenceNumber = (docRef: string | null | undefined): string | null => docRef?.split(":")[0] || null;
 
 /** The `Message-ID` without angle brackets, lower case; null when there is none.
  * @public Exercised by the bundled unit tests.

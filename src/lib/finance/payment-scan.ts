@@ -35,6 +35,8 @@ export type ScanView = {
 	status: "running" | "done" | "failed";
 	scanned: number;
 	recorded: number;
+	/** Messages that could not be read and were passed over. */
+	skipped: number;
 	startedAt: string;
 	finishedAt: string | null;
 };
@@ -47,6 +49,7 @@ export function scanView(row: ScanRow | null): ScanView | null {
 		status: row.status,
 		scanned: row.scanned,
 		recorded: row.recorded,
+		skipped: row.skipped,
 		startedAt: row.startedAt.toISOString(),
 		finishedAt: row.finishedAt ? row.finishedAt.toISOString() : null,
 	};
@@ -86,6 +89,7 @@ export async function startScan(userId: string, now = new Date()): Promise<ScanR
 		cursorId: null,
 		scanned: 0,
 		recorded: 0,
+		skipped: 0,
 		leaseUntil: null,
 		startedAt: now,
 		updatedAt: now,
@@ -130,7 +134,37 @@ async function ownerContext(cron: CapabilityCallContext, userId: string): Promis
 	});
 }
 
-type Progress = { scanned: number; recorded: number; cursor: { receivedAt: string; id: string } | null; done: boolean };
+type Progress = {
+	scanned: number;
+	recorded: number;
+	skipped: number;
+	cursor: { receivedAt: string; id: string } | null;
+	done: boolean;
+};
+
+/** Reads one message and records its payment; true when a row was written. */
+async function recordMessage(ctx: CapabilityCallContext, messageId: string): Promise<boolean> {
+	const input = await moduleHost.mail.stepInput(ctx, "finance", { messageId, capability: STEP_CAPABILITY });
+	return !!input && (await recordPaymentFromInput(ctx, input as unknown as DetectStepInput, "scan")) === "recorded";
+}
+
+/** One retry for a passing failure; a message that fails twice is passed over and counted, never retried forever. */
+async function recordWithRetry(
+	ctx: CapabilityCallContext,
+	messageId: string,
+): Promise<"recorded" | "none" | "skipped"> {
+	for (let attempt = 0; attempt < 2; attempt++) {
+		try {
+			return (await recordMessage(ctx, messageId)) ? "recorded" : "none";
+		} catch (error) {
+			if (attempt === 1) {
+				log.warn("finance.scan_message_failed", { messageId, error });
+				return "skipped";
+			}
+		}
+	}
+	return "skipped";
+}
 
 /** One run: a page of the owner's mail after the cursor, the prefilter, then the full step input for the rest. */
 async function scanPage(ctx: CapabilityCallContext, row: ScanRow, started: number): Promise<Progress> {
@@ -143,26 +177,21 @@ async function scanPage(ctx: CapabilityCallContext, row: ScanRow, started: numbe
 	});
 	let scanned = 0;
 	let recorded = 0;
+	let skipped = 0;
 	let cursor = after;
 	for (const message of page.messages) {
 		// At least one message per run, so a slow listing still moves the cursor.
-		if (scanned > 0 && Date.now() - started > RUN_BUDGET_MS) return { scanned, recorded, cursor, done: false };
+		if (scanned > 0 && Date.now() - started > RUN_BUDGET_MS) return { scanned, recorded, skipped, cursor, done: false };
 		scanned += 1;
 		cursor = { receivedAt: message.receivedAt, id: message.id };
 		if (!worthScanning(message)) continue;
-		try {
-			const input = await moduleHost.mail.stepInput(ctx, "finance", {
-				messageId: message.id,
-				capability: STEP_CAPABILITY,
-			});
-			if (input && (await recordPaymentFromInput(ctx, input as unknown as DetectStepInput, "scan")) === "recorded")
-				recorded += 1;
-		} catch (error) {
-			// One unreadable message never holds the scan: it is skipped and the cursor moves past it.
-			log.warn("finance.scan_message_failed", { messageId: message.id, error });
-		}
+		const outcome = await recordWithRetry(ctx, message.id);
+		if (outcome === "recorded") recorded += 1;
+		else if (outcome === "skipped") skipped += 1;
 	}
-	return { scanned, recorded, cursor, done: page.next === null };
+	// The whole page was handled: move past every row read, also the ones the gate left out, so a page the gate empties
+	// cannot hold the scan.
+	return { scanned: page.read, recorded, skipped, cursor: page.next ?? cursor, done: page.next === null };
 }
 
 /**
@@ -191,6 +220,7 @@ async function saveProgress(row: ScanRow, progress: Progress, now: Date): Promis
 			cursorId: progress.cursor?.id ?? row.cursorId,
 			scanned: row.scanned + progress.scanned,
 			recorded: await recordedSince(row.userId, row.startedAt),
+			skipped: row.skipped + progress.skipped,
 			leaseUntil: null,
 			updatedAt: now,
 			...(progress.done ? { status: "done" as const, finishedAt: now } : {}),

@@ -2,6 +2,7 @@
 	"\"{invalid}\" is not a valid email address": "\"{invalid}\" is geen geldig e-mailadres",
 	"(no subject)": "(geen onderwerp)",
 	"(opens in a new tab)": "(opent in een nieuw tabblad)",
+	"{skipped, plural, one {# message} other {# messages}} could not be read.": "{skipped, plural, one {# bericht kon} other {# berichten konden}} niet worden gelezen.",
 	"1 sender is now blocked.": "1 afzender is nu geblokkeerd.",
 	"A folder with that name already exists.": "Er bestaat al een map met die naam.",
 	"A link that is not in your text or the conversation was removed.": "Een link die niet in je tekst of het gesprek staat, is verwijderd.",

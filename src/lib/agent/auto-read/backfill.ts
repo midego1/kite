@@ -144,7 +144,11 @@ async function passingGate(
 		});
 		return gate === null || gate === "auto_submitted";
 	});
-	const pending = await screenerPendingRows(getDb(env), gated);
+	// Archived mail from an undecided sender was never read by live triage either, so it counts as received here.
+	const pending = await screenerPendingRows(
+		getDb(env),
+		gated.map((row) => (row.status === "archived" ? { ...row, status: "received" } : row)),
+	);
 	return new Set(gated.filter((row) => !pending.has(row.id)).map((row) => row.id));
 }
 
@@ -175,10 +179,10 @@ export async function backfillMessages(
 	moduleId: ModuleId,
 	query: HostBackfillQuery,
 ): Promise<HostBackfillPage> {
-	if (!ctx.viewer) return { messages: [], next: null };
+	if (!ctx.viewer) return { messages: [], read: 0, next: null };
 	const env = getEnv();
 	const eligible = await eligibleMailboxes(env, ctx.viewer, moduleId, query.capability);
-	if (eligible.length === 0) return { messages: [], next: null };
+	if (eligible.length === 0) return { messages: [], read: 0, next: null };
 	const limit = Math.max(1, Math.min(MAX_PAGE, Math.floor(query.limit)));
 	const since = new Date(query.since);
 	const after = query.after ? { at: new Date(query.after.receivedAt), id: query.after.id } : null;
@@ -227,6 +231,7 @@ export async function backfillMessages(
 	const last = rows[rows.length - 1];
 	return {
 		messages: page,
+		read: rows.length,
 		next: rows.length === limit && last ? { receivedAt: last.createdAt.toISOString(), id: last.id } : null,
 	};
 }

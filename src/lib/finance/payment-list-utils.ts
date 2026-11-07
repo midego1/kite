@@ -1,4 +1,5 @@
 import { daysBetween } from "./date-utils";
+import { referenceNumber } from "./payment-utils";
 import { pairedDocumentIds, type LedgerEntry } from "./totals-utils";
 import type { DocType } from "./types";
 
@@ -100,7 +101,7 @@ export function pairedEntryIds(entries: readonly PaymentListEntry[]): Set<string
 				!paired.has(entry.id) &&
 				entry.group === payment.group &&
 				entry.currency === payment.currency &&
-				entry.docRef === payment.docRef,
+				referenceNumber(entry.docRef) === referenceNumber(payment.docRef),
 		);
 		if (!invoice) continue;
 		paired.add(invoice.id);

@@ -104,6 +104,21 @@ const resultOf = (row: PaymentRow): Record<string, JsonValue> => ({
 	...(row.messageId ? { ref: { kind: "mail:message", id: row.messageId } } : {}),
 });
 
+/**
+ * Writes a correction or its undo; 409 when the vendor, type and document number (or the Message-ID) would repeat
+ * another row's, for example after another row took the values an undo puts back.
+ */
+async function updateOrRefuse(userId: string, id: string, columns: Parameters<typeof updatePayment>[2]): Promise<void> {
+	try {
+		await updatePayment(userId, id, columns);
+	} catch (error) {
+		const text = error instanceof Error ? `${error.message} ${String(error.cause ?? "")}` : "";
+		if (/UNIQUE constraint failed/i.test(text))
+			throw new FinanceRefusal(409, "Another payment already records this document");
+		throw error;
+	}
+}
+
 type RawCall =
 	| { op: "execute"; actionId: string; input?: JsonValue; before?: JsonValue }
 	| { op: "undo" | "authorize_undo"; actionId: string; inverse: { inverse: JsonValue } };
@@ -133,7 +148,7 @@ async function run<Input>(
 	if (!inverse.success) throw new FinanceRefusal(409, "This change cannot be undone");
 	if (inverse.data.userId !== viewer.userId) throw new FinanceRefusal(403, "Only the owner can change this payment");
 	if (call.op === "undo")
-		await updatePayment(inverse.data.userId, inverse.data.paymentId, columnsOf(inverse.data.previous));
+		await updateOrRefuse(inverse.data.userId, inverse.data.paymentId, columnsOf(inverse.data.previous));
 	return { result: {}, inverse: null };
 }
 
@@ -164,15 +179,7 @@ async function requirePayment(userId: string, id: string): Promise<PaymentRow> {
 export const updatePaymentAction = paymentAction(updateInput, async ({ userId, input, before }) => {
 	const row = await requirePayment(userId, input.paymentId);
 	const prior = priorOf(before, row);
-	try {
-		await updatePayment(userId, row.id, correctedColumns(row, input.fields));
-	} catch (error) {
-		// The vendor, type and document number (or the vendor key) would repeat another row's.
-		const text = error instanceof Error ? `${error.message} ${String(error.cause ?? "")}` : "";
-		if (/UNIQUE constraint failed/i.test(text))
-			throw new FinanceRefusal(409, "Another payment already records this document");
-		throw error;
-	}
+	await updateOrRefuse(userId, row.id, correctedColumns(row, input.fields));
 	const { removedAt: _removed, ...previous } = prior;
 	return { result: resultOf(row), inverse: { userId, paymentId: row.id, previous } };
 });

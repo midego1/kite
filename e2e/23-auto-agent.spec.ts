@@ -1141,7 +1141,10 @@ test.describe("triage scheduling", () => {
 		const account = await suggestAccount("trn");
 		try {
 			// Money Watch reads automatic mail while its switch is on; with it off nothing opts in to auto-replies.
-			await setAutonomy(account, { autonomy: "suggest", capabilities: { modules: { subscriptions: false } } });
+			await setAutonomy(account, {
+				autonomy: "suggest",
+				capabilities: { modules: { subscriptions: false, payments: false } },
+			});
 			const token = uniqueToken("ineligible");
 			const senders = [account.address, "MAILER-DAEMON@relay.outside.test", "postmaster@relay.outside.test"];
 			for (const [index, from] of senders.entries())
@@ -1271,7 +1274,10 @@ test.describe("triage scheduling", () => {
 	async function deliverForTriage(restore: () => Promise<void>, prefix: string, text: string) {
 		const account = await suggestAccount(prefix);
 		// With a module step running, a model that fails for good no longer fails the job, so these core retry checks turn the steps off.
-		await setAutonomy(account, { autonomy: "suggest", capabilities: { modules: { subscriptions: false } } });
+		await setAutonomy(account, {
+			autonomy: "suggest",
+			capabilities: { modules: { subscriptions: false, payments: false } },
+		});
 		const subject = uniqueToken(prefix);
 		const message = await deliverInbound(account.api, {
 			from: "Customer <customer@outside.test>",
@@ -1292,7 +1298,10 @@ test.describe("triage scheduling", () => {
 		const account = await suggestAccount("trw");
 		try {
 			// With no active module extension the request must stay exactly as it was before extensions.
-			await setAutonomy(account, { autonomy: "suggest", capabilities: { modules: { subscriptions: false } } });
+			await setAutonomy(account, {
+				autonomy: "suggest",
+				capabilities: { modules: { subscriptions: false, payments: false } },
+			});
 			const nonces: string[] = [];
 			for (const index of [1, 2]) {
 				const message = await deliverInbound(account.api, {
@@ -1348,7 +1357,7 @@ test.describe("triage scheduling", () => {
 			await setAutonomy(account, {
 				autonomy: "suggest",
 				triageModelId: "fake-triage",
-				capabilities: { modules: { subscriptions: false } },
+				capabilities: { modules: { subscriptions: false, payments: false } },
 			});
 			const message = await deliverInbound(account.api, {
 				from: "Customer <customer@outside.test>",
@@ -1499,7 +1508,7 @@ test.describe("triage scheduling", () => {
 	 * Money Watch's step reads every message and still runs when the model is refused, which completes the job
 	 * instead of skipping it; with its switch off no module step is due.
 	 */
-	const NO_MODULE_STEPS = { modules: { subscriptions: false } };
+	const NO_MODULE_STEPS = { modules: { subscriptions: false, payments: false } };
 
 	async function expectSkipped(
 		account: { api: APIRequestContext; mailboxId: string; address: string },

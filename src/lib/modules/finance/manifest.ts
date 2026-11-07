@@ -5,7 +5,7 @@ export const financeManifest: ModuleManifest = {
 	id: "finance",
 	name: financeClientData.name,
 	description:
-		"Finds subscriptions in receipts and invoices, keeps their invoices, payments and refunds, and reminds you before they renew.",
+		"Finds subscriptions in receipts and invoices, keeps their invoices, payments and refunds, records the payments that arrive by mail, and reminds you before they renew.",
 	runtime: "builtin",
 	dependsOn: [],
 	defaultEnabled: true,
@@ -40,8 +40,11 @@ export const financeManifest: ModuleManifest = {
 	jmapCapabilities: [],
 	searchSections: financeClientData.searchSections ?? [],
 	messageStatuses: [],
-	queueMessageTypes: [],
-	cronTasks: [{ name: "remindRenewals", schedule: "*/5 * * * *", capability: "remindRenewals" }],
+	queueMessageTypes: [{ kind: "finance.scan", queue: "agent", capability: "scanPayments", metricClass: "finance" }],
+	cronTasks: [
+		{ name: "remindRenewals", schedule: "*/5 * * * *", capability: "remindRenewals" },
+		{ name: "resumePaymentScans", schedule: "*/5 * * * *", capability: "resumePaymentScans" },
+	],
 	actionLabels: {
 		create_subscription: "Started tracking a subscription",
 		"create_subscription:update": "Updated a tracked subscription from a new invoice",
@@ -60,6 +63,8 @@ export const financeManifest: ModuleManifest = {
 		"record_document:credit": "Recorded a credit note",
 		"record_document:refund": "Recorded a refund",
 		delete_document: "Removed a subscription document",
+		update_payment: "Changed a payment",
+		remove_payment: "Removed a payment",
 	},
 	reasonTexts: {
 		...SUBSCRIPTION_REASONS,

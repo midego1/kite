@@ -246,6 +246,7 @@ test("triage steps list in order for modules that are on", () => {
 		[
 			["calendar", "invite", "invite_attachment"],
 			["finance", "detect", undefined],
+			["finance", "recordPayment", undefined],
 		],
 	);
 });
@@ -277,6 +278,7 @@ test("triage steps carry their automatic opt-in and switch key", () => {
 		[
 			["calendar", false, null],
 			["finance", true, "subscriptions"],
+			["finance", true, "payments"],
 		],
 	);
 });
@@ -305,17 +307,29 @@ test("due steps: switched on, with their fact, and only opted-in steps on a step
 		steps
 			.selectDueSteps(all, { inviteAttachments: 1, capabilities: CORE_CAPABILITIES, automaticOnly: false, ...input })
 			.map((step) => step.capability);
-	assert.deepEqual(due({}), ["plainStep", "invite", "detect", "scan"]);
-	assert.deepEqual(due({ inviteAttachments: 0 }), ["plainStep", "detect", "scan"]);
-	assert.deepEqual(due({ automaticOnly: true }), ["detect", "scan"]);
+	assert.deepEqual(due({}), ["plainStep", "invite", "detect", "scan", "recordPayment"]);
+	assert.deepEqual(due({ inviteAttachments: 0 }), ["plainStep", "detect", "scan", "recordPayment"]);
+	assert.deepEqual(due({ automaticOnly: true }), ["detect", "scan", "recordPayment"]);
 	assert.deepEqual(due({ capabilities: { ...CORE_CAPABILITIES, modules: { gadgets: false } } }), [
 		"plainStep",
 		"invite",
 		"detect",
+		"recordPayment",
 	]);
-	const off = { gadgets: false, subscriptions: false };
+	assert.deepEqual(due({ capabilities: { ...CORE_CAPABILITIES, modules: { payments: false } } }), [
+		"plainStep",
+		"invite",
+		"detect",
+		"scan",
+	]);
+	const off = { gadgets: false, subscriptions: false, payments: false };
 	assert.deepEqual(due({ automaticOnly: true, capabilities: { ...CORE_CAPABILITIES, modules: off } }), []);
-	assert.deepEqual(due({ capabilities: { ...CORE_CAPABILITIES, calendar: false } }), ["plainStep", "detect", "scan"]);
+	assert.deepEqual(due({ capabilities: { ...CORE_CAPABILITIES, calendar: false } }), [
+		"plainStep",
+		"detect",
+		"scan",
+		"recordPayment",
+	]);
 });
 
 test("a finished job's note names the refused model first, then the skipped modules", () => {
@@ -381,6 +395,7 @@ test("the wider step input carries the sender name, an 8 KB excerpt, extra facts
 			automatic: true,
 			noReply: false,
 			list: true,
+			muted: false,
 			spam: false,
 		},
 		headers: {
@@ -480,10 +495,14 @@ test("module actions register from their descriptors with the rules calendar use
 		"delete_event",
 		"delete_subscription",
 		"record_document",
+		"remove_payment",
 		"send_rsvp",
 		"set_subscription_status",
+		"update_payment",
 		"update_subscription",
 	]);
+	assert.deepEqual(registry.owners.update_payment, { moduleId: "finance", capability: "updatePayment" });
+	assert.deepEqual(registry.owners.remove_payment, { moduleId: "finance", capability: "removePayment" });
 	assert.deepEqual(registry.owners.create_subscription, {
 		moduleId: "finance",
 		capability: "trackSubscription",

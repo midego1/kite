@@ -588,7 +588,7 @@ test("the client slice equals what the manifests declare", () => {
 		assert.deepEqual(suggestionKinds ?? [], kinds[manifest.id] ?? []);
 		assert.deepEqual(
 			(triageSwitches ?? []).map((item) => item.key),
-			manifest.id === "finance" ? ["subscriptions"] : [],
+			manifest.id === "finance" ? ["subscriptions", "payments"] : [],
 		);
 		assert.deepEqual(Object.keys(suggestionKindMeta ?? {}), suggestionKinds ?? []);
 		assert.deepEqual(

@@ -53,6 +53,7 @@ const BACKUP_TABLES: DatabaseBackupTable[] = [
 	"booking_appointments",
 	"finance_subscriptions",
 	"finance_charges",
+	"finance_payments",
 	"drive_items",
 	"drive_shares",
 	"drive_links",
@@ -149,6 +150,9 @@ const INTERNAL_TABLES = [
 	// Storage migration jobs: transient work that points at the live stores, so replaying one into a
 	// restored database would restart a copy between stores that may no longer match.
 	"storage_migrations",
+	// The bookkeeping of a Money Watch "Scan last 90 days" (migration 0094): a cursor over the mail it was started on,
+	// meaningless in another database.
+	"finance_payment_scans",
 	// The direct-uploads setup note and the dismissed reminder (migration 0085): the outcome of this deployment's own
 	// R2 setup, not user data, so a restore into another install must not carry it over.
 	"storage_state",

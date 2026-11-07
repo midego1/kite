@@ -135,3 +135,46 @@ export function vendorKey(from: string, vendor: string): string | null {
 	const name = slug(vendor);
 	return name ? `${domain}:${name}`.slice(0, 120) : domain;
 }
+
+/** Where a processor's receipt names the merchant: "Your receipt from Acme #1234", "Your Acme receipt [#1234]". */
+const MERCHANT_IN_SUBJECT = [
+	/^\s*(?:your\s+)?(?:receipt|invoice|refund)\s+from\s+(.{2,80}?)\s*(?:[#[(]|$)/iu,
+	/^\s*your\s+(.{2,80}?)\s+(?:receipt|invoice|refund)(?![\p{L}])/iu,
+];
+const MERCHANT_IN_BODY = /(?:^|\n)[ \t]*(?:receipt|invoice|refund)\s+from\s+([^\n]{2,80})/iu;
+
+/** The processor's own name, as its display name or without one: "Stripe", "PayPal", "Paddle.com". */
+function genericProcessorName(name: string, domain: string): boolean {
+	const label = domain.split(".")[0] ?? "";
+	const plain = name.toLowerCase().replace(/[^a-z]/g, "");
+	return !plain || plain === label || plain === `${label}com` || plain === `${label}payments`;
+}
+
+function merchantFrom(text: string | null, patterns: readonly RegExp[]): string {
+	for (const pattern of patterns) {
+		const found = pattern.exec((text ?? "").slice(0, 300))?.[1];
+		const name = found ? cleanVendorName(found.replace(/[.!,;:]+$/u, "")) : "";
+		if (name) return name;
+	}
+	return "";
+}
+
+/**
+ * The vendor of a message: as `vendorName`, except that mail a payment processor sends for a merchant under its own
+ * name ("Stripe <receipts+acct_…@stripe.com>") names the merchant the receipt is from, taken from the subject or a
+ * "Receipt from …" line, so the vendor and its key are the merchant's, not the processor's (spec §25.1).
+ */
+export function messageVendor(
+	fromName: string | null,
+	from: string,
+	subject: string | null,
+	excerpt: string | null,
+): { vendor: string; fromDomain: boolean } {
+	const named = vendorName(fromName, from);
+	const domain = registrableDomain(senderDomain(from));
+	if (!PROCESSOR_DOMAINS.has(domain) || !genericProcessorName(named.fromDomain ? "" : named.vendor, domain))
+		return named;
+	const merchant = merchantFrom(subject, MERCHANT_IN_SUBJECT) || merchantFrom(excerpt, [MERCHANT_IN_BODY]);
+	if (!merchant || genericProcessorName(merchant, domain)) return named;
+	return { vendor: merchant, fromDomain: false };
+}

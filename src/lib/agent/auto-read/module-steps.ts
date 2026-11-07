@@ -96,6 +96,7 @@ async function stepInput(input: StepRunInput): Promise<Record<string, JsonValue>
 				bodyText: input.bodyText,
 				attachments,
 				model: input.model,
+				muted: (input.capabilities.mutedSenders ?? []).includes(input.facts.senderAddress),
 			}),
 		),
 	) as Record<string, JsonValue>;

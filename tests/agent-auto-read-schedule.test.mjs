@@ -166,7 +166,7 @@ test("ineligible mail gets no triage job", async (t) => {
 	// With no step opted in to automatic mail, Auto-Submitted mail is ineligible like the rest.
 	db.db
 		.prepare("UPDATE mailbox_agent_settings SET capabilities = ? WHERE mailbox_id = 'mailbox-a'")
-		.run(JSON.stringify({ modules: { subscriptions: false } }));
+		.run(JSON.stringify({ modules: { subscriptions: false, payments: false } }));
 	const cases = [
 		{ status: "spam" },
 		{ status: "trash" },

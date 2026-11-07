@@ -29,7 +29,7 @@ import {
 	TOTAL_PHRASE,
 	TRIAL_PHRASE,
 } from "./keywords-utils";
-import { cleanText, senderLocalPart, senderUsesUsDomain, vendorKey, vendorName } from "./vendor-utils";
+import { cleanText, messageVendor, senderLocalPart, senderUsesUsDomain, vendorKey } from "./vendor-utils";
 import type {
 	DetectStepInput,
 	Cycle,
@@ -194,11 +194,11 @@ export function skipsMessage(facts: Pick<DetectStepInput["facts"], "phishing" | 
 /** Reads one message's billing evidence; null when the sender has no domain to key a vendor by. */
 export function analyzeMessage(input: DetectStepInput, timeZone: string): Analysis | null {
 	const { message } = input;
-	const { vendor, fromDomain } = vendorName(message.fromName, message.from);
-	const key = vendor ? vendorKey(message.from, vendor) : null;
-	if (!key) return null;
 	const subject = (message.subject ?? "").slice(0, MAX_SUBJECT);
 	const excerpt = message.textExcerpt ?? "";
+	const { vendor, fromDomain } = messageVendor(message.fromName, message.from, subject, excerpt);
+	const key = vendor ? vendorKey(message.from, vendor) : null;
+	if (!key) return null;
 	const text = `${subject}\n${excerpt}`;
 	const amount = amountOf(text);
 	const dates: DateContext = {

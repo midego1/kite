@@ -107,7 +107,8 @@ async function withAttachmentText(
 	}
 }
 
-async function analyzeWithAttachments(ctx: CapabilityCallContext, raw: DetectStepInput) {
+/** The detector's analysis, with the text of the invoice PDF when the body had no amount (spec §6). */
+export async function analyzeWithAttachments(ctx: CapabilityCallContext, raw: DetectStepInput) {
 	const first = analyzeMessage(raw, ctx.timeZone);
 	if (!first) return { input: raw, deterministic: null };
 	const input = await withAttachmentText(ctx, raw, first);

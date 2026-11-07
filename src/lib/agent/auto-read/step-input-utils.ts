@@ -26,6 +26,8 @@ export type StepInputParts = {
 	bodyText: string;
 	attachments: StepAttachment[];
 	model: unknown;
+	/** The sender is one of the mailbox's muted senders. */
+	muted?: boolean;
 };
 
 /** At most 8,192 characters of the body, without splitting a surrogate pair; null when there is no text. @public Test-only: used inside this file, exported for tests. */
@@ -76,6 +78,7 @@ export function buildStepInput(parts: StepInputParts) {
 			noReply: facts.noReply,
 			list: facts.list,
 			spam: facts.spamVerdict === "spam",
+			muted: parts.muted === true,
 		},
 		headers: stepHeaders(parts.headers),
 		attachments: parts.attachments,

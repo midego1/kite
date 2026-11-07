@@ -21,7 +21,7 @@ Design principles:
 5. **The cancel link comes only from the `List-Unsubscribe` header**, never from the body, an attachment or a model, and it only opens on a click.
 6. **No Money Watch code in core.** Every core change in §16 is generic ("a module-owned suggestion kind", "a module sidebar item", "a module model extension"), so the next module (alerts, bills) reuses it. `tests/module-imports.test.mjs` keeps enforcing the boundary.
 
-Non-goals for this milestone: one-off purchases and general expense tracking (a receipt with no tracked or detectable subscription records nothing; this is an advanced, later feature, §23 Decisions, item 5), filing documents into Drive (a follow-up, §24), bank or card connections, currency conversion, automatic tracking without a click (waits for an Act level), server-side unsubscribe or cancellation requests, OCR of image receipts, any model request other than the one existing triage call (the module never calls a model itself, §5.7), the assistant suggesting "enable Money Watch" while it is off (milestone 19, item 5), REST `/api/v1` endpoints and write tools for the assistant.
+Non-goals for this milestone: general expense tracking beyond payments by mail (one-off receipts, invoices, refunds and credit notes found in mail are recorded in the Payments tab since §25; categories, budgets and bank data are not), filing documents into Drive (a follow-up, §24), bank or card connections, currency conversion, automatic tracking without a click (waits for an Act level), server-side unsubscribe or cancellation requests, OCR of image receipts, any model request other than the one existing triage call (the module never calls a model itself, §5.7), the assistant suggesting "enable Money Watch" while it is off (milestone 19, item 5), REST `/api/v1` endpoints and write tools for the assistant.
 
 ## 2. Module identity
 
@@ -993,7 +993,7 @@ The spec is approved as written, except for these decisions, which the sections 
 2. **Webhook events `finance.subscription.detected` and `finance.subscription.renewal_due`**, the `<id>.<record>.<event>` pattern.
 3. **The model extension is in v1** (§5.7): a generic, descriptor-declared extension of the triage request (C15) with a deterministic `wantsModel` hint (C16), validated and merged in the module, under every existing gate, delivered in M2b.
 4. **A basic document ledger is in v1** (§5.10, §7.2, §9, §12.2). `finance_charges` holds one row per money document (`invoice`, `payment`, `credit`, `refund`, `failed_payment`) linked to one tracked subscription, with a positive amount whose sign comes from the type, the document date, the stated period, the source message and a reference to the attachment that is the document, never a copy. One row per subscription, message and type. Detection classifies the type deterministically (and the model extension may fill `docType`); still at most one card per message; credits and refunds record the document and reduce totals but never change the price or renewal date. The view adds "paid in the last 12 months" per currency (payments plus unpaired invoices, minus refunds and unpaired credits) and the documents in each vendor's history; documents can be added by hand from any message.
-5. **One-off purchases and general expense tracking come later** (an advanced feature), not in this mission (§1).
+5. **One-off purchases and general expense tracking come later** (an advanced feature), not in this mission (§1). Superseded in part by §25 (approved 2026-11-07): payment documents found in mail, one-off or not, are recorded automatically in the Payments tab; general expense tracking (categories, budgets, bank data) stays out.
 6. **Automatic Drive filing is a follow-up after Drive ships** (§24): every ledger row with an attachment reference, including a backfill of earlier rows, is filed into the owner's Drive under `Finance/<vendor>/<year>/`. This mission adds only the unused nullable `filed_ref` column and calls no Drive code.
 7. **Migration 0063 (journal `idx` 66) is claimed by this mission**; `mission/attachments-once` runs in parallel with 0064 or later, and whichever merges second rebases its number, journal `idx` and the `tests/module-migration.test.mjs` "last migration" assertions (§7.3).
 
@@ -1053,3 +1053,95 @@ None.
 4. Its own path rules, if stricter than §24.1; the service then returns the final path and name, and Money Watch stores only the returned reference.
 
 The Money Watch side of the follow-up is then small: the filing call after recording actions, the cron task in the manifest, the drawer link, `filed_ref` reads and writes, unit tests for the path and name rules, and an e2e case that turns Drive on and sees earlier documents filed under `Finance/<vendor>/<year>/`. The ledger is small (one row per document), so the backfill scans by `finance_charges_user_idx` and needs no new index.
+
+## 25. Payments by mail (one-off documents)
+
+Status: Approved 2026-11-07 (owner request, Foreman design decisions). Written against `main` at `2d13042`. Claims migration 0094 (journal `idx` 97).
+
+Payments that arrive by mail land in Money Watch on their own, so there is one overview of what was paid, refunded or still owed by mail: a receipt for a one-off purchase, an invoice that still has to be paid, a refund or a credit note. They are recorded without a card, never send mail, and every row can be corrected or removed with Undo. Subscription documents keep going to their subscription's ledger (§7.2) and appear in the same list, marked with their subscription; nothing is counted twice.
+
+### 25.1 What is recorded
+
+`detectPayment(analysis, input)` in `src/lib/finance/payment-utils.ts` is pure and reuses the §5 analysis (`analyzeMessage`, the §5.4 amounts, the §5.10 document classification, the §5.7.4 model merge). A message is recorded only when all of these hold:
+
+| Rule | Why |
+| --- | --- |
+| Not phishing-flagged (`facts.phishing` empty, and the model's `suspicious.flagged` not set), not spam, not from a muted sender (`facts.muted`, new, below) | The same mail that never gets a card never records. Screener-held mail is never triaged at all (`status = "screening"`). |
+| `facts.authPassed` | Spoofed mail must not be able to write a row without a click. |
+| An amount and currency (§5.4), deterministic or a validated model pair | A money document without an amount is a notice. |
+| A document type `invoice`, `payment`, `credit` or `refund` (§5.10). It must come from the subject or an attachment filename (confident), or from the body together with a "paid/total/amount due" line holding the amount and a billing sender | `failed_payment` records nothing here: a failed charge is not a payment. |
+| A payment score of at least 3: confident type 2, document attachment 1, billing sender 1, the amount on a "total/amount paid/amount due" line 1, a receipt or invoice number 1 | One weak signal never records. |
+| No marketing evidence: a "% off", "sale", "shop now", "limited time", "promo code", "coupon", "deal" phrase (and the Dutch, German, French and Spanish equivalents) blocks a body-only type, and blocks a subject type on list mail (`facts.list`) | Marketing mail with prices must not match; a real receipt rarely carries list headers or sales copy. |
+| No tracked subscription of the owner with the same vendor key | A recognised subscription keeps going to its ledger through the card (§5.6). |
+
+The model only fills gaps through the existing extension of the `detect` step (§5.7): its instruction now asks for every receipt, invoice, refund or credit note, not only recurring ones, and the hint (§5.7.2) is unchanged, so no new model request is made for payments. Model fields are validated as in §5.7.4 and never make a row on their own: a model-filled amount or type needs the deterministic receipt condition (§5.7.2). The backfill (§25.5) never calls the model.
+
+**Status.** `invoice` gives `open`, `payment` gives `paid`, `refund` gives `refunded`, `credit` gives `credited`. An invoice marked paid in the mail is already a `payment` (§5.10). The user can change the status (an invoice paid by bank transfer becomes `paid`).
+
+**Vendor.** As §5.3, with one change for payment processors (`PROCESSOR_DOMAINS`): when the display name is the processor's own name or empty, the merchant is taken from the receipt: the subject ("Your receipt from Acme #1234", "Your Acme receipt [#1234]", "Receipt from Acme"), else a "Receipt from Acme" line in the body. So `receipts+acct_…@stripe.com` mail gives the merchant, and its vendor key is `stripe.com:<merchant slug>`. This also applies to subscription detection.
+
+**Date.** The §5.10 document date ("Date paid", "Invoice date", …), else the message date in the reviewer's time zone.
+
+### 25.2 Data model and migration 0094
+
+`finance_payments` in `src/db/schema/finance.ts`. A new table rather than a nullable `finance_charges.subscription_id`: SQLite can only drop `NOT NULL` by rebuilding the ledger, its dedupe index (`subscription_id, message_id, doc_type`) would not dedupe rows without a subscription (nulls are distinct), and payments need columns the ledger has no use for (vendor, status, source, removal).
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | text PK | Derived from the owner and message (`fpay_<hash>`), so a retried step or scan writes the same row. |
+| `user_id` | text NOT NULL → `users.id` ON DELETE cascade | The owner: the reviewer of the mailbox (§13.1). |
+| `mailbox_id` | text → `mailboxes.id` ON DELETE set null | Where it was found; the audit mailbox of corrections (§9.5). |
+| `message_id` | text → `messages.id` ON DELETE set null | The source message; the row keeps its amount after the mail is purged. |
+| `attachment_id` | text, no foreign key | The document attachment (§5.10), a reference only. |
+| `vendor`, `vendor_key` | text NOT NULL | §25.1. |
+| `doc_type` | text NOT NULL, `invoice, payment, credit, refund` | |
+| `status` | text NOT NULL, `open, paid, refunded, credited` | |
+| `amount_minor`, `currency` | integer NOT NULL, text NOT NULL | Always positive; credits and refunds reduce totals by type. |
+| `document_at` | integer (timestamp) NOT NULL | 00:00 UTC of the document date. |
+| `source` | text NOT NULL, `auto, scan` | Found by automatic reading or by the 90-day scan. |
+| `model_fields` | text | JSON list of the fields the model filled, shown as "read by the assistant". |
+| `removed_at` | integer (timestamp) | Removed by the user. The row stays as a tombstone so neither triage nor a scan records the message again; Undo clears it. |
+| `created_at`, `updated_at` | integer (timestamp) NOT NULL | |
+
+Indexes: unique `finance_payments_message_idx (user_id, message_id)`, the dedupe per message (inserts are `ON CONFLICT DO NOTHING`); `finance_payments_user_idx (user_id, document_at)`.
+
+`finance_payment_scans` holds one scan per owner (`user_id` PK → `users.id` cascade, `status` `running | done | failed`, `since_at`, `cursor_at`, `cursor_id`, `scanned`, `recorded`, `lease_until`, `started_at`, `updated_at`, `finished_at`). It is bookkeeping, not user data.
+
+Backups: `finance_payments` in `BACKUP_TABLES` after `finance_charges`, in the `mail` group; `finance_payment_scans` in `INTERNAL_TABLES`. Before 0094 is applied, `GET /api/finance/payments` answers `{ payments: [], months: [], migrationPending: true }`, writes answer 409 `MIGRATION_PENDING`, the step and the scan do nothing, and every check reads `sqlite_master`.
+
+### 25.3 Where it runs
+
+A second triage step, `recordPayment` (`triage_step`, order 30, `automatic: true`, `capability: "payments"`, no model extension of its own), runs after `detect` under every rule of §5.1: autonomy `off` means no job, No-AI mailboxes get no job (`mailboxAiOff`), the kill switch, pause, daily limit and per-user module state apply, and the reviewer is the viewer. It receives `model.modules.finance` when the `detect` extension was active. It returns no suggestions; it writes the row itself, which is the one write a triage step makes without a click, and only into the module's own table.
+
+- **Per-mailbox switch.** `capabilities.modules.payments`, on unless set to false, listed in the automatic-reading settings as "Payments in receipts (Money Watch)". Since triage only runs where automatic reading is on, it is on only there.
+- **`facts.muted`** (new, generic, step input): whether the sender is in the mailbox's muted senders, so a step that writes without a card follows the rule `planSuggestions` applies to cards. Other steps strip it.
+- **Never double count.** A message the owner already recorded in a subscription's ledger (`finance_charges.message_id`) is skipped by the step and the scan, and the list hides a payment row whose message is in the owner's ledger (a card accepted after the payment was recorded). Within payments, an `invoice` paired with a `payment` of the same vendor key and currency (§12.2 pairing, by vendor key instead of subscription) counts once, through the payment, and is shown as paid.
+
+### 25.4 Corrections and Undo
+
+Two actions through `agent_actions` (§9.1), owner only, `permission: "manage"` on the audit mailbox (§9.5): `update_payment` (`""`: vendor, amount, currency, date and status) and `remove_payment` (`""`: sets `removed_at`). Both store the previous values in `inverse`; Undo restores them. Activity labels: "Changed a payment", "Removed a payment". Routes: `PATCH /api/finance/payments/[id]` and `DELETE /api/finance/payments/[id]`, each returning `{ payment?, actionId }` for the undo toast. Subscription documents in the list keep their own Remove (`delete_document`).
+
+### 25.5 Scan last 90 days
+
+**Scan last 90 days** on the Payments tab records the same documents from mail that is already here. It is cheap and resumable:
+
+- `POST /api/finance/payments/scan` starts (or restarts a finished) scan for the user and sends `{ kind: "finance.scan", userId }` on `AGENT_QUEUE` (a manifest `queueMessageTypes` entry, capability `scanPayments`). Each run leases the scan for 2 minutes, reads at most 200 messages after the cursor, and hands on by sending the next message; the five-minute cron task `resumePaymentScans` re-sends a scan whose lease ran out, as Mail import does. `GET /api/finance/payments` carries the scan's progress.
+- Messages come from two new generic host services bound by automatic reading: `mail.backfillMessages(ctx, moduleId, { capability, since, after, limit })` lists the light rows (id, mailbox, sender, subject, date, attachment names) of inbound mail (`received` and `archived`; never spam, trash, drafts, sent, templates or Screener-held mail) in the mailboxes where the viewer is the reviewer, automatic reading is not `off`, AI is not off and the module's step switch is on; `mail.stepInput(ctx, moduleId, { messageId, capability })` builds the full triage step input (with `model: null`) for one of them after checking the same rules again. The module calls `stepInput` only for rows whose subject, sender or attachment names pass the cheap prefilter (a document keyword or a billing sender), so most mail costs one indexed row read and no R2 read.
+- Rows are recorded with `source: "scan"`. A removed row, a message already recorded and a subscription document are left alone. No model is called and no notification is sent.
+
+### 25.6 The Payments tab
+
+`/finance` gets two tabs, **Subscriptions** (as before) and **Payments** (`/finance?tab=payments`). The Payments list:
+
+- Every payment row and every subscription document of the owner, newest first: date, vendor, type, status (Open, Paid, Refunded, Credited, Failed for a subscription's failed payment), amount (credits and refunds as "−"), a "Subscription: Netflix" chip on ledger rows, "read by the assistant" on model-filled values, and **Open mail** through the message's `mail:message` ref (a purged message shows "Message deleted").
+- Month totals per currency, never converted or summed across currencies: paid (payments and paid invoices, minus refunds and unsettled credits) and open (open invoices).
+- Filters by vendor, month and status.
+- A row menu: Mark as paid / open, Correct (vendor, amount, currency, date), Remove; each with the undo toast.
+- **Scan last 90 days** with its progress, and an empty state that explains what lands here.
+- Strings go through `t()` with Dutch and Arabic catalog entries; the page works in light, dark, Classic, right-to-left and on a phone.
+
+Off means absent (§15): with the module off for the install or the user the tab, routes (404), step, scan and cron work are gone and data is kept.
+
+### 25.7 Tests
+
+Unit: detection on receipts, invoices, refunds and credit notes in the five languages, and no match for marketing mail with prices, a price list, a spoofed receipt, phishing, spam, muted senders and failed payments; the processor merchant (a synthetic Stripe receipt of the owner's shape gives "Stripe Atlas", paid, USD 500.00, the date paid); month totals per currency with pairing and refunds; dedupe per message and the tombstone; no double count with the ledger. e2e: a delivered receipt lands in Payments with demo data, a No-AI mailbox and a phishing-flagged receipt record nothing, correct and remove with Undo, and Scan last 90 days finds mail delivered before the switch was on.

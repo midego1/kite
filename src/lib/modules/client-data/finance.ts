@@ -26,7 +26,10 @@ export const financeClientData: ClientModuleData = {
 			icon: "WalletCards",
 		},
 	},
-	triageSwitches: [{ key: "subscriptions", label: "Subscriptions in receipts (Money Watch)" }],
+	triageSwitches: [
+		{ key: "subscriptions", label: "Subscriptions in receipts (Money Watch)" },
+		{ key: "payments", label: "Payments in receipts (Money Watch)" },
+	],
 	keyScopes: {
 		mcp: [
 			{

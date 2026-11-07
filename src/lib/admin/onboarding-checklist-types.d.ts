@@ -8,7 +8,7 @@ export type OnboardingChecklistState = {
 	modulesConfigured: boolean;
 	/** `resolveAbuseChKey` found a usable key, either a secret or one saved and tested on the General page. */
 	spamKeyConfigured: boolean;
-	/** The assistant is deliberately off, or a saved AI provider is active. */
+	/** The assistant is deliberately off, or `getAgentProviderPublicConfig` finds a provider that is actually usable. */
 	assistantConfigured: boolean;
 	/** Automatic backups are on, or at least one backup has already completed. */
 	backupsReady: boolean;

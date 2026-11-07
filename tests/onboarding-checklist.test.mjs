@@ -89,11 +89,13 @@ test("the assistant only reads as configured once a provider was actually chosen
 	// Every fresh install already has one `app_settings` row (migration 0012); nothing chosen yet still reads false.
 	assert.equal((await loadOnboardingChecklistState(env, OWNER)).assistantConfigured, false);
 
-	sqlite.db.exec("UPDATE app_settings SET agent_provider = 'compatible', agent_preset = 'openai' WHERE id = 'default'");
+	sqlite.db.exec(
+		"UPDATE app_settings SET agent_provider = 'compatible', agent_preset = 'openai', agent_api_key = 'sk-test', agent_model = 'gpt-4o-mini' WHERE id = 'default'",
+	);
 	assert.equal((await loadOnboardingChecklistState(env, OWNER)).assistantConfigured, true);
 
 	sqlite.db.exec(
-		"UPDATE app_settings SET agent_provider = NULL, agent_preset = NULL, agent_enabled = 0 WHERE id = 'default'",
+		"UPDATE app_settings SET agent_provider = NULL, agent_preset = NULL, agent_api_key = NULL, agent_model = NULL, agent_enabled = 0 WHERE id = 'default'",
 	);
 	assert.equal(
 		(await loadOnboardingChecklistState(env, OWNER)).assistantConfigured,
@@ -106,8 +108,23 @@ test("a saved provider whose key a rotated encryption key can no longer open doe
 	const sqlite = await database(t);
 	// The "enc:v1:" prefix marks it sealed; with no APP_ENCRYPTION_KEY in this env, opening it always fails.
 	sqlite.db.exec(
-		"UPDATE app_settings SET agent_provider = 'compatible', agent_preset = 'openai', agent_api_key = 'enc:v1:AAAA:BBBB' WHERE id = 'default'",
+		"UPDATE app_settings SET agent_provider = 'compatible', agent_preset = 'openai', agent_api_key = 'enc:v1:AAAA:BBBB', agent_model = 'gpt-4o-mini' WHERE id = 'default'",
 	);
 	const env = { DB: sqlite, BUCKET: EMPTY_BUCKET };
 	assert.equal((await loadOnboardingChecklistState(env, OWNER)).assistantConfigured, false);
+});
+
+test("a Workers AI binding or an AI_BASE_URL/AI_API_KEY pair counts as configured with nothing saved at all", async (t) => {
+	const sqlite = await database(t);
+	const base = { DB: sqlite, BUCKET: EMPTY_BUCKET };
+	// Nothing saved and no binding or environment endpoint: the default placeholder is not actually usable.
+	assert.equal((await loadOnboardingChecklistState(base, OWNER)).assistantConfigured, false);
+	// The Workers AI binding: a real, zero-configuration assistant.
+	assert.equal((await loadOnboardingChecklistState({ ...base, AI: {} }, OWNER)).assistantConfigured, true);
+	// An OpenAI-compatible endpoint set by environment variables, same idea.
+	assert.equal(
+		(await loadOnboardingChecklistState({ ...base, AI_BASE_URL: "https://ai.example.test", AI_API_KEY: "key" }, OWNER))
+			.assistantConfigured,
+		true,
+	);
 });

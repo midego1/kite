@@ -27,7 +27,10 @@ function ChecklistRow({ item }: { item: OnboardingChecklistItem }) {
 				<Circle className="mt-0.5 h-4 w-4 shrink-0 text-neutral-300" aria-hidden="true" />
 			)}
 			<div className="min-w-0 flex-1 space-y-1">
-				<p className="text-sm font-medium text-neutral-900">{item.title}</p>
+				<p className="text-sm font-medium text-neutral-900">
+					<span className="sr-only">{item.done ? "Done: " : "Not done: "}</span>
+					{item.title}
+				</p>
 				<p className="text-sm text-neutral-500">{item.detail}</p>
 				<p className="flex flex-wrap items-center gap-3 text-sm">
 					<Link href={item.href} className="font-medium underline underline-offset-2 hover:opacity-80">

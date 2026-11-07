@@ -3,8 +3,7 @@ import { getDb } from "@/db";
 import { domains, mailboxes, users } from "@/db/schema";
 import { moduleSettings } from "@/db/schema/modules";
 import { isNoSuchTableError } from "@/lib/modules/state-utils";
-import { getAgentEnabled } from "@/lib/agent/provider";
-import { readStoredAgentProvider } from "@/lib/agent/provider-connections";
+import { getAgentEnabled, getAgentProviderPublicConfig } from "@/lib/agent/provider";
 import { domainOwnerId } from "@/lib/domains/owner-utils";
 import { getBackupHealth } from "@/lib/backups/service";
 import { getPendingMigrationStatus } from "@/lib/migrations/pending";
@@ -43,7 +42,7 @@ export async function loadOnboardingChecklistState(
 		accountRow,
 		modulesConfigured,
 		agentEnabled,
-		storedProvider,
+		agentProvider,
 		backups,
 		migrations,
 		abuseChKey,
@@ -63,7 +62,7 @@ export async function loadOnboardingChecklistState(
 			.then((rows) => rows[0]),
 		readModulesConfigured(env),
 		getAgentEnabled(env),
-		readStoredAgentProvider(env),
+		getAgentProviderPublicConfig(env),
 		getBackupHealth(env),
 		getPendingMigrationStatus(env.DB),
 		resolveAbuseChKey(env),
@@ -74,10 +73,10 @@ export async function loadOnboardingChecklistState(
 		accountCount: accountRow.total,
 		modulesConfigured,
 		spamKeyConfigured: abuseChKey !== null,
-		// `readStoredAgentProvider` always resolves to a row (the single `app_settings` row migration 0012 seeds, read
-		// as the legacy fallback), so `provider` itself, not the object, says whether one was actually chosen; a
-		// provider whose sealed key a rotated APP_ENCRYPTION_KEY can no longer open is not usable either.
-		assistantConfigured: !agentEnabled || (!!storedProvider?.provider && !storedProvider.keyUnreadable),
+		// `.configured` is the same signal compose, summaries and automatic reading already gate on: a saved
+		// provider with a readable key, or (with nothing saved) the Workers AI binding or an AI_BASE_URL/AI_API_KEY
+		// pair actually being usable, not just a default placeholder.
+		assistantConfigured: !agentEnabled || agentProvider.configured,
 		backupsReady: !!backups.automatic?.enabled || !!backups.lastSuccess,
 		migrationsPending: migrations.pending,
 	};

@@ -45,14 +45,20 @@ export function importServerProblem(env: ImapImportEnv, input: Pick<ImapAccount,
 /**
  * `importServerProblem` plus, on the Node server, every address the name resolves to: what saving a job checks, so a
  * name that resolves to a private address is refused when the job is created, not only when its first run connects.
- * Each run is checked again when it connects (the Node connector resolves and pins the address it vetted).
+ * Each run is checked again when it connects (the Node connector resolves and pins the address it vetted). With a
+ * `guard` (the routes pass the import sign-in limit) a refused lookup counts like a failed sign-in, so saving jobs
+ * cannot be used to map which names resolve to private addresses without limit; past it `SignInLimitError` is thrown.
  */
 export async function importServerRefusal(
-	env: Parameters<typeof assertMailServerHost>[0],
+	env: ImapImportEnv & Parameters<typeof assertMailServerHost>[0],
 	input: Pick<ImapAccount, "host" | "port">,
+	guard?: SignInGuard,
 ): Promise<string | null> {
+	const literal = importServerProblem(env, input);
+	if (literal || !env.RESOLVE_HOST) return literal;
+	const check = () => assertMailServerHost(env, input.host, input.port, IMAP_PORTS);
 	try {
-		await assertMailServerHost(env, input.host, input.port, IMAP_PORTS);
+		await (guard ? guard(input, check) : check());
 		return null;
 	} catch (error) {
 		if (error instanceof MailServerRefusedError) return error.message;

@@ -6,12 +6,13 @@ import { hasValidSessionMutationOrigin } from "@/lib/auth/origin";
 import { getEnv } from "@/lib/cloudflare";
 import { RequestBodyTooLargeError } from "@/lib/http/errors";
 import { readJsonBody } from "@/lib/http/request";
-import { importServerRefusal } from "@/lib/import/imap";
+import { importServerProblem } from "@/lib/import/imap";
 import { createImportJob, listImportJobs, serializeImportJob } from "@/lib/import/jobs";
 import { checkImportStart } from "@/lib/import/size-guard";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { parseImapImportRequest } from "../imap/utils";
 import { createAccountJobResponse } from "./account";
+import { resolveServer } from "./server-check";
 import type { AccountImportJobRequest, ImapImportJobRequest } from "./types";
 import { withModule } from "@/lib/modules/route-guard";
 import { jobSourceFields, resolveImportSource, type ConnectedSource } from "../connected-account";
@@ -57,8 +58,7 @@ export const POST = withModule("import", async (request, { checkUser }) => {
 		return Response.json({ error: error instanceof Error ? error.message : "Invalid IMAP import request" }, { status });
 	}
 
-	// Resolved on Node, so a saved job never keeps a name that points at a private address.
-	const refused = await importServerRefusal(env, input);
+	const refused = importServerProblem(env, input);
 	if (refused) return Response.json({ error: refused }, { status: 400 });
 
 	const db = getDb(env);
@@ -72,6 +72,8 @@ export const POST = withModule("import", async (request, { checkUser }) => {
 			.limit(1);
 		if (!folder) return Response.json({ error: "Folder not found" }, { status: 404 });
 	}
+	const unresolved = await resolveServer(env, user.id, input);
+	if (unresolved) return unresolved;
 
 	const maxMessages = body.importAll === false ? Math.min(Math.max(Number(body.limit) || 100, 1), 10_000) : null;
 	// Above 90% of the database limit (now, or once `maxMessages` more are added) the user has to say "Import anyway".

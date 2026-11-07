@@ -2,7 +2,8 @@ import { getDb } from "@/db";
 import { ImportJobSaveError, ImportMigrationPendingError, assertAccountImportsReady } from "@/lib/import/account-jobs";
 import { GMAIL_LABELS_DESTINATION, parseAccountFolderRequest } from "@/lib/import/folder-mapping-utils";
 import { resolveImportDestination } from "@/lib/import/folders";
-import { importServerRefusal } from "@/lib/import/imap";
+import { importServerProblem } from "@/lib/import/imap";
+import { resolveServer } from "./server-check";
 import { createAccountImportJob, serializeImportJob } from "@/lib/import/jobs";
 import { checkImportStart } from "@/lib/import/size-guard";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
@@ -37,8 +38,7 @@ export async function createAccountJobResponse(
 	} catch (error) {
 		return Response.json({ error: error instanceof Error ? error.message : "Invalid import request" }, { status: 400 });
 	}
-	// Resolved on Node, so a saved job never keeps a name that points at a private address.
-	const refused = await importServerRefusal(env, account);
+	const refused = importServerProblem(env, account);
 	if (refused) return Response.json({ error: refused }, { status: 400 });
 	const access = await getMailboxAccessLevel(getDb(env), user, body.mailboxId);
 	if (!access?.canManage) return Response.json({ error: "Mailbox not found" }, { status: 404 });
@@ -65,6 +65,9 @@ export async function createAccountJobResponse(
 				!(await resolveImportDestination(env, mailbox, folder.destination))
 			)
 				return Response.json({ error: "Folder not found" }, { status: 404 });
+		// Before any new folder is created too, so a refused server leaves none.
+		const unresolved = await resolveServer(env, user.id, account);
+		if (unresolved) return unresolved;
 		const resolved = [];
 		for (const folder of folders) {
 			const isNew = folder.destination.startsWith("new:");

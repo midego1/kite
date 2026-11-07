@@ -1,6 +1,7 @@
 import { MailServerRefusedError } from "./errors";
 import {
 	allowsPlainText,
+	canonicalMailHost,
 	isLanAddress,
 	mailHostPolicy,
 	MAIL_SERVER_PORTS,
@@ -27,14 +28,16 @@ export async function assertMailServerHost(
 	const policy = mailHostPolicy(env, process.env.NODE_ENV);
 	const problem = mailServerHostProblem(host, port, policy, ports);
 	if (problem) throw new MailServerRefusedError(problem);
-	if (!env.RESOLVE_HOST || allowsPlainText(host, policy) || isIpAddressLiteral(host.trim())) return;
+	// The form the literal check passed and the connector dials (`0x0a.1.` is `10.0.0.1`), never the text as typed.
+	const name = canonicalMailHost(host) ?? host.trim();
+	if (!env.RESOLVE_HOST || allowsPlainText(name, policy) || isIpAddressLiteral(name)) return;
 	let addresses: string[];
 	try {
-		addresses = await env.RESOLVE_HOST(host.trim());
+		addresses = await env.RESOLVE_HOST(name);
 	} catch {
-		throw new MailServerRefusedError(`Kite could not find the mail server ${host.trim()}`);
+		throw new MailServerRefusedError(`Kite could not find the mail server ${name}`);
 	}
-	if (!addresses.length) throw new MailServerRefusedError(`Kite could not find the mail server ${host.trim()}`);
+	if (!addresses.length) throw new MailServerRefusedError(`Kite could not find the mail server ${name}`);
 	const refused = addresses.some(
 		(address) => isPrivateIpAddress(address) && !(policy.allowPrivate && isLanAddress(address)),
 	);

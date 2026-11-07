@@ -82,3 +82,51 @@ test("the private-host setting opens LAN addresses only, never loopback or link-
 			address,
 		);
 });
+
+test("the canonical host is resolved, the form the literal check passed and the connector dials", async () => {
+	const lan = { EXTERNAL_ACCOUNTS_ALLOW_PRIVATE_HOSTS: "1" };
+	// A LAN literal in shorthand is a literal: allowed by the setting, never looked up.
+	const shorthand = resolving(new Error("ENOTFOUND"), lan);
+	assert.equal(await importServerRefusal(shorthand.env, { host: "0x0a.1.", port: 993 }), null);
+	assert.deepEqual(shorthand.asked, []);
+	const named = resolving(["93.184.216.34"]);
+	assert.equal(await importServerRefusal(named.env, { host: " IMAP.Example.ORG. ", port: 993 }), null);
+	assert.deepEqual(named.asked, ["imap.example.org"]);
+	const idn = resolving(["93.184.216.34"]);
+	assert.equal(await importServerRefusal(idn.env, { host: "mail.bücher.example", port: 993 }), null);
+	assert.deepEqual(idn.asked, ["mail.xn--bcher-kva.example"]);
+});
+
+test("with a guard only the lookup runs through it, and a refused lookup fails inside it", async () => {
+	const calls = [];
+	const guard = async (server, open) => {
+		calls.push(`${server.host}:${server.port}`);
+		try {
+			const result = await open();
+			calls.push("ok");
+			return result;
+		} catch (error) {
+			calls.push("failed");
+			throw error;
+		}
+	};
+	// A literal refusal and the Workers runtime never reach the guard: nothing is looked up.
+	assert.match(await importServerRefusal(resolving([]).env, { host: "10.0.0.1", port: 993 }, guard), /Private/);
+	assert.equal(await importServerRefusal({}, { host: "imap.example.org", port: 993 }, guard), null);
+	assert.deepEqual(calls, []);
+	const privateName = resolving(["10.0.0.9"]).env;
+	assert.match(await importServerRefusal(privateName, { host: "imap.example.org", port: 993 }, guard), /Private/);
+	assert.equal(
+		await importServerRefusal(resolving(["93.184.216.34"]).env, { host: "imap.example.org", port: 993 }, guard),
+		null,
+	);
+	assert.deepEqual(calls, ["imap.example.org:993", "failed", "imap.example.org:993", "ok"]);
+	// The limit's own refusal is not a server refusal: the route answers 429 with it.
+	const limited = async () => {
+		throw new Error("limit reached");
+	};
+	await assert.rejects(
+		importServerRefusal(privateName, { host: "imap.example.org", port: 993 }, limited),
+		/limit reached/,
+	);
+});

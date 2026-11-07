@@ -181,6 +181,8 @@
 		"src/lib/finance/keywords-utils.ts",
 		"src/lib/finance/manual-utils.ts",
 		"src/lib/finance/model-utils.ts",
+		"src/lib/finance/payment-list-utils.ts",
+		"src/lib/finance/payment-utils.ts",
 		"src/lib/finance/pdf-text-utils.ts",
 		"src/lib/finance/record-utils.ts",
 		"src/lib/finance/reminder-utils.ts",
@@ -190,6 +192,7 @@
 		"src/lib/finance/totals-utils.ts",
 		"src/lib/finance/vendor-utils.ts",
 		"src/components/finance/dialog-utils.ts",
+		"src/components/finance/payments-utils.ts",
 		"src/components/finance/subscriptions-utils.ts",
 		"src/lib/backups/restore-utils.ts",
 		"src/lib/backups/backup-reader-utils.ts",
@@ -283,6 +286,7 @@
 		"src/lib/mcp/server-utils.ts"
 	],
 	"ungated": {
+		"src/lib/finance/payment-keywords-utils.ts": "Only phrase lists and regular expressions; tests/finance-payments-detect.test.mjs runs them through detectPayment.",
 		"src/lib/agent/fixed-rules-utils.ts": "Only the two prompt rule strings; the prompt fixture tests pin their text byte for byte.",
 		"src/lib/auth/password-reset-utils.ts": "no unit test bundles it; covered only through the e2e suite",
 		"src/lib/auth/setup-utils.ts": "no unit test bundles it; covered only through the e2e suite",

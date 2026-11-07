@@ -293,7 +293,7 @@ test("a draft over the spend cap is recorded as blocked and makes no draft reque
 	// model extension would raise the triage reservation, so its switch is off here.
 	db.db
 		.prepare(
-			`UPDATE mailbox_agent_settings SET daily_spend_cap_micros = 200, capabilities = '{"modules":{"subscriptions":false}}' WHERE mailbox_id = 'mailbox-a'`,
+			`UPDATE mailbox_agent_settings SET daily_spend_cap_micros = 200, capabilities = '{"modules":{"subscriptions":false,"payments":false}}' WHERE mailbox_id = 'mailbox-a'`,
 		)
 		.run();
 	await processAgentTriageJob(env, jobId);

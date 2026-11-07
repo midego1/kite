@@ -78,6 +78,36 @@ export type HostRecentFromSenderQuery = {
 	limit: number;
 };
 
+export type HostBackfillQuery = {
+	/** The step's switch key (`triage.capability`) whose mailboxes count. */
+	capability: string;
+	/** ISO time; only messages received at or after it are listed. */
+	since: string;
+	/** The `next` cursor of the previous page, or null for the first. */
+	after: { receivedAt: string; id: string } | null;
+	/** At most 500. */
+	limit: number;
+};
+
+export type HostBackfillMessage = {
+	id: string;
+	mailboxId: string;
+	/** The From header as stored: display name and address. */
+	from: string;
+	subject: string | null;
+	receivedAt: string;
+	attachments: { id: string; contentType: string; filename: string | null; size: number }[];
+};
+
+export type HostBackfillPage = {
+	/** The rows that passed the triage gate. */
+	messages: HostBackfillMessage[];
+	/** How many rows were read, the gated-out ones included. */
+	read: number;
+	/** The cursor after the last row read (gated out or not), or null when the range is done. */
+	next: { receivedAt: string; id: string } | null;
+};
+
 export type HostSuggestion = {
 	id: string;
 	mailboxId: string;
@@ -138,6 +168,12 @@ export type HostAgentServices = {
 		status: "accepted",
 	): Promise<boolean>;
 	executeAction(ctx: CapabilityCallContext, moduleId: ModuleId, call: HostActionCall): Promise<HostActionResult>;
+	backfillMessages(ctx: CapabilityCallContext, moduleId: ModuleId, query: HostBackfillQuery): Promise<HostBackfillPage>;
+	backfillStepInput(
+		ctx: CapabilityCallContext,
+		moduleId: ModuleId,
+		request: { messageId: string; capability: string },
+	): Promise<JsonValue | null>;
 };
 
 /**
@@ -196,6 +232,22 @@ export type ModuleHost = {
 		 * action taken in one. Checked when called; a lost id hides the record.
 		 */
 		aiHidden(ctx: CapabilityCallContext, sources: readonly HostAiSource[]): Promise<boolean[]>;
+		/**
+		 * A page of the inbound mail one of the module's triage steps may read in the background for the viewer: mail in
+		 * the mailboxes the viewer reviews with automatic reading on, AI on and the step's switch on, oldest first. Spam,
+		 * trash, drafts, sent mail and Screener-held mail are never listed. Light rows only.
+		 */
+		backfillMessages(
+			ctx: CapabilityCallContext,
+			moduleId: ModuleId,
+			query: HostBackfillQuery,
+		): Promise<HostBackfillPage>;
+		/** The triage step input, with `model: null`, of one message `backfillMessages` may list; null otherwise. */
+		stepInput(
+			ctx: CapabilityCallContext,
+			moduleId: ModuleId,
+			request: { messageId: string; capability: string },
+		): Promise<JsonValue | null>;
 		importMessages(
 			ctx: CapabilityCallContext,
 			request: { userId: string; mailboxId: string; destination: string; messages: HostImportMessage[] },

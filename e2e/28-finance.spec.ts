@@ -519,7 +519,7 @@ test.describe("Money Watch model extension", () => {
 
 			await okJson(
 				await account.api.put("/api/agent/settings", {
-					data: { mailboxId: account.mailboxId, capabilities: { modules: { subscriptions: false } } },
+					data: { mailboxId: account.mailboxId, capabilities: { modules: { subscriptions: false, payments: false } } },
 				}),
 			);
 			// With no step on, automatic mail gets no triage job at all; give the queue time to prove it.

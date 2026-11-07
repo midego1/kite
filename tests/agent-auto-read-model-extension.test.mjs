@@ -229,7 +229,7 @@ async function setup(t, { externalAllowed = 1, rateLimited = false } = {}) {
 function setSwitches(db, modules, extra = {}) {
 	db.db
 		.prepare("UPDATE mailbox_agent_settings SET capabilities = ? WHERE mailbox_id = 'mailbox-a'")
-		.run(JSON.stringify({ ...extra, modules: { subscriptions: false, ...modules } }));
+		.run(JSON.stringify({ ...extra, modules: { subscriptions: false, payments: false, ...modules } }));
 	clearModuleStateCache();
 }
 

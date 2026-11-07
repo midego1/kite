@@ -85,3 +85,68 @@ export const financeCharges = sqliteTable(
 		index("finance_charges_user_idx").on(t.userId, t.documentAt),
 	],
 );
+
+/**
+ * A payment document found in mail that is not a tracked subscription's (spec §25): one per owner and message.
+ * `removedAt` keeps a removed row as a tombstone, so neither triage nor a scan records the message again.
+ */
+export const financePayments = sqliteTable(
+	"finance_payments",
+	{
+		id: text("id").primaryKey(),
+		userId: text("user_id")
+			.notNull()
+			.references(() => users.id, { onDelete: "cascade" }),
+		mailboxId: text("mailbox_id").references(() => mailboxes.id, { onDelete: "set null" }),
+		messageId: text("message_id").references(() => messages.id, { onDelete: "set null" }),
+		/** A reference read through the message, never a copy. */
+		attachmentId: text("attachment_id"),
+		vendor: text("vendor").notNull(),
+		vendorKey: text("vendor_key").notNull(),
+		docType: text("doc_type", { enum: ["invoice", "payment", "credit", "refund"] }).notNull(),
+		status: text("status", { enum: ["open", "paid", "refunded", "credited"] }).notNull(),
+		/** Always positive; the sign comes from `docType`. */
+		amountMinor: integer("amount_minor").notNull(),
+		currency: text("currency").notNull(),
+		documentAt: integer("document_at", { mode: "timestamp" }).notNull(),
+		source: text("source", { enum: ["auto", "scan"] }).notNull(),
+		/** The receipt, invoice or order number: one row per vendor, type and number. */
+		docRef: text("doc_ref"),
+		/** The Message-ID: one row per copy of a message delivered to several mailboxes. */
+		mailRef: text("mail_ref"),
+		/** JSON list of the fields the model filled. */
+		modelFields: text("model_fields"),
+		removedAt: integer("removed_at", { mode: "timestamp" }),
+		createdAt: integer("created_at", { mode: "timestamp" })
+			.notNull()
+			.$defaultFn(() => new Date()),
+		updatedAt: integer("updated_at", { mode: "timestamp" })
+			.notNull()
+			.$defaultFn(() => new Date()),
+	},
+	(t) => [
+		uniqueIndex("finance_payments_message_idx").on(t.userId, t.messageId),
+		uniqueIndex("finance_payments_mail_ref_idx").on(t.userId, t.mailRef),
+		uniqueIndex("finance_payments_doc_ref_idx").on(t.userId, t.vendorKey, t.docType, t.docRef),
+		index("finance_payments_user_idx").on(t.userId, t.documentAt),
+	],
+);
+
+/** The "Scan last 90 days" of one owner: a cursor over their mail, leased by one run at a time. */
+export const financePaymentScans = sqliteTable("finance_payment_scans", {
+	userId: text("user_id")
+		.primaryKey()
+		.references(() => users.id, { onDelete: "cascade" }),
+	status: text("status", { enum: ["running", "done", "failed"] }).notNull(),
+	sinceAt: integer("since_at", { mode: "timestamp" }).notNull(),
+	cursorAt: integer("cursor_at", { mode: "timestamp" }),
+	cursorId: text("cursor_id"),
+	scanned: integer("scanned").notNull().default(0),
+	recorded: integer("recorded").notNull().default(0),
+	/** Messages that could not be read twice in a row and were passed over. */
+	skipped: integer("skipped").notNull().default(0),
+	leaseUntil: integer("lease_until", { mode: "timestamp" }),
+	startedAt: integer("started_at", { mode: "timestamp" }).notNull(),
+	updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
+	finishedAt: integer("finished_at", { mode: "timestamp" }),
+});

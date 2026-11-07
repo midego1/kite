@@ -123,8 +123,9 @@ async function trackedOnApproval(
 
 /** The sender's vendor key, as Track as subscription stores it, so the dedupe matches what saving would. */
 function senderKeys(message: HostMessageDetail, draft: ManualDraft | null): string[] {
-	const key = draft?.vendorKey ?? vendorKey(message.from, vendorName(message.fromName, message.from).vendor);
-	return key ? [key] : [];
+	// The draft's key names a processor's merchant; a row tracked before that keeps the display name's key.
+	const named = vendorKey(message.from, vendorName(message.fromName, message.from).vendor);
+	return [...new Set([draft?.vendorKey, named].filter((key): key is string => !!key))];
 }
 
 /** Refusals, the pending database update among them, become the `refused` answer; anything else still fails the call. */

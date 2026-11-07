@@ -22,7 +22,7 @@ import { auditMailbox, editPlan, manualFields, type ManagedMailbox } from "./man
 import { rowJson, subscriptionView, type SubscriptionRow } from "./record-utils";
 import { subscriptionRemovalSnapshot } from "./removal-snapshot";
 import { ownerRow } from "./subscriptions";
-import { manualVendorKey, senderAddress, vendorKey, vendorName } from "./vendor-utils";
+import { manualVendorKey, messageVendor, senderAddress, vendorKey } from "./vendor-utils";
 
 /** A document as an action records it, with every optional field explicit. */
 export function documentInput(document: DocumentBody) {
@@ -64,11 +64,12 @@ async function sourceOf(
 		if (!manages(managed, mailboxId)) return notFound("Mailbox not found");
 		return { mailboxId, messageId: null, vendorKey: manualVendorKey(body.vendor), contactId: null, cancelLink: null };
 	}
-	const message = await managedMessage(user, managed, body.messageId);
+	// The text names a processor's merchant when the subject does not, as detection reads it.
+	const message = await managedMessage(user, managed, body.messageId, { maxBytes: 8_192 });
 	if (!message) return notFound("Message not found");
 	if (!hasAttachment(message, body.document?.attachmentId)) return notFound("Attachment not found");
 	const contact = await moduleHost.contacts.find(sessionContext(user), user.id, senderAddress(message.from));
-	const sender = vendorName(message.fromName, message.from).vendor;
+	const sender = messageVendor(message.fromName, message.from, message.subject, message.textExcerpt ?? null).vendor;
 	return {
 		mailboxId: message.mailboxId,
 		messageId: message.id,

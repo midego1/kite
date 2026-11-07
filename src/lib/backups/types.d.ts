@@ -33,6 +33,7 @@ export type DatabaseBackupTable =
 	| "booking_appointments"
 	| "finance_subscriptions"
 	| "finance_charges"
+	| "finance_payments"
 	| "drive_items"
 	| "drive_shares"
 	| "drive_links"

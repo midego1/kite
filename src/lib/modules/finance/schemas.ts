@@ -110,6 +110,7 @@ export const FINANCE_MODEL_JSON_SCHEMA = toModelExtensionSchema(financeModelSche
 
 export const financeSchemas: ModuleSchemas = {
 	detect: triageStepSchemas,
+	recordPayment: triageStepSchemas,
 	wantsModel: { input: triageStepSchemas.input, output: z.object({ wantsModel: z.boolean() }) },
 	subscription: { input: subscriptionSuggestion },
 	answerSubscription,
@@ -119,6 +120,16 @@ export const financeSchemas: ModuleSchemas = {
 	deleteSubscription: actionSchemas,
 	recordDocument: actionSchemas,
 	deleteDocument: actionSchemas,
+	updatePayment: actionSchemas,
+	removePayment: actionSchemas,
+	scanPayments: {
+		input: z.object({ kind: z.literal("finance.scan"), userId: z.string().min(1).max(160) }),
+		output: z.object({ scanned: z.number().int().min(0) }),
+	},
+	resumePaymentScans: {
+		input: z.object({ scheduledTime: z.string().datetime({ offset: true }).optional() }),
+		output: z.object({ resumed: z.number().int().min(0) }),
+	},
 	resolveRefs: resolveRefsSchemas(["finance:subscription"]),
 	search: searchSchemas,
 	list_subscriptions: listSubscriptions,

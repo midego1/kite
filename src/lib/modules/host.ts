@@ -117,6 +117,8 @@ export const moduleHost: ModuleHost = {
 		send: (ctx, draft) => sendModuleMail(getEnv(), ctx, draft),
 		aiHidden: async (ctx, sources) =>
 			ctx.trigger === "chat" ? aiHiddenSources(getEnv(), sources) : sources.map(() => false),
+		backfillMessages: (ctx, moduleId, query) => boundAgentServices().backfillMessages(ctx, moduleId, query),
+		stepInput: (ctx, moduleId, request) => boundAgentServices().backfillStepInput(ctx, moduleId, request),
 		importMessages: (_ctx, request) => importModuleMessages(getEnv(), request),
 	},
 	users: { getProfile: (_ctx, userId) => getUserProfile(getEnv(), userId) },

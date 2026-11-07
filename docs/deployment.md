@@ -11,7 +11,7 @@ Set up Kite in four steps:
 3. **Complete setup:** open `/setup` on the deployed app to check the installation and create the first admin account. This also turns on fast Drive uploads (direct to R2).
 4. **Connect your domain:** add a domain managed by the same Cloudflare account and choose which service receives its mail. Kite configures Email Routing and, when selected, Email Sending, then helps you create the first mailbox. Resend and Amazon SES are alternatives to Cloudflare for receiving and sending; see [Sending and receiving providers](providers.md).
 
-Once the first mailbox exists, a "Get started" checklist on the admin overview walks through the optional parts — inviting people, modules, phishing lookups, an AI provider, backups — with a link to the page that does each one. Nothing on it is required, and it can be dismissed.
+Once the first mailbox exists, a "Get started" checklist on the admin overview walks through the optional parts — inviting people, modules, phishing lookups, an AI provider, backups — with a link to the page that does each one. Nothing on it is required; dismissing it leaves a "Show it again" link in its place.
 
 ### Everything you have to provide
 

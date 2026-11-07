@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, Circle, ListChecks } from "lucide-react";
 import { Card, CardContent, CardTitleRow } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { SOURCE_CODE_URL } from "@/lib/source-code";
 import type { OnboardingChecklistItem } from "@/lib/admin/onboarding-checklist-types";
@@ -50,17 +49,52 @@ function ChecklistRow({ item }: { item: OnboardingChecklistItem }) {
 	);
 }
 
+/** A short line in place of the card: an error, or a link to bring a dismissed checklist back. */
+function ChecklistLine({
+	testId,
+	tone = "neutral",
+	message,
+	action,
+}: {
+	testId: string;
+	tone?: "neutral" | "error";
+	message: string;
+	action?: { label: string; onClick: () => void; disabled?: boolean };
+}) {
+	return (
+		<p
+			role={tone === "error" ? "alert" : undefined}
+			data-testid={testId}
+			className={`flex flex-wrap items-center gap-3 text-sm ${tone === "error" ? "text-red-600 dark:text-red-400" : "text-neutral-500"}`}
+		>
+			{message}
+			{action && (
+				<button
+					type="button"
+					onClick={action.onClick}
+					disabled={action.disabled}
+					className="font-medium text-neutral-900 underline underline-offset-2 hover:opacity-80 disabled:opacity-50"
+				>
+					{action.label}
+				</button>
+			)}
+		</p>
+	);
+}
+
 /**
  * The dismissible "Get started" checklist, shared by the admin overview and onboarding: every item's done state
  * comes from `GET /api/admin/onboarding-checklist`, read fresh on every mount so it flips on its own as the owner
- * sets things up elsewhere. Owner only (`isPrimaryAdmin`); dismissing is this owner's choice alone.
+ * sets things up elsewhere. Owner only (`isPrimaryAdmin`), shown only once the first mailbox exists; dismissing is
+ * this owner's choice alone, and a short line in the card's place brings it back.
  */
 export function OnboardingChecklistCard() {
 	const user = useCurrentUser();
 	const primary = user?.isPrimaryAdmin === true;
 	const queryClient = useQueryClient();
-	const [dismissing, setDismissing] = useState(false);
-	const { data, isLoading } = useQuery({
+	const [pending, setPending] = useState(false);
+	const [actionError, setActionError] = useState("");
+	const { data, isError } = useQuery({
 		queryKey: ONBOARDING_CHECKLIST_QUERY,
 		queryFn: fetchOnboardingChecklist,
 		enabled: primary,
@@ -69,48 +103,65 @@ export function OnboardingChecklistCard() {
 		retry: false,
 	});
 
-	if (!primary || data?.dismissed) return null;
+	if (!primary) return null;
+	if (isError)
+		return (
+			<ChecklistLine testId="onboarding-checklist-error" tone="error" message="Could not load the setup checklist." />
+		);
+	// Nothing to show yet: loading, or (per the roadmap) before the first mailbox exists.
+	if (!data || !data.items.find((item) => item.id === "mailbox")?.done) return null;
 
-	async function dismiss() {
-		setDismissing(true);
+	async function setDismissed(dismissed: boolean) {
+		setPending(true);
+		setActionError("");
 		try {
-			await saveOnboardingChecklistDismissed(true);
+			await saveOnboardingChecklistDismissed(dismissed);
 			await queryClient.invalidateQueries({ queryKey: ONBOARDING_CHECKLIST_QUERY });
-		} catch {
-			setDismissing(false);
+		} catch (error) {
+			setActionError(error instanceof Error ? error.message : "Could not save the checklist.");
+		} finally {
+			setPending(false);
 		}
 	}
 
-	const items = data?.items ?? [];
-	const doneCount = items.filter((item) => item.done).length;
+	if (data.dismissed)
+		return (
+			<ChecklistLine
+				testId="onboarding-checklist-restore"
+				tone={actionError ? "error" : "neutral"}
+				message={actionError || "Get started checklist dismissed."}
+				action={{ label: "Show it again", onClick: () => void setDismissed(false), disabled: pending }}
+			/>
+		);
+
+	const doneCount = data.items.filter((item) => item.done).length;
 
 	return (
 		<Card data-testid="onboarding-checklist">
 			<CardTitleRow
 				icon={ListChecks}
 				title="Get started"
-				description={isLoading ? "Checking what is already set up…" : `${doneCount} of ${items.length} done`}
+				description={`${doneCount} of ${data.items.length} done`}
 				action={
 					<button
 						type="button"
-						onClick={() => void dismiss()}
-						disabled={dismissing}
+						onClick={() => void setDismissed(true)}
+						disabled={pending}
 						className="text-sm font-medium text-neutral-600 underline underline-offset-2 hover:opacity-80 disabled:opacity-50"
 					>
 						Dismiss
 					</button>
 				}
 			/>
+			{actionError && (
+				<p role="alert" className="mt-2 text-sm text-red-600 dark:text-red-400">
+					{actionError}
+				</p>
+			)}
 			<CardContent className="divide-y divide-neutral-100 pt-4">
-				{isLoading ? (
-					<div className="space-y-3 py-1">
-						<Skeleton className="h-10 w-full rounded-lg" />
-						<Skeleton className="h-10 w-full rounded-lg" />
-						<Skeleton className="h-10 w-full rounded-lg" />
-					</div>
-				) : (
-					items.map((item) => <ChecklistRow key={item.id} item={item} />)
-				)}
+				{data.items.map((item) => (
+					<ChecklistRow key={item.id} item={item} />
+				))}
 			</CardContent>
 		</Card>
 	);

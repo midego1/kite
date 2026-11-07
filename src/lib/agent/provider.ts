@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { appSettings } from "@/db/schema";
+import { missingColumnFromError } from "@/lib/auth/user-lookup-utils";
 import { readSavedAgentProvider, readStoredAgentProvider } from "./provider-connections";
 import type { StoredAgentProvider } from "./provider-connection-utils";
 import type { AgentProviderConfig, AgentProviderPreset, AgentProviderPublicConfig } from "./provider-types";
@@ -20,13 +21,19 @@ export function resolveAgentBaseUrl(
 	return parseCustomAgentBaseUrl(customUrl, allowLoopback);
 }
 
+/** Reads the install's switch; a schema from before migration 0034 has no column to read, so it defaults on. */
 export async function getAgentEnabled(env: CloudflareEnv): Promise<boolean> {
-	const [saved] = await getDb(env)
-		.select({ enabled: appSettings.agentEnabled })
-		.from(appSettings)
-		.where(eq(appSettings.id, AGENT_SETTINGS_ID))
-		.limit(1);
-	return saved?.enabled ?? true;
+	try {
+		const [saved] = await getDb(env)
+			.select({ enabled: appSettings.agentEnabled })
+			.from(appSettings)
+			.where(eq(appSettings.id, AGENT_SETTINGS_ID))
+			.limit(1);
+		return saved?.enabled ?? true;
+	} catch (error) {
+		if (!missingColumnFromError(error)) throw error;
+		return true;
+	}
 }
 
 export async function getAgentProviderConfig(env: CloudflareEnv): Promise<AgentProviderConfig> {

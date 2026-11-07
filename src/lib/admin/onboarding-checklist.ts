@@ -2,6 +2,7 @@ import { and, count, eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { domains, mailboxes, users } from "@/db/schema";
 import { moduleSettings } from "@/db/schema/modules";
+import { isNoSuchTableError } from "@/lib/modules/state-utils";
 import { getAgentEnabled } from "@/lib/agent/provider";
 import { readStoredAgentProvider } from "@/lib/agent/provider-connections";
 import { domainOwnerId } from "@/lib/domains/owner-utils";
@@ -12,44 +13,63 @@ import { resolveAbuseChKey } from "@/lib/spam/providers/abuse-ch-key";
 import type { SessionUser } from "@/lib/auth/types";
 import type { OnboardingChecklistState } from "./onboarding-checklist-types";
 
+/** Whether an explicit module choice exists; `false` before migration 0062, like the rest of the modules system. */
+async function readModulesConfigured(env: CloudflareEnv): Promise<boolean> {
+	try {
+		const [row] = await getDb(env).select({ total: count() }).from(moduleSettings);
+		return (row?.total ?? 0) > 0;
+	} catch (error) {
+		if (!isNoSuchTableError(error)) throw error;
+		return false;
+	}
+}
+
 /** The real state behind every checklist item, read fresh on every load so items flip on their own. */
 export async function loadOnboardingChecklistState(
 	env: CloudflareEnv,
 	user: SessionUser,
 ): Promise<OnboardingChecklistState> {
 	const db = getDb(env);
-	const [domainRow, mailboxRow, accountRow, moduleRow, agentEnabled, storedProvider, backups, migrations, abuseChKey] =
-		await Promise.all([
-			db
-				.select({ active: count() })
-				.from(domains)
-				.where(and(eq(domains.userId, domainOwnerId(user)), eq(domains.status, "active")))
-				.then((rows) => rows[0]),
-			db
-				.select({ total: count() })
-				.from(mailboxes)
-				.then((rows) => rows[0]),
-			db
-				.select({ total: count() })
-				.from(users)
-				.then((rows) => rows[0]),
-			db
-				.select({ total: count() })
-				.from(moduleSettings)
-				.then((rows) => rows[0]),
-			getAgentEnabled(env),
-			readStoredAgentProvider(env),
-			getBackupHealth(env),
-			getPendingMigrationStatus(env.DB),
-			resolveAbuseChKey(env),
-		]);
+	const [
+		domainRow,
+		mailboxRow,
+		accountRow,
+		modulesConfigured,
+		agentEnabled,
+		storedProvider,
+		backups,
+		migrations,
+		abuseChKey,
+	] = await Promise.all([
+		db
+			.select({ active: count() })
+			.from(domains)
+			.where(and(eq(domains.userId, domainOwnerId(user)), eq(domains.status, "active")))
+			.then((rows) => rows[0]),
+		db
+			.select({ total: count() })
+			.from(mailboxes)
+			.then((rows) => rows[0]),
+		db
+			.select({ total: count() })
+			.from(users)
+			.then((rows) => rows[0]),
+		readModulesConfigured(env),
+		getAgentEnabled(env),
+		readStoredAgentProvider(env),
+		getBackupHealth(env),
+		getPendingMigrationStatus(env.DB),
+		resolveAbuseChKey(env),
+	]);
 	return {
 		domainActive: domainRow.active > 0,
 		mailboxCount: mailboxRow.total,
 		accountCount: accountRow.total,
-		modulesConfigured: moduleRow.total > 0,
+		modulesConfigured,
 		spamKeyConfigured: abuseChKey !== null,
-		assistantConfigured: !agentEnabled || storedProvider !== null,
+		// `readStoredAgentProvider` always resolves to a row (the single `app_settings` row migration 0012 seeds, read
+		// as the legacy fallback), so `provider` itself, not the object, says whether one was actually chosen.
+		assistantConfigured: !agentEnabled || !!storedProvider?.provider,
 		backupsReady: !!backups.automatic?.enabled || !!backups.lastSuccess,
 		migrationsPending: migrations.pending,
 	};

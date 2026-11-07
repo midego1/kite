@@ -72,19 +72,25 @@ test.describe("the owner setup checklist", () => {
 		expect(doneOf(await readChecklist(api), "spam")).toBe(false);
 	});
 
-	test("dismissing hides it on the admin overview and stays hidden after a reload", async ({ page }) => {
+	test("dismissing hides it on the admin overview, stays hidden after a reload, and a link there brings it back", async ({
+		page,
+	}) => {
 		await page.goto("/admin");
 		const card = page.getByTestId("onboarding-checklist");
 		await expect(card).toBeVisible();
 		await card.getByRole("button", { name: "Dismiss" }).click();
 		await expect(card).toHaveCount(0);
+		const restore = page.getByTestId("onboarding-checklist-restore");
+		await expect(restore).toContainText("dismissed");
 
 		await page.reload();
 		await expect(page.getByTestId("onboarding-checklist")).toHaveCount(0);
+		await expect(page.getByTestId("onboarding-checklist-restore")).toBeVisible();
 		expect((await readChecklist(api)).dismissed).toBe(true);
 
-		await api.patch("/api/admin/onboarding-checklist", { data: { dismissed: false } });
-		await page.reload();
+		await page.getByTestId("onboarding-checklist-restore").getByRole("button", { name: "Show it again" }).click();
 		await expect(page.getByTestId("onboarding-checklist")).toBeVisible();
+		await expect(page.getByTestId("onboarding-checklist-restore")).toHaveCount(0);
+		expect((await readChecklist(api)).dismissed).toBe(false);
 	});
 });

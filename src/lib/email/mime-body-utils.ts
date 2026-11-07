@@ -192,6 +192,50 @@ export function limitDecodedText(
 	return cut;
 }
 
+/** The part of postal-mime that turns a part that is not read as a body into an attachment. */
+type AttachmentCollector = {
+	attachments: { mimeType: string }[];
+	collectAttachment(node: MimePart, content: ArrayBuffer, ...rest: unknown[]): void;
+};
+
+/**
+ * Decoded bytes of a calendar part that `limitCalendarDecoding` lets postal-mime read as text. postal-mime decodes a
+ * `text/calendar` or `application/ics` part whole into a string to store it as UTF-8, outside `MAX_DECODED_TEXT_BYTES`:
+ * 24 MB with one character outside Latin-1 needed about 112 MB of heap. A part of 1 MiB fits a 24 MB heap whatever its
+ * characters, and is four times what the invitation reader parses (`ICS_MAX_BYTES`, 256 KB), so every part that can
+ * become an invitation is read as before. Real invitations are a few kilobytes.
+ *
+ * @public Exercised by the unit tests.
+ */
+export const MAX_DECODED_CALENDAR_BYTES = 1024 * 1024;
+const CALENDAR_TYPES = new Set(["text/calendar", "application/ics"]);
+/** A type postal-mime has no special case for, so it keeps the decoded bytes as they are. */
+const PLAIN_ATTACHMENT_TYPE = "application/octet-stream";
+
+/**
+ * Keeps a calendar part of `parser` over `max` decoded bytes as a plain attachment: its decoded bytes as sent, in its
+ * own charset and line ends, never turned into a string. It keeps its type, so it is listed as a calendar file, and the
+ * invitation reader leaves it alone for its size. The raw message keeps everything.
+ */
+export function limitCalendarDecoding(parser: PostalMime, max = MAX_DECODED_CALENDAR_BYTES): void {
+	const collector = parser as unknown as AttachmentCollector;
+	const collectAttachment = collector.collectAttachment.bind(collector);
+	collector.collectAttachment = (node, content, ...rest) => {
+		const { contentType } = node;
+		const type = contentType.parsed.value;
+		if (!CALENDAR_TYPES.has(type) || content.byteLength <= max) return collectAttachment(node, content, ...rest);
+		// postal-mime picks the calendar case by the part's type alone, and adds exactly one attachment for the part.
+		node.contentType = { ...contentType, parsed: { ...contentType.parsed, value: PLAIN_ATTACHMENT_TYPE } };
+		try {
+			collectAttachment(node, content, ...rest);
+		} finally {
+			node.contentType = contentType;
+		}
+		const attachment = collector.attachments.at(-1);
+		if (attachment) attachment.mimeType = type;
+	};
+}
+
 /** Which bodies hold a part that was cut: a body holds the parts of its own format, and those converted into it. */
 export function cutBodies(cut: DecodedTextCut, converted: BodyConversion): Record<TextType, boolean> {
 	const convertedCut = (keys: Set<unknown>) => [...keys].some((key) => converted.has(key));

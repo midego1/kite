@@ -22,6 +22,11 @@ const MODULE_CLIENTS: Partial<Record<ModuleId, () => Promise<ModuleClient>>> = {
 	drive: () => (typeof window === "undefined" ? new Promise<never>(() => {}) : import("./drive/client")),
 };
 
+/** Whether the module has a client chunk at all, without loading it. */
+export function hasModuleClient(id: ModuleId): boolean {
+	return Object.hasOwn(MODULE_CLIENTS, id);
+}
+
 /** The module's client chunk, or null when it has none. Call only for a module that is on. */
 export function loadModuleClient(id: ModuleId): Promise<ModuleClient> | null {
 	return MODULE_CLIENTS[id]?.() ?? null;

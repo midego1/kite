@@ -11,6 +11,7 @@ import { AgentEmailLink } from "./email-link";
 import { RecordRefLink } from "@/components/modules/record-ref-link";
 import type { ModuleProposalCard } from "@/components/modules/client-registry-types";
 import { useModuleProposalCard } from "./use-proposal-card";
+import { proposalCardBlock, type ProposalCardStatus } from "./proposal-card-utils";
 import type { AssistantDetailPreference } from "@/components/appearance-preferences";
 
 function emailReferences(value: Record<string, unknown>): AgentEmailReference[] {
@@ -216,13 +217,28 @@ function ApprovedAction({
 	);
 }
 
+/**
+ * The approve button's text and why it is unavailable: blocked while the module's own card loads or failed to load,
+ * then as the module's card says, or core's label for a proposal without one.
+ */
+function approveState(
+	proposal: AgentActionProposal,
+	card: ModuleProposalCard | null,
+	status: ProposalCardStatus,
+	edits: Record<string, unknown>,
+): { label: string; blocked: string | null } {
+	const waiting = proposalCardBlock(status);
+	if (waiting) return { label: approveActionLabel(proposal), blocked: waiting };
+	return card ? card.approve({ ...proposal.input, ...edits }) : { label: approveActionLabel(proposal), blocked: null };
+}
+
 export function AgentPendingActions({
 	item,
 	onApproveAction,
 	approvingId,
 }: Pick<AgentTurnProps, "onApproveAction" | "approvingId"> & { item: AgentMessage }) {
 	const proposal = agentActionProposal(item.content);
-	const card = useModuleProposalCard(proposal?.moduleId, proposal?.action ?? "");
+	const { card, status } = useModuleProposalCard(proposal?.moduleId, proposal?.action ?? "");
 	const [edits, setEdits] = useState<Record<string, unknown>>({});
 	if (!proposal || proposal.status === "processing" || draftFromToolContent(item.content)) return null;
 	if (proposal.status !== "pending_approval")
@@ -232,7 +248,7 @@ export function AgentPendingActions({
 			</div>
 		);
 	const approving = approvingId === item.id;
-	const approve = card ? card.approve({ ...proposal.input, ...edits }) : null;
+	const approve = approveState(proposal, card, status, edits);
 	return (
 		<div className="space-y-2 text-xs">
 			<ProposalEmails proposal={proposal} />
@@ -248,14 +264,14 @@ export function AgentPendingActions({
 				<ProposalItems proposal={proposal} />
 			)}
 			<div className="flex flex-wrap items-center justify-end gap-3">
-				{approve?.blocked && <span className="me-auto text-neutral-500">{approve.blocked}</span>}
+				{approve.blocked && <span className="me-auto text-neutral-500">{approve.blocked}</span>}
 				<button
 					type="button"
 					className="rounded-lg bg-blue-600 px-3 py-2 font-medium text-white disabled:opacity-50"
-					disabled={!item.recordId || approving || !!approve?.blocked}
+					disabled={!item.recordId || approving || !!approve.blocked}
 					onClick={() => onApproveAction(item, card && Object.keys(edits).length > 0 ? edits : undefined)}
 				>
-					{approving ? "Approving…" : (approve?.label ?? approveActionLabel(proposal))}
+					{approving ? "Approving…" : approve.label}
 				</button>
 			</div>
 		</div>

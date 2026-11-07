@@ -61,9 +61,34 @@ export function proposalDetails(details: Record<string, unknown>): TrackProposal
 }
 
 /** A field as the card sends it: a blank field is null, so it stays empty instead of keeping the proposed value. */
-export function editValue(value: string): string | null {
+function editValue(value: string): string | null {
 	const trimmed = value.trim();
 	return trimmed ? value : null;
+}
+
+/**
+ * The card's edits after the user changed one field. A renewal Kite estimated from the billing period no longer holds
+ * once the period changes, so it is cleared (and its "estimated" note goes) unless the user set the date themselves;
+ * the card asks for it rather than guessing again.
+ */
+export function withEdit(
+	edits: Record<string, unknown>,
+	key: string,
+	value: string,
+	renewalEstimated: boolean,
+): Record<string, unknown> {
+	const next = { ...edits, [key]: editValue(value) };
+	if (key === "cycle" && renewalEstimated && !Object.hasOwn(edits, "nextRenewalOn")) next.nextRenewalOn = null;
+	return next;
+}
+
+/** Whether the next renewal still shows the date Kite estimated: it was estimated, and nobody changed it since. */
+export function showsEstimatedRenewal(
+	fields: Pick<TrackProposalFields, "nextRenewalOn">,
+	details: Pick<TrackProposalDetails, "renewalEstimated">,
+	edits: Record<string, unknown>,
+): boolean {
+	return details.renewalEstimated && !!fields.nextRenewalOn && !Object.hasOwn(edits, "nextRenewalOn");
 }
 
 export const CYCLE_OPTIONS: { value: string; label: MessageKey }[] = [

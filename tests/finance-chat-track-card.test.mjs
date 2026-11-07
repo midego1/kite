@@ -19,6 +19,9 @@ await build({
 	stdin: {
 		contents: `
 			export { trackProposalCard } from "./src/components/modules/finance/track-proposal-card.tsx";
+			export { showsEstimatedRenewal, withEdit } from "./src/components/modules/finance/track-proposal-utils.ts";
+			export { AgentPendingActions } from "./src/components/agent/tool-activity.tsx";
+			export { proposalCardBlock, proposalCardStatus } from "./src/components/agent/proposal-card-utils.ts";
 			export { attachRequestBody, trackRequestBody } from "./src/lib/finance/chat-track-utils.ts";
 			export { createElement } from "react";
 			export { renderToStaticMarkup } from "react-dom/server";
@@ -32,6 +35,12 @@ await build({
 	format: "esm",
 	target: "node22",
 	jsx: "automatic",
+	alias: {
+		"next/navigation": "next/navigation.js",
+		"next/link": "next/link.js",
+		"next/headers": "next/headers.js",
+		"next/server": "next/server.js",
+	},
 	logLevel: "silent",
 	packages: "external",
 	tsconfig: join(root, "tsconfig.json"),
@@ -110,4 +119,81 @@ test("the plan, like every field the assistant filled, is shown with its value a
 	assert.match(html, /data-card-field="plan"[\s\S]*?from the assistant[\s\S]*?value="Premium"/);
 	assert.match(html, /Your receipt/);
 	assert.match(html, /receipt\.pdf/);
+});
+
+const estimatedDetails = { assisted: [], renewalEstimated: true, existing: null, attachmentName: null, email: null };
+
+function renderTrack(edits) {
+	return m.renderToStaticMarkup(
+		m.createElement(m.trackProposalCard.Body, {
+			input: { ...full, mode: "track" },
+			details: estimatedDetails,
+			edits,
+			onEditsChange: () => {},
+			disabled: false,
+		}),
+	);
+}
+
+test("changing the billing period clears a renewal Kite estimated from the old one, with its note", () => {
+	assert.match(renderTrack({}), /estimated[\s\S]*?value="2026-12-01"/);
+	const edits = m.withEdit({}, "cycle", "yearly", true);
+	assert.deepEqual(edits, { cycle: "yearly", nextRenewalOn: null });
+	const html = renderTrack(edits);
+	assert.doesNotMatch(html, /estimated/);
+	assert.doesNotMatch(html, /value="2026-12-01"/);
+	// A date the user set, or one that was read rather than estimated, is kept.
+	assert.deepEqual(m.withEdit({ nextRenewalOn: "2027-02-01" }, "cycle", "yearly", true), {
+		nextRenewalOn: "2027-02-01",
+		cycle: "yearly",
+	});
+	assert.deepEqual(m.withEdit({}, "cycle", "yearly", false), { cycle: "yearly" });
+	assert.equal(m.withEdit({}, "cycle", "", true).cycle, null);
+	// Typing a date of one's own drops the note too.
+	assert.equal(
+		m.showsEstimatedRenewal(
+			{ nextRenewalOn: "2027-03-01" },
+			{ renewalEstimated: true },
+			{ nextRenewalOn: "2027-03-01" },
+		),
+		false,
+	);
+	assert.equal(m.showsEstimatedRenewal({ nextRenewalOn: "2026-12-01" }, { renewalEstimated: true }, {}), true);
+});
+
+test("approve waits for the module's own card, and stays off with a message when it fails to load", () => {
+	assert.equal(m.proposalCardStatus(false, null), "none");
+	assert.equal(m.proposalCardStatus(true, null), "loading");
+	assert.equal(m.proposalCardStatus(true, { card: true }), "ready");
+	assert.equal(m.proposalCardStatus(true, { card: false }), "none");
+	assert.equal(m.proposalCardStatus(true, { failed: true }), "failed");
+	assert.match(m.proposalCardBlock("loading"), /Loading/);
+	assert.match(m.proposalCardBlock("failed"), /could not be loaded/);
+	assert.equal(m.proposalCardBlock("ready"), null);
+	assert.equal(m.proposalCardBlock("none"), null);
+
+	// The first render, before the finance chunk arrives: core's lines, and no working approve button.
+	const proposal = {
+		action: "track_subscription",
+		status: "pending_approval",
+		moduleId: "finance",
+		effect: "create",
+		input: { ...full, mode: "track" },
+		items: [{ label: "Track Acmeflix", detail: null }],
+	};
+	const html = m.renderToStaticMarkup(
+		m.createElement(m.AgentPendingActions, {
+			item: {
+				id: "msg-1",
+				recordId: "tool-1",
+				role: "tool",
+				content: JSON.stringify(proposal),
+				toolName: "track_subscription",
+			},
+			onApproveAction: () => {},
+			approvingId: null,
+		}),
+	);
+	assert.match(html, /Loading the card…/);
+	assert.match(html, /<button[^>]*disabled=""[^>]*>Approve and save<\/button>/);
 });

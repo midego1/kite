@@ -11,9 +11,10 @@ import {
 	DOC_TYPE_OPTIONS,
 	approveState,
 	approvedText,
-	editValue,
 	proposalDetails,
 	proposalFields,
+	showsEstimatedRenewal,
+	withEdit,
 	type TrackProposalDetails,
 	type TrackProposalFields,
 } from "./track-proposal-utils";
@@ -141,13 +142,15 @@ function TrackFields({
 	controls,
 	fields,
 	details,
+	edits,
 }: {
 	controls: Controls;
 	fields: TrackProposalFields;
 	details: TrackProposalDetails;
+	edits: Record<string, unknown>;
 }) {
 	const t = useT();
-	const estimated = details.renewalEstimated && controls.note("nextRenewalOn") === null && !!fields.nextRenewalOn;
+	const estimated = showsEstimatedRenewal(fields, details, edits);
 	return (
 		<>
 			<TextField controls={controls} name="vendor" label={t("Service")} dir="auto" maxLength={80} />
@@ -199,7 +202,7 @@ function TrackProposalBody({ input, details: rawDetails, edits, onEditsChange, d
 	const controls: Controls = {
 		fieldId: (key) => `${id}-${key}`,
 		value: (key) => fields[key] ?? "",
-		set: (key, value) => onEditsChange({ ...edits, [key]: editValue(value) }),
+		set: (key, value) => onEditsChange(withEdit(edits, key, value, details.renewalEstimated)),
 		note: (key) => (details.assisted.includes(key) && !Object.hasOwn(edits, key) ? t("from the assistant") : null),
 		disabled,
 	};
@@ -253,7 +256,7 @@ function TrackProposalBody({ input, details: rawDetails, edits, onEditsChange, d
 					<TextField controls={controls} name="documentOn" label={t("Date")} type="date" />
 				</>
 			) : (
-				<TrackFields controls={controls} fields={fields} details={details} />
+				<TrackFields controls={controls} fields={fields} details={details} edits={edits} />
 			)}
 			{fields.attachmentId && fields.docType && (
 				<p data-card-field="attachmentId" className="break-words text-neutral-500">

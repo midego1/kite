@@ -7,6 +7,7 @@ import { sanitizeStoredEmailHtml } from "@/lib/email/stored-html-utils";
 import {
 	cutBodies,
 	limitBodyConversion,
+	limitCalendarDecoding,
 	limitDecodedText,
 	TEXT_CUT_NOTE,
 	withHtmlCutNote,
@@ -73,6 +74,7 @@ export async function parseRawMime(raw: ArrayBuffer): Promise<ParsedEmail> {
 		});
 		const converted = limitBodyConversion(parser);
 		const decoded = limitDecodedText(parser);
+		limitCalendarDecoding(parser);
 		email = await parser.parse(raw);
 		cut = cutBodies(decoded, converted);
 	} catch (error) {

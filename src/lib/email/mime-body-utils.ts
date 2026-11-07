@@ -5,10 +5,16 @@ type TextEntry = Partial<Record<TextType, { value: unknown }[]>>;
 /** The parts of postal-mime that hold a message's text parts until they are joined into its bodies. */
 type BodyRenderer = { textMap: Map<unknown, TextEntry>; textTypes: Set<TextType>; renderTextContent(): void };
 /** A MIME part as postal-mime holds it, with its decoded bytes once it is read. */
-type MimePart = { contentType: { multipart: string | false; parsed: { value: string } }; content: ArrayBuffer | null };
-/** The parts of postal-mime that read a message's text parts out of the tree. */
+type MimePart = {
+	contentType: { multipart: string | false; parsed: { value: string; params: Record<string, unknown> } };
+	content: ArrayBuffer | null;
+};
+/**
+ * The parts of postal-mime that read a message's text parts out of the tree. A text part is filed in `textMap` under
+ * its closest `multipart/alternative`, or else under itself.
+ */
 type PartCollector = {
-	collectNode(node: MimePart, ...rest: unknown[]): Promise<void>;
+	collectNode(node: MimePart, alternative: unknown, ...rest: unknown[]): Promise<void>;
 	isInlineTextNode(node: MimePart): boolean;
 };
 
@@ -79,8 +85,8 @@ function withoutConversion(textMap: BodyRenderer["textMap"]): TextEntry {
 	return merged;
 }
 
-/** Per format, whether its parts were also rendered into the body of the other format. */
-export type BodyConversion = Record<TextType, boolean>;
+/** The `textMap` entries whose parts were also rendered into the body of the other format. */
+export type BodyConversion = Set<unknown>;
 
 /**
  * Keeps the text bodies of `parser` from being converted when that would cost more than `MAX_BODY_CONVERSION_COST`:
@@ -90,7 +96,7 @@ export type BodyConversion = Record<TextType, boolean>;
 export function limitBodyConversion(parser: PostalMime): BodyConversion {
 	const renderer = parser as unknown as BodyRenderer;
 	const render = renderer.renderTextContent.bind(renderer);
-	const converted: BodyConversion = { plain: false, html: false };
+	const converted: BodyConversion = new Set();
 	renderer.renderTextContent = () => {
 		if (renderer.textTypes.size > 1 && totalConversionCost(renderer.textMap) > MAX_BODY_CONVERSION_COST) {
 			const merged = withoutConversion(renderer.textMap);
@@ -98,9 +104,8 @@ export function limitBodyConversion(parser: PostalMime): BodyConversion {
 			renderer.textMap.set(merged, merged);
 		}
 		if (renderer.textTypes.size > 1) {
-			for (const entry of renderer.textMap.values()) {
-				if (!entry.html) converted.plain = true;
-				if (!entry.plain) converted.html = true;
+			for (const [key, entry] of renderer.textMap) {
+				if (!entry.html || !entry.plain) converted.add(key);
 			}
 		}
 		render();
@@ -130,25 +135,29 @@ const UTF8_CONTINUATION = 0x80;
 
 /**
  * Where to cut `bytes` to keep at most `max` of them: after the last line end in the final `CUT_LINE_WINDOW`, or else
- * before a UTF-8 lead byte, so a UTF-8 part still decodes as UTF-8 and not as windows-1252. Every other charset
- * loses at most the one character the cut goes through.
+ * at `max`. In a part that may be UTF-8 (`utf8`) that moves back before a lead byte, so the part still decodes as UTF-8
+ * and not as windows-1252; any other charset loses at most the one character the cut goes through.
  *
  * @public Exercised by the unit tests.
  */
-export function decodedTextCut(bytes: Uint8Array, max: number): number {
+export function decodedTextCut(bytes: Uint8Array, max: number, utf8 = true): number {
 	if (bytes.length <= max) return bytes.length;
 	if (max <= 0) return 0;
 	const lineEnd = bytes.lastIndexOf(LINE_FEED, max - 1);
 	if (lineEnd >= 0 && lineEnd >= max - CUT_LINE_WINDOW) return lineEnd + 1;
 	let cut = max;
+	if (!utf8) return cut;
 	for (let step = 0; step < 3 && cut > 0 && (bytes[cut] & UTF8_CONTINUATION_MASK) === UTF8_CONTINUATION; step += 1) {
 		cut -= 1;
 	}
 	return cut;
 }
 
-/** Per format, whether `limitDecodedText` left part of its parts out. */
-export type DecodedTextCut = Record<TextType, boolean>;
+/** Per format, the `textMap` entries holding a part that `limitDecodedText` cut or left out. */
+export type DecodedTextCut = Record<TextType, Set<unknown>>;
+
+/** A charset label that names UTF-8, or none: an unlabelled part is read as UTF-8 when it is well formed. */
+const MAYBE_UTF8 = /^(?:utf-?8|unicode-1-1-utf-8)?$/i;
 
 /**
  * Keeps the text parts and the HTML parts of `parser` within `MAX_DECODED_TEXT_BYTES` of decoded bytes per format,
@@ -161,30 +170,33 @@ export function limitDecodedText(
 ): DecodedTextCut {
 	const collector = parser as unknown as PartCollector;
 	const collect = collector.collectNode.bind(collector);
-	const cut: DecodedTextCut = { plain: false, html: false };
+	const cut: DecodedTextCut = { plain: new Set(), html: new Set() };
 	const left = { ...max };
 	// postal-mime walks the tree through `this.collectNode`, so every part comes through here.
-	collector.collectNode = (node, ...rest) => {
+	collector.collectNode = (node, alternative, ...rest) => {
 		const { content } = node;
 		if (!node.contentType.multipart && content && collector.isInlineTextNode(node)) {
-			const type = node.contentType.parsed.value === "text/html" ? "html" : "plain";
-			const kept = decodedTextCut(new Uint8Array(content), left[type]);
+			const { value, params } = node.contentType.parsed;
+			const type = value === "text/html" ? "html" : "plain";
+			const charset = typeof params.charset === "string" ? params.charset.trim() : "";
+			const kept = decodedTextCut(new Uint8Array(content), left[type], MAYBE_UTF8.test(charset));
 			if (kept < content.byteLength) {
 				node.content = content.slice(0, kept);
-				cut[type] = true;
+				cut[type].add(alternative || node);
 			}
 			// Once a part is cut, later parts of its format are left out whole rather than read past a gap.
-			left[type] = cut[type] ? 0 : left[type] - kept;
+			left[type] = cut[type].size ? 0 : left[type] - kept;
 		}
-		return collect(node, ...rest);
+		return collect(node, alternative, ...rest);
 	};
 	return cut;
 }
 
 /** Which bodies hold a part that was cut: a body holds the parts of its own format, and those converted into it. */
 export function cutBodies(cut: DecodedTextCut, converted: BodyConversion): Record<TextType, boolean> {
+	const convertedCut = (keys: Set<unknown>) => [...keys].some((key) => converted.has(key));
 	return {
-		plain: cut.plain || (cut.html && converted.html),
-		html: cut.html || (cut.plain && converted.plain),
+		plain: cut.plain.size > 0 || convertedCut(cut.html),
+		html: cut.html.size > 0 || convertedCut(cut.plain),
 	};
 }

@@ -159,6 +159,8 @@ test("a cut keeps whole lines, or else whole UTF-8 characters", () => {
 	assert.equal(decodedTextCut(bytes("ab€cd"), 3), 2);
 	assert.equal(decodedTextCut(bytes("ab€cd"), 4), 2);
 	assert.equal(decodedTextCut(bytes("ab€cd"), 5), 5);
+	// A part in another charset is cut where the limit falls: every byte there is a character of its own.
+	assert.equal(decodedTextCut(bytes("ab€cd"), 4, false), 4);
 	// A line end further back than 64 KiB is not worth what it would leave out.
 	const longLine = bytes(`a\n${"б".repeat(40_000)}`);
 	assert.equal(decodedTextCut(longLine, 70_001), 70_000);
@@ -181,6 +183,10 @@ test("text past the limit is cut on a character boundary and stays UTF-8, with a
 	// Without a charset, a part that is not well formed UTF-8 would read as windows-1252.
 	const unlabelled = await parseRawMime(encode(single("text/plain", `${"é".repeat(MiB - 1)}x€`)));
 	assert.equal(unlabelled.text, `${"é".repeat(MiB - 1)}x${TEXT_NOTE}`);
+	// In a single-byte charset the cut keeps every character up to the limit.
+	const latin1 = Buffer.from(single("text/plain; charset=iso-8859-1", "°".repeat(2 * MiB + 10)), "latin1");
+	const singleByte = await parseRawMime(latin1.buffer.slice(latin1.byteOffset, latin1.byteOffset + latin1.byteLength));
+	assert.equal(singleByte.text, `${"°".repeat(2 * MiB)}${TEXT_NOTE}`);
 });
 
 test("HTML past the limit ends with the note, inside the root direction", async () => {
@@ -211,6 +217,21 @@ test("each format has its own limit, and parts past it are left out", async () =
 	const twoTexts = await parseRawMime(encode(multi("mixed", part("text/plain", large), part("text/plain", "after"))));
 	assert.ok(!twoTexts.text.includes("after"));
 	assert.ok(twoTexts.text.endsWith(TEXT_NOTE));
+});
+
+test("only a cut part converted into the other body puts the note there too", async () => {
+	const large = `${"x".repeat(1_000)}\r\n`.repeat(2_200);
+	// The short text part is converted into the HTML body; the cut one has an HTML alternative and is not.
+	const alternative =
+		'Content-Type: multipart/alternative; boundary="A"\r\n\r\n' +
+		`--A\r\nContent-Type: text/plain\r\n\r\n${large}\r\n` +
+		"--A\r\nContent-Type: text/html\r\n\r\n<p>hi</p>\r\n--A--";
+	const parsed = await parseRawMime(encode(multi("mixed", part("text/plain", "intro"), `--B\r\n${alternative}\r\n`)));
+	assert.ok(parsed.text.startsWith("intro"));
+	assert.ok(parsed.html.includes("intro"));
+	assert.ok(parsed.text.endsWith(TEXT_NOTE));
+	assert.ok(parsed.html.includes("<p>hi</p>"));
+	assert.ok(!parsed.html.includes(NOTE), parsed.html.slice(-200));
 });
 
 test("a cut text part converted into the HTML body puts the note there too", async () => {

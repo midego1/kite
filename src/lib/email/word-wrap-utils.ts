@@ -10,7 +10,9 @@ const SHOW_TEXT = 4;
  * to its description) is squeezed into one character per line. Cells break words only where they would overflow
  * (`break-word`, which leaves the minimum width alone), and text marked by `markLongWords` still breaks anywhere.
  */
-export const CELL_WRAP_STYLES = `td,th{overflow-wrap:break-word}[${LONG_WORD_ATTRIBUTE}]{overflow-wrap:anywhere}`;
+// The marked text wraps even where the sender said otherwise: an inline `!important` never survives the sanitizer, so
+// these win over the mail's own `nowrap` and `overflow-wrap`.
+export const CELL_WRAP_STYLES = `td,th{overflow-wrap:break-word}[${LONG_WORD_ATTRIBUTE}]{overflow-wrap:anywhere!important;text-wrap-mode:wrap!important}`;
 
 /**
  * Marks the parent of every text node in a table cell under `root` that holds a long word, such as a URL written out in

@@ -42,3 +42,14 @@ export function receiptTableHtml({ description = "Incorporate your startup × 1"
 		"</body></html>",
 	].join("");
 }
+
+// Ordinary mail that tells text not to wrap where the reader cannot afford it on a phone: a navigation row in one
+// `nowrap` cell, a `nowrap` block and span, and a paragraph that turns off breaking long words.
+export const NO_WRAP_SHAPES = {
+	navigationCell:
+		'<table width="100%"><tr><td nowrap align="center">Home · Products · Pricing · Support · Account · Contact us · Blog</td></tr></table>',
+	block:
+		'<div style="white-space:nowrap">Your order has shipped and will arrive within three to five working days, tracking follows soon.</div>',
+	span: `<p>Track it at <span style="white-space:nowrap">${RECEIPT_URL}</span> any time.</p>`,
+	paragraph: `<p style="word-wrap:normal;overflow-wrap:normal">${RECEIPT_URL}</p>`,
+};

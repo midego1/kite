@@ -7,7 +7,7 @@ import { build } from "esbuild";
 import { JSDOM } from "jsdom";
 import { makeBundleDirectory } from "./support/bundle-directory.mjs";
 import { XSS_PAYLOADS, findActiveContent } from "./fixtures/xss-payloads.mjs";
-import { RECEIPT_AMOUNT, RECEIPT_URL, receiptTableHtml } from "./fixtures/receipt-table.mjs";
+import { NO_WRAP_SHAPES, RECEIPT_AMOUNT, RECEIPT_URL, receiptTableHtml } from "./fixtures/receipt-table.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const directory = makeBundleDirectory("kite-sanitizer-test-");
@@ -158,14 +158,14 @@ test("the reader sanitizer keeps the longhands browsers expand allowed shorthand
 	// Chromium reads `white-space: nowrap` as these two and `border: 0` as each side's width, style and colour; jsdom
 	// does not expand shorthands, so the longhands are given as written.
 	const output = sanitizeEmailHtml(
-		'<div style="white-space-collapse: collapse; text-wrap-mode: nowrap; border-top-width: 1px; border-top-style: solid; border-top-color: red; border-top-left-radius: 4px; overflow-wrap: normal; text-decoration-line: none">x</div>',
+		'<table><tr><td style="white-space-collapse: collapse; text-wrap-mode: nowrap; border-top-width: 1px; border-top-style: solid; border-top-color: red; border-top-left-radius: 4px; overflow-wrap: break-word; text-decoration-line: none">$500.00</td></tr></table>',
 	);
 	for (const declaration of [
 		"white-space-collapse: collapse",
 		"text-wrap-mode: nowrap",
 		"border-top: 1px solid red",
 		"border-top-left-radius: 4px",
-		"overflow-wrap: normal",
+		"overflow-wrap: break-word",
 		"text-decoration-line: none",
 	]) {
 		assert.ok(output.includes(declaration), `${declaration} in ${output}`);
@@ -176,8 +176,29 @@ test("the reader sanitizer keeps the longhands browsers expand allowed shorthand
 	assert.equal(sanitizeEmailHtml(quote), '<blockquote style="margin-left: 0.8ex">q</blockquote>');
 	assert.match(sanitizeEmailHtml(quote, { forOutgoing: true }), /border-left-width: 1px/);
 	assert.equal(
-		sanitizeEmailHtml('<p style="border-image-source: none; position: fixed; text-wrap-mode: nowrap">x</p>'),
-		'<p style="text-wrap-mode: nowrap">x</p>',
+		sanitizeEmailHtml('<p style="border-image-source: none; position: fixed; white-space-collapse: preserve">x</p>'),
+		'<p style="white-space-collapse: preserve">x</p>',
+	);
+});
+
+test("in the reader only a short table cell keeps its text on one line, and long words always break", () => {
+	const unwrapped = /nowrap|text-wrap|white-space: pre;|overflow-wrap: normal|word-wrap: normal/;
+	for (const [shape, html] of Object.entries(NO_WRAP_SHAPES)) {
+		assert.doesNotMatch(sanitizeEmailHtml(html), unwrapped, shape);
+		// Sent mail is the sender's to lay out.
+		assert.match(sanitizeEmailHtml(html, { forOutgoing: true }), unwrapped, shape);
+	}
+	for (const value of ["nowrap", "pre"]) {
+		assert.equal(
+			sanitizeEmailHtml(`<div style="text-wrap-mode: wrap; white-space: ${value}">x</div>`),
+			'<div style="text-wrap-mode: wrap">x</div>',
+		);
+	}
+	assert.equal(
+		sanitizeEmailHtml(
+			'<table><tr><th nowrap style="text-wrap-mode: nowrap; overflow-wrap: anywhere">Amount paid</th></tr></table>',
+		),
+		'<table><tbody><tr><th nowrap="" style="text-wrap-mode: nowrap; overflow-wrap: anywhere">Amount paid</th></tr></tbody></table>',
 	);
 });
 

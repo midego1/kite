@@ -169,6 +169,13 @@ const ALLOWED_STYLE_LONGHANDS = new Set([
 	"white-space-collapse",
 ]);
 const UNSAFE_STYLE_VALUE = /url\s*\(|expression\s*\(|javascript:|@import|behavior\s*:|-moz-binding/i;
+// In the reader only a short table cell (an amount, a date) keeps its text on one line; anywhere else `nowrap` pushes
+// the mail past a phone's width. Turning off breaking long words is not left to the sender either.
+const SHORT_CELL_CHARS = 32;
+const NO_WRAP_PROPERTIES = new Set(["text-wrap", "text-wrap-mode", "white-space"]);
+const NO_WRAP_VALUE = /nowrap|^\s*pre\s*$/i;
+const WRAP_WORD_PROPERTIES = new Set(["overflow-wrap", "word-wrap"]);
+const BREAKS_LONG_WORDS = /^\s*(?:break-word|anywhere)\s*$/i;
 /** Near-black text, marked for the frame; the frame's CSS reads it (email-html-frame-utils.ts). */
 const NEUTRAL_TEXT_ATTRIBUTE = "data-kite-text";
 const APP_FONT_FALLBACK = "var(--font-geist-sans), system-ui, sans-serif";
@@ -243,18 +250,30 @@ function noteColours(element: StyledElement, colours: EmailColourFacts): void {
 	}
 }
 
-function sanitizeStyle(element: StyledElement, options: SanitizeEmailHtmlOptions): void {
-	if (options.colours && !options.forOutgoing) noteColours(element, options.colours);
+function isShortCell(element: Element): boolean {
+	const tag = element.tagName.toLowerCase();
+	if (tag !== "td" && tag !== "th") return false;
+	return (element.textContent ?? "").replace(/\s+/g, " ").trim().length <= SHORT_CELL_CHARS;
+}
+
+/** Declarations the reader leaves out although they are allowed: ones that would widen the mail or double a bar. */
+function isDisplayedDeclaration(element: Element, property: string, value: string): boolean {
+	if (NO_WRAP_PROPERTIES.has(property) && NO_WRAP_VALUE.test(value)) return isShortCell(element);
+	if (WRAP_WORD_PROPERTIES.has(property)) return BREAKS_LONG_WORDS.test(value);
 	// The frame draws a quote's bar on the reading start side; Gmail's own `border-left` would add a second one in
 	// right-to-left mail.
-	const ownQuoteBar = !options.forOutgoing && element.tagName.toLowerCase() === "blockquote";
+	return !(property.startsWith("border") && element.tagName.toLowerCase() === "blockquote");
+}
+
+function sanitizeStyle(element: StyledElement, options: SanitizeEmailHtmlOptions): void {
+	if (options.colours && !options.forOutgoing) noteColours(element, options.colours);
 	const safe = (element.ownerDocument.createElement("span") as StyledElement).style;
 	for (const property of Array.from(element.style)) {
 		if (!ALLOWED_STYLE_PROPERTIES.has(property) && !ALLOWED_STYLE_LONGHANDS.has(property)) continue;
-		if (ownQuoteBar && property.startsWith("border")) continue;
 		if (property === "font-family" && options.dropFontFamily) continue;
 		const value = element.style.getPropertyValue(property);
 		if (UNSAFE_STYLE_VALUE.test(value)) continue;
+		if (!options.forOutgoing && !isDisplayedDeclaration(element, property, value)) continue;
 		const safeValue = property === "font-family" && !options.forOutgoing ? `${value}, ${APP_FONT_FALLBACK}` : value;
 		safe.setProperty(property, safeValue);
 	}
@@ -285,6 +304,8 @@ function styleQuoteIntroductions(root: Element): void {
 function finishElement(element: Element, origin: string, options: SanitizeEmailHtmlOptions): void {
 	const tag = element.tagName.toLowerCase();
 	if (hasInlineStyle(element)) sanitizeStyle(element, options);
+	if (!options.forOutgoing && element.hasAttribute("nowrap") && !isShortCell(element))
+		element.removeAttribute("nowrap");
 
 	if (tag === "a") {
 		const href = element.getAttribute("href");

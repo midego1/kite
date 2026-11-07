@@ -21,7 +21,7 @@ import type { SubscriptionRow } from "./record-utils";
 import { subscriptionRef } from "./record-utils";
 import { ownerDocuments, ownerRows } from "./subscriptions";
 import { visibleToCaller } from "./tools";
-import { manualVendorKey, vendorKey, vendorName } from "./vendor-utils";
+import { manualVendorKey, senderAddress, vendorKey, vendorName } from "./vendor-utils";
 
 /** A refusal the assistant can read and say in its own words; the tool and the card never fail silently. */
 class ChatTrackRefusal extends Error {}
@@ -30,6 +30,7 @@ const refused = (error: string): JsonValue => ({ result: null, refused: { error 
 
 const EMAIL_NOT_FOUND = "Email not found in this mailbox, or you do not have full access to it";
 const AI_OFF = "AI is off for this mailbox";
+/** Shown only to the user who approved a card, never answered to the assistant. */
 const HIDDEN_TRACKED =
 	"This service is already tracked in Money Watch from a mailbox with AI off; add the email to it on the Subscriptions page";
 
@@ -86,22 +87,38 @@ const existingOf = (row: SubscriptionRow): ChatTrackExisting => ({
 type Service = { vendorKeys: string[]; vendor: string | null; plan: string | null; matchedId: string | null };
 
 /**
- * The owner's tracked row for the same service, or null: the detector's own match for an email, else the row with
- * the sender's vendor key or the name typed by hand, else the row with the same name. A row the chat may not see
- * still stops a second one, with a refusal that names nothing from it.
+ * The owner's tracked row for the same service among `rows`, or null: the detector's own match for an email, else the
+ * row with the sender's vendor key or the name typed by hand, else the row with the same name.
  */
-async function trackedFor(
+function sameService(rows: readonly SubscriptionRow[], service: Service): SubscriptionRow | null {
+	const keys = [...service.vendorKeys, ...(service.vendor ? [manualVendorKey(service.vendor)] : [])];
+	const matched = service.matchedId ? rows.find((row) => row.id === service.matchedId) : null;
+	if (matched) return matched;
+	const found = findExisting(rows, { ...service, vendorKeys: keys });
+	return found ? (rows.find((row) => row.id === found.id) ?? null) : null;
+}
+
+/**
+ * The tracked rows the chat may show: nothing in them came from a mailbox with AI off. The preview matches only
+ * these, so a row from such a mailbox looks untracked to the assistant, which cannot probe for it by name.
+ */
+async function visibleRows(ctx: CapabilityCallContext, user: FinanceUser): Promise<SubscriptionRow[]> {
+	const [rows, documents] = await Promise.all([ownerRows(user.id), ownerDocuments(user.id)]);
+	return (await visibleToCaller(ctx, rows, documents)).rows;
+}
+
+/**
+ * On approval, the tracked row for the same service among all of the owner's rows. A row the chat may not see still
+ * stops a second one; the refusal goes to the user who clicked, never into the chat the assistant reads.
+ */
+async function trackedOnApproval(
 	ctx: CapabilityCallContext,
 	user: FinanceUser,
 	service: Service,
 ): Promise<ChatTrackExisting | null> {
-	const rows = await ownerRows(user.id);
-	const keys = [...service.vendorKeys, ...(service.vendor ? [manualVendorKey(service.vendor)] : [])];
-	const matched = service.matchedId ? rows.find((row) => row.id === service.matchedId) : null;
-	const found = matched ? existingOf(matched) : findExisting(rows, { ...service, vendorKeys: keys });
-	const row = found && rows.find((candidate) => candidate.id === found.id);
+	const row = sameService(await ownerRows(user.id), service);
 	if (row && !(await visibleRow(ctx, row))) throw new ChatTrackRefusal(HIDDEN_TRACKED);
-	return found;
+	return row ? existingOf(row) : null;
 }
 
 /** The sender's vendor key, as Track as subscription stores it, so the dedupe matches what saving would. */
@@ -122,11 +139,30 @@ async function answeringRefusals(run: () => Promise<JsonValue>): Promise<JsonVal
 	}
 }
 
-/** The email the call names and the detector's reading of it, or neither for a subscription typed in the chat. */
-async function readEmail(ctx: CapabilityCallContext, user: FinanceUser, emailId: string | undefined) {
+/**
+ * The email the call names and the detector's reading of it, or neither for a subscription typed in the chat. A
+ * tracked row the chat may not see is no match for the reading either.
+ */
+async function readEmail(
+	ctx: CapabilityCallContext,
+	user: FinanceUser,
+	emailId: string | undefined,
+	visible: readonly SubscriptionRow[],
+) {
 	if (!emailId) return { message: null, draft: null };
 	const message = await chatMessage(ctx, user, emailId, true);
-	return { message, draft: await draftOf(user, message) };
+	const ids = new Set(visible.map((row) => row.id));
+	return { message, draft: await draftOf(user, message, (id) => ids.has(id)) };
+}
+
+const SUBJECT_MAX = 200;
+
+/** The subject and sender the card names the email by. */
+function emailLine(message: HostMessageDetail) {
+	return {
+		subject: message.subject ? message.subject.slice(0, SUBJECT_MAX) : null,
+		from: message.fromName ? `${message.fromName} <${senderAddress(message.from)}>` : senderAddress(message.from),
+	};
 }
 
 function attachmentName(message: HostMessageDetail | null, draft: ManualDraft | null): string | null {
@@ -147,14 +183,19 @@ export const previewTrackSubscription: CapabilityHandler = async (raw, ctx) =>
 		if (!input.emailId && !input.vendor)
 			return refused("Name the service to track, or open the email with the receipt");
 		const user = await chatUser(ctx);
-		const { message, draft } = await readEmail(ctx, user, input.emailId);
-		const existing = await trackedFor(ctx, user, {
+		if (input.emailId) await chatMessage(ctx, user, input.emailId, false);
+		const visible = await visibleRows(ctx, user);
+		const { message, draft } = await readEmail(ctx, user, input.emailId, visible);
+		const row = sameService(visible, {
 			vendorKeys: message ? senderKeys(message, draft) : [],
 			vendor: draft?.vendor || input.vendor || null,
 			plan: draft?.plan ?? input.plan ?? null,
 			matchedId: draft?.subscriptionId ?? null,
 		});
-		const { proposal, details } = mergeProposal(draft, input, existing, attachmentName(message, draft));
+		const existing = row ? existingOf(row) : null;
+		const merged = mergeProposal(draft, input, existing, attachmentName(message, draft));
+		const { proposal } = merged;
+		const details = { ...merged.details, email: message ? emailLine(message) : null };
 		return {
 			items: proposalItems(proposal, details, ctx.locale),
 			input: proposal,
@@ -216,7 +257,7 @@ async function track(
 	const mailboxId = message?.mailboxId ?? ctx.mailboxIds?.[0];
 	if (!mailboxId) throw new ChatTrackRefusal(EMAIL_NOT_FOUND);
 	// Tracked meanwhile (another card, another chat): never a second row for the same service.
-	const existing = await trackedFor(ctx, user, {
+	const existing = await trackedOnApproval(ctx, user, {
 		vendorKeys: message ? senderKeys(message, null) : [],
 		vendor: proposal.vendor,
 		plan: proposal.plan,

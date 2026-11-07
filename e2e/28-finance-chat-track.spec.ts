@@ -82,12 +82,13 @@ async function openStyled(
 	conversationId: string,
 	look: { style: string; theme: string; language?: string },
 ) {
-	const context = await browser.newContext({ storageState: STORAGE_STATE, viewport: { width: 1280, height: 900 } });
+	const context = await browser.newContext({ storageState: STORAGE_STATE, viewport: { width: 1280, height: 1200 } });
 	const page = await context.newPage();
 	await page.addInitScript(
 		({ value, mailbox, conversation }) => {
 			localStorage.setItem("selected-mailbox-id", mailbox);
-			localStorage.setItem("kite-assistant-layout", "floating");
+			// The side panel is as tall as the window, so the whole card fits in the screenshot.
+			localStorage.setItem("kite-assistant-layout", "sidebar");
 			localStorage.setItem("kite-layout-sync", "off");
 			localStorage.setItem("kite-style", value.style);
 			localStorage.setItem("kite-theme", value.theme);
@@ -129,6 +130,9 @@ test.describe("assistant chat tracks a subscription from a receipt", () => {
 		const proposal = card(panel, "track");
 		await expect(proposal).toBeVisible();
 		await expect(proposal.getByLabel("Service")).toHaveValue(vendor);
+		// Every saved field is on the card, the plan included, and so is the email it was read from.
+		await expect(proposal.getByLabel("Plan")).toBeVisible();
+		await expect(proposal.getByText(`From the email: ${first.subject}`)).toBeVisible();
 		await expect(proposal.getByLabel("Amount")).toHaveValue("12.99");
 		await expect(proposal.getByLabel("Currency")).toHaveValue("EUR");
 		// The email says monthly; the "yearly" the mail tried to talk the assistant into is not used.
@@ -150,7 +154,7 @@ test.describe("assistant chat tracks a subscription from a receipt", () => {
 			const styled = await openStyled(browser, first.mailboxId, conversationId!, look);
 			await expect(card(styled.panel, "track")).toBeVisible();
 			if (look.language) await expect(styled.page.locator("html")).toHaveAttribute("dir", "rtl");
-			await card(styled.panel, "track").scrollIntoViewIfNeeded();
+			await card(styled.panel, "track").evaluate((element) => element.scrollIntoView({ block: "start" }));
 			await styled.page.screenshot({ path: test.info().outputPath(`chat-track-card-${look.name}.png`) });
 			await styled.context.close();
 		}

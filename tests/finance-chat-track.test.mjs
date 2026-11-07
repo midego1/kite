@@ -412,15 +412,20 @@ test("only an email in the chat's mailbox that the user manages and AI may read 
 	const readerTrack = await tool(reader);
 	await assert.rejects(readerTrack.execute({ emailId: "shared" }), /Email not found/);
 
-	// A row found in a mailbox with AI off still stops a duplicate, without telling the assistant anything about it.
+	// A row found in a mailbox with AI off: the assistant cannot tell it exists (no refusal to probe with, no cycle or
+	// plan from it), but approving still stops a duplicate, with a refusal only the user who clicked sees.
+	addMessage("no-cycle", { text: "Thank you for your payment of $17.99.\n" });
 	db.db
 		.exec(`INSERT INTO finance_subscriptions (id, user_id, mailbox_id, vendor, vendor_key, plan, amount_minor, currency, cycle, status, reminder_days, calendar_reminder, cancel_one_click, renewal_estimated, source_message_id, created_at, updated_at)
-		VALUES ('fsub-private', 'owner', 'mailbox-off', 'Acmeflix', 'acmeflix.example', 'Secret plan', 4242, 'USD', 'monthly', 'active', 3, 0, 0, 0, 'private', 1, 1)`);
-	await assert.rejects(track.execute({ emailId: "shared" }), (error) => {
-		assert.match(error.message, /mailbox with AI off/);
-		assert.doesNotMatch(error.message, /Secret plan|42\.42/);
-		return true;
-	});
+		VALUES ('fsub-private', 'owner', 'mailbox-off', 'Acmeflix', 'acmeflix.example', 'Secret plan', 4242, 'USD', 'quarterly', 'active', 3, 0, 0, 0, 'private', 1, 1)`);
+	for (const call of [{ emailId: "no-cycle" }, { vendor: "Acmeflix" }]) {
+		const plain = await track.execute(call);
+		assert.equal(plain.input.mode, "track", JSON.stringify(call));
+		assert.equal(plain.input.subscriptionId, null);
+		assert.equal(plain.input.cycle, null, "the hidden row's cycle does not reach the card");
+		assert.doesNotMatch(JSON.stringify(plain), /Secret plan|42\.42|quarterly|AI off|already tracked/i);
+		await assert.rejects(confirmAgentAction(env, owner, store(plain)), /mailbox with AI off/);
+	}
 
 	// A forged stored proposal still runs only through the same checks.
 	const forged = {

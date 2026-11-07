@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, type ReactNode } from "react";
+import { useId, type ComponentProps, type ReactNode } from "react";
 import { WalletCards } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -14,27 +14,32 @@ import {
 	editValue,
 	proposalDetails,
 	proposalFields,
+	type TrackProposalDetails,
 	type TrackProposalFields,
 } from "./track-proposal-utils";
+import type { MessageKey } from "@/lib/i18n/i18n-types";
 
-type FieldKey = keyof Omit<TrackProposalFields, "mode" | "emailId">;
+type FieldKey = keyof Omit<TrackProposalFields, "mode" | "emailId" | "attachmentId" | "subscriptionId">;
 
 const INPUT = "h-8 text-xs";
 const SELECT = "flex h-8 text-xs";
 
+/** One field; `data-card-field` names the input key it shows, which the card-equals-save test reads. */
 function Field({
 	id,
+	name,
 	label,
 	note,
 	children,
 }: {
 	id: string;
+	name: FieldKey;
 	label: string;
 	note?: string | null;
 	children: ReactNode;
 }) {
 	return (
-		<div className="min-w-0 space-y-1">
+		<div className="min-w-0 space-y-1" data-card-field={name}>
 			<label htmlFor={id} className="block font-medium text-neutral-700">
 				{label}
 				{note && <span className="ms-1 font-normal text-neutral-500">· {note}</span>}
@@ -44,62 +49,67 @@ function Field({
 	);
 }
 
-/**
- * The `track_subscription` approval card: the fields Kite read from the email (and only where it read nothing, what
- * the assistant supplied, marked so), all editable. A field nobody stated stays empty and the approve button asks for
- * what is required, so nothing is guessed. In `attach` mode the service is already tracked and the card adds the
- * email to it as a document instead.
- */
-function TrackProposalBody({ input, details: rawDetails, edits, onEditsChange, disabled }: ProposalCardContext) {
-	const t = useT();
-	const id = useId();
-	const fields = proposalFields({ ...input, ...edits });
-	const details = proposalDetails(rawDetails);
-	const edited = (key: FieldKey) => Object.hasOwn(edits, key);
-	const note = (key: FieldKey) => (details.assisted.includes(key) && !edited(key) ? t("from the assistant") : null);
-	const set = (key: FieldKey, value: string) => onEditsChange({ ...edits, [key]: editValue(value) });
-	const value = (key: FieldKey) => fields[key] ?? "";
-	const fieldId = (key: FieldKey) => `${id}-${key}`;
-	const attach = fields.mode === "attach";
-	const money = (
-		<div className="grid grid-cols-[1fr_5rem] gap-2">
-			<Field id={fieldId("amount")} label={t("Amount")} note={note("amount")}>
-				<Input
-					id={fieldId("amount")}
-					className={INPUT}
-					inputMode="decimal"
-					dir="ltr"
-					value={value("amount")}
-					placeholder="17.99"
-					disabled={disabled}
-					onChange={(event) => set("amount", event.target.value)}
-				/>
-			</Field>
-			<Field id={fieldId("currency")} label={t("Currency")} note={note("currency")}>
-				<Input
-					id={fieldId("currency")}
-					className={INPUT}
-					dir="ltr"
-					maxLength={3}
-					value={value("currency")}
-					placeholder="EUR"
-					disabled={disabled}
-					onChange={(event) => set("currency", event.target.value.toUpperCase())}
-				/>
-			</Field>
-		</div>
+type Controls = {
+	fieldId: (key: FieldKey) => string;
+	value: (key: FieldKey) => string;
+	set: (key: FieldKey, value: string) => void;
+	note: (key: FieldKey) => string | null;
+	disabled: boolean;
+};
+
+function TextField({
+	controls,
+	name,
+	label,
+	note,
+	...input
+}: {
+	controls: Controls;
+	name: FieldKey;
+	label: string;
+	note?: string | null;
+} & Pick<ComponentProps<typeof Input>, "type" | "inputMode" | "dir" | "maxLength" | "placeholder">) {
+	return (
+		<Field id={controls.fieldId(name)} name={name} label={label} note={note === undefined ? controls.note(name) : note}>
+			<Input
+				id={controls.fieldId(name)}
+				className={INPUT}
+				value={controls.value(name)}
+				disabled={controls.disabled}
+				onChange={(event) =>
+					controls.set(name, name === "currency" ? event.target.value.toUpperCase() : event.target.value)
+				}
+				{...input}
+			/>
+		</Field>
 	);
-	const docType = (label: string, none: string | null) => (
-		<Field id={fieldId("docType")} label={label}>
+}
+
+function ChoiceField({
+	controls,
+	name,
+	label,
+	none,
+	options,
+}: {
+	controls: Controls;
+	name: FieldKey;
+	label: string;
+	none: string;
+	options: { value: string; label: MessageKey }[];
+}) {
+	const t = useT();
+	return (
+		<Field id={controls.fieldId(name)} name={name} label={label} note={controls.note(name)}>
 			<Select
-				id={fieldId("docType")}
+				id={controls.fieldId(name)}
 				containerClassName={SELECT}
-				value={value("docType")}
-				disabled={disabled}
-				onChange={(event) => set("docType", event.target.value)}
+				value={controls.value(name)}
+				disabled={controls.disabled}
+				onChange={(event) => controls.set(name, event.target.value)}
 			>
-				<option value="">{none ?? t("Choose…")}</option>
-				{DOC_TYPE_OPTIONS.map((option) => (
+				<option value="">{none}</option>
+				{options.map((option) => (
 					<option key={option.value} value={option.value}>
 						{t(option.label)}
 					</option>
@@ -107,6 +117,93 @@ function TrackProposalBody({ input, details: rawDetails, edits, onEditsChange, d
 			</Select>
 		</Field>
 	);
+}
+
+function Money({ controls }: { controls: Controls }) {
+	const t = useT();
+	return (
+		<div className="grid grid-cols-[1fr_5rem] gap-2">
+			<TextField
+				controls={controls}
+				name="amount"
+				label={t("Amount")}
+				inputMode="decimal"
+				dir="ltr"
+				placeholder="17.99"
+			/>
+			<TextField controls={controls} name="currency" label={t("Currency")} dir="ltr" maxLength={3} placeholder="EUR" />
+		</div>
+	);
+}
+
+/** The fields of a new subscription, and the email as its first document when a type is chosen. */
+function TrackFields({
+	controls,
+	fields,
+	details,
+}: {
+	controls: Controls;
+	fields: TrackProposalFields;
+	details: TrackProposalDetails;
+}) {
+	const t = useT();
+	const estimated = details.renewalEstimated && controls.note("nextRenewalOn") === null && !!fields.nextRenewalOn;
+	return (
+		<>
+			<TextField controls={controls} name="vendor" label={t("Service")} dir="auto" maxLength={80} />
+			<TextField controls={controls} name="plan" label={t("Plan")} dir="auto" maxLength={80} />
+			<Money controls={controls} />
+			<div className="grid grid-cols-2 gap-2">
+				<ChoiceField
+					controls={controls}
+					name="cycle"
+					label={t("Billing period")}
+					none={t("Not stated")}
+					options={CYCLE_OPTIONS}
+				/>
+				<TextField
+					controls={controls}
+					name="nextRenewalOn"
+					label={t("Next renewal")}
+					type="date"
+					note={estimated ? t("estimated") : undefined}
+				/>
+			</div>
+			{fields.emailId && (
+				<ChoiceField
+					controls={controls}
+					name="docType"
+					label={t("Record this email as")}
+					none={t("Do not record it")}
+					options={DOC_TYPE_OPTIONS}
+				/>
+			)}
+			{fields.emailId && fields.docType && (
+				<TextField controls={controls} name="documentOn" label={t("Document date")} type="date" />
+			)}
+		</>
+	);
+}
+
+/**
+ * The `track_subscription` approval card: the fields Kite read from the email (and only where it read nothing, what
+ * the assistant supplied, marked so), all editable. A field nobody stated stays empty and the approve button asks for
+ * what is required, so nothing is guessed. In `attach` mode the service is already tracked and the card adds the
+ * email to it as a document instead. Every value the approval saves is drawn here (`tests/finance-chat-track-card`).
+ */
+function TrackProposalBody({ input, details: rawDetails, edits, onEditsChange, disabled }: ProposalCardContext) {
+	const t = useT();
+	const id = useId();
+	const fields = proposalFields({ ...input, ...edits });
+	const details = proposalDetails(rawDetails);
+	const controls: Controls = {
+		fieldId: (key) => `${id}-${key}`,
+		value: (key) => fields[key] ?? "",
+		set: (key, value) => onEditsChange({ ...edits, [key]: editValue(value) }),
+		note: (key) => (details.assisted.includes(key) && !Object.hasOwn(edits, key) ? t("from the assistant") : null),
+		disabled,
+	};
+	const attach = fields.mode === "attach";
 	return (
 		<div
 			data-finance-track-proposal={fields.mode}
@@ -115,10 +212,10 @@ function TrackProposalBody({ input, details: rawDetails, edits, onEditsChange, d
 			<div className="flex items-start gap-2">
 				<WalletCards size={16} className="mt-0.5 shrink-0 text-blue-800" aria-hidden="true" />
 				<div className="min-w-0">
-					<p className="font-semibold text-neutral-900">
-						{attach && details.existing ? (
+					<p className="font-semibold text-neutral-900" {...(attach ? { "data-card-field": "subscriptionId" } : {})}>
+						{attach ? (
 							<>
-								{t("Already tracked:")} <bdi>{details.existing.vendor}</bdi>
+								{t("Already tracked:")} <bdi>{details.existing?.vendor ?? fields.vendor}</bdi>
 							</>
 						) : (
 							t("Track this subscription")
@@ -131,77 +228,36 @@ function TrackProposalBody({ input, details: rawDetails, edits, onEditsChange, d
 					</p>
 				</div>
 			</div>
+			{fields.emailId && (
+				<p data-card-field="emailId" className="break-words text-neutral-600">
+					{t("From the email:")}{" "}
+					<bdi className="font-medium text-neutral-800">{details.email?.subject || t("(no subject)")}</bdi>
+					{details.email?.from && (
+						<span className="text-neutral-500">
+							{" "}
+							· <bdi>{details.email.from}</bdi>
+						</span>
+					)}
+				</p>
+			)}
 			{attach ? (
 				<>
-					{docType(t("This email is"), null)}
-					{money}
-					<Field id={fieldId("documentOn")} label={t("Date")}>
-						<Input
-							id={fieldId("documentOn")}
-							type="date"
-							className={INPUT}
-							value={value("documentOn")}
-							disabled={disabled}
-							onChange={(event) => set("documentOn", event.target.value)}
-						/>
-					</Field>
+					<ChoiceField
+						controls={controls}
+						name="docType"
+						label={t("This email is")}
+						none={t("Choose…")}
+						options={DOC_TYPE_OPTIONS}
+					/>
+					<Money controls={controls} />
+					<TextField controls={controls} name="documentOn" label={t("Date")} type="date" />
 				</>
 			) : (
-				<>
-					<Field id={fieldId("vendor")} label={t("Service")} note={note("vendor")}>
-						<Input
-							id={fieldId("vendor")}
-							className={INPUT}
-							dir="auto"
-							maxLength={80}
-							value={value("vendor")}
-							disabled={disabled}
-							onChange={(event) => set("vendor", event.target.value)}
-						/>
-					</Field>
-					{money}
-					<div className="grid grid-cols-2 gap-2">
-						<Field id={fieldId("cycle")} label={t("Billing period")} note={note("cycle")}>
-							<Select
-								id={fieldId("cycle")}
-								containerClassName={SELECT}
-								value={value("cycle")}
-								disabled={disabled}
-								onChange={(event) => set("cycle", event.target.value)}
-							>
-								<option value="">{t("Not stated")}</option>
-								{CYCLE_OPTIONS.map((option) => (
-									<option key={option.value} value={option.value}>
-										{t(option.label)}
-									</option>
-								))}
-							</Select>
-						</Field>
-						<Field
-							id={fieldId("nextRenewalOn")}
-							label={t("Next renewal")}
-							note={
-								details.renewalEstimated && !edited("nextRenewalOn") && fields.nextRenewalOn
-									? t("estimated")
-									: note("nextRenewalOn")
-							}
-						>
-							<Input
-								id={fieldId("nextRenewalOn")}
-								type="date"
-								className={INPUT}
-								value={value("nextRenewalOn")}
-								disabled={disabled}
-								onChange={(event) => set("nextRenewalOn", event.target.value)}
-							/>
-						</Field>
-					</div>
-					{fields.emailId && docType(t("Record this email as"), t("Do not record it"))}
-				</>
+				<TrackFields controls={controls} fields={fields} details={details} />
 			)}
-			{details.attachmentName && fields.docType && (
-				<p className="break-words text-neutral-500">
-					{t("Document:")} <bdi>{details.attachmentName}</bdi>
+			{fields.attachmentId && fields.docType && (
+				<p data-card-field="attachmentId" className="break-words text-neutral-500">
+					{t("Document:")} <bdi>{details.attachmentName ?? t("an attachment of the email")}</bdi>
 				</p>
 			)}
 		</div>

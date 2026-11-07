@@ -72,13 +72,22 @@ function bareDraft(input: DetectStepInput): ManualDraft {
 	};
 }
 
-/** The detector's reading of one message the user manages, as the dialogs and the chat card prefill it. */
-export async function draftOf(user: FinanceUser, message: HostMessageDetail): Promise<ManualDraft> {
+/**
+ * The detector's reading of one message the user manages, as the dialogs and the chat card prefill it. `canShow`
+ * (the chat) drops a matched tracked row the caller may not see, with the cycle it would lend the draft.
+ */
+export async function draftOf(
+	user: FinanceUser,
+	message: HostMessageDetail,
+	canShow?: (subscriptionId: string) => boolean,
+): Promise<ManualDraft> {
 	const ctx = sessionContext(user, [message.mailboxId]);
 	const input = stepInput(message);
 	const analysis = analyzeMessage(input, ctx.timeZone);
 	if (!analysis) return bareDraft(input);
-	return draftFromAnalysis(analysis, await detectionContext(ctx, input, analysis, user.id));
+	const context = await detectionContext(ctx, input, analysis, user.id);
+	const hidden = !!context.tracked && !!canShow && !canShow(context.tracked.id);
+	return draftFromAnalysis(analysis, hidden ? { tracked: null, recurring: null } : context);
 }
 
 /**

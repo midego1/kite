@@ -13,6 +13,8 @@ export type TrackProposalFields = {
 	nextRenewalOn: string | null;
 	docType: string | null;
 	documentOn: string | null;
+	attachmentId: string | null;
+	subscriptionId: string | null;
 };
 
 /** The preview's `details`: which values the assistant supplied, and the subscription the email would be added to. */
@@ -21,6 +23,8 @@ export type TrackProposalDetails = {
 	renewalEstimated: boolean;
 	existing: { vendor: string } | null;
 	attachmentName: string | null;
+	/** The email the card reads, so the user sees which one the assistant picked. */
+	email: { subject: string | null; from: string | null } | null;
 };
 
 const text = (value: unknown): string | null => (typeof value === "string" && value.trim() ? value : null);
@@ -37,11 +41,14 @@ export function proposalFields(input: Record<string, unknown>): TrackProposalFie
 		nextRenewalOn: text(input.nextRenewalOn),
 		docType: text(input.docType),
 		documentOn: text(input.documentOn),
+		attachmentId: text(input.attachmentId),
+		subscriptionId: text(input.subscriptionId),
 	};
 }
 
 export function proposalDetails(details: Record<string, unknown>): TrackProposalDetails {
 	const existing = details.existing as { vendor?: unknown } | null | undefined;
+	const email = details.email as { subject?: unknown; from?: unknown } | null | undefined;
 	return {
 		assisted: Array.isArray(details.assisted)
 			? details.assisted.filter((item): item is string => typeof item === "string")
@@ -49,6 +56,7 @@ export function proposalDetails(details: Record<string, unknown>): TrackProposal
 		renewalEstimated: details.renewalEstimated === true,
 		existing: existing && typeof existing.vendor === "string" ? { vendor: existing.vendor } : null,
 		attachmentName: text(details.attachmentName),
+		email: email ? { subject: text(email.subject), from: text(email.from) } : null,
 	};
 }
 

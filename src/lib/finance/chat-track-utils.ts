@@ -38,6 +38,8 @@ export type ChatTrackDetails = {
 	renewalEstimated: boolean;
 	existing: ChatTrackExisting | null;
 	attachmentName: string | null;
+	/** The email the card reads, so the user sees which one the assistant picked; null without one. */
+	email?: { subject: string | null; from: string } | null;
 };
 
 const MERGED_FIELDS = ["vendor", "plan", "amount", "currency", "cycle", "nextRenewalOn"] as const;

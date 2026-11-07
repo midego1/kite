@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { ClipboardEvent, DragEvent } from "react";
 import { Paperclip, Trash2 } from "lucide-react";
 import { ComposeHeader, composeTitle } from "./compose-header";
 import { useRouter } from "next/navigation";
@@ -19,8 +18,7 @@ import { SendReview } from "@/components/agent/send-review";
 import type { OpenedSendReview, ReviewSnapshot } from "@/components/agent/send-review-types";
 import { buildSendFormData, fetchDraft } from "./utils";
 import { ComposeAttachmentList } from "./compose-attachment-list";
-import { dragHasFiles, namePastedFiles, pastedFiles } from "./compose-drop-utils";
-import { useFileDropGuard } from "./use-file-drop-guard";
+import { useComposerFiles } from "./use-composer-files";
 import { SendPreview } from "./send-preview";
 import {
 	composeFrameAria,
@@ -110,7 +108,6 @@ export function ComposeForm({
 		cloudThresholdBytes: 3_000_000,
 		cloudLinks: true,
 	});
-	const [draggingFiles, setDraggingFiles] = useState(false);
 	const [modalMode, setModalMode] = useState(false);
 	const [minimized, setMinimized] = useState(false);
 	const besideAssistant = useComposerBesideAssistant({ mode, minimized, modalMode }, setMinimized);
@@ -142,7 +139,6 @@ export function ComposeForm({
 	const undoRequested = useRef(false);
 	const attachmentInput = useRef<HTMLInputElement | null>(null);
 	const attachButton = useRef<HTMLButtonElement | null>(null);
-	const fileDragDepth = useRef(0);
 	const previousSignature = useRef("");
 
 	const senderAddresses = useMemo(
@@ -628,51 +624,6 @@ export function ComposeForm({
 		if (attachmentInput.current) attachmentInput.current.value = "";
 	}
 
-	function onFileDragEnter(event: DragEvent<HTMLFormElement>) {
-		if (!dragHasFiles(event.dataTransfer)) return;
-		fileDragDepth.current += 1;
-		if (!loading && !loadingDraft) setDraggingFiles(true);
-	}
-
-	function onFileDragOver(event: DragEvent<HTMLFormElement>) {
-		if (!dragHasFiles(event.dataTransfer)) return;
-		event.preventDefault();
-		event.dataTransfer.dropEffect = loading || loadingDraft ? "none" : "copy";
-		// A dragenter the drop zone did not see (the drag began over it, or the counter drifted) still shows the target.
-		if (!loading && !loadingDraft && !draggingFiles) setDraggingFiles(true);
-	}
-
-	function onFileDragLeave(event: DragEvent<HTMLFormElement>) {
-		// Not judged by the drag's types: a browser may hide them while a drag leaves, and the target would stay up.
-		if (fileDragDepth.current === 0) return;
-		fileDragDepth.current -= 1;
-		const into = event.relatedTarget;
-		// Safari reports no related target, so the counter decides there; elsewhere leaving for a place outside ends it at once.
-		if (fileDragDepth.current === 0 || (into instanceof Node && !event.currentTarget.contains(into))) {
-			fileDragDepth.current = 0;
-			setDraggingFiles(false);
-		}
-	}
-
-	function onFileDrop(event: DragEvent<HTMLFormElement>) {
-		if (!dragHasFiles(event.dataTransfer)) return;
-		// Before anything else can act on it: the editor would insert the file's name and a bare input would open it.
-		event.preventDefault();
-		event.stopPropagation();
-		fileDragDepth.current = 0;
-		setDraggingFiles(false);
-		if (!loading && !loadingDraft) addAttachments(event.dataTransfer.files);
-	}
-
-	/** A screenshot or a copied file is attached like a picked one; a text paste is left to the editor and the fields. */
-	function onFilePaste(event: ClipboardEvent<HTMLFormElement>) {
-		const files = pastedFiles(event.clipboardData);
-		if (files.length === 0) return;
-		event.preventDefault();
-		event.stopPropagation();
-		if (!loading && !loadingDraft) addAttachments(namePastedFiles(files));
-	}
-
 	function selectSender(value: string) {
 		const option = senderOptions.find((item) => `${item.mailbox.id}|${item.address}` === value);
 		if (!option || option.disabled || isOtherMailbox(option)) return;
@@ -693,7 +644,7 @@ export function ComposeForm({
 		/>
 	);
 
-	useFileDropGuard();
+	const fileFrame = useComposerFiles({ busy: loading || loadingDraft, minimized, addAttachments });
 
 	const frameClass = composeFrameClass({ mode, minimized, modalMode }, besideAssistant);
 
@@ -786,13 +737,9 @@ export function ComposeForm({
 						inline.collapse(draftSaves.draftId ?? draftId);
 					}
 				}}
-				onDragEnterCapture={minimized ? undefined : onFileDragEnter}
-				onDragOverCapture={minimized ? undefined : onFileDragOver}
-				onDragLeaveCapture={minimized ? undefined : onFileDragLeave}
-				onDropCapture={minimized ? undefined : onFileDrop}
-				onPasteCapture={minimized ? undefined : onFilePaste}
+				{...fileFrame.frameHandlers}
 			>
-				{draggingFiles && !minimized && (
+				{fileFrame.dragging && (
 					<div
 						className="pointer-events-none absolute inset-0 z-30 flex flex-col items-center justify-center gap-2 rounded-[inherit] border-2 border-dashed border-blue-500 bg-blue-500/20 text-neutral-900 dark:border-blue-400"
 						aria-hidden="true"
@@ -809,7 +756,7 @@ export function ComposeForm({
 					modalMode={modalMode}
 					onToggleMinimized={() => {
 						setMinimized((current) => !current);
-						setDraggingFiles(false);
+						fileFrame.stopDragging();
 					}}
 					onToggleModal={() => {
 						if (minimized) setMinimized(false);

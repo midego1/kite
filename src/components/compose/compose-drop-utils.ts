@@ -8,7 +8,7 @@ export function dragHasFiles(transfer: DragPayload | null | undefined): boolean 
 }
 
 /** The files of a clipboard or drag, from `files` or, where a browser fills only `items`, from the file items. */
-export function transferFiles(transfer: ClipboardPayload | null | undefined): File[] {
+function transferFiles(transfer: ClipboardPayload | null | undefined): File[] {
 	if (!transfer) return [];
 	const listed = Array.from(transfer.files ?? []);
 	if (listed.length > 0) return listed;

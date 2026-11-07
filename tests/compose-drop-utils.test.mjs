@@ -18,9 +18,7 @@ await build({
 	format: "esm",
 	logLevel: "silent",
 });
-const { dragHasFiles, namePastedFiles, pastedFiles, transferFiles } = await import(
-	pathToFileURL(join(outDir, "utils.mjs")).href
-);
+const { dragHasFiles, namePastedFiles, pastedFiles } = await import(pathToFileURL(join(outDir, "utils.mjs")).href);
 
 function clipboard({ types = [], files = [], items, text = "" }) {
 	return { types, files, items, getData: (format) => (format === "text/plain" ? text : "") };
@@ -44,13 +42,13 @@ test("a DOMStringList without includes still counts", () => {
 
 test("files come from the list, or from the file items when a browser fills only those", () => {
 	const file = png();
-	assert.deepEqual(transferFiles(clipboard({ files: [file] })), [file]);
+	assert.deepEqual(pastedFiles(clipboard({ files: [file] })), [file]);
 	const items = [
 		{ kind: "string", getAsFile: () => null },
 		{ kind: "file", getAsFile: () => file },
 	];
-	assert.deepEqual(transferFiles(clipboard({ items })), [file]);
-	assert.deepEqual(transferFiles(null), []);
+	assert.deepEqual(pastedFiles(clipboard({ items })), [file]);
+	assert.deepEqual(pastedFiles(null), []);
 });
 
 test("a screenshot, an image without text and a copied file are attached", () => {

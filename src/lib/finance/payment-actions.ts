@@ -46,11 +46,7 @@ const inverseSchema = z.object({ userId: z.string(), paymentId: z.string(), prev
 type Previous = z.infer<typeof previousSchema>;
 
 /** A status that fits the type: an invoice is open or paid, every other type has one status. */
-function statusFor(
-	type: PaymentDocType,
-	wanted: PaymentStatus | undefined,
-	current: PaymentStatus,
-): PaymentStatus {
+function statusFor(type: PaymentDocType, wanted: PaymentStatus | undefined, current: PaymentStatus): PaymentStatus {
 	if (type !== "invoice") return initialStatus(type);
 	const next = wanted ?? current;
 	return next === "paid" ? "paid" : "open";

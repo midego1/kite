@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.11.07.3] - 2026-11-07
+
+### Fixed
+
+- Amounts in receipts and invoices no longer break into one character per line in the reader or when printed. Mail keeps its own no-wrap cells, borders and rounded corners, and long links still wrap on a phone.
+
 ## [2026.11.07.2] - 2026-11-07
 
 ### Fixed

@@ -327,7 +327,8 @@ export function sanitizeStoredEmailHtml(html: string | null | undefined): string
 					dropped -= 1;
 					return;
 				}
-				if (STORED_TAGS.has(name) && !VOID_TAGS.has(name)) {
+				// A tag the input ends inside was never opened here, but the parser still closes it at the end.
+				if (STORED_TAGS.has(name) && !VOID_TAGS.has(name) && open.at(-1) === name) {
 					open.pop();
 					output.add(`</${name}>`);
 				}

@@ -21,6 +21,7 @@ writeFileSync(
 export { buildSnippet, parseRawMime } from "${root}/src/lib/email/parse";
 export { MAX_DECODED_TEXT_BYTES, decodedTextCut } from "${root}/src/lib/email/mime-body-utils";
 export { wrappedRootDirection } from "${root}/src/lib/email/root-direction-utils";
+export { boundParsedEmail } from "${root}/src/lib/email/inbound-limits";
 `,
 );
 const bundle = join(directory, "entry.mjs");
@@ -37,7 +38,7 @@ await build({
 	packages: "external",
 	logLevel: "silent",
 });
-const { MAX_DECODED_TEXT_BYTES, decodedTextCut, parseRawMime, wrappedRootDirection } = await import(
+const { MAX_DECODED_TEXT_BYTES, boundParsedEmail, decodedTextCut, parseRawMime, wrappedRootDirection } = await import(
 	pathToFileURL(bundle).href
 );
 const MiB = 1024 * 1024;
@@ -171,6 +172,7 @@ test("a body under the limits is read in full, without a note", async () => {
 	const text = "x".repeat(2 * MiB - 1);
 	const parsed = await parseRawMime(encode(single("text/plain", text)));
 	assert.ok(parsed.text.trimEnd() === text, `${parsed.text.length} characters of text`);
+	assert.equal(parsed.bodyCut, false);
 	const html = `<p>${"y".repeat(4 * MiB - 8)}</p>`;
 	const stored = await parseRawMime(encode(single("text/html", html)));
 	assert.ok(stored.html.trim() === html, `${stored.html.length} characters of HTML`);
@@ -180,6 +182,7 @@ test("text past the limit is cut on a character boundary and stays UTF-8, with a
 	// Two-byte characters and no line ends: the cut falls inside one character unless it moves back.
 	const parsed = await parseRawMime(encode(single("text/plain; charset=utf-8", "б".repeat(MiB + 10))));
 	assert.equal(parsed.text, `${"б".repeat(MiB)}${TEXT_NOTE}`);
+	assert.equal(parsed.bodyCut, true);
 	// Without a charset, a part that is not well formed UTF-8 would read as windows-1252.
 	const unlabelled = await parseRawMime(encode(single("text/plain", `${"é".repeat(MiB - 1)}x€`)));
 	assert.equal(unlabelled.text, `${"é".repeat(MiB - 1)}x${TEXT_NOTE}`);
@@ -240,4 +243,23 @@ test("a cut text part converted into the HTML body puts the note there too", asy
 	assert.ok(parsed.text.endsWith(TEXT_NOTE));
 	assert.ok(parsed.html.startsWith("<p>hi</p>"));
 	assert.ok(parsed.html.endsWith(HTML_NOTE));
+});
+
+test("delivery's 450 KB text bound keeps the note, once", async () => {
+	const utf8Bytes = (text) => Buffer.byteLength(text, "utf8");
+	const parsed = await parseRawMime(encode(single("text/plain", `${"x".repeat(999)}\r\n`.repeat(2_200))));
+	assert.ok(parsed.text.endsWith(TEXT_NOTE));
+	const stored = boundParsedEmail(parsed).text;
+	assert.ok(utf8Bytes(stored) <= 450_000, `${utf8Bytes(stored)} bytes`);
+	assert.ok(stored.endsWith(TEXT_NOTE));
+	assert.equal(stored.split(NOTE).length, 2);
+	// A text body under the decoded limit but over the row's is cut there, now with the note too.
+	const mid = await parseRawMime(encode(single("text/plain", "б".repeat(300_000))));
+	assert.equal(mid.bodyCut, false);
+	const midStored = boundParsedEmail(mid).text;
+	assert.ok(utf8Bytes(midStored) <= 450_000 && midStored.endsWith(TEXT_NOTE));
+	assert.ok(!midStored.includes("\ufffd"));
+	// A text body that fits is stored as it is.
+	const short = await parseRawMime(encode(single("text/plain", "hello")));
+	assert.equal(boundParsedEmail(short).text, short.text);
 });

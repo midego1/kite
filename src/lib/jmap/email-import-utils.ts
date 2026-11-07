@@ -57,3 +57,19 @@ export function resolveDraftsMailbox(
 		return invalid("New messages can only be created in a Drafts mailbox");
 	return { mailboxId: ref.mailboxId };
 }
+
+/**
+ * The From address of a parsed upload, or why it cannot become a draft. A draft is sent from its stored bodies
+ * (`EmailSubmission/set`), so an import whose body `parseRawMime` cut to the decoded body limit would go out cut, with
+ * Kite's note in it; it is refused instead of stored.
+ */
+export function parsedDraftFrom(parsed: {
+	fromAddr: string | null;
+	bodyCut: boolean;
+}): { fromAddr: string } | { error: JmapSetError } {
+	if (!parsed.fromAddr) return { error: { type: "invalidEmail", description: "The message has no From header" } };
+	if (parsed.bodyCut) {
+		return { error: { type: "tooLarge", description: "The message body is longer than a draft can hold" } };
+	}
+	return { fromAddr: parsed.fromAddr };
+}

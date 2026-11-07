@@ -164,6 +164,12 @@ test("cut output stays balanced and inert", () => {
 	}
 });
 
+test("a body that ends inside an unfinished tag gets no closing tag for it", () => {
+	assert.equal(sanitizeStoredEmailHtml('<p><a href="x">one<a href="unfin'), '<p><a href="x">one</a></p>');
+	assert.equal(sanitizeStoredEmailHtml('<div><p>one<a title="'), "<div><p>one</p></div>");
+	assert.equal(sanitizeStoredEmailHtml("<b><i>x</b>y</i>"), "<b><i>x</i></b>y");
+});
+
 test("too many attributes on one tag leave out its attributes only", () => {
 	const names = Array.from({ length: MAX_TAG_ATTRIBUTES - 1 }, (_, index) => `data-a${index}="1"`).join(" ");
 	const atLimit = `<p>one</p><a ${names} title="x">two</a><a title="y">three</a>`;

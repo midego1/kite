@@ -1,4 +1,5 @@
 import type { ParsedEmail } from "@/lib/email/parse";
+import { TEXT_CUT_NOTE } from "@/lib/email/body-cut-note-utils";
 
 /**
  * What a delivered message's columns may hold, so one row stays well inside D1's 2 MB limit (Mailflare #217). The
@@ -32,9 +33,13 @@ export function truncateUtf8(value: string, maxBytes: number): string {
 	return decoder.decode(bytes.subarray(0, maxBytes)).replace(/(?<!�)�+$/u, "");
 }
 
-/** A text body cut to what a row may hold. */
+/**
+ * A text body cut to what a row may hold. A cut body ends with the note saying the rest is in the original message,
+ * in place of the one a body cut while it was parsed already had.
+ */
 export function boundTextBody(text: string): string {
-	return truncateUtf8(text, INBOUND_LIMITS.textBodyBytes);
+	if (truncateUtf8(text, INBOUND_LIMITS.textBodyBytes) === text) return text;
+	return `${truncateUtf8(text, INBOUND_LIMITS.textBodyBytes - TEXT_CUT_NOTE.length)}${TEXT_CUT_NOTE}`;
 }
 
 /** `value` cut to at most `max` UTF-16 units, never between the halves of a surrogate pair. */

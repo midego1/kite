@@ -4,6 +4,7 @@ import { normalizeMessageId, parseMessageIdList } from "@/lib/email/threading";
 import { normalizeAttachmentContent } from "@/lib/email/attachment-content-utils";
 import { getLatestEmailContent, htmlToReadableText } from "@/lib/email/reply-content-utils";
 import { sanitizeStoredEmailHtml } from "@/lib/email/stored-html-utils";
+import { TEXT_CUT_NOTE, withHtmlCutNote } from "@/lib/email/body-cut-note-utils";
 import { cutBodies, limitBodyConversion, limitDecodedText } from "@/lib/email/mime-body-utils";
 import { MIME_LIMITS, mimePreflightReason } from "@/lib/email/mime-preflight";
 import type { AttachmentContent } from "@/lib/email/attachment-types";
@@ -26,20 +27,15 @@ export type ParsedEmail = {
 	references: string[];
 	date: Date | null;
 	attachments: AttachmentContent[];
+	/**
+	 * Whether a body was cut to `MAX_DECODED_TEXT_BYTES` (`mime-body-utils.ts`) and ends with the note: fine to store
+	 * beside the raw message, which keeps the rest, but not to send on as the message.
+	 */
+	bodyCut: boolean;
 };
 
 /** postal-mime's own caps, reported like the preflight's. */
 const LIMIT_ERROR_CODES = new Set(["EMAXNESTINGDEPTH", "EMAXHEADERSIZE", "EMAXPARTCOUNT"]);
-
-const CUT_NOTE =
-	"This message is longer than Kite shows. The rest is in the original message: use Show original to download it.";
-
-/** `html` with the cut note at its end, inside the one element that carries the root direction when there is one. */
-function withCutNote(html: string): string {
-	const note = `<hr><p>${CUT_NOTE}</p>`;
-	const wrapped = /^<div dir="(?:ltr|rtl)">/.test(html) && html.endsWith("</div>");
-	return wrapped ? `${html.slice(0, -"</div>".length)}${note}</div>` : `${html}${note}`;
-}
 
 /**
  * A message that can never be parsed within `MIME_LIMITS`. Deterministic: retrying only repeats the work, so callers
@@ -87,8 +83,8 @@ export async function parseRawMime(raw: ArrayBuffer): Promise<ParsedEmail> {
 	return {
 		subject: email.subject === undefined ? null : collapseFoldingSpace(email.subject),
 		// A body over `MAX_DECODED_TEXT_BYTES` was cut before it was decoded; the raw message still holds all of it.
-		text: text !== null && cut.plain ? `${text}\n\n[${CUT_NOTE}]` : text,
-		html: html !== null && cut.html ? withCutNote(html) : html,
+		text: text !== null && cut.plain ? `${text}${TEXT_CUT_NOTE}` : text,
+		html: html !== null && cut.html ? withHtmlCutNote(html) : html,
 		messageId: email.messageId ?? null,
 		fromAddr: formatPostalAddress(email.from, null),
 		toAddr: formatPostalAddressList(email.to, null),
@@ -105,6 +101,7 @@ export async function parseRawMime(raw: ArrayBuffer): Promise<ParsedEmail> {
 			disposition: attachment.disposition === "inline" ? "inline" : "attachment",
 			contentId: attachment.contentId ?? null,
 		})),
+		bodyCut: cut.plain || cut.html,
 	};
 }
 

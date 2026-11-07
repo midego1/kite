@@ -21,7 +21,7 @@ after(() => rmSync(outDir, { recursive: true, force: true }));
 await build({
 	stdin: {
 		contents: `
-			export { idSetToList, importFlags, parseReceivedAt, resolveDraftsMailbox } from "./src/lib/jmap/email-import-utils.ts";
+			export { parsedDraftFrom, idSetToList, importFlags, parseReceivedAt, resolveDraftsMailbox } from "./src/lib/jmap/email-import-utils.ts";
 			export { filterToSql } from "./src/lib/jmap/email-query.ts";
 			export { encodeMailboxRef } from "./src/lib/jmap/ids.ts";
 			import { SQLiteSyncDialect } from "drizzle-orm/sqlite-core";
@@ -42,8 +42,16 @@ await build({
 	logLevel: "silent",
 });
 
-const { idSetToList, importFlags, parseReceivedAt, resolveDraftsMailbox, filterToSql, encodeMailboxRef, render } =
-	await import(pathToFileURL(join(outDir, "entry.mjs")).href);
+const {
+	parsedDraftFrom,
+	idSetToList,
+	importFlags,
+	parseReceivedAt,
+	resolveDraftsMailbox,
+	filterToSql,
+	encodeMailboxRef,
+	render,
+} = await import(pathToFileURL(join(outDir, "entry.mjs")).href);
 
 const DRAFTS = encodeMailboxRef({ kind: "role", mailboxId: "mbx1", role: "drafts" });
 const INBOX = encodeMailboxRef({ kind: "role", mailboxId: "mbx1", role: "inbox" });
@@ -101,6 +109,12 @@ test("anything but a Drafts mailbox is rejected as invalidProperties on mailboxI
 		assert.equal(result.error.type, "invalidProperties", name);
 		assert.deepEqual(result.error.properties, ["mailboxIds"], name);
 	}
+});
+
+test("an import whose body was cut to the decoded limit is refused as tooLarge, since a draft is sent as stored", () => {
+	assert.deepEqual(parsedDraftFrom({ fromAddr: "a@example.com", bodyCut: false }), { fromAddr: "a@example.com" });
+	assert.equal(parsedDraftFrom({ fromAddr: "a@example.com", bodyCut: true }).error?.type, "tooLarge");
+	assert.equal(parsedDraftFrom({ fromAddr: null, bodyCut: false }).error?.type, "invalidEmail");
 });
 
 test("a Message-ID header filter compares without angle brackets", () => {

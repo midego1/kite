@@ -65,10 +65,12 @@ Make the app usable for Arabic, Hebrew, Persian and Urdu mail and users.
 
 ## Milestone 2: Backups and restore at scale
 
-1. **Streaming restore**: restore reads the backup from R2 in pages and inserts in batches, so a backup larger than Worker memory restores. The safety backup and rollback keep working. Test: unit tests for the page reader; e2e restore of a backup with several thousand messages.
-2. **Attachments and raw mail in backups**: optional full backup that also copies R2 objects (raw MIME and attachments) to a dated prefix, with a manifest. Restore can bring them back. Off by default, with the size shown before running. Since [storing attachments once](docs/specs/attachments-once.md), it copies each raw message and every attachment object some row names once per key, and nothing for a file served from its raw message, so a full backup of received mail is about a third smaller.
-3. **Retention on by default**: new installs keep the last 14 daily backups; the setting is visible on the Backups page. Existing installs are not changed.
-4. **Backup health**: the admin overview shows the last successful backup, its size and duration, and warns when the last run failed.
+All four items have shipped: items 1 and 4 in [#204](https://github.com/midego1/kite/pull/204), items 2 and 3 in [#207](https://github.com/midego1/kite/pull/207).
+
+1. **Streaming restore (shipped in [#204](https://github.com/midego1/kite/pull/204))**: restore reads the backup from R2 in pages and inserts in batches, so a backup larger than Worker memory restores. The safety backup and rollback keep working. Test: unit tests for the page reader; e2e restore of a backup with several thousand messages.
+2. **Attachments and raw mail in backups (shipped in [#207](https://github.com/midego1/kite/pull/207))**: optional full backup that also copies R2 objects (raw MIME and attachments) to a dated prefix, with a manifest. Restore can bring them back. Off by default, with the size shown before running. Since [storing attachments once](docs/specs/attachments-once.md), it copies each raw message and every attachment object some row names once per key, and nothing for a file served from its raw message, so a full backup of received mail is about a third smaller.
+3. **Retention on by default (shipped in [#207](https://github.com/midego1/kite/pull/207))**: new installs keep the last 14 daily backups; the setting is visible on the Backups page. Existing installs are not changed.
+4. **Backup health (shipped in [#204](https://github.com/midego1/kite/pull/204))**: the admin overview shows the last successful backup, its size and duration, and warns when the last run failed.
 
 ## Milestone 3: Admin and deploy polish
 

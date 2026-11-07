@@ -1,4 +1,4 @@
-import { isBlockedHost, isIpAddressLiteral, isPrivateIpAddress } from "@/lib/security/outbound-url";
+import { canonicalHost, isBlockedHost, isIpAddressLiteral, isPrivateIpAddress } from "@/lib/security/outbound-url";
 
 /** The ports mail servers listen on: IMAP 993 and 143, SMTP submission 465 and 587. */
 export const MAIL_SERVER_PORTS = [993, 143, 465, 587] as const;
@@ -55,27 +55,12 @@ export function mailHostPolicy(
 }
 
 /**
- * The host as a connection would see it: trimmed, lower-case, without brackets or a trailing dot, and with IPv4
- * shorthands (`127.1`, `0177.0.0.1`, `0x7f.0.0.1`, `2130706433`) turned into dotted quads by the WHATWG URL parser,
- * so a literal check cannot be dodged by spelling an address differently. Null when it is not a valid host.
+ * The host as a connection would see it, or null when it is not a valid host: `canonicalHost`, the one canonical form
+ * every outbound guard shares (`127.1` and `0x7f.0.0.1` are `127.0.0.1`, IDN labels are ASCII). `openMailSocket` dials
+ * this form.
  */
 export function canonicalMailHost(host: string): string | null {
-	const value = host
-		.trim()
-		.toLowerCase()
-		.replace(/^\[|\]$/g, "")
-		.replace(/\.$/, "");
-	if (!value) return null;
-	if (value.includes(":")) return isIpAddressLiteral(value) ? value : null;
-	// One trailing dot is the DNS root; any other empty label (`127.0.0.1..`, `.host`, `a..b`) is not a host name.
-	if (value.split(".").some((label) => !label)) return null;
-	try {
-		const url = new URL(`http://${value}/`);
-		const bare = !url.username && !url.password && !url.port && url.pathname === "/" && !url.search && !url.hash;
-		return bare && url.hostname ? url.hostname : null;
-	} catch {
-		return null;
-	}
+	return canonicalHost(host);
 }
 
 export function isLoopbackHost(host: string): boolean {

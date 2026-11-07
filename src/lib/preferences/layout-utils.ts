@@ -95,6 +95,8 @@ function parseLayoutPreferences(value: unknown): LayoutPreferences {
 	const labelColors = parseLabelColors(input.labelColors);
 	if (labelColors) layout.labelColors = labelColors;
 	if (typeof input.conversationView === "boolean") layout.conversationView = input.conversationView;
+	if (typeof input.onboardingChecklistDismissed === "boolean")
+		layout.onboardingChecklistDismissed = input.onboardingChecklistDismissed;
 	if (isInterfaceLanguageChoice(input.interfaceLanguage)) layout.interfaceLanguage = input.interfaceLanguage;
 	Object.assign(layout, parseTranslationChoices(input));
 	const listWidth = size(input.listWidth, LIST_WIDTH_LIMITS);

@@ -14,8 +14,12 @@ docker compose up -d --build
 ```
 
 Open `http://your-host:3000/setup`, create the admin account and add your
-domain. All data lives in the `mailflare-data` volume (`/data` in the
-container): the SQLite database, raw messages, attachments and backups.
+domain. Once the first mailbox is created, a "Get started" checklist walks
+through the optional parts (inviting people, modules, phishing lookups, an AI
+provider, backups) with a link to each page; it stays on the admin overview
+until dismissed, and nothing on it is required. All data lives in the
+`mailflare-data` volume (`/data` in the container): the SQLite database, raw
+messages, attachments and backups.
 
 Behind a reverse proxy, set `APP_URL=https://mail.example.com` so links in
 password-reset mail and the JMAP session point at the public address, and

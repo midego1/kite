@@ -2,6 +2,7 @@
 
 import { AdminBackupHealthCard } from "@/components/admin-backup-health-card";
 import { AdminDatabaseSizeCard } from "@/components/admin-database-size-card";
+import { OnboardingChecklistCard } from "@/components/admin-onboarding-checklist-card";
 import { AdminPendingMigrationsNotice, AdminUpdateCard } from "@/components/admin-update-card";
 import { PageHeader } from "@/components/ui/page";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -43,6 +44,7 @@ export default function AdminOverviewPage() {
 	return (
 		<div className="space-y-8">
 			<PageHeader title="Overview" description="What needs attention, the numbers, and the database." />
+			<OnboardingChecklistCard />
 			<AttentionList items={loading ? [] : attentionItems(data, primary)} loading={loading} onDismiss={dismiss} />
 			{!primary && <AdminPendingMigrationsNotice />}
 			<section aria-label="At a glance">

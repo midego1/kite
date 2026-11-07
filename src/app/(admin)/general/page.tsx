@@ -106,7 +106,9 @@ export default function GeneralSettingsPage() {
 					</form>
 				</CardContent>
 			</Card>
-			<ThreatLookupsCard status={threatLookupKey} onStatusChange={setThreatLookupKey} />
+			<div id="threat-lookups" className="scroll-mt-6">
+				<ThreatLookupsCard status={threatLookupKey} onStatusChange={setThreatLookupKey} />
+			</div>
 			<SenderAuthenticationCard />
 			<ConnectedAccountsCard />
 			<TelemetryCard />

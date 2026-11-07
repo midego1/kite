@@ -7,6 +7,10 @@ import { normalizeCalendarColor } from "@/lib/calendar/colors";
 import { slugifyBookingName } from "@/lib/booking/utils";
 import { parseBookingHostIds } from "@/lib/booking/hosts-utils";
 
+export const EDITOR_SECTION_CLASS = "border-b border-neutral-200 px-5 py-5";
+export const EDITOR_HEADING_CLASS =
+	"flex w-full items-center justify-between gap-3 text-start text-base font-semibold text-neutral-900";
+
 export const WEEKDAYS = [
 	{ value: 0, short: "Sun", label: "Sunday" },
 	{ value: 1, short: "Mon", label: "Monday" },

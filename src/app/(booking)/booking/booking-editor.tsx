@@ -13,6 +13,8 @@ import { useKeyChanged } from "@/hooks/use-synced-state";
 import type { BookingEditorProps } from "./editor-types";
 import type { BookingEditorSection } from "./types";
 import {
+	EDITOR_HEADING_CLASS,
+	EDITOR_SECTION_CLASS,
 	bookingFormWithName,
 	durationLabel,
 	formAvailabilityLabel,
@@ -50,9 +52,6 @@ export function BookingEditor({
 		setHostQuery("");
 		setHostError("");
 	}
-	const sectionClass = "border-b border-neutral-200 px-5 py-5";
-	const headingClass =
-		"flex w-full items-center justify-between gap-3 text-start text-base font-semibold text-neutral-900";
 	const fieldClass = "h-10 w-full rounded-xl border border-neutral-200 bg-white px-3 text-sm";
 	const toggle = (section: BookingEditorSection) =>
 		setActiveSection((current) => (current === section ? null : section));
@@ -77,7 +76,7 @@ export function BookingEditor({
 				)}
 			>
 				<div className="min-h-0 flex-1 overflow-y-auto overscroll-contain scrollbar-gutter-stable">
-					<section className={sectionClass}>
+					<section className={EDITOR_SECTION_CLASS}>
 						<div className="flex items-center gap-3">
 							<button
 								type="button"
@@ -180,12 +179,12 @@ export function BookingEditor({
 							</div>
 						)}
 					</section>
-					<section className={sectionClass}>
+					<section className={EDITOR_SECTION_CLASS}>
 						<button
 							type="button"
 							onClick={() => toggle("duration")}
 							aria-expanded={activeSection === "duration"}
-							className={headingClass}
+							className={EDITOR_HEADING_CLASS}
 						>
 							<span>Duration</span>
 							<ChevronDown
@@ -238,12 +237,12 @@ export function BookingEditor({
 							</button>
 						)}
 					</section>
-					<section className={sectionClass}>
+					<section className={EDITOR_SECTION_CLASS}>
 						<button
 							type="button"
 							onClick={() => toggle("location")}
 							aria-expanded={activeSection === "location"}
-							className={headingClass}
+							className={EDITOR_HEADING_CLASS}
 						>
 							<span>Location</span>
 							<ChevronDown
@@ -273,12 +272,12 @@ export function BookingEditor({
 							</button>
 						)}
 					</section>
-					<section className={sectionClass}>
+					<section className={EDITOR_SECTION_CLASS}>
 						<button
 							type="button"
 							onClick={() => toggle("availability")}
 							aria-expanded={activeSection === "availability"}
-							className={headingClass}
+							className={EDITOR_HEADING_CLASS}
 						>
 							<span>Availability</span>
 							<ChevronDown
@@ -404,12 +403,12 @@ export function BookingEditor({
 							</button>
 						)}
 					</section>
-					<section className={sectionClass}>
+					<section className={EDITOR_SECTION_CLASS}>
 						<button
 							type="button"
 							onClick={() => toggle("host")}
 							aria-expanded={activeSection === "host"}
-							className={headingClass}
+							className={EDITOR_HEADING_CLASS}
 						>
 							<span>Host</span>
 							<ChevronDown

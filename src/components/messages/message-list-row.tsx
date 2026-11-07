@@ -342,9 +342,15 @@ function WideMessageRow(props: RowViewProps) {
 						<span dir="auto" className={clsx("reading-font", row.unread && "font-medium text-neutral-900")}>
 							{row.rowMessage.subject ?? "(no subject)"}
 						</span>
-						<span dir="auto" className="reading-font text-neutral-500">
+						{/* The separator stays outside the isolated preview: with a line in the other direction than the
+						subject (an Arabic line under an English subject, or the reverse) it would otherwise follow the
+						line's direction and end up at the far end of the row. */}
+						<span className="reading-font text-neutral-500">
 							{" "}
-							- <MessageRowPreview preview={row.preview} line={row.line} />
+							-{" "}
+							<span dir="auto">
+								<MessageRowPreview preview={row.preview} line={row.line} />
+							</span>
 						</span>
 					</Link>
 				</span>

@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.11.07.5] - 2026-11-07
+
+### Fixed
+
+- Dismissing a suggestion or acting on it from the For you hover preview now returns keyboard focus to its row instead of losing it.
+- A malformed email with an unusual message structure could be rejected by mistake; that is fixed.
+- When an email was rejected for having too much header data overall, the bounce reply sometimes named the wrong size limit; it now names the right one.
+- A slow send, backup, restore or storage job no longer holds up the other outbound work queued behind it for a retry it did not need.
+- In the full-width message list, a one-line summary written in a language that reads right to left (or an Arabic or Hebrew subject above an English summary) no longer pushes the dash between subject and summary to the far end of the row. The summary reads after the subject at every list density and in each style.
+
+  ![Full-width inbox at compact density with one-line summaries after the subjects, one of them in Arabic](/changelog/2026-11-07-list-summary-wide-rows-light.webp)
+
 ## [2026.11.07.4] - 2026-11-07
 
 ### Added

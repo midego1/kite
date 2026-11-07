@@ -24,7 +24,7 @@ import {
 	planStartTls,
 	planUidSearch,
 	quoteImapString,
-	tooManyUidsMessage,
+	TooManyUidsError,
 } from "./protocol-utils";
 import type { ImapFetchedMessage, ImapLogin } from "./types";
 
@@ -48,10 +48,10 @@ export type ImapSession = {
 	 */
 	select(folder: string): Promise<ImapFolderState>;
 	/**
-	 * The UIDs of the open folder, in order and each once. A folder too large for one answer takes several commands;
+	 * The UIDs of the open folder, ascending and each once. A folder too large for one answer takes several commands;
 	 * none but the first starts after `deadline`, which throws (four minutes from now by default).
 	 */
-	searchUids(options?: { deadline?: number }): Promise<string[]>;
+	searchUids(options?: { deadline?: number }): Promise<number[]>;
 	/** The UIDs of the open folder's messages received on or after `date`'s day (`UID SEARCH SINCE`). */
 	searchUidsSince(date: Date): Promise<number[]>;
 	/**
@@ -156,7 +156,7 @@ export async function openImapSession(
 		},
 		async searchUids({ deadline = Date.now() + UID_SEARCH_MS } = {}) {
 			const { folderUids } = connectionLimits;
-			if ((opened?.exists ?? 0) > folderUids) throw new Error(tooManyUidsMessage(folderUids));
+			if ((opened?.exists ?? 0) > folderUids) throw new TooManyUidsError(folderUids);
 			const found = new Uint32Array(folderUids);
 			const windows = opened && planUidSearch(opened, connectionLimits.lineBytes);
 			let count = 0;
@@ -166,7 +166,7 @@ export async function openImapSession(
 				const lines = await imap.command(`UID SEARCH UID ${range.from}:${range.to ?? "*"}`);
 				count = collectSearchUids(lines, found, count, range);
 			}
-			return distinctUids(found.subarray(0, count)).map(String);
+			return distinctUids(found.subarray(0, count));
 		},
 		async searchUidsSince(date) {
 			const lines = await imap.command(`UID SEARCH SINCE ${imapSearchDate(date)}`);

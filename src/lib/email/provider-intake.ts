@@ -56,7 +56,8 @@ export async function intakeProviderMail(
 		receiving.has(hostOf(address)),
 	);
 	const recipients = input.provider === "resend" ? known.filter((a) => receiving.get(hostOf(a)) === "resend") : known;
-	const elsewhere = new Set(known.filter((address) => !recipients.includes(address)).map(hostOf));
+	const accepted = new Set(recipients);
+	const elsewhere = new Set(known.filter((address) => !accepted.has(address)).map(hostOf));
 	for (const domain of elsewhere) logger.warn("email.provider_recipient_dropped", { provider: input.provider, domain });
 	const capped = input.provider === "resend" ? recipients.slice(0, MAX_PROVIDER_RECIPIENTS) : recipients;
 	if (capped.length < recipients.length)

@@ -22,10 +22,14 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
 	if (!(await hasAdminAccount(env))) redirect("/setup");
 	const cookieStore = await cookies();
 	const user = await getUserFromSession(env, cookieStore.get(SESSION_COOKIE)?.value);
-	if (user && !user.disabled && !adding) redirect("/inbox");
+	if (user && !user.disabled && !adding) redirect(justFinishedSetup ? "/admin" : "/inbox");
 
 	return (
-		<AuthGuard mode="public" allowAuthenticated={adding}>
+		<AuthGuard
+			mode="public"
+			allowAuthenticated={adding}
+			authenticatedRedirect={justFinishedSetup ? "/admin" : undefined}
+		>
 			<LoginClient adding={adding} justFinishedSetup={justFinishedSetup} />
 		</AuthGuard>
 	);

@@ -10,6 +10,8 @@ export type AuthGuardProps = {
 	requirePrimary?: boolean;
 	/** Public page that stays usable while signed in (adding another account). */
 	allowAuthenticated?: boolean;
+	/** Where a public page sends an already-signed-in visitor instead of `/inbox` (first sign-in after setup). */
+	authenticatedRedirect?: string;
 };
 
 export type AuthGuardDecisionInput = Omit<AuthGuardProps, "children" | "mode"> & {

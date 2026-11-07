@@ -122,35 +122,39 @@ test.describe("reaching the checklist after first registration", () => {
 		const domain = `${uniqueToken("checklistdomain")}.test`;
 		const password = "checklist-owner-pw-1";
 
-		await withoutAdmins(async () => {
-			const anonymous = await apiContext();
-			try {
-				const response = await anonymous.post("/api/auth/register", {
-					data: {
-						domain,
-						username,
-						password,
-						resetEmail: `${username}-recovery@example.net`,
-						skipDns: true,
-						usageStatistics: false,
-					},
-				});
-				const body = (await response.json()) as { redirect?: string };
-				expect(response.ok(), JSON.stringify(body)).toBe(true);
-				expect(body.redirect).toBe("/login?setup=1");
+		try {
+			await withoutAdmins(async () => {
+				const anonymous = await apiContext();
+				try {
+					const response = await anonymous.post("/api/auth/register", {
+						data: {
+							domain,
+							username,
+							password,
+							resetEmail: `${username}-recovery@example.net`,
+							skipDns: true,
+							usageStatistics: false,
+						},
+					});
+					const body = (await response.json()) as { redirect?: string };
+					expect(response.ok(), JSON.stringify(body)).toBe(true);
+					expect(body.redirect).toBe("/login?setup=1");
 
-				await page.goto(body.redirect!);
-				await waitForHydration(page);
-				await page.getByLabel("Email").fill(`${username}@${domain}`);
-				await page.getByLabel("Password").fill(password);
-				await page.getByRole("button", { name: "Sign in" }).click();
-				await expect(page).toHaveURL(/\/admin$/);
-				await expect(page.getByTestId("onboarding-checklist")).toBeVisible();
-				await expect(page.getByTestId("onboarding-item-mailbox")).toHaveAttribute("data-done", "true");
-			} finally {
-				await anonymous.dispose();
-			}
-		});
-		sql(`DELETE FROM users WHERE email = '${username}@${domain}'`);
+					await page.goto(body.redirect!);
+					await waitForHydration(page);
+					await page.getByLabel("Email").fill(`${username}@${domain}`);
+					await page.getByLabel("Password").fill(password);
+					await page.getByRole("button", { name: "Sign in" }).click();
+					await expect(page).toHaveURL(/\/admin$/);
+					await expect(page.getByTestId("onboarding-checklist")).toBeVisible();
+					await expect(page.getByTestId("onboarding-item-mailbox")).toHaveAttribute("data-done", "true");
+				} finally {
+					await anonymous.dispose();
+				}
+			});
+		} finally {
+			// A no-op DELETE when registration itself never created the row.
+			sql(`DELETE FROM users WHERE email = '${username}@${domain}'`);
+		}
 	});
 });

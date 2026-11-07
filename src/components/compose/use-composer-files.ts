@@ -7,12 +7,16 @@ import { dragHasFiles, namePastedFiles, pastedFiles } from "./compose-drop-utils
 /**
  * While a composer is open, a file dropped anywhere that does not take it is ignored. Left alone, the browser opens
  * the file in this tab, and the page, the open message and the draft the sender is writing are gone. A drop zone
- * (the composer, Drive) cancels its own drag first, so the guard acts only on a drag nobody has taken.
+ * (the composer, Drive) cancels its own drag first, so the guard acts only on a drag nobody has taken. It rests while the
+ * composer is minimized, and leaves file inputs alone.
  */
-function useFileDropGuard() {
+function useFileDropGuard(active: boolean) {
 	useEffect(() => {
+		if (!active) return;
 		function ignore(event: DragEvent | globalThis.DragEvent) {
 			if (event.defaultPrevented || !dragHasFiles(event.dataTransfer)) return;
+			// A file input takes a dropped file by itself (Import mail); cancelling the drop would stop that.
+			if (event.target instanceof Element && event.target.closest("input[type='file']")) return;
 			event.preventDefault();
 			if (event.dataTransfer) event.dataTransfer.dropEffect = "none";
 		}
@@ -22,7 +26,7 @@ function useFileDropGuard() {
 			window.removeEventListener("dragover", ignore);
 			window.removeEventListener("drop", ignore);
 		};
-	}, []);
+	}, [active]);
 }
 
 /**
@@ -33,14 +37,17 @@ export function useComposerFiles({
 	busy,
 	minimized,
 	addAttachments,
+	attachmentNames,
 }: {
 	busy: boolean;
 	minimized: boolean;
 	addAttachments: (files: File[]) => void;
+	/** The names of the files already on the message, so a pasted file never repeats one. */
+	attachmentNames: () => string[];
 }) {
 	const [dragging, setDragging] = useState(false);
 	const depth = useRef(0);
-	useFileDropGuard();
+	useFileDropGuard(!minimized);
 
 	function stopDragging() {
 		depth.current = 0;
@@ -85,7 +92,7 @@ export function useComposerFiles({
 		if (files.length === 0) return;
 		event.preventDefault();
 		event.stopPropagation();
-		if (!busy) addAttachments(namePastedFiles(files));
+		if (!busy) addAttachments(namePastedFiles(files, attachmentNames()));
 	}
 
 	return {

@@ -41,6 +41,18 @@ async function dropFile(page: Page, target: Locator, paths: string[]) {
 	await desktopDrag(page, target, "drop", paths);
 }
 
+/** Whether the page cancels a file drag over `target` (which then opens nowhere); a drop zone or input leaves it alone. */
+function dragoverCancelled(target: Locator, file: TestFile) {
+	return target.evaluate((element, args) => {
+		const transfer = new DataTransfer();
+		const bytes = Uint8Array.from(atob(args.base64), (char) => char.charCodeAt(0));
+		transfer.items.add(new File([bytes], args.name, { type: args.type }));
+		const event = new DragEvent("dragover", { bubbles: true, cancelable: true, dataTransfer: transfer });
+		element.dispatchEvent(event);
+		return event.defaultPrevented;
+	}, file);
+}
+
 function fileOnDisk(directory: string, file: TestFile): string {
 	const path = join(directory, file.name);
 	writeFileSync(path, Buffer.from(file.base64, "base64"));
@@ -73,8 +85,8 @@ function floating(page: Page) {
 	return page.getByRole("region", { name: "Compose message" }).last();
 }
 
-async function openFloating(page: Page) {
-	await page.goto("/inbox");
+async function openFloating(page: Page, path = "/inbox") {
+	await page.goto(path);
 	await page.getByRole("button", { name: "Compose" }).click();
 	const composer = floating(page);
 	const to = composer.getByLabel("To", { exact: true });
@@ -170,6 +182,29 @@ test.describe("files dropped on and pasted into the composer", () => {
 		await dropFile(page, page.getByRole("main"), [fileOnDisk(files, AGENDA)]);
 		await expect(body(composer)).toHaveText("Draft that must survive");
 		expect(page.url()).toBe(address);
+	});
+
+	test("a file dropped on a file input is left to the browser while a composer is open, and a minimized composer lets go", async ({
+		page,
+	}) => {
+		const composer = await openFloating(page, "/settings/import");
+		const input = page.locator("#import-files");
+		await expect(input).toBeVisible();
+		// The drop on an input is what puts the file in it, so the page must not cancel it; beside the input it does.
+		expect(await dragoverCancelled(input, AGENDA)).toBe(false);
+		expect(await dragoverCancelled(page.getByRole("main"), AGENDA)).toBe(true);
+		await composer.getByRole("button", { name: "Minimize composer" }).click();
+		expect(await dragoverCancelled(page.getByRole("main"), AGENDA)).toBe(false);
+	});
+
+	test("a pasted file never takes the name of one already attached", async ({ page }) => {
+		const composer = await openFloating(page);
+		const editor = body(composer);
+		await editor.click();
+		await pasteInto(editor, { files: [AGENDA] });
+		await expect(composer.getByText("agenda.txt")).toBeVisible();
+		await pasteInto(editor, { files: [AGENDA] });
+		await expect(composer.getByText("agenda-2.txt")).toBeVisible();
 	});
 
 	test("a drag that carries no files leaves the composer alone", async ({ page }) => {

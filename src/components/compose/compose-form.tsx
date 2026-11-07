@@ -644,7 +644,15 @@ export function ComposeForm({
 		/>
 	);
 
-	const fileFrame = useComposerFiles({ busy: loading || loadingDraft, minimized, addAttachments });
+	const fileFrame = useComposerFiles({
+		busy: loading || loadingDraft,
+		minimized,
+		addAttachments,
+		attachmentNames: () => [
+			...storedAttachments.map((item) => item.filename),
+			...attachments.map((item) => item.file.name),
+		],
+	});
 
 	const frameClass = composeFrameClass({ mode, minimized, modalMode }, besideAssistant);
 

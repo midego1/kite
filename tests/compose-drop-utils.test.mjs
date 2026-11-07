@@ -69,7 +69,7 @@ test("a copy with text and a picture of it is a text paste", () => {
 
 test("a screenshot gets a dated name in local time, and a second one a counter", () => {
 	const now = new Date(2026, 10, 7, 4, 5);
-	const [first, second, other] = namePastedFiles([png("image.png"), png(""), png("holiday.png")], now);
+	const [first, second, other] = namePastedFiles([png("image.png"), png(""), png("holiday.png")], [], now);
 	assert.equal(first.name, "screenshot-2026-11-07-0405.png");
 	assert.equal(second.name, "screenshot-2026-11-07-0405-2.png");
 	assert.equal(first.type, "image/png");
@@ -80,13 +80,26 @@ test("the extension follows the file, or the type when the name has none", () =>
 	const now = new Date(2026, 0, 2, 23, 59);
 	const [jpeg, bare] = namePastedFiles(
 		[new File(["x"], "", { type: "image/jpeg" }), new File(["x"], "image", { type: "image/webp" })],
+		[],
 		now,
 	);
 	assert.equal(jpeg.name, "screenshot-2026-01-02-2359.jpg");
-	assert.equal(bare.name, "screenshot-2026-01-02-2359-2.webp");
+	assert.equal(bare.name, "screenshot-2026-01-02-2359.webp");
 });
 
 test("files that are not pictures keep their names", () => {
 	const [pdf] = namePastedFiles([new File(["x"], "image.pdf", { type: "application/pdf" })]);
 	assert.equal(pdf.name, "image.pdf");
+});
+
+test("a name an attachment already has gets a counter, whatever the earlier paste was", () => {
+	const now = new Date(2026, 10, 7, 4, 5);
+	const [shot, agenda, again] = namePastedFiles(
+		[png("image.png"), new File(["x"], "Agenda.txt"), new File(["x"], "agenda.txt")],
+		["screenshot-2026-11-07-0405.png", "agenda.txt"],
+		now,
+	);
+	assert.equal(shot.name, "screenshot-2026-11-07-0405-2.png");
+	assert.equal(agenda.name, "Agenda-2.txt");
+	assert.equal(again.name, "agenda-3.txt");
 });

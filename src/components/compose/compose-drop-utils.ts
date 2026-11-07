@@ -48,17 +48,28 @@ function extensionOf(file: File): string {
 	return subtype && /^[a-z0-9]+$/i.test(subtype) ? `.${subtype.toLowerCase()}` : ".png";
 }
 
+/** `name` unless `taken` has it, then `name-2`, `name-3` before the extension. Names compare without regard to case. */
+function uniqueName(name: string, taken: Set<string>): string {
+	const dot = name.lastIndexOf(".");
+	const [base, extension] = dot > 0 ? [name.slice(0, dot), name.slice(dot)] : [name, ""];
+	let candidate = name;
+	for (let count = 2; taken.has(candidate.toLowerCase()); count += 1) candidate = `${base}-${count}${extension}`;
+	taken.add(candidate.toLowerCase());
+	return candidate;
+}
+
 /**
  * Browsers name a pasted screenshot "image.png" (or nothing at all). It gets a dated name instead, `screenshot-YYYY-MM-DD-HHmm.png`, in
- * the viewer's local time, and a second one in the same minute gets `-2`, `-3`. A file with a name of its own keeps it.
+ * the viewer's local time. A file with a name of its own keeps it. A name that an attachment already has (`existing`, or an
+ * earlier file of the same paste) gets `-2`, `-3`, so two pastes in the same minute never collide.
  */
-export function namePastedFiles(files: File[], now: Date = new Date()): File[] {
+export function namePastedFiles(files: File[], existing: Iterable<string> = [], now: Date = new Date()): File[] {
 	const stamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
-	let screenshots = 0;
+	const taken = new Set(Array.from(existing, (name) => name.toLowerCase()));
 	return files.map((file) => {
-		if (!file.type.startsWith("image/") || !GENERIC_IMAGE_NAME.test(file.name)) return file;
-		screenshots += 1;
-		const name = `screenshot-${stamp}${screenshots > 1 ? `-${screenshots}` : ""}${extensionOf(file)}`;
-		return new File([file], name, { type: file.type, lastModified: file.lastModified });
+		const generic = file.type.startsWith("image/") && GENERIC_IMAGE_NAME.test(file.name);
+		const wanted = generic ? `screenshot-${stamp}${extensionOf(file)}` : file.name;
+		const name = uniqueName(wanted, taken);
+		return name === file.name ? file : new File([file], name, { type: file.type, lastModified: file.lastModified });
 	});
 }

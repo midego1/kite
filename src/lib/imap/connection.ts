@@ -234,7 +234,40 @@ export class ImapConnection {
 		options: { gmailLabels?: boolean; messageIdHeader?: boolean } = {},
 	): Promise<Map<string, ImapFetchedMessage>> {
 		const result = new Map<string, ImapFetchedMessage>();
-		if (uids.length === 0) return result;
+		await this.readFetch(uids, options, (uid, message) => {
+			result.set(uid, message);
+		});
+		return result;
+	}
+
+	/**
+	 * `fetchMessages` that hands each message to `onMessage` as soon as its response is read, and keeps none of them,
+	 * so a caller can write one message before the next is read instead of holding the whole fetch. The rest of the
+	 * answer waits in the socket meanwhile, and the time `onMessage` takes does not count toward the command deadline.
+	 * A message the server sends twice is handed over twice; the caller decides what to keep.
+	 */
+	async streamMessages(
+		uids: string[],
+		options: { gmailLabels?: boolean },
+		onMessage: (uid: string, message: ImapFetchedMessage) => Promise<void>,
+	): Promise<void> {
+		await this.readFetch(uids, options, async (uid, message) => {
+			const paused = Date.now();
+			try {
+				await onMessage(uid, message);
+			} finally {
+				// The server did not have to answer while the caller wrote: that time is given back to the deadline.
+				this.commandStart += Date.now() - paused;
+			}
+		});
+	}
+
+	private async readFetch(
+		uids: string[],
+		options: { gmailLabels?: boolean; messageIdHeader?: boolean },
+		deliver: (uid: string, message: ImapFetchedMessage) => void | Promise<void>,
+	): Promise<void> {
+		if (uids.length === 0) return;
 		const tag = this.nextTag();
 		const labels = options.gmailLabels ? " X-GM-LABELS" : "";
 		const section = options.messageIdHeader ? "BODY.PEEK[HEADER.FIELDS (MESSAGE-ID)]" : "BODY.PEEK[]";
@@ -246,15 +279,16 @@ export class ImapConnection {
 			const line = await this.readLine();
 			if (isTaggedCompletion(line, tag)) {
 				if (!isTaggedOk(line, tag)) throw new Error(`IMAP fetch failed: ${line}`);
-				return result;
+				return;
 			}
 			if (!response || line.startsWith("* ")) response = { text: line, raw: null };
 			else response.text += ` ${line}`;
 			const literalLength = getLiteralLength(line);
 			if (literalLength === null) {
 				// A line without a literal ends the response.
-				addFetchedMessage(result, response);
+				const fetched = fetchedMessage(response);
 				response = null;
+				if (fetched) await deliver(fetched.uid, fetched.message);
 				continue;
 			}
 			batchBytes += literalLength;
@@ -440,12 +474,12 @@ export class ImapConnection {
 
 const newResponseCount = (): ResponseCount => ({ lines: 0, bytes: 0 });
 
-/** Adds a finished FETCH response that carried a UID and a body; flag-only responses are ignored. */
-function addFetchedMessage(
-	result: Map<string, ImapFetchedMessage>,
-	response: { text: string; raw: ArrayBuffer | null },
-): void {
-	if (!response.raw) return;
+/** A finished FETCH response that carried a UID and a body; flag-only responses are null. */
+function fetchedMessage(response: {
+	text: string;
+	raw: ArrayBuffer | null;
+}): { uid: string; message: ImapFetchedMessage } | null {
+	if (!response.raw) return null;
 	const { uid, flags, internalDate, size, labels } = parseFetchAttributes(response.text);
-	if (uid) result.set(uid, { raw: response.raw, flags, internalDate, size, labels });
+	return uid ? { uid, message: { raw: response.raw, flags, internalDate, size, labels } } : null;
 }

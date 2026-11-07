@@ -24,7 +24,6 @@ const {
 	selectImapUidBatch,
 	selectRemainingUids,
 	chunk,
-	groupByBytes,
 	imapSecurity,
 	importFlagState,
 	importMessageFromImap,
@@ -35,7 +34,7 @@ const {
 		"src/lib/imap/protocol-utils.ts",
 	],
 	[
-		"selectImapUidBatch, selectRemainingUids, chunk, groupByBytes, imapSecurity, importFlagState, importMessageFromImap, hostImportMessageFromImap",
+		"selectImapUidBatch, selectRemainingUids, chunk, imapSecurity, importFlagState, importMessageFromImap, hostImportMessageFromImap",
 		"src/lib/import/imap-utils.ts",
 	],
 ]);
@@ -115,18 +114,6 @@ test("selectRemainingUids keeps UIDs below the cursor, newest first, and drops j
 	assert.deepEqual(selectRemainingUids([3, 9, 5], null), [9, 5, 3]);
 	assert.deepEqual(selectRemainingUids([3, 9, 5], 5), [3]);
 	assert.deepEqual(selectRemainingUids([0, -2, Number.NaN, 7], null), [7]);
-});
-
-test("groupByBytes keeps order, fills groups up to the limit and gives a bigger item its own group", () => {
-	const sizes = [3, 3, 3, 10, 1, 1];
-	assert.deepEqual(
-		groupByBytes(sizes, (size) => size, 6),
-		[[3, 3], [3], [10], [1, 1]],
-	);
-	assert.deepEqual(
-		groupByBytes([], (size) => size, 6),
-		[],
-	);
 });
 
 test("chunk splits a list into pieces of at most the size", () => {

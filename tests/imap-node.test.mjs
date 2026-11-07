@@ -581,8 +581,9 @@ test("an import keeps read and starred state, dates undated mail by INTERNALDATE
 				{ raw: undated, internalDate: " 1-Feb-2025 08:30:00 +0100" },
 				// Kite sent this one itself: the outbound row stores the Message-ID without brackets.
 				{ raw: sampleMessage(4, { subject: "Sent from Kite", messageId: "<sent@example.org>" }), flags: ["\\Seen"] },
-				// The same bytes again, without a Message-ID: recognised by their SHA-256. Imports run newest first, so
-				// this copy is the one kept, read, and the older one is the duplicate.
+				// The same bytes again, without a Message-ID: recognised by their SHA-256. A segment is written in the order
+				// the server answers (by sequence number, oldest first), so the older copy is the one kept, unread, and this
+				// one is the duplicate.
 				{ raw: undated, flags: ["\\Seen"], internalDate: " 1-Feb-2025 08:30:00 +0100" },
 			],
 		},
@@ -614,7 +615,7 @@ test("an import keeps read and starred state, dates undated mail by INTERNALDATE
 	assert.equal(rows["Re: Root"].thread_id, "root@example.org");
 	assert.equal(rows.Root.thread_id, "root@example.org");
 	const undatedRow = rows["No id, no date"];
-	assert.equal(undatedRow.read, 1);
+	assert.equal(undatedRow.read, 0);
 	assert.equal(undatedRow.provider_message_id, `import:sha256:${createHash("sha256").update(undated).digest("hex")}`);
 	assert.equal(undatedRow.created_at, Date.parse("2025-02-01T07:30:00Z") / 1000);
 	// A message with a Date header keeps it.

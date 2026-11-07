@@ -10,10 +10,9 @@ import { moduleHost } from "@/lib/modules/host";
 import type { CapabilityCallContext } from "@/lib/modules/module-types";
 import type { HostImportMessage, HostImportResult } from "@/lib/modules/host-types";
 import { encodeRawMime } from "@/lib/email/module-import-utils";
-import { fetchSegment, planSizedFetch, type PlannedSegment } from "./capped-fetch";
-import { canPrefetch } from "./capped-fetch-utils";
+import { planSizedFetch, type PlannedSegment } from "./capped-fetch";
 import { getImportMessageUserId, parseImportDestination } from "./destination";
-import { HOST_IMPORT_GROUP_BYTES, groupByBytes, hostImportMessageFromImap, selectRemainingUids } from "./imap-utils";
+import { HOST_IMPORT_GROUP_BYTES, hostImportMessageFromImap, selectRemainingUids } from "./imap-utils";
 import { importPauseNote } from "./size-guard-utils";
 
 const logger = createLogger("import");
@@ -111,47 +110,69 @@ export type ImportRunOutcome = "done" | "more" | "stopped";
 export const runDeadline = (run: ImportRun) => run.startedAt + RUN_TIME_BUDGET_MS;
 export const hasRunTime = (run: ImportRun) => Date.now() < runDeadline(run);
 
+/** Where a fetched message is imported (an import destination), or null to leave it out; the caller counts those. */
+export type PlaceMessage = (uid: number, message: ImapFetchedMessage) => Promise<string | null>;
+
+/** What writing one segment did; `missing` counts its UIDs the server did not return or that were too big to fetch. */
+export type ChunkResult = HostImportResult & { missing: number };
+
 /**
- * Fetches `uids` in segments (`planSizedFetch`: at most 25 messages and 16 MB each, a bigger message alone), the next
- * one from IMAP while the current one is written to D1/R2 (only when both together stay within the memory budget),
- * until the time budget runs out. A segment is fetched whole and written before the one after it is held, so a chunk
- * of big messages is never accumulated. A message above the connection's size limit is not fetched: it is missing from
- * what `onChunk` gets, so the caller counts it as skipped, and the job's problems name it (`folderName` names the
- * folder). `onChunk` returns false to stop (the job was cancelled or paused). Returns how many UIDs were handled, or
- * null when it stopped.
+ * Fetches `uids` in segments (`planSizedFetch`: at most 25 messages and 16 MB each, a bigger message alone) and writes
+ * each message as soon as it is read (`ImportWriter`), until the time budget runs out. Only after a segment is read and
+ * written does `onChunk` save it and the next segment's FETCH start, so the cursor never passes a message that was not
+ * written, and a run holds at most a few megabytes of a segment instead of the whole segment and the next one. A
+ * message above the connection's size limit is not fetched: it counts as missing, and the job's problems name it
+ * (`folderName` names the folder). `onChunk` returns false to stop (the job was cancelled or paused). Returns how many
+ * UIDs were handled, or null when it stopped.
  */
 export async function fetchInChunks(
 	run: ImportRun,
 	uids: number[],
 	options: { gmailLabels?: boolean; folderName: string },
-	onChunk: (uids: number[], fetched: Map<string, ImapFetchedMessage>) => Promise<boolean>,
+	place: PlaceMessage,
+	onChunk: (uids: number[], result: ChunkResult) => Promise<boolean>,
 ): Promise<number | null> {
 	const limits = imapLimits(run.env.KITE_RUNTIME);
 	const segments = uids.length
 		? await planSizedFetch(run.session, uids.map(String), limits.literalBytes, options.folderName)
 		: [];
-	const fetchOne = (segment: PlannedSegment) => fetchSegment(run.session, segment, options);
-	let prefetched = segments.length ? fetchOne(segments[0]) : null;
 	let handled = 0;
-	for (let index = 0; index < segments.length; index += 1) {
-		const segment = segments[index];
-		const fetched = await (prefetched ?? fetchOne(segment));
-		const next = segments[index + 1];
-		// The next segment is fetched while this one is written, unless both together would be too much to hold.
-		prefetched = next && hasRunTime(run) && canPrefetch(segment, next) ? fetchOne(next) : null;
-		prefetched?.catch(() => undefined);
+	for (const segment of segments) {
 		if (segment.skipped.length) run.errors = [...run.errors, ...segment.skipped].slice(-MAX_STORED_ERRORS);
+		const result = await writeSegment(run, segment, options, place);
 		const chunkUids = segment.uids.map(Number);
-		// Another run holds the job now: nothing of this chunk is written.
-		if (run.hold.lost || !(await onChunk(chunkUids, fetched))) {
-			await prefetched?.catch(() => undefined);
-			return null;
-		}
+		// Another run holds the job now: the writer wrote nothing of this chunk once it noticed, and nothing is saved.
+		if (run.hold.lost || !(await onChunk(chunkUids, result))) return null;
 		handled += chunkUids.length;
 		run.budget -= chunkUids.length;
-		if (!prefetched && !hasRunTime(run)) break;
+		if (!hasRunTime(run)) break;
 	}
 	return handled;
+}
+
+/** Streams one segment's messages into an `ImportWriter`; a UID it did not ask for, or one sent twice, is ignored. */
+async function writeSegment(
+	run: ImportRun,
+	segment: PlannedSegment,
+	options: { gmailLabels?: boolean; folderName: string },
+	place: PlaceMessage,
+): Promise<ChunkResult> {
+	const writer = new ImportWriter(run);
+	const expected = new Set(segment.fetch);
+	try {
+		if (segment.fetch.length)
+			await run.session.streamMessages(segment.fetch, { gmailLabels: options.gmailLabels }, async (uid, message) => {
+				if (!expected.delete(uid)) return;
+				const destination = await place(Number(uid), message);
+				if (destination)
+					await writer.add(destination, { filename: `${options.folderName}-${uid}.eml`, fetched: message });
+			});
+		const written = await writer.finish();
+		return { ...written, missing: segment.uids.length - (segment.fetch.length - expected.size) };
+	} finally {
+		// A fetch that failed midway still waits for the write in flight, so none outlives the run.
+		await writer.settle();
+	}
 }
 
 /** Imports one batch into `destination` through the module host, owned as the destination requires. */
@@ -165,30 +186,72 @@ function importBatch(run: ImportRun, destination: string, messages: HostImportMe
 }
 
 /** A fetched message waiting to be handed to the module host. */
-export type FetchedImport = { filename: string; fetched: ImapFetchedMessage };
+type FetchedImport = { filename: string; fetched: ImapFetchedMessage };
 
 /**
- * `importBatch` for fetched messages, a few megabytes per host call: each group is base64-encoded just before its
- * call, so a chunk of big messages never has all of its encoded copies (and the host's decoded ones) alive at once.
+ * Hands fetched messages to the module host while the FETCH that reads them is still open, a few megabytes per call
+ * (`HOST_IMPORT_GROUP_BYTES` of raw message across destinations, a bigger message alone). One group is written while
+ * the next is read; the group after that waits for the write, so a run holds at most two groups and the message being
+ * read. A group is base64-encoded just before its call and dropped from the writer before the call starts, so its raw
+ * bytes can be freed while the host decodes the copies. Calls run one at a time, in order. Once the run has lost its
+ * job (`hold.lost`) nothing more is written.
  */
-export async function importFetched(
-	run: ImportRun,
-	destination: string,
-	items: readonly FetchedImport[],
-): Promise<HostImportResult> {
-	const total: HostImportResult = { imported: 0, skipped: 0, failed: 0, errors: [] };
-	for (const group of groupByBytes(items, (item) => item.fetched.raw.byteLength, HOST_IMPORT_GROUP_BYTES)) {
-		const result = await importBatch(
-			run,
-			destination,
-			group.map(({ filename, fetched }) => hostImportMessageFromImap(filename, fetched, encodeRawMime)),
-		);
-		total.imported += result.imported;
-		total.skipped += result.skipped;
-		total.failed += result.failed;
-		total.errors.push(...result.errors);
+class ImportWriter {
+	private groups = new Map<string, FetchedImport[]>();
+	private held = 0;
+	private writing: Promise<void> | null = null;
+	private readonly result: HostImportResult = { imported: 0, skipped: 0, failed: 0, errors: [] };
+
+	constructor(private readonly run: ImportRun) {}
+
+	async add(destination: string, item: FetchedImport): Promise<void> {
+		const bytes = item.fetched.raw.byteLength;
+		if (this.held && this.held + bytes > HOST_IMPORT_GROUP_BYTES) await this.flush();
+		this.groups.set(destination, [...(this.groups.get(destination) ?? []), item]);
+		this.held += bytes;
 	}
-	return total;
+
+	/** Writes what is still held and waits for every write; a write that failed throws here. */
+	async finish(): Promise<HostImportResult> {
+		await this.flush();
+		await this.writing;
+		this.writing = null;
+		return this.result;
+	}
+
+	/** Waits for a write still in flight, whatever its outcome. */
+	async settle(): Promise<void> {
+		await this.writing?.catch(() => undefined);
+	}
+
+	/** Starts writing the held groups once the write before them has finished (whose failure throws here). */
+	private async flush(): Promise<void> {
+		await this.writing;
+		const groups = [...this.groups];
+		this.groups = new Map();
+		this.held = 0;
+		if (!groups.length) return;
+		this.writing = this.write(groups);
+		// Awaited by the next flush or by finish; until then a failure must not count as unhandled.
+		this.writing.catch(() => undefined);
+	}
+
+	private async write(groups: Array<[string, FetchedImport[]]>): Promise<void> {
+		while (groups.length) {
+			const [destination, items] = groups.shift()!;
+			if (this.run.hold.lost) return;
+			const messages = items.map(({ filename, fetched }) =>
+				hostImportMessageFromImap(filename, fetched, encodeRawMime),
+			);
+			// Nothing but the encoded copies refers to the raw bytes any more while the host works.
+			items.length = 0;
+			const batch = await importBatch(this.run, destination, messages);
+			this.result.imported += batch.imported;
+			this.result.skipped += batch.skipped;
+			this.result.failed += batch.failed;
+			this.result.errors.push(...batch.errors);
+		}
+	}
 }
 
 /** Adds a chunk's outcome to the job's totals; a UID the server did not return counts as skipped. */
@@ -374,14 +437,9 @@ export async function runFolderJob(run: ImportRun): Promise<ImportRunOutcome> {
 		run,
 		remaining.slice(0, run.budget),
 		{ folderName: job.folder },
-		async (uids, fetched) => {
-			const batch: FetchedImport[] = [];
-			for (const uid of uids) {
-				const message = fetched.get(String(uid));
-				if (message) batch.push({ filename: `${job.folder}-${uid}.eml`, fetched: message });
-			}
-			const result = await importFetched(run, job.destination, batch);
-			addChunkResult(run, uids.length, { ...result, missing: uids.length - batch.length });
+		async () => job.destination,
+		async (uids, result) => {
+			addChunkResult(run, uids.length, result);
 			cursorUid = uids[uids.length - 1];
 			return recordChunk(run, { ...run.progress, cursorUid, total: run.total, errors: run.errors });
 		},

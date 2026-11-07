@@ -780,18 +780,11 @@ test("a dead worker's job is reclaimed within the short lease after Resume, with
 });
 
 test(
-	"a database-full pause from a saved chunk keeps the lease until the open FETCH is finished",
+	"a database-full pause from a saved chunk stops the run before the next FETCH and releases the lease at its end",
 	slowSuite,
 	async (t) => {
-		const second = gate();
-		t.after(() => second.open());
 		const inbox = Array.from({ length: 60 }, (_, index) => sampleMessage(index + 1, { subject: `Full ${index + 1}` }));
-		// The first chunk (its sizes, then its messages) answers at once; the prefetch of the second chunk stays open
-		// until the test lets it go.
-		const server = await fake(t, {
-			folders: { INBOX: inbox },
-			fetchGate: (n) => (n <= 1 ? Promise.resolve() : second.promise),
-		});
+		const server = await fake(t, { folders: { INBOX: inbox } });
 		const { db, env, limits } = await setup(t, server);
 		const job = await startAccountJob(env, await planAccountImport(env, account));
 		limits.onPut = () => {
@@ -800,16 +793,15 @@ test(
 			delete env.KITE_RUNTIME;
 			env.D1_MAX_BYTES = "1";
 		};
-		const run = processImportJob(env, job.id, CTX);
-		const state = () => db.db.prepare("SELECT status, lease_until, pause_reason FROM import_jobs").get();
-		await until(() => state().status === "paused", "the database-full pause");
-		assert.equal(state().pause_reason, "database");
-		await sleep(300);
-		assert.equal(fetches(server), 3, "the prefetch is still open");
-		assert.notEqual(state().lease_until, null, "the open FETCH still holds the job");
-		second.open();
-		await run;
-		assert.equal(state().lease_until, null, "the run's end released it");
+		const before = fetches(server);
+		await processImportJob(env, job.id, CTX);
+		const state = db.db.prepare("SELECT status, lease_until, pause_reason, processed FROM import_jobs").get();
+		assert.equal(state.status, "paused");
+		assert.equal(state.pause_reason, "database");
+		// The sizes, then the first chunk's messages, written as they were read; the second chunk was never asked for.
+		assert.equal(fetches(server) - before, 2);
+		assert.equal(state.processed, 25);
+		assert.equal(state.lease_until, null, "the run's end released it");
 	},
 );
 

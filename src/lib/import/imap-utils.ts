@@ -33,30 +33,11 @@ export function selectRemainingUids(allUids: readonly number[], cursorUid: numbe
 		.sort((a, b) => b - a);
 }
 
-/** The raw bytes one call to the module host carries at most (a message above it goes alone). */
-export const HOST_IMPORT_GROUP_BYTES = 4 * 1024 * 1024;
-
 /**
- * Splits `items` in order into groups of at most `maxBytes` of `bytesOf` (an item above it gets a group of its own).
- * A host call holds the raw message, its base64 text and the decoded copy at once, so a fetch of many big messages is
- * handed over in several calls instead of one.
+ * The raw bytes one call to the module host carries at most (a message above it goes alone). A call holds the raw
+ * message, its base64 text and the decoded copy at once, so a fetch of many big messages is handed over in several calls.
  */
-export function groupByBytes<T>(items: readonly T[], bytesOf: (item: T) => number, maxBytes: number): T[][] {
-	const groups: T[][] = [];
-	let weight = 0;
-	for (const item of items) {
-		const bytes = bytesOf(item);
-		const last = groups[groups.length - 1];
-		if (last && weight + bytes <= maxBytes) {
-			last.push(item);
-			weight += bytes;
-		} else {
-			groups.push([item]);
-			weight = bytes;
-		}
-	}
-	return groups;
-}
+export const HOST_IMPORT_GROUP_BYTES = 4 * 1024 * 1024;
 
 /** @public Exercised by the unit tests. */
 export function chunk<T>(values: T[], size: number): T[][] {

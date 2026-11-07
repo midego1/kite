@@ -38,7 +38,6 @@ const {
 	SIGN_IN_FAILURES_PER_USER,
 	SIGN_IN_WINDOW_MS,
 	planFetchSegments,
-	canPrefetch,
 	isAuthRefusal,
 	signInLimitMessage,
 	oversizedNote,
@@ -145,10 +144,6 @@ test("25 messages of 15 MB are 25 segments, never one chunk held together", () =
 	const segments = planFetchSegments(uids, sizes, { messageBytes: 36 * MB });
 	assert.equal(segments.length, 25);
 	assert.ok(segments.every((segment) => segment.weight <= 16 * MB));
-	// A segment and the one prefetched behind it stay within two budgets.
-	assert.equal(canPrefetch(segments[0], segments[1]), true);
-	assert.equal(canPrefetch({ weight: 36 * MB }, { weight: 1 * MB }), false);
-	assert.equal(canPrefetch({ weight: 20 * MB }, { weight: 20 * MB }), false);
 });
 
 test("a message above the cap stays in its segment's UIDs but is not fetched; the others are", () => {
@@ -182,13 +177,12 @@ test("only oversized messages make a segment with nothing to fetch", () => {
 	assert.equal(segments[0].weight, 0);
 });
 
-test("a message without a stated size is planned at the cap: alone, and never prefetched beside another", () => {
+test("a message without a stated size is planned at the cap: alone", () => {
 	const segments = planFetchSegments(["1", "2"], new Map(), { messageBytes: 36 * MB });
 	assert.deepEqual(
 		segments.map((segment) => segment.fetch),
 		[["1"], ["2"]],
 	);
-	assert.equal(canPrefetch(segments[0], segments[1]), false);
 });
 
 test("cancelled sign-ins are not failures, but are limited per server and per user", () => {

@@ -8,6 +8,7 @@ import {
 	pairedEntryIds,
 	shownStatus,
 	sortEntries,
+	unpaidLedgerInvoices,
 	type PaymentListEntry,
 } from "./payment-list-utils";
 import { ownerScan, scanView } from "./payment-scan";
@@ -16,7 +17,7 @@ import { dateToDay, type ChargeRow } from "./record-utils";
 import { ownerDocuments, ownerRows } from "./subscriptions";
 import type { ViewUser } from "./views";
 
-/** At most this many rows are listed; months older than the newest rows are dropped first. */
+/** At most this many rows are listed, newest first; totals and pairing still cover every row. */
 const MAX_ROWS = 1_000;
 
 function paymentEntry(row: PaymentRow): PaymentListEntry {
@@ -51,6 +52,12 @@ function ledgerEntryOf(row: ChargeRow, vendor: string): PaymentListEntry {
 		messageId: row.messageId,
 		subscriptionId: row.subscriptionId,
 	};
+}
+
+/** A subscription invoice a failed payment followed is shown, and counted, as open. */
+function withUnpaid(entries: readonly PaymentListEntry[], paired: ReadonlySet<string>): PaymentListEntry[] {
+	const unpaid = unpaidLedgerInvoices(entries, paired);
+	return entries.map((entry) => (unpaid.has(entry.id) ? { ...entry, status: "open" as const } : entry));
 }
 
 function modelFieldsOf(row: PaymentRow | undefined): string[] {
@@ -91,14 +98,18 @@ export async function listPaymentsView(user: ViewUser) {
 		]);
 		const vendors = new Map(subscriptions.map((row) => [row.id, row.vendor]));
 		const byId = new Map(payments.map((row) => [row.id, row]));
-		const entries = sortEntries([
+		const all = sortEntries([
 			...payments.filter((row) => !row.messageId || !inLedger.has(row.messageId)).map(paymentEntry),
 			...documents.map((row) => ledgerEntryOf(row, vendors.get(row.subscriptionId) ?? "")),
-		]).slice(0, MAX_ROWS);
-		const paired = pairedEntryIds(entries);
-		const refs = await messageRefs(user, entries);
+		]);
+		// Pairing and totals cover every row; only the list is cut, and says so.
+		const paired = pairedEntryIds(all);
+		const entries = withUnpaid(all, paired);
+		const listed = entries.slice(0, MAX_ROWS);
+		const refs = await messageRefs(user, listed);
 		return {
-			payments: entries.map((entry) => ({
+			truncated: entries.length > listed.length,
+			payments: listed.map((entry) => ({
 				id: entry.id,
 				source: entry.source,
 				docType: entry.docType,
@@ -120,7 +131,7 @@ export async function listPaymentsView(user: ViewUser) {
 		};
 	} catch (error) {
 		if (refusalOf(error)?.error === MIGRATION_PENDING_ERROR)
-			return { payments: [], months: [], scan: null, migrationPending: true as const };
+			return { truncated: false, payments: [], months: [], scan: null, migrationPending: true as const };
 		throw error;
 	}
 }

@@ -1,3 +1,4 @@
+import { daysBetween } from "./date-utils";
 import { pairedDocumentIds, type LedgerEntry } from "./totals-utils";
 import type { DocType } from "./types";
 
@@ -46,6 +47,29 @@ const LEDGER_STATUS: Record<DocType, ListStatus> = {
 /** A ledger document's status: a subscription's invoice is charged with it, the rest follow their type. */
 export function ledgerStatus(docType: DocType): ListStatus {
 	return LEDGER_STATUS[docType];
+}
+
+/** Days after an invoice within which a failed payment of its subscription means it was not collected. */
+const UNPAID_DAYS = 31;
+
+/**
+ * A subscription's invoices that a failed payment followed (same subscription, on or up to 31 days after the invoice)
+ * and no payment settled: still open, not charged. Every other subscription invoice counts as charged with it.
+ */
+export function unpaidLedgerInvoices(entries: readonly PaymentListEntry[], paired: ReadonlySet<string>): Set<string> {
+	const failures = entries.filter((entry) => entry.source === "subscription" && entry.docType === "failed_payment");
+	const unpaid = new Set<string>();
+	for (const entry of entries) {
+		if (entry.source !== "subscription" || entry.docType !== "invoice" || paired.has(entry.id)) continue;
+		const failed = failures.some(
+			(failure) =>
+				failure.group === entry.group &&
+				failure.documentOn >= entry.documentOn &&
+				daysBetween(entry.documentOn, failure.documentOn) <= UNPAID_DAYS,
+		);
+		if (failed) unpaid.add(entry.id);
+	}
+	return unpaid;
 }
 
 const asLedger = (entry: PaymentListEntry): LedgerEntry => ({

@@ -38,6 +38,10 @@ export type ScanState = {
 
 export type PaymentList = {
 	payments: PaymentItem[];
+	/** Month totals over every row, also those past the list's cap. */
+	months: MonthCurrencyTotal[];
+	/** The list holds only the newest rows. */
+	truncated?: boolean;
 	scan: ScanState | null;
 	migrationPending?: true;
 };

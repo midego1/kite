@@ -109,7 +109,8 @@ async function loadCard(ctx: CapabilityCallContext, userId: string, suggestionId
 	const payload = parsed.data as SubscriptionPayload;
 	const message = await moduleHost.mail.getMessage(ctx, suggestion.messageId);
 	if (!message) return { status: 404, error: "Message not found" };
-	const row = rowForPayload(await ownerRows(userId, payload.vendorKey), payload);
+	// A card about a named row reads all rows: a row tracked before processor merchants were read keeps an older key.
+	const row = rowForPayload(await ownerRows(userId, payload.subscriptionId ? undefined : payload.vendorKey), payload);
 	const live = liveDocument(
 		payload.document,
 		message.attachments.map((attachment) => attachment.id),

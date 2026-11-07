@@ -1107,7 +1107,7 @@ Indexes: unique `finance_payments_message_idx (user_id, message_id)`, the dedupe
 
 `finance_payment_scans` holds one scan per owner (`user_id` PK → `users.id` cascade, `status` `running | done | failed`, `since_at`, `cursor_at`, `cursor_id`, `scanned`, `recorded`, `lease_until`, `started_at`, `updated_at`, `finished_at`). It is bookkeeping, not user data.
 
-Backups: `finance_payments` in `BACKUP_TABLES` after `finance_charges`, in the `mail` group; `finance_payment_scans` in `INTERNAL_TABLES`. Before 0094 is applied, `GET /api/finance/payments` answers `{ payments: [], months: [], migrationPending: true }`, writes answer 409 `MIGRATION_PENDING`, the step and the scan do nothing, and every check reads `sqlite_master`.
+Backups: `finance_payments` in `BACKUP_TABLES` after `finance_charges`, in the `mail` group; `finance_payment_scans` in `INTERNAL_TABLES`. Before 0094 is applied, `GET /api/finance/payments` answers `{ truncated: false, payments: [], months: [], scan: null, migrationPending: true }`, writes answer 409 `MIGRATION_PENDING`, the step and the scan do nothing, and every check reads `sqlite_master`.
 
 ### 25.3 Where it runs
 
@@ -1144,4 +1144,4 @@ Off means absent (§15): with the module off for the install or the user the tab
 
 ### 25.7 Tests
 
-Unit: detection on receipts, invoices, refunds and credit notes in the five languages, and no match for marketing mail with prices, a price list, a spoofed receipt, phishing, spam, muted senders and failed payments; the processor merchant (a synthetic Stripe receipt of the owner's shape gives "Stripe Atlas", paid, USD 500.00, the date paid); month totals per currency with pairing and refunds; dedupe per message and the tombstone; no double count with the ledger. e2e: a delivered receipt lands in Payments with demo data, a No-AI mailbox and a phishing-flagged receipt record nothing, correct and remove with Undo, and Scan last 90 days finds mail delivered before the switch was on.
+Unit: detection on receipts, invoices, refunds and credit notes in the five languages, and no match for marketing mail with prices, a price list, a spoofed receipt, phishing, spam, muted senders and failed payments; the processor merchant (a synthetic receipt of the owner's shape, sent through Stripe for an invented merchant, gives that merchant, paid, USD 500.00, the date paid); month totals per currency with pairing and refunds; dedupe per message and the tombstone; no double count with the ledger. e2e: a delivered receipt lands in Payments with demo data, a No-AI mailbox and a phishing-flagged receipt record nothing, correct and remove with Undo, and Scan last 90 days finds mail delivered before the switch was on.

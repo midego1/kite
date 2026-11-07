@@ -6,10 +6,13 @@ import type { PaymentList } from "./payments-types";
 
 /** How often the list is read again while a scan runs. */
 const SCAN_POLL_MS = 3_000;
+/** How often an open Payments tab picks up payments recorded from new mail. */
+const IDLE_POLL_MS = 60_000;
 
 /**
- * Every payment row and subscription document of the viewer; the view filters and totals them itself. While a scan
- * runs the list is read again every few seconds, so found payments appear as the scan goes.
+ * Every payment row and subscription document of the viewer; the view filters them itself. The list is read again
+ * every few seconds while a scan runs (also after a failed read), every minute otherwise while the tab is visible,
+ * and when the window regains focus, so payments recorded from new mail appear without a reload.
  */
 export function usePaymentList() {
 	const [list, setList] = useState<PaymentList | null>(null);
@@ -37,11 +40,21 @@ export function usePaymentList() {
 		};
 	}, [version]);
 
+	// Keyed on `version`, so the next read is scheduled after every attempt, a failed one included.
 	useEffect(() => {
-		if (!scanning) return;
-		const timer = window.setTimeout(reload, SCAN_POLL_MS);
+		const timer = window.setTimeout(
+			() => {
+				if (scanning || document.visibilityState === "visible") reload();
+			},
+			scanning ? SCAN_POLL_MS : IDLE_POLL_MS,
+		);
 		return () => window.clearTimeout(timer);
-	}, [scanning, list, reload]);
+	}, [scanning, version, reload]);
+
+	useEffect(() => {
+		window.addEventListener("focus", reload);
+		return () => window.removeEventListener("focus", reload);
+	}, [reload]);
 
 	return { list, failed, reload };
 }

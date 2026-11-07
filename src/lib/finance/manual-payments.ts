@@ -23,6 +23,7 @@ function beforeOf(row: PaymentRow) {
 	return {
 		id: row.id,
 		vendor: row.vendor,
+		vendorKey: row.vendorKey,
 		amountMinor: row.amountMinor,
 		currency: row.currency,
 		documentAt: row.documentAt.toISOString(),

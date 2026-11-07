@@ -141,7 +141,8 @@ const MERCHANT_IN_SUBJECT = [
 	/^\s*(?:your\s+)?(?:receipt|invoice|refund)\s+from\s+(.{2,80}?)\s*(?:[#[(]|$)/iu,
 	/^\s*your\s+(.{2,80}?)\s+(?:receipt|invoice|refund)(?![\p{L}])/iu,
 ];
-const MERCHANT_IN_BODY = /(?:^|\n)[ \t]*(?:receipt|invoice|refund)\s+from\s+([^\n]{2,80})/iu;
+// The name ends before a reference ("Receipt from Acme #2214-0001") as in the subject.
+const MERCHANT_IN_BODY = /(?:^|\n)[ \t]*(?:receipt|invoice|refund)\s+from\s+([^\n#[(]{2,80}?)[ \t]*(?:[#[(]|\n|$)/iu;
 
 /** The processor's own name, as its display name or without one: "Stripe", "PayPal", "Paddle.com". */
 function genericProcessorName(name: string, domain: string): boolean {

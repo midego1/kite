@@ -3,8 +3,9 @@ import type { CapabilityCallContext, CapabilityHandler, JsonValue } from "@/lib/
 import { isDayString } from "./date-utils";
 import { FinanceRefusal, refusalOf } from "./errors";
 import { initialStatus, type PaymentDocType, type PaymentStatus } from "./payment-utils";
-import { ownerPayment, updatePayment, type PaymentRow } from "./payments";
+import { ownerPayment, removePaymentRow, updatePayment, type PaymentRow } from "./payments";
 import { dayToDate } from "./record-utils";
+import { manualVendorKey } from "./vendor-utils";
 
 const day = z.string().refine(isDayString, "Not a calendar date");
 const docType = z.enum(["invoice", "payment", "credit", "refund"]);
@@ -32,6 +33,7 @@ const removeInput = z.object({ paymentId: z.string().min(1).max(160) });
 const previousSchema = z
 	.object({
 		vendor: z.string(),
+		vendorKey: z.string(),
 		amountMinor: z.number().int(),
 		currency: z.string(),
 		documentAt: z.string().datetime({ offset: true }),
@@ -56,7 +58,10 @@ function statusFor(type: PaymentDocType, wanted: PaymentStatus | undefined, curr
 function correctedColumns(row: PaymentRow, fields: PaymentFields) {
 	const type = fields.docType ?? row.docType;
 	return {
-		...(fields.vendor !== undefined ? { vendor: fields.vendor } : {}),
+		// A renamed vendor pairs only with its own rows, not with the sender's original ones.
+		...(fields.vendor !== undefined && fields.vendor !== row.vendor
+			? { vendor: fields.vendor, vendorKey: manualVendorKey(fields.vendor) }
+			: {}),
 		...(fields.amountMinor !== undefined ? { amountMinor: fields.amountMinor } : {}),
 		...(fields.currency !== undefined ? { currency: fields.currency } : {}),
 		...(fields.documentOn !== undefined ? { documentAt: dayToDate(fields.documentOn)! } : {}),
@@ -68,6 +73,7 @@ function correctedColumns(row: PaymentRow, fields: PaymentFields) {
 function snapshot(row: PaymentRow): Previous {
 	return {
 		vendor: row.vendor,
+		vendorKey: row.vendorKey,
 		amountMinor: row.amountMinor,
 		currency: row.currency,
 		documentAt: row.documentAt.toISOString(),
@@ -123,9 +129,10 @@ async function run<Input>(
 		return { result: outcome.result, inverse: JSON.parse(JSON.stringify(outcome.inverse)) as JsonValue };
 	}
 	const inverse = inverseSchema.safeParse(call.inverse?.inverse);
-	if (inverse.success && inverse.data.userId !== viewer.userId)
-		throw new FinanceRefusal(403, "Only the owner can change this payment");
-	if (inverse.success && call.op === "undo")
+	// Without what to put back there is nothing to undo, so the undo is refused rather than reported as done.
+	if (!inverse.success) throw new FinanceRefusal(409, "This change cannot be undone");
+	if (inverse.data.userId !== viewer.userId) throw new FinanceRefusal(403, "Only the owner can change this payment");
+	if (call.op === "undo")
 		await updatePayment(inverse.data.userId, inverse.data.paymentId, columnsOf(inverse.data.previous));
 	return { result: {}, inverse: null };
 }
@@ -162,9 +169,13 @@ export const updatePaymentAction = paymentAction(updateInput, async ({ userId, i
 	return { result: resultOf(row), inverse: { userId, paymentId: row.id, previous } };
 });
 
-/** `remove_payment`: hides the row and keeps it as a tombstone so the message is not recorded again; undo shows it. */
+/**
+ * `remove_payment`: hides the row and keeps it as a tombstone so the message is not recorded again; undo shows it.
+ * Only the action whose update hid the row records an undo: a second removal of a row already removed is refused, so
+ * its undo can never bring back a row another action removed.
+ */
 export const removePaymentAction = paymentAction(removeInput, async ({ userId, input }) => {
 	const row = await requirePayment(userId, input.paymentId);
-	if (!row.removedAt) await updatePayment(userId, row.id, { removedAt: new Date() });
+	if (!(await removePaymentRow(userId, row.id))) throw new FinanceRefusal(409, "This payment was already removed");
 	return { result: resultOf(row), inverse: { userId, paymentId: row.id, previous: { removedAt: null } } };
 });

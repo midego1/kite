@@ -1,6 +1,6 @@
-import { and, eq, isNull, lt, or } from "drizzle-orm";
+import { and, asc, eq, gte, isNull, lt, or, sql } from "drizzle-orm";
 import { getDb } from "@/db";
-import { financePaymentScans } from "@/db/schema/finance";
+import { financePaymentScans, financePayments } from "@/db/schema/finance";
 import { getEnv } from "@/lib/cloudflare";
 import { createLogger } from "@/lib/logger.mjs";
 import { buildCallContext } from "@/lib/modules/capability-utils";
@@ -144,7 +144,8 @@ async function scanPage(ctx: CapabilityCallContext, row: ScanRow, started: numbe
 	let recorded = 0;
 	let cursor = after;
 	for (const message of page.messages) {
-		if (Date.now() - started > RUN_BUDGET_MS) return { scanned, recorded, cursor, done: false };
+		// At least one message per run, so a slow listing still moves the cursor.
+		if (scanned > 0 && Date.now() - started > RUN_BUDGET_MS) return { scanned, recorded, cursor, done: false };
 		scanned += 1;
 		cursor = { receivedAt: message.receivedAt, id: message.id };
 		if (!worthScanning(message)) continue;
@@ -158,6 +159,24 @@ async function scanPage(ctx: CapabilityCallContext, row: ScanRow, started: numbe
 	return { scanned, recorded, cursor, done: page.next === null };
 }
 
+/**
+ * What this scan has recorded so far, counted from the rows themselves, so a run that failed after inserting a payment
+ * (and whose retry then skips it as already recorded) still counts it.
+ */
+async function recordedSince(userId: string, startedAt: Date): Promise<number> {
+	const [row] = await db()
+		.select({ count: sql<number>`count(*)` })
+		.from(financePayments)
+		.where(
+			and(
+				eq(financePayments.userId, userId),
+				eq(financePayments.source, "scan"),
+				gte(financePayments.createdAt, startedAt),
+			),
+		);
+	return Number(row?.count ?? 0);
+}
+
 async function saveProgress(row: ScanRow, progress: Progress, now: Date): Promise<void> {
 	await db()
 		.update(financePaymentScans)
@@ -165,7 +184,7 @@ async function saveProgress(row: ScanRow, progress: Progress, now: Date): Promis
 			cursorAt: progress.cursor ? new Date(progress.cursor.receivedAt) : row.cursorAt,
 			cursorId: progress.cursor?.id ?? row.cursorId,
 			scanned: row.scanned + progress.scanned,
-			recorded: row.recorded + progress.recorded,
+			recorded: await recordedSince(row.userId, row.startedAt),
 			leaseUntil: null,
 			updatedAt: now,
 			...(progress.done ? { status: "done" as const, finishedAt: now } : {}),
@@ -181,7 +200,14 @@ export const scanPayments: CapabilityHandler = async (raw, cron): Promise<JsonVa
 	const userId = (raw as { userId?: unknown } | null)?.userId;
 	if (typeof userId !== "string" || !(await paymentTablesReady())) return { scanned: 0 };
 	const ctx = await ownerContext(cron, userId);
-	if (!ctx) return { scanned: 0 };
+	if (!ctx) {
+		// Money Watch is off for the owner: the scan waits, at the back of the recovery queue so it never blocks others.
+		await db()
+			.update(financePaymentScans)
+			.set({ updatedAt: new Date() })
+			.where(and(eq(financePaymentScans.userId, userId), eq(financePaymentScans.status, "running")));
+		return { scanned: 0 };
+	}
 	const started = Date.now();
 	const row = await leaseScan(userId, new Date(started));
 	if (!row) return { scanned: 0 };
@@ -215,6 +241,7 @@ export const resumePaymentScans: CapabilityHandler = async (_input, cron): Promi
 				lt(financePaymentScans.updatedAt, new Date(now.getTime() - 60_000)),
 			),
 		)
+		.orderBy(asc(financePaymentScans.updatedAt))
 		.limit(20);
 	for (const { userId } of stalled)
 		if (!(await enqueueScan(userId))) await scanPayments({ kind: SCAN_KIND, userId }, cron);

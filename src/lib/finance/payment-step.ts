@@ -29,7 +29,7 @@ export async function recordPaymentFromInput(
 	});
 	const finding = detectPayment(mergeDetection(deterministic, extraction), deterministic, read);
 	if (!finding) return "skipped";
-	if (await tracksVendor(userId, finding.vendorKey)) return "skipped";
+	if (await tracksVendor(userId, [finding.vendorKey, ...deterministic.vendorKeys])) return "skipped";
 	if (await messageRecorded(userId, input.message.id)) return "skipped";
 	const now = new Date();
 	const recorded = await insertPayment({

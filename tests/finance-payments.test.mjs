@@ -58,8 +58,8 @@ const viewOf = (account) => ({ userId: account.id, role: account.role, isPrimary
 
 const STRIPE = {
 	from: "Stripe <receipts+acct_1AbCdEfGhIjKlMn@stripe.com>",
-	subject: "Your Stripe Atlas receipt [#1114-6093]",
-	body: "Stripe Atlas\nReceipt #1114-6093\n\nAmount paid\n$500.00\n\nDate paid\nNov 2, 2026\n\nSummary\nStripe Atlas signup fee $500.00",
+	subject: "Your Kestrel Atlas receipt [#1114-6093]",
+	body: "Kestrel Atlas\nReceipt #1114-6093\n\nAmount paid\n$500.00\n\nDate paid\nNov 2, 2026\n\nSummary\nKestrel Atlas signup fee $500.00",
 };
 const INVOICE = {
 	from: "Hosting Co <invoices@hosting.example>",
@@ -185,7 +185,7 @@ test("the step records a receipt once, without a card, and a removed row is neve
 	await recordStep(messageId, STRIPE);
 	assert.deepEqual(rows(db), [
 		{
-			vendor: "Stripe Atlas",
+			vendor: "Kestrel Atlas",
 			doc_type: "payment",
 			status: "paid",
 			amount_minor: 50_000,
@@ -203,7 +203,7 @@ test("the step records a receipt once, without a card, and a removed row is neve
 
 	await undoAgentAction(globalThis.__kiteNodeEnv, { id: "owner", role: "user" }, removed.body.actionId);
 	const [shown] = (await listPaymentsView(viewOf(owner))).payments;
-	assert.equal(shown.vendor, "Stripe Atlas");
+	assert.equal(shown.vendor, "Kestrel Atlas");
 });
 
 test("phishing, spam, muted and marketing mail record nothing", async (t) => {
@@ -225,10 +225,10 @@ test("a tracked subscription's mail goes to its ledger, and a ledger document hi
 
 	const stripeId = insertMessage(db, STRIPE);
 	await recordStep(stripeId, STRIPE);
-	// The user then tracks Stripe Atlas from the same receipt: the document moves to that ledger.
+	// The user then tracks Kestrel Atlas from the same receipt: the document moves to that ledger.
 	db.db
 		.exec(`INSERT INTO finance_subscriptions (id, user_id, mailbox_id, vendor, vendor_key, status, created_at, updated_at)
-		VALUES ('sub-atlas', 'owner', 'mailbox-a', 'Stripe Atlas', 'stripe.com:stripe-atlas', 'active', 1, 1)`);
+		VALUES ('sub-atlas', 'owner', 'mailbox-a', 'Kestrel Atlas', 'stripe.com:kestrel-atlas', 'active', 1, 1)`);
 	db.db
 		.prepare(
 			"INSERT INTO finance_charges (id, subscription_id, user_id, message_id, doc_type, amount_minor, currency, document_at, created_at) VALUES ('fdoc-1', 'sub-atlas', 'owner', ?, 'payment', 50000, 'USD', ?, 1)",
@@ -237,7 +237,7 @@ test("a tracked subscription's mail goes to its ledger, and a ledger document hi
 	const view = await listPaymentsView(viewOf(owner));
 	assert.deepEqual(
 		view.payments.map((item) => [item.source, item.vendor, item.amount.minor, item.subscriptionId]),
-		[["subscription", "Stripe Atlas", 50_000, "sub-atlas"]],
+		[["subscription", "Kestrel Atlas", 50_000, "sub-atlas"]],
 		"listed once, as the subscription's document",
 	);
 	assert.deepEqual(view.months, [
@@ -259,6 +259,36 @@ test("a correction is an audited write with Undo", async (t) => {
 		status: "open",
 		amount_minor: 12_000,
 	});
+	// A renamed vendor pairs only with its own rows; undo puts the sender's key back.
+	const renamed = await patchPayment(owner, id, { fields: { vendor: "Hosting Group" } });
+	assert.equal(db.db.prepare("SELECT vendor_key FROM finance_payments").get().vendor_key, "manual:hosting-group");
+	await undoAgentAction(globalThis.__kiteNodeEnv, { id: "owner", role: "user" }, renamed.body.actionId);
+	assert.deepEqual(db.db.prepare("SELECT vendor, vendor_key FROM finance_payments").get(), {
+		vendor: "Hosting Co",
+		vendor_key: "hosting.example",
+	});
+	// Only the removal that hid the row owns it: a second one is refused.
+	assert.equal((await removePayment(owner, id)).status, 200);
+	assert.equal((await removePayment(owner, id)).status, 404, "a removed row is gone for the routes");
+	const second = await invokeCapability(
+		"finance",
+		"removePayment",
+		{
+			op: "execute",
+			actionId: "aact_second",
+			suggestion: { id: null, messageId: null, mailboxId: "mailbox-a" },
+			input: { paymentId: id },
+		},
+		stepContext(),
+	);
+	assert.equal(second.output.refused?.status, 409);
+	const broken = await invokeCapability(
+		"finance",
+		"removePayment",
+		{ op: "undo", actionId: "aact_broken", inverse: { inverse: { nothing: true } } },
+		stepContext(),
+	);
+	assert.equal(broken.output.refused?.status, 409, "an undo with nothing to put back is refused");
 	assert.equal((await patchPayment(owner, "fpay_missing", { fields: { status: "paid" } })).status, 404);
 	assert.equal((await patchPayment(owner, id, { fields: { status: "refunded", extra: 1 } })).status, 400);
 });
@@ -303,6 +333,7 @@ test("before migration 0094 the step and the view report the pending update", as
 	const result = await invokeCapability("finance", "recordPayment", stepInput("message-x", STRIPE), stepContext());
 	assert.deepEqual(result.output, { suggestions: [], skipped: "migration_pending" });
 	assert.deepEqual(await listPaymentsView(viewOf(owner)), {
+		truncated: false,
 		payments: [],
 		months: [],
 		scan: null,

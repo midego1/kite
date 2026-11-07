@@ -51,9 +51,9 @@ function TotalLine({ total, locale }: { total: MonthCurrencyTotal; locale: strin
 }
 
 /** One block per month with a line per currency; amounts in different currencies are never added together. */
-function MonthTotals({ items, locale }: { items: PaymentItem[]; locale: string | undefined }) {
+function MonthTotals({ totals, locale }: { totals: MonthCurrencyTotal[]; locale: string | undefined }) {
 	const t = useT();
-	const months = totalsByMonth(monthTotals(items)).slice(0, MONTH_BLOCKS);
+	const months = totalsByMonth(totals).slice(0, MONTH_BLOCKS);
 	if (months.length === 0) return null;
 	return (
 		<section aria-label={t("Month totals")} className="grid gap-3 sm:grid-cols-3" data-payment-months>
@@ -178,6 +178,8 @@ export function PaymentsView() {
 	const locale = currentLocale();
 	const items = list?.payments ?? [];
 	const shown = filterPayments(items, filters);
+	// Unfiltered, the server's totals also cover rows past the list's cap.
+	const unfiltered = !filters.vendor && !filters.month && !filters.status;
 	return (
 		<div className="space-y-6" data-payments-view>
 			{failed && (
@@ -208,22 +210,29 @@ export function PaymentsView() {
 						/>
 					) : (
 						<>
-							<MonthTotals items={shown} locale={locale} />
+							<MonthTotals totals={unfiltered ? list.months : monthTotals(shown)} locale={locale} />
 							<Filters items={items} filters={filters} onChange={setFilters} locale={locale} />
 							{shown.length === 0 ? (
 								<p className="text-sm text-neutral-600">{t("No payments match these filters.")}</p>
 							) : (
-								<ul className={`divide-y divide-neutral-200 overflow-hidden ${CARD_CLASS}`} data-payment-list>
-									{shown.map((item) => (
-										<PaymentRow
-											key={item.id}
-											item={item}
-											locale={locale}
-											onCorrect={setCorrecting}
-											onChanged={reload}
-										/>
-									))}
-								</ul>
+								<>
+									<ul className={`divide-y divide-neutral-200 overflow-hidden ${CARD_CLASS}`} data-payment-list>
+										{shown.map((item) => (
+											<PaymentRow
+												key={item.id}
+												item={item}
+												locale={locale}
+												onCorrect={setCorrecting}
+												onChanged={reload}
+											/>
+										))}
+									</ul>
+									{list.truncated && (
+										<p className="text-xs text-neutral-500" data-payment-truncated>
+											{t("Only the newest 1,000 are listed; the month totals cover every payment.")}
+										</p>
+									)}
+								</>
 							)}
 						</>
 					)}

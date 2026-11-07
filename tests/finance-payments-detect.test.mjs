@@ -54,9 +54,9 @@ function run(options = {}) {
 const STRIPE_RECEIPT = {
 	from: "receipts+acct_1AbCdEfGhIjKlMn@stripe.com",
 	fromName: "Stripe",
-	subject: "Your Stripe Atlas receipt [#1114-6093]",
+	subject: "Your Kestrel Atlas receipt [#1114-6093]",
 	body: [
-		"Stripe Atlas",
+		"Kestrel Atlas",
 		"Receipt #1114-6093",
 		"",
 		"Amount paid",
@@ -69,7 +69,7 @@ const STRIPE_RECEIPT = {
 		"Visa - 4242",
 		"",
 		"Summary",
-		"Stripe Atlas signup fee   $500.00",
+		"Kestrel Atlas signup fee   $500.00",
 		"Amount charged   $500.00",
 		"",
 		"Questions? Contact us at help@atlas.invalid.",
@@ -78,8 +78,8 @@ const STRIPE_RECEIPT = {
 
 test("a one-off Stripe receipt lands as paid, USD 500.00, from the merchant, on the date paid", () => {
 	assert.deepEqual(run(STRIPE_RECEIPT), {
-		vendor: "Stripe Atlas",
-		vendorKey: "stripe.com:stripe-atlas",
+		vendor: "Kestrel Atlas",
+		vendorKey: "stripe.com:kestrel-atlas",
 		docType: "payment",
 		status: "paid",
 		amountMinor: 50_000,
@@ -268,4 +268,21 @@ test("a subscription's documents follow their type: an invoice is charged, a fai
 	assert.equal(list.ledgerStatus("credit"), "credited");
 	assert.equal(list.ledgerStatus("failed_payment"), "failed");
 	assert.equal(payments.initialStatus("invoice"), "open");
+});
+
+test("a subscription invoice a failed payment followed stays open; a settled or uncontested one is charged", () => {
+	const sub = (overrides) => entry({ source: "subscription", group: "fsub_1", subscriptionId: "fsub_1", ...overrides });
+	const invoice = sub({ id: "inv", docType: "invoice", status: "paid", documentOn: "2026-10-01" });
+	const failed = sub({
+		id: "fail",
+		docType: "failed_payment",
+		status: "failed",
+		amountMinor: null,
+		documentOn: "2026-10-03",
+	});
+	const older = sub({ id: "old", docType: "invoice", status: "paid", documentOn: "2026-08-01" });
+	const entries = [invoice, failed, older];
+	assert.deepEqual([...list.unpaidLedgerInvoices(entries, new Set())], ["inv"]);
+	assert.deepEqual([...list.unpaidLedgerInvoices(entries, new Set(["inv"]))], [], "a payment settled it");
+	assert.deepEqual([...list.unpaidLedgerInvoices([older, failed], new Set())], [], "the failure was too late");
 });

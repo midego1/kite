@@ -31,7 +31,7 @@ function item(overrides = {}) {
 		status: "paid",
 		storedStatus: "paid",
 		paired: false,
-		vendor: "Stripe Atlas",
+		vendor: "Kestrel Atlas",
 		amount: { minor: 50_000, currency: "USD" },
 		documentOn: "2026-11-02",
 		subscriptionId: null,
@@ -111,7 +111,7 @@ test("month totals of the shown rows stay per currency, with refunds and open in
 
 test("filters by vendor, month and status, and offer the vendors and months there are", () => {
 	assert.deepEqual(view.filterOptions(ITEMS), {
-		vendors: ["Acmeflix", "Hosting Co", "Shop", "Stripe Atlas"],
+		vendors: ["Acmeflix", "Hosting Co", "Kestrel Atlas", "Shop"],
 		months: ["2026-11", "2026-10"],
 	});
 	const ids = (filters) =>

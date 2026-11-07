@@ -1,4 +1,4 @@
-import { and, desc, eq, isNotNull, isNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import { getDb } from "@/db";
 import { financeCharges, financePayments, financeSubscriptions } from "@/db/schema/finance";
 import { getEnv } from "@/lib/cloudflare";
@@ -49,13 +49,13 @@ export async function insertPayment(values: PaymentInsert): Promise<boolean> {
 	return inserted.length > 0;
 }
 
-/** Whether the owner tracks a subscription with this vendor key: its documents go to that ledger instead. */
-export async function tracksVendor(userId: string, vendorKey: string): Promise<boolean> {
+/** Whether the owner tracks a subscription with one of these vendor keys: its documents go to that ledger instead. */
+export async function tracksVendor(userId: string, vendorKeys: readonly string[]): Promise<boolean> {
 	const [row] = await onPaymentTables(() =>
 		db()
 			.select({ id: financeSubscriptions.id })
 			.from(financeSubscriptions)
-			.where(and(eq(financeSubscriptions.userId, userId), eq(financeSubscriptions.vendorKey, vendorKey)))
+			.where(and(eq(financeSubscriptions.userId, userId), inArray(financeSubscriptions.vendorKey, [...vendorKeys])))
 			.limit(1),
 	);
 	return !!row;
@@ -111,6 +111,18 @@ export async function updatePayment(userId: string, id: string, columns: Partial
 			.returning({ id: financePayments.id }),
 	);
 	return updated.length > 0;
+}
+
+/** Hides a live row; true only for the call whose update did it, so two removals never both own it. */
+export async function removePaymentRow(userId: string, id: string): Promise<boolean> {
+	const removed = await onPaymentTables(() =>
+		db()
+			.update(financePayments)
+			.set({ removedAt: new Date(), updatedAt: new Date() })
+			.where(and(eq(financePayments.id, id), eq(financePayments.userId, userId), isNull(financePayments.removedAt)))
+			.returning({ id: financePayments.id }),
+	);
+	return removed.length > 0;
 }
 
 /** The message ids of the owner's subscription documents, which hide a payment row for the same message. */

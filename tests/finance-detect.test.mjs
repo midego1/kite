@@ -685,3 +685,28 @@ test("a processor receipt names the merchant from the subject or a Receipt from 
 	assert.equal(at("Stripe", "receipts@stripe.com", "Receipt", "Thanks\nRefund from Acme Tools\n"), "Acme Tools");
 	assert.equal(at("Stripe", "receipts@stripe.com", null, null), "Stripe");
 });
+
+test("a processor receipt still matches a row tracked under the processor's own key", () => {
+	const input = stepInput({
+		from: "receipts+acct_1X@stripe.com",
+		fromName: "Stripe",
+		subject: "Your Kestrel Desk receipt [#2214-0001]",
+		body: "Amount paid $12.00/month, renews on 1 Nov 2026",
+	});
+	const analysis = detect.analyzeMessage(input, "UTC");
+	assert.equal(analysis.vendorKey, "stripe.com:kestrel-desk");
+	assert.deepEqual(analysis.vendorKeys, ["stripe.com:kestrel-desk", "stripe.com:stripe"]);
+	const legacy = tracked({ id: "sub-old", vendorKey: "stripe.com:stripe", amountMinor: 1200 });
+	assert.equal(detect.matchTracked([legacy], analysis)?.id, "sub-old");
+	assert.equal(detect.matchTracked([tracked({ vendorKey: "stripe.com:other" })], analysis), null);
+	// A body line names the merchant without its reference.
+	assert.equal(
+		vendors.messageVendor(
+			"Stripe",
+			"receipts@stripe.com",
+			"Payment confirmation",
+			"Receipt from Kestrel Desk #2214-0001",
+		).vendor,
+		"Kestrel Desk",
+	);
+});

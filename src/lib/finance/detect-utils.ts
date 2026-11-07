@@ -29,7 +29,7 @@ import {
 	TOTAL_PHRASE,
 	TRIAL_PHRASE,
 } from "./keywords-utils";
-import { cleanText, messageVendor, senderLocalPart, senderUsesUsDomain, vendorKey } from "./vendor-utils";
+import { cleanText, messageVendor, senderLocalPart, senderUsesUsDomain, vendorKey, vendorName } from "./vendor-utils";
 import type {
 	DetectStepInput,
 	Cycle,
@@ -99,6 +99,11 @@ export type Analysis = {
 	vendor: string;
 	vendorFromDomain: boolean;
 	vendorKey: string;
+	/**
+	 * The keys a tracked row of this sender may carry: `vendorKey`, plus the key from the display name alone when a
+	 * processor receipt names its merchant (rows tracked before merchants were read keep that older key).
+	 */
+	vendorKeys: string[];
 	plan: string | null;
 	amount: { minor: number; currency: string } | null;
 	cycle: Cycle | null;
@@ -199,6 +204,8 @@ export function analyzeMessage(input: DetectStepInput, timeZone: string): Analys
 	const { vendor, fromDomain } = messageVendor(message.fromName, message.from, subject, excerpt);
 	const key = vendor ? vendorKey(message.from, vendor) : null;
 	if (!key) return null;
+	const named = vendorName(message.fromName, message.from).vendor;
+	const older = named ? vendorKey(message.from, named) : null;
 	const text = `${subject}\n${excerpt}`;
 	const amount = amountOf(text);
 	const dates: DateContext = {
@@ -234,6 +241,7 @@ export function analyzeMessage(input: DetectStepInput, timeZone: string): Analys
 		vendor,
 		vendorFromDomain: fromDomain,
 		vendorKey: key,
+		vendorKeys: older && older !== key ? [key, older] : [key],
 		plan: planOf(text, vendor, amount?.line ?? null),
 		amount: amount ? { minor: amount.minor, currency: amount.currency } : null,
 		cycle,
@@ -326,9 +334,10 @@ export function recurringCycle(analysis: Analysis, history: readonly HistoryMess
 /** The tracked row this message is about: same vendor key, then the same currency, then plan, then the closest amount. */
 export function matchTracked<Row extends TrackedMatchRow>(
 	rows: readonly Row[],
-	analysis: Pick<Analysis, "vendorKey" | "plan" | "amount">,
+	analysis: Pick<Analysis, "vendorKey" | "plan" | "amount"> & { vendorKeys?: readonly string[] },
 ): Row | null {
-	const sameKey = rows.filter((row) => row.vendorKey === analysis.vendorKey);
+	const keys = analysis.vendorKeys ?? [analysis.vendorKey];
+	const sameKey = rows.filter((row) => row.vendorKey === analysis.vendorKey || keys.includes(row.vendorKey));
 	if (sameKey.length === 0) return null;
 	const score = (row: TrackedMatchRow) => {
 		const sameCurrency = !!analysis.amount && row.currency === analysis.amount.currency;

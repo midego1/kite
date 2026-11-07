@@ -251,42 +251,48 @@ const PAYMENT_MAIL = [
 		subject: "Your Northwind Studio receipt [#2214-0042]",
 		text: `Northwind Studio\nReceipt #2214-0042\n\nAmount paid\n$500.00\n\nDate paid\n${daysBack(2)}\n\nSummary\nNorthwind Studio setup fee $500.00`,
 		domain: "stripe.com",
+		vendor: "Northwind Studio",
 	},
 	{
 		from: "Fabrikam Hosting <invoices@fabrikam.test>",
 		subject: "Invoice FH-2026-1107 from Fabrikam Hosting",
 		text: `Amount due: €120.00\nInvoice date: ${daysBack(1)}\nPlease pay within 14 days.`,
 		domain: "fabrikam.test",
+		vendor: "Fabrikam Hosting",
 	},
 	{
 		from: "Contoso Coffee <receipts@contoso.test>",
 		subject: "Your receipt from Contoso Coffee #4471",
 		text: `Amount paid: €18.40\nReceipt date: ${daysBack(3)}\nThanks for stopping by.`,
 		domain: "contoso.test",
+		vendor: "Contoso Coffee",
 	},
 	{
 		from: "Wingtip Toys <support@wingtip.test>",
 		subject: "Your refund has been issued",
 		text: `We refunded €35.00 to your card for order #WT-4821.\nRefund date: ${daysBack(4)}`,
 		domain: "wingtip.test",
+		vendor: "Wingtip Toys",
 	},
 	{
 		from: "Adventure Works <billing@adventure-works.test>",
 		subject: "Payment received, receipt AW-77812",
 		text: `Amount paid: £42.00\nDate paid: ${daysBack(36)}\nThank you for your payment.`,
 		domain: "adventure-works.test",
+		vendor: "Adventure Works",
 	},
 	{
 		from: "Litware Print <invoices@litware.test>",
 		subject: "Receipt LP-30981 for your print order",
 		text: `Total paid: €64.90\nDate paid: ${daysBack(40)}\nOrder LP-30981, 250 business cards.`,
 		domain: "litware.test",
+		vendor: "Litware Print",
 	},
 ] as const;
 
 /**
- * The Payments tab's demo rows: automatic reading on for the support mailbox, then the invented receipts delivered to
- * it, recorded by Money Watch on their own. Delivered once; a kept server already has them.
+ * The Payments tab's demo rows: automatic reading on for the support mailbox, then each invented receipt that is not
+ * there yet delivered to it, and a wait until every fixture's vendor is listed, so unrelated rows never stand in.
  */
 export async function seedPaymentsDemo(): Promise<void> {
 	const api = await apiContext(STORAGE_STATE);
@@ -295,12 +301,22 @@ export async function seedPaymentsDemo(): Promise<void> {
 	};
 	const support = mailboxes.find((box) => box.localPart === "support") ?? mailboxes[0]!;
 	await api.put("/api/agent/settings", { data: { mailboxId: support.id, autonomy: "suggest" } });
-	const count = async () =>
-		((await (await api.get("/api/finance/payments")).json()) as { payments?: unknown[] }).payments?.length ?? 0;
-	if ((await count()) >= PAYMENT_MAIL.length) return;
-	for (const { domain, ...mail } of PAYMENT_MAIL) {
+	const vendors = async () =>
+		new Set(
+			((await (await api.get("/api/finance/payments")).json()) as { payments?: { vendor: string }[] }).payments?.map(
+				(row) => row.vendor,
+			) ?? [],
+		);
+	const listed = await vendors();
+	for (const { domain, vendor, ...mail } of PAYMENT_MAIL) {
+		if (listed.has(vendor)) continue;
 		await postInbound(api, { ...mail, to: SUPPORT_ADDRESS, headers: authFor(domain) });
 		await waitForMessage(api, mail.subject);
 	}
-	await expect.poll(count, { timeout: 120_000 }).toBeGreaterThanOrEqual(PAYMENT_MAIL.length);
+	await expect
+		.poll(async () => {
+			const now = await vendors();
+			return PAYMENT_MAIL.every((mail) => now.has(mail.vendor));
+		}, { timeout: 120_000 })
+		.toBe(true);
 }

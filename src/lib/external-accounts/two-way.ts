@@ -62,12 +62,22 @@ async function ownReadyAccount(env: CloudflareEnv, actor: AccountActor, id: stri
 	return account;
 }
 
-/** The account's two-way settings for its owner; another user's account answers like a missing one. */
-export async function readTwoWayView(env: CloudflareEnv, actor: AccountActor, id: string): Promise<TwoWayView> {
+/**
+ * The account's two-way settings for its owner; another user's account answers like a missing one. With `storedOnly`
+ * (the closed row's summary) the server is never asked: the support is whatever was stored, possibly old or null, so
+ * a passive page load opens no session, records no connection test and uses none of its budget.
+ */
+export async function readTwoWayView(
+	env: CloudflareEnv,
+	actor: AccountActor,
+	id: string,
+	options: { storedOnly?: boolean } = {},
+): Promise<TwoWayView> {
 	const account = await ownReadyAccount(env, actor, id);
 	const { settings, state } = await readTwoWayConfig(env, id);
+	const stored = readSupport(state);
 	const [support, pending, problems] = await Promise.all([
-		currentSupport(env, account, readSupport(state)),
+		options.storedOnly ? stored : currentSupport(env, account, stored),
 		countPendingActions(env, id),
 		readRecentProblems(env, id, PROBLEMS_SHOWN),
 	]);

@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.11.07.0] - 2026-11-07
+
+### Added
+
+- Each connected account is listed in the sidebar under its mailbox as a view that shows only the mail that came in through it, titled with the account's name and with a way back. Choosing the account's chip in an open message opens the same view.
+- You can pick the colour of each mailbox's square and each connected account's icon in [Settings → Inbox](/settings/inbox), or from the account's menu in the sidebar. The colours follow your account.
+- Hover over a suggestion on the home view or the For you page, or focus it with the keyboard, to preview the message and answer from there: review a drafted reply, answer an invitation, report phishing or dismiss. On a touch screen the row still opens the message.
+  ![A reply suggestion's preview on the For you page, with the message, the drafted reply and its buttons](/changelog/2026-11-06-for-you-preview-light.webp)
+
+### Changed
+
+- The message list marks a mailbox with a small coloured square and mail from a connected account with a small link icon, so subjects get their room back. Choose Full or Off for them in [Settings → Inbox](/settings/inbox).
+  ![The message list with a square per mailbox, link icons on mail from a connected account, and the account listed in the sidebar](/changelog/2026-11-06-compact-labels-light.webp)
+
 ## [2026.11.06.6] - 2026-11-06
 
 ### Changed

@@ -37,6 +37,8 @@ import { useStoredState } from "@/hooks/use-stored-state";
 import { useKeyChanged } from "@/hooks/use-synced-state";
 import { SidebarFooter } from "./sidebar-footer";
 import { SidebarAccounts } from "./sidebar-accounts";
+import { SidebarAccountViews } from "./sidebar-account-views";
+import { useAccountViews } from "./use-account-views";
 import { SidebarScaffold } from "./sidebar-scaffold";
 import { SidebarMailboxSwitcher } from "./sidebar-mailbox-switcher";
 import { useSidebar } from "./sidebar-state";
@@ -113,6 +115,7 @@ export function DashboardNav({
 	const { screenerMailbox, folderTarget } = useAllMailboxesNav();
 	const screener = useScreenerNav(screenerMailbox, counts.folders);
 	const folderMailboxId = folderTarget.mailboxId;
+	const accountViews = useAccountViews();
 	const moduleLinks = useModuleSidebarLinks();
 	const [folders, setFolders] = useState<CustomFolder[]>([]);
 	const [newFolderName, setNewFolderName] = useState("");
@@ -124,7 +127,12 @@ export function DashboardNav({
 	const linksWithCounts: NavLink[] = links.map((entry): NavLink => {
 		const link = { ...entry, label: t(entry.label) };
 		if (link.href === "/inbox") {
-			return { ...link, count: getFolderNavCount("inbox", counts.folders) };
+			// An account's view is the Inbox too; only the view's own row is highlighted then.
+			return {
+				...link,
+				count: getFolderNavCount("inbox", counts.folders),
+				...(accountViews.active ? { active: false } : {}),
+			};
 		}
 		if (link.href === "/starred") {
 			return { ...link, count: getFolderNavCount("starred", counts.folders) };
@@ -283,6 +291,7 @@ export function DashboardNav({
 					},
 				]}
 			/>
+			{!minimal && <SidebarAccountViews entries={accountViews.entries} active={accountViews.active} />}
 			{minimal && <hr className="mx-6 my-2 border-neutral-200/70" />}
 			{!minimal && (
 				<NavSectionHeader label={t("Folders")} open={foldersSectionOpen} onToggle={toggleFoldersSection}>

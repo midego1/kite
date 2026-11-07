@@ -29,8 +29,15 @@ export async function readLayoutPreferences(db: AppDatabase, userId: string): Pr
 }
 
 /**
+ * The choices that are whole maps (mailbox or account id to a colour): a save replaces the saved map. `json_patch`
+ * would merge it into the old one, and a colour removed on one device would come back from the other's copy.
+ */
+const REPLACED_WHOLE = ["labelColors"] as const;
+
+/**
  * Merges the changed choices into the saved layout in one statement (`json_patch`), so two tabs saving
- * different choices at once both keep theirs. Throws `LayoutPreferencesPendingError` before migration 0080.
+ * different choices at once both keep theirs; a whole map such as the label colours replaces the saved one.
+ * Throws `LayoutPreferencesPendingError` before migration 0080.
  */
 export async function saveLayoutPreferences(
 	db: AppDatabase,
@@ -39,13 +46,19 @@ export async function saveLayoutPreferences(
 ): Promise<LayoutPreferences> {
 	const json = JSON.stringify(patch);
 	const now = new Date();
+	// Dropping the replaced keys first makes the patch below write them as given instead of merging into the old map.
+	const replaced = REPLACED_WHOLE.filter((key) => key in patch);
+	const base = replaced.reduce<ReturnType<typeof sql>>(
+		(layout, key) => sql`json_remove(${layout}, ${`$.${key}`})`,
+		sql`${userPreferences.layout}`,
+	);
 	try {
 		const [row] = await db
 			.insert(userPreferences)
 			.values({ userId, layout: json, updatedAt: now })
 			.onConflictDoUpdate({
 				target: userPreferences.userId,
-				set: { layout: sql`json_patch(${userPreferences.layout}, ${json})`, updatedAt: now },
+				set: { layout: sql`json_patch(${base}, ${json})`, updatedAt: now },
 			})
 			.returning({ layout: userPreferences.layout });
 		return parseStoredLayout(row?.layout);

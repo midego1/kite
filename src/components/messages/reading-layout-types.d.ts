@@ -7,10 +7,20 @@ export type ReadingPaneMode = "none" | "right" | "below";
 /** How much vertical space each message list row takes. */
 export type MessageListDensity = "default" | "comfortable" | "compact";
 
+/** How rows show their mailbox and connected account (`MessageListRow`): a small marker, the full chip, or nothing. */
+export type MessageListLabels = "compact" | "full" | "off";
+
 export type ReadingLayoutOption<T extends string> = {
 	value: T;
 	label: MessageKey;
 	description: MessageKey;
+};
+
+/** A choice of Settings → Inbox, whose text stays English until Settings is translated (`docs/translations.md`). */
+export type SettingsChoiceOption<T extends string> = {
+	value: T;
+	label: string;
+	description: string;
 };
 
 export type MessageRowDensityStyle = {

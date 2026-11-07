@@ -38,7 +38,15 @@ function WhyDisclosure({ suggestion }: { suggestion: CardSuggestion }) {
 	);
 }
 
-function ReplyBlock({ suggestion, onChanged }: { suggestion: CardSuggestion; onChanged: () => void }) {
+function ReplyBlock({
+	suggestion,
+	onChanged,
+	compact = false,
+}: {
+	suggestion: CardSuggestion;
+	onChanged: () => void;
+	compact?: boolean;
+}) {
 	const router = useRouter();
 	const [busy, setBusy] = useState<"review" | "discard" | null>(null);
 	const [error, setError] = useState<string | null>(null);
@@ -68,7 +76,7 @@ function ReplyBlock({ suggestion, onChanged }: { suggestion: CardSuggestion; onC
 				<p dir="auto" className="font-medium text-neutral-900">
 					{suggestion.title}
 				</p>
-				<SuggestionCardMenu suggestion={suggestion} onChanged={onChanged} />
+				{!compact && <SuggestionCardMenu suggestion={suggestion} onChanged={onChanged} />}
 			</div>
 			<p className="text-neutral-600">{replyStatusText(suggestion)}</p>
 			<div className="mt-2 flex flex-wrap gap-2">
@@ -113,10 +121,12 @@ function ModuleBlock({
 	suggestion,
 	onChanged,
 	answered = false,
+	compact = false,
 }: {
 	suggestion: CardSuggestion;
 	onChanged: () => void;
 	answered?: boolean;
+	compact?: boolean;
 }): ReactNode {
 	const card = useModuleCard(suggestion.kind);
 	if (!card) return null;
@@ -125,7 +135,34 @@ function ModuleBlock({
 		<card.Block
 			suggestion={suggestion}
 			onChanged={onChanged}
-			menu={<SuggestionCardMenu suggestion={suggestion} onChanged={onChanged} />}
+			menu={compact ? null : <SuggestionCardMenu suggestion={suggestion} onChanged={onChanged} />}
+			why={<WhyDisclosure suggestion={suggestion} />}
+		/>
+	);
+}
+
+/**
+ * One suggestion's block: the reply block, the block a module draws for its kind, or the phishing warning. The
+ * reader card lists them; the For you preview shows one `compact` (without the ⋯ menu, whose Dismiss it has itself).
+ */
+export function SuggestionBlock({
+	suggestion,
+	onChanged,
+	compact = false,
+}: {
+	suggestion: CardSuggestion;
+	onChanged: () => void;
+	compact?: boolean;
+}) {
+	if (suggestion.kind === "reply")
+		return <ReplyBlock suggestion={suggestion} onChanged={onChanged} compact={compact} />;
+	if (suggestionKindModule(suggestion.kind))
+		return <ModuleBlock suggestion={suggestion} onChanged={onChanged} compact={compact} />;
+	return (
+		<PhishingBlock
+			suggestion={suggestion}
+			onChanged={onChanged}
+			menu={compact ? null : <SuggestionCardMenu suggestion={suggestion} onChanged={onChanged} />}
 			why={<WhyDisclosure suggestion={suggestion} />}
 		/>
 	);
@@ -156,21 +193,9 @@ export function SuggestionCardBody({ sections, onChanged }: SuggestionCardBodyPr
 					</div>
 				)}
 				{answered && <ModuleBlock answered suggestion={answered} onChanged={onChanged} />}
-				{blocks.map((suggestion) =>
-					suggestion.kind === "reply" ? (
-						<ReplyBlock key={suggestion.id} suggestion={suggestion} onChanged={onChanged} />
-					) : suggestionKindModule(suggestion.kind) ? (
-						<ModuleBlock key={suggestion.id} suggestion={suggestion} onChanged={onChanged} />
-					) : (
-						<PhishingBlock
-							key={suggestion.id}
-							suggestion={suggestion}
-							onChanged={onChanged}
-							menu={<SuggestionCardMenu suggestion={suggestion} onChanged={onChanged} />}
-							why={<WhyDisclosure suggestion={suggestion} />}
-						/>
-					),
-				)}
+				{blocks.map((suggestion) => (
+					<SuggestionBlock key={suggestion.id} suggestion={suggestion} onChanged={onChanged} />
+				))}
 			</section>
 		</div>
 	);

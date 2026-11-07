@@ -350,6 +350,40 @@ test("a folder the server refuses fails alone and the rest of the account is cop
 	assert.deepEqual(finished, { status: "completed", last_error: "1 folder could not be imported" });
 });
 
+test("a folder with more messages than one search lists fails alone and the rest of the account is copied", async (t) => {
+	const server = await fake(t, {
+		folders: {
+			INBOX: [sampleMessage(1, { subject: "Still copied" })],
+			Huge: [sampleMessage(1, { subject: "Never listed" })],
+		},
+	});
+	// Node lists up to 4,000,000 UIDs of a folder: a server claiming more cannot be searched, however often it is retried.
+	server.setExists("Huge", 4_000_001);
+	const { db, env, queued } = await setup(t, server);
+	const plan = await planAccountImport(env, account);
+	const huge = { sourceName: "Huge", role: "user", include: true, destination: "new:Huge", bytes: null };
+	const job = await startAccountJob(env, {
+		...plan,
+		folders: [huge, ...plan.folders.filter((f) => f.sourceName !== "Huge")],
+	});
+	assert.equal(await drain(env, db, job.id), "completed");
+	const folders = db.db
+		.prepare("SELECT source_name, status, last_error FROM import_job_folders ORDER BY position")
+		.all();
+	assert.equal(folders[0].status, "failed");
+	assert.match(
+		folders[0].last_error,
+		/more than 4000000 messages in one folder; Kite cannot import a folder that large/,
+	);
+	assert.equal(folders[1].status, "completed");
+	assert.deepEqual(placements(db), { "Still copied": "received" });
+	assert.deepEqual(db.db.prepare("SELECT status, last_error FROM import_jobs").get(), {
+		status: "completed",
+		last_error: "1 folder could not be imported",
+	});
+	assert.equal(queued.length <= 1, true, "one run, no retries of the failed folder");
+});
+
 test("a transient refusal of a folder retries the run instead of failing the folder", async (t) => {
 	const examineRefusals = { INBOX: "NO [THROTTLED] Too many requests, slow down" };
 	const server = await fake(t, {

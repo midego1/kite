@@ -1,5 +1,7 @@
 import { PageHeader, PageSection, SettingRows, SettingsCard, SettingsCardSection } from "@/components/ui/page";
 import { InboxThreadingSettings } from "@/components/settings/inbox-threading-settings";
+import { LabelColorsSettings } from "@/components/settings/label-colors-settings";
+import { MessageLabelsSetting } from "@/components/settings/message-labels-setting";
 import { LayoutSyncSetting } from "@/components/settings/layout-sync-setting";
 import { RecipientAddressSettings } from "@/components/settings/recipient-address-settings";
 import { RemoteImageSettings } from "@/components/settings/remote-image-settings";
@@ -23,10 +25,18 @@ export default function SettingsInboxPage() {
 					<SettingsCardSection headingLevel={3} title="Layout and reading">
 						<SettingRows>
 							<LayoutSyncSetting />
+							<MessageLabelsSetting />
 							<RecipientAddressSettings />
 							<RemoteImageSettings />
 							<InboxShortcutsSettings />
 						</SettingRows>
+					</SettingsCardSection>
+					<SettingsCardSection
+						headingLevel={3}
+						title="Label colours"
+						description="The square that marks each mailbox in the message list, and the icon of each connected account. They follow your account."
+					>
+						<LabelColorsSettings />
 					</SettingsCardSection>
 				</SettingsCard>
 			</PageSection>

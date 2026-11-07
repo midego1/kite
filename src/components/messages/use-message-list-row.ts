@@ -1,5 +1,6 @@
 "use client";
 
+import { useViewHref } from "@/components/mail-search/use-view-href";
 import type { MouseEvent } from "react";
 import { useSyncedState } from "@/hooks/use-synced-state";
 import { LIST_SUMMARIES_PREFERENCE } from "@/components/appearance-preferences";
@@ -34,7 +35,8 @@ export function useMessageListRow({
 	const [starred, setStarred] = useSyncedState(message.starred);
 	const [listSummaries] = useAppearancePreference(LIST_SUMMARIES_PREFERENCE);
 	const rowMessage = { ...message, read, starred, threadUnread };
-	const href = `${config.hrefPrefix}/${message.id}`;
+	const viewHref = useViewHref();
+	const href = viewHref(`${config.hrefPrefix}/${message.id}`);
 	const navigation = useMessageNavigation(href, rowMessage);
 	const affectsInboxCount = affectsInboxUnreadCount(config);
 	const inbound = message.direction === "inbound";

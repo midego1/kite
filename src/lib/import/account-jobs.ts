@@ -4,18 +4,19 @@ import { D1_MAX_BOUND_PARAMETERS, chunkArray, runInChunks } from "@/db/chunk-uti
 import { folders as kiteFolders } from "@/db/schema";
 import { importJobFolders, importJobs } from "@/db/schema/import-jobs";
 import { newId } from "@/lib/ids";
-import { encodeRawMime } from "@/lib/email/module-import-utils";
-import type { HostImportMessage, HostImportResult } from "@/lib/modules/host-types";
+import { TooManyUidsError } from "@/lib/imap/protocol-utils";
+import type { HostImportResult } from "@/lib/modules/host-types";
 import { ensureImportFolder } from "./folders";
 import { GMAIL_LABELS_DESTINATION, gmailLabelDestination, isFolderRefusal } from "./folder-mapping-utils";
 import type { AccountFolderRequest } from "./folder-mapping-types";
-import { hostImportMessageFromImap, selectRemainingUids } from "./imap-utils";
+import { selectRemainingUids } from "./imap-utils";
 import {
 	addChunkResult,
 	fetchInChunks,
 	hasRunTime,
 	runDeadline,
-	importBatch,
+	importFetched,
+	type FetchedImport,
 	recordChunk,
 	underLease,
 	type ImportRun,
@@ -218,7 +219,18 @@ async function runAccountFolder(
 	}
 	// A new UIDVALIDITY means the old UIDs mean nothing: start the folder over; dedupe skips what is in Kite.
 	const restart = folder.uidvalidity !== null && uidValidity !== null && uidValidity !== folder.uidvalidity;
-	const uids = await run.session.searchUids({ deadline: runDeadline(run) });
+	let uids: number[];
+	try {
+		uids = await run.session.searchUids({ deadline: runDeadline(run) });
+	} catch (error) {
+		// Retrying cannot make the folder smaller: fail this folder with the reason and go on with the others.
+		if (!(error instanceof TooManyUidsError)) throw error;
+		const failed = await updateFolder(run, folder, {
+			status: "failed",
+			lastError: `${error.message}; Kite cannot import a folder that large`,
+		});
+		return failed ? "next" : "stopped";
+	}
 	const remaining = selectRemainingUids(uids, restart ? null : folder.cursorUid);
 	// Not while the job is cancelled, failed or paused: the run stops here instead of walking the later folders.
 	const opened = await updateFolder(run, folder, {
@@ -235,7 +247,7 @@ async function runAccountFolder(
 		remaining.slice(0, run.budget),
 		{ gmailLabels: gmail, folderName: folder.sourceName },
 		async (part, fetched) => {
-			const groups = new Map<string, HostImportMessage[]>();
+			const groups = new Map<string, FetchedImport[]>();
 			let missing = 0;
 			let drafts = 0;
 			let multiLabel = 0;
@@ -256,14 +268,11 @@ async function runAccountFolder(
 					destination = await labelDestination(run, labelDestinations, target.destination);
 				}
 				const filename = `${folder.sourceName}-${uid}.eml`;
-				groups.set(destination, [
-					...(groups.get(destination) ?? []),
-					hostImportMessageFromImap(filename, message, encodeRawMime),
-				]);
+				groups.set(destination, [...(groups.get(destination) ?? []), { filename, fetched: message }]);
 			}
 			const result: HostImportResult = { imported: 0, skipped: 0, failed: 0, errors: [] };
 			for (const [destination, messages] of groups) {
-				const batch = await importBatch(run, destination, messages);
+				const batch = await importFetched(run, destination, messages);
 				result.imported += batch.imported;
 				result.skipped += batch.skipped;
 				result.failed += batch.failed;

@@ -1,19 +1,18 @@
-import { expect, test, type APIRequestContext, type Browser, type Page } from "@playwright/test";
-import { BASE_URL, DOMAIN, STORAGE_STATE } from "./support/constants";
+import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { DOMAIN, STORAGE_STATE } from "./support/constants";
 import { useFakeProvider } from "./support/agent";
 import {
 	beginAutoReadSnapshot,
 	createSharedMailbox,
-	createSignedInAccount,
 	okJson,
 	restoreAutoReadSnapshot,
-	selectMailbox,
 	shareMailbox,
 } from "./support/auto-read";
 import { startFakeModel } from "./support/fake-model";
 import type { FakeModel } from "./support/fake-model-types";
-import { apiContext, postInbound, uniqueToken, waitForMessage } from "./support/helpers";
-import { readSuggestions, waitForFinishedJob } from "./support/triage";
+import { apiContext, uniqueToken } from "./support/helpers";
+import { deliverPhishing, deliverReply, openAs, suggestAccount } from "./support/for-you";
+import { readSuggestions } from "./support/triage";
 
 // The command center's For you card (src/components/command-center/for-you-card.tsx): the newest open suggestions
 // of the mailboxes in view, with an inline Dismiss and a link to the For you page, drawn from the list the sidebar
@@ -42,60 +41,6 @@ test.afterEach(async () => {
 	await restoreAutoReadSnapshot();
 });
 
-type Account = Awaited<ReturnType<typeof createSignedInAccount>> & { address: string };
-
-async function suggestAccount(prefix: string): Promise<Account> {
-	const username = `${prefix}${uniqueToken("")}`;
-	const account = await createSignedInAccount(api, username);
-	await okJson(
-		await account.api.put("/api/agent/settings", { data: { mailboxId: account.mailboxId, autonomy: "suggest" } }),
-	);
-	return { ...account, address: `${username}@${DOMAIN}` };
-}
-
-/** Mail the fake model answers with a reply suggestion; waits for the triage job to finish. */
-async function deliverReply(
-	account: Account,
-	mailboxId: string,
-	to: string,
-	from: string,
-	client: APIRequestContext = account.api,
-) {
-	const subject = uniqueToken("ccr");
-	await postInbound(client, {
-		from,
-		to,
-		subject,
-		text: "Can you confirm the order? [[scenario:question]]",
-	});
-	const message = await waitForMessage(client, subject, { status: "received" });
-	expect((await waitForFinishedJob(client, mailboxId, message.id, "triage")).status).toBe("completed");
-	return message;
-}
-
-/** Mail with a link that hides its target: the deterministic phishing facts make a phishing suggestion. */
-async function deliverPhishing(account: Account, mailboxId: string, to: string) {
-	const subject = uniqueToken("ccp");
-	await postInbound(account.api, {
-		from: "Bank <alerts@bank.test>",
-		to,
-		subject,
-		text: "Please verify your account. [[scenario:fyi]]",
-		html: `<p>Please verify your account. [[scenario:fyi]]</p><p><a href="https://login.evil.test/account">https://bank.example.com/account</a></p>`,
-	});
-	const message = await waitForMessage(account.api, subject, { status: "received" });
-	expect((await waitForFinishedJob(account.api, mailboxId, message.id, "triage")).status).toBe("completed");
-	return message;
-}
-
-async function openAs(browser: Browser, account: Account, mailboxId: string, extra?: () => void) {
-	const context = await browser.newContext({ baseURL: BASE_URL, storageState: await account.api.storageState() });
-	const page = await context.newPage();
-	await selectMailbox(page, mailboxId);
-	extra?.();
-	return { context, page };
-}
-
 const pane = (page: Page) => page.getByTestId("reading-pane-empty");
 const card = (page: Page) => pane(page).getByTestId("command-center-for-you");
 const entries = (page: Page) => card(page).locator("[data-for-you-card-entry]");
@@ -109,7 +54,7 @@ test("the card lists the newest suggestions of the mailbox in view, dismisses in
 	browser,
 }) => {
 	const restore = await useFakeProvider(api, fake);
-	const account = await suggestAccount("ccf");
+	const account = await suggestAccount(api, "ccf");
 	const sharedLocal = `ccfs${uniqueToken("")}`;
 	const sharedId = await createSharedMailbox(api, sharedLocal);
 	const { context, page } = await openAs(browser, account, account.mailboxId);
@@ -200,7 +145,7 @@ test("the card is left out while automatic reading is off or the mailbox has no 
 	browser,
 }) => {
 	const restore = await useFakeProvider(api, fake);
-	const account = await suggestAccount("ccg");
+	const account = await suggestAccount(api, "ccg");
 	const sharedLocal = `ccgs${uniqueToken("")}`;
 	const sharedId = await createSharedMailbox(api, sharedLocal);
 	const { context, page } = await openAs(browser, account, account.mailboxId);

@@ -5,6 +5,8 @@ import { useState } from "react";
 import { Sparkles, X } from "lucide-react";
 import { SuggestionKindIcon } from "@/components/agent/suggestion-badge";
 import { runCardAction } from "@/components/agent/suggestion-card-actions";
+import { SuggestionPreviewRow } from "@/components/agent/suggestion-preview";
+import { previewHintId } from "@/components/agent/suggestion-preview-utils";
 import { useSelectedMailbox } from "@/components/mailbox-provider";
 import { formatMessageListTimestamp } from "@/components/messages/utils";
 import { useT } from "@/lib/i18n/use-t";
@@ -51,9 +53,18 @@ function ForYouCardEntry({
 		</>
 	);
 	return (
-		<li className="flex items-center gap-1" data-for-you-card-entry={row.id} data-kind={row.kind}>
+		<SuggestionPreviewRow
+			suggestion={row.suggestion}
+			className="flex items-center gap-1"
+			data-for-you-card-entry={row.id}
+			data-kind={row.kind}
+		>
 			{row.href && isSameOriginPath(row.href) ? (
-				<Link href={row.href} className={`${COMMAND_CENTER_LINK_ROW_CLASS} ${ROW_CLASS}`}>
+				<Link
+					href={row.href}
+					aria-describedby={previewHintId(row.id)}
+					className={`${COMMAND_CENTER_LINK_ROW_CLASS} ${ROW_CLASS}`}
+				>
 					{body}
 				</Link>
 			) : (
@@ -69,7 +80,7 @@ function ForYouCardEntry({
 			>
 				<X className="h-4 w-4" aria-hidden="true" />
 			</button>
-		</li>
+		</SuggestionPreviewRow>
 	);
 }
 

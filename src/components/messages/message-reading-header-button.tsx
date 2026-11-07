@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { useViewHref } from "@/components/mail-search/use-view-href";
 import { ArrowLeft, PanelLeftClose, PanelLeftOpen, PanelTopClose, PanelTopOpen } from "lucide-react";
 import { Tooltip } from "@/components/ui/tooltip";
 import { useMessageListVisibility } from "./message-list-visibility";
@@ -9,6 +10,7 @@ import { useT } from "@/lib/i18n/use-t";
 export function MessageReadingHeaderButton() {
 	const t = useT();
 	const router = useRouter();
+	const viewHref = useViewHref();
 	const { visible, toggle, singleColumn, stacked, backHref, backLabel } = useMessageListVisibility();
 	const label = singleColumn
 		? t("Back to {backLabel}", { backLabel })
@@ -18,7 +20,7 @@ export function MessageReadingHeaderButton() {
 	const PanelIcon = stacked ? (visible ? PanelTopClose : PanelTopOpen) : visible ? PanelLeftClose : PanelLeftOpen;
 
 	function handleClick() {
-		if (singleColumn) router.push(backHref);
+		if (singleColumn) router.push(viewHref(backHref));
 		else toggle();
 	}
 

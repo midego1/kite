@@ -147,8 +147,8 @@ test("failed FETCH rejects", async () => {
 test("helpers", () => {
 	assert.equal(parseFetchUid("* 4 FETCH (UID 99 BODY[] {3}"), "99");
 	assert.equal(parseFetchUid(")"), null);
-	assert.deepEqual(selectRemainingUids(["1", "5", "3", "x"], null), [5, 3, 1]);
-	assert.deepEqual(selectRemainingUids(["1", "5", "3"], 5), [3, 1]);
+	assert.deepEqual(selectRemainingUids([1, 5, 3, Number.NaN], null), [5, 3, 1]);
+	assert.deepEqual(selectRemainingUids([1, 5, 3], 5), [3, 1]);
 	assert.deepEqual(chunk([1, 2, 3, 4, 5], 2), [[1, 2], [3, 4], [5]]);
 });
 

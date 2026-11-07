@@ -31,7 +31,7 @@ import {
 } from "./message-range-selection-utils";
 import { dispatchMessageCountsDelta } from "./message-list-row-actions-utils";
 import { useConversationView } from "./use-conversation-view";
-import { useMessageListDensity } from "./use-reading-layout";
+import { useMessageListDensity, useMessageListLabels } from "./use-reading-layout";
 import { useMessageListKeyboard } from "./use-message-list-keyboard";
 import type { MessageFolderPageProps, SelectedMessage } from "./types";
 import {
@@ -67,6 +67,15 @@ import { useT } from "@/lib/i18n/use-t";
 
 const pageSize = 25;
 
+/**
+ * The folder the header can empty (Trash and Spam, not your own folders). While an account's view is open the list is
+ * only part of the folder, and emptying removes all of it, so the button is not offered there.
+ */
+function folderToEmpty(config: MessageFolderPageProps["config"], viewOpen: boolean) {
+	if (viewOpen || config.folderId) return null;
+	return supportsPermanentDelete(config.folder) ? config.folder : null;
+}
+
 export function MessageFolderPage({
 	config,
 	compact = false,
@@ -83,7 +92,7 @@ export function MessageFolderPage({
 		isLoading: mailboxesLoading,
 	} = useSelectedMailbox();
 	const access = useMessageAccess();
-	const { query } = useMailSearch();
+	const { query, view } = useMailSearch();
 	const isMobile = useIsMobile();
 	const [offset, setOffset] = useState(0);
 	// Cursor that starts the page at each offset, filled in as the user pages forward.
@@ -95,6 +104,7 @@ export function MessageFolderPage({
 	const [selecting, setSelecting] = useState(false);
 	const [conversationView] = useConversationView();
 	const [density] = useMessageListDensity();
+	const [labels] = useMessageListLabels();
 	const grouped = conversationView && config.folder !== "drafts";
 	const { messages, isLoading, total, limit, nextCursor, updateMessages } = useMessages(
 		config.folder,
@@ -222,7 +232,7 @@ export function MessageFolderPage({
 		setSelectedMessages((current) => applySelection(current, messages, visibleIds, selected));
 	}
 
-	const permanentDeleteFolder = !config.folderId && supportsPermanentDelete(config.folder) ? config.folder : null;
+	const permanentDeleteFolder = folderToEmpty(config, view !== null);
 	async function emptyFolder() {
 		if (!permanentDeleteFolder) return;
 		// In All mailboxes this empties every listed mailbox the user may manage, never a read-only one.
@@ -495,9 +505,14 @@ export function MessageFolderPage({
 								density={density}
 								hoverActions={!isMobile}
 								currentAccountName={accountNameOf(message)}
+								labels={labels}
+								viaSlot={messages.some((item) => item.via)}
 								mailboxLabel={
-									access.showMailboxLabels ? (
-										<MessageMailboxLabel mailbox={access.mailboxOf(message.mailboxId)} />
+									access.showMailboxLabels && labels !== "off" ? (
+										<MessageMailboxLabel
+											mailbox={access.mailboxOf(message.mailboxId)}
+											variant={labels === "full" ? "full" : "compact"}
+										/>
 									) : null
 								}
 								canManage={access.canManage(message.mailboxId)}

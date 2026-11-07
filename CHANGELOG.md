@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.11.07.5] - 2026-11-07
+
+### Fixed
+
+- A malformed email with an unusual message structure could be rejected by mistake; that is fixed.
+- When an email was rejected for having too much header data overall, the bounce reply sometimes named the wrong size limit; it now names the right one.
+
 ## [2026.11.07.4] - 2026-11-07
 
 ### Added

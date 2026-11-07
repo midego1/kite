@@ -9,6 +9,7 @@ import {
 } from "@/components/messages/email-colour-utils";
 import { linkifyTextNodes } from "@/lib/email/linkify-dom-utils";
 import { rootDirection, withRootDirection } from "@/lib/email/root-direction-utils";
+import { markLongWords } from "@/lib/email/word-wrap-utils";
 import { remoteImageProxyUrl } from "@/lib/remote-images/proxy-url-utils";
 import type { EmailColourFacts } from "@/components/messages/email-html-frame-types";
 import type { EmailHtmlSanitizer, SanitizeEmailHtmlOptions } from "./email-html-sanitizer-types";
@@ -99,8 +100,8 @@ const TAG_ATTRIBUTES: Record<string, Set<string>> = {
 	li: new Set(["value"]),
 	ol: new Set(["start", "type"]),
 	table: new Set(["border", "cellpadding", "cellspacing", "width"]),
-	td: new Set(["align", "colspan", "rowspan", "valign", "width"]),
-	th: new Set(["align", "colspan", "rowspan", "scope", "valign", "width"]),
+	td: new Set(["align", "colspan", "nowrap", "rowspan", "valign", "width"]),
+	th: new Set(["align", "colspan", "nowrap", "rowspan", "scope", "valign", "width"]),
 };
 const ALLOWED_ATTRIBUTES = [
 	...new Set([...GLOBAL_ATTRIBUTES, ...Object.values(TAG_ATTRIBUTES).flatMap((set) => [...set])]),
@@ -149,7 +150,32 @@ const ALLOWED_STYLE_PROPERTIES = new Set([
 	"word-break",
 	"word-wrap",
 ]);
+// Browsers hand a parsed style over as longhands: `white-space: nowrap` arrives as `white-space-collapse` and
+// `text-wrap-mode`, `border: 0` as each side's width, style and colour. These are the longhands of the shorthands
+// allowed above (but not `border-image`, which `border` resets too); the kept declarations are serialized again, so
+// the browser writes them back as shorthands wherever it can.
+const ALLOWED_STYLE_LONGHANDS = new Set([
+	...["top", "right", "bottom", "left"].flatMap((side) =>
+		["width", "style", "color"].map((part) => `border-${side}-${part}`),
+	),
+	...["top-left", "top-right", "bottom-right", "bottom-left"].map((corner) => `border-${corner}-radius`),
+	"overflow-wrap",
+	"text-decoration-color",
+	"text-decoration-line",
+	"text-decoration-style",
+	"text-decoration-thickness",
+	"text-wrap",
+	"text-wrap-mode",
+	"white-space-collapse",
+]);
 const UNSAFE_STYLE_VALUE = /url\s*\(|expression\s*\(|javascript:|@import|behavior\s*:|-moz-binding/i;
+// In the reader only a short table cell (an amount, a date) keeps its text on one line; anywhere else `nowrap` pushes
+// the mail past a phone's width. Turning off breaking long words is not left to the sender either.
+const SHORT_CELL_CHARS = 32;
+const NO_WRAP_PROPERTIES = new Set(["text-wrap", "text-wrap-mode", "white-space"]);
+const NO_WRAP_VALUE = /nowrap|^\s*pre\s*$/i;
+const WRAP_WORD_PROPERTIES = new Set(["overflow-wrap", "word-wrap"]);
+const BREAKS_LONG_WORDS = /^\s*(?:break-word|anywhere)\s*$/i;
 /** Near-black text, marked for the frame; the frame's CSS reads it (email-html-frame-utils.ts). */
 const NEUTRAL_TEXT_ATTRIBUTE = "data-kite-text";
 const APP_FONT_FALLBACK = "var(--font-geist-sans), system-ui, sans-serif";
@@ -224,19 +250,36 @@ function noteColours(element: StyledElement, colours: EmailColourFacts): void {
 	}
 }
 
+function isShortCell(element: Element): boolean {
+	const tag = element.tagName.toLowerCase();
+	if (tag !== "td" && tag !== "th") return false;
+	return (element.textContent ?? "").replace(/\s+/g, " ").trim().length <= SHORT_CELL_CHARS;
+}
+
+/** Declarations the reader leaves out although they are allowed: ones that would widen the mail or double a bar. */
+function isDisplayedDeclaration(element: Element, property: string, value: string): boolean {
+	if (NO_WRAP_PROPERTIES.has(property) && NO_WRAP_VALUE.test(value)) return isShortCell(element);
+	if (WRAP_WORD_PROPERTIES.has(property)) return BREAKS_LONG_WORDS.test(value);
+	// The frame draws a quote's bar on the reading start side; Gmail's own `border-left` would add a second one in
+	// right-to-left mail.
+	return !(property.startsWith("border") && element.tagName.toLowerCase() === "blockquote");
+}
+
 function sanitizeStyle(element: StyledElement, options: SanitizeEmailHtmlOptions): void {
 	if (options.colours && !options.forOutgoing) noteColours(element, options.colours);
-	const safeDeclarations: string[] = [];
+	const safe = (element.ownerDocument.createElement("span") as StyledElement).style;
 	for (const property of Array.from(element.style)) {
-		if (!ALLOWED_STYLE_PROPERTIES.has(property)) continue;
+		if (!ALLOWED_STYLE_PROPERTIES.has(property) && !ALLOWED_STYLE_LONGHANDS.has(property)) continue;
 		if (property === "font-family" && options.dropFontFamily) continue;
 		const value = element.style.getPropertyValue(property);
 		if (UNSAFE_STYLE_VALUE.test(value)) continue;
+		if (!options.forOutgoing && !isDisplayedDeclaration(element, property, value)) continue;
 		const safeValue = property === "font-family" && !options.forOutgoing ? `${value}, ${APP_FONT_FALLBACK}` : value;
-		safeDeclarations.push(`${property}: ${safeValue}`);
+		safe.setProperty(property, safeValue);
 	}
-	if (safeDeclarations.length) {
-		element.setAttribute("style", safeDeclarations.join("; "));
+	const declarations = safe.cssText.trim().replace(/;$/, "");
+	if (declarations) {
+		element.setAttribute("style", declarations);
 	} else {
 		element.removeAttribute("style");
 	}
@@ -261,6 +304,8 @@ function styleQuoteIntroductions(root: Element): void {
 function finishElement(element: Element, origin: string, options: SanitizeEmailHtmlOptions): void {
 	const tag = element.tagName.toLowerCase();
 	if (hasInlineStyle(element)) sanitizeStyle(element, options);
+	if (!options.forOutgoing && element.hasAttribute("nowrap") && !isShortCell(element))
+		element.removeAttribute("nowrap");
 
 	if (tag === "a") {
 		const href = element.getAttribute("href");
@@ -318,6 +363,7 @@ export function createEmailHtmlSanitizer(root: SanitizerWindow): EmailHtmlSaniti
 		for (const element of Array.from(body.querySelectorAll("*"))) {
 			finishElement(element, root.location.origin, options);
 		}
+		if (!options.forOutgoing) markLongWords(body);
 		// Last, so the loop above never sees the new anchors: the linkifier only emits http, https
 		// and mailto links, and leaves text inside existing links and code alone.
 		if (options.linkify && !options.forOutgoing) linkifyTextNodes(body, LINKIFIED_ANCHOR_ATTRIBUTES);

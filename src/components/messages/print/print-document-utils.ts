@@ -1,6 +1,7 @@
 import { formatAttachmentSize, resolveInlineAttachmentUrls } from "@/app/(dashboard)/inbox/[messageId]/utils";
 import type { EmailHtmlSanitizer } from "@/app/(dashboard)/inbox/[messageId]/email-html-sanitizer-types";
 import { parseEmailAddressParts, splitEmailAddressList } from "@/lib/email/address";
+import { CELL_WRAP_STYLES } from "@/lib/email/word-wrap-utils";
 import type { PrintDocumentInput, PrintHeaderInput, PrintHeaderRow, PrintMessage, PrintSource } from "./print-types";
 
 const FALLBACK_FILE_NAME = "Email";
@@ -113,6 +114,7 @@ const PRINT_STYLES = [
 	"@page{margin:16mm 14mm}",
 	"html{color-scheme:light;background:#fff}",
 	'body{margin:0;color:#171717;background:#fff;font:14px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;overflow-wrap:anywhere;-webkit-print-color-adjust:exact;print-color-adjust:exact}',
+	CELL_WRAP_STYLES,
 	".print-title{margin:0 0 4px;font-size:20px;line-height:1.3;font-weight:700}",
 	".print-count{margin:0;color:#525252;font-size:13px}",
 	".print-message{padding-top:16px}",

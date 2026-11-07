@@ -1,5 +1,5 @@
 import type { ParsedEmail } from "@/lib/email/parse";
-import { TEXT_CUT_NOTE } from "@/lib/email/body-cut-note-utils";
+import { TEXT_CUT_NOTE } from "@/lib/email/mime-body-utils";
 
 /**
  * What a delivered message's columns may hold, so one row stays well inside D1's 2 MB limit (Mailflare #217). The

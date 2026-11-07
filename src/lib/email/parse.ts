@@ -4,8 +4,13 @@ import { normalizeMessageId, parseMessageIdList } from "@/lib/email/threading";
 import { normalizeAttachmentContent } from "@/lib/email/attachment-content-utils";
 import { getLatestEmailContent, htmlToReadableText } from "@/lib/email/reply-content-utils";
 import { sanitizeStoredEmailHtml } from "@/lib/email/stored-html-utils";
-import { TEXT_CUT_NOTE, withHtmlCutNote } from "@/lib/email/body-cut-note-utils";
-import { cutBodies, limitBodyConversion, limitDecodedText } from "@/lib/email/mime-body-utils";
+import {
+	cutBodies,
+	limitBodyConversion,
+	limitDecodedText,
+	TEXT_CUT_NOTE,
+	withHtmlCutNote,
+} from "@/lib/email/mime-body-utils";
 import { MIME_LIMITS, mimePreflightReason } from "@/lib/email/mime-preflight";
 import type { AttachmentContent } from "@/lib/email/attachment-types";
 

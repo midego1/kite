@@ -20,13 +20,14 @@ import { rootDirection, withRootDirection } from "@/lib/email/root-direction-uti
  * same 512 levels, so past `MAX_OPEN_ELEMENTS` the sanitizer stops parsing, closes what it opened and keeps the rest
  * as plain text. A tag past `MAX_TAG_ATTRIBUTES` attributes or `MAX_TAG_ENTITIES` entities loses its attributes:
  * `BoundedParser` holds no more of them, because the parser keeps them until the tag ends, with a heap node per entity
- * in a value. `MAX_SANITIZED_HTML_CHARS` is above the largest body a message can hold, so only output that grew while
- * it was escaped reaches it: attributes that do not fit are left out, and what fits of the rest is kept and closed.
+ * in a value. `MAX_SANITIZED_HTML_CHARS` is twice the largest HTML body `parseRawMime` decodes (`MAX_DECODED_TEXT_BYTES`
+ * in `mime-body-utils.ts`), so only output that grew while it was escaped reaches it: attributes that do not fit are
+ * left out, and what fits of the rest is kept and closed.
  */
 const MAX_OPEN_ELEMENTS = 512;
 const MAX_TAG_ATTRIBUTES = 1_024;
 const MAX_TAG_ENTITIES = 256 * 1024;
-const MAX_SANITIZED_HTML_CHARS = 26_000_000;
+const MAX_SANITIZED_HTML_CHARS = 8_000_000;
 /**
  * How much output waits to be joined. A string grown with `+=` or a global replace keeps a heap node per piece until it
  * is flattened, far more than a small tag's text, and joining flattens it.
@@ -326,7 +327,8 @@ export function sanitizeStoredEmailHtml(html: string | null | undefined): string
 					dropped -= 1;
 					return;
 				}
-				if (STORED_TAGS.has(name) && !VOID_TAGS.has(name)) {
+				// A tag the input ends inside was never opened here, but the parser still closes it at the end.
+				if (STORED_TAGS.has(name) && !VOID_TAGS.has(name) && open.at(-1) === name) {
 					open.pop();
 					output.add(`</${name}>`);
 				}

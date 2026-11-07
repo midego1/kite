@@ -73,6 +73,7 @@ export async function applySpamFeedbackWithReceipt(
 		references: message.references?.split(/\s+/).filter(Boolean) ?? [],
 		date: message.createdAt,
 		attachments: [],
+		bodyCut: false,
 	};
 	const prepared = prepareSpamContent(parsed);
 	const tokens = previous ? (JSON.parse(previous.trainingTokens) as string[]) : tokenizeMessage(parsed, prepared);

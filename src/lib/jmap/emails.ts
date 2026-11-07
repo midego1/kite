@@ -16,7 +16,7 @@ import { LIMITS, KEYWORD_FLAGGED, KEYWORD_SEEN } from "./constants";
 import { JmapError, invalidArguments } from "./errors";
 import { decodeBlobId, decodeMailboxRef, roleToStatus } from "./ids";
 import { buildEmailObject, loadAttachmentsByMessage, resolveHeaderProperty } from "./email-objects";
-import { importFlags, parseReceivedAt, resolveDraftsMailbox } from "./email-import-utils";
+import { importFlags, parsedDraftFrom, parseReceivedAt, resolveDraftsMailbox } from "./email-import-utils";
 import { filterToSql, mailboxRefCondition, sortToSql } from "./email-query";
 import { getEmailState } from "./state";
 import { unescapePointerToken } from "./pointer-utils";
@@ -472,13 +472,14 @@ async function importEmail(
 			},
 		};
 	}
-	if (!parsed.fromAddr) return { error: { type: "invalidEmail", description: "The message has no From header" } };
+	const draftFrom = parsedDraftFrom(parsed);
+	if ("error" in draftFrom) return draftFrom;
 
 	let sender: { fromAddr: string; mailboxId: string };
 	try {
 		sender = await getAuthorizedSenderAddress(ctx.env, {
 			userId: ctx.auth.userId,
-			from: parsed.fromAddr,
+			from: draftFrom.fromAddr,
 			mailboxId: target.mailboxId,
 		});
 	} catch (error) {

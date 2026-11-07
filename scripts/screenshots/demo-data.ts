@@ -236,3 +236,71 @@ export async function seedPagedMail(): Promise<void> {
 	}
 	await api.dispose();
 }
+
+const PAID_FORMAT = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
+const daysBack = (days: number) => PAID_FORMAT.format(new Date(Date.now() - days * 86_400_000));
+const authFor = (domain: string) => ({
+	"Auto-Submitted": "auto-generated",
+	"Authentication-Results": `mx.cloudflare.net; spf=pass smtp.mailfrom=${domain}; dkim=pass header.d=${domain}; dmarc=pass header.from=${domain}`,
+});
+
+/** Invented receipts, invoices and a refund for the Money Watch Payments tab, in three currencies and two months. */
+const PAYMENT_MAIL = [
+	{
+		from: "Stripe <receipts+acct_1DemoNw0000@stripe.com>",
+		subject: "Your Northwind Studio receipt [#2214-0042]",
+		text: `Northwind Studio\nReceipt #2214-0042\n\nAmount paid\n$500.00\n\nDate paid\n${daysBack(2)}\n\nSummary\nNorthwind Studio setup fee $500.00`,
+		domain: "stripe.com",
+	},
+	{
+		from: "Fabrikam Hosting <invoices@fabrikam.test>",
+		subject: "Invoice FH-2026-1107 from Fabrikam Hosting",
+		text: `Amount due: €120.00\nInvoice date: ${daysBack(1)}\nPlease pay within 14 days.`,
+		domain: "fabrikam.test",
+	},
+	{
+		from: "Contoso Coffee <receipts@contoso.test>",
+		subject: "Your receipt from Contoso Coffee #4471",
+		text: `Amount paid: €18.40\nReceipt date: ${daysBack(3)}\nThanks for stopping by.`,
+		domain: "contoso.test",
+	},
+	{
+		from: "Wingtip Toys <support@wingtip.test>",
+		subject: "Your refund has been issued",
+		text: `We refunded €35.00 to your card for order #WT-4821.\nRefund date: ${daysBack(4)}`,
+		domain: "wingtip.test",
+	},
+	{
+		from: "Adventure Works <billing@adventure-works.test>",
+		subject: "Payment received, receipt AW-77812",
+		text: `Amount paid: £42.00\nDate paid: ${daysBack(36)}\nThank you for your payment.`,
+		domain: "adventure-works.test",
+	},
+	{
+		from: "Litware Print <invoices@litware.test>",
+		subject: "Receipt LP-30981 for your print order",
+		text: `Total paid: €64.90\nDate paid: ${daysBack(40)}\nOrder LP-30981, 250 business cards.`,
+		domain: "litware.test",
+	},
+] as const;
+
+/**
+ * The Payments tab's demo rows: automatic reading on for the support mailbox, then the invented receipts delivered to
+ * it, recorded by Money Watch on their own. Delivered once; a kept server already has them.
+ */
+export async function seedPaymentsDemo(): Promise<void> {
+	const api = await apiContext(STORAGE_STATE);
+	const { mailboxes } = (await (await api.get("/api/mailboxes")).json()) as {
+		mailboxes: { id: string; localPart: string }[];
+	};
+	const support = mailboxes.find((box) => box.localPart === "support") ?? mailboxes[0]!;
+	await api.put("/api/agent/settings", { data: { mailboxId: support.id, autonomy: "suggest" } });
+	const count = async () =>
+		((await (await api.get("/api/finance/payments")).json()) as { payments?: unknown[] }).payments?.length ?? 0;
+	if ((await count()) >= PAYMENT_MAIL.length) return;
+	for (const { domain, ...mail } of PAYMENT_MAIL) {
+		await postInbound(api, { ...mail, to: SUPPORT_ADDRESS, headers: authFor(domain) });
+		await waitForMessage(api, mail.subject);
+	}
+	await expect.poll(count, { timeout: 120_000 }).toBeGreaterThanOrEqual(PAYMENT_MAIL.length);
+}

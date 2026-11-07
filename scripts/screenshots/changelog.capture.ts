@@ -12,6 +12,7 @@ import {
 	RTL_MAIL,
 	seedDemoData,
 	seedPagedMail,
+	seedPaymentsDemo,
 	seedRtlMail,
 	seedThaiMail,
 	THAI_MAIL,
@@ -609,6 +610,20 @@ const SHOTS: Shot[] = [
 			},
 		}),
 	),
+	{
+		// Money Watch's Payments tab: invented receipts, an invoice and a refund with month totals per currency. Before the
+		// No AI shot, which turns AI off for the mailbox these are delivered to.
+		name: "2026-11-07-money-watch-payments-light",
+		theme: "light",
+		viewport: { width: 1280, height: 900 },
+		open: async (page) => {
+			await seedPaymentsDemo();
+			await page.goto("/finance?tab=payments");
+			await expect(page.locator("[data-payment-row]").first()).toBeVisible();
+			await expect(page.locator("[data-payment-month]").first()).toBeVisible();
+			return page.locator("[data-finance-page]");
+		},
+	},
 	{
 		// The assistant panel's settings: No AI for this mailbox, turned on (it stays on in the e2e state afterwards).
 		name: "2026-11-05-mailbox-no-ai",

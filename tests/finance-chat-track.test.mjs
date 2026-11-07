@@ -30,6 +30,8 @@ await build({
 	outExtension: { ".js": ".mjs" },
 	bundle: true,
 	splitting: true,
+	// Source maps let the coverage gate credit src/lib/finance/chat-track-utils.ts.
+	sourcemap: "inline",
 	platform: "node",
 	format: "esm",
 	target: "node22",

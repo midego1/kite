@@ -39,6 +39,8 @@ npm run cf-typegen             # regenerate cloudflare-env.d.ts from wrangler.js
 
 Formatting is Prettier with tabs (`.prettierrc.json`); `.prettierignore` excludes generated files, migrations, `wrangler.jsonc`, assets and all Markdown. There is no formatting baseline, so format every file you touch (`npx prettier --write <file>`). Git hooks are opt-in: `npm install` never changes Git config; `npm run hooks:install` sets `core.hooksPath` (per worktree only when `extensions.worktreeConfig` is enabled).
 
+vinext downloads the `next/font/google` files in the Vite process (dev server and build); when a download is rejected it silently falls back to `<link>` tags for `fonts.googleapis.com`, which the CSP blocks (console errors in every e2e test that asserts none). `vite.config.ts` therefore installs `scripts/font-fetch-retry.mjs`, which retries only the Google Fonts hosts; the files are cached in `.vinext/fonts`.
+
 `npm run deploy` builds with vinext and uploads with Wrangler. The Cloudflare Vite plugin generates `dist/server/wrangler.json` and redirects Wrangler to it, preserving the custom `worker.ts` entrypoint.
 
 ## Architecture

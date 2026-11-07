@@ -3,8 +3,11 @@ import vinext from "vinext";
 import { cloudflare } from "@cloudflare/vite-plugin";
 import { imagesOptimizer } from "@vinext/cloudflare/images/images-optimizer";
 import { getBuildVersion } from "./scripts/build-version.mjs";
+import { installFontFetchRetry } from "./scripts/font-fetch-retry.mjs";
 
 const build = getBuildVersion();
+// vinext fetches the next/font/google files in this process while it transforms the root layout.
+installFontFetchRetry();
 const DEV_ONLY_VARS = [
 	"ALERT_WEBHOOK_ALLOW_INSECURE",
 	"AI_ALLOW_INSECURE_LOOPBACK",

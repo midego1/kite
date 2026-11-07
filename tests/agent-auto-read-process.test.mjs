@@ -88,7 +88,7 @@ beforeEach(() => {
 });
 
 // Money Watch's step reads every message; these cases are about core triage, so its switch is off.
-const NO_FINANCE = JSON.stringify({ modules: { subscriptions: false } });
+const NO_FINANCE = JSON.stringify({ modules: { subscriptions: false, payments: false } });
 
 async function setup(t, { rates = { "fake-triage": { input: 0.05, output: 0.3 } }, externalAllowed = 1 } = {}) {
 	const db = new SqliteDatabase(":memory:");

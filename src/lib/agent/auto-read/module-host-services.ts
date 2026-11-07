@@ -13,6 +13,7 @@ import { ownedActionDescriptor, refusedAction } from "@/lib/modules/host-utils";
 import type { CapabilityCallContext, JsonValue, ModuleId } from "@/lib/modules/module-types";
 import { normalizeTimeZone } from "@/lib/time/utils";
 import { AgentActionError } from "./action-error";
+import { backfillMessages, backfillStepInput } from "./backfill";
 import { executeAction } from "./execute";
 import { hiddenFromViewer, reviewerOnlySuggestionKinds, suggestionKindOwners } from "./module-steps-utils";
 import { notifySuggestionsQuietly } from "./suggestion-events";
@@ -166,4 +167,6 @@ bindHostAgentServices({
 	getSuggestion: getModuleSuggestion,
 	decideSuggestion: decideModuleSuggestion,
 	executeAction: executeModuleAction,
+	backfillMessages,
+	backfillStepInput,
 });

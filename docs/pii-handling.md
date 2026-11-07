@@ -9,8 +9,8 @@ are confidential even when not personal data.
 
 See [Privacy and data handling](privacy.md) for what is stored where, retention, export and deletion.
 
-Money Watch adds two per-user tables (`src/db/schema/finance.ts`, migration
-0063): `finance_subscriptions` (vendor, plan, amounts, dates, status, the
+Money Watch adds per-user tables (`src/db/schema/finance.ts`, migrations
+0063 and 0094): `finance_subscriptions` (vendor, plan, amounts, dates, status, the
 `List-Unsubscribe` cancel link and links to messages, contact, mailbox and the
 calendar reminder) and `finance_charges`, the document ledger (type, amount,
 dates and period, source message and attachment id per invoice, payment, credit
@@ -19,6 +19,13 @@ never file content or extracted PDF text. Both are owner-only in every surface
 (page, API, search, refs, tools, webhooks), are backed up in the `mail` group,
 cascade from the user row, keep the amounts but lose the message and attachment
 links when a message is deleted, and are kept when the module is turned off.
+`finance_payments` (migration 0094) holds the payments found in mail that are
+not a tracked subscription's: vendor, type, status, amount, currency, date, the
+mailbox, the source message and attachment id, and which fields the assistant
+read; never the body. It follows the same owner-only, backup (`mail` group),
+cascade and message-deletion rules; a removed row is kept as a marker so the
+mail is not recorded again. `finance_payment_scans` is the progress of "Scan
+last 90 days" (a cursor and counts) and is not backed up.
 Logs carry only ids and codes for them, never vendors, amounts, dates or URLs.
 
 Usage statistics are off unless the owner turns them on under Admin → General

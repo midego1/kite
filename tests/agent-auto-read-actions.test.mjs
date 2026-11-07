@@ -68,9 +68,11 @@ test("the registry covers dismiss, drafts, moves, read state, folders and the mo
 		"mark_read",
 		"move",
 		"record_document",
+		"remove_payment",
 		"send_rsvp",
 		"set_folder",
 		"set_subscription_status",
+		"update_payment",
 		"update_subscription",
 	]);
 	assert.deepEqual(ACTION_REGISTRY.send_rsvp.variants, ["accepted", "declined"]);

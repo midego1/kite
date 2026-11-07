@@ -118,11 +118,15 @@ export const triageStepSchemas: CapabilitySchemas = {
 			noReply: z.boolean(),
 			list: z.boolean(),
 			spam: z.boolean(),
+			/** The sender is one of the mailbox's muted senders: a step that writes without a card skips it. */
+			muted: z.boolean().default(false),
 		}),
 		headers: z.object({
 			listUnsubscribe: z.string().nullable(),
 			listUnsubscribePost: z.string().nullable(),
 			listId: z.string().nullable(),
+			/** The message's `Message-ID` header, when it has one. */
+			messageId: z.string().nullable().default(null),
 		}),
 		attachments: stepAttachments,
 		model: json.nullable(),

@@ -29,8 +29,16 @@ export type DetectStepInput = {
 		noReply: boolean;
 		list: boolean;
 		spam: boolean;
+		/** The sender is muted for the mailbox; absent in inputs built before the fact existed. */
+		muted?: boolean;
 	};
-	headers: { listUnsubscribe: string | null; listUnsubscribePost: string | null; listId: string | null };
+	headers: {
+		listUnsubscribe: string | null;
+		listUnsubscribePost: string | null;
+		listId: string | null;
+		/** Absent in inputs built before the step input carried it. */
+		messageId?: string | null;
+	};
 	attachments: StepAttachment[];
 	model: Record<string, unknown> | null;
 };

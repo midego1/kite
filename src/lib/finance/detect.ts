@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { getDb } from "@/db";
 import { financeSubscriptions } from "@/db/schema/finance";
 import { getEnv } from "@/lib/cloudflare";
@@ -29,7 +29,7 @@ const HISTORY_LIMIT = 5;
 
 export class MigrationPending extends Error {}
 
-async function trackedRows(userId: string, key: string): Promise<TrackedMatchRow[]> {
+async function trackedRows(userId: string, keys: readonly string[]): Promise<TrackedMatchRow[]> {
 	if (!(await financeTablesReady())) throw new MigrationPending();
 	try {
 		return await getDb(getEnv())
@@ -42,7 +42,7 @@ async function trackedRows(userId: string, key: string): Promise<TrackedMatchRow
 				cycle: financeSubscriptions.cycle,
 			})
 			.from(financeSubscriptions)
-			.where(and(eq(financeSubscriptions.userId, userId), eq(financeSubscriptions.vendorKey, key)));
+			.where(and(eq(financeSubscriptions.userId, userId), inArray(financeSubscriptions.vendorKey, [...keys])));
 	} catch (error) {
 		if (isNoSuchTableError(error)) throw new MigrationPending();
 		throw error;
@@ -77,7 +77,7 @@ export async function detectionContext(
 	userId: string,
 	deterministic: Analysis = analysis,
 ): Promise<DetectionContext> {
-	const tracked = matchTracked(await trackedRows(userId, analysis.vendorKey), analysis);
+	const tracked = matchTracked(await trackedRows(userId, analysis.vendorKeys), analysis);
 	const recurring =
 		!tracked && needsHistory(deterministic)
 			? recurringCycle(deterministic, await senderHistory(ctx, input), ctx.timeZone)
@@ -107,7 +107,8 @@ async function withAttachmentText(
 	}
 }
 
-async function analyzeWithAttachments(ctx: CapabilityCallContext, raw: DetectStepInput) {
+/** The detector's analysis, with the text of the invoice PDF when the body had no amount (spec §6). */
+export async function analyzeWithAttachments(ctx: CapabilityCallContext, raw: DetectStepInput) {
 	const first = analyzeMessage(raw, ctx.timeZone);
 	if (!first) return { input: raw, deterministic: null };
 	const input = await withAttachmentText(ctx, raw, first);

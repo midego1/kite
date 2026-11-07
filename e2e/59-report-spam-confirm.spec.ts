@@ -82,6 +82,9 @@ test("the reader's Report spam button asks first, Cancel and Esc do nothing, Con
 test("the ! key and the Move menu ask first too", async ({ page }) => {
 	const { id, subject } = await deliver("Key report");
 	await openReader(page, id, subject);
+	// The reader's keys start disabled until the stored preference has loaded, and a key pressed before that does
+	// nothing; the button's name gains its key once they are on.
+	await expect(page.getByRole("button", { name: "Report spam (!)" })).toBeVisible();
 
 	await page.keyboard.press("!");
 	await expect(dialog(page, "Report as spam?")).toBeVisible();

@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.11.07.1] - 2026-11-07
+
+### Changed
+
+- Two-way sync on a connected account now looks like something you can open: a row with an arrow, a clear label and its current state, shown whether it is open or closed.
+
+### Fixed
+
+- A folder that is too large to list no longer stops a whole-account import: it is marked as failed with the reason and the other folders are still copied.
+- Setting up Resend for receiving now also makes Resend the receiving provider of that domain, so mail that arrives through it is no longer dropped.
+- Received mail is processed one message at a time, so a very large message arriving at the same moment no longer holds other mail back for a retry.
+
 ## [2026.11.07.0] - 2026-11-07
 
 ### Added

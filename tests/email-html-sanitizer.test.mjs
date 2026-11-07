@@ -7,6 +7,7 @@ import { build } from "esbuild";
 import { JSDOM } from "jsdom";
 import { makeBundleDirectory } from "./support/bundle-directory.mjs";
 import { XSS_PAYLOADS, findActiveContent } from "./fixtures/xss-payloads.mjs";
+import { RECEIPT_AMOUNT, RECEIPT_URL, receiptTableHtml } from "./fixtures/receipt-table.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const directory = makeBundleDirectory("kite-sanitizer-test-");
@@ -137,6 +138,63 @@ test("the reader sanitizer applies per-tag attributes and the style allowlist", 
 	assert.equal(
 		sanitizeEmailHtml('<div data-kite-signature="1" data-other="1">sig</div>'),
 		'<div data-kite-signature="1">sig</div>',
+	);
+});
+
+test("a receipt's amount cells keep what stops them wrapping, after both sanitizers", () => {
+	const body = parse(sanitizeEmailHtml(sanitizeStoredEmailHtml(receiptTableHtml())));
+	const amounts = [...body.querySelectorAll("td")].filter((cell) => cell.textContent === RECEIPT_AMOUNT);
+	assert.equal(amounts.length, 2);
+	assert.equal(amounts[0].hasAttribute("nowrap"), true);
+	assert.match(amounts[0].getAttribute("style"), /white-space: nowrap/);
+	assert.ok(
+		[...body.querySelectorAll("table")].some((table) => /border-radius: 5px/.test(table.getAttribute("style"))),
+	);
+	assert.ok([...body.querySelectorAll("td")].some((cell) => /width: 100%/.test(cell.getAttribute("style") ?? "")));
+	assert.equal(sanitizeEmailHtml("<table><tr><th nowrap>x</th></tr></table>").includes('<th nowrap="">'), true);
+});
+
+test("the reader sanitizer keeps the longhands browsers expand allowed shorthands into", () => {
+	// Chromium reads `white-space: nowrap` as these two and `border: 0` as each side's width, style and colour; jsdom
+	// does not expand shorthands, so the longhands are given as written.
+	const output = sanitizeEmailHtml(
+		'<div style="white-space-collapse: collapse; text-wrap-mode: nowrap; border-top-width: 1px; border-top-style: solid; border-top-color: red; border-top-left-radius: 4px; overflow-wrap: normal; text-decoration-line: none">x</div>',
+	);
+	for (const declaration of [
+		"white-space-collapse: collapse",
+		"text-wrap-mode: nowrap",
+		"border-top: 1px solid red",
+		"border-top-left-radius: 4px",
+		"overflow-wrap: normal",
+		"text-decoration-line: none",
+	]) {
+		assert.ok(output.includes(declaration), `${declaration} in ${output}`);
+	}
+	// The frame draws the quote bar itself; mail that is sent keeps the sender's.
+	const quote =
+		'<blockquote style="margin-left: 0.8ex; border-left-width: 1px; border-left-style: solid">q</blockquote>';
+	assert.equal(sanitizeEmailHtml(quote), '<blockquote style="margin-left: 0.8ex">q</blockquote>');
+	assert.match(sanitizeEmailHtml(quote, { forOutgoing: true }), /border-left-width: 1px/);
+	assert.equal(
+		sanitizeEmailHtml('<p style="border-image-source: none; position: fixed; text-wrap-mode: nowrap">x</p>'),
+		'<p style="text-wrap-mode: nowrap">x</p>',
+	);
+});
+
+test("the reader marks text with a long word so it may break anywhere, but not amounts or outgoing mail", () => {
+	const html = sanitizeStoredEmailHtml(receiptTableHtml());
+	const body = parse(sanitizeEmailHtml(html, { linkify: true }));
+	const marked = [...body.querySelectorAll("[data-kite-wrap]")];
+	assert.deepEqual(
+		marked.map((element) => element.getAttribute("data-kite-wrap")),
+		["anywhere"],
+	);
+	assert.match(marked[0].textContent, /^Questions\? Visit https:/);
+	assert.equal(marked[0].querySelector("a")?.getAttribute("href"), RECEIPT_URL);
+	assert.doesNotMatch(sanitizeEmailHtml(html, { forOutgoing: true }), /data-kite-wrap/);
+	assert.equal(
+		sanitizeEmailHtml(`<table><tr><td>Total due: $1,234,567.89 on 2026-11-07</td></tr></table><p>${RECEIPT_URL}</p>`),
+		`<table><tbody><tr><td>Total due: $1,234,567.89 on 2026-11-07</td></tr></tbody></table><p>${RECEIPT_URL}</p>`,
 	);
 });
 

@@ -20,6 +20,7 @@ import {
 	chatActionPlan,
 	chatActionState,
 	chatProposalSchema,
+	editedProposalInput,
 	moduleProposalSchema,
 	safeActionError,
 	type ModuleProposal,
@@ -146,21 +147,45 @@ async function applyProposal(
 
 const STALE_PROPOSAL = "This changed since it was proposed; ask the assistant again";
 
+/** The audit row an approved module tool wrote through the executor (`result.actionId`), when it is the user's own. */
+async function moduleActionUndo(env: CloudflareEnv, user: SessionUser, output: unknown) {
+	const value = (output ?? {}) as { actionId?: unknown; result?: { actionId?: unknown } | null };
+	const actionId = value.result?.actionId ?? value.actionId;
+	if (typeof actionId !== "string" || !actionId) return {};
+	const [row] = await getDb(env)
+		.select({ id: agentActions.id, undoUntil: agentActions.undoUntil })
+		.from(agentActions)
+		.where(and(eq(agentActions.id, actionId), eq(agentActions.actingUserId, user.id)))
+		.limit(1);
+	return row ? { actionId: row.id, undoUntil: row.undoUntil?.toISOString() ?? null } : {};
+}
+
 /**
- * Runs an approved module tool proposal through `invokeCapability` as the viewer, with the chat trigger, so
- * module state, grants and input validation apply as they would have when the model called it. Only a tool
- * that still needs approval is run this way: anything else was never proposed by Kite.
+ * Runs an approved module tool proposal through `invokeCapability` as the viewer, with the chat trigger and the
+ * conversation's mailbox, so module state, grants, input validation and the mailbox the chat may read apply as
+ * they did when the model called it. Only a tool that still needs approval is run this way: anything else was never
+ * proposed by Kite. The user's card edits change only the keys the tool's `approval.editable` names. A module that
+ * refuses (`{ refused: { error } }`) leaves the card waiting; one that wrote through the executor gets Undo.
  */
-async function applyModuleProposal(env: CloudflareEnv, user: SessionUser, proposal: ModuleProposal) {
+async function applyModuleProposal(
+	env: CloudflareEnv,
+	user: SessionUser,
+	proposal: ModuleProposal,
+	mailboxId: string,
+	edits?: Record<string, unknown>,
+) {
 	const moduleId = proposal.moduleId as ModuleId;
 	const descriptor = findDescriptor(moduleId, proposal.action);
 	if (!descriptor?.surfaces.includes("assistant_tool") || !needsChatApproval(descriptor))
 		throw new Error("Action is unavailable or already approved");
+	const edited = editedProposalInput(proposal.input, edits, descriptor.approval?.editable);
+	if ("error" in edited) throw new Error(edited.error);
 	const viewer = { userId: user.id, role: user.role, isPrimaryAdmin: user.isPrimaryAdmin };
 	const callContext = buildCallContext({
 		trigger: "chat",
 		viewer,
 		timeZone: normalizeTimeZone(user.timeZone),
+		mailboxIds: [mailboxId],
 		enabled: await listEnabledModules(env, viewer),
 		manifests: MODULE_MANIFESTS,
 	});
@@ -175,12 +200,23 @@ async function applyModuleProposal(env: CloudflareEnv, user: SessionUser, propos
 		if (!preview.ok || (preview.output as { version?: string }).version !== proposal.version)
 			throw new Error(STALE_PROPOSAL);
 	}
-	const result = await invokeCapability(moduleId, proposal.action, proposal.input as JsonValue, callContext);
+	const result = await invokeCapability(moduleId, proposal.action, edited.input as JsonValue, callContext);
 	if (!result.ok) throw new Error(safeActionError(new Error(result.error.message)));
-	return { result: result.output };
+	const refused = (result.output as { refused?: { error?: unknown } } | null)?.refused;
+	if (refused) throw new Error(safeActionError(new Error(String(refused.error ?? ""))));
+	return {
+		...(edited.input === proposal.input ? {} : { input: edited.input }),
+		result: result.output,
+		...(await moduleActionUndo(env, user, result.output)),
+	};
 }
 
-export async function confirmAgentAction(env: CloudflareEnv, user: SessionUser, toolMessageId: string) {
+export async function confirmAgentAction(
+	env: CloudflareEnv,
+	user: SessionUser,
+	toolMessageId: string,
+	edits?: Record<string, unknown>,
+) {
 	const db = getDb(env);
 	const row = await loadToolMessage(env, user, toolMessageId);
 	const stored = parseContent(row.message.content);
@@ -195,9 +231,10 @@ export async function confirmAgentAction(env: CloudflareEnv, user: SessionUser, 
 		.returning({ id: agentChatMessages.id });
 	if (!claimed.length) throw new Error("Action is already being processed");
 	try {
+		if (proposal.success && edits && Object.keys(edits).length > 0) throw new Error("This action cannot be changed");
 		const applied = proposal.success
 			? await applyProposal(env, user, row.conversation.mailboxId, chatActionPlan(proposal.data))
-			: await applyModuleProposal(env, user, moduleProposal!.data!);
+			: await applyModuleProposal(env, user, moduleProposal!.data!, row.conversation.mailboxId, edits);
 		const updated = { ...stored, status: "approved", ...applied };
 		await db
 			.update(agentChatMessages)

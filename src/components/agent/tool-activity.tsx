@@ -9,6 +9,8 @@ import { approveActionLabel, approvedActionText, canUndoAction, undoneActionText
 import { undoApprovedAgentAction } from "./client-actions";
 import { AgentEmailLink } from "./email-link";
 import { RecordRefLink } from "@/components/modules/record-ref-link";
+import type { ModuleProposalCard } from "@/components/modules/client-registry-types";
+import { useModuleProposalCard } from "./use-proposal-card";
 import type { AssistantDetailPreference } from "@/components/appearance-preferences";
 
 function emailReferences(value: Record<string, unknown>): AgentEmailReference[] {
@@ -157,7 +159,15 @@ function ProposalItems({ proposal }: { proposal: AgentActionProposal }) {
 }
 
 /** An approved action: what it did, and Undo while its undo window is open. The result is kept per card. */
-function ApprovedAction({ item, proposal }: { item: AgentMessage; proposal: AgentActionProposal }) {
+function ApprovedAction({
+	item,
+	proposal,
+	card,
+}: {
+	item: AgentMessage;
+	proposal: AgentActionProposal;
+	card: ModuleProposalCard | null;
+}) {
 	const [state, setState] = useState<"idle" | "undoing" | "undone">(proposal.status === "undone" ? "undone" : "idle");
 	const [undone, setUndone] = useState<string>(() => undoneActionText(proposal));
 	const [error, setError] = useState<string | null>(null);
@@ -184,7 +194,9 @@ function ApprovedAction({ item, proposal }: { item: AgentMessage; proposal: Agen
 	}
 	return (
 		<div className="flex flex-wrap items-center justify-end gap-3" data-agent-action-state="approved">
-			<span className="me-auto text-neutral-600">{approvedActionText(proposal)}</span>
+			<span className="me-auto text-neutral-600">
+				{card ? card.approvedText(proposal.input ?? {}, proposal.result) : approvedActionText(proposal)}
+			</span>
 			{error && (
 				<span role="alert" className="text-red-600">
 					{error}
@@ -210,25 +222,40 @@ export function AgentPendingActions({
 	approvingId,
 }: Pick<AgentTurnProps, "onApproveAction" | "approvingId"> & { item: AgentMessage }) {
 	const proposal = agentActionProposal(item.content);
+	const card = useModuleProposalCard(proposal?.moduleId, proposal?.action ?? "");
+	const [edits, setEdits] = useState<Record<string, unknown>>({});
 	if (!proposal || proposal.status === "processing" || draftFromToolContent(item.content)) return null;
 	if (proposal.status !== "pending_approval")
 		return (
 			<div className="space-y-2 text-xs">
-				<ApprovedAction item={item} proposal={proposal} />
+				<ApprovedAction item={item} proposal={proposal} card={card} />
 			</div>
 		);
+	const approving = approvingId === item.id;
+	const approve = card ? card.approve({ ...proposal.input, ...edits }) : null;
 	return (
 		<div className="space-y-2 text-xs">
 			<ProposalEmails proposal={proposal} />
-			<ProposalItems proposal={proposal} />
+			{card ? (
+				<card.Body
+					input={proposal.input ?? {}}
+					details={proposal.details ?? {}}
+					edits={edits}
+					onEditsChange={setEdits}
+					disabled={approving}
+				/>
+			) : (
+				<ProposalItems proposal={proposal} />
+			)}
 			<div className="flex flex-wrap items-center justify-end gap-3">
+				{approve?.blocked && <span className="me-auto text-neutral-500">{approve.blocked}</span>}
 				<button
 					type="button"
 					className="rounded-lg bg-blue-600 px-3 py-2 font-medium text-white disabled:opacity-50"
-					disabled={!item.recordId || approvingId === item.id}
-					onClick={() => onApproveAction(item)}
+					disabled={!item.recordId || approving || !!approve?.blocked}
+					onClick={() => onApproveAction(item, card && Object.keys(edits).length > 0 ? edits : undefined)}
 				>
-					{approvingId === item.id ? "Approving…" : approveActionLabel(proposal)}
+					{approving ? "Approving…" : (approve?.label ?? approveActionLabel(proposal))}
 				</button>
 			</div>
 		</div>

@@ -20,7 +20,7 @@ import type { DetectStepInput } from "./types";
 import { vendorName } from "./vendor-utils";
 
 /** The same bounded excerpt the triage step reads (spec §5.2). */
-const EXCERPT_BYTES = 8_192;
+export const EXCERPT_BYTES = 8_192;
 
 function stepInput(message: HostMessageDetail): DetectStepInput {
 	return {
@@ -72,7 +72,8 @@ function bareDraft(input: DetectStepInput): ManualDraft {
 	};
 }
 
-async function draftOf(user: FinanceUser, message: HostMessageDetail): Promise<ManualDraft> {
+/** The detector's reading of one message the user manages, as the dialogs and the chat card prefill it. */
+export async function draftOf(user: FinanceUser, message: HostMessageDetail): Promise<ManualDraft> {
 	const ctx = sessionContext(user, [message.mailboxId]);
 	const input = stepInput(message);
 	const analysis = analyzeMessage(input, ctx.timeZone);

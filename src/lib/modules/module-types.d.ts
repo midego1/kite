@@ -292,10 +292,13 @@ export type CapabilityDescriptor = {
 	/**
 	 * An assistant tool the user approves in chat before it runs (a tool whose effect is `update`, `delete` or
 	 * `send` always needs it). `preview` names a `service` capability of the same module that core calls with
-	 * `{ tool, input }` and that answers `{ items: { label, detail }[], version? }`: the lines the approval card
-	 * shows, and the state of the records they describe, which core checks again before running an approval.
+	 * `{ tool, input }` and that answers `{ items: { label, detail }[], version?, input?, details? }`: the lines the
+	 * approval card shows, the state of the records they describe, which core checks again before running an
+	 * approval, the input the card runs with in place of the model's, and data for the module's own card; or
+	 * `{ refused: { error } }`, which the assistant gets as the tool's error. `editable` names the input keys the
+	 * user may change on the card before approving; core merges only those and the tool validates the result.
 	 */
-	approval?: { preview: string };
+	approval?: { preview: string; editable?: string[] };
 	event?: { value: string };
 	lifecycle?: { event: "user.created" | "user.time_zone_changed"; dataHook: boolean };
 	cron?: { task: string };

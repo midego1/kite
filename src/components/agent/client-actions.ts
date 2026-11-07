@@ -27,11 +27,14 @@ export async function requestDraftReview(draftId: string, expectedRevision?: num
 	};
 }
 
-export async function approveAgentAction(toolMessageId: string): Promise<Record<string, unknown>> {
+export async function approveAgentAction(
+	toolMessageId: string,
+	edits?: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
 	const response = await authFetch("/api/agent/actions/confirm", {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({ toolMessageId }),
+		body: JSON.stringify(edits ? { toolMessageId, edits } : { toolMessageId }),
 	});
 	const result = (await response.json()) as Record<string, unknown>;
 	if (!response.ok) throw new Error(typeof result.error === "string" ? result.error : "Could not approve action");

@@ -145,14 +145,14 @@ const commented = header + 'Content-Type: multipart/mixed; (a comment; boundary=
 out.ok.commented = (await parseRawMime(encoder.encode(commented).buffer)).attachments.length;
 })();
 // format=flowed text is unfolded in linear time: 39,000 flowed 60-character lines (2.4 MB) took about 25 s with
-// postal-mime 2.7's own decoder.
+// postal-mime 2.7's own decoder. 33,000 of them (2 MB) stay under the decoded text limit.
 await (async () => {
-const flowed = header + "Content-Type: text/plain; charset=utf-8; format=flowed; delsp=yes\\r\\n\\r\\n" + ("a".repeat(59) + " \\r\\n").repeat(39_000);
+const flowed = header + "Content-Type: text/plain; charset=utf-8; format=flowed; delsp=yes\\r\\n\\r\\n" + ("a".repeat(59) + " \\r\\n").repeat(33_000);
 let flowedStarted = performance.now();
 const flowedText = (await parseRawMime(encoder.encode(flowed).buffer)).text ?? "";
 out.ok.flowedMs = performance.now() - flowedStarted;
 out.ok.flowedBytes = flowed.length;
-out.ok.flowedUnfolded = flowedText.length === 39_000 * 59 && !flowedText.includes("\\n");
+out.ok.flowedUnfolded = flowedText.length === 33_000 * 59 && !flowedText.includes("\\n");
 })();
 // The boundary parameter on a folded line, as most mail clients write it.
 await (async () => {
@@ -161,7 +161,7 @@ out.ok.folded = (await parseRawMime(encoder.encode(folded).buffer)).attachments.
 })();
 // #245's table: every shape that exhausted a 128 MB heap on postal-mime 2.7, or was refused for fear of it.
 await (async () => {
-out.ok.textBody = (await parseRawMime(encoder.encode(header + "\\r\\n" + ("a".repeat(78) + "\\r\\n").repeat(100000)).buffer)).text.length;
+out.ok.textBody = (({ text }) => [text.length, text.endsWith("to download it.]")])(await parseRawMime(encoder.encode(header + "\\r\\n" + ("a".repeat(78) + "\\r\\n").repeat(100000)).buffer));
 })();
 await (async () => {
 out.ok.textBodyAtLimit = (await parseRawMime(encoder.encode(header + "\\r\\n" + "a\\r\\n".repeat(150000)).buffer)).text.length;
@@ -279,15 +279,16 @@ test("hostile MIME is refused cheaply and legitimate mail still parses, inside a
 	}
 	assert.ok(out.slowestMs < 5000, `the slowest hostile message took ${Math.round(out.slowestMs)} ms`);
 	assert.equal(out.ok.attachments, 1);
-	assert.equal(out.ok.textBody, 7_900_000);
+	// 8 MB of text keeps the whole lines that fit in 2 MiB, then the note.
+	assert.deepEqual(out.ok.textBody, [26_214 * 79 + 114, true]);
 	assert.equal(out.ok.textBodyAtLimit, 300_000);
 	assert.deepEqual(out.ok.textAttachment, [262144 * 5 - 2]);
 	assert.deepEqual(out.ok.millionLineAttachment, [3_000_000 - 2]);
 	assert.deepEqual(out.ok.forwardedBase64Body, [["message/rfc822"], null]);
 	assert.deepEqual(out.ok.forwardedMultipartBase64, ["message/rfc822"]);
-	assert.ok(out.ok.flowedBytes > 2_300_000);
+	assert.ok(out.ok.flowedBytes > 2_000_000);
 	// About 0.3 s; the quadratic decoder took about 23 s. The margin is for a loaded CI runner.
-	assert.ok(out.ok.flowedMs < 3000, `39,000 flowed lines took ${Math.round(out.ok.flowedMs)} ms`);
+	assert.ok(out.ok.flowedMs < 3000, `33,000 flowed lines took ${Math.round(out.ok.flowedMs)} ms`);
 	assert.equal(out.ok.flowedUnfolded, true);
 	assert.equal(out.ok.folded, 1);
 	assert.equal(out.ok.commented, 1);

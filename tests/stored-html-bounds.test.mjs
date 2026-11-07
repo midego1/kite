@@ -40,7 +40,7 @@ const { sanitizeStoredEmailHtml } = await import(pathToFileURL(bundle).href);
 const MAX_OPEN_ELEMENTS = 512;
 const MAX_TAG_ATTRIBUTES = 1_024;
 const MAX_TAG_ENTITIES = 256 * 1024;
-const MAX_SANITIZED_HTML_CHARS = 26_000_000;
+const MAX_SANITIZED_HTML_CHARS = 8_000_000;
 
 const worker = join(directory, "worker.mjs");
 writeFileSync(
@@ -57,8 +57,9 @@ const shapes = {
 	openLarge: () => lines("<b>".repeat(198), 39_000),
 	openAttributes: () => lines("<a x=1>".repeat(22), 149_000),
 	openDivs: () => lines("<div>".repeat(130), 39_000),
-	closedDivs: () => lines("<div></div>".repeat(50), 40_000),
-	longDivs: () => lines("<div>" + "x".repeat(150) + "</div>", 149_000),
+	closedDivs: () => lines("<div></div>".repeat(50), 7_000),
+	longDivs: () => lines("<div>" + "x".repeat(150) + "</div>", 25_000),
+	largeDivs: () => lines("<div>" + "x".repeat(150) + "</div>", 149_000),
 	paragraphs: () => lines("<p>".repeat(100), 75_000),
 	listItems: () => lines("<li>".repeat(100), 56_000),
 	breaks: () => lines("<br>".repeat(38), 149_000),
@@ -78,7 +79,7 @@ const shapes = {
 	attributeReferences: () => '<a title="' + "&lt;".repeat(4_000_000) + '">x</a>',
 	shortAttributeReferences: () => '<a title="' + "&lt".repeat(7_000_000) + '">x</a>',
 	unknownTagReferences: () => '<zz y="' + "&lt;".repeat(4_000_000) + '">x</zz>',
-	largeImage: () => '<p>one</p><img src="data:image/png;base64,' + "A".repeat(20_000_000) + '"><p>two</p>',
+	largeImage: () => '<p>one</p><img src="data:image/png;base64,' + "A".repeat(4_000_000) + '"><p>two</p>',
 };
 
 const out = {};
@@ -104,7 +105,7 @@ test("large bodies of tags, text and attributes are sanitized within a 128 MB he
 		timeout: 300_000,
 	});
 	const results = JSON.parse(output);
-	assert.equal(Object.keys(results).length, 27);
+	assert.equal(Object.keys(results).length, 28);
 	for (const [name, result] of Object.entries(results)) {
 		assert.ok(result.ms < 60_000, `${name}: ${result.ms} ms`);
 		assert.ok(result.html <= MAX_SANITIZED_HTML_CHARS + 2_000_000, `${name}: ${result.html} characters`);
@@ -113,10 +114,11 @@ test("large bodies of tags, text and attributes are sanitized within a 128 MB he
 		assert.ok(results[name].html <= MAX_SANITIZED_HTML_CHARS, `${name}: ${results[name].html} characters`);
 	}
 	// A large value without entities is an ordinary inline image.
-	assert.equal(results.largeImage.html, 20_000_055);
-	// Balanced markup of this size stays whole.
-	assert.equal(results.closedDivs.html, 22_040_000);
-	assert.equal(results.longDivs.html, 149_000 * 162);
+	assert.equal(results.largeImage.html, 4_000_055);
+	// Balanced markup up to the decoded HTML limit stays whole; past it, the whole lines that fit and the note.
+	assert.equal(results.closedDivs.html, 7_000 * 551);
+	assert.equal(results.longDivs.html, 25_000 * 162);
+	assert.equal(results.largeDivs.html, Math.floor((4 * 1024 * 1024) / 163) * 162 + "<hr><p></p>".length + 110);
 });
 
 const parse = (html) => new JSDOM(html).window.document;

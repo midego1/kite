@@ -4,7 +4,7 @@ import { normalizeMessageId, parseMessageIdList } from "@/lib/email/threading";
 import { normalizeAttachmentContent } from "@/lib/email/attachment-content-utils";
 import { getLatestEmailContent, htmlToReadableText } from "@/lib/email/reply-content-utils";
 import { sanitizeStoredEmailHtml } from "@/lib/email/stored-html-utils";
-import { limitBodyConversion } from "@/lib/email/mime-body-utils";
+import { cutBodies, limitBodyConversion, limitDecodedText } from "@/lib/email/mime-body-utils";
 import { MIME_LIMITS, mimePreflightReason } from "@/lib/email/mime-preflight";
 import type { AttachmentContent } from "@/lib/email/attachment-types";
 
@@ -31,6 +31,16 @@ export type ParsedEmail = {
 /** postal-mime's own caps, reported like the preflight's. */
 const LIMIT_ERROR_CODES = new Set(["EMAXNESTINGDEPTH", "EMAXHEADERSIZE", "EMAXPARTCOUNT"]);
 
+const CUT_NOTE =
+	"This message is longer than Kite shows. The rest is in the original message: use Show original to download it.";
+
+/** `html` with the cut note at its end, inside the one element that carries the root direction when there is one. */
+function withCutNote(html: string): string {
+	const note = `<hr><p>${CUT_NOTE}</p>`;
+	const wrapped = /^<div dir="(?:ltr|rtl)">/.test(html) && html.endsWith("</div>");
+	return wrapped ? `${html.slice(0, -"</div>".length)}${note}</div>` : `${html}${note}`;
+}
+
 /**
  * A message that can never be parsed within `MIME_LIMITS`. Deterministic: retrying only repeats the work, so callers
  * refuse or drop the message instead.
@@ -51,6 +61,7 @@ export async function parseRawMime(raw: ArrayBuffer): Promise<ParsedEmail> {
 	const limitReason = mimePreflightReason(raw);
 	if (limitReason) throw new MimeLimitError(limitReason);
 	let email: Awaited<ReturnType<typeof PostalMime.parse>>;
+	let cut: ReturnType<typeof cutBodies>;
 	try {
 		// forceRfc822Attachments keeps an attached message one leaf part, which is what the preflight models.
 		const parser = new PostalMime({
@@ -59,8 +70,10 @@ export async function parseRawMime(raw: ArrayBuffer): Promise<ParsedEmail> {
 			maxPartCount: MIME_LIMITS.maxParts,
 			forceRfc822Attachments: true,
 		});
-		limitBodyConversion(parser);
+		const converted = limitBodyConversion(parser);
+		const decoded = limitDecodedText(parser);
 		email = await parser.parse(raw);
+		cut = cutBodies(decoded, converted);
 	} catch (error) {
 		if (LIMIT_ERROR_CODES.has((error as PostalMimeError).code)) {
 			const { message } = error as PostalMimeError;
@@ -69,10 +82,13 @@ export async function parseRawMime(raw: ArrayBuffer): Promise<ParsedEmail> {
 		throw error;
 	}
 	const date = email.date ? new Date(email.date) : null;
+	const text = email.text ?? null;
+	const html = sanitizeStoredEmailHtml(email.html);
 	return {
 		subject: email.subject === undefined ? null : collapseFoldingSpace(email.subject),
-		text: email.text ?? null,
-		html: sanitizeStoredEmailHtml(email.html),
+		// A body over `MAX_DECODED_TEXT_BYTES` was cut before it was decoded; the raw message still holds all of it.
+		text: text !== null && cut.plain ? `${text}\n\n[${CUT_NOTE}]` : text,
+		html: html !== null && cut.html ? withCutNote(html) : html,
 		messageId: email.messageId ?? null,
 		fromAddr: formatPostalAddress(email.from, null),
 		toAddr: formatPostalAddressList(email.to, null),

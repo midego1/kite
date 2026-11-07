@@ -19,12 +19,16 @@ export async function GET(request: Request) {
 	const env = getEnv();
 	const auth = await requireSessionAdmin(env, request, isPrimaryAdmin);
 	if (auth.error) return auth.error;
-	const [state, dismissed] = await Promise.all([
-		loadOnboardingChecklistState(env, auth.user),
-		readOnboardingChecklistDismissed(env, auth.user.id),
-	]);
-	const body: OnboardingChecklistResponse = { dismissed, items: onboardingChecklistItems(state) };
-	return NextResponse.json(body, { headers: NO_STORE });
+	try {
+		const [state, dismissed] = await Promise.all([
+			loadOnboardingChecklistState(env, auth.user),
+			readOnboardingChecklistDismissed(env, auth.user.id),
+		]);
+		const body: OnboardingChecklistResponse = { dismissed, items: onboardingChecklistItems(state) };
+		return NextResponse.json(body, { headers: NO_STORE });
+	} catch {
+		return NextResponse.json({ error: "Could not read the setup checklist" }, { status: 500, headers: NO_STORE });
+	}
 }
 
 /** Dismisses or restores the checklist for this owner only, with `{ dismissed }`. */
@@ -41,8 +45,9 @@ export async function PATCH(request: Request) {
 	try {
 		await saveOnboardingChecklistDismissed(env, auth.user.id, dismissed);
 	} catch (error) {
-		if (!(error instanceof LayoutPreferencesPendingError)) throw error;
-		return NextResponse.json({ error: error.message, code: "MIGRATION_PENDING" }, { status: 409 });
+		if (error instanceof LayoutPreferencesPendingError)
+			return NextResponse.json({ error: error.message, code: "MIGRATION_PENDING" }, { status: 409 });
+		return NextResponse.json({ error: "Could not save the checklist" }, { status: 500, headers: NO_STORE });
 	}
 	return NextResponse.json({ ok: true }, { headers: NO_STORE });
 }

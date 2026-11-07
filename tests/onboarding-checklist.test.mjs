@@ -65,6 +65,24 @@ test("a schema behind both migrations still answers the whole checklist in one c
 	assert.equal(state.domainActive, true);
 });
 
+test("modules only read as configured once an owner actually changed one, not from migration 0062's own seed rows", async (t) => {
+	const sqlite = await database(t);
+	const env = { DB: sqlite, BUCKET: EMPTY_BUCKET };
+	// Migration 0062 seeds Calendar, Booking, Email templates and Mail import as on, with no owner behind it.
+	const seeded = sqlite.db
+		.prepare("SELECT module_id, enabled, updated_by FROM module_settings ORDER BY module_id")
+		.all();
+	assert.deepEqual(
+		seeded.map((row) => row.module_id),
+		["booking", "calendar", "import", "templates"],
+	);
+	assert.ok(seeded.every((row) => row.updated_by === null));
+	assert.equal((await loadOnboardingChecklistState(env, OWNER)).modulesConfigured, false);
+
+	sqlite.db.exec("UPDATE module_settings SET updated_by = 'owner' WHERE module_id = 'templates'");
+	assert.equal((await loadOnboardingChecklistState(env, OWNER)).modulesConfigured, true);
+});
+
 test("the assistant only reads as configured once a provider was actually chosen, not from the seeded settings row", async (t) => {
 	const sqlite = await database(t);
 	const env = { DB: sqlite, BUCKET: EMPTY_BUCKET };
@@ -82,4 +100,14 @@ test("the assistant only reads as configured once a provider was actually chosen
 		true,
 		"deliberately off needs nothing",
 	);
+});
+
+test("a saved provider whose key a rotated encryption key can no longer open does not read as configured", async (t) => {
+	const sqlite = await database(t);
+	// The "enc:v1:" prefix marks it sealed; with no APP_ENCRYPTION_KEY in this env, opening it always fails.
+	sqlite.db.exec(
+		"UPDATE app_settings SET agent_provider = 'compatible', agent_preset = 'openai', agent_api_key = 'enc:v1:AAAA:BBBB' WHERE id = 'default'",
+	);
+	const env = { DB: sqlite, BUCKET: EMPTY_BUCKET };
+	assert.equal((await loadOnboardingChecklistState(env, OWNER)).assistantConfigured, false);
 });

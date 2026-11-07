@@ -1,4 +1,4 @@
-import { and, count, eq } from "drizzle-orm";
+import { and, count, eq, isNotNull } from "drizzle-orm";
 import { getDb } from "@/db";
 import { domains, mailboxes, users } from "@/db/schema";
 import { moduleSettings } from "@/db/schema/modules";
@@ -13,10 +13,17 @@ import { resolveAbuseChKey } from "@/lib/spam/providers/abuse-ch-key";
 import type { SessionUser } from "@/lib/auth/types";
 import type { OnboardingChecklistState } from "./onboarding-checklist-types";
 
-/** Whether an explicit module choice exists; `false` before migration 0062, like the rest of the modules system. */
+/**
+ * Whether an owner actually changed a module's switch; `false` before migration 0062, like the rest of the modules
+ * system. Migration 0062 itself seeds four rows (Calendar, Booking, Email templates, Mail import) with no
+ * `updated_by`, so a row existing is not enough: only a row `setInstallModule` wrote counts.
+ */
 async function readModulesConfigured(env: CloudflareEnv): Promise<boolean> {
 	try {
-		const [row] = await getDb(env).select({ total: count() }).from(moduleSettings);
+		const [row] = await getDb(env)
+			.select({ total: count() })
+			.from(moduleSettings)
+			.where(isNotNull(moduleSettings.updatedBy));
 		return (row?.total ?? 0) > 0;
 	} catch (error) {
 		if (!isNoSuchTableError(error)) throw error;
@@ -68,8 +75,9 @@ export async function loadOnboardingChecklistState(
 		modulesConfigured,
 		spamKeyConfigured: abuseChKey !== null,
 		// `readStoredAgentProvider` always resolves to a row (the single `app_settings` row migration 0012 seeds, read
-		// as the legacy fallback), so `provider` itself, not the object, says whether one was actually chosen.
-		assistantConfigured: !agentEnabled || !!storedProvider?.provider,
+		// as the legacy fallback), so `provider` itself, not the object, says whether one was actually chosen; a
+		// provider whose sealed key a rotated APP_ENCRYPTION_KEY can no longer open is not usable either.
+		assistantConfigured: !agentEnabled || (!!storedProvider?.provider && !storedProvider.keyUnreadable),
 		backupsReady: !!backups.automatic?.enabled || !!backups.lastSuccess,
 		migrationsPending: migrations.pending,
 	};

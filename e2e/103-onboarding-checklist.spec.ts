@@ -1,7 +1,8 @@
 import { expect, test, type APIRequestContext } from "@playwright/test";
 import { STORAGE_STATE } from "./support/constants";
+import { sql } from "./support/drive";
 import { FAKE_ABUSE_CH_KEYS, startFakeAbuseCh, type FakeAbuseCh } from "./support/fake-abuse-ch";
-import { apiContext } from "./support/helpers";
+import { apiContext, uniqueToken, waitForHydration } from "./support/helpers";
 
 type Checklist = { dismissed: boolean; items: { id: string; done: boolean }[] };
 
@@ -92,5 +93,64 @@ test.describe("the owner setup checklist", () => {
 		await expect(page.getByTestId("onboarding-checklist")).toBeVisible();
 		await expect(page.getByTestId("onboarding-checklist-restore")).toHaveCount(0);
 		expect((await readChecklist(api)).dismissed).toBe(false);
+	});
+});
+
+/** `/setup` renders first-run registration only while no admin exists; the real admins come back in `finally`. */
+async function withoutAdmins<T>(run: () => Promise<T>): Promise<T> {
+	sql(
+		"CREATE TABLE e2e_checklist_admins AS SELECT id FROM users WHERE role = 'admin'; UPDATE users SET role = 'user' WHERE id IN (SELECT id FROM e2e_checklist_admins);",
+	);
+	try {
+		return await run();
+	} finally {
+		sql(
+			"UPDATE users SET role = 'admin' WHERE id IN (SELECT id FROM e2e_checklist_admins); DROP TABLE e2e_checklist_admins;",
+		);
+	}
+}
+
+test.describe("reaching the checklist after first registration", () => {
+	// A fresh browser: the default storage state is the suite's own admin, already signed in, which /login would
+	// bounce straight past.
+	test.use({ storageState: { cookies: [], origins: [] } });
+
+	test("a freshly registered owner's first sign-in opens the admin overview and its checklist, not the inbox", async ({
+		page,
+	}) => {
+		const username = uniqueToken("checklistowner");
+		const domain = `${uniqueToken("checklistdomain")}.test`;
+		const password = "checklist-owner-pw-1";
+
+		await withoutAdmins(async () => {
+			const anonymous = await apiContext();
+			try {
+				const response = await anonymous.post("/api/auth/register", {
+					data: {
+						domain,
+						username,
+						password,
+						resetEmail: `${username}-recovery@example.net`,
+						skipDns: true,
+						usageStatistics: false,
+					},
+				});
+				const body = (await response.json()) as { redirect?: string };
+				expect(response.ok(), JSON.stringify(body)).toBe(true);
+				expect(body.redirect).toBe("/login?setup=1");
+
+				await page.goto(body.redirect!);
+				await waitForHydration(page);
+				await page.getByLabel("Email").fill(`${username}@${domain}`);
+				await page.getByLabel("Password").fill(password);
+				await page.getByRole("button", { name: "Sign in" }).click();
+				await expect(page).toHaveURL(/\/admin$/);
+				await expect(page.getByTestId("onboarding-checklist")).toBeVisible();
+				await expect(page.getByTestId("onboarding-item-mailbox")).toHaveAttribute("data-done", "true");
+			} finally {
+				await anonymous.dispose();
+			}
+		});
+		sql(`DELETE FROM users WHERE email = '${username}@${domain}'`);
 	});
 });

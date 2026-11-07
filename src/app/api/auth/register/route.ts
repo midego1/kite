@@ -135,7 +135,13 @@ export async function POST(request: Request) {
 	// Direct uploads are on by default on Cloudflare; a refusal never fails registration and shows up as a fix item.
 	const directUploads = await setUpDirectUploadsAtInstall(env, { id: userId }, new URL(request.url).origin);
 
-	const response = NextResponse.json({ ok: true, redirect: "/login", ...(directUploads ? { directUploads } : {}) });
+	// `setup=1` tells the login page's first sign-in to open the admin overview's "Get started" checklist
+	// instead of the inbox; this request never signs the browser in itself (cleared below).
+	const response = NextResponse.json({
+		ok: true,
+		redirect: "/login?setup=1",
+		...(directUploads ? { directUploads } : {}),
+	});
 	response.headers.set("Cache-Control", "no-store");
 	response.cookies.set(SESSION_COOKIE, "", {
 		httpOnly: true,

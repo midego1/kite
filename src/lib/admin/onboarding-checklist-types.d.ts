@@ -4,7 +4,7 @@ export type OnboardingChecklistState = {
 	domainActive: boolean;
 	mailboxCount: number;
 	accountCount: number;
-	/** At least one module's install-wide switch was explicitly changed from its default. */
+	/** An owner actually changed a module's install-wide switch at least once (not just the migration's own seed row). */
 	modulesConfigured: boolean;
 	/** `resolveAbuseChKey` found a usable key, either a secret or one saved and tested on the General page. */
 	spamKeyConfigured: boolean;

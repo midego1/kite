@@ -6,6 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.11.07.5] - 2026-11-07
+
+### Changed
+
+- #149 Mail imports now save each message as soon as it arrives instead of holding a whole batch first, so importing large mailboxes uses much less memory.
+
+### Fixed
+
+- Dismissing a suggestion or acting on it from the For you hover preview now returns keyboard focus to its row instead of losing it.
+- A malformed email with an unusual message structure could be rejected by mistake; that is fixed.
+- When an email was rejected for having too much header data overall, the bounce reply sometimes named the wrong size limit; it now names the right one.
+- A slow send, backup, restore or storage job no longer holds up the other outbound work queued behind it for a retry it did not need.
+- After you correct the amount or currency of a payment in Money Watch, the same payment arriving by mail again is recognised and not recorded a second time.
+- The note after a payment scan about messages that could not be read is now a single sentence, so it translates properly.
+- An import of a folder with too many messages to list now stops at once with its reason, instead of trying again several times first.
+- In the full-width message list, a one-line summary written in a language that reads right to left (or an Arabic or Hebrew subject above an English summary) no longer pushes the dash between subject and summary to the far end of the row. The summary reads after the subject at every list density and in each style.
+
+  ![Full-width inbox at compact density with one-line summaries after the subjects, one of them in Arabic](/changelog/2026-11-07-list-summary-wide-rows-light.webp)
+
+### Security
+
+- #149 Webhooks, remote images, object storage and mail servers now share one check for private and local addresses, so an address written another way (shortened, in hex or octal, with full-width characters or a trailing dot) is refused everywhere alike.
+- #149 When Kite runs on its own Node or Docker server, starting an import now checks where the mail server's name points, so a server on a private or local address is refused right away instead of at the import's first run.
+
 ## [2026.11.07.4] - 2026-11-07
 
 ### Added

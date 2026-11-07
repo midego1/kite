@@ -283,7 +283,8 @@
 		"src/lib/telemetry/telemetry-utils.ts",
 		"src/lib/telemetry/notice-utils.ts",
 		"src/lib/calendar/tool-preview-utils.ts",
-		"src/lib/mcp/server-utils.ts"
+		"src/lib/mcp/server-utils.ts",
+		"src/lib/admin/onboarding-checklist-utils.ts"
 	],
 	"ungated": {
 		"src/lib/finance/payment-keywords-utils.ts": "Only phrase lists and regular expressions; tests/finance-payments-detect.test.mjs runs them through detectPayment.",

@@ -32,6 +32,7 @@ function paymentEntry(row: PaymentRow): PaymentListEntry {
 		currency: row.currency,
 		documentOn: dateToDay(row.documentAt)!,
 		periodStartOn: null,
+		docRef: row.docRef,
 		messageId: row.messageId,
 		subscriptionId: null,
 	};
@@ -58,6 +59,18 @@ function ledgerEntryOf(row: ChargeRow, vendor: string): PaymentListEntry {
 function withUnpaid(entries: readonly PaymentListEntry[], paired: ReadonlySet<string>): PaymentListEntry[] {
 	const unpaid = unpaidLedgerInvoices(entries, paired);
 	return entries.map((entry) => (unpaid.has(entry.id) ? { ...entry, status: "open" as const } : entry));
+}
+
+/**
+ * Where a payment row's mail came from, from its vendor key: the domain ("stripe.com" for a processor's merchant), the
+ * address for a person at a free mail provider, nothing for a row renamed by hand. Shown next to the vendor, so a
+ * display name that borrows a known brand does not hide its real sender.
+ * @public Exercised by the bundled unit tests.
+ */
+export function senderOf(vendorKey: string): string | null {
+	if (vendorKey.startsWith("manual:")) return null;
+	if (vendorKey.startsWith("mail:")) return vendorKey.slice("mail:".length) || null;
+	return vendorKey.split(":")[0] || null;
 }
 
 function modelFieldsOf(row: PaymentRow | undefined): string[] {
@@ -124,6 +137,7 @@ export async function listPaymentsView(user: ViewUser) {
 				messageId: entry.messageId,
 				message: entry.messageId ? (refs.get(entry.messageId) ?? null) : null,
 				modelFields: modelFieldsOf(byId.get(entry.id)),
+				sender: byId.has(entry.id) ? senderOf(byId.get(entry.id)!.vendorKey) : null,
 				origin: byId.get(entry.id)?.source ?? null,
 			})),
 			months: monthTotals(entries, paired),

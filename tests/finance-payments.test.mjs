@@ -46,7 +46,7 @@ const { buildCallContext } = await load("capability");
 const { clearModuleStateCache } = await load("state");
 const { undoAgentAction } = await load("execute");
 const { startScan, scanPayments } = await load("scan");
-const { listPaymentsView } = await load("views");
+const { listPaymentsView, senderOf } = await load("views");
 const { patchPayment, removePayment } = await load("manual");
 const { SqliteDatabase } = await load("runtime");
 const { applyMigrations } = await load("migrate");
@@ -125,11 +125,11 @@ function insertMessage(
 	return id;
 }
 
-function stepInput(messageId, mail, facts = {}) {
+function stepInput(messageId, mail, facts = {}, { mailboxId = "mailbox-a", messageIdHeader = null } = {}) {
 	return {
 		message: {
 			id: messageId,
-			mailboxId: "mailbox-a",
+			mailboxId,
 			from: mail.from,
 			fromName: /^([^<]+)</.exec(mail.from)?.[1].trim() ?? null,
 			subject: mail.subject,
@@ -148,7 +148,7 @@ function stepInput(messageId, mail, facts = {}) {
 			muted: false,
 			...facts,
 		},
-		headers: { listUnsubscribe: null, listUnsubscribePost: null, listId: null },
+		headers: { listUnsubscribe: null, listUnsubscribePost: null, listId: null, messageId: messageIdHeader },
 		attachments: [],
 		model: null,
 	};
@@ -165,8 +165,15 @@ const stepContext = () =>
 const cronContext = () =>
 	buildCallContext({ trigger: "cron", viewer: null, grants: ["finance.read", "finance.write"] });
 
-async function recordStep(messageId, mail, facts) {
-	const result = await invokeCapability("finance", "recordPayment", stepInput(messageId, mail, facts), stepContext());
+async function recordStep(messageId, mail, facts, options) {
+	const ctx = buildCallContext({
+		trigger: "auto_read",
+		viewer: { userId: "owner", role: "user", isPrimaryAdmin: false },
+		timeZone: "UTC",
+		mailboxIds: [options?.mailboxId ?? "mailbox-a"],
+		grants: ["finance.read", "finance.write"],
+	});
+	const result = await invokeCapability("finance", "recordPayment", stepInput(messageId, mail, facts, options), ctx);
 	assert.equal(result.ok, true, JSON.stringify(result));
 	assert.deepEqual(result.output, { suggestions: [] }, "the step never offers a card");
 }
@@ -339,4 +346,88 @@ test("before migration 0094 the step and the view report the pending update", as
 		scan: null,
 		migrationPending: true,
 	});
+});
+
+test("review probe: a reminder of a recorded invoice and its payment leave nothing open and count once", async (t) => {
+	const { db } = await setup(t);
+	const bill = { ...INVOICE, subject: "Invoice INV-2041 from Hosting Co", body: "Amount due: €100.00" };
+	const reminder = {
+		...INVOICE,
+		subject: "Reminder: invoice INV-2041 has not been paid",
+		body: "Amount due: €100.00",
+	};
+	const receipt = {
+		...INVOICE,
+		subject: "Payment received for invoice INV-2041",
+		body: "Thank you for your payment.\nAmount paid: €100.00",
+	};
+	await recordStep(insertMessage(db, bill), bill);
+	await recordStep(insertMessage(db, reminder), reminder);
+	assert.deepEqual(
+		rows(db).map((row) => [row.doc_type, row.status]),
+		[["invoice", "open"]],
+		"the reminder repeats the invoice's number",
+	);
+	await recordStep(insertMessage(db, receipt), receipt);
+	const view = await listPaymentsView(viewOf(owner));
+	assert.deepEqual(view.payments.map((item) => [item.docType, item.status]).sort(), [
+		["invoice", "paid"],
+		["payment", "paid"],
+	]);
+	assert.deepEqual(view.months, [
+		{ month: "2026-11", currency: "EUR", paidMinor: 10_000, refundedMinor: 0, openMinor: 0 },
+	]);
+});
+
+test("review probe: one receipt delivered to two mailboxes the user reviews is recorded once", async (t) => {
+	const { db } = await setup(t);
+	const header = "<receipt-1114-6093@mail.stripe.example>";
+	await recordStep(insertMessage(db, STRIPE), STRIPE, {}, { messageIdHeader: header });
+	const copy = insertMessage(db, STRIPE, { mailboxId: "mailbox-off" });
+	await recordStep(copy, STRIPE, {}, { mailboxId: "mailbox-off", messageIdHeader: header.toUpperCase() });
+	assert.equal(rows(db).length, 1);
+	// A forwarded copy from the user's own address book counts nothing either.
+	const forwarded = { ...STRIPE, from: "Me <me.example@gmail.com>", subject: `Fwd: ${STRIPE.subject}` };
+	await recordStep(insertMessage(db, forwarded), forwarded);
+	assert.equal(rows(db).length, 1);
+});
+
+test("review probe: the scan follows the live gate and the Screener", async (t) => {
+	const { db, env } = await setup(t);
+	const own = { ...INVOICE, from: "Me Freelance <me@example.com>", subject: "Invoice INV-7001 from Me Freelance" };
+	const bounce = { ...INVOICE, from: "MAILER-DAEMON@relay.example.net", subject: "Invoice INV-7002 undeliverable" };
+	const undecided = { ...INVOICE, from: "Newco <invoices@newco.example>", subject: "Invoice INV-7003 from Newco" };
+	const approved = { ...INVOICE, from: "Oldco <invoices@oldco.example>", subject: "Invoice INV-7004 from Oldco" };
+	for (const mail of [own, bounce, undecided, approved]) insertMessage(db, mail, { daysAgo: 5 });
+	db.db.exec(`
+		INSERT INTO screener_settings (mailbox_id, enabled, mode, created_at, updated_at) VALUES ('mailbox-a', 1, 'inbox', 1, 1);
+		INSERT INTO screener_senders (id, mailbox_id, address, decision, created_at, updated_at)
+			VALUES ('ss-1', 'mailbox-a', 'invoices@oldco.example', 'approved', 1, 1);
+	`);
+	// A message whose raw headers cannot be read is skipped; the scan moves on.
+	const broken = insertMessage(db, { ...INVOICE, subject: "Invoice INV-7005 from Hosting Co" }, { daysAgo: 4 });
+	db.db.prepare("UPDATE messages SET raw_r2_key = 'raw/broken' WHERE id = ?").run(broken);
+	env.BUCKET = {
+		get: async (key) => {
+			if (key === "raw/broken") throw new Error("storage unavailable");
+			return null;
+		},
+	};
+	await startScan("owner");
+	for (let run = 0; run < 5 && (await listPaymentsView(viewOf(owner))).scan.status === "running"; run++)
+		await scanPayments({ kind: "finance.scan", userId: "owner" }, cronContext());
+	const view = await listPaymentsView(viewOf(owner));
+	assert.equal(view.scan.status, "done");
+	assert.deepEqual(
+		rows(db).map((row) => row.vendor),
+		["Oldco"],
+		"own address, bounce sender, undecided Inbox-mode sender and the unreadable message are left out",
+	);
+});
+
+test("the row names where a payment's mail came from", () => {
+	assert.equal(senderOf("attacker-example.test"), "attacker-example.test");
+	assert.equal(senderOf("stripe.com:kestrel-atlas"), "stripe.com");
+	assert.equal(senderOf("mail:friend.example@gmail.com"), "friend.example@gmail.com");
+	assert.equal(senderOf("manual:hosting-group"), null);
 });

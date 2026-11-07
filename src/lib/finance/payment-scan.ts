@@ -74,7 +74,8 @@ async function enqueueScan(userId: string, delaySeconds?: number): Promise<boole
 export async function startScan(userId: string, now = new Date()): Promise<ScanRow> {
 	const existing = await ownerScan(userId);
 	if (existing?.status === "running") {
-		await enqueueScan(userId);
+		// A run holds it already; only a scan nobody holds is queued again.
+		if (!existing.leaseUntil || existing.leaseUntil < now) await enqueueScan(userId);
 		return existing;
 	}
 	const since = new Date(now.getTime() - SCAN_DAYS * 86_400_000);
@@ -149,12 +150,17 @@ async function scanPage(ctx: CapabilityCallContext, row: ScanRow, started: numbe
 		scanned += 1;
 		cursor = { receivedAt: message.receivedAt, id: message.id };
 		if (!worthScanning(message)) continue;
-		const input = await moduleHost.mail.stepInput(ctx, "finance", {
-			messageId: message.id,
-			capability: STEP_CAPABILITY,
-		});
-		if (input && (await recordPaymentFromInput(ctx, input as unknown as DetectStepInput, "scan")) === "recorded")
-			recorded += 1;
+		try {
+			const input = await moduleHost.mail.stepInput(ctx, "finance", {
+				messageId: message.id,
+				capability: STEP_CAPABILITY,
+			});
+			if (input && (await recordPaymentFromInput(ctx, input as unknown as DetectStepInput, "scan")) === "recorded")
+				recorded += 1;
+		} catch (error) {
+			// One unreadable message never holds the scan: it is skipped and the cursor moves past it.
+			log.warn("finance.scan_message_failed", { messageId: message.id, error });
+		}
 	}
 	return { scanned, recorded, cursor, done: page.next === null };
 }

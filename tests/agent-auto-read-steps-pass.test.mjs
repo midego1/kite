@@ -336,6 +336,7 @@ test("a steps-only pass runs only the opted-in step, makes no model request and 
 		listUnsubscribe: "<https://vendor.test/u/1>",
 		listUnsubscribePost: "List-Unsubscribe=One-Click",
 		listId: null,
+		messageId: null,
 	});
 	const [title] = db.db.prepare("SELECT title FROM agent_suggestions WHERE message_id = ?").all(messageId);
 	assert.equal(title.title, "Gadget found");

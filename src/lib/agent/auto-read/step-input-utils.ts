@@ -44,12 +44,17 @@ function headerValue(headers: Record<string, string>, name: string): string | nu
 	return value.trim().slice(0, MAX_HEADER_CHARS);
 }
 
-/** The three list headers a step may read, from the header map triage loaded. @public Test-only: used inside this file, exported for tests. */
+/**
+ * The list headers and the `Message-ID` a step may read, from the header map triage loaded. The Message-ID lets a step
+ * that writes without a card recognise one message delivered to several mailboxes.
+ * @public Test-only: used inside this file, exported for tests.
+ */
 export function stepHeaders(headers: Record<string, string>) {
 	return {
 		listUnsubscribe: headerValue(headers, "list-unsubscribe"),
 		listUnsubscribePost: headerValue(headers, "list-unsubscribe-post"),
 		listId: headerValue(headers, "list-id"),
+		messageId: headerValue(headers, "message-id"),
 	};
 }
 

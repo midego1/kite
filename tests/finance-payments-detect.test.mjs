@@ -87,6 +87,8 @@ test("a one-off Stripe receipt lands as paid, USD 500.00, from the merchant, on 
 		documentOn: "2026-11-02",
 		attachmentId: null,
 		modelFields: [],
+		docRef: "1114-6093",
+		mailRef: null,
 	});
 });
 
@@ -285,4 +287,123 @@ test("a subscription invoice a failed payment followed stays open; a settled or 
 	assert.deepEqual([...list.unpaidLedgerInvoices(entries, new Set())], ["inv"]);
 	assert.deepEqual([...list.unpaidLedgerInvoices(entries, new Set(["inv"]))], [], "a payment settled it");
 	assert.deepEqual([...list.unpaidLedgerInvoices([older, failed], new Set())], [], "the failure was too late");
+});
+
+test("review probe: a reminder or an invoice that says it is not paid is an open invoice, in five languages", () => {
+	const reminders = [
+		["Reminder: invoice 2026-1101 has not been paid", "Amount due: €84.10"],
+		["Herinnering: factuur 2026-1101 nog niet betaald", "Te betalen: € 84,10"],
+		["Zahlungserinnerung: Rechnung 2026-1101 noch nicht bezahlt", "Rechnungsbetrag: 84,10 €"],
+		["Relance : facture 2026-1101 pas encore payée", "Montant dû : 84,10 €"],
+		["Recordatorio: factura 2026-1101 aún no se ha pagado", "Importe a pagar: 84,10 €"],
+		["Your invoice 2026-1101 is not paid yet", "Amount due: €84.10"],
+		["Betaling factuur 2026-1101: niet betaald", "Openstaand bedrag: € 84,10\nTe betalen: € 84,10"],
+		["Rechnung 2026-1101 ist unbezahlt", "Offener Betrag: 84,10 €\nRechnungsbetrag: 84,10 €"],
+	];
+	for (const [subject, body] of reminders) {
+		const found = run({ from: "billing@energy.example", fromName: "Energy Co", subject, body });
+		assert.ok(found, subject);
+		assert.deepEqual([found.docType, found.status, found.amountMinor], ["invoice", "open", 8_410], subject);
+	}
+	for (const subject of ["Unpaid invoice 2026-1101", "Onbetaalde factuur 2026-1101"]) {
+		const found = run({ from: "billing@energy.example", fromName: "Energy Co", subject, body: "Amount due: €84.10" });
+		assert.deepEqual([found?.docType, found?.status], ["invoice", "open"], subject);
+	}
+	// A receipt that prints a zero balance is still a payment.
+	const paid = run({
+		subject: "Your receipt from Shop #R-1001",
+		body: "Thank you for your payment.\nAmount paid: €42.00\nOutstanding balance: €0.00",
+	});
+	assert.deepEqual([paid?.docType, paid?.status], ["payment", "paid"]);
+	// The model cannot turn a reminder into a payment.
+	const modelPaid = run({
+		subject: "Billing reminder for order 2026-1101",
+		body: "Please transfer the total.\nTotal due: €84.10\nOrder 2026-1101",
+		from: "billing@energy.example",
+		model: { modules: { finance: { docType: "payment" } } },
+	});
+	assert.equal(modelPaid?.status, "open");
+});
+
+test("review probe: replies, forwards and a person's mail without the document record nothing", () => {
+	const forwarded = {
+		from: "michiel.example@gmail.com",
+		fromName: "Michiel",
+		subject: "Fwd: Your receipt from Acme #1234",
+		body: "---------- Forwarded message ----------\nAmount paid: $500.00\nReceipt #1234",
+	};
+	assert.equal(run(forwarded), null);
+	for (const prefix of ["Re:", "RE:", "AW:", "WG:", "Doorst:", "TR:", "RV:", "Fw[2]:"])
+		assert.equal(run({ subject: `${prefix} Your receipt from Shop #R-1001` }), null, prefix);
+	const friend = {
+		from: "friend.example@gmail.com",
+		fromName: "A Friend",
+		subject: "Invoice for the trip",
+		body: "Hi! Total paid €120.00, Order number AB12345. Thanks!",
+	};
+	assert.equal(run(friend), null, "a free-mail sender without a document attachment");
+	const withPdf = run({
+		...friend,
+		attachments: [{ id: "a1", contentType: "application/pdf", filename: "invoice-AB12345.pdf", size: 900 }],
+	});
+	assert.equal(withPdf?.vendorKey, "mail:friend.example@gmail.com", "keyed by the person, not gmail.com");
+});
+
+test("review probe: a borrowed display name keeps the real sender's key", () => {
+	const spoofed = run({
+		from: "billing@attacker-example.test",
+		fromName: "Apple",
+		subject: "Your receipt #R-99881",
+		body: "Amount paid €999.00\nReceipt #R-99881",
+	});
+	assert.equal(spoofed?.vendor, "Apple");
+	assert.equal(spoofed?.vendorKey, "attacker-example.test", "the row shows this domain next to the name");
+});
+
+test("document and message references for dedupe", () => {
+	assert.equal(payments.documentReference("Your Kestrel Atlas receipt [#1114-6093]", ""), "1114-6093");
+	assert.equal(payments.documentReference("Invoice INV-2041 from Hosting Co", ""), "INV-2041");
+	assert.equal(payments.documentReference("Payment received", "Order number ab12345 shipped"), "AB12345");
+	assert.equal(payments.documentReference("Invoice today", "Thanks"), null);
+	assert.equal(payments.messageReference(" <R-1@Vendor.Example> "), "r-1@vendor.example");
+	assert.equal(payments.messageReference("no-at-sign"), null);
+	assert.equal(payments.messageReference(null), null);
+	const reminder = run({ subject: "Reminder: invoice INV-2041 has not been paid", body: "Amount due: €120.00" });
+	assert.equal(reminder?.docRef, "INV-2041");
+});
+
+test("an invoice and a payment naming the same number pair first, whatever amount and date", () => {
+	const older = entry({
+		id: "a",
+		docType: "invoice",
+		status: "open",
+		amountMinor: 10_000,
+		documentOn: "2026-10-01",
+		docRef: "INV-1",
+	});
+	const nearer = entry({
+		id: "b",
+		docType: "invoice",
+		status: "open",
+		amountMinor: 10_000,
+		documentOn: "2026-10-30",
+		docRef: "INV-2",
+	});
+	const payment = entry({
+		id: "p",
+		docType: "payment",
+		status: "paid",
+		amountMinor: 10_000,
+		documentOn: "2026-11-01",
+		docRef: "INV-1",
+	});
+	assert.deepEqual([...list.pairedEntryIds([older, nearer, payment])], ["a"]);
+	const discounted = entry({
+		id: "q",
+		docType: "payment",
+		amountMinor: 9_500,
+		documentOn: "2026-12-20",
+		docRef: "INV-2",
+	});
+	assert.deepEqual([...list.pairedEntryIds([nearer, discounted])], ["b"]);
 });

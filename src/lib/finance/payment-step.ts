@@ -46,6 +46,8 @@ export async function recordPaymentFromInput(
 		currency: finding.currency,
 		documentAt: dayToDate(finding.documentOn)!,
 		source,
+		docRef: finding.docRef,
+		mailRef: finding.mailRef,
 		modelFields: finding.modelFields.length > 0 ? JSON.stringify(finding.modelFields) : null,
 		createdAt: now,
 		updatedAt: now,

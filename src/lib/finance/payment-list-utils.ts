@@ -20,6 +20,8 @@ export type PaymentListEntry = {
 	documentOn: string;
 	/** A ledger document's stated period, which pairs it as the subscription view does; null for payment rows. */
 	periodStartOn: string | null;
+	/** A payment row's document number; null for ledger rows and documents without one. */
+	docRef?: string | null;
 	messageId: string | null;
 	subscriptionId: string | null;
 };
@@ -87,7 +89,26 @@ const asLedger = (entry: PaymentListEntry): LedgerEntry => ({
  * subscription) and currency, which count once, through the money movement (spec §12.2 pairing).
  */
 export function pairedEntryIds(entries: readonly PaymentListEntry[]): Set<string> {
-	return pairedDocumentIds(entries.map(asLedger));
+	// An invoice and a payment naming the same number pair first, whatever their amounts and dates.
+	const paired = new Set<string>();
+	const settled = new Set<string>();
+	for (const payment of entries) {
+		if (payment.docType !== "payment" || !payment.docRef) continue;
+		const invoice = entries.find(
+			(entry) =>
+				entry.docType === "invoice" &&
+				!paired.has(entry.id) &&
+				entry.group === payment.group &&
+				entry.currency === payment.currency &&
+				entry.docRef === payment.docRef,
+		);
+		if (!invoice) continue;
+		paired.add(invoice.id);
+		settled.add(payment.id);
+	}
+	const rest = entries.filter((entry) => !paired.has(entry.id) && !settled.has(entry.id));
+	for (const id of pairedDocumentIds(rest.map(asLedger))) paired.add(id);
+	return paired;
 }
 
 /** What a row shows: an invoice paired with a payment is paid, a credit paired with a refund is credited. */

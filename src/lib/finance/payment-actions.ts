@@ -164,7 +164,15 @@ async function requirePayment(userId: string, id: string): Promise<PaymentRow> {
 export const updatePaymentAction = paymentAction(updateInput, async ({ userId, input, before }) => {
 	const row = await requirePayment(userId, input.paymentId);
 	const prior = priorOf(before, row);
-	await updatePayment(userId, row.id, correctedColumns(row, input.fields));
+	try {
+		await updatePayment(userId, row.id, correctedColumns(row, input.fields));
+	} catch (error) {
+		// The vendor, type and document number (or the vendor key) would repeat another row's.
+		const text = error instanceof Error ? `${error.message} ${String(error.cause ?? "")}` : "";
+		if (/UNIQUE constraint failed/i.test(text))
+			throw new FinanceRefusal(409, "Another payment already records this document");
+		throw error;
+	}
 	const { removedAt: _removed, ...previous } = prior;
 	return { result: resultOf(row), inverse: { userId, paymentId: row.id, previous } };
 });

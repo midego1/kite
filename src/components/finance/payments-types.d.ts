@@ -22,6 +22,8 @@ export type PaymentItem = {
 	subscriptionId: string | null;
 	messageId: string | null;
 	message: ResolvedRecordRef | null;
+	/** The sender's domain (or a free-mail address) of a payment row; null for a subscription document. */
+	sender: string | null;
 	/** Fields the assistant read, shown as such. */
 	modelFields: string[];
 	/** How a payment row was found; null for a subscription document. */

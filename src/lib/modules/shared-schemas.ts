@@ -125,6 +125,8 @@ export const triageStepSchemas: CapabilitySchemas = {
 			listUnsubscribe: z.string().nullable(),
 			listUnsubscribePost: z.string().nullable(),
 			listId: z.string().nullable(),
+			/** The message's `Message-ID` header, when it has one. */
+			messageId: z.string().nullable().default(null),
 		}),
 		attachments: stepAttachments,
 		model: json.nullable(),

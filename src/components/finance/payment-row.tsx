@@ -137,6 +137,14 @@ export function PaymentRow({ item, locale, onCorrect, onChanged }: RowProps) {
 				</div>
 				<p className="mt-0.5 text-xs text-neutral-500">
 					{t(TYPE_LABELS[item.docType])} · {dayLabel(item.documentOn, locale)}
+					{item.sender && (
+						<>
+							{" · "}
+							<span dir="ltr" data-payment-sender>
+								{item.sender}
+							</span>
+						</>
+					)}
 					{!item.message || item.message.unavailable ? ` · ${t("Message deleted")}` : ""}
 				</p>
 			</div>

@@ -38,6 +38,7 @@ function item(overrides = {}) {
 		messageId: "m1",
 		message: { kind: "mail:message", id: "m1", href: "/inbox/m1", label: "Your receipt" },
 		modelFields: [],
+		sender: "stripe.com",
 		origin: "auto",
 		...overrides,
 	};

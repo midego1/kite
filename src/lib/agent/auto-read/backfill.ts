@@ -3,6 +3,8 @@ import { getDb } from "@/db";
 import { inJsonArray } from "@/db/chunk-utils";
 import { mailboxAgentSettings, mailboxes, messageAttachments, messages, users } from "@/db/schema";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
+import { getMailboxDomainAddresses } from "@/lib/mailboxes/domain-addresses";
+import { screenerPendingRows } from "@/lib/screener/views";
 import { getEnv } from "@/lib/cloudflare";
 import { MODULE_CAPABILITIES } from "@/lib/modules/capability-registry";
 import type { HostBackfillMessage, HostBackfillPage, HostBackfillQuery } from "@/lib/modules/host-types";
@@ -11,7 +13,7 @@ import type { CapabilityCallContext, JsonValue, ModuleId } from "@/lib/modules/m
 import { aiOffMailboxIds } from "../mailbox-ai";
 import { getAutoReadInstallSettings } from "./install-settings";
 import { stepSwitchOn, triageStepsFor } from "./module-steps-utils";
-import { isPaused } from "./schedule-utils";
+import { isPaused, triageMessageGate } from "./schedule-utils";
 import { resolveMailboxAgentSettings } from "./settings-utils";
 import type { MailboxAgentSettingsState } from "./settings-types";
 import { buildStepInput } from "./step-input-utils";
@@ -21,26 +23,53 @@ import { loadTriageContext } from "./triage-context";
  * Backfill for module triage steps (spec money-watch §25.5): the inbound mail a step would have read had it been on,
  * for a module to work through in its own background job. The same rules as a triage job decide which mailboxes count:
  * the viewer is the reviewer, automatic reading is on and not paused, AI is not off, the install's assistant and
- * automatic reading are on, the module is on for the viewer and the step's own switch is on for the mailbox. Spam,
- * trash, drafts, sent mail, templates and Screener-held mail are never listed.
+ * automatic reading are on, the module is on for the viewer and the step's own switch is on for the mailbox. Each
+ * message then passes the live triage gate (`triageMessageGate`: not from the mailbox's own addresses or a bounce
+ * sender) and is not waiting for a Screener decision (held, or an undecided sender in an Inbox-mode mailbox). Spam,
+ * trash, drafts, sent mail and templates are never listed.
  */
 
 const TRIAGE_STEPS = triageStepsFor(MODULE_CAPABILITIES);
 /** Inbound mail a reader has kept: the Inbox and folders (`received`) and the archive. */
 const BACKFILL_STATUSES = ["received", "archived"];
 const MAX_PAGE = 500;
+/** How long one viewer's eligible mailboxes are reused, so a scan run does not resolve them for every message. */
+const ELIGIBLE_TTL_MS = 15_000;
 
 type Viewer = NonNullable<CapabilityCallContext["viewer"]>;
 
-type Eligible = { mailboxId: string; settings: MailboxAgentSettingsState; ownerUserId: string };
+type Eligible = {
+	mailboxId: string;
+	settings: MailboxAgentSettingsState;
+	ownerUserId: string;
+	/** The mailbox's own addresses, which the live gate refuses as senders. */
+	ownAddresses: string[];
+};
+
+/** Per database binding, so a cached answer never crosses databases. */
+const eligibleCaches = new WeakMap<object, Map<string, { at: number; value: Promise<Eligible[]> }>>();
 
 /** The module's triage step whose per-mailbox switch is `switchKey`. */
 function stepFor(moduleId: ModuleId, switchKey: string) {
 	return TRIAGE_STEPS.find((step) => step.moduleId === moduleId && step.switchKey === switchKey) ?? null;
 }
 
+/** The eligible mailboxes, reused for a few seconds per viewer, module and switch. */
+function eligibleMailboxes(env: CloudflareEnv, viewer: Viewer, moduleId: ModuleId, capability: string) {
+	const key = `${viewer.userId}\n${moduleId}\n${capability}`;
+	const now = Date.now();
+	let eligibleCache = eligibleCaches.get(env.DB);
+	if (!eligibleCache) eligibleCaches.set(env.DB, (eligibleCache = new Map()));
+	const cached = eligibleCache.get(key);
+	if (cached && now - cached.at < ELIGIBLE_TTL_MS) return cached.value;
+	const value = resolveEligible(env, viewer, moduleId, capability);
+	eligibleCache.set(key, { at: now, value });
+	value.catch(() => eligibleCache.delete(key));
+	return value;
+}
+
 /** The mailboxes whose mail the viewer's step may read in the background, with their resolved settings. */
-async function eligibleMailboxes(
+async function resolveEligible(
 	env: CloudflareEnv,
 	viewer: Viewer,
 	moduleId: ModuleId,
@@ -59,6 +88,7 @@ async function eligibleMailboxes(
 		.where(or(eq(mailboxAgentSettings.reviewerUserId, viewer.userId), eq(mailboxes.userId, viewer.userId)));
 	const candidates = rows
 		.map(({ settings, mailbox }) => ({
+			mailbox,
 			mailboxId: mailbox.id,
 			ownerUserId: mailbox.userId,
 			settings: resolveMailboxAgentSettings(settings, {
@@ -82,11 +112,40 @@ async function eligibleMailboxes(
 	const [reviewer] = await db.select().from(users).where(eq(users.id, viewer.userId)).limit(1);
 	if (!reviewer || reviewer.disabled) return [];
 	const eligible: Eligible[] = [];
-	for (const entry of candidates) {
+	for (const { mailbox, ...entry } of candidates) {
 		if (off.has(entry.mailboxId)) continue;
-		if ((await getMailboxAccessLevel(db, reviewer, entry.mailboxId))?.canRead) eligible.push(entry);
+		if (!(await getMailboxAccessLevel(db, reviewer, entry.mailboxId))?.canRead) continue;
+		eligible.push({ ...entry, ownAddresses: await getMailboxDomainAddresses(db, mailbox) });
 	}
 	return eligible;
+}
+
+type GateRow = { id: string; mailboxId: string | null; status: string; direction: string; fromAddr: string };
+
+/**
+ * The rows live triage would also read: the gate's sender rules (archived mail counts as kept, and `Auto-Submitted`
+ * mail passes because the step opted in to it) and no pending Screener decision.
+ */
+async function passingGate(
+	env: CloudflareEnv,
+	eligible: readonly Eligible[],
+	rows: readonly GateRow[],
+	headers?: Record<string, string>,
+): Promise<Set<string>> {
+	const byMailbox = new Map(eligible.map((entry) => [entry.mailboxId, entry]));
+	const gated = rows.filter((row) => {
+		const entry = row.mailboxId ? byMailbox.get(row.mailboxId) : undefined;
+		if (!entry) return false;
+		const gate = triageMessageGate({
+			status: "received",
+			sender: row.fromAddr,
+			headers,
+			ownAddresses: entry.ownAddresses,
+		});
+		return gate === null || gate === "auto_submitted";
+	});
+	const pending = await screenerPendingRows(getDb(env), gated);
+	return new Set(gated.filter((row) => !pending.has(row.id)).map((row) => row.id));
 }
 
 async function attachmentsOf(env: CloudflareEnv, ids: string[]) {
@@ -127,7 +186,9 @@ export async function backfillMessages(
 		.select({
 			id: messages.id,
 			mailboxId: messages.mailboxId,
-			from: messages.fromAddr,
+			fromAddr: messages.fromAddr,
+			status: messages.status,
+			direction: messages.direction,
 			subject: messages.subject,
 			createdAt: messages.createdAt,
 		})
@@ -148,20 +209,26 @@ export async function backfillMessages(
 		)
 		.orderBy(asc(messages.createdAt), asc(messages.id))
 		.limit(limit);
+	const passing = await passingGate(env, eligible, rows);
+	const kept = rows.filter((row) => passing.has(row.id));
 	const attachments = await attachmentsOf(
 		env,
-		rows.map((row) => row.id),
+		kept.map((row) => row.id),
 	);
-	const page = rows.map((row) => ({
+	const page = kept.map((row) => ({
 		id: row.id,
 		mailboxId: row.mailboxId ?? "",
-		from: row.from,
+		from: row.fromAddr,
 		subject: row.subject,
 		receivedAt: row.createdAt.toISOString(),
 		attachments: attachments.get(row.id) ?? [],
 	}));
-	const last = page[page.length - 1];
-	return { messages: page, next: rows.length === limit && last ? { receivedAt: last.receivedAt, id: last.id } : null };
+	// The cursor follows the last row read, also when the gate left it out.
+	const last = rows[rows.length - 1];
+	return {
+		messages: page,
+		next: rows.length === limit && last ? { receivedAt: last.createdAt.toISOString(), id: last.id } : null,
+	};
 }
 
 /**
@@ -183,6 +250,7 @@ export async function backfillStepInput(
 	);
 	if (!eligible) return null;
 	const context = await loadTriageContext(env, source, eligible.ownerUserId);
+	if (!(await passingGate(env, [eligible], [source], context.headers)).has(source.id)) return null;
 	const attachments = await db
 		.select({
 			id: messageAttachments.id,

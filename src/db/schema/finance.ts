@@ -110,6 +110,10 @@ export const financePayments = sqliteTable(
 		currency: text("currency").notNull(),
 		documentAt: integer("document_at", { mode: "timestamp" }).notNull(),
 		source: text("source", { enum: ["auto", "scan"] }).notNull(),
+		/** The receipt, invoice or order number: one row per vendor, type and number. */
+		docRef: text("doc_ref"),
+		/** The Message-ID: one row per copy of a message delivered to several mailboxes. */
+		mailRef: text("mail_ref"),
 		/** JSON list of the fields the model filled. */
 		modelFields: text("model_fields"),
 		removedAt: integer("removed_at", { mode: "timestamp" }),
@@ -122,6 +126,8 @@ export const financePayments = sqliteTable(
 	},
 	(t) => [
 		uniqueIndex("finance_payments_message_idx").on(t.userId, t.messageId),
+		uniqueIndex("finance_payments_mail_ref_idx").on(t.userId, t.mailRef),
+		uniqueIndex("finance_payments_doc_ref_idx").on(t.userId, t.vendorKey, t.docType, t.docRef),
 		index("finance_payments_user_idx").on(t.userId, t.documentAt),
 	],
 );

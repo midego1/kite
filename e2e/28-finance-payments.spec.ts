@@ -225,6 +225,16 @@ test.describe("Money Watch payments", () => {
 			const spoofed = { ...stripeReceipt("Spoof Shop"), headers: authFor("stripe.com", "fail") };
 			await postInbound(account.api, { ...spoofed, to: account.address });
 			await waitForMessage(account.api, spoofed.subject);
+			// A forwarded copy of a receipt from a personal address is a copy, not the document.
+			const original = stripeReceipt("Forward Shop");
+			const forwarded = await deliver(account, {
+				...original,
+				from: "A Person <person.example@forward.test>",
+				subject: `Fwd: ${original.subject}`,
+				headers: authFor("forward.test"),
+			});
+			expect(forwarded.job.status).toBe("completed");
+			expect((await listPayments(account)).payments).toEqual([]);
 
 			await okJson(
 				await account.api.put("/api/agent/settings/ai", { data: { mailboxId: account.mailboxId, aiDisabled: true } }),

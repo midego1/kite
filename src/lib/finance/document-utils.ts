@@ -21,6 +21,7 @@ import {
 	REFUND_PHRASES,
 	phraseRegex,
 } from "./keywords-utils";
+import { REMINDER_PHRASE, UNPAID_PHRASE } from "./payment-keywords-utils";
 import type { DocType } from "./types";
 
 export type StepAttachment = { id: string; contentType: string; filename: string | null; size: number };
@@ -52,7 +53,10 @@ const RANK: Record<string, number> = { refund: 0, credit: 1, payment: 2, invoice
  * @public Exercised by the bundled unit tests.
  */
 export function docTypeOfText(text: string): Exclude<DocType, "failed_payment"> | null {
-	return PRECEDENCE.find((entry) => entry.pattern.test(text))?.docType ?? null;
+	const found = PRECEDENCE.find((entry) => entry.pattern.test(text))?.docType ?? null;
+	// "Has not been paid" and payment reminders match "paid" but ask for money: they are invoices.
+	if (found === "payment" && (UNPAID_PHRASE.test(text) || REMINDER_PHRASE.test(text))) return "invoice";
+	return found;
 }
 
 /** The document type the attachment names suggest, by the same precedence.

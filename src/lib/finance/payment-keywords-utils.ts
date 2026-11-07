@@ -80,3 +80,86 @@ export const DOCUMENT_NUMBER =
 
 /** A bracketed reference such as "[#1114-6093]" in a subject. */
 export const BRACKETED_NUMBER = /\[#?(?=[A-Z-]{0,40}\d)[A-Z0-9][A-Z0-9-]{3,40}\]/iu;
+
+/**
+ * Wording that says a bill is still owed, which turns a "paid" match into an open invoice: "has not been paid",
+ * "nog niet betaald", "noch nicht bezahlt", "pas encore payé", "aún no se ha pagado". Balance words such as
+ * "outstanding" or "openstaand" are left out: receipts print "outstanding balance: €0.00".
+ */
+export const UNPAID_PHRASE = phraseRegex([
+	"not been paid",
+	"not yet paid",
+	"not paid",
+	"unpaid",
+	"nog niet betaald",
+	"niet betaald",
+	"onbetaald",
+	"noch nicht bezahlt",
+	"nicht bezahlt",
+	"unbezahlt",
+	"pas encore payé",
+	"pas été payée",
+	"pas été payé",
+	"non payé",
+	"non payée",
+	"impayé",
+	"impayée",
+	"no ha sido pagado",
+	"no ha sido pagada",
+	"aún no se ha pagado",
+	"no pagado",
+	"pendiente de pago",
+]);
+
+/** Payment reminders and dunning, which ask for money rather than confirm it: an open invoice, never a payment. */
+export const REMINDER_PHRASE = phraseRegex([
+	"reminder",
+	"payment reminder",
+	"overdue",
+	"final notice",
+	"herinnering",
+	"betalingsherinnering",
+	"aanmaning",
+	"mahnung",
+	"zahlungserinnerung",
+	"erinnerung",
+	"relance",
+	"rappel",
+	"recordatorio",
+	"recordatorio de pago",
+	"aviso de pago",
+]);
+
+/** A reply or forward ("Re:", "Fwd:", "AW:", "WG:", "Doorst:", "TR:", "RV:"): a copy of a document, not the document. */
+export const REPLY_OR_FORWARD = /^\s*(?:re|fw|fwd|aw|wg|antw|doorst|tr|rv|sv|vs|réf)\s*(?:\[\d{1,3}\])?\s*:/iu;
+
+/** Mail providers anyone can sign up to: their senders are people, so the domain says nothing about a vendor. */
+export const FREE_MAIL_DOMAINS = new Set([
+	"gmail.com",
+	"googlemail.com",
+	"outlook.com",
+	"hotmail.com",
+	"live.com",
+	"msn.com",
+	"yahoo.com",
+	"icloud.com",
+	"me.com",
+	"mac.com",
+	"aol.com",
+	"proton.me",
+	"protonmail.com",
+	"zoho.com",
+	"gmx.de",
+	"gmx.net",
+	"web.de",
+	"t-online.de",
+	"ziggo.nl",
+	"kpnmail.nl",
+	"hetnet.nl",
+	"planet.nl",
+	"orange.fr",
+	"free.fr",
+	"laposte.net",
+	"yandex.ru",
+	"mail.ru",
+]);

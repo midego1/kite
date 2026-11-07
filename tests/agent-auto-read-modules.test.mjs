@@ -402,6 +402,7 @@ test("the wider step input carries the sender name, an 8 KB excerpt, extra facts
 			listUnsubscribe: "<https://vendor.test/u/1>, <mailto:u@vendor.test>",
 			listUnsubscribePost: "List-Unsubscribe=One-Click",
 			listId: "<news.vendor.test>",
+			messageId: null,
 		},
 		attachments: [{ id: "a1", contentType: "application/pdf", filename: "r.pdf", size: 10 }],
 		model: null,
@@ -419,7 +420,8 @@ test("the wider step input carries the sender name, an 8 KB excerpt, extra facts
 	});
 	assert.equal(spam.facts.spam, true);
 	assert.equal(spam.message.textExcerpt, null);
-	assert.deepEqual(spam.headers, { listUnsubscribe: null, listUnsubscribePost: null, listId: null });
+	assert.deepEqual(spam.headers, { listUnsubscribe: null, listUnsubscribePost: null, listId: null, messageId: null });
+	assert.equal(stepHeaders({ "message-id": " <r-1@vendor.test> " }).messageId, "<r-1@vendor.test>");
 	assert.deepEqual(spam.model, { category: "fyi" });
 });
 

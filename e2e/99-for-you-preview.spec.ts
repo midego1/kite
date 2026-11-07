@@ -253,3 +253,32 @@ test("the preview stays inside a narrow pane, in a right-to-left interface too",
 	await account.api.dispose();
 	await restore();
 });
+
+test("Dismiss and a card action inside the preview return focus to the row", async ({ browser }) => {
+	const restore = await useFakeProvider(api, fake);
+	const { account, reply, phishing } = await setUp();
+	const { context, page } = await openAs(browser, account, account.mailboxId);
+	try {
+		await page.goto("/for-you");
+
+		// A card action (Discard, inside the reader card's block) resolves the suggestion; the reply row's
+		// own request to discard its draft disables the button clicked, which used to blur focus to nowhere
+		// instead of handing it back to the row.
+		const replyLink = pageEntry(page, reply.subject!).getByRole("link").first();
+		await pageEntry(page, reply.subject!).hover({ position: START });
+		await expect(popover(page)).toBeVisible();
+		await popover(page).getByRole("button", { name: "Discard" }).click();
+		await expect(popover(page)).toHaveCount(0);
+		await expect(replyLink).toBeFocused();
+
+		// The preview's own Dismiss does the same.
+		const phishingLink = pageEntry(page, phishing.subject!).getByRole("link").first();
+		await pageEntry(page, phishing.subject!).hover({ position: START });
+		await expect(popover(page)).toBeVisible();
+		await popover(page).getByRole("button", { name: "Dismiss" }).click();
+		await expect(popover(page)).toHaveCount(0);
+		await expect(phishingLink).toBeFocused();
+	} finally {
+		await closeAll(account, restore, context);
+	}
+});

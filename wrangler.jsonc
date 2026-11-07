@@ -130,9 +130,11 @@
 				"max_concurrency": 10,
 				"max_retries": 3,
 			},
+			// One message per invocation, for the same reason as kite-inbound above: it mixes sends, backups,
+			// restores and storage migrations, so a slow one must not retry the rest of its batch with it.
 			{
 				"queue": "kite-outbound",
-				"max_batch_size": 5,
+				"max_batch_size": 1,
 				"max_retries": 3,
 			},
 			{

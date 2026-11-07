@@ -117,7 +117,13 @@ export function SuggestionPreviewRow({
 					onBlur={(event) => {
 						const next = event.relatedTarget as Node | null;
 						if (next && event.currentTarget.contains(next)) return;
-						if (!next && pointerInside.current) return;
+						if (!next) {
+							// Focus landed nowhere rather than moving somewhere else: the focused control (a busy
+							// action button) was disabled or removed under it. Keep focus in the preview so a close
+							// right after (the action's onChanged/onClose) still has it to hand back to the row.
+							content.current?.focus();
+							if (pointerInside.current) return;
+						}
 						schedule(false, 0);
 					}}
 				>

@@ -119,9 +119,10 @@ export function SuggestionPreviewRow({
 						if (next && event.currentTarget.contains(next)) return;
 						if (!next) {
 							// Focus landed nowhere rather than moving somewhere else: the focused control (a busy
-							// action button) was disabled or removed under it. Keep focus in the preview so a close
-							// right after (the action's onChanged/onClose) still has it to hand back to the row.
-							content.current?.focus();
+							// action button) was disabled or removed under it. Keep focus in the preview, but only
+							// when it was the preview's own focus that was lost, so a close right after (the
+							// action's onChanged/onClose) still has it to hand back to the row.
+							if (content.current?.contains(event.target as Node)) content.current.focus();
 							if (pointerInside.current) return;
 						}
 						schedule(false, 0);

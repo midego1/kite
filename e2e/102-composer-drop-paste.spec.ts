@@ -3,7 +3,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { STORAGE_STATE, SUPPORT_ADDRESS } from "./support/constants";
-import { apiContext, deliverInbound, setSendingSettings, uniqueToken, waitForMessage } from "./support/helpers";
+import {
+	apiContext,
+	deliverInbound,
+	openMessage,
+	setSendingSettings,
+	uniqueToken,
+	waitForMessage,
+} from "./support/helpers";
 
 // Files dropped on or pasted into the composer become attachments, in the floating composer, the docked reply and the
 // full-screen one; pasted text keeps going in as plain text.
@@ -111,12 +118,7 @@ async function openDockedReply(page: Page) {
 	});
 	await api.dispose();
 	await page.goto("/inbox");
-	await page
-		.getByRole("list", { name: "Inbox" })
-		.locator("[data-message-row]")
-		.filter({ has: page.getByText(subject, { exact: true }) })
-		.getByRole("link")
-		.click();
+	await openMessage(page, subject);
 	await expect(page.getByRole("heading", { level: 1, name: subject })).toBeVisible();
 	await page.getByRole("button", { name: /^Reply to Drop Sender/ }).click();
 	const composer = page
@@ -132,6 +134,13 @@ test.describe("files dropped on and pasted into the composer", () => {
 
 	test.beforeAll(() => {
 		files = mkdtempSync(join(tmpdir(), "kite-composer-files-"));
+	});
+
+	// A preview or an undo window left by another spec would hold the send these tests wait for.
+	test.beforeEach(async () => {
+		const api = await apiContext(STORAGE_STATE);
+		await setSendingSettings(api, { previewEnabled: false, undoSeconds: 0 });
+		await api.dispose();
 	});
 
 	test.afterEach(async () => {

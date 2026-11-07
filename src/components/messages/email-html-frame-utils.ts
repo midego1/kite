@@ -1,5 +1,6 @@
 import { readerFontStyles } from "@/components/font-assets-utils";
 import { wrappedRootDirection } from "@/lib/email/root-direction-utils";
+import { CELL_WRAP_STYLES } from "@/lib/email/word-wrap-utils";
 import type { EmailColourFacts, EmailFrameDocumentOptions } from "./email-html-frame-types";
 
 /**
@@ -15,6 +16,7 @@ const BASE_STYLES = [
 	'body{margin:0;padding:0;font-size:14px;line-height:1.5;overflow-wrap:anywhere;font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif}',
 	"img{max-width:100%;height:auto}",
 	"table{max-width:100%}",
+	CELL_WRAP_STYLES,
 	"ul{list-style:disc;padding-inline-start:1.5rem;margin:.25rem 0}",
 	"ol{list-style:decimal;padding-inline-start:1.5rem;margin:.25rem 0}",
 	"blockquote{border-inline-start:2px solid #d4d4d4;margin:.25rem 0;padding-inline-start:.75rem}",

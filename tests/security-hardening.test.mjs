@@ -294,7 +294,7 @@ test("near-black text takes the theme colour in dark mode, with no inverted card
 	const original = frame.buildEmailFrameDocument(html, { dark: true, colours: NEUTRAL, original: true });
 	assert.match(original, /color-scheme:light/);
 	assert.match(original, /html\{background:#fff\}/);
-	assert.doesNotMatch(original, /filter:invert|!important/);
+	assert.doesNotMatch(original, /filter:invert|data-kite-text=neutral\]\{/);
 	// Light mode never touches the colours.
 	assert.doesNotMatch(
 		frame.buildEmailFrameDocument(html, { dark: false, colours: NEUTRAL }),

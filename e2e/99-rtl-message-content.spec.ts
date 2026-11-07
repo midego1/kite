@@ -176,7 +176,7 @@ test("a direction the sender declares on html or body wins over the first letter
 	await expect(frame.getByText("Kite Weekly")).toBeVisible();
 	// The body said right to left (body wins over html), though the first strong letter is Latin.
 	expect(await direction(frame.getByText("Kite Weekly"))).toBe("rtl");
-	// Gmail's inline border-left never reaches the frame (the reader's sanitizer drops border longhands), so the one
+	// Gmail's inline border-left never reaches the frame (the reader's sanitizer drops a quote's borders), so the one
 	// bar is ours, on the reading start side: the right.
 	const quote = frame.locator("blockquote").first();
 	await expect(quote).toBeAttached();

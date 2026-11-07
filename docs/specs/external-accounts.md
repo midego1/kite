@@ -384,7 +384,7 @@ Numbers are taken at build time; each PR adds its own migration, with backup lis
 
 ### 11.2 SSRF to arbitrary IMAP and SMTP hosts
 
-`assertMailServerHost(env, host, port)` (`src/lib/external-accounts/host-guard.ts`), modelled on `assertStoreEndpoint`, runs when an account is saved, before every connection, and for import jobs:
+`assertMailServerHost(env, host, port)` (`src/lib/net/host-guard.ts`), modelled on `assertStoreEndpoint`, runs when an account is saved, before every connection, and for import jobs:
 
 - `isBlockedHost` (names such as `localhost`, `.internal`, `.local`, private and reserved IP literals, bare names).
 - Ports limited to 143, 993, 465 and 587 (and any port only under the dev flag), so the feature cannot be used to probe other services.

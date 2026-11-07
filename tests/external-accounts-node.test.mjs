@@ -51,7 +51,7 @@ const {
 	["parseAccountInput, AccountInputError", "src/lib/external-accounts/input-utils.ts"],
 	["classifyConnectionError", "src/lib/external-accounts/connection-utils.ts"],
 	["serializeExternalAccount", "src/lib/external-accounts/serialize-utils.ts"],
-	["assertMailServerHost", "src/lib/external-accounts/host-guard.ts"],
+	["assertMailServerHost", "src/lib/net/host-guard.ts"],
 	[
 		"connectExternalAccount, listExternalAccounts, updateExternalAccount, retestExternalAccount, removeExternalAccount",
 		"src/lib/external-accounts/service.ts",

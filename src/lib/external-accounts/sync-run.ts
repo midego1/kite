@@ -10,7 +10,7 @@ import { createLogger } from "@/lib/logger.mjs";
 import { MailServerRefusedError } from "@/lib/net/errors";
 import { openSetting, SecretBoxError } from "@/lib/security/secret-box";
 import { shortServerText } from "./connection-utils";
-import { assertMailServerHost } from "./host-guard";
+import { assertMailServerHost } from "@/lib/net/host-guard";
 import type { ExternalAccountRow } from "./serialize-utils";
 import { externalSyncRefusal } from "./sync-target";
 import { runTwoWay } from "./two-way-run";

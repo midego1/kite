@@ -6,7 +6,7 @@ import { hasValidSessionMutationOrigin } from "@/lib/auth/origin";
 import { getEnv } from "@/lib/cloudflare";
 import { RequestBodyTooLargeError } from "@/lib/http/errors";
 import { readJsonBody } from "@/lib/http/request";
-import { importServerProblem } from "@/lib/import/imap";
+import { importServerRefusal } from "@/lib/import/imap";
 import { createImportJob, listImportJobs, serializeImportJob } from "@/lib/import/jobs";
 import { checkImportStart } from "@/lib/import/size-guard";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
@@ -57,7 +57,8 @@ export const POST = withModule("import", async (request, { checkUser }) => {
 		return Response.json({ error: error instanceof Error ? error.message : "Invalid IMAP import request" }, { status });
 	}
 
-	const refused = importServerProblem(env, input);
+	// Resolved on Node, so a saved job never keeps a name that points at a private address.
+	const refused = await importServerRefusal(env, input);
 	if (refused) return Response.json({ error: refused }, { status: 400 });
 
 	const db = getDb(env);

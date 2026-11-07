@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { ChevronRight } from "lucide-react";
+import { useEffect, useId, useState } from "react";
 import { Select } from "@/components/ui/select";
+import { cn } from "@/lib/utils";
 import type { TwoWaySettings, TwoWayView } from "@/lib/external-accounts/two-way-types";
 import type { ExternalAccountView } from "@/lib/external-accounts/types";
 import { fetchTwoWay, offeredMoves, saveTwoWay, supportNote, twoWaySummary } from "./account-two-way-utils";
@@ -20,14 +22,15 @@ function Setting({
 	onChange: (value: string) => void;
 }) {
 	return (
-		<label className="flex flex-wrap items-center justify-between gap-2 text-xs text-neutral-700">
+		// One label column and one select column, so every select has the same start and width; a narrow panel stacks them.
+		<label className="grid grid-cols-1 items-center gap-x-3 gap-y-1 text-xs text-neutral-700 @sm:grid-cols-[minmax(0,1fr)_14rem]">
 			<span>{label}</span>
 			<Select
 				aria-label={label}
 				value={value}
 				disabled={disabled}
 				onChange={(event) => onChange(event.target.value)}
-				containerClassName="min-w-48"
+				containerClassName="w-full"
 			>
 				{options.map((option) => (
 					<option key={option.value} value={option.value}>
@@ -59,12 +62,15 @@ function TwoWayFields({
 	const { settings, support } = view;
 	const offered = offeredMoves(support);
 	const disabled = !usable || saving;
+	const id = useId();
 	const note = supportNote(support);
 	const set = (patch: Partial<TwoWaySettings>) => onSave({ ...settings, ...patch });
 	return (
-		<div className="space-y-3 rounded-lg border border-neutral-200 p-3">
-			<fieldset className="space-y-2">
-				<legend className="text-xs font-medium text-neutral-800">When you act in Kite</legend>
+		<div className="@container space-y-3 rounded-lg border border-neutral-200 p-3">
+			<div role="group" aria-labelledby={`${id}-kite`} className="space-y-2">
+				<p id={`${id}-kite`} className="text-xs font-medium text-neutral-800">
+					When you act in Kite
+				</p>
 				<Setting
 					label="Delete in Kite"
 					value={settings.kiteDelete}
@@ -93,9 +99,11 @@ function TwoWayFields({
 					options={ON_OFF}
 					onChange={(value) => set({ kiteFlags: value === "on" })}
 				/>
-			</fieldset>
-			<fieldset className="space-y-2">
-				<legend className="text-xs font-medium text-neutral-800">When something changes at the provider</legend>
+			</div>
+			<div role="group" aria-labelledby={`${id}-provider`} className="space-y-2">
+				<p id={`${id}-provider`} className="text-xs font-medium text-neutral-800">
+					When something changes at the provider
+				</p>
 				<Setting
 					label="Deleted or moved out of the Inbox"
 					value={settings.providerGone}
@@ -110,7 +118,7 @@ function TwoWayFields({
 					options={ON_OFF}
 					onChange={(value) => set({ providerFlags: value === "on" })}
 				/>
-			</fieldset>
+			</div>
 			<p className="text-xs text-neutral-500">
 				Only mail Kite fetched from this account, and only what you do from now on. Mail Kite files by itself stays put
 				at the provider. Kite compares the newest {view.windowSize.toLocaleString("en")} Inbox messages at each check,
@@ -138,23 +146,29 @@ function TwoWayFields({
 
 /**
  * Two-way sync on an account row (spec §6.8), everything off by default. The settings and what the server supports are
- * read when it is opened, because answering them can mean asking the server; the closed row only says that it exists.
+ * read as soon as the row shows, so its state is visible open or closed, but only from what is stored: the server is
+ * asked what it supports (at most once a day) when the row is opened, and a failed read stays silent until then.
  */
 export function AccountTwoWay({ account, usable }: { account: ExternalAccountView; usable: boolean }) {
 	const [open, setOpen] = useState(false);
 	const [view, setView] = useState<TwoWayView | null>(null);
+	// The summary comes from what is stored; only the full read may ask the account's server what it supports.
+	const [full, setFull] = useState(false);
 	const [saving, setSaving] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 
 	useEffect(() => {
-		if (!open) return;
 		let current = true;
-		fetchTwoWay(account.id)
+		fetchTwoWay(account.id, !open)
 			.then((next) => {
-				if (current) setView(next);
+				if (current) {
+					setView(next);
+					setFull(open);
+					setError(null);
+				}
 			})
 			.catch((cause: unknown) => {
-				if (current) setError(cause instanceof Error ? cause.message : "Could not load the two-way settings");
+				if (current && open) setError(cause instanceof Error ? cause.message : "Could not load the two-way settings");
 			});
 		return () => {
 			current = false;
@@ -166,6 +180,7 @@ export function AccountTwoWay({ account, usable }: { account: ExternalAccountVie
 		setError(null);
 		try {
 			setView(await saveTwoWay(account.id, settings));
+			setFull(true);
 		} catch (cause) {
 			setError(cause instanceof Error ? cause.message : "Could not save the two-way settings");
 		} finally {
@@ -174,18 +189,27 @@ export function AccountTwoWay({ account, usable }: { account: ExternalAccountVie
 	}
 
 	return (
-		<div className="space-y-1 pt-1" data-account-two-way={account.address}>
+		<div className="space-y-1.5 pt-1 pb-2" data-account-two-way={account.address}>
 			<button
 				type="button"
-				className="text-xs font-medium text-neutral-700 underline-offset-2 hover:underline"
+				className="flex w-full items-start gap-2 rounded-md text-start text-xs hover:text-neutral-900"
 				aria-expanded={open}
 				onClick={() => setOpen(!open)}
 			>
-				Two-way sync
+				<ChevronRight
+					aria-hidden="true"
+					className={cn(
+						"mt-px h-4 w-4 shrink-0 text-neutral-500 transition-transform rtl:-scale-x-100",
+						open && "rotate-90 rtl:-rotate-90",
+					)}
+				/>
+				<span className="flex min-w-0 flex-1 flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+					<span className="font-medium text-neutral-700">Two-way sync: choose what stays in step</span>
+					{view && <span className="ms-auto min-w-0 text-end text-neutral-500">{twoWaySummary(view.settings)}</span>}
+				</span>
 			</button>
-			{view && !open && <p className="text-xs text-neutral-500">{twoWaySummary(view.settings)}</p>}
-			{open && !view && !error && <p className="text-xs text-neutral-500">Asking the server what it supports…</p>}
-			{open && view && (
+			{open && !full && !error && <p className="text-xs text-neutral-500">Asking the server what it supports…</p>}
+			{open && full && view && (
 				<TwoWayFields view={view} usable={usable} saving={saving} onSave={(settings) => void save(settings)} />
 			)}
 			{error && (

@@ -6,7 +6,8 @@ import { ADMIN, STORAGE_STATE } from "../../e2e/support/constants";
 import { useFakeProvider as connectFakeProvider } from "../../e2e/support/agent";
 import { startFakeModel } from "../../e2e/support/fake-model";
 import type { FakeModel } from "../../e2e/support/fake-model-types";
-import { apiContext } from "../../e2e/support/helpers";
+import { apiContext, postInbound, waitForMessage } from "../../e2e/support/helpers";
+import { turnScreenerOff } from "../../e2e/support/screener";
 import {
 	RTL_MAIL,
 	seedDemoData,
@@ -47,6 +48,76 @@ let demoTwoWay: Awaited<ReturnType<typeof startFakeImap>> | null = null;
 const demoFolder = (count: number, bytes: number, label: string) =>
 	Array.from({ length: count }, (_, index) => ({ raw: sampleMessage(index + 1, { subject: `${label} ${index + 1}` }), size: bytes }));
 
+
+/** A fake Gmail for the compact-labels shot: a fake IMAP server on 127.0.0.1 and an account connected to it. */
+let demoGmail: Awaited<ReturnType<typeof startFakeImap>> | null = null;
+const GMAIL_ADDRESS = "demo.gmail@example.test";
+const GMAIL_MAIL = [
+	["Priya Raman", "priya@acme.test", "Quarterly support metrics", "First-response time dropped to 42 minutes."],
+	["Wingtip Toys", "orders@wingtip.test", "Your order #4821 has shipped", "Your order should arrive on Thursday."],
+	["Tom Okafor", "tom@adventure-works.test", "Offsite agenda and travel details", "The offsite is on 14-15 November."],
+] as const;
+
+/** The demo admin's All mailboxes view with mail through a connected account; once, so a kept server is not doubled. */
+async function seedCompactLabelsDemo(): Promise<void> {
+	const api = await apiContext(STORAGE_STATE);
+	await turnScreenerOff(api);
+	const { mailboxes } = (await (await api.get("/api/mailboxes")).json()) as {
+		mailboxes: { id: string; localPart: string; hostname: string; permission?: string }[];
+	};
+	const home = mailboxes.find((box) => box.localPart === "support") ?? mailboxes[0]!;
+	const connected = (await (await api.get("/api/external-accounts")).json()) as { accounts: { address: string }[] };
+	if (!connected.accounts.some((account) => account.address === GMAIL_ADDRESS)) {
+		demoGmail = await startFakeImap({ authPlain: true, users: { [GMAIL_ADDRESS]: "app-password" }, folders: { INBOX: [] } });
+		const response = await api.post("/api/external-accounts", {
+			data: {
+				address: GMAIL_ADDRESS,
+				label: "Gmail",
+				preset: "other",
+				mailboxId: home.id,
+				imap: { host: "127.0.0.1", port: demoGmail.port, security: "starttls" },
+				password: "app-password",
+				kitePassword: ADMIN.password,
+			},
+		});
+		expect(response.status(), await response.text()).toBe(201);
+		const { account } = (await response.json()) as { account: { id: string } };
+		GMAIL_MAIL.forEach(([name, from, subject, body], index) =>
+			demoGmail!.addMessage(
+				"INBOX",
+				[
+					`From: ${name} <${from}>`,
+					`To: ${GMAIL_ADDRESS}`,
+					`Subject: ${subject}`,
+					`Message-ID: <demo-label-${index}@gmail.example.test>`,
+					`Date: Tue, 3 Nov 2026 0${8 + index}:15:00 +0000`,
+					"Content-Type: text/plain; charset=utf-8",
+					"",
+					body,
+					"",
+				].join("\r\n"),
+			),
+		);
+		await expect
+			.poll(async () => (await api.post(`/api/external-accounts/${account.id}/sync`)).status(), { timeout: 120_000, intervals: [5_000] })
+			.toBe(202);
+		await waitForMessage(api, GMAIL_MAIL[2][2]);
+	}
+	for (const [localPart, from, name, subject] of [
+		["hello", "sofia@northwind.test", "Sofia Marchetti", "Partnership question from the studio"],
+		["team", "daniel@northwind.test", "Daniel Osei", "Sprint review notes for Friday"],
+	] as const) {
+		const box = mailboxes.find((item) => item.localPart === localPart);
+		if (!box) continue;
+		const probe = await api.get(`/api/messages?${new URLSearchParams({ q: subject, limit: "1" })}`);
+		const { messages } = (await probe.json()) as { messages: unknown[] };
+		if (messages.length > 0) continue;
+		await postInbound(api, { from: `"${name}" <${from}>`, to: `${localPart}@${box.hostname}`, subject, text: subject });
+		await waitForMessage(api, subject);
+	}
+	await api.dispose();
+}
+
 /** A model for the shots that need the assistant: nothing it answers appears in them. */
 let demoModel: { fake: FakeModel; restore: () => Promise<void> } | null = null;
 
@@ -63,6 +134,25 @@ async function openThaiMail(page: Page) {
 }
 
 const SHOTS: Shot[] = [
+	{
+		// All mailboxes with compact labels: a square per mailbox, a link icon for mail through a connected account, and
+		// the account as a view in the sidebar.
+		name: "2026-11-06-compact-labels-light",
+		theme: "light",
+		viewport: { width: 1280, height: 1000 },
+		open: async (page) => {
+			await seedCompactLabelsDemo();
+			await page.addInitScript(() => localStorage.setItem("kite-all-mailboxes", "true"));
+			await page.goto("/inbox");
+			const rows = page.getByRole("list", { name: "Inbox" }).locator("[data-message-row]");
+			await expect(rows.filter({ hasText: "Offsite agenda and travel details" }).locator("[data-via-account]")).toBeVisible();
+			await expect(page.getByTestId("kite-sidebar-panel").getByRole("link", { name: "Gmail" })).toBeVisible();
+			// An open message shows the reader beside the list, with its full via chip.
+			await rows.filter({ hasText: "Offsite agenda and travel details" }).first().getByRole("link").first().click();
+			await expect(page.getByRole("button", { name: /^via Gmail: show all mail through/ })).toBeVisible();
+			return page;
+		},
+	},
 	{
 		// The For you page with the hover preview of a reply suggestion open (demo suggestions and texts from demo-mocks).
 		name: "2026-11-06-for-you-preview-light",
@@ -570,6 +660,8 @@ test.describe("changelog screenshots", () => {
 	test.afterAll(async () => {
 		await demoImap?.close();
 		demoImap = null;
+		await demoGmail?.close();
+		demoGmail = null;
 		await demoModel?.restore();
 		await demoModel?.fake.close();
 		demoModel = null;

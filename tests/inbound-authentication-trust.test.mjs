@@ -561,13 +561,13 @@ test("SES: its own receipt verdicts count, the message's Authentication-Results 
 		headers: notification.headers,
 		authenticationResults: notification.authenticationResults,
 	});
-	const resend = await intakeProviderMail(env, {
+	const withoutHeaders = await intakeProviderMail(env, {
 		provider: "ses",
 		from: "x@bank.test",
 		recipients: ["owner@example.com"],
 		raw,
 	});
-	assert.equal(ses.delivered + resend.delivered, 2);
+	assert.equal(ses.delivered + withoutHeaders.delivered, 2);
 	assert.deepEqual(
 		queued.map((payload) => payload.authenticationResults),
 		[notification.authenticationResults, null],

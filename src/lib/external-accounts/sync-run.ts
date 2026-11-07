@@ -357,8 +357,7 @@ async function syncFolder(
 	const plan = planInboxSync(cursor ? { uidValidity: cursor.uidvalidity, lastUid: cursor.lastUid } : null, state);
 	const save = (lastUid: number) => saveCursor(env, account.id, folder, state, lastUid, options);
 	if (plan.kind === "baseline") {
-		const uids =
-			state.uidNext === null && state.exists !== 0 ? (await connection.session.searchUids()).map(Number) : [];
+		const uids = state.uidNext === null && state.exists !== 0 ? await connection.session.searchUids() : [];
 		await save(baselineLastUid(state.uidNext, uids));
 		return "done";
 	}

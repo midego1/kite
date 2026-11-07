@@ -69,3 +69,15 @@ test("every option list matches its type guard", () => {
 	assert.ok(helpers.readingPaneOptions(false).every((option) => helpers.isReadingPaneMode(option.value)));
 	assert.ok(helpers.MESSAGE_DENSITY_OPTIONS.every((option) => helpers.isMessageListDensity(option.value)));
 });
+
+test("rows show compact labels unless the stored choice says otherwise", () => {
+	assert.equal(helpers.DEFAULT_MESSAGE_LABELS, "compact");
+	assert.equal(helpers.parseMessageListLabels(null), "compact");
+	assert.equal(helpers.parseMessageListLabels("wide"), "compact");
+	for (const mode of ["compact", "full", "off"]) assert.equal(helpers.parseMessageListLabels(mode), mode);
+	assert.deepEqual(
+		helpers.MESSAGE_LABEL_OPTIONS.map((option) => option.value),
+		["compact", "full", "off"],
+	);
+	assert.equal(helpers.MESSAGE_LABELS_STORAGE_KEY, "kite-message-labels");
+});

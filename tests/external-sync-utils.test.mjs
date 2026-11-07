@@ -89,7 +89,15 @@ test("an INBOX check is one EXAMINE when nothing arrived, and fetches from the c
 	assert.equal(baselineLastUid(1), 0);
 	assert.equal(baselineLastUid(null, [4, 12, 7]), 12);
 	assert.equal(baselineLastUid(null), 0);
-	assert.equal(resetLastUid([40, 38, 41], 50), 37);
+	assert.equal(resetLastUid([38, 40, 41], 50), 37);
+	// A spread of arguments would throw a RangeError from about 125,000 values on.
+	assert.equal(
+		resetLastUid(
+			Array.from({ length: 300_000 }, (_, index) => index + 1000),
+			400_000,
+		),
+		999,
+	);
 	assert.equal(resetLastUid([], 50), 49);
 	assert.equal(resetLastUid([1], null), 0);
 });

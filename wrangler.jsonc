@@ -119,9 +119,12 @@
 			},
 		],
 		"consumers": [
+			// One message per invocation: a batch runs its messages one after another in one invocation, sharing its CPU
+			// time and memory, so one very large message could end the invocation and send the other mail of its batch
+			// to a retry it did not need. Queues bills per message, not per batch.
 			{
 				"queue": "kite-inbound",
-				"max_batch_size": 5,
+				"max_batch_size": 1,
 				"max_retries": 3,
 			},
 			{

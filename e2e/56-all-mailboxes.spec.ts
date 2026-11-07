@@ -38,7 +38,10 @@ async function listMessages(query: string): Promise<ListedMessage[]> {
 
 async function openPage(browser: Browser, viewport?: { width: number; height: number }): Promise<Page> {
 	const context = await browser.newContext({ storageState, ...(viewport ? { viewport, hasTouch: true } : {}) });
-	return context.newPage();
+	const page = await context.newPage();
+	// These checks are about the text pill; the compact dot (the default) has its own spec, 100-message-labels.
+	await page.addInitScript(() => localStorage.setItem("kite-message-labels", "full"));
+	return page;
 }
 
 function inboxList(page: Page) {

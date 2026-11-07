@@ -37,7 +37,15 @@ const MAX_UID = 2 ** 32 - 1;
 const SEARCH_ANSWER = /^\* SEARCH(?=\s|$)/i;
 const isSearchSpace = (code: number) => code === 32 || code === 9;
 
-export const tooManyUidsMessage = (limit: number) => `The IMAP server listed more than ${limit} messages in one folder`;
+const tooManyUidsMessage = (limit: number) => `The IMAP server listed more than ${limit} messages in one folder`;
+
+/** A folder with more messages than one search may list (`ImapLimits.folderUids`): retrying cannot change that. */
+export class TooManyUidsError extends Error {
+	constructor(limit: number) {
+		super(tooManyUidsMessage(limit));
+		this.name = "TooManyUidsError";
+	}
+}
 
 /**
  * Copies the UIDs of SEARCH answers into `found` from position `count`, those inside `range` when one is given, and
@@ -67,7 +75,7 @@ export function collectSearchUids(
 			if (!digits || value < 1 || value > MAX_UID) continue;
 			// `n:*` answers the highest UID even when it is below `n`, and a server may ignore the range.
 			if (range && (value < range.from || (range.to !== null && value > range.to))) continue;
-			if (next === found.length) throw new Error(tooManyUidsMessage(found.length));
+			if (next === found.length) throw new TooManyUidsError(found.length);
 			found[next] = value;
 			next += 1;
 		}

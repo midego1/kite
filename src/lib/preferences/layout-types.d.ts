@@ -1,5 +1,7 @@
 export type LayoutReadingPane = "none" | "right" | "below";
 export type LayoutDensity = "default" | "comfortable" | "compact";
+/** How the message list shows each row's mailbox and connected account: a small marker, the full chip, or nothing. */
+export type LayoutListLabels = "compact" | "full" | "off";
 /** The Font choice under Settings → Appearance (`FONT_PREFERENCE` in `src/components/appearance-preferences.ts`). */
 export type LayoutFont = "auto" | "manrope" | "geist" | "inter" | "system" | "opendyslexic";
 /** Whether a dyslexia-friendly font also replaces the fonts of HTML mail (`EMAIL_FONT_PREFERENCE`). */
@@ -11,11 +13,24 @@ export type LayoutInterfaceDirection = "auto" | "ltr" | "rtl";
 /** The interface language: `auto` follows the browser language (`src/lib/i18n/language-utils.ts`). */
 export type LayoutInterfaceLanguage = "auto" | "en" | "nl" | "ar";
 
+/** The colours a label dot or icon can be given (`LABEL_COLORS` in `src/components/messages/label-colors-utils.ts`). */
+export type LayoutLabelColor = "blue" | "purple" | "pink" | "red" | "orange" | "amber" | "green" | "teal";
+/**
+ * The colours chosen for the marks in the message list, by mailbox id and by connected account id. A mailbox or account
+ * that is absent has none chosen: the mailbox gets its automatic colour and the account's icon stays neutral.
+ */
+export interface LayoutLabelColors {
+	mailboxes?: Record<string, LayoutLabelColor>;
+	accounts?: Record<string, LayoutLabelColor>;
+}
+
 /** The layout choices that follow the account; a key that is absent was never chosen. */
 export interface LayoutPreferences {
 	readingPane?: LayoutReadingPane;
 	density?: LayoutDensity;
 	conversationView?: boolean;
+	listLabels?: LayoutListLabels;
+	labelColors?: LayoutLabelColors;
 	/** The message list's width beside the reading pane, in pixels. */
 	listWidth?: number;
 	/** The message list's height above the reading pane, in pixels. */

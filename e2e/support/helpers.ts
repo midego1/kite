@@ -157,13 +157,26 @@ function addressOf(header: string): string {
  * Delivers mail through the Worker's real `email` handler (Miniflare's local
  * trigger endpoint), so it takes the same R2 + queue + parse path as production.
  */
+/** The second in which the last `deliverInbound` of this worker found its message stored, or before. */
+let lastStoredSecond = 0;
+
+/**
+ * Delivers one message and waits until it is stored. Messages keep their creation time in whole seconds and lists sort
+ * ties by id, which is random, so a delivery waits for the next second when the previous one was stored in this one:
+ * then the order of deliveries is the order of the list. The inbound queue takes one message per batch, so it no
+ * longer spaces them out by waiting for a batch to fill.
+ */
 export async function deliverInbound(
 	api: APIRequestContext,
 	mail: InboundMail,
 	mime = buildMime(mail),
 ): Promise<StoredMessage> {
+	const wait = (lastStoredSecond + 1) * 1000 - Date.now();
+	if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
 	await postInbound(api, mail, mime);
-	return waitForMessage(api, mail.subject);
+	const stored = await waitForMessage(api, mail.subject);
+	lastStoredSecond = Math.floor(Date.now() / 1000);
+	return stored;
 }
 
 /**

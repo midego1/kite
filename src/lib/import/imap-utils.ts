@@ -3,7 +3,7 @@ import type { HostImportMessage } from "@/lib/modules/host-types";
 import type { ImportMessageInput } from "./types";
 
 export type ImapUidBatch = {
-	uids: string[];
+	uids: number[];
 	total: number;
 	/** Offset to pass on the next request, or null when the folder is fully covered. */
 	nextOffset: number | null;
@@ -14,7 +14,7 @@ export type ImapUidBatch = {
  * messages earlier batches already covered, so repeated requests with the
  * returned `nextOffset` walk back through the whole folder.
  */
-export function selectImapUidBatch(allUids: string[], limit: number, offset: number): ImapUidBatch {
+export function selectImapUidBatch(allUids: number[], limit: number, offset: number): ImapUidBatch {
 	const total = allUids.length;
 	const safeOffset = Math.min(Math.max(Math.floor(offset) || 0, 0), total);
 	const end = total - safeOffset;
@@ -27,11 +27,35 @@ export function selectImapUidBatch(allUids: string[], limit: number, offset: num
  * UIDs still to import for a background job, newest first. `cursorUid` is the
  * lowest UID an earlier run already handled; null means nothing was handled yet.
  */
-export function selectRemainingUids(allUids: string[], cursorUid: number | null): number[] {
+export function selectRemainingUids(allUids: readonly number[], cursorUid: number | null): number[] {
 	return allUids
-		.map(Number)
 		.filter((uid) => Number.isSafeInteger(uid) && uid > 0 && (cursorUid === null || uid < cursorUid))
 		.sort((a, b) => b - a);
+}
+
+/** The raw bytes one call to the module host carries at most (a message above it goes alone). */
+export const HOST_IMPORT_GROUP_BYTES = 4 * 1024 * 1024;
+
+/**
+ * Splits `items` in order into groups of at most `maxBytes` of `bytesOf` (an item above it gets a group of its own).
+ * A host call holds the raw message, its base64 text and the decoded copy at once, so a fetch of many big messages is
+ * handed over in several calls instead of one.
+ */
+export function groupByBytes<T>(items: readonly T[], bytesOf: (item: T) => number, maxBytes: number): T[][] {
+	const groups: T[][] = [];
+	let weight = 0;
+	for (const item of items) {
+		const bytes = bytesOf(item);
+		const last = groups[groups.length - 1];
+		if (last && weight + bytes <= maxBytes) {
+			last.push(item);
+			weight += bytes;
+		} else {
+			groups.push([item]);
+			weight = bytes;
+		}
+	}
+	return groups;
 }
 
 /** @public Exercised by the unit tests. */

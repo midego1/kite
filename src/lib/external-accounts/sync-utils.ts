@@ -81,10 +81,10 @@ export function baselineLastUid(uidNext: number | null, uids: readonly number[] 
 
 /**
  * The cursor after a reset: just before the oldest message of the last two days, so the normal fetch takes them (and
- * dedupe drops what Kite has), or `UIDNEXT − 1` when there is none.
+ * dedupe drops what Kite has), or `UIDNEXT − 1` when there is none. `recentUids` is in ascending order (`searchUidsSince`).
  */
 export function resetLastUid(recentUids: readonly number[], uidNext: number | null): number {
-	if (recentUids.length) return Math.max(Math.min(...recentUids) - 1, 0);
+	if (recentUids.length) return Math.max(recentUids[0] - 1, 0);
 	return baselineLastUid(uidNext);
 }
 

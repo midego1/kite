@@ -23,7 +23,7 @@ const stubs = {
 				examine: async () => undefined,
 				searchUids: async (options) => {
 					fake.searchDeadline = options?.deadline;
-					return fake.uids.map(String);
+					return fake.uids;
 				},
 				fetchUidSizes: async (uids) =>
 					uids.map((uid) => ({ uid: Number(uid), flags: [], internalDate: null, size: fake.sizes?.[uid] ?? 20 })),

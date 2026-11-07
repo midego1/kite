@@ -249,7 +249,8 @@ test("the Connected accounts page reads in Kite, Kite light, Classic and dark mo
 				}, variant);
 				await page.goto("/settings/connected-accounts");
 				await expect(page.locator("html")).toHaveAttribute("data-style", variant.style);
-				const label = page.getByText(`Archive ${token}`, { exact: true });
+				// The sidebar lists the account too (its view), so look inside the page itself.
+				const label = page.getByTestId("kite-page-panel").getByText(`Archive ${token}`, { exact: true });
 				await expect(label).toBeVisible();
 				const [text, background] = await label.evaluate((element) => {
 					const canvas = document.createElement("canvas").getContext("2d")!;

@@ -21,15 +21,28 @@ export function resolveRefsSchemas(kinds: [RecordKind, ...RecordKind[]]): Capabi
 	};
 }
 
-/** The lines an approval card shows for a proposed tool call, from the module's `approval.preview` service. */
-export const approvalPreviewOutputSchema = z.object({
-	items: z
-		.array(z.object({ label: z.string().max(300), detail: z.string().max(1_000).nullable() }))
-		.min(1)
-		.max(20),
-	/** The state of the records the lines describe; core refuses the approval when it differs by then. */
-	version: z.string().max(4_000).optional(),
-});
+/** A tool call the module refuses, in words the assistant can pass on; the tool proposes or does nothing. */
+const toolRefusalSchema = z.object({ refused: z.object({ error: z.string().min(1).max(300) }) });
+
+/**
+ * The lines an approval card shows for a proposed tool call, from the module's `approval.preview` service, or why
+ * the module refuses the call.
+ */
+export const approvalPreviewOutputSchema = z.union([
+	z.object({
+		items: z
+			.array(z.object({ label: z.string().max(300), detail: z.string().max(1_000).nullable() }))
+			.min(1)
+			.max(20),
+		/** The state of the records the lines describe; core refuses the approval when it differs by then. */
+		version: z.string().max(4_000).optional(),
+		/** The input the card shows and the tool runs with, in place of the model's; core validates it again. */
+		input: json.optional(),
+		/** What the module's own card draws besides the fields (`proposalCards` in its client chunk). */
+		details: json.optional(),
+	}),
+	toolRefusalSchema,
+]);
 
 export const searchSchemas: CapabilitySchemas = {
 	input: z.object({ query: z.string().trim().min(1).max(300), limit: z.number().int().min(1).max(20).default(5) }),

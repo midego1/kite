@@ -36,6 +36,15 @@ function toolSchema(schema: JsonSchemaObject): ToolSchema {
 	return rest as ToolSchema;
 }
 
+type ModulePreview = Partial<Pick<ModuleProposal, "items" | "version" | "details">> & {
+	input?: Record<string, unknown>;
+	refused?: { error: string };
+};
+
+function proposalEffect(effect: CapabilityDescriptor["effect"]): ModuleProposal["effect"] {
+	return effect === "delete" || effect === "send" || effect === "create" ? effect : "update";
+}
+
 /**
  * A module tool call the user must approve first: the input is validated now and the module's preview names
  * what would change, but nothing runs until `confirmAgentAction` (upstream Mailflare #225).
@@ -46,11 +55,13 @@ async function proposeModuleTool(
 	input: unknown,
 	callContext: CapabilityCallContext,
 ): Promise<ModuleProposal> {
-	const parsed = capabilityInputSchema(moduleId, descriptor.name)?.safeParse(input);
+	const schema = capabilityInputSchema(moduleId, descriptor.name);
+	const parsed = schema?.safeParse(input);
 	if (!parsed?.success) throw new Error("Invalid input for this tool");
-	const value = parsed.data as Record<string, unknown>;
+	let value = parsed.data as Record<string, unknown>;
 	let items: ModuleProposal["items"] = [];
 	let version: string | undefined;
+	let details: ModuleProposal["details"];
 	if (descriptor.approval) {
 		const preview = await invokeCapability(
 			moduleId,
@@ -59,16 +70,25 @@ async function proposeModuleTool(
 			callContext,
 		);
 		if (!preview.ok) throw new Error(preview.error.message);
-		({ items, version } = preview.output as Pick<ModuleProposal, "items" | "version">);
+		const output = preview.output as ModulePreview;
+		if (output.refused) throw new Error(output.refused.error);
+		({ items = [], version, details } = output);
+		if (output.input) {
+			// The module's reading replaces the model's input; it must still be valid input for the tool.
+			const normalized = schema!.safeParse(output.input);
+			if (!normalized.success) throw new Error("Invalid input for this tool");
+			value = normalized.data as Record<string, unknown>;
+		}
 	}
 	return {
 		action: descriptor.name,
 		status: "pending_approval",
 		moduleId,
-		effect: descriptor.effect === "delete" || descriptor.effect === "send" ? descriptor.effect : "update",
+		effect: proposalEffect(descriptor.effect),
 		input: value,
 		items,
 		...(version ? { version } : {}),
+		...(details ? { details } : {}),
 	};
 }
 

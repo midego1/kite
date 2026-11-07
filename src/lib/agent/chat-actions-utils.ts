@@ -49,12 +49,34 @@ export const moduleProposalSchema = z.object({
 	action: z.string().min(1).max(80),
 	status: z.literal("pending_approval"),
 	moduleId: z.string().min(1).max(40),
-	effect: z.enum(["update", "delete", "send"]),
+	effect: z.enum(["create", "update", "delete", "send"]),
 	input: z.record(z.string(), z.unknown()),
 	items: z.array(z.object({ label: z.string(), detail: z.string().nullable() })).max(20),
 	/** The module preview's state of the records when proposed; the approval is refused once it changed. */
 	version: z.string().max(4_000).optional(),
+	/** What the module's own card draws besides the input (`proposalCards`); never read by core. */
+	details: z.record(z.string(), z.unknown()).optional(),
 });
+
+/** The user's changes to a proposal's fields on its card, sent with the approval. */
+export const proposalEditsSchema = z
+	.record(z.string().max(80), z.unknown())
+	.refine((edits) => Object.keys(edits).length <= 40 && JSON.stringify(edits).length <= 8_000, "Too many changes");
+
+/**
+ * The proposal's input with the user's card edits, or why they cannot be applied: only the keys the tool's
+ * `approval.editable` names may change, so a card can never add a key the preview did not offer for editing.
+ */
+export function editedProposalInput(
+	input: Record<string, unknown>,
+	edits: Record<string, unknown> | undefined,
+	editable: readonly string[] | undefined,
+): { input: Record<string, unknown> } | { error: string } {
+	if (!edits || Object.keys(edits).length === 0) return { input };
+	const allowed = new Set(editable ?? []);
+	if (Object.keys(edits).some((key) => !allowed.has(key))) return { error: "This field cannot be changed here" };
+	return { input: { ...input, ...edits } };
+}
 
 export type ModuleProposal = z.infer<typeof moduleProposalSchema>;
 

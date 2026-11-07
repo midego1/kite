@@ -491,6 +491,21 @@ test("suggestion kinds carry client meta, and reopening actions belong to a kind
 	}
 });
 
+test("approval cards name a preview service of their own module and only editable keys of the tool's input", () => {
+	let editable = 0;
+	for (const entry of MODULE_CAPABILITIES)
+		for (const descriptor of entry.descriptors.filter((item) => item.approval)) {
+			assert.ok(descriptor.surfaces.includes("assistant_tool"), `${descriptor.name} is not an assistant tool`);
+			const preview = entry.descriptors.find((item) => item.name === descriptor.approval.preview);
+			assert.deepEqual(preview?.surfaces, ["service"], `${descriptor.name} names no preview service of its module`);
+			for (const key of descriptor.approval.editable ?? []) {
+				assert.ok(Object.hasOwn(descriptor.inputSchema.properties ?? {}, key), `${descriptor.name} edits ${key}`);
+				editable += 1;
+			}
+		}
+	assert.ok(editable > 0);
+});
+
 const MODEL_PROPERTY_TYPES = new Set(["string", "number", "integer", "boolean", "null"]);
 
 /** A scalar or enum property, with no `$ref`, `default`, nesting or combinator. */
@@ -585,9 +600,9 @@ test("lifecycle hooks follow the data-hook rule", () => {
 
 test("listCapabilities returns the enabled modules' descriptors for a surface in registry order", () => {
 	const names = (surface, enabled) => listCapabilities(surface, enabled).map((item) => item.descriptor.name);
-	assert.equal(names("assistant_tool", IDS).length, 9);
+	assert.equal(names("assistant_tool", IDS).length, 10);
 	assert.deepEqual(names("assistant_tool", ["booking", "templates", "import"]), []);
-	assert.deepEqual(names("assistant_tool", ["finance"]), ["list_subscriptions"]);
+	assert.deepEqual(names("assistant_tool", ["finance"]), ["list_subscriptions", "track_subscription"]);
 	assert.deepEqual(names("mcp_tool", ["calendar"]), names("assistant_tool", ["calendar"]));
 	assert.deepEqual(names("mcp_tool", ["finance"]), ["list_subscriptions"]);
 	assert.deepEqual(names("search", ["calendar"]), ["search"]);

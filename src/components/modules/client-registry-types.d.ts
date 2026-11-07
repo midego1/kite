@@ -57,6 +57,29 @@ export type ModulePaneClient = {
 	readingPaneSlots?: Record<string, ModuleReadingPaneSlot>;
 };
 
+/** All a proposal card learns: the proposed tool call as the server stored it, and the user's edits so far. */
+export type ProposalCardContext = {
+	/** The tool's input as the module's preview answered it (`approval.preview`). */
+	input: Record<string, unknown>;
+	/** The preview's `details`, the module's own data for the card. */
+	details: Record<string, unknown>;
+	edits: Record<string, unknown>;
+	onEditsChange: (edits: Record<string, unknown>) => void;
+	disabled: boolean;
+};
+
+/**
+ * The body of a chat approval card for one of the module's assistant tools: core draws the frame, the approve
+ * button and Undo; the module draws the fields, and only keys its descriptor's `approval.editable` names are kept.
+ */
+export type ModuleProposalCard = {
+	Body: ComponentType<ProposalCardContext>;
+	/** The approve button's text, and why it is unavailable (a required field is blank) or null. */
+	approve: (input: Record<string, unknown>) => { label: string; blocked: string | null };
+	/** What the approved call did, next to Undo. */
+	approvedText: (input: Record<string, unknown>, result: unknown) => string;
+};
+
 /** What a module's lazy client chunk exports. */
 export type ModuleClient = {
 	/** Client command handlers by the `handler` name in `UiCommand.target`. */
@@ -69,4 +92,6 @@ export type ModuleClient = {
 	messageSlots?: Record<string, ModuleMessageSlot>;
 	/** Attachment menu slots by the `id` the manifest declares. */
 	attachmentSlots?: Record<string, ModuleAttachmentSlot>;
+	/** Chat approval cards by the name of the assistant tool they approve. */
+	proposalCards?: Record<string, ModuleProposalCard>;
 };

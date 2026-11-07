@@ -1,8 +1,15 @@
 import { z } from "zod";
+import { chatTrackInputSchema, chatTrackOutputSchema } from "@/lib/finance/chat-track-schema";
 import { financeModelSchema } from "@/lib/finance/model-schema";
 import { subscriptionSuggestion } from "@/lib/finance/payload-schema";
 import { toModelExtensionSchema, type ModuleSchemas } from "../schema-utils";
-import { actionSchemas, resolveRefsSchemas, searchSchemas, triageStepSchemas } from "../shared-schemas";
+import {
+	actionSchemas,
+	approvalPreviewOutputSchema,
+	resolveRefsSchemas,
+	searchSchemas,
+	triageStepSchemas,
+} from "../shared-schemas";
 
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const cycle = z.enum(["weekly", "monthly", "quarterly", "yearly"]);
@@ -115,6 +122,11 @@ export const financeSchemas: ModuleSchemas = {
 	resolveRefs: resolveRefsSchemas(["finance:subscription"]),
 	search: searchSchemas,
 	list_subscriptions: listSubscriptions,
+	track_subscription: { input: chatTrackInputSchema, output: chatTrackOutputSchema },
+	previewTrackSubscription: {
+		input: z.object({ tool: z.literal("track_subscription"), input: z.record(z.string(), z.unknown()) }),
+		output: approvalPreviewOutputSchema,
+	},
 	remindRenewals: {
 		input: z.object({ scheduledTime: z.string().datetime({ offset: true }).optional() }),
 		output: z.object({ reminded: z.number().int().min(0), skipped: z.literal("module_disabled").optional() }),

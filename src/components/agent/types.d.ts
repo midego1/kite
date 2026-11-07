@@ -65,8 +65,13 @@ export type AgentActionProposal = {
 	folderName?: string;
 	/** A module tool waiting for approval (`update_events`, ...): its module, effect and preview lines. */
 	moduleId?: string;
-	effect?: "update" | "delete" | "send";
+	effect?: "create" | "update" | "delete" | "send";
 	items?: AgentProposalItem[];
+	/** A module tool's input as the card shows it and its preview's data for the module's own card. */
+	input?: Record<string, unknown>;
+	details?: Record<string, unknown>;
+	/** Set once a module tool ran: what it answered. */
+	result?: unknown;
 	/** Set once approved, for an action that can be undone. */
 	actionId?: string;
 	undoUntil?: string | null;
@@ -87,7 +92,8 @@ export type AgentTurnProps = {
 	draftActions: AgentDraftAction[];
 	onOpenDraft: (draftId: string) => void;
 	onApproveDraft: (draftId: string, revision: number) => void;
-	onApproveAction: (item: AgentMessage) => void;
+	/** `edits` are the user's changes on a module card (`proposalCards`), merged by the server into the editable keys. */
+	onApproveAction: (item: AgentMessage, edits?: Record<string, unknown>) => void;
 	approvingId: string | null;
 };
 

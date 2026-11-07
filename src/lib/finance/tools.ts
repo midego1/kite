@@ -14,7 +14,7 @@ import { selectToolRows, toolSubscription, toolTotals, type ToolInput } from "./
  * its source or latest message, any document's message, or a card from such a mailbox that updated it. A mixed row is left
  * out whole, because which fields that card changed is not recorded.
  */
-async function visibleToCaller(ctx: CapabilityCallContext, rows: SubscriptionRow[], documents: ChargeRow[]) {
+export async function visibleToCaller(ctx: CapabilityCallContext, rows: SubscriptionRow[], documents: ChargeRow[]) {
 	const hidden = await moduleHost.mail.aiHidden(
 		ctx,
 		rows.map((row) => ({

@@ -1,5 +1,6 @@
 import { deleteSubscription, editSubscription, setSubscriptionStatus, trackSubscription } from "@/lib/finance/actions";
 import { answerSubscription } from "@/lib/finance/answer";
+import { previewTrackSubscription, trackSubscriptionTool } from "@/lib/finance/chat-track";
 import { detectSubscriptionStep, wantsModelStep } from "@/lib/finance/detect";
 import { deleteDocument, recordDocument } from "@/lib/finance/document-actions";
 import { resolveFinanceRefs } from "@/lib/finance/refs";
@@ -21,5 +22,7 @@ export const financeHandlers: Record<string, CapabilityHandler> = {
 	resolveRefs: resolveFinanceRefs,
 	search: searchSubscriptions,
 	list_subscriptions: listSubscriptionsTool,
+	track_subscription: trackSubscriptionTool,
+	previewTrackSubscription,
 	remindRenewals,
 };

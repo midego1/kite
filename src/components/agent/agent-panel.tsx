@@ -541,12 +541,12 @@ export function AgentPanel({ open, fullSize, docked, onClose, onToggleFullSize }
 		}
 	}
 
-	async function confirmAction(item: AgentMessage) {
+	async function confirmAction(item: AgentMessage, edits?: Record<string, unknown>) {
 		if (!item.recordId) return;
 		setApprovingId(item.id);
 		setError(null);
 		try {
-			const result = await approveAgentAction(item.recordId);
+			const result = await approveAgentAction(item.recordId, edits);
 			setMessages((current) =>
 				current.map((message) => (message.id === item.id ? { ...message, content: JSON.stringify(result) } : message)),
 			);
@@ -719,7 +719,7 @@ export function AgentPanel({ open, fullSize, docked, onClose, onToggleFullSize }
 									draftActions={draftActions}
 									onOpenDraft={openDraftComposer}
 									onApproveDraft={(draftId, revision) => void startDraftReview(draftId, revision)}
-									onApproveAction={(item) => void confirmAction(item)}
+									onApproveAction={(item, edits) => void confirmAction(item, edits)}
 									approvingId={approvingId}
 								/>
 							))}

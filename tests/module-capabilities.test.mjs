@@ -84,10 +84,11 @@ test("mcp_tool lists Calendar's eight tools and list_subscriptions only while th
 	);
 });
 
-test("assistant_tool lists Calendar's eight tools and list_subscriptions only while their modules are on", () => {
+test("assistant_tool lists Calendar's eight tools and Money Watch's two only while their modules are on", () => {
 	assert.deepEqual(names(listCapabilities("assistant_tool", enabledWith([]))), [
 		...CALENDAR_TOOLS,
 		"list_subscriptions",
+		"track_subscription",
 	]);
 	assert.deepEqual(names(listCapabilities("assistant_tool", enabledWith(["calendar", "finance"]))), []);
 });

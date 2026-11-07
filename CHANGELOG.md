@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.11.07.1] - 2026-11-07
+
+### Fixed
+
+- A folder that is too large to list no longer stops a whole-account import: it is marked as failed with the reason and the other folders are still copied.
+- Setting up Resend for receiving now also makes Resend the receiving provider of that domain, so mail that arrives through it is no longer dropped.
+
 ## [2026.11.07.0] - 2026-11-07
 
 ### Added

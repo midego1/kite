@@ -1,4 +1,4 @@
-import { isBlockedHost, isIpAddressLiteral, isPrivateIpAddress } from "@/lib/security/outbound-url";
+import { canonicalHost, isBlockedHost, isIpAddressLiteral, isPrivateIpAddress } from "@/lib/security/outbound-url";
 import type { S3Location } from "./types";
 
 /** What the endpoint guard lets through beyond public https hosts. */
@@ -47,12 +47,13 @@ export function endpointHostname(endpoint: string): string {
 	return value.replace(/:\d+$/, "");
 }
 
-/** @public Exercised by the unit tests. */
+/** @public Exercised by the unit tests. Canonicalised first, so `127.1` and `localhost.` are loopback too. */
 export function isLoopbackHostname(hostname: string): boolean {
+	const host = canonicalHost(hostname);
 	return (
-		hostname === "localhost" ||
-		hostname === "::1" ||
-		(/^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname) && isPrivateIpAddress(hostname))
+		host === "localhost" ||
+		host === "::1" ||
+		(!!host && /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host) && isPrivateIpAddress(host))
 	);
 }
 

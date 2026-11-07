@@ -143,11 +143,41 @@ function embedsBlockedIpv4(host: string): boolean {
 }
 
 /**
+ * The host as a connection would see it: trimmed, lower-case, without brackets or a trailing dot, with IDN labels in
+ * their ASCII form (`bücher.example` is `xn--bcher-kva.example`, full-width digits are digits) and with IPv4 shorthands
+ * (`127.1`, `0177.0.0.1`, `0x7f.0.0.1`, `2130706433`) turned into dotted quads by the WHATWG URL parser, so a literal
+ * check cannot be dodged by spelling an address differently. Null when it is not a valid host.
+ */
+export function canonicalHost(host: string): string | null {
+	const value = host
+		.trim()
+		.toLowerCase()
+		.replace(/^\[|\]$/g, "")
+		.replace(/\.$/, "");
+	if (!value) return null;
+	if (value.includes(":")) return isIpAddressLiteral(value) ? value : null;
+	// One trailing dot is the DNS root; any other empty label (`127.0.0.1..`, `.host`, `a..b`) is not a host name.
+	if (value.split(".").some((label) => !label)) return null;
+	try {
+		const url = new URL(`http://${value}/`);
+		const bare = !url.username && !url.password && !url.port && url.pathname === "/" && !url.search && !url.hash;
+		if (!bare || !url.hostname) return null;
+		// The parser maps some characters (full-width dots) to dots after the label check above, and keeps a final one.
+		const hostname = url.hostname.replace(/\.$/, "");
+		return hostname && !hostname.split(".").some((label) => !label) ? hostname : null;
+	} catch {
+		return null;
+	}
+}
+
+/**
  * Literal check, without DNS: blocked names, private IP literals, wildcard DNS services and names that embed a
- * private IPv4 address.
+ * private IPv4 address. The host is canonicalised first (`canonicalHost`), so every caller gets the same answer for
+ * `127.1`, `0x7f.0.0.1`, `[::ffff:127.0.0.1]`, `localhost.` and `ｌｏｃａｌｈｏｓｔ`, whether or not it parsed a URL
+ * first; a host that is not valid is blocked.
  */
 export function isBlockedHost(hostname: string): boolean {
-	const host = hostname.trim().toLowerCase().replace(/\.$/, "");
+	const host = canonicalHost(hostname);
 	if (!host) return true;
 	if (BLOCKED_HOSTNAMES.has(host)) return true;
 	if (BLOCKED_HOSTNAME_SUFFIXES.some((suffix) => host.endsWith(suffix))) return true;

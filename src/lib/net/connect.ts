@@ -1,5 +1,6 @@
 import { MailServerRefusedError } from "./errors";
-import { canonicalMailHost, mailHostPolicy, mailServerHostProblem, MAIL_SERVER_PORTS } from "./host-guard-utils";
+import { mailHostPolicy, mailServerHostProblem, MAIL_SERVER_PORTS } from "./host-guard-utils";
+import { canonicalHost } from "@/lib/security/outbound-url";
 import type { MailServerTarget, MailSocket, TcpConnect } from "./types";
 
 async function cloudflareConnect(): Promise<TcpConnect> {
@@ -38,7 +39,7 @@ export async function openMailSocket(
 	const connect = env.TCP_CONNECT ?? (await cloudflareConnect());
 	const socket = connect(
 		// The canonical form the guard checked: `127.1` is never dialled as a name the platform might expand later.
-		{ hostname: canonicalMailHost(target.host) ?? target.host.trim(), port: target.port },
+		{ hostname: canonicalHost(target.host) ?? target.host.trim(), port: target.port },
 		{ secureTransport: target.security === "tls" ? "on" : "starttls", allowHalfOpen: false },
 	);
 	try {

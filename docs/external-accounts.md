@@ -90,9 +90,9 @@ What it does not do:
 
 ## Which account mail came through
 
-Mail that came in through a connected account shows a **via** chip: in the message list next to the subject, and in the reader beside the date. It names the account's label, or its provider while the label is still the address (`via Gmail`, `via iCloud Mail`, or the domain for **Other IMAP provider**); hover it to see the address. Mail you send as the account in Kite carries the chip too. Mail that reached your Kite address any other way (forwarded mail included) has none, and once you remove the account its mail keeps its content but loses the chip.
+Mail that came in through a connected account is marked **via** the account: in the message list and in the reader beside the date. The marker names the account's label, or its provider while the label is still the address (`via Gmail`, `via iCloud Mail`, or the domain for **Other IMAP provider**); hover it to see the address. Mail you send as the account in Kite carries it too. Mail that reached your Kite address any other way (forwarded mail included) has none, and once you remove the account its mail keeps its content but loses the marker.
 
-Choosing the chip in the reader searches for everything that came through the same account. You can also search with `via:` yourself, combined with anything else:
+In the message list the marker is a small link icon by default, with the account in its accessible name and tooltip, so the subject keeps its room; **Settings → Inbox → Labels in the message list** chooses **Compact** (the icon, and a coloured square for the mailbox in [All mailboxes](all-mailboxes.md#what-you-see)), **Full** (the `via Gmail` text chip and the mailbox's name) or **Off** (neither in the rows). The setting follows your account with the rest of your [layout](privacy.md). The open message always shows the full chip, and choosing it there opens the account's [view](#connected-account-views). You can also search with `via:` yourself, combined with anything else:
 
 | Search | Finds mail that came through |
 | --- | --- |
@@ -102,6 +102,24 @@ Choosing the chip in the reader searches for everything that came through the sa
 | `via:example.org` | any account whose address is at that domain |
 
 `via:` needs migration 0079; before it is applied it finds nothing.
+
+### Connected account views
+
+Each account you connected is listed in the sidebar under **Connected accounts**, below **Management** and above **Folders**, as a view of the Inbox with only the mail that came in through it. A short line under the heading says so ("Each shows only the mail that came in through that account. Nothing is moved.") until you open a view or choose **Got it**, and each entry's tooltip says the same with the account's address.
+
+- **A view, not a search and not a mailbox.** Choosing an entry narrows the Inbox with the same server-side `via:<the account's address>` filter the reader's chip uses, but the search box stays empty: the list's title becomes the view's name (the account's label or provider, with the address in its tooltip) and an arrow before it goes **Back to Inbox**. Nothing is moved or stored. Typing in the search box searches within the view. The view lives in the address (`/inbox?via=<address>`), so the browser's Back and Forward, the sidebar's Inbox and a reload all agree with what the list shows; it closes when you leave the mail pages or switch to a mailbox that does not receive the account's mail. On a phone, choosing a view closes the menu. The view belongs to the Inbox and the messages opened from it: opening a message, Newer and Older, leaving or archiving a message and the phone's back arrow all stay inside it (the address carries it), but the sidebar's links to Sent, Archive and the other lists drop it, since they are other places. A link to another list with `?via=` narrows that list the same way, titled with the view and the folder; **Empty Trash** and **Empty Spam** are not offered there, since they would empty the whole folder.
+- **Only your own accounts, under their mailbox.** With one mailbox selected the section lists the accounts that deliver into it; in All mailboxes every account is listed under the name of the mailbox it delivers into. It is hidden when you have no account there, in the icon-only sidebar, and before migration 0079. Someone you share a mailbox with sees your account's mail marked via it, but not your account in their sidebar.
+- **Named like the marker.** An entry reads as the account's label (or its provider). The row you are on is highlighted instead of Inbox, and choosing the chip in an open message opens the same view.
+- **No counts.** Unlike folders, the entries show no unread numbers.
+
+In a full-width list (reading pane set to No split) the compact markers come before the subject instead of after it, and rows without the link icon keep its place, so the subjects line up; hovering a marker shows its name and clicking it opens the message.
+
+### Colours of the marks
+
+The mailbox's square and the account's icon take a colour you choose, so a mailbox is recognisable at a glance and the same colour shows in the sidebar: a small square on the mailbox's avatar and beside its name above its folders and accounts in All mailboxes, and the account's icon in its sidebar row. Choose them in **Settings → Inbox → Label colours**, which lists each mailbox you can open and each account you connected, or, for an account, from the **⋯** button on its sidebar row.
+
+- **Eight colours** (blue, purple, pink, red, orange, amber, green, teal), each readable (at least 3:1) on the list's light and dark backgrounds, Kite classic's included. A mailbox you have not chosen for gets an automatic colour from the same eight, fixed by the mailbox's own id and different from your other mailboxes' while there are eight or fewer. Adding a mailbox leaves the others' colours alone unless its id sorts before one and wants the same colour, which then moves on to the next free one; choose a colour for a mailbox to pin it. An account's icon stays grey until you choose.
+- **They follow your account** with the rest of the layout (no database change), in the browser's storage and on the account's layout, keyed by mailbox and account. Colours of mailboxes and accounts that are gone are ignored, and dropped the next time you choose a colour in Settings → Inbox or when it opens, once your account's layout has loaded (so a cleanup never overwrites colours saved on another device; if the layout could not be loaded, nothing is cleaned up).
 
 ## Forward mail to Kite instead
 

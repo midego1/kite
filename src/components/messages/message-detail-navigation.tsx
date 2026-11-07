@@ -1,5 +1,6 @@
 "use client";
 
+import { useViewHref } from "@/components/mail-search/use-view-href";
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronLeft, ChevronRight } from "lucide-react";
@@ -97,13 +98,14 @@ export function MessageDetailNavigation({ messageId, unread }: MessageDetailNavi
 	const t = useT();
 	const context = useContext(NavigationContext);
 	const router = useRouter();
+	const viewHref = useViewHref();
 	const { shortcutsEnabled } = useShortcuts();
 	useEffect(() => {
 		if (unread) context?.recordUnread(messageId);
 	}, [context?.recordUnread, messageId, unread]);
 	const { previousId, nextId } = getMessageDetailNavigationState(context?.entries ?? [], messageId);
 	const open = (id: string | null) => {
-		if (id && context) router.push(`${context.hrefPrefix}/${id}`);
+		if (id && context) router.push(viewHref(`${context.hrefPrefix}/${id}`));
 	};
 	useHotkeys(
 		readerNavigationShortcuts((direction) => open(direction === "older" ? nextId : previousId)),

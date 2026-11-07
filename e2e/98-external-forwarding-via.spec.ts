@@ -51,6 +51,8 @@ async function setStyle(page: Page, style: string, theme: string) {
 		({ style, theme }) => {
 			localStorage.setItem("kite-style", style);
 			localStorage.setItem("kite-theme", theme);
+			// The text chip is what these checks look at; the compact icon (the default) is in 100-message-labels.
+			localStorage.setItem("kite-message-labels", "full");
 		},
 		{ style, theme },
 	);
@@ -136,7 +138,9 @@ test("synced mail shows a via chip in the list and the reader, and via: filters 
 			const readerChip = page.getByRole("button", { name: `via example.test: show all mail through ${address}` });
 			await expect(readerChip).toBeVisible({ timeout: 30_000 });
 			await readerChip.click();
-			await expect(page.getByRole("textbox", { name: /Search mail/ }).first()).toHaveValue(`via:${address}`);
+			// The chip opens the account's view: titled with it, the search box left empty.
+			await expect(page.locator(`[data-account-view-title="${address}"]`)).toBeVisible();
+			await expect(page.getByRole("textbox", { name: /Search mail/ }).first()).toHaveValue("");
 			await expect(page.locator("[data-message-row]").filter({ hasText: `${token} synced` })).toBeVisible();
 			await expect(page.locator("[data-message-row]").filter({ hasText: `${token} received` })).toHaveCount(0);
 		} finally {

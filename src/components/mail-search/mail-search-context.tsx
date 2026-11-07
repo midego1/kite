@@ -1,7 +1,9 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
+import { viaSearchQuery } from "@/lib/external-accounts/via-utils";
 import type { MailSearchContextValue } from "./types";
 
 const MailSearchContext = createContext<MailSearchContextValue | null>(null);
@@ -23,6 +25,8 @@ const SEARCH_DEBOUNCE_MS = 250;
 const MAIL_SEARCH_HANDOFF_KEY = "kite:mail-search-handoff";
 /** A note older than this is stale: the view it was meant for never mounted. */
 const HANDOFF_MAX_AGE_MS = 10_000;
+/** The address parameter that opens a connected account's view (`/inbox?via=<address>`). */
+const VIEW_PARAM = "via";
 
 /** Leaves a search for the next mail view that mounts; nothing is left when storage is unavailable. */
 export function handOffMailSearch(query: string): void {
@@ -63,22 +67,67 @@ function initialSearch(): string {
 	return readHandoff() ?? new URLSearchParams(window.location.search).get("q") ?? "";
 }
 
+/** The account in the address (`?via=`), trimmed; an empty value is no view. */
+function viewFromParams(params: { get(name: string): string | null } | null): string | null {
+	return params?.get(VIEW_PARAM)?.trim() || null;
+}
+
 export function MailSearchProvider({ children }: { children: ReactNode }) {
 	// `input` follows every keystroke; `query` is what lists fetch with, and
 	// trails it slightly so a typed word costs one request instead of one per letter.
 	const [input, setInput] = useState(initialSearch);
-	const [query, setQuery] = useState(input);
+	const [typed, setTyped] = useState(input);
+	const pathname = usePathname();
+	const router = useRouter();
+	const params = useSearchParams();
+	// The address is the source of truth for an account view, so the sidebar's Inbox, the browser's Back and a reload all
+	// agree with what the list shows. A view belongs to the mail pages: elsewhere the parameter means nothing.
+	const view = isMailPath(pathname) ? viewFromParams(params) : null;
 
 	useEffect(clearHandoff, []);
 
 	useEffect(() => {
 		// Clearing the box should empty the list at once; typing waits for a pause.
 		const delay = input.trim() ? SEARCH_DEBOUNCE_MS : 0;
-		const timer = setTimeout(() => setQuery(input.trim() ? input : ""), delay);
+		const timer = setTimeout(() => setTyped(input.trim() ? input : ""), delay);
 		return () => clearTimeout(timer);
 	}, [input]);
 
-	return (
-		<MailSearchContext.Provider value={{ query, input, setQuery: setInput }}>{children}</MailSearchContext.Provider>
+	const value = useMemo<MailSearchContextValue>(
+		() => ({
+			query: [view ? viaSearchQuery({ address: view }) : "", typed].filter(Boolean).join(" "),
+			input,
+			setQuery: setInput,
+			view,
+			setView: (address, { replace = false } = {}) => {
+				const url = new URL(window.location.href);
+				const next = address?.trim();
+				if (next) url.searchParams.set(VIEW_PARAM, next);
+				else url.searchParams.delete(VIEW_PARAM);
+				const target = `${url.pathname}${url.search}${url.hash}`;
+				if (replace) router.replace(target);
+				else router.push(target);
+			},
+		}),
+		[view, typed, input, router],
 	);
+
+	return <MailSearchContext.Provider value={value}>{children}</MailSearchContext.Provider>;
+}
+
+const MAIL_FOLDER_PREFIXES = [
+	"/inbox",
+	"/starred",
+	"/snoozed",
+	"/sent",
+	"/drafts",
+	"/archived",
+	"/spam",
+	"/trash",
+	"/folders",
+];
+
+/** The mail lists and the open message, where a view narrows the list. */
+function isMailPath(pathname: string): boolean {
+	return MAIL_FOLDER_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 }

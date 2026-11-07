@@ -14,6 +14,7 @@ These are names, written in Latin letters in every language and never translated
 | --- | --- | --- | --- |
 | Inbox | Inbox | البريد الوارد | The ordinary Dutch word, so not "Postvak IN". |
 | Mailbox | Mailbox | صندوق البريد | |
+| Connected account | Gekoppeld account | حساب مرتبط | The sidebar's "Connected accounts" section lists them as views of the Inbox. |
 | Starred | Met ster | المميّزة بنجمة | |
 | Snooze, Snoozed | Uitstellen, Uitgesteld | تأجيل، المؤجّلة | A real verb rather than the anglicism. |
 | Sent | Verzonden | المُرسَلة | |

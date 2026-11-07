@@ -64,6 +64,16 @@ test("a stored layout keeps only valid choices and clamps sizes", () => {
 	for (const value of [null, "x", [], 4]) assert.deepEqual(parseLayoutPreferences(value), {});
 });
 
+test("the labels choice for message list rows is kept only when it is one of the three modes", () => {
+	for (const listLabels of ["compact", "full", "off"])
+		assert.deepEqual(parseStoredLayout(JSON.stringify({ listLabels })), { listLabels });
+	for (const listLabels of ["tiny", "", 1, true, null])
+		assert.deepEqual(parseStoredLayout(JSON.stringify({ listLabels })), {});
+	assert.deepEqual(parseLayoutPatch({ layout: { listLabels: "off" } }), { listLabels: "off" });
+	assert.equal(parseLayoutPatch({ layout: { listLabels: "hidden" } }), null);
+	assert.deepEqual(layoutStorageEntries({ listLabels: "full" }, "user-1"), [["kite-message-labels", "full"]]);
+});
+
 test("a stored language must be one Kite speaks", () => {
 	assert.deepEqual(parseStoredLayout('{"interfaceLanguage":"ar"}'), { interfaceLanguage: "ar" });
 	assert.deepEqual(parseStoredLayout('{"interfaceLanguage":"auto"}'), { interfaceLanguage: "auto" });
@@ -94,6 +104,8 @@ test("a layout maps to the browser storage the views read", () => {
 	const layout = {
 		readingPane: "below",
 		density: "compact",
+		listLabels: "full",
+		labelColors: { mailboxes: { "box-1": "red" }, accounts: { "acc-1": "teal" } },
 		conversationView: false,
 		font: "opendyslexic",
 		emailFont: "reader",
@@ -109,13 +121,15 @@ test("a layout maps to the browser storage the views read", () => {
 	assert.deepEqual(entries, [
 		["kite-reading-pane", "below"],
 		["kite-message-density", "compact"],
-		["kite-conversation-view", "off"],
+		["kite-message-labels", "full"],
 		["kite-font", "opendyslexic"],
 		["kite-email-font", "reader"],
 		["kite-font-scope", "everywhere"],
 		["kite-interface-direction", "rtl"],
 		["kite-interface-language", "ar"],
 		["kite-translate-to", "th"],
+		["kite-conversation-view", "off"],
+		["kite-label-colors", '{"mailboxes":{"box-1":"red"},"accounts":{"acc-1":"teal"}}'],
 		["kite-translate-never", "en,de"],
 		["kite-column-width:message-list", "420"],
 		["kite-column-width:message-list:user-1", "420"],
@@ -132,6 +146,36 @@ test("a layout maps to the browser storage the views read", () => {
 		["kite-column-width:message-list-height", "300"],
 		["kite-column-width:message-list-height:user-1", "300"],
 	]);
+});
+
+test("saving the label colours replaces the saved map, so a removed colour stays removed", async (t) => {
+	const { db } = await database(t);
+	const both = { mailboxes: { "box-1": "red", "box-2": "blue" }, accounts: { "acc-1": "teal" } };
+	assert.deepEqual(await saveLayoutPreferences(db, "owner", { density: "compact", labelColors: both }), {
+		density: "compact",
+		labelColors: both,
+	});
+	// One colour fewer: the others stay, the removed one does not come back from the old map.
+	const fewer = { mailboxes: { "box-2": "blue" }, accounts: { "acc-1": "teal" } };
+	assert.deepEqual(await saveLayoutPreferences(db, "owner", { labelColors: fewer }), {
+		density: "compact",
+		labelColors: fewer,
+	});
+	// None left: an empty choice is kept as such, and the rest of the layout is untouched.
+	assert.deepEqual(await saveLayoutPreferences(db, "owner", { labelColors: {} }), {
+		density: "compact",
+		labelColors: {},
+	});
+	// A save of other choices leaves the colours alone.
+	assert.deepEqual(await saveLayoutPreferences(db, "owner", { labelColors: fewer }), {
+		density: "compact",
+		labelColors: fewer,
+	});
+	assert.deepEqual(await saveLayoutPreferences(db, "owner", { readingPane: "none" }), {
+		readingPane: "none",
+		density: "compact",
+		labelColors: fewer,
+	});
 });
 
 test("withoutKeys leaves out choices made here and not saved yet", () => {

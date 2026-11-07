@@ -11,7 +11,7 @@ Your browser remembers the choice. Nothing is stored on the server, so another b
 ## What you see
 
 - **Every mailbox you can open**, and only those: your own mailboxes and the shared ones you were given access to. Being an administrator does not add anyone else's mailbox; the view holds exactly the mailboxes you could open one by one.
-- **A label on each email** with the name of the mailbox it belongs to, in that mailbox's colour.
+- **A mark on each email** for the mailbox it belongs to. By default a small coloured square (its name is its accessible name and tooltip, and it is square so it is never taken for the round blue unread dot by the avatar), so the subject keeps its room; **Settings → Inbox → Labels in the message list** switches to the full label with the mailbox's name, or turns the mark off, and **Label colours** below it picks each mailbox's colour. Mail that came in through a [connected account](external-accounts.md#which-account-mail-came-through) carries its own small link icon.
 - **Counts added up.** The numbers next to Inbox, Starred and the other folders are the totals of the mailboxes in view.
 - **Folders per mailbox.** Your own folders are listed under the name of the mailbox they belong to. New folders still belong to one mailbox: **Create folder** asks which one. Each folder's **⋯** menu (or a right-click on it) renames or deletes it, as in a single mailbox.
 - **Conversations per mailbox.** In conversation view a thread is grouped within one mailbox. When the same email reached two of your mailboxes, each mailbox shows its own conversation.

@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { CapabilityCallContext, CapabilityHandler, JsonValue } from "@/lib/modules/module-types";
 import { isDayString } from "./date-utils";
 import { FinanceRefusal, refusalOf } from "./errors";
-import { initialStatus, type PaymentDocType, type PaymentStatus } from "./payment-utils";
+import { initialStatus, referenceNumber, rowReference, type PaymentDocType, type PaymentStatus } from "./payment-utils";
 import { ownerPayment, removePaymentRow, updatePayment, type PaymentRow } from "./payments";
 import { dayToDate } from "./record-utils";
 import { manualVendorKey } from "./vendor-utils";
@@ -36,6 +36,7 @@ const previousSchema = z
 		vendorKey: z.string(),
 		amountMinor: z.number().int(),
 		currency: z.string(),
+		docRef: z.string().nullable(),
 		documentAt: z.string().datetime({ offset: true }),
 		docType,
 		status,
@@ -54,10 +55,25 @@ function statusFor(type: PaymentDocType, wanted: PaymentStatus | undefined, curr
 	return next === "paid" ? "paid" : "open";
 }
 
+/**
+ * The row's dedupe reference after a correction. A payment's, refund's or credit note's carries its amount and
+ * currency (`A12345:1500EUR`, see `rowReference`), so a corrected amount, currency or type changes it: left alone, the
+ * same document arriving again at the corrected amount would be recorded a second time.
+ */
+function correctedReference(row: PaymentRow, type: PaymentDocType, amount: { minor: number; currency: string }) {
+	const reference = rowReference(type, referenceNumber(row.docRef), amount);
+	return reference === row.docRef ? {} : { docRef: reference };
+}
+
 /** The columns a correction writes, from the row as it was and the fields asked for. */
 function correctedColumns(row: PaymentRow, fields: PaymentFields) {
 	const type = fields.docType ?? row.docType;
+	const amount = {
+		minor: fields.amountMinor ?? row.amountMinor,
+		currency: fields.currency ?? row.currency,
+	};
 	return {
+		...correctedReference(row, type, amount),
 		// A renamed vendor pairs only with its own rows, not with the sender's original ones.
 		...(fields.vendor !== undefined && fields.vendor !== row.vendor
 			? { vendor: fields.vendor, vendorKey: manualVendorKey(fields.vendor) }
@@ -76,6 +92,7 @@ function snapshot(row: PaymentRow): Previous {
 		vendorKey: row.vendorKey,
 		amountMinor: row.amountMinor,
 		currency: row.currency,
+		docRef: row.docRef,
 		documentAt: row.documentAt.toISOString(),
 		docType: row.docType,
 		status: row.status,

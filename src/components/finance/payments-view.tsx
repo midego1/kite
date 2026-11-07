@@ -72,15 +72,18 @@ function MonthTotals({ totals, locale }: { totals: MonthCurrencyTotal[]; locale:
 }
 
 function scanText(scan: ScanState, t: ReturnType<typeof useT>): string {
-	const values = { scanned: scan.scanned, recorded: scan.recorded };
+	const values = { scanned: scan.scanned, recorded: scan.recorded, skipped: scan.skipped };
 	if (scan.status === "running")
 		return t("Scanning the last 90 days: {scanned, plural, one {# message} other {# messages}} checked so far", values);
-	const done = t(
+	if (scan.skipped)
+		return t(
+			"Last scan: {recorded, plural, =0 {no new payments} one {# new payment} other {# new payments}} in {scanned, plural, one {# message} other {# messages}}. {skipped, plural, one {# message} other {# messages}} could not be read.",
+			values,
+		);
+	return t(
 		"Last scan: {recorded, plural, =0 {no new payments} one {# new payment} other {# new payments}} in {scanned, plural, one {# message} other {# messages}}",
 		values,
 	);
-	if (!scan.skipped) return done;
-	return `${done}. ${t("{skipped, plural, one {# message} other {# messages}} could not be read.", { skipped: scan.skipped })}`;
 }
 
 function ScanButton({ scan, onStarted }: { scan: ScanState | null; onStarted: () => void }) {

@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { DragEvent } from "react";
 import { Paperclip, Trash2 } from "lucide-react";
 import { ComposeHeader, composeTitle } from "./compose-header";
 import { useRouter } from "next/navigation";
@@ -19,6 +18,7 @@ import { SendReview } from "@/components/agent/send-review";
 import type { OpenedSendReview, ReviewSnapshot } from "@/components/agent/send-review-types";
 import { buildSendFormData, fetchDraft } from "./utils";
 import { ComposeAttachmentList } from "./compose-attachment-list";
+import { useComposerFiles } from "./use-composer-files";
 import { SendPreview } from "./send-preview";
 import {
 	composeFrameAria,
@@ -108,7 +108,6 @@ export function ComposeForm({
 		cloudThresholdBytes: 3_000_000,
 		cloudLinks: true,
 	});
-	const [draggingFiles, setDraggingFiles] = useState(false);
 	const [modalMode, setModalMode] = useState(false);
 	const [minimized, setMinimized] = useState(false);
 	const besideAssistant = useComposerBesideAssistant({ mode, minimized, modalMode }, setMinimized);
@@ -140,7 +139,6 @@ export function ComposeForm({
 	const undoRequested = useRef(false);
 	const attachmentInput = useRef<HTMLInputElement | null>(null);
 	const attachButton = useRef<HTMLButtonElement | null>(null);
-	const fileDragDepth = useRef(0);
 	const previousSignature = useRef("");
 
 	const senderAddresses = useMemo(
@@ -608,9 +606,10 @@ export function ComposeForm({
 		setStoredAttachments((current) => current.filter((item) => item.id !== attachmentId));
 	}
 
-	function addAttachments(files: FileList | null) {
+	function addAttachments(files: FileList | File[] | null) {
 		if (!files) return;
 		const nextFiles = Array.from(files);
+		if (nextFiles.length === 0) return;
 		const refused = refusedAttachments(
 			attachmentPolicy,
 			[...storedAttachments.map((item) => item.size), ...attachments.map((attachment) => attachment.file.size)],
@@ -623,32 +622,6 @@ export function ComposeForm({
 
 		setAttachments((current) => [...current, ...nextFiles.map((file) => ({ id: crypto.randomUUID(), file }))]);
 		if (attachmentInput.current) attachmentInput.current.value = "";
-	}
-
-	function onFileDragEnter(event: DragEvent<HTMLFormElement>) {
-		if (!event.dataTransfer.types.includes("Files")) return;
-		fileDragDepth.current += 1;
-		if (!loading && !loadingDraft) setDraggingFiles(true);
-	}
-
-	function onFileDragOver(event: DragEvent<HTMLFormElement>) {
-		if (!event.dataTransfer.types.includes("Files")) return;
-		event.preventDefault();
-		event.dataTransfer.dropEffect = loading || loadingDraft ? "none" : "copy";
-	}
-
-	function onFileDragLeave(event: DragEvent<HTMLFormElement>) {
-		if (!event.dataTransfer.types.includes("Files")) return;
-		fileDragDepth.current = Math.max(0, fileDragDepth.current - 1);
-		if (fileDragDepth.current === 0) setDraggingFiles(false);
-	}
-
-	function onFileDrop(event: DragEvent<HTMLFormElement>) {
-		if (!event.dataTransfer.types.includes("Files")) return;
-		event.preventDefault();
-		fileDragDepth.current = 0;
-		setDraggingFiles(false);
-		if (!loading && !loadingDraft) addAttachments(event.dataTransfer.files);
 	}
 
 	function selectSender(value: string) {
@@ -670,6 +643,16 @@ export function ComposeForm({
 			onRemoveStored={(id) => void removeStoredAttachment(id)}
 		/>
 	);
+
+	const fileFrame = useComposerFiles({
+		busy: loading || loadingDraft,
+		minimized,
+		addAttachments,
+		attachmentNames: () => [
+			...storedAttachments.map((item) => item.filename),
+			...attachments.map((item) => item.file.name),
+		],
+	});
 
 	const frameClass = composeFrameClass({ mode, minimized, modalMode }, besideAssistant);
 
@@ -762,17 +745,15 @@ export function ComposeForm({
 						inline.collapse(draftSaves.draftId ?? draftId);
 					}
 				}}
-				onDragEnterCapture={minimized ? undefined : onFileDragEnter}
-				onDragOverCapture={minimized ? undefined : onFileDragOver}
-				onDragLeaveCapture={minimized ? undefined : onFileDragLeave}
-				onDropCapture={minimized ? undefined : onFileDrop}
+				{...fileFrame.frameHandlers}
 			>
-				{draggingFiles && !minimized && (
+				{fileFrame.dragging && (
 					<div
-						className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center border-2 border-dashed border-blue-400 bg-blue-50/90 text-sm font-medium text-blue-700"
+						className="pointer-events-none absolute inset-0 z-30 flex flex-col items-center justify-center gap-2 rounded-[inherit] border-2 border-dashed border-blue-500 bg-blue-500/20 text-neutral-900 dark:border-blue-400"
 						aria-hidden="true"
 					>
-						{t("Drop files to attach")}
+						<Paperclip className="size-6 text-blue-600 dark:text-blue-300" />
+						<span className="text-sm font-medium">{t("Drop files to attach")}</span>
 					</div>
 				)}
 				<ComposeHeader
@@ -783,7 +764,7 @@ export function ComposeForm({
 					modalMode={modalMode}
 					onToggleMinimized={() => {
 						setMinimized((current) => !current);
-						setDraggingFiles(false);
+						fileFrame.stopDragging();
 					}}
 					onToggleModal={() => {
 						if (minimized) setMinimized(false);

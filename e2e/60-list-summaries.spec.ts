@@ -3,7 +3,7 @@ import { DOMAIN, STORAGE_STATE } from "./support/constants";
 import { useFakeProvider } from "./support/agent";
 import { createSignedInAccount, okJson, openAutoReadSection, selectMailbox } from "./support/auto-read";
 import { startFakeModel } from "./support/fake-model";
-import { LINE_FROM_JOB, LINE_FROM_TRIAGE } from "./support/fake-model-scenarios";
+import { LINE_ARABIC, LINE_FROM_JOB, LINE_FROM_TRIAGE } from "./support/fake-model-scenarios";
 import type { FakeModel, FakeRecordedRequest } from "./support/fake-model-types";
 import type { StoredMessage } from "./support/helpers-types";
 import { apiContext, postInbound, uniqueToken, waitForMessage } from "./support/helpers";
@@ -126,6 +126,28 @@ test.describe("One-line summaries in the message list", () => {
 			await page.goto("/inbox");
 			await expect(row(page, subject)).toBeVisible();
 			await expect(row(page, subject).locator("[data-line-summary]")).toHaveCount(0);
+		} finally {
+			await context.close();
+			await account.api.dispose();
+		}
+	});
+
+	test("in the full-width list the dash after the subject stays outside the summary, whatever its direction", async ({
+		browser,
+	}) => {
+		const account = await newAccount("lsr", { autonomy: "suggest" });
+		const { context, page } = await inboxPage(browser, account);
+		try {
+			await page.addInitScript(() => localStorage.setItem("kite-reading-pane", "none"));
+			await page.goto("/inbox");
+			const subject = uniqueToken("Budget review");
+			await deliver(account, { subject, text: `${LONG_BODY} [[scenario:line-arabic]]` });
+			const line = row(page, subject).locator("[data-line-summary]");
+			await expect(line).toHaveText(LINE_ARABIC);
+			// The isolated (dir=auto) span around the summary holds nothing else, so the dash cannot follow its direction.
+			const isolated = line.locator("xpath=ancestor::span[@dir='auto'][1]");
+			await expect(isolated).toHaveText(LINE_ARABIC);
+			await expect(isolated.locator("xpath=..")).toContainText(`- ${LINE_ARABIC}`);
 		} finally {
 			await context.close();
 			await account.api.dispose();

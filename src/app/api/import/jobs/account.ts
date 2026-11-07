@@ -3,6 +3,7 @@ import { ImportJobSaveError, ImportMigrationPendingError, assertAccountImportsRe
 import { GMAIL_LABELS_DESTINATION, parseAccountFolderRequest } from "@/lib/import/folder-mapping-utils";
 import { resolveImportDestination } from "@/lib/import/folders";
 import { importServerProblem } from "@/lib/import/imap";
+import { resolveServer } from "./server-check";
 import { createAccountImportJob, serializeImportJob } from "@/lib/import/jobs";
 import { checkImportStart } from "@/lib/import/size-guard";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
@@ -64,6 +65,9 @@ export async function createAccountJobResponse(
 				!(await resolveImportDestination(env, mailbox, folder.destination))
 			)
 				return Response.json({ error: "Folder not found" }, { status: 404 });
+		// Before any new folder is created too, so a refused server leaves none.
+		const unresolved = await resolveServer(env, user.id, account);
+		if (unresolved) return unresolved;
 		const resolved = [];
 		for (const folder of folders) {
 			const isNew = folder.destination.startsWith("new:");

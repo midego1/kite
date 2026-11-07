@@ -1,5 +1,7 @@
 import { openImapSession } from "@/lib/imap/session";
 import { IMAP_PORTS, imapLimits } from "@/lib/imap/protocol-utils";
+import { MailServerRefusedError } from "@/lib/net/errors";
+import { assertMailServerHost } from "@/lib/net/host-guard";
 import { mailHostPolicy, mailServerHostProblem } from "@/lib/net/host-guard-utils";
 import { fetchSegment, planSizedFetch } from "./capped-fetch";
 import type { SignInGuard } from "./sign-in-limit";
@@ -38,6 +40,30 @@ export function openImportSession(env: ImapImportEnv, input: ImapAccount, signal
 /** Why the import form's server is refused before anything connects (a local host, a port other than 993 or 143). */
 export function importServerProblem(env: ImapImportEnv, input: Pick<ImapAccount, "host" | "port">): string | null {
 	return mailServerHostProblem(input.host, input.port, mailHostPolicy(env, process.env.NODE_ENV), IMAP_PORTS);
+}
+
+/**
+ * `importServerProblem` plus, on the Node server, every address the name resolves to: what saving a job checks, so a
+ * name that resolves to a private address is refused when the job is created, not only when its first run connects.
+ * Each run is checked again when it connects (the Node connector resolves and pins the address it vetted). With a
+ * `guard` (the routes pass the import sign-in limit) a refused lookup counts like a failed sign-in, so saving jobs
+ * cannot be used to map which names resolve to private addresses without limit; past it `SignInLimitError` is thrown.
+ */
+export async function importServerRefusal(
+	env: ImapImportEnv & Parameters<typeof assertMailServerHost>[0],
+	input: Pick<ImapAccount, "host" | "port">,
+	guard?: SignInGuard,
+): Promise<string | null> {
+	const literal = importServerProblem(env, input);
+	if (literal || !env.RESOLVE_HOST) return literal;
+	const check = () => assertMailServerHost(env, input.host, input.port, IMAP_PORTS);
+	try {
+		await (guard ? guard(input, check) : check());
+		return null;
+	} catch (error) {
+		if (error instanceof MailServerRefusedError) return error.message;
+		throw error;
+	}
 }
 
 export type ImapFetchResult = {

@@ -34,8 +34,9 @@ type Viewer = NonNullable<CapabilityCallContext["viewer"]>;
 
 type Eligible = { mailboxId: string; settings: MailboxAgentSettingsState; ownerUserId: string };
 
-function stepFor(moduleId: ModuleId, capability: string) {
-	return TRIAGE_STEPS.find((step) => step.moduleId === moduleId && step.capability === capability) ?? null;
+/** The module's triage step whose per-mailbox switch is `switchKey`. */
+function stepFor(moduleId: ModuleId, switchKey: string) {
+	return TRIAGE_STEPS.find((step) => step.moduleId === moduleId && step.switchKey === switchKey) ?? null;
 }
 
 /** The mailboxes whose mail the viewer's step may read in the background, with their resolved settings. */

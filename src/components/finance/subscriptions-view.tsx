@@ -2,12 +2,15 @@
 
 import { useState, type ComponentProps, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ChevronDown, Plus, WalletCards } from "lucide-react";
+import { ChevronDown, Plus, Receipt, WalletCards } from "lucide-react";
 import { useStaleCommandCenterCards } from "@/components/command-center/use-card-query";
 import { mobilePrimaryActionClass } from "@/components/page-header-utils";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
+import { useT } from "@/lib/i18n/use-t";
 import { cn } from "@/lib/utils";
+import { FinanceTabs, financeTabOf } from "./finance-tabs";
+import { PaymentsView } from "./payments-view";
 import { SubscriptionDialog } from "./subscription-dialog";
 import { SubscriptionDrawer } from "./subscription-drawer";
 import { SubscriptionRow } from "./subscription-row";
@@ -122,10 +125,15 @@ function SubscriptionSections({
 	);
 }
 
-/** The Subscriptions page: totals, Needs attention, upcoming renewals, rows without a date and ended rows. */
+/**
+ * The Money Watch page. Subscriptions: totals, Needs attention, upcoming renewals, rows without a date and ended
+ * rows. Payments (`?tab=payments`): the payments found in mail, with month totals.
+ */
 export function SubscriptionsView() {
+	const t = useT();
 	const router = useRouter();
 	const params = useSearchParams();
+	const tab = financeTabOf(params.get("tab"));
 	const openId = params.get("subscription");
 	const adding = params.get("add") === "1";
 	const { list, error, version, reload } = useSubscriptionList();
@@ -152,46 +160,52 @@ export function SubscriptionsView() {
 	return (
 		<div className="flex min-h-full flex-col" data-finance-page>
 			<PanelHeader
-				icon={WalletCards}
-				title="Subscriptions"
+				icon={tab === "payments" ? Receipt : WalletCards}
+				title={tab === "payments" ? t("Payments") : "Subscriptions"}
 				actions={
-					<>
-						<Select
-							aria-label="Show"
-							containerClassName="flex h-8 text-sm"
-							value={filter}
-							onChange={(event) => setFilter(event.target.value as StatusFilter)}
-						>
-							{FILTERS.map((option) => (
-								<option key={option.value} value={option.value}>
-									{option.label}
-								</option>
-							))}
-						</Select>
-						<Button type="button" size="sm" className="h-8 text-sm max-md:hidden" onClick={() => setEditing(null)}>
-							<Plus aria-hidden className="h-4 w-4" />
-							Add subscription
-						</Button>
-					</>
+					tab === "subscriptions" && (
+						<>
+							<Select
+								aria-label="Show"
+								containerClassName="flex h-8 text-sm"
+								value={filter}
+								onChange={(event) => setFilter(event.target.value as StatusFilter)}
+							>
+								{FILTERS.map((option) => (
+									<option key={option.value} value={option.value}>
+										{option.label}
+									</option>
+								))}
+							</Select>
+							<Button type="button" size="sm" className="h-8 text-sm max-md:hidden" onClick={() => setEditing(null)}>
+								<Plus aria-hidden className="h-4 w-4" />
+								Add subscription
+							</Button>
+						</>
+					)
 				}
 			/>
+			<FinanceTabs active={tab} />
 			{/* On phones the button floats over the page, outside the sticky title bar so no layer covers it. */}
-			<Button type="button" className={cn("md:hidden", mobilePrimaryActionClass)} onClick={() => setEditing(null)}>
-				<Plus aria-hidden className="h-4 w-4" />
-				Add subscription
-			</Button>
+			{tab === "subscriptions" && (
+				<Button type="button" className={cn("md:hidden", mobilePrimaryActionClass)} onClick={() => setEditing(null)}>
+					<Plus aria-hidden className="h-4 w-4" />
+					Add subscription
+				</Button>
+			)}
 			<div className="mx-auto w-full max-w-4xl space-y-6 px-4 py-6 md:px-8">
-				{error && (
+				{tab === "payments" && <PaymentsView />}
+				{tab === "subscriptions" && error && (
 					<p role="alert" className="text-sm text-red-600">
 						{error}
 					</p>
 				)}
-				{list?.migrationPending && (
+				{tab === "subscriptions" && list?.migrationPending && (
 					<p className={`${CARD_CLASS} p-5 text-sm text-neutral-600`}>
 						The database update for Money Watch has not been applied yet.
 					</p>
 				)}
-				{list && !list.migrationPending && (
+				{tab === "subscriptions" && list && !list.migrationPending && (
 					<>
 						<SubscriptionTotals totals={list.totals} items={items} locale={locale} />
 						{items.length === 0 && (

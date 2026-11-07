@@ -46,7 +46,7 @@ const inverseSchema = z.object({ userId: z.string(), paymentId: z.string(), prev
 type Previous = z.infer<typeof previousSchema>;
 
 /** A status that fits the type: an invoice is open or paid, every other type has one status. */
-export function statusFor(
+function statusFor(
 	type: PaymentDocType,
 	wanted: PaymentStatus | undefined,
 	current: PaymentStatus,
@@ -57,7 +57,7 @@ export function statusFor(
 }
 
 /** The columns a correction writes, from the row as it was and the fields asked for. */
-export function correctedColumns(row: PaymentRow, fields: PaymentFields) {
+function correctedColumns(row: PaymentRow, fields: PaymentFields) {
 	const type = fields.docType ?? row.docType;
 	return {
 		...(fields.vendor !== undefined ? { vendor: fields.vendor } : {}),

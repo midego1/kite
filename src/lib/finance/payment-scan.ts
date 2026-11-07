@@ -16,7 +16,7 @@ import type { DetectStepInput } from "./types";
 const log = createLogger("finance");
 
 /** How far back "Scan last 90 days" reads. */
-export const SCAN_DAYS = 90;
+const SCAN_DAYS = 90;
 /** Messages one run lists; only the few that pass the prefilter have their body read. */
 const PAGE_SIZE = 200;
 /** A run stops handing out new work after this long, well inside the queue handler's timeout. */
@@ -28,7 +28,7 @@ const STEP_CAPABILITY = "payments";
 
 export type ScanRow = typeof financePaymentScans.$inferSelect;
 
-/** The agent queue message of one scan run. */
+/** The agent queue message of one scan run. @public Named by `AGENT_QUEUE` in env.d.ts. */
 export type PaymentScanMessage = { kind: "finance.scan"; userId: string };
 
 export type ScanView = {

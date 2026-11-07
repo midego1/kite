@@ -32,7 +32,7 @@ function beforeOf(row: PaymentRow) {
 	};
 }
 
-export function paymentView(row: PaymentRow) {
+function paymentView(row: PaymentRow) {
 	return {
 		id: row.id,
 		vendor: row.vendor,

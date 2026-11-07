@@ -53,7 +53,7 @@ function textOf(input: DetectStepInput): { subject: string; text: string } {
 }
 
 /** Sales copy: a marketing phrase or a percentage discount anywhere in the subject or the excerpt. */
-export function looksLikeMarketing(text: string): boolean {
+function looksLikeMarketing(text: string): boolean {
 	return MARKETING_PHRASE.test(text) || PERCENT_OFF.test(text);
 }
 

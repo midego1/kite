@@ -71,9 +71,12 @@ export const MONEY_LABEL = phraseRegex([
 	"importe pagado",
 ]);
 
-/** A receipt, invoice or order number: a document word followed by a code of four or more letters and digits. */
+/**
+ * A receipt, invoice or order number: a document word followed by a code of four or more letters and digits with at
+ * least one digit, so "invoice today" is not a number.
+ */
 export const DOCUMENT_NUMBER =
-	/(?:receipt|invoice|order|transaction|factuur|rechnung|facture|factura|recibo|bestelling)\s*(?:no\.?|number|nr\.?|nummer|n°|nº|#|id)?\s*[:#]?\s*\[?#?[A-Z0-9][A-Z0-9-]{3,40}/iu;
+	/(?:receipt|invoice|order|transaction|factuur|rechnung|facture|factura|recibo|bestelling)\s*(?:no\.?|number|nr\.?|nummer|n°|nº|#|id)?\s*[:#]?\s*\[?#?(?=[A-Z-]{0,40}\d)[A-Z0-9][A-Z0-9-]{3,40}/iu;
 
 /** A bracketed reference such as "[#1114-6093]" in a subject. */
-export const BRACKETED_NUMBER = /\[#?[A-Z0-9][A-Z0-9-]{3,40}\]/iu;
+export const BRACKETED_NUMBER = /\[#?(?=[A-Z-]{0,40}\d)[A-Z0-9][A-Z0-9-]{3,40}\]/iu;

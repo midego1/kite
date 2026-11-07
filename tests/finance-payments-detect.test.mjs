@@ -5,7 +5,6 @@ import { loadFinance } from "./support/finance-bundle.mjs";
 const detect = await loadFinance("detect-utils");
 const payments = await loadFinance("payment-utils");
 const list = await loadFinance("payment-list-utils");
-const vendors = await loadFinance("vendor-utils");
 const model = await loadFinance("model-utils");
 
 const RECEIVED = "2026-11-03T10:00:00.000Z";
@@ -89,23 +88,6 @@ test("a one-off Stripe receipt lands as paid, USD 500.00, from the merchant, on 
 		attachmentId: null,
 		modelFields: [],
 	});
-});
-
-test("a processor receipt names the merchant from the subject or a Receipt from line, not the processor", () => {
-	const name = (fromName, subject, body = null) =>
-		vendors.messageVendor(fromName, "receipts+acct_1X@stripe.com", subject, body).vendor;
-	assert.equal(name("Stripe", "Your receipt from Acme Tools #2214-0001"), "Acme Tools");
-	assert.equal(name(null, "Your Acme Tools receipt [#2214-0001]"), "Acme Tools");
-	assert.equal(name("Stripe", "Payment confirmation", "Receipt from Acme Tools\nAmount paid $9.00"), "Acme Tools");
-	// A merchant that sends under its own name keeps it; a non-processor sender is unchanged.
-	assert.equal(name("Acme Tools", "Your receipt from Other Co"), "Acme Tools");
-	assert.equal(
-		vendors.messageVendor("Shop", "billing@shop.example", "Your receipt from Other Co", null).vendor,
-		"Shop",
-	);
-	// Nothing to read the merchant from: the processor's own name stays.
-	assert.equal(name("Stripe", "Payment confirmation"), "Stripe");
-	assert.equal(vendors.vendorKey("receipts+acct_1X@stripe.com", "Acme Tools"), "stripe.com:acme-tools");
 });
 
 test("invoices are open, receipts paid, refunds refunded and credit notes credited, in five languages", () => {

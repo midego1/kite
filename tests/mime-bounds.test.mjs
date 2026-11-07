@@ -41,6 +41,9 @@ const hostile = {
 	fakeBoundaryLines: () => header + "\\r\\n--x\\r\\n" + "a\\r\\n".repeat(262144),
 	// Lines in a part's header block count too.
 	partHeaderLines: () => header + multipart("b") + "--b\\r\\n" + "X-A: 1\\r\\n".repeat(262144),
+	// Many small header blocks, each under the 64 KiB per-block cap, that only add up past the 2 MiB total.
+	totalHeaderBytesOnly: () =>
+		header + multipart("b") + ("--b\\r\\nX-A: " + "a".repeat(2200) + "\\r\\n\\r\\n").repeat(999),
 	// Text decoded from a part: no raw line shows these line feeds, and they exhaust a 128 MB heap all the same.
 	base64Text: () => header + "Content-Transfer-Encoding: base64\\r\\n\\r\\n" + decodedLineFeeds(),
 	base64Html: () => header + "Content-Type: text/html\\r\\nContent-Transfer-Encoding: base64\\r\\n\\r\\n" + decodedLineFeeds(),
@@ -278,6 +281,8 @@ test("hostile MIME is refused cheaply and legitimate mail still parses, inside a
 		assert.equal(out.edge[name], reason, `${name} is refused at intake with the same reason`);
 	}
 	assert.ok(out.slowestMs < 5000, `the slowest hostile message took ${Math.round(out.slowestMs)} ms`);
+	assert.match(hostile.rejected.totalHeaderBytesOnly, /2 MiB in total/);
+	assert.doesNotMatch(hostile.rejected.totalHeaderBytesOnly, /64 KiB/);
 	assert.equal(out.ok.attachments, 1);
 	// 8 MB of text keeps the whole lines that fit in 2 MiB, then the note.
 	assert.deepEqual(out.ok.textBody, [26_214 * 79 + 114, true]);

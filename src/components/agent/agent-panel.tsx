@@ -26,6 +26,7 @@ import { useSelectedMailbox } from "@/components/mailbox-provider";
 import { useKeyChanged } from "@/hooks/use-synced-state";
 import { useCompose } from "@/components/compose/compose-context";
 import { Button } from "@/components/ui/button";
+import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { AgentTurnView } from "./agent-turn";
 import { useRequestedAssistantPrompt } from "./assistant-prompt-request";
@@ -861,8 +862,9 @@ export function AgentPanel({ open, fullSize, docked, onClose, onToggleFullSize }
 						<>
 							<label className="block">
 								Draft reviewer
-								<select
-									className="mt-2 w-full rounded-xl border border-neutral-200 bg-white p-2 outline-none focus:border-blue-400"
+								<Select
+									containerClassName="mt-2 w-full rounded-xl bg-white"
+									className="p-2"
 									value={settings.reviewerUserId ?? ""}
 									disabled={!canManage}
 									onChange={(event) => setSettings({ ...settings, reviewerUserId: event.target.value })}
@@ -872,12 +874,13 @@ export function AgentPanel({ open, fullSize, docked, onClose, onToggleFullSize }
 											{reviewer.name} ({reviewer.email})
 										</option>
 									))}
-								</select>
+								</Select>
 							</label>
 							<label className="block">
 								Model
-								<select
-									className="mt-2 w-full rounded-xl border border-neutral-200 bg-white p-2 outline-none focus:border-blue-400"
+								<Select
+									containerClassName="mt-2 w-full rounded-xl bg-white"
+									className="p-2"
 									value={settings.modelId ?? ""}
 									disabled={!canManage || !availableModels.length}
 									onChange={(event) => setSettings({ ...settings, modelId: event.target.value })}
@@ -888,7 +891,7 @@ export function AgentPanel({ open, fullSize, docked, onClose, onToggleFullSize }
 											{model}
 										</option>
 									))}
-								</select>
+								</Select>
 								<ModelFallbackNotice text={modelNotice} />
 							</label>
 							<div className="flex items-center justify-between gap-3">

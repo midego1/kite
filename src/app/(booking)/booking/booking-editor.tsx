@@ -5,6 +5,7 @@ import { CalendarDays, ChevronDown, Clock3, MapPin, MoreHorizontal, Plus, Trash2
 import clsx from "clsx";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { FOLDER_COLOR_OPTIONS } from "@/lib/folders/colors";
 import { slugifyBookingName } from "@/lib/booking/utils";
@@ -196,7 +197,7 @@ export function BookingEditor({
 						</button>
 						{activeSection === "duration" ? (
 							<div className="mt-4">
-								<select
+								<Select
 									aria-label="Meeting length"
 									value={[15, 30, 45, 60].includes(form.durationMinutes) ? form.durationMinutes : "custom"}
 									onChange={(event) =>
@@ -205,14 +206,14 @@ export function BookingEditor({
 											durationMinutes: event.target.value === "custom" ? 90 : Number(event.target.value),
 										})
 									}
-									className={fieldClass}
+									containerClassName={fieldClass}
 								>
 									<option value={15}>15 minutes</option>
 									<option value={30}>30 minutes</option>
 									<option value={45}>45 minutes</option>
 									<option value={60}>1 hour</option>
 									<option value="custom">Custom</option>
-								</select>
+								</Select>
 								{![15, 30, 45, 60].includes(form.durationMinutes) && (
 									<Input
 										aria-label="Custom minutes"

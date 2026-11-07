@@ -23,7 +23,7 @@ import type { InboundMail } from "./support/helpers-types";
 import { apiContext, deliverInbound, postInbound, signIn, uniqueToken, waitForMessage } from "./support/helpers";
 import { futureAt, inviteAttachment } from "./support/invites";
 import { restoreModules, setModuleState } from "./support/modules";
-import { chooseOption, readOptions } from "./support/select";
+import { chooseOption, expectSelectValue, readOptions } from "./support/select";
 import { readActions, readJobs, readSuggestions, waitForFinishedJob } from "./support/triage";
 import { readUsageRows } from "./support/ai-usage";
 
@@ -716,7 +716,7 @@ test.describe("automatic reading settings UI", () => {
 				await expect(section.getByRole("switch", { name })).toHaveAttribute("aria-checked", "true");
 			await section.getByRole("radio", { name: "Suggest only" }).check();
 			await section.getByRole("switch", { name: "Summaries and tasks" }).click();
-			await section.getByRole("combobox", { name: "Triage model" }).selectOption("fake-triage");
+			await chooseOption(section.getByRole("combobox", { name: "Triage model" }), "fake-triage");
 			await section.getByRole("spinbutton", { name: "Daily triage limit" }).fill("50");
 			await section.getByRole("spinbutton", { name: /spend cap/ }).fill("0.50");
 			const saved = settingsPut(page);
@@ -739,7 +739,7 @@ test.describe("automatic reading settings UI", () => {
 				"aria-checked",
 				"false",
 			);
-			await expect(section.getByRole("combobox", { name: "Triage model" })).toHaveValue("fake-triage");
+			await expectSelectValue(section.getByRole("combobox", { name: "Triage model" }), "fake-triage");
 			await expect(section.getByRole("spinbutton", { name: "Daily triage limit" })).toHaveValue("50");
 			await expect(section.getByRole("spinbutton", { name: /spend cap/ })).toHaveValue("0.50");
 			expect(autoReadFields(await readMailboxSettings(api, sharedId))).toMatchObject({

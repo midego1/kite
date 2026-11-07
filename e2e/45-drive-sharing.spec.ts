@@ -11,6 +11,7 @@ import {
 	signedInPage,
 } from "./support/drive";
 import { apiContext } from "./support/helpers";
+import { chooseOption } from "./support/select";
 
 const row = (page: Page, name: string) => page.locator(`[data-drive-item="${name}"]`);
 
@@ -41,7 +42,7 @@ test("sharing with people: a viewer reads under Shared with me, an editor change
 		const dialog = await openShareDialog(page, "Team");
 		await expect(dialog.getByText("Only you have access.")).toBeVisible();
 		await dialog.getByLabel("Email address").fill(viewer.email);
-		await dialog.getByLabel("Access", { exact: true }).selectOption("view");
+		await chooseOption(dialog.getByLabel("Access", { exact: true }), "view");
 		await dialog.getByRole("button", { name: "Share", exact: true }).click();
 		await expect(dialog.getByRole("listitem").filter({ hasText: viewer.email })).toContainText("Can view");
 		await page.keyboard.press("Escape");

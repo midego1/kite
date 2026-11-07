@@ -3,6 +3,7 @@
 import { type Dispatch, type SetStateAction, useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useModules } from "@/components/modules/modules-context";
+import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import type {
 	AutoReadForm,
@@ -195,8 +196,9 @@ function AutoReadFields({
 			/>
 			<label className="block">
 				Triage model
-				<select
-					className={fieldClass}
+				<Select
+					containerClassName="mt-2 w-full rounded-xl bg-white"
+					className="p-2"
 					value={form.triageModelId}
 					disabled={locked}
 					onChange={(event) => setForm({ triageModelId: event.target.value })}
@@ -207,7 +209,7 @@ function AutoReadFields({
 							{model}
 						</option>
 					))}
-				</select>
+				</Select>
 				<ModelFallbackNotice text={state.triageModelNotice} />
 			</label>
 			<label className="block">

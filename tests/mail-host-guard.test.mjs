@@ -9,14 +9,13 @@ const {
 	allowsPlainText,
 	isLoopbackHost,
 	isLanAddress,
-	canonicalHost,
+	canonicalMailHost,
 	parsePortList,
 } = await bundleModules("kite-mail-host-guard-", [
 	[
-		"MAIL_SERVER_PORTS, mailHostPolicy, mailServerHostProblem, allowsPlainText, isLoopbackHost, isLanAddress, parsePortList",
+		"MAIL_SERVER_PORTS, mailHostPolicy, mailServerHostProblem, allowsPlainText, isLoopbackHost, isLanAddress, canonicalMailHost, parsePortList",
 		"src/lib/net/host-guard-utils.ts",
 	],
-	["canonicalHost", "src/lib/security/outbound-url.ts"],
 ]);
 
 const strict = { allowInsecureLoopback: false, allowPrivate: false, extraPorts: [] };
@@ -129,12 +128,12 @@ test("isLanAddress opens RFC 1918 and unique local addresses only", () => {
 });
 
 test("IPv4 shorthands are checked as the address they spell", () => {
-	assert.equal(canonicalHost("0177.0.0.1"), "127.0.0.1");
-	assert.equal(canonicalHost("127.1"), "127.0.0.1");
-	assert.equal(canonicalHost("0x7f.0.0.1"), "127.0.0.1");
-	assert.equal(canonicalHost("2130706433"), "127.0.0.1");
-	assert.equal(canonicalHost(" Imap.Example.COM. "), "imap.example.com");
-	assert.equal(canonicalHost("bücher.example"), "xn--bcher-kva.example");
+	assert.equal(canonicalMailHost("0177.0.0.1"), "127.0.0.1");
+	assert.equal(canonicalMailHost("127.1"), "127.0.0.1");
+	assert.equal(canonicalMailHost("0x7f.0.0.1"), "127.0.0.1");
+	assert.equal(canonicalMailHost("2130706433"), "127.0.0.1");
+	assert.equal(canonicalMailHost(" Imap.Example.COM. "), "imap.example.com");
+	assert.equal(canonicalMailHost("bücher.example"), "xn--bcher-kva.example");
 	for (const host of [
 		"a b",
 		"user@host.example",
@@ -149,12 +148,12 @@ test("IPv4 shorthands are checked as the address they spell", () => {
 		"imap..example.com",
 		"imap.example.com..",
 	])
-		assert.equal(canonicalHost(host), null, host);
+		assert.equal(canonicalMailHost(host), null, host);
 	for (const host of ["0177.0.0.1", "127.1", "0x7f.0.0.1", "2130706433", "0x0a.1", "0251.0376.0251.0376", "0xa9fea9fe"])
 		assert.match(mailServerHostProblem(host, 993, strict), /Private and local/, host);
 	assert.match(mailServerHostProblem("user@imap.example.com", 993, strict), /invalid/);
 	assert.match(mailServerHostProblem("127.0.0.1...", 993, loopback), /invalid/);
-	assert.equal(canonicalHost("imap.example.com."), "imap.example.com");
+	assert.equal(canonicalMailHost("imap.example.com."), "imap.example.com");
 	for (const host of ["127.1", "0x7f.0.0.1"]) assert.equal(isLoopbackHost(host), true, host);
 });
 

@@ -54,8 +54,17 @@ export function mailHostPolicy(
 	};
 }
 
+/**
+ * The host as a connection would see it, or null when it is not a valid host: `canonicalHost`, the one canonical form
+ * every outbound guard shares (`127.1` and `0x7f.0.0.1` are `127.0.0.1`, IDN labels are ASCII). `openMailSocket` dials
+ * this form.
+ */
+export function canonicalMailHost(host: string): string | null {
+	return canonicalHost(host);
+}
+
 export function isLoopbackHost(host: string): boolean {
-	const value = canonicalHost(host);
+	const value = canonicalMailHost(host);
 	if (!value) return false;
 	return (
 		value === "localhost" ||
@@ -70,7 +79,7 @@ export function isLoopbackHost(host: string): boolean {
  * IPv6 unique local fc00::/7. Never loopback, link-local, CGNAT, 0.0.0.0/8 or mapped forms.
  */
 export function isLanAddress(address: string): boolean {
-	const value = canonicalHost(address);
+	const value = canonicalMailHost(address);
 	if (!value || !isIpAddressLiteral(value)) return false;
 	const quad = value.match(/^(\d{1,3})\.(\d{1,3})\.\d{1,3}\.\d{1,3}$/);
 	if (quad) {
@@ -106,7 +115,7 @@ export function mailServerHostProblem(
 	ports: readonly number[] = MAIL_SERVER_PORTS,
 ): string | null {
 	if (!host.trim()) return "Enter the mail server name";
-	const canonical = canonicalHost(host);
+	const canonical = canonicalMailHost(host);
 	if (!canonical) return "The mail server name is invalid";
 	if (!Number.isInteger(port) || port < 1 || port > 65535) return "The port is invalid";
 	if (allowsPlainText(canonical, policy)) return null;

@@ -1,7 +1,7 @@
 "use client";
 
 import { useId, type ComponentProps, type ReactNode } from "react";
-import { WalletCards } from "lucide-react";
+import { Link2, WalletCards } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { useT } from "@/lib/i18n/use-t";
@@ -183,6 +183,14 @@ function TrackFields({
 			)}
 			{fields.emailId && fields.docType && (
 				<TextField controls={controls} name="documentOn" label={t("Document date")} type="date" />
+			)}
+			{details.cancelLinkHost && (
+				<p data-card-field="cancelLink" className="flex items-center gap-1.5 break-words text-neutral-600">
+					<Link2 aria-hidden className="h-3.5 w-3.5 shrink-0" />
+					<span>
+						{t("Cancel link from the email:")} <bdi>{details.cancelLinkHost}</bdi>
+					</span>
+				</p>
 			)}
 		</>
 	);

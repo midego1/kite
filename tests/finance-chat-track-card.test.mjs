@@ -19,7 +19,7 @@ await build({
 	stdin: {
 		contents: `
 			export { trackProposalCard } from "./src/components/modules/finance/track-proposal-card.tsx";
-			export { showsEstimatedRenewal, withEdit } from "./src/components/modules/finance/track-proposal-utils.ts";
+			export { approveState, showsEstimatedRenewal, withEdit } from "./src/components/modules/finance/track-proposal-utils.ts";
 			export { AgentPendingActions } from "./src/components/agent/tool-activity.tsx";
 			export { proposalCardBlock, proposalCardStatus } from "./src/components/agent/proposal-card-utils.ts";
 			export { attachRequestBody, trackRequestBody } from "./src/lib/finance/chat-track-utils.ts";
@@ -74,8 +74,8 @@ const other = {
 	attachmentId: "att-2",
 };
 const save = {
-	track: (input) => JSON.stringify(m.trackRequestBody(input, { mailboxId: "mailbox-1", today: "2026-11-07" })),
-	attach: (input) => JSON.stringify(m.attachRequestBody(input, "2026-11-07")),
+	track: (input) => JSON.stringify(m.trackRequestBody(input, { mailboxId: "mailbox-1" })),
+	attach: (input) => JSON.stringify(m.attachRequestBody(input)),
 };
 
 /** The proposal keys whose value changes what approving saves. */
@@ -196,4 +196,35 @@ test("approve waits for the module's own card, and stays off with a message when
 	);
 	assert.match(html, /Loading the card…/);
 	assert.match(html, /<button[^>]*disabled=""[^>]*>Approve and save<\/button>/);
+});
+
+test("the cancel link saving takes from the email is on the card, and a document needs a date before approve", () => {
+	const html = m.renderToStaticMarkup(
+		m.createElement(m.trackProposalCard.Body, {
+			input: { ...full, mode: "track" },
+			details: { ...estimatedDetails, cancelLinkHost: "acmeflix.example" },
+			edits: {},
+			onEditsChange: () => {},
+			disabled: false,
+		}),
+	);
+	assert.match(html, /data-card-field="cancelLink"[\s\S]*?acmeflix\.example/);
+	const fields = {
+		mode: "track",
+		emailId: "m-1",
+		vendor: "Acmeflix",
+		plan: null,
+		amount: "17.99",
+		currency: "USD",
+		cycle: null,
+		nextRenewalOn: null,
+		docType: "payment",
+		documentOn: null,
+		attachmentId: null,
+		subscriptionId: null,
+	};
+	assert.equal(m.approveState(fields).blocked, "Add the document date");
+	assert.equal(m.approveState({ ...fields, documentOn: "2026-11-01" }).blocked, null);
+	assert.equal(m.approveState({ ...fields, docType: null }).blocked, null);
+	assert.equal(m.approveState({ ...fields, mode: "attach", documentOn: null }).blocked, "Add the document date");
 });

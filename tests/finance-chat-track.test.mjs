@@ -162,7 +162,7 @@ test("amounts follow their currency's decimals and need a currency", () => {
 
 test("request bodies: a name is required, the email is the first document only with its type and amount", () => {
 	const base = { mode: "track", subscriptionId: null, plan: null, cycle: null, nextRenewalOn: null };
-	const context = { mailboxId: "mailbox-o", today: "2026-11-06" };
+	const context = { mailboxId: "mailbox-o" };
 	assert.deepEqual(trackRequestBody({ ...base, vendor: " ", amount: null, currency: null }, context), {
 		error: "Name the service to track",
 	});
@@ -173,25 +173,27 @@ test("request bodies: a name is required, the email is the first document only w
 	assert.equal(byHand.body.mailboxId, "mailbox-o");
 	assert.equal(byHand.body.amountMinor, 2500);
 	assert.equal(Object.hasOwn(byHand.body, "document"), false);
-	const fromEmail = trackRequestBody(
-		{ ...base, emailId: "m-1", vendor: "Gym", amount: "25", currency: "EUR", docType: "payment", documentOn: null },
-		context,
-	);
+	const email = { ...base, emailId: "m-1", vendor: "Gym", amount: "25", currency: "EUR", docType: "payment" };
+	// A document is saved with the date the card showed, never one filled in on approval.
+	assert.deepEqual(trackRequestBody({ ...email, documentOn: null }, context), { error: "A document needs its date" });
+	assert.deepEqual(trackRequestBody({ ...email, amount: null, documentOn: "2026-11-01" }, context), {
+		error: "A document needs its amount",
+	});
+	const fromEmail = trackRequestBody({ ...email, documentOn: "2026-11-01" }, context);
 	assert.equal(fromEmail.body.messageId, "m-1");
 	assert.deepEqual(fromEmail.body.document, {
 		docType: "payment",
 		amountMinor: 2500,
 		currency: "EUR",
-		documentOn: "2026-11-06",
+		documentOn: "2026-11-01",
 		attachmentId: undefined,
 	});
-	assert.match(
-		attachRequestBody(
-			{ ...base, mode: "attach", subscriptionId: "fsub-1", emailId: "m-1", docType: null },
-			"2026-11-06",
-		).error,
-		/Choose what the email is/,
-	);
+	assert.equal(Object.hasOwn(trackRequestBody({ ...email, docType: null }, context).body, "document"), false);
+	const attach = { ...base, mode: "attach", subscriptionId: "fsub-1", emailId: "m-1", amount: "25", currency: "EUR" };
+	assert.deepEqual(attachRequestBody({ ...attach, docType: "payment", documentOn: null }), {
+		error: "A document needs its date",
+	});
+	assert.match(attachRequestBody({ ...attach, docType: null }).error, /Choose what the email is/);
 });
 
 test("dedupe finds the same service by sender key or by name, preferring a current row", () => {
@@ -386,10 +388,9 @@ test("a second receipt for a tracked service is added to it, never tracked twice
 	);
 	assert.equal(actions().at(-1).action, "record_document");
 
-	// The same service typed by hand is found by name too.
-	const byName = await track.execute({ vendor: "acme-flix" });
-	assert.equal(byName.input.mode, "attach");
-	await assert.rejects(confirmAgentAction(env, owner, store(byName)), /Only an email can be added/);
+	// The same service typed by hand is found by name too; with no email to add, the assistant is told so instead of
+	// getting a card that could never be approved.
+	await assert.rejects(track.execute({ vendor: "acme-flix" }), /Acmeflix is already tracked in Money Watch/);
 
 	// A stale "track" card for a service tracked meanwhile is refused instead of creating a duplicate.
 	const stale = { ...second, input: { ...second.input, mode: "track", subscriptionId: null, vendor: "Acmeflix" } };

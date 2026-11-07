@@ -113,7 +113,8 @@ test.describe("assistant chat tracks a subscription from a receipt", () => {
 		browser,
 	}) => {
 		const token = uniqueToken("").toLowerCase();
-		const vendor = "Streamly";
+		// Unique per attempt, so a retry never finds the row an earlier attempt tracked.
+		const vendor = `Streamly ${token.slice(0, 6).toUpperCase()}`;
 		const domain = `streamly-${token}.test`;
 		const renews = new Date(Date.now() + 20 * 86_400_000).toISOString().slice(0, 10);
 		const first = await receipt(vendor, domain, renews);

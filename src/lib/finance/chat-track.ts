@@ -14,7 +14,7 @@ import {
 import { draftOf, EXCERPT_BYTES } from "./draft";
 import { refusalOf } from "./errors";
 import { addSubscription } from "./manual";
-import { managedMailboxes, managedMessage, todayFor, type FinanceAnswer, type FinanceUser } from "./manual-context";
+import { managedMailboxes, managedMessage, type FinanceAnswer, type FinanceUser } from "./manual-context";
 import { addDocument } from "./manual-documents";
 import type { ManualDraft } from "./manual-utils";
 import type { SubscriptionRow } from "./record-utils";
@@ -165,9 +165,51 @@ function emailLine(message: HostMessageDetail) {
 	};
 }
 
+/** The host a cancel link opens, as Track as subscription shows it; null without one. */
+function linkHost(url: string | null | undefined): string | null {
+	if (!url) return null;
+	try {
+		return new URL(url).host;
+	} catch {
+		return null;
+	}
+}
+
 function attachmentName(message: HostMessageDetail | null, draft: ManualDraft | null): string | null {
 	const id = draft?.document?.attachmentId;
 	return (id && message?.attachments.find((item) => item.id === id)?.filename) || null;
+}
+
+function serviceOf(input: ChatTrackInput, message: HostMessageDetail | null, draft: ManualDraft | null): Service {
+	return {
+		vendorKeys: message ? senderKeys(message, draft) : [],
+		vendor: draft?.vendor || input.vendor || null,
+		plan: draft?.plan ?? input.plan ?? null,
+		matchedId: draft?.subscriptionId ?? null,
+	};
+}
+
+/** The card's input and what it shows besides: the email it reads and the cancel link saving takes from it. */
+function cardOf(
+	input: ChatTrackInput,
+	message: HostMessageDetail | null,
+	draft: ManualDraft | null,
+	row: SubscriptionRow | null,
+) {
+	const { proposal, details } = mergeProposal(
+		draft,
+		input,
+		row ? existingOf(row) : null,
+		attachmentName(message, draft),
+	);
+	return {
+		proposal,
+		details: {
+			...details,
+			email: message ? emailLine(message) : null,
+			cancelLinkHost: proposal.mode === "track" ? linkHost(draft?.cancelLink?.url) : null,
+		},
+	};
 }
 
 /**
@@ -186,16 +228,14 @@ export const previewTrackSubscription: CapabilityHandler = async (raw, ctx) =>
 		if (input.emailId) await chatMessage(ctx, user, input.emailId, false);
 		const visible = await visibleRows(ctx, user);
 		const { message, draft } = await readEmail(ctx, user, input.emailId, visible);
-		const row = sameService(visible, {
-			vendorKeys: message ? senderKeys(message, draft) : [],
-			vendor: draft?.vendor || input.vendor || null,
-			plan: draft?.plan ?? input.plan ?? null,
-			matchedId: draft?.subscriptionId ?? null,
-		});
-		const existing = row ? existingOf(row) : null;
-		const merged = mergeProposal(draft, input, existing, attachmentName(message, draft));
-		const { proposal } = merged;
-		const details = { ...merged.details, email: message ? emailLine(message) : null };
+		const row = sameService(visible, serviceOf(input, message, draft));
+		// Without an email there is nothing to add to a tracked subscription, so say so rather than show a card that
+		// cannot be approved.
+		if (row && !input.emailId)
+			return refused(
+				`${row.vendor} is already tracked in Money Watch; open the email with the receipt and ask again to add it there`,
+			);
+		const { proposal, details } = cardOf(input, message, draft, row);
 		return {
 			items: proposalItems(proposal, details, ctx.locale),
 			input: proposal,
@@ -243,7 +283,7 @@ async function attach(ctx: CapabilityCallContext, user: FinanceUser, proposal: C
 	const row = rows.find((candidate) => candidate.id === proposal.subscriptionId);
 	if (!row) throw new ChatTrackRefusal("That tracked subscription is no longer there; ask again");
 	if (!(await visibleRow(ctx, row))) throw new ChatTrackRefusal(HIDDEN_TRACKED);
-	const request = attachRequestBody(proposal, todayFor(user));
+	const request = attachRequestBody(proposal);
 	if ("error" in request) throw new ChatTrackRefusal(request.error);
 	return answerResult(await addDocument(user, row.id, request.body), "recorded", row.id);
 }
@@ -265,7 +305,7 @@ async function track(
 	});
 	if (existing)
 		throw new ChatTrackRefusal(`${existing.vendor} is already tracked; ask again to add this email to it instead`);
-	const request = trackRequestBody(proposal, { mailboxId, today: todayFor(user) });
+	const request = trackRequestBody(proposal, { mailboxId });
 	if ("error" in request) throw new ChatTrackRefusal(request.error);
 	const answer = await addSubscription(user, request.body);
 	const subscription = (answer.body.subscription as { id?: string } | null | undefined)?.id ?? "";

@@ -23,6 +23,8 @@ export type TrackProposalDetails = {
 	renewalEstimated: boolean;
 	existing: { vendor: string } | null;
 	attachmentName: string | null;
+	/** The host of the cancel link saving takes from the email's `List-Unsubscribe`. */
+	cancelLinkHost: string | null;
 	/** The email the card reads, so the user sees which one the assistant picked. */
 	email: { subject: string | null; from: string | null } | null;
 };
@@ -56,6 +58,7 @@ export function proposalDetails(details: Record<string, unknown>): TrackProposal
 		renewalEstimated: details.renewalEstimated === true,
 		existing: existing && typeof existing.vendor === "string" ? { vendor: existing.vendor } : null,
 		attachmentName: text(details.attachmentName),
+		cancelLinkHost: text(details.cancelLinkHost),
 		email: email ? { subject: text(email.subject), from: text(email.from) } : null,
 	};
 }
@@ -118,16 +121,22 @@ function moneyProblem(fields: TrackProposalFields, required: boolean): string | 
 
 /** The approve button's text and why it is not available yet; Kite asks rather than guessing a missing value. */
 export function approveState(fields: TrackProposalFields): { label: string; blocked: string | null } {
+	const documentProblem = () => moneyProblem(fields, true) ?? (fields.documentOn ? null : t("Add the document date"));
 	if (fields.mode === "attach") {
 		const vendor = fields.vendor ?? "";
 		return {
 			label: t("Add to {vendor}", { vendor }),
-			blocked: fields.docType ? moneyProblem(fields, true) : t("Choose what this email is"),
+			blocked: fields.docType ? documentProblem() : t("Choose what this email is"),
 		};
 	}
+	const recordsEmail = !!fields.emailId && !!fields.docType;
 	return {
 		label: t("Track subscription"),
-		blocked: fields.vendor ? moneyProblem(fields, !!fields.docType) : t("Name the service first"),
+		blocked: !fields.vendor
+			? t("Name the service first")
+			: recordsEmail
+				? documentProblem()
+				: moneyProblem(fields, false),
 	};
 }
 

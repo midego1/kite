@@ -38,6 +38,8 @@ export type ChatTrackDetails = {
 	renewalEstimated: boolean;
 	existing: ChatTrackExisting | null;
 	attachmentName: string | null;
+	/** The host of the cancel link saving takes from the email's own `List-Unsubscribe`, so the card shows it. */
+	cancelLinkHost?: string | null;
 	/** The email the card reads, so the user sees which one the assistant picked; null without one. */
 	email?: { subject: string | null; from: string } | null;
 };
@@ -154,7 +156,7 @@ export function moneyOf(input: Pick<ChatTrackProposal, "amount" | "currency">): 
 /** The body `addSubscription` takes for a proposal in `track` mode, or why it cannot be saved. */
 export function trackRequestBody(
 	input: ChatTrackProposal,
-	context: { mailboxId: string; today: string },
+	context: { mailboxId: string },
 ): { body: Record<string, unknown> } | { error: string } {
 	const vendor = input.vendor?.trim();
 	if (!vendor) return { error: "Name the service to track" };
@@ -170,22 +172,24 @@ export function trackRequestBody(
 	};
 	if (!input.emailId) return { body: { ...body, mailboxId: context.mailboxId } };
 	body.messageId = input.emailId;
-	// The email is recorded as the subscription's first document only when its type and amount are known.
-	if (input.docType && money)
-		body.document = {
-			docType: input.docType,
-			amountMinor: money.amountMinor,
-			currency: money.currency,
-			documentOn: input.documentOn ?? context.today,
-			attachmentId: input.attachmentId,
-		};
+	if (!input.docType) return { body };
+	// The email is recorded as the subscription's first document with the amount and date the card showed; nothing
+	// is filled in on approval that the user did not see.
+	if (!money) return { error: "A document needs its amount" };
+	if (!input.documentOn) return { error: "A document needs its date" };
+	body.document = {
+		docType: input.docType,
+		amountMinor: money.amountMinor,
+		currency: money.currency,
+		documentOn: input.documentOn,
+		attachmentId: input.attachmentId,
+	};
 	return { body };
 }
 
 /** The body `addDocument` takes for a proposal in `attach` mode, or why it cannot be saved. */
 export function attachRequestBody(
 	input: ChatTrackProposal,
-	today: string,
 ): { subscriptionId: string; body: Record<string, unknown> } | { error: string } {
 	if (!input.subscriptionId) return { error: "The tracked subscription is missing" };
 	if (!input.emailId) return { error: "Only an email can be added to a tracked subscription" };
@@ -193,6 +197,7 @@ export function attachRequestBody(
 	const money = moneyOf(input);
 	if (!money) return { error: "A document needs its amount" };
 	if ("error" in money) return money;
+	if (!input.documentOn) return { error: "A document needs its date" };
 	return {
 		subscriptionId: input.subscriptionId,
 		body: {
@@ -200,7 +205,7 @@ export function attachRequestBody(
 			docType: input.docType,
 			amountMinor: money.amountMinor,
 			currency: money.currency,
-			documentOn: input.documentOn ?? today,
+			documentOn: input.documentOn,
 			attachmentId: input.attachmentId,
 		},
 	};

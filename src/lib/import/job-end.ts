@@ -1,6 +1,7 @@
 import { and, eq, inArray, isNull, lt, ne, or, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { importJobs } from "@/db/schema/import-jobs";
+import { TooManyUidsError } from "@/lib/imap/protocol-utils";
 import { MailServerRefusedError } from "@/lib/net/errors";
 import { closeOpenFolders } from "./account-jobs";
 import { nextLease, underLease, type ImportJobRow, type LeaseHold } from "./job-run";
@@ -148,10 +149,14 @@ export async function deferForSignInLimit(
 	if (deferred) await enqueueImportJob(env, job.id, limit.retryAfterSeconds + 1);
 }
 
-/** Refused connections (no TLS, a private host), authentication and missing-folder errors will not fix themselves. */
+/**
+ * Refused connections (no TLS, a private host), authentication and missing-folder errors will not fix themselves, and
+ * neither does a folder with more messages than one search can list.
+ */
 function isPermanentImportError(error: unknown, message: string): boolean {
 	return (
 		error instanceof MailServerRefusedError ||
+		error instanceof TooManyUidsError ||
 		/AUTHENTICATIONFAILED|LOGIN|sign-in failed|NONEXISTENT|does not exist|not allowed/i.test(message)
 	);
 }

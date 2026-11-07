@@ -252,6 +252,41 @@ test("a tracked subscription's mail goes to its ledger, and a ledger document hi
 	]);
 });
 
+test("correcting a payment's amount, currency or type keeps its dedupe reference in step, and Undo puts it back", async (t) => {
+	const { db } = await setup(t);
+	await recordStep(insertMessage(db, INVOICE), INVOICE);
+	const [{ id }] = db.db.prepare("SELECT id FROM finance_payments").all();
+	const ref = () => db.db.prepare("SELECT doc_ref FROM finance_payments").get().doc_ref;
+	const undo = (actionId) => undoAgentAction(globalThis.__kiteNodeEnv, { id: "owner", role: "user" }, actionId);
+	// An invoice collapses on its number alone, so a corrected amount leaves it as it is.
+	assert.equal(ref(), "INV-2041");
+	const invoice = await patchPayment(owner, id, { fields: { amountMinor: 11_900 } });
+	assert.equal(ref(), "INV-2041");
+	await undo(invoice.body.actionId);
+	// A payment's reference carries its amount and currency: correcting either moves it, so the same document at
+	// the corrected amount is recognised and not recorded again.
+	db.db
+		.prepare("UPDATE finance_payments SET doc_type = 'payment', status = 'paid', doc_ref = 'INV-2041:12000EUR'")
+		.run();
+	const amount = await patchPayment(owner, id, { fields: { amountMinor: 11_900 } });
+	assert.equal(amount.status, 200, JSON.stringify(amount.body));
+	assert.equal(ref(), "INV-2041:11900EUR");
+	await undo(amount.body.actionId);
+	assert.equal(ref(), "INV-2041:12000EUR");
+	const currency = await patchPayment(owner, id, { fields: { currency: "USD" } });
+	assert.equal(ref(), "INV-2041:12000USD");
+	await undo(currency.body.actionId);
+	// A payment turned into an invoice collapses on its number alone again.
+	const retyped = await patchPayment(owner, id, { fields: { docType: "invoice" } });
+	assert.equal(ref(), "INV-2041");
+	await undo(retyped.body.actionId);
+	assert.equal(ref(), "INV-2041:12000EUR");
+	// A row without a number (added by hand, or the mail named none) stays without one.
+	db.db.prepare("UPDATE finance_payments SET doc_ref = NULL").run();
+	await patchPayment(owner, id, { fields: { amountMinor: 5_000 } });
+	assert.equal(ref(), null);
+});
+
 test("a correction is an audited write with Undo", async (t) => {
 	const { db } = await setup(t);
 	await recordStep(insertMessage(db, INVOICE), INVOICE);

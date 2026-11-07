@@ -557,6 +557,24 @@ async function runInboxJob(env) {
 	return job.id;
 }
 
+test("a folder job over the search limit fails at once instead of being retried", async (t) => {
+	const server = await fake(t, {
+		implicitTls: true,
+		authPlain: true,
+		saslIr: true,
+		folders: { INBOX: [{ raw: sampleMessage(1, { subject: "Never listed" }), uid: 1 }] },
+	});
+	// Node lists up to 4,000,000 UIDs of a folder: retrying cannot make a larger one smaller.
+	server.setExists("INBOX", 4_000_001);
+	const { db, env } = await importDatabase(t, server);
+	const id = await runInboxJob(env);
+	const row = db.db.prepare("SELECT status, attempts, password, last_error FROM import_jobs WHERE id = ?").get(id);
+	assert.equal(row.status, "failed");
+	assert.equal(row.attempts, 0);
+	assert.equal(row.password, "");
+	assert.match(row.last_error, /more than 4000000 messages in one folder/);
+});
+
 test("an import keeps read and starred state, dates undated mail by INTERNALDATE, dedupes and threads replies", async (t) => {
 	const undated = sampleMessage(3, { subject: "No id, no date", messageId: null, date: null });
 	const server = await fake(t, {

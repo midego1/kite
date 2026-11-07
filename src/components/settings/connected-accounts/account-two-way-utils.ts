@@ -6,8 +6,11 @@ function twoWayUrl(id: string) {
 	return `/api/external-accounts/${encodeURIComponent(id)}/two-way`;
 }
 
-export async function fetchTwoWay(id: string): Promise<TwoWayView> {
-	const response = await authFetch(twoWayUrl(id), { cache: "no-store" });
+/** `storedOnly` is the closed row's summary: answered from what is stored, never by asking the account's server. */
+export async function fetchTwoWay(id: string, storedOnly = false): Promise<TwoWayView> {
+	const response = await authFetch(storedOnly ? `${twoWayUrl(id)}?support=stored` : twoWayUrl(id), {
+		cache: "no-store",
+	});
 	return (await readJson<{ twoWay: TwoWayView }>(response, "Could not load the two-way settings")).twoWay;
 }
 

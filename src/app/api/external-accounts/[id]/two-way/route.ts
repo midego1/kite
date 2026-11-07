@@ -7,13 +7,17 @@ import { readJsonBody } from "@/lib/http/request";
 
 type Params = { params: Promise<{ id: string }> };
 
-/** The account's two-way sync settings and what its server supports (spec §6.8); only its owner gets them. */
+/**
+ * The account's two-way sync settings and what its server supports (spec §6.8); only its owner gets them.
+ * `?support=stored` answers from what is stored and never asks the server, for the closed row's summary.
+ */
 export async function GET(request: Request, { params }: Params) {
 	const env = getEnv();
 	const auth = await requireSessionUser(env, request);
 	if (auth.error) return auth.error;
 	const { id } = await params;
-	return answerExternal(async () => ({ twoWay: await readTwoWayView(env, auth.user, id) }));
+	const storedOnly = new URL(request.url).searchParams.get("support") === "stored";
+	return answerExternal(async () => ({ twoWay: await readTwoWayView(env, auth.user, id, { storedOnly }) }));
 }
 
 /** Saves them; a choice the server cannot carry out is refused. */

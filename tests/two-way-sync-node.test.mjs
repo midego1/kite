@@ -490,6 +490,27 @@ test("a server with neither MOVE nor UIDPLUS is not offered a move, and asking a
 	await setTwoWay({ kiteFlags: true, providerGone: "trash", providerFlags: true });
 });
 
+test("the closed row's stored-only read opens no session, records no connection test and writes no audit row", async (t) => {
+	const { env, server, db, accountId } = await start(t);
+	const commands = server.commands.length;
+	const audit = () => db.db.prepare("SELECT COUNT(*) AS n FROM audit_logs").get().n;
+	const before = audit();
+	for (let read = 0; read < 3; read += 1) {
+		const view = await readTwoWayView(env, owner, accountId, { storedOnly: true });
+		assert.equal(view.support, null, "nothing stored yet, and nothing asked");
+		assert.equal(view.settings.kiteFlags, false);
+	}
+	assert.equal(server.commands.length, commands, "no session was opened");
+	assert.equal(audit(), before, "no connection test or other audit row was written");
+	// Opening the row is the full read: it asks the server once and stores the answer.
+	assert.ok((await readTwoWayView(env, owner, accountId)).support);
+	assert.ok(server.commands.length > commands);
+	assert.ok(audit() > before);
+	const asked = server.commands.length;
+	assert.ok((await readTwoWayView(env, owner, accountId, { storedOnly: true })).support, "the stored answer is used");
+	assert.equal(server.commands.length, asked);
+});
+
 test("no special-use Archive folder means archiving is not offered", async (t) => {
 	const { setTwoWay } = await start(t, {
 		folderAttributes: { Trash: ["\\Trash"], Junk: ["\\Junk"] },

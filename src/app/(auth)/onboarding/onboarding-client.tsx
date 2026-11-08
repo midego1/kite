@@ -232,7 +232,11 @@ export function OnboardingClient() {
 										them with Cloudflare Email Routing, so the previous provider will stop receiving mail.
 									</p>
 								</div>
-								<Button onClick={() => void addDomain(true)} disabled={loading} className="h-10 w-full">
+								<Button
+									onClick={() => void addDomain(true)}
+									disabled={loading}
+									className="h-10 w-full [@media(pointer:coarse)]:h-11"
+								>
 									{loading ? "Replacing MX records..." : "Delete MX records and continue"}
 								</Button>
 							</div>
@@ -241,7 +245,7 @@ export function OnboardingClient() {
 							<Button
 								onClick={() => void addDomain()}
 								disabled={!hostname || loading || domainChecking}
-								className="h-10 w-full"
+								className="h-10 w-full [@media(pointer:coarse)]:h-11"
 							>
 								{loading ? "Adding..." : "Add domain"}
 							</Button>
@@ -262,7 +266,11 @@ export function OnboardingClient() {
 								<span className="max-w-36 truncate text-sm font-medium text-neutral-500">@{hostname}</span>
 							</div>
 						</div>
-						<Button onClick={addMailbox} disabled={!localPart || loading} className="h-10 w-full">
+						<Button
+							onClick={addMailbox}
+							disabled={!localPart || loading}
+							className="h-10 w-full [@media(pointer:coarse)]:h-11"
+						>
 							{loading ? "Creating..." : "Continue"}
 						</Button>
 					</>
@@ -270,7 +278,7 @@ export function OnboardingClient() {
 				{step === 3 && (
 					<>
 						<OnboardingChecklistCard />
-						<Button onClick={() => router.push("/inbox")} className="h-10 w-full">
+						<Button onClick={() => router.push("/inbox")} className="h-10 w-full [@media(pointer:coarse)]:h-11">
 							Go to inbox
 						</Button>
 					</>

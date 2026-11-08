@@ -294,7 +294,10 @@ test("display names are atoms, quoted strings or encoded words", () => {
 		"x@example.org",
 	]);
 	assert.deepEqual(addressTokens(["Q. Public <q@example.org>"]), ['"Q. Public"', "<q@example.org>"]);
-	assert.deepEqual(addressTokens(['"Back\\slash" <b@example.org>']), ['"Back\\\\slash"', "<b@example.org>"]);
+	// A quoted-pair (an escaped character) decodes to that character; a literal backslash round-trips escaped.
+	assert.deepEqual(addressTokens(['"Back\\slash" <b@example.org>']), ["Backslash", "<b@example.org>"]);
+	assert.deepEqual(addressTokens(['"Back\\\\slash" <b@example.org>']), ['"Back\\\\slash"', "<b@example.org>"]);
+	assert.deepEqual(addressTokens(['"5\\" Screens" <b@example.org>']), ['"5\\" Screens"', "<b@example.org>"]);
 	assert.deepEqual(addressTokens(["<only@example.org>"]), ["only@example.org"]);
 	// One element holding a comma-joined header value keeps every address in it.
 	assert.deepEqual(addressTokens(["A <a@x.com>, B <b@y.com>", '"Doe, J" <j@z.com>; c@w.com']), [

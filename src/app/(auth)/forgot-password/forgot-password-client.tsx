@@ -46,7 +46,10 @@ export function ForgotPasswordClient() {
 					: "Enter the address you sign in with. We will send a reset link to the recovery email on the account."
 			}
 			footer={
-				<Link href="/login" className="text-sm text-neutral-500 hover:text-neutral-800">
+				<Link
+					href="/login"
+					className="inline-flex items-center text-sm text-neutral-500 hover:text-neutral-800 [@media(pointer:coarse)]:min-h-11"
+				>
 					Back to sign in
 				</Link>
 			}
@@ -66,7 +69,7 @@ export function ForgotPasswordClient() {
 						</p>
 					)}
 					<TurnstileField resetSignal={turnstileReset} />
-					<Button type="submit" className="h-10 w-full" disabled={loading}>
+					<Button type="submit" className="h-10 w-full [@media(pointer:coarse)]:h-11" disabled={loading}>
 						{loading ? "Sending..." : "Send reset link"}
 					</Button>
 				</form>

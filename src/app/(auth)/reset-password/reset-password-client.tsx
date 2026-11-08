@@ -65,7 +65,10 @@ export function ResetPasswordClient() {
 			}
 			footer={
 				done ? (
-					<Link href="/login" className="text-sm font-medium text-blue-600 hover:underline">
+					<Link
+						href="/login"
+						className="inline-flex items-center text-sm font-medium text-blue-600 hover:underline [@media(pointer:coarse)]:min-h-11"
+					>
 						Go to sign in
 					</Link>
 				) : undefined
@@ -106,7 +109,7 @@ export function ResetPasswordClient() {
 							{error}
 						</p>
 					)}
-					<Button type="submit" className="h-10 w-full" disabled={loading}>
+					<Button type="submit" className="h-10 w-full [@media(pointer:coarse)]:h-11" disabled={loading}>
 						{loading ? "Saving..." : "Set new password"}
 					</Button>
 				</form>

@@ -8,6 +8,7 @@ import * as writingTables from "@/db/schema/agent-writing";
 import * as spamReportTables from "@/db/schema/spam-reports";
 import * as driveTables from "@/db/schema/drive";
 import {
+	externalAccountAuthRechecks,
 	externalAccountFolders,
 	externalAccounts,
 	externalIdentities,
@@ -37,6 +38,7 @@ const schema = {
 	...screenerTables,
 	...telemetryTables,
 	externalAccounts,
+	externalAccountAuthRechecks,
 	externalAccountFolders,
 	externalIdentities,
 	externalMessageRefs,

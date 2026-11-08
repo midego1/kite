@@ -22,11 +22,14 @@ import { ForwardingGuide } from "./forwarding-guide";
 import type { ForwardingProviderId } from "./forwarding-guide-utils";
 import type { ConnectedAccountsState } from "./connected-accounts-types";
 import {
+	authRecheckStatusText,
 	canCheckNow,
+	canRecheckAuth,
 	showLastError,
 	checkAccountNow,
 	CONNECTED_ACCOUNTS_QUERY_KEY,
 	fetchConnectedAccounts,
+	recheckAccountAuth,
 	removeAccount,
 	setAccountChecking,
 	STATUS_LABELS,
@@ -216,6 +219,11 @@ function AccountRow({
 				await checkAccountNow(account.id);
 				return "Checking for new mail…";
 			}),
+		recheckAuth: () =>
+			act(async () => {
+				await recheckAccountAuth(account.id);
+				return "Rechecking authentication…";
+			}),
 		toggleChecking: () =>
 			act(async () => {
 				await setAccountChecking(account.id, !account.sync.enabled);
@@ -284,6 +292,11 @@ function AccountDetails({
 				</p>
 			)}
 			{showLastError(account, syncText) && <p className="text-xs text-neutral-500">{account.lastError}</p>}
+			{authRecheckStatusText(account.authRecheck) && (
+				<p className="text-xs text-neutral-600" data-auth-recheck-status>
+					{authRecheckStatusText(account.authRecheck)}
+				</p>
+			)}
 			{message && (
 				<p role="status" className="text-xs text-neutral-700">
 					{message}
@@ -293,7 +306,10 @@ function AccountDetails({
 	);
 }
 
-type AccountActionHandlers = Record<"test" | "checkNow" | "toggleChecking" | "remove" | "edit", () => void>;
+type AccountActionHandlers = Record<
+	"test" | "checkNow" | "recheckAuth" | "toggleChecking" | "remove" | "edit",
+	() => void
+>;
 
 function AccountActions({
 	account,
@@ -320,6 +336,7 @@ function AccountActions({
 					Check now
 				</Button>
 			)}
+			<AccountAuthRecheckButton account={account} usable={usable} busy={busy} onClick={actions.recheckAuth} />
 			{usable && checked && account.hasPassword && (
 				<Button size="sm" variant="outline" disabled={busy} onClick={actions.toggleChecking}>
 					{account.sync.enabled ? "Pause" : "Resume"}
@@ -337,5 +354,25 @@ function AccountActions({
 				Remove
 			</Button>
 		</div>
+	);
+}
+
+/** "Recheck authentication" (spec §6.6.1): only for a connected Gmail or Google Workspace account that has a password. */
+function AccountAuthRecheckButton({
+	account,
+	usable,
+	busy,
+	onClick,
+}: {
+	account: ExternalAccountView;
+	usable: boolean;
+	busy: boolean;
+	onClick: () => void;
+}) {
+	if (!usable || !account.hasPassword || !canRecheckAuth(account)) return null;
+	return (
+		<Button size="sm" variant="outline" disabled={busy || account.authRecheck?.status === "running"} onClick={onClick}>
+			Recheck authentication
+		</Button>
 	);
 }

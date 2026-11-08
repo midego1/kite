@@ -9,6 +9,7 @@ import { recordMetric } from "@/lib/metrics.mjs";
 import { MailServerRefusedError } from "@/lib/net/errors";
 import { notifyUsersOfNewMessage } from "@/lib/realtime/utils";
 import { auditExternalAccount } from "./audit";
+import { processAuthRecheckMessage } from "./auth-recheck";
 import { externalAccountTablesReady } from "./errors";
 import { appendRecentErrors } from "./recent-errors";
 import { readInstallState } from "./settings";
@@ -284,7 +285,7 @@ export async function writebackExternalAccount(
 export async function processExternalAccountMessage(env: CloudflareEnv, body: unknown): Promise<boolean> {
 	if (isExternalSyncMessage(body)) await syncExternalAccount(env, body.accountId);
 	else if (isExternalWritebackMessage(body)) await writebackExternalAccount(env, body.accountId);
-	else return false;
+	else return await processAuthRecheckMessage(env, body);
 	return true;
 }
 

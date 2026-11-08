@@ -153,6 +153,9 @@ const INTERNAL_TABLES = [
 	// The bookkeeping of a Money Watch "Scan last 90 days" (migration 0094): a cursor over the mail it was started on,
 	// meaningless in another database.
 	"finance_payment_scans",
+	// The bookkeeping of "Recheck authentication" on a connected account (migration 0100): a cursor over that
+	// account's own mail, meaningless in another database.
+	"external_account_auth_rechecks",
 	// The direct-uploads setup note and the dismissed reminder (migration 0085): the outcome of this deployment's own
 	// R2 setup, not user data, so a restore into another install must not carry it over.
 	"storage_state",

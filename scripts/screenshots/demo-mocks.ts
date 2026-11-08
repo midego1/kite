@@ -283,3 +283,63 @@ export async function mockAiUsage(page: Page): Promise<void> {
 		}),
 	);
 }
+
+/**
+ * A connected Gmail account with "Recheck authentication" already finished, for the changelog shot: a real Gmail
+ * sign-in needs credentials this sandbox never has, so the account list is a network-level stand-in like the rest of
+ * this file, over the real Settings → Connected accounts page.
+ */
+export async function mockConnectedAccountAuthRecheck(page: Page): Promise<void> {
+	const now = Date.now();
+	await page.route("**/api/external-accounts", (route) =>
+		route.fulfill({
+			json: {
+				accounts: [
+					{
+						id: "demo-gmail",
+						label: "Gmail",
+						address: "demo.user@gmail.example",
+						displayName: "Demo User",
+						preset: "gmail",
+						presetLabel: "Gmail",
+						mailboxId: "demo",
+						imap: { host: "imap.gmail.com", port: 993, security: "tls" },
+						smtp: { host: "smtp.gmail.com", port: 465, security: "tls" },
+						username: "demo.user@gmail.example",
+						status: "active",
+						statusReason: null,
+						lastError: null,
+						hasPassword: true,
+						sync: {
+							enabled: true,
+							intervalMinutes: 5,
+							lastSuccessAt: ago(4 * 60_000),
+							nextSyncAt: new Date(now + 60_000).toISOString(),
+							failures: 0,
+							problem: null,
+							running: false,
+							junk: false,
+						},
+						sending: { enabled: true, appendSent: false, providerSavesSent: true, verified: true, block: null },
+						identities: [],
+						authRecheck: {
+							status: "done",
+							scanned: 214,
+							updated: 12,
+							skipped: 0,
+							startedAt: ago(6 * 60_000),
+							finishedAt: ago(60_000),
+							error: null,
+						},
+						createdAt: ago(60 * DAY),
+						updatedAt: ago(60_000),
+					},
+				],
+				refusal: null,
+				refusalText: null,
+				presets: [],
+				migrationPending: false,
+			},
+		}),
+	);
+}

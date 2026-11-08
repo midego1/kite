@@ -565,7 +565,7 @@ export default function CalendarPage() {
 											type="button"
 											aria-label="Previous month"
 											onClick={() => setPickerMonth(addMonths(pickerMonth, -1))}
-											className="flex h-8 w-8 items-center justify-center rounded-lg text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
+											className="flex h-8 w-8 items-center justify-center rounded-lg text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 pointer-coarse:h-11 pointer-coarse:w-11"
 										>
 											<ChevronLeft className="h-4 w-4 rtl:-scale-x-100" />
 										</button>
@@ -573,7 +573,7 @@ export default function CalendarPage() {
 											type="button"
 											aria-label="Next month"
 											onClick={() => setPickerMonth(addMonths(pickerMonth, 1))}
-											className="flex h-8 w-8 items-center justify-center rounded-lg text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
+											className="flex h-8 w-8 items-center justify-center rounded-lg text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 pointer-coarse:h-11 pointer-coarse:w-11"
 										>
 											<ChevronRight className="h-4 w-4 rtl:-scale-x-100" />
 										</button>
@@ -634,7 +634,7 @@ export default function CalendarPage() {
 					type="button"
 					aria-label={`Previous ${view}`}
 					onClick={() => setVisibleDate(navigateCalendar(visibleDate, view, -1))}
-					className="flex h-8 w-8 items-center justify-center rounded-lg text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
+					className="flex h-8 w-8 items-center justify-center rounded-lg text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 pointer-coarse:h-11 pointer-coarse:w-11"
 				>
 					<ChevronLeft className="h-4 w-4 rtl:-scale-x-100" />
 				</button>
@@ -642,7 +642,7 @@ export default function CalendarPage() {
 					type="button"
 					aria-label={`Next ${view}`}
 					onClick={() => setVisibleDate(navigateCalendar(visibleDate, view, 1))}
-					className="flex h-8 w-8 items-center justify-center rounded-lg text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
+					className="flex h-8 w-8 items-center justify-center rounded-lg text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 pointer-coarse:h-11 pointer-coarse:w-11"
 				>
 					<ChevronRight className="h-4 w-4 rtl:-scale-x-100" />
 				</button>
@@ -658,7 +658,7 @@ export default function CalendarPage() {
 						<button
 							type="button"
 							aria-label="Calendar options"
-							className="flex h-8 w-8 items-center justify-center rounded-lg text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 md:hidden"
+							className="flex h-8 w-8 items-center justify-center rounded-lg text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 md:hidden pointer-coarse:h-11 pointer-coarse:w-11"
 						>
 							<MoreVertical className="h-5 w-5" />
 						</button>
@@ -685,7 +685,7 @@ export default function CalendarPage() {
 				<Button
 					disabled={pendingAction !== null}
 					onClick={() => openNewEvent()}
-					className="ms-1 max-md:ms-0 max-md:h-8 max-md:w-8 max-md:px-0"
+					className="ms-1 max-md:ms-0 max-md:h-8 max-md:w-8 max-md:px-0 max-md:pointer-coarse:h-11 max-md:pointer-coarse:w-11"
 				>
 					<Plus className="h-4 w-4" />
 					<span className="max-md:sr-only">New event</span>
@@ -1027,7 +1027,11 @@ export default function CalendarPage() {
 							</div>
 							<div className="grid grid-cols-[24px_minmax(0,1fr)] items-center gap-3">
 								<Palette aria-hidden="true" className="h-5 w-5 text-neutral-600" />
-								<div role="radiogroup" aria-label="Event color" className="flex flex-wrap items-center gap-1.5 px-2">
+								<div
+									role="radiogroup"
+									aria-label="Event color"
+									className="flex flex-wrap items-center gap-1.5 px-2 pointer-coarse:gap-3"
+								>
 									{FOLDER_COLOR_OPTIONS.map((option) => (
 										<button
 											key={option.value}
@@ -1037,7 +1041,7 @@ export default function CalendarPage() {
 											title={option.label}
 											aria-checked={color === option.value}
 											onClick={() => setColor(option.value)}
-											className={`h-7 w-7 rounded-full border-2 transition-transform hover:scale-110 ${color === option.value ? "border-neutral-900 ring-2 ring-neutral-300 ring-offset-2" : "border-transparent"}`}
+											className={`h-7 w-7 rounded-full border-2 transition-transform hover:scale-110 pointer-coarse:h-11 pointer-coarse:w-11 ${color === option.value ? "border-neutral-900 ring-2 ring-neutral-300 ring-offset-2" : "border-transparent"}`}
 											style={{ backgroundColor: option.value }}
 										/>
 									))}

@@ -75,6 +75,28 @@ handle is off beside a hinge, so the width saved for other devices is not overwr
 reader still starts on the second screen. CSS `env(viewport-segment-*)` values are used where the browser
 supplies them, with the measured geometry as the fallback.
 
+## The sidebar on a touch tablet or an unfolded foldable
+
+The expanded sidebar (`src/components/sidebar-state.tsx`, audited above) used to default to its full width on
+every non-phone viewport, mouse or touch alike. On a touch device past the phone shell but still under the
+unfolded width ceiling (`touchTabletDefaultsToRail` in `fold-posture-utils.ts`: coarse pointer, width over
+767 px and under 1100 px), it now defaults to the collapsed 72 px rail instead, so a module page (Calendar,
+Drive, Money Watch, …) gets most of that width back instead of losing it to a sidebar nobody can see past a
+few icons on. A narrow desktop window at the same width with a mouse is unaffected and keeps the expanded
+sidebar, exactly as before. The `<head>` bootstrap script applies the same rule before paint, so there is no
+flash of the expanded sidebar first; an explicit choice (the rail toggle, or a width dragged and saved) always
+wins over this default, on any device.
+
+## A listing that narrows with its panels, not just the viewport
+
+Drive's file grid (`DRIVE_GRID` in `src/components/drive/drive-item-row.tsx`) used to show its Owner, Modified
+and Size columns from Tailwind's `md` breakpoint (768 px) up — a *viewport* width. Nested behind the sidebar and
+the Drive views panel, the grid's own rendered width can be much narrower than the viewport at that point (an
+unfolded foldable is the common case), and the fixed-width extra columns had no room: the Name column's text
+overflowed into them instead of wrapping or clipping. The grid's own container now carries a `@container` and
+the extra columns gate on `@3xl` (the same 768 px, now measured against the grid's rendered width) instead of
+the viewport, so they only show once there is real room and hide instead of overlapping otherwise.
+
 ## The setting
 
 **Settings → Appearance → Foldable screens → Fold layout** is a per-browser preference

@@ -10,12 +10,12 @@ export const FOLDED_VIEWPORT_QUERY = `(max-width: ${FOLDED_MAX_WIDTH}px)`;
 /** The home page's split variant floor (globals.css): below it even a saved "Always two panes" shows one pane. */
 export const TWO_PANE_VIEWPORT_QUERY = `(min-width: ${FOLDED_MAX_WIDTH + 1}px)`;
 /** Tailwind's `md` breakpoint, where the app has always switched from its phone shell to the sidebar. */
-const PHONE_SHELL_MAX_WIDTH = 767;
+export const PHONE_SHELL_MAX_WIDTH = 767;
 export const PHONE_SHELL_VIEWPORT_QUERY = `(max-width: ${PHONE_SHELL_MAX_WIDTH}px)`;
 /** Tailwind's `lg` breakpoint, where the desktop reading pane has always started. */
 const DESKTOP_MIN_WIDTH = 1024;
 /** A touch device as wide as this is usually a tablet or an unfolded foldable, not a desktop. */
-const UNFOLDED_MAX_WIDTH = 1100;
+export const UNFOLDED_MAX_WIDTH = 1100;
 /** A touch screen this short is a phone held sideways, which is too low for two panes. */
 const SHORT_MAX_HEIGHT = 500;
 
@@ -78,6 +78,16 @@ export function resolveFoldPosture(base: FoldPosture, override: FoldLayoutPrefer
 	if (override === "single") return "folded";
 	if (override === "two") return "unfolded";
 	return base;
+}
+
+/**
+ * A touch tablet or an unfolded foldable, past the phone shell but still under the desktop reading-pane width:
+ * wide enough that the phone shell no longer applies, but a sidebar left at its full expanded width still
+ * eats a large share of it. The sidebar defaults to the collapsed rail here unless it was set explicitly; a
+ * desktop window this wide with a mouse (no coarse pointer) is unaffected and keeps the expanded default.
+ */
+export function touchTabletDefaultsToRail(width: number, coarsePointer: boolean): boolean {
+	return coarsePointer && width > PHONE_SHELL_MAX_WIDTH && width < UNFOLDED_MAX_WIDTH;
 }
 
 /**

@@ -119,15 +119,17 @@ test("a phone held sideways keeps one pane", async ({ page }) => {
 	await expect(page.getByRole("button", { name: "Back to Inbox" })).toBeVisible();
 });
 
-test("two panes that cannot fit fall back to one pane", async ({ page }) => {
-	// A small tablet next to the 260px sidebar leaves less than the list and reader need.
+test("a small tablet gets two panes because the sidebar collapses to its rail there", async ({ page }) => {
+	// A touch tablet this size defaults the sidebar to its 72px rail (not the 260px expanded sidebar a mouse
+	// window keeps), which is what leaves the list and reader enough room to fit side by side.
 	await page.setViewportSize(SMALL_TABLET);
 	await page.goto("/inbox");
 	await expectPosture(page, "unfolded");
-	await expect(page.locator("[data-reading-pane]")).toHaveCount(0);
+	await expect(page.locator("html")).toHaveCSS("--persisted-sidebar-width", "72px");
+	await expect(page.locator("[data-reading-pane]")).toHaveAttribute("data-reading-pane", "right");
 	await openMessage(page, subject);
 	await expect(page.getByRole("heading", { level: 1, name: subject })).toBeVisible();
-	await expect(page.getByRole("button", { name: "Back to Inbox" })).toBeVisible();
+	await expect(page.getByRole("main").locator("[data-density]").getByText(subject, { exact: true })).toBeVisible();
 });
 
 test.describe("a fold with a hinge", () => {

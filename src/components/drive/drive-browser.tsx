@@ -7,6 +7,7 @@ import { Clock, HardDrive, Paperclip, Search, Trash2, UploadCloud, UsersRound, t
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { mobileScrollClearsFloatingActionClass } from "@/components/page-header-utils";
 import { parseDriveCategories, type DriveCategory } from "@/lib/drive/category-names-utils";
 import type { DriveItemDto } from "@/lib/drive/types";
 import { refreshDrive } from "./drive-api";
@@ -187,9 +188,9 @@ function ColumnHeader({ view, selection }: { view: DriveListingView; selection: 
 				className="ms-1"
 			/>
 			<span className="ps-7 font-medium">Name</span>
-			<span className="hidden font-medium md:block">{view === "attachments" ? "From" : "Owner"}</span>
-			<span className="hidden font-medium md:block">{view === "trash" ? "Trashed" : "Modified"}</span>
-			<span className="hidden font-medium md:block">Size</span>
+			<span className="hidden font-medium @3xl:block">{view === "attachments" ? "From" : "Owner"}</span>
+			<span className="hidden font-medium @3xl:block">{view === "trash" ? "Trashed" : "Modified"}</span>
+			<span className="hidden font-medium @3xl:block">Size</span>
 			<span />
 		</div>
 	);
@@ -329,7 +330,7 @@ export function DriveBrowser({ view, folderId = null }: { view: DriveListingView
 				onFiles={(files) => uploads.uploadFiles(files, parentId)}
 				onFolder={(files) => void uploads.uploadFolder(files, parentId)}
 			/>
-			<div className="flex min-h-0 flex-1 flex-col bg-white">
+			<div className="@container flex min-h-0 flex-1 flex-col bg-white">
 				<DriveHeader
 					{...{ view, folderId, title, rootHref, listing, query, canWrite, selection, onCommand, setParam, runBulk }}
 					onMove={() => setDialog({ kind: "move", items: selection.selected })}
@@ -339,7 +340,7 @@ export function DriveBrowser({ view, folderId = null }: { view: DriveListingView
 				<div
 					role="table"
 					aria-label={title}
-					className="min-h-0 flex-1 space-y-px overflow-y-auto overscroll-contain px-2 pt-px"
+					className={`min-h-0 flex-1 space-y-px overflow-y-auto overscroll-contain px-2 pt-px ${mobileScrollClearsFloatingActionClass}`}
 				>
 					<ListState
 						loading={loading}

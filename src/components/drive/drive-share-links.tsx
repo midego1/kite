@@ -33,7 +33,7 @@ function LinkRow({ link, onRevoke }: { link: DriveLinkDto; onRevoke: (link: Driv
 						type="button"
 						onClick={copy}
 						aria-label="Copy link"
-						className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-neutral-600 hover:bg-neutral-100"
+						className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-neutral-600 hover:bg-neutral-100 pointer-coarse:h-11 pointer-coarse:w-11"
 					>
 						<Copy size={15} />
 					</button>

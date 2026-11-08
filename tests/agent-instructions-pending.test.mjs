@@ -176,6 +176,32 @@ test("before migration 0096 the assistant-by-email columns read as their default
 	assert.deepEqual(state.assistantEmail, { enabled: false, mailboxId: null, dailyLimit: 20 });
 });
 
+test("before migration 0096 personal instructions and the writing style opt-in still save, on a fresh row and an existing one", async (t) => {
+	const { sqlite, db } = await database(t);
+	// Unlike the previous test, the columns are gone *before* any save is attempted: this is what a deploy ahead of
+	// 0096 actually looks like for a user who has never saved AI settings before. Drizzle's `insert().values()`
+	// names every column the table declares (defaults and all) even when `values` never mentions these three, so
+	// a naive upsert fails here with "no such column" unless the insert path falls back the way `insertRow` does.
+	sqlite.db.exec(`
+		ALTER TABLE user_ai_settings DROP COLUMN assistant_email_enabled;
+		ALTER TABLE user_ai_settings DROP COLUMN assistant_email_mailbox_id;
+		ALTER TABLE user_ai_settings DROP COLUMN assistant_email_daily_limit;
+	`);
+	assert.equal(sqlite.db.prepare("SELECT count(*) AS n FROM user_ai_settings").get().n, 0);
+	await personal.savePersonalInstructions(db, "user-1", { general: "first save", chat: "", draft: "", summary: "" });
+	assert.equal(sqlite.db.prepare("SELECT count(*) AS n FROM user_ai_settings").get().n, 1);
+	assert.equal(
+		sqlite.db.prepare("SELECT instructions FROM user_ai_settings WHERE user_id = 'user-1'").get().instructions,
+		"first save",
+	);
+	// A second save updates the existing row rather than naming a pending column and failing, or inserting again.
+	await personal.savePersonalInstructions(db, "user-1", { general: "second save", chat: "", draft: "", summary: "" });
+	await personal.saveWritingStyleEnabled(db, "user-1", true);
+	assert.equal(sqlite.db.prepare("SELECT count(*) AS n FROM user_ai_settings").get().n, 1);
+	const row = sqlite.db.prepare("SELECT instructions, writing_style_enabled FROM user_ai_settings").get();
+	assert.deepEqual(row, { instructions: "second save", writing_style_enabled: 1 });
+});
+
 test("after migration 0096 the assistant-by-email columns read back", async (t) => {
 	const { sqlite, db } = await database(t);
 	sqlite.db.exec(`

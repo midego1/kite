@@ -15,7 +15,11 @@
 
 const BLANK_PIXEL = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
 
-const IMG_SRC = /(<img\b[^>]*?\bsrc=")([^"]*)(")/gi;
+/** `(?<![\w-])` (not `\b`) before `src=`, because `\b` fires between the hyphen and the `s` of `data-src=` just as
+ * readily as before a real `src=`; the sanitizer keeps `data-*` attributes, so `<img data-src="..." src="...">`
+ * is a real input, and a `\b`-based pattern matches `data-src`'s value instead, leaving the real `src` (the one a
+ * browser or a less careful previewer actually loads) untouched. */
+const IMG_SRC = /(<img\b[^>]*?(?<![\w-])src=")([^"]*)(")/gi;
 const STYLE_ATTR = /(\sstyle=")([^"]*)(")/gi;
 /** A backslash (CSS's escape character, valid inside a function name or a URL) or a numeric character reference:
  * never needed by an ordinary style value, always suspicious here. */

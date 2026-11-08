@@ -48,6 +48,17 @@ test("blankRemoteImages replaces every non-data image source, including cid: ref
 	assert.ok(out.includes("data:image/png;base64,AAAA"));
 });
 
+test("blankRemoteImages blanks the real src even when a data-src attribute comes first", () => {
+	// The sanitizer keeps data-* attributes (inert: a browser never fetches them on its own), so this is a real
+	// input. A naive `\bsrc="` pattern matches "data-src" too (`\b` fires between the hyphen and the "s" just
+	// as readily as before a real `src`), consuming that attribute's value and leaving the actually-loaded
+	// `src` — the one a browser or a less careful previewer does fetch — behind, untouched.
+	const html = `<img data-src="https://evil.example/decoy.gif" src="https://evil.example/real.gif">`;
+	const out = blankRemoteImages(html);
+	const realSrc = out.match(/(?<![\w-])src="([^"]*)"/)?.[1];
+	assert.ok(realSrc?.startsWith("data:"), `expected the real src to be blanked, got: ${out}`);
+});
+
 test("blankRemoteStyleUrls drops the whole style value with a remote url(), but keeps a bare data: one", () => {
 	const html = `<div style="background:url('https://evil.example/bg.png')">x</div><div style="background:url(data:image/png;base64,AAAA)">y</div>`;
 	const out = blankRemoteStyleUrls(html);

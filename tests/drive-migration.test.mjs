@@ -223,7 +223,7 @@ test("a document without excludedGroups must still cover every group that predat
 	seedAccountData(source);
 	const document = await exportDocument(source);
 	delete document.excludedGroups;
-	const routing = ["routing_rules", "webhooks", "webhook_deliveries"];
+	const routing = ["routing_rules", "assistant_addresses", "webhooks", "webhook_deliveries"];
 	document.includedTables = document.includedTables.filter((table) => !routing.includes(table));
 	for (const table of routing) delete document.tables[table];
 	const target = await database(t);

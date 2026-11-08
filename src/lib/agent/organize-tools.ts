@@ -76,7 +76,7 @@ async function setRead(context: AgentToolContext, rows: readonly MessageRow[], r
 async function markEmailRead(context: AgentToolContext, input: Input) {
 	const row = await ownMessage(context, input.emailId as string);
 	const read = input.read as boolean;
-	if (context.origin === "chat")
+	if (context.origin === "chat" || context.origin === "email")
 		return {
 			action: "mark_email_read",
 			status: "pending_approval",
@@ -92,7 +92,7 @@ async function markEmails(context: AgentToolContext, name: "mark_emails_read" | 
 	const rows = await ownMessages(context, input.emailIds as string[]);
 	const read = name === "mark_emails_read";
 	const emailIds = rows.map((row) => row.id);
-	if (context.origin === "chat")
+	if (context.origin === "chat" || context.origin === "email")
 		return { action: name, status: "pending_approval", emailIds, read, emails: rows.map(publicMessage) };
 	await setRead(context, rows, read);
 	return { emailIds, read, status: "approved" };
@@ -104,7 +104,7 @@ async function moveEmails(context: AgentToolContext, name: "move_email" | "move_
 	const rows = await ownMessages(context, ids);
 	refuseUnmovable(rows);
 	const destination = input.destination as string;
-	if (context.origin === "chat")
+	if (context.origin === "chat" || context.origin === "email")
 		return { action: name, status: "pending_approval", emailIds: ids, destination, emails: rows.map(publicMessage) };
 	for (const row of rows) {
 		const moved = await updateMessageStatusForUser(
@@ -147,7 +147,7 @@ async function createFolder(context: AgentToolContext, input: Input) {
 	if (existing) throw new Error(`A folder named "${name}" already exists; its folderId is ${existing.id}`);
 	// The proposal keeps the colour's name, which is what approving passes back to this tool; none when none was asked
 	// for, so the approved folder is not stored as a picked colour.
-	if (context.origin === "chat")
+	if (context.origin === "chat" || context.origin === "email")
 		return { action: "create_folder", status: "pending_approval", name, ...(colorName ? { color: colorName } : {}) };
 	const folderId = context.folderId ?? newId("fld");
 	try {
@@ -186,7 +186,7 @@ async function moveEmailsToFolder(context: AgentToolContext, input: Input) {
 	const rows = await ownMessages(context, input.emailIds as string[]);
 	refuseUnmovable(rows);
 	const emailIds = rows.map((row) => row.id);
-	if (context.origin === "chat")
+	if (context.origin === "chat" || context.origin === "email")
 		return {
 			action: "move_emails_to_folder",
 			status: "pending_approval",

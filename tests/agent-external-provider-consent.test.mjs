@@ -287,6 +287,7 @@ test("every model selection goes through the opt-in", () => {
 				"src/lib/agent/summaries/model-answer.ts",
 				"src/lib/agent/jobs/draft-generation.ts",
 				"src/lib/agent/step-limit-utils.ts",
+				"src/lib/agent/email/process.ts",
 			].includes(file),
 			`${file} calls a model: route its model through selectInteractiveModel or selectAutoReadModel and add it here`,
 		);

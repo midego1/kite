@@ -128,8 +128,8 @@ export async function saveSemanticAdminSettings(
 	env: CloudflareEnv,
 	input: SaveSemanticAdminSettingsInput,
 ): Promise<void> {
-	await env.DB.prepare("INSERT INTO app_settings (id) VALUES (?) ON CONFLICT(id) DO NOTHING")
-		.bind(AGENT_SETTINGS_ID)
+	await env.DB.prepare("INSERT INTO app_settings (id, updated_at) VALUES (?, ?) ON CONFLICT(id) DO NOTHING")
+		.bind(AGENT_SETTINGS_ID, Math.floor(Date.now() / 1000))
 		.run();
 	const sets: string[] = [];
 	const params: unknown[] = [];

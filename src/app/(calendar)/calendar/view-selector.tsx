@@ -25,7 +25,7 @@ export function CalendarViewSelect({ value, onChange }: Props) {
 			value={value}
 			onChange={(event) => onChange(event.target.value as CalendarView)}
 			aria-label="Calendar view"
-			containerClassName="h-8 bg-white max-md:hidden"
+			containerClassName="h-8 bg-white @max-3xl:hidden"
 			className="text-sm font-medium text-neutral-700"
 		>
 			{views.map((view) => (

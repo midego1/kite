@@ -10,7 +10,7 @@ import {
 } from "./support/auto-read";
 import { startFakeModel } from "./support/fake-model";
 import type { FakeModel } from "./support/fake-model-types";
-import { apiContext, postInbound, uniqueToken, waitForMessage } from "./support/helpers";
+import { apiContext, postInbound, suppressMailboxTour, uniqueToken, waitForMessage } from "./support/helpers";
 import { createSharedMailbox, shareMailbox } from "./support/auto-read";
 import { sendChat } from "./support/chat";
 import { E2E_PERSIST_DIR } from "./support/constants";
@@ -133,6 +133,7 @@ test.describe("No AI for this mailbox", () => {
 			// The reader and the composer say why instead of offering the features.
 			const context = await browser.newContext({ storageState: await off.api.storageState() });
 			const page = await context.newPage();
+			await suppressMailboxTour(page);
 			try {
 				await selectMailbox(page, off.mailboxId);
 				await page.goto(`/inbox/${encodeURIComponent(messageOff.id)}`);

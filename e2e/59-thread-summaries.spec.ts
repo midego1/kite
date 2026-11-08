@@ -11,7 +11,7 @@ import {
 } from "./support/fake-model-scenarios";
 import type { FakeModel, FakeRecordedRequest } from "./support/fake-model-types";
 import type { StoredMessage } from "./support/helpers-types";
-import { apiContext, postInbound, uniqueToken, waitForMessage } from "./support/helpers";
+import { apiContext, postInbound, suppressMailboxTour, uniqueToken, waitForMessage } from "./support/helpers";
 import { setScreener } from "./support/screener";
 import { readUsageRows } from "./support/ai-usage";
 
@@ -110,6 +110,7 @@ const postSummary = (client: APIRequestContext, id: string, data: Record<string,
 async function signedInPage(browser: Browser, client: APIRequestContext, mailboxId: string, locale = "en-US") {
 	const context = await browser.newContext({ storageState: await client.storageState(), locale });
 	const page = await context.newPage();
+	await suppressMailboxTour(page);
 	await selectMailbox(page, mailboxId);
 	return { context, page };
 }

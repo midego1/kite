@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
 import { Geist, Geist_Mono, Inter, Manrope, Ms_Madi } from "next/font/google";
 import { Providers } from "@/components/providers";
@@ -62,8 +62,27 @@ const baseMetadata: Metadata = {
 /** The configured app name is the title of the first response, so it is not swapped in after the page loads. */
 export async function generateMetadata(): Promise<Metadata> {
 	const { appName } = await getHomeBranding();
-	return { ...baseMetadata, title: appName };
+	return {
+		...baseMetadata,
+		title: appName,
+		// Lets iOS "Add to Home Screen" run without browser chrome today, ahead of a full installable PWA
+		// (manifest and a service worker are unplanned, see ROADMAP.md): `statusBarStyle: "default"` keeps an
+		// opaque status bar rather than drawing under it, since that would need every screen's own top inset.
+		appleWebApp: { capable: true, title: appName, statusBarStyle: "default" },
+	};
 }
+
+/**
+ * `viewportFit: "cover"` is what makes `env(safe-area-inset-*)` resolve to a real value instead of `0px`: without
+ * it, a page added to the home screen on a notched phone (no manifest needed for that, just this and the Apple
+ * meta tags below) draws under the notch and the home indicator with no inset to avoid them. The mobile tab bar,
+ * its floating compose button and the Drive upload panel already assume this.
+ */
+export const viewport: Viewport = {
+	width: "device-width",
+	initialScale: 1,
+	viewportFit: "cover",
+};
 
 export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
 	const nonce = (await headers()).get("x-nonce") ?? undefined;

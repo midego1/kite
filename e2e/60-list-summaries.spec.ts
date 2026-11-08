@@ -6,7 +6,7 @@ import { startFakeModel } from "./support/fake-model";
 import { LINE_ARABIC, LINE_FROM_JOB, LINE_FROM_TRIAGE } from "./support/fake-model-scenarios";
 import type { FakeModel, FakeRecordedRequest } from "./support/fake-model-types";
 import type { StoredMessage } from "./support/helpers-types";
-import { apiContext, postInbound, uniqueToken, waitForMessage } from "./support/helpers";
+import { apiContext, postInbound, suppressMailboxTour, uniqueToken, waitForMessage } from "./support/helpers";
 import { setScreener } from "./support/screener";
 import { chooseOption } from "./support/select";
 import { readJobs, waitForFinishedJob } from "./support/triage";
@@ -88,6 +88,7 @@ async function lineOf(account: Account, id: string): Promise<string | undefined>
 async function inboxPage(browser: Browser, account: Account) {
 	const context = await browser.newContext({ storageState: await account.api.storageState() });
 	const page = await context.newPage();
+	await suppressMailboxTour(page);
 	await selectMailbox(page, account.mailboxId);
 	// The realtime socket starts once the client knows whose session it is.
 	await page.addInitScript((id) => localStorage.setItem("kite-session-user", id), account.id);

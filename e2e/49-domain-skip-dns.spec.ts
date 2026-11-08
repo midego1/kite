@@ -1,6 +1,6 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import { DOMAIN, STORAGE_STATE } from "./support/constants";
-import { apiContext, apiSignIn, uniqueToken } from "./support/helpers";
+import { apiContext, apiSignIn, suppressMailboxTour, uniqueToken } from "./support/helpers";
 
 const MEMBER_PASSWORD = "skip-dns-member-password-123";
 
@@ -143,6 +143,7 @@ test("a domain added with DNS setup skipped is flagged until an admin marks it d
 
 			const context = await browser.newContext({ storageState: await member.storageState() });
 			const memberPage = await context.newPage();
+			await suppressMailboxTour(memberPage);
 			const domainRequests: string[] = [];
 			memberPage.on("request", (request) => {
 				if (new URL(request.url()).pathname === "/api/domains") domainRequests.push(request.method());
@@ -187,6 +188,7 @@ test("a domain added with DNS setup skipped is flagged until an admin marks it d
 				const patch = await manager.patch(`/api/domains/${domainId}`, { data: { dnsSkipped: false } });
 				expect(patch.status()).toBe(404);
 				const managerPage = await context.newPage();
+				await suppressMailboxTour(managerPage);
 				const response = await openInboxWithDomains(managerPage);
 				expect(response.ok()).toBe(true);
 				await expect(managerPage.getByRole("main")).toBeVisible();

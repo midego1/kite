@@ -166,7 +166,7 @@ export function BookingEditor({
 												aria-checked={form.color === option.value}
 												onClick={() => onChange({ ...form, color: option.value })}
 												className={clsx(
-													"flex h-8 w-8 items-center justify-center rounded-full border-2 border-white ring-2",
+													"flex h-8 w-8 items-center justify-center rounded-full border-2 border-white ring-2 pointer-coarse:h-11 pointer-coarse:w-11",
 													form.color === option.value ? "ring-neutral-800" : "ring-transparent hover:ring-neutral-300",
 												)}
 												style={{ backgroundColor: option.value }}

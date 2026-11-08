@@ -297,7 +297,7 @@ export default function BookingsPage() {
 																	href={`/c/${username}/${event.slug}`}
 																	target="_blank"
 																	aria-label={`Open booking page for ${event.name}`}
-																	className="rounded-lg p-2 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
+																	className="flex items-center justify-center rounded-lg p-2 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 pointer-coarse:h-11 pointer-coarse:w-11"
 																>
 																	<ExternalLink className="h-4 w-4" />
 																</Link>
@@ -321,7 +321,7 @@ export default function BookingsPage() {
 																aria-label={`More options for ${event.name}`}
 																aria-expanded={menuId === event.id}
 																onClick={() => setMenuId(menuId === event.id ? null : event.id)}
-																className="rounded-lg p-2 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
+																className="flex items-center justify-center rounded-lg p-2 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 pointer-coarse:h-11 pointer-coarse:w-11"
 															>
 																<MoreHorizontal className="h-5 w-5" />
 															</button>

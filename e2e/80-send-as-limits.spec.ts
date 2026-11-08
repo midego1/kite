@@ -1,7 +1,14 @@
 import { expect, test, type APIRequestContext, type Browser } from "@playwright/test";
 import { AUTO_READ_ACCOUNT_PASSWORD, createSignedInAccount } from "./support/auto-read";
 import { STORAGE_STATE } from "./support/constants";
-import { apiContext, openMessage, setSendingSettings, uniqueToken, waitForMessage } from "./support/helpers";
+import {
+	apiContext,
+	openMessage,
+	setSendingSettings,
+	suppressMailboxTour,
+	uniqueToken,
+	waitForMessage,
+} from "./support/helpers";
 import { chooseOption, readOptions } from "./support/select";
 import { markKnownProvider } from "./support/send-as";
 import { startFakeImap } from "../tests/support/fake-imap.mjs";
@@ -47,7 +54,9 @@ async function setUp(prefix: string, smtpOptions: Record<string, unknown> = {}) 
 
 async function userPage(browser: Browser, api: APIRequestContext) {
 	const context = await browser.newContext({ storageState: await api.storageState() });
-	return { context, page: await context.newPage() };
+	const page = await context.newPage();
+	await suppressMailboxTour(page);
+	return { context, page };
 }
 
 const sendBody = (address: string, mailboxId: string, subject: string, extra: Record<string, unknown> = {}) => ({

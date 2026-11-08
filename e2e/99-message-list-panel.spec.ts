@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { createSignedInAccount } from "./support/auto-read";
 import { BASE_URL, DOMAIN, STORAGE_STATE } from "./support/constants";
-import { apiContext, deliverInbound, postInbound, uniqueToken } from "./support/helpers";
+import { apiContext, deliverInbound, postInbound, suppressMailboxTour, uniqueToken } from "./support/helpers";
 
 // The message list scrolls inside its own panel (src/components/messages/message-split-layout.tsx): a folder with
 // more mail than fits never grows the page, whatever the window's height, so the list's and the reader's rounded
@@ -46,6 +46,7 @@ test("a long inbox scrolls inside the list panel instead of growing the page", a
 			else await deliverInbound(member.api, mail);
 		}
 		const page = await context.newPage();
+		await suppressMailboxTour(page);
 		for (const height of HEIGHTS) {
 			await page.setViewportSize({ width: 1710, height });
 			await page.goto("/inbox");

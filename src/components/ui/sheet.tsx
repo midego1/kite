@@ -44,7 +44,7 @@ export function SheetContent({
 				{...props}
 			>
 				{children}
-				<SheetPrimitive.Close className="absolute end-3 top-3 rounded-full p-1.5 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600">
+				<SheetPrimitive.Close className="absolute end-3 top-3 flex items-center justify-center rounded-full p-1.5 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 pointer-coarse:end-2 pointer-coarse:top-2 pointer-coarse:h-11 pointer-coarse:w-11">
 					<X className="h-4 w-4" />
 					<span className="sr-only">{closeLabel}</span>
 				</SheetPrimitive.Close>

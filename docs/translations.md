@@ -6,7 +6,7 @@ Kite's interface is available in English and Dutch, with Arabic as an opt-in dra
 
 **Direction** on Automatic follows the interface language: right to left when Arabic is the chosen language, left to right otherwise. An explicit Left to right or Right to left always wins.
 
-Translated so far: the sidebar, the account menu, the message list, the reader's toolbar and menus, the composer and the panel shown when no message is open. Still English: Settings, Admin, the modules' own pages, the command palette, the keyboard shortcuts help, the assistant panel and error messages that come from the server.
+Translated so far: the sidebar, the account menu, the mailbox tour, the message list, the reader's toolbar and menus, the composer and the panel shown when no message is open. Still English: Settings, Admin, the modules' own pages, the command palette, the keyboard shortcuts help, the assistant panel and error messages that come from the server.
 
 Pages anyone can open without an account (the home page, sign-in and setup, `/book`, `/c` and public Drive links at `/d`) stay English and left to right whatever the language setting says, until they are translated. An explicit Direction on this browser still applies there.
 

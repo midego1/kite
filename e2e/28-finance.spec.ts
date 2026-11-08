@@ -16,7 +16,7 @@ import { startFakeModel } from "./support/fake-model";
 import { FINANCE_RECEIPT_RENEWAL_DAYS } from "./support/fake-model-scenarios";
 import type { FakeModel } from "./support/fake-model-types";
 import type { InboundMail } from "./support/helpers-types";
-import { apiContext, postInbound, uniqueToken, waitForMessage } from "./support/helpers";
+import { apiContext, postInbound, suppressMailboxTour, uniqueToken, waitForMessage } from "./support/helpers";
 import { openPalette } from "./support/module-flows";
 import { restoreModules, setModuleState } from "./support/modules";
 import { readSuggestions, waitForFinishedJob } from "./support/triage";
@@ -199,6 +199,7 @@ test.describe("Money Watch detection", () => {
 			});
 
 			const page = await context.newPage();
+			await suppressMailboxTour(page);
 			const errors = collectConsoleErrors(page);
 			await selectMailbox(page, account.mailboxId);
 			await page.goto(`/inbox/${message.id}`);
@@ -339,6 +340,7 @@ test.describe("Money Watch detection", () => {
 			expect(cards).toHaveLength(1);
 			expect(cards[0].payload.unverified).toBe(true);
 			const page = await context.newPage();
+			await suppressMailboxTour(page);
 			await selectMailbox(page, account.mailboxId);
 			await page.goto(`/inbox/${message.id}`);
 			await expect(subscriptionBlock(page).locator("[data-subscription-unverified]")).toContainText(
@@ -392,6 +394,7 @@ test.describe("Money Watch detection", () => {
 			expect(oneClick.cards[0].payload.cancelLink).toEqual({ url: "https://clickflix.test/stop?u=1", oneClick: true });
 
 			const page = await context.newPage();
+			await suppressMailboxTour(page);
 			await selectMailbox(page, account.mailboxId);
 			await page.goto(`/inbox/${bodyOnly.message.id}`);
 			await expect(subscriptionBlock(page).locator("[data-subscription-cancel-link]")).toHaveText("No cancel link");
@@ -511,6 +514,7 @@ test.describe("Money Watch model extension", () => {
 			expect(JSON.stringify(rows)).not.toContain(vendor);
 
 			const page = await context.newPage();
+			await suppressMailboxTour(page);
 			await selectMailbox(page, account.mailboxId);
 			await page.goto(`/inbox/${message.id}`);
 			const note = subscriptionBlock(page).locator("[data-subscription-model-fields]");
@@ -560,6 +564,7 @@ test.describe("Money Watch model extension", () => {
 			expect(JSON.stringify(payload)).not.toContain("evil.test");
 
 			const page = await context.newPage();
+			await suppressMailboxTour(page);
 			await selectMailbox(page, account.mailboxId);
 			await page.goto(`/inbox/${conflict.message.id}`);
 			const block = subscriptionBlock(page);
@@ -604,6 +609,7 @@ test.describe("Money Watch model extension", () => {
 			expect(capped.cards).toEqual([]);
 
 			const page = await context.newPage();
+			await suppressMailboxTour(page);
 			await selectMailbox(page, account.mailboxId);
 			await page.goto("/kite-activity");
 			await expect(page.locator(`[data-activity-skipped="${external.job.id}"]`)).toContainText(
@@ -639,6 +645,7 @@ test.describe("Money Watch tracking", () => {
 			expect(before.subscriptions).toEqual([]);
 
 			const page = await context.newPage();
+			await suppressMailboxTour(page);
 			const errors = collectConsoleErrors(page);
 			await selectMailbox(page, account.mailboxId);
 			await page.goto(`/inbox/${message.id}`);
@@ -754,6 +761,7 @@ test.describe("Money Watch tracking", () => {
 			expect(await paidTotal(account)).toBe(3798);
 
 			const page = await context.newPage();
+			await suppressMailboxTour(page);
 			const errors = collectConsoleErrors(page);
 			await selectMailbox(page, account.mailboxId);
 			await page.goto("/finance");
@@ -854,6 +862,7 @@ test.describe("Money Watch tracking", () => {
 			expect((await listSubscriptions(account)).subscriptions[0].urgent).toBe(false);
 
 			const page = await context.newPage();
+			await suppressMailboxTour(page);
 			await selectMailbox(page, account.mailboxId);
 			await page.goto(`/inbox/${failed.message.id}`);
 			const accepted = page.waitForResponse(
@@ -1036,6 +1045,7 @@ test.describe("Money Watch manual add", () => {
 			);
 
 			const page = await context.newPage();
+			await suppressMailboxTour(page);
 			const errors = collectConsoleErrors(page);
 			await selectMailbox(page, account.mailboxId);
 			const draft = await openMessageMenuItem(page, message.id, "Track as subscription");
@@ -1158,6 +1168,7 @@ test.describe("Money Watch manual add", () => {
 			const vendor = `Reopenflix${uniqueToken("").slice(-4)}`;
 			const message = await deliverPlain(account, invoice(vendor, dayFromNow(20).long, { headers: AUTOMATIC }));
 			const page = await context.newPage();
+			await suppressMailboxTour(page);
 			const errors = collectConsoleErrors(page);
 			await selectMailbox(page, account.mailboxId);
 			const documentDialog = page.locator("[data-finance-document-dialog]");
@@ -1264,6 +1275,7 @@ test.describe("Money Watch manual add", () => {
 			expect(await okJson(await account.api.get("/api/finance/badge"))).toEqual({ count: 1 });
 
 			const page = await context.newPage();
+			await suppressMailboxTour(page);
 			const errors = collectConsoleErrors(page);
 			await selectMailbox(page, account.mailboxId);
 			await page.goto("/inbox");
@@ -1342,6 +1354,7 @@ function recordRealtimeFrames() {
 async function openRealtimePage(browser: Browser, account: { id: string; api: APIRequestContext; mailboxId: string }) {
 	const context = await browser.newContext({ baseURL: BASE_URL, storageState: await account.api.storageState() });
 	const page = await context.newPage();
+	await suppressMailboxTour(page);
 	await page.addInitScript((userId) => localStorage.setItem("kite-session-user", userId), account.id);
 	await page.addInitScript(recordRealtimeFrames);
 	await selectMailbox(page, account.mailboxId);
@@ -1592,6 +1605,7 @@ test.describe("Money Watch view", () => {
 			});
 
 			const page = await context.newPage();
+			await suppressMailboxTour(page);
 			const errors = collectConsoleErrors(page);
 			const cancelRequests: string[] = [];
 			page.on("request", (request) => {
@@ -1725,6 +1739,7 @@ test.describe("Money Watch view", () => {
 		try {
 			const vendor = uniqueVendor("Dialogbox");
 			const page = await context.newPage();
+			await suppressMailboxTour(page);
 			const errors = collectConsoleErrors(page);
 			await selectMailbox(page, account.mailboxId);
 			await page.goto("/inbox");
@@ -1870,6 +1885,7 @@ test.describe("Money Watch view", () => {
 			});
 
 			const page = await context.newPage();
+			await suppressMailboxTour(page);
 			const errors = collectConsoleErrors(page);
 			await selectMailbox(page, account.mailboxId);
 			for (const style of [
@@ -1960,6 +1976,7 @@ test.describe("Money Watch view", () => {
 		const context = await browser.newContext({ baseURL: BASE_URL, storageState: await account.api.storageState() });
 		try {
 			const page = await context.newPage();
+			await suppressMailboxTour(page);
 			const errors: string[] = [];
 			page.on("pageerror", (error) => errors.push(error.message));
 			// The shared e2e database has 0063 applied, so the routes answer with the bodies the views give

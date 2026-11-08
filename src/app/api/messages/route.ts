@@ -88,23 +88,29 @@ async function resolveListQuery(input: {
 }
 
 /**
- * One row per thread from a fused, relevance-ordered id list: the first (best-ranked) message of each conversation
- * becomes its representative, a deliberate difference from conversation view's usual newest-message representative,
- * since relevance order is the point of a meaning search. `loaded` need not be in `ids` order; `ids` decides it.
+ * One row per thread from a fused, relevance-ordered id list: a thread is ranked by the best position any of its
+ * matching messages reached (so a meaning-only hit still lifts its thread), but the representative shown for it is
+ * its newest matching message, the same convention as every other conversation view row (a bug this route's own
+ * tests enforce: an attachment on an older message of the thread must still show through the newest row).
+ * `loaded` need not be in `ids` order; `ids` decides the thread rank.
  */
 function representativeRowsByThread(ids: readonly string[], loaded: readonly ListMessage[]): ListMessage[] {
 	const rowById = new Map(loaded.map((row) => [row.id, row]));
-	const seenKeys = new Set<string>();
-	const rows: ListMessage[] = [];
+	const order: string[] = [];
+	const newestByKey = new Map<string, ListMessage>();
 	for (const id of ids) {
 		const row = rowById.get(id);
 		if (!row) continue;
 		const key = rowConversationKey(row);
-		if (seenKeys.has(key)) continue;
-		seenKeys.add(key);
-		rows.push(row);
+		const current = newestByKey.get(key);
+		if (!current) {
+			order.push(key);
+			newestByKey.set(key, row);
+		} else if (row.createdAt > current.createdAt) {
+			newestByKey.set(key, row);
+		}
 	}
-	return rows;
+	return order.map((key) => newestByKey.get(key)!);
 }
 
 /** Every message of each row's conversation (not just the ones a search matched), for `groupThreadMembers`. */

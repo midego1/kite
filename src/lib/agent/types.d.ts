@@ -38,7 +38,7 @@ export type AgentToolContext = {
 	env: CloudflareEnv;
 	user: SessionUser;
 	mailboxId: string;
-	origin: "chat" | "auto" | "mcp";
+	origin: "chat" | "auto" | "mcp" | "email";
 	timeZone?: string;
 	/** Id for the next draft this context creates, chosen up front so an audited action can find it again. */
 	draftId?: string;

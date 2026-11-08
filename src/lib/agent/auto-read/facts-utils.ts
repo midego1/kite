@@ -8,6 +8,7 @@ import type {
 	SupportingPhishingSignal,
 } from "./facts-types";
 import type { AutoReadCapabilities } from "./settings-types";
+import type { SpamSignal } from "@/lib/spam/types";
 
 const AUTOMATIC_SENDER = /^(mailer-daemon|postmaster|no-?reply|do-?not-?reply)@/i;
 const NO_REPLY_SENDER = /^(no-?reply|do-?not-?reply)@/i;
@@ -59,32 +60,50 @@ export function isAutomaticMessage(from: string, headers?: Record<string, string
 	);
 }
 
-/** Stands in for a `dkim_passed` signal whose signature belongs to the From domain (`metadata.aligned`). */
-const DKIM_ALIGNED = "dkim_aligned";
+/** The shape of a stored spam signal `authPassedFromSignals` needs: just the id and DKIM's alignment metadata. */
+type RawAuthSignal = Pick<SpamSignal, "id" | "metadata">;
 
-function parseSignalIds(value: string | null): Set<string> {
-	if (!value) return new Set();
+/** Every well-formed signal of a parsed `messages.spam_signals` array (or whatever else produced the same shape). */
+function parseRawSignals(value: string | null): RawAuthSignal[] {
+	if (!value) return [];
 	try {
 		const parsed: unknown = JSON.parse(value);
-		if (!Array.isArray(parsed)) return new Set();
-		const ids = new Set<string>();
-		for (const signal of parsed) {
-			if (!signal || typeof signal !== "object") continue;
-			const { id, metadata } = signal as { id?: unknown; metadata?: { aligned?: unknown } };
-			if (typeof id !== "string") continue;
-			ids.add(id);
-			if (id === "dkim_passed" && metadata?.aligned === true) ids.add(DKIM_ALIGNED);
-		}
-		return ids;
+		if (!Array.isArray(parsed)) return [];
+		return parsed.filter(
+			(signal): signal is RawAuthSignal =>
+				!!signal && typeof signal === "object" && typeof (signal as { id?: unknown }).id === "string",
+		);
 	} catch {
-		return new Set();
+		return [];
 	}
+}
+
+function parseSignalIds(signals: readonly RawAuthSignal[]): Set<string> {
+	return new Set(signals.map((signal) => signal.id));
 }
 
 function authResult(signals: Set<string>, method: (typeof AUTH_METHODS)[number]): AuthResult {
 	if (signals.has(`${method}_failed`)) return "fail";
 	if (signals.has(`${method}_passed`)) return "pass";
 	return "unknown";
+}
+
+/**
+ * Whether Kite's `authPassed` rule is satisfied: a DMARC pass, or a DKIM pass aligned with the From domain
+ * (`metadata.aligned`), with no authentication failure. SPF is not required: a DMARC pass already implies an
+ * aligned SPF or DKIM pass (RFC 7489), so a failed SPF check of a forwarded message does not undo it, and DKIM
+ * alone counts only for the From domain's own signature (any domain can sign its mail, including a hostile one).
+ *
+ * Pure and exported so `collectFacts` and the assistant by email (docs/specs/assistant-by-email.md §5.2) compute
+ * the same rule from the same kind of input: `collectFacts` from the stored message's parsed `spam_signals`,
+ * the assistant from `analyzeAuthentication`'s direct return value (the request's trusted `Authentication-Results`
+ * run through the spam analyzer, never stored). A change to the rule changes both callers at once.
+ */
+export function authPassedFromSignals(signals: readonly RawAuthSignal[]): boolean {
+	const ids = parseSignalIds(signals);
+	const authFailed = AUTH_METHODS.some((method) => ids.has(`${method}_failed`));
+	const dkimAligned = signals.some((signal) => signal.id === "dkim_passed" && signal.metadata?.aligned === true);
+	return ids.has("dmarc_passed") || (!authFailed && dkimAligned);
 }
 
 /** `text/calendar` (any parameters), `application/ics`, or a `.ics` filename. */
@@ -158,7 +177,8 @@ export function collectFacts(input: CollectFactsInput): MessageFacts {
 	const parts = senderParts(message.fromAddr);
 	const senderAddress = parts.address;
 	const headers = lowerHeaders(input.headers);
-	const signals = parseSignalIds(message.spamSignals);
+	const rawSignals = parseRawSignals(message.spamSignals);
+	const signals = parseSignalIds(rawSignals);
 	const contacts = input.contacts ?? [];
 	const auth = {
 		spf: authResult(signals, "spf"),
@@ -180,10 +200,7 @@ export function collectFacts(input: CollectFactsInput): MessageFacts {
 			? (Object.entries(input.headers).find(([key]) => key.toLowerCase() === "list-unsubscribe")?.[1] ?? null)
 			: null,
 		auth,
-		// A DMARC pass already means an aligned SPF or DKIM pass (RFC 7489), so a failed SPF check of a
-		// forwarded message does not undo it; `spf_failed` still shows among the phishing signs. DKIM
-		// alone counts only for the From domain's own signature, any domain can sign its mail.
-		authPassed: auth.dmarc === "pass" || (!authFailed && signals.has(DKIM_ALIGNED)),
+		authPassed: authPassedFromSignals(rawSignals),
 		authFailed,
 		spamVerdict: verdict,
 		suspicious: verdict === "suspicious",

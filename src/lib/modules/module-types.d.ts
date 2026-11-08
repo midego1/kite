@@ -326,7 +326,8 @@ export type ModuleCapabilities = {
 	descriptors: CapabilityDescriptor[];
 };
 
-export type CapabilityTrigger = "chat" | "auto_read" | "mcp" | "api" | "cron" | "queue" | "webhook" | "system";
+export type CapabilityTrigger =
+	"chat" | "auto_read" | "mcp" | "api" | "cron" | "queue" | "webhook" | "system" | "email";
 
 export type CapabilityCallContext = {
 	viewer: { userId: string; role: string; isPrimaryAdmin: boolean } | null;

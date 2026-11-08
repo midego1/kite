@@ -14,6 +14,7 @@ interface CloudflareEnv {
 		| import("./src/lib/external-accounts/sync-utils").ExternalSyncMessage
 		| import("./src/lib/external-accounts/sync-utils").ExternalWritebackMessage
 		| import("./src/lib/finance/payment-scan").PaymentScanMessage
+		| { kind: "agent.assistant_email"; requestId: string }
 	>;
 	AI?: Ai;
 	AI_MODEL?: string;

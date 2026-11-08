@@ -30,7 +30,11 @@ const settingsSchema = z
 	})
 	.strict();
 
-/** The primary admin changes the settings; turning the feature off goes through `disableSemanticSearch` instead. */
+/**
+ * The primary admin changes the settings; turning the feature off goes through `disableSemanticSearch` instead.
+ * Before migration 0099 the answer is 409 `MIGRATION_PENDING` (the UI already disables itself then; this only
+ * covers a direct API call).
+ */
 export async function PUT(request: Request) {
 	const env = getEnv();
 	const auth = await requireSessionAdmin(env, request, isPrimaryAdmin);
@@ -47,6 +51,11 @@ export async function PUT(request: Request) {
 		}
 	}
 	const before = await getSemanticStatus(env);
+	if (!before.ready)
+		return Response.json(
+			{ error: "Apply the pending database update to change this setting", code: "MIGRATION_PENDING" },
+			{ status: 409, headers: noStore },
+		);
 	if (parsed.data.enabled === false && before.settings.enabled) {
 		await disableSemanticSearch(env);
 		await createAuditLog(env, { actorUserId: auth.user.id, action: "search.semantic_disabled" });

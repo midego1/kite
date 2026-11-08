@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { rmSync } from "node:fs";
 import test, { after } from "node:test";
 import { makeBundleDirectory } from "./support/bundle-directory.mjs";
-import { migrationsDir, seedAccountData } from "./support/module-database.mjs";
+import { D1_BOUND_PARAMETER_LIMIT, limitBoundParameters } from "./support/jmap-database.mjs";
+import { copyMigrationsBefore, migrationsDir, seedAccountData } from "./support/module-database.mjs";
 import { bundleModules } from "./support/modules-bundle.mjs";
 
 // import.meta.resolve (plain strings in bundleModules's export list are invisible to it) lets knip see this test
@@ -71,6 +72,36 @@ test("a message deleted while its embedding call is in flight gets no vectors, a
 	assert.deepEqual(db.db.prepare("SELECT * FROM message_embeddings").all(), []);
 	// The same call's own tombstone drain already processed it: nothing to remove, so nothing was left behind either.
 	assert.deepEqual(db.db.prepare("SELECT vector_key, chunk_count FROM message_embedding_deletes").all(), []);
+});
+
+test("a mailbox cleared while a message's embedding call is still in flight gets its freshly-written vectors deleted again, never indexed (S1 of review round 2)", async (t) => {
+	const { db, env, upserts, deletedIds } = await setup(t);
+	db.db.exec(`
+		INSERT INTO messages (id, user_id, mailbox_id, direction, from_addr, to_addr, subject, text_body, status, created_at)
+		VALUES ('race-message', 'owner', 'mailbox-a', 'inbound', 'x@example.net', 'a@example.com', 'Hi', 'Hello there', 'received', 10);
+	`);
+	env.AI = { run: async (_model, input) => ({ data: fakeVectors(input.text.length) }) };
+	// `clearMailboxSemanticIndex` (or the mailbox going No AI) marking this row `skipped` lands in the narrow window
+	// between the `rowsStillRunning` check (which still read `running`) and the final guarded write: simulated here
+	// by running it from inside the fake store's own `upsert`, the one awaited call between the two.
+	env.VECTORS.upsert = async (items) => {
+		db.db.exec(
+			"UPDATE message_embeddings SET status = 'skipped', lease_until = NULL WHERE message_id = 'race-message'",
+		);
+		upserts.push(...items);
+	};
+	const result = await processEmbeddingBatch(env);
+	assert.equal(result.claimed, 1);
+	const row = db.db
+		.prepare("SELECT status, vector_key, chunk_count FROM message_embeddings WHERE message_id = 'race-message'")
+		.get();
+	// Never flipped back to indexed: the guarded update matched nothing because status was no longer 'running'.
+	assert.equal(row.status, "skipped");
+	assert.equal(row.vector_key, null);
+	assert.equal(row.chunk_count, 0);
+	// The vectors `upsert` just wrote are deleted again, not left orphaned in the store.
+	assert.ok(upserts.length > 0);
+	assert.deepEqual(deletedIds.sort(), upserts.map((item) => item.id).sort());
 });
 
 test("an ordinary message is embedded, upserted and marked indexed", async (t) => {
@@ -172,4 +203,41 @@ test("processEmbeddingBatch still drains tombstones while the embedding gate is 
 	assert.equal(claimed, 0);
 	assert.deepEqual(deletedIds.sort(), ["abc123:0", "abc123:1"]);
 	assert.equal(db.db.prepare("SELECT count(*) AS n FROM message_embedding_deletes").get().n, 0);
+});
+
+test("drainDeleteTombstones clears a page of more than 100 tombstones without exceeding D1's bound-parameter limit (R3 of review round 2)", async (t) => {
+	const { db, env, deletedIds } = await setup(t);
+	const count = 150; // more than the 100-parameter limit a per-row DELETE ... IN (...) used to bind.
+	const rows = Array.from(
+		{ length: count },
+		(_, index) =>
+			`('m${index}', 'owner', 'mailbox-a', 'inbound', 'x@example.net', 'a@example.com', 'Hi', 'Hello there', 'received', ${index})`,
+	).join(",\n");
+	db.db.exec(
+		`INSERT INTO messages (id, user_id, mailbox_id, direction, from_addr, to_addr, subject, text_body, status, created_at) VALUES ${rows};`,
+	);
+	for (let index = 0; index < count; index++)
+		db.db
+			.prepare("UPDATE message_embeddings SET status = 'indexed', vector_key = ?, chunk_count = 1 WHERE message_id = ?")
+			.run(`key${index}`, `m${index}`);
+	db.db.exec(
+		`DELETE FROM messages WHERE id IN (${Array.from({ length: count }, (_, index) => `'m${index}'`).join(",")})`,
+	);
+	assert.equal(db.db.prepare("SELECT count(*) AS n FROM message_embedding_deletes").get().n, count);
+
+	const stats = limitBoundParameters(db);
+	await drainDeleteTombstones(env);
+	assert.ok(stats.maxBound <= D1_BOUND_PARAMETER_LIMIT, `bound ${stats.maxBound}`);
+	assert.equal(deletedIds.length, count);
+	assert.equal(db.db.prepare("SELECT count(*) AS n FROM message_embedding_deletes").get().n, 0);
+});
+
+test("drainDeleteTombstones is quiet, not throwing, before migration 0099 (S5 of review round 2)", async (t) => {
+	const before = copyMigrationsBefore(scratch, 99);
+	const db = new SqliteDatabase(":memory:");
+	t.after(() => db.db.close());
+	await applyMigrations(db, before);
+	// worker.ts and scheduler.ts call this directly from cron, every tick, on every install (off by default): it
+	// must not throw "no such table: message_embedding_deletes" there, which would log as an error forever.
+	await drainDeleteTombstones({ DB: db });
 });

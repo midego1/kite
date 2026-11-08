@@ -3,18 +3,12 @@ import { getDb } from "@/db";
 import { messageEmbeddings } from "@/db/schema/semantic";
 import { AGENT_SETTINGS_ID } from "@/lib/agent/provider-constants";
 import { chunkVectorId } from "./filter-utils";
+import { getSemanticInstallSettings } from "./install-settings";
+import { insertPendingEmbeddingRows } from "./queue-pending";
 import { getVectorStore, VectorStoreUnavailableError } from "./vector-store";
 
 /** Rows are read and deleted in pages this large, so a large install never loads its whole index at once. */
 const PAGE_SIZE = 1_000;
-/** `message_embeddings` rows are inserted in batches this small to stay under D1's 100 bound-parameter limit. */
-const INSERT_CHUNK_SIZE = 20;
-
-function chunks<T>(items: readonly T[], size: number): T[][] {
-	const result: T[][] = [];
-	for (let index = 0; index < items.length; index += size) result.push(items.slice(index, index + size));
-	return result;
-}
 
 type IndexedRow = { vectorKey: string; chunkCount: number };
 
@@ -107,8 +101,14 @@ export async function disableSemanticSearch(env: CloudflareEnv): Promise<void> {
  * the moment it looks again, so it writes nothing for these rows. The search path (`search.ts`) only ever maps a
  * vector key back to an `indexed` row of a mailbox whose switches still allow it, which is the real guarantee: it
  * holds even in the narrow window a concurrent write could still land between these two statements.
+ *
+ * Returns early while the install feature is off (S2 of review round 2, also its own `message_embeddings` table
+ * cannot have anything to clear before migration 0099, and `getSemanticInstallSettings` already reads as `enabled:
+ * false` on a database that has not applied it): a mailbox's AI switch flips on every install, most of which never
+ * turn this feature on, and would otherwise page the mailbox's whole row set for nothing every time.
  */
 export async function clearMailboxSemanticIndex(env: CloudflareEnv, mailboxId: string): Promise<void> {
+	if (!(await getSemanticInstallSettings(env)).enabled) return;
 	await getDb(env)
 		.update(messageEmbeddings)
 		.set({ status: "skipped", leaseUntil: null })
@@ -117,12 +117,6 @@ export async function clearMailboxSemanticIndex(env: CloudflareEnv, mailboxId: s
 	await getDb(env).update(messageEmbeddings).set({ chunkCount: 0 }).where(eq(messageEmbeddings.mailboxId, mailboxId));
 }
 
-/**
- * Switching **Search by meaning** back on for a mailbox (or turning "No AI for this mailbox" back off): every row
- * of the mailbox is set back to `pending`, including ones marked `indexed`, because their vectors are gone and the
- * content-hash skip in `indexer.ts` must not keep them out. The triggers do not see this (no message status
- * changes) and the backfill cursor may have long passed these messages, so the switch does it itself.
- */
 /**
  * Eligible messages of the mailbox with no `message_embeddings` row at all, paged: a message delivered while the
  * mailbox was excluded never got one from the INSERT trigger, and the backfill, which only looks at messages with
@@ -150,7 +144,19 @@ async function* pagesOfMissingRows(env: CloudflareEnv, mailboxId: string): Async
 	}
 }
 
+/**
+ * Switching **Search by meaning** back on for a mailbox (or turning "No AI for this mailbox" back off): every row
+ * of the mailbox is set back to `pending`, including ones marked `indexed`, because their vectors are gone and the
+ * content-hash skip in `indexer.ts` must not keep them out. The triggers do not see this (no message status
+ * changes) and the backfill cursor may have long passed these messages, so the switch does it itself.
+ *
+ * Returns early while the install feature is off (S2 and R4 of review round 2): before migration 0099 is applied,
+ * `mailbox_agent_settings.semantic_index`, read below, does not exist yet either, and reading a missing column
+ * fails as "no such column", not "no such table" — `getSemanticInstallSettings` already reads as `enabled: false`
+ * on such a database, so checking it first here means this never reaches that read until 0099 is applied.
+ */
 export async function requeueMailboxSemanticIndex(env: CloudflareEnv, mailboxId: string): Promise<void> {
+	if (!(await getSemanticInstallSettings(env)).enabled) return;
 	// Guarded by the mailbox's own switches, so a caller flipping "No AI for this mailbox" back off never requeues a
 	// mailbox whose manager separately turned "Search by meaning" off for it (and vice versa for ai_disabled).
 	const allowed = await env.DB.prepare(
@@ -168,15 +174,12 @@ export async function requeueMailboxSemanticIndex(env: CloudflareEnv, mailboxId:
 		.run();
 	// A message delivered or imported while the mailbox was excluded, or already walked past by the backfill,
 	// never got a row at all: give it one now, instead of only ever resetting rows that already existed.
-	const db = getDb(env);
 	const now = new Date();
 	for await (const ids of pagesOfMissingRows(env, mailboxId)) {
-		for (const batch of chunks(ids, INSERT_CHUNK_SIZE)) {
-			await db
-				.insert(messageEmbeddings)
-				.values(batch.map((id) => ({ messageId: id, mailboxId, status: "pending" as const, queuedAt: now })))
-				.onConflictDoNothing();
-		}
+		await insertPendingEmbeddingRows(
+			env,
+			ids.map((id) => ({ id, mailboxId, queuedAt: now })),
+		);
 	}
 }
 

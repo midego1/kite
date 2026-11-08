@@ -16,15 +16,28 @@ export function chunkArray<T>(items: readonly T[], size: number): T[][] {
 	return chunks;
 }
 
-/** Combines the responses of several batched bulk-action requests into the one a single request would have answered. */
+/**
+ * Combines the responses of several batched bulk-action requests into the one a single request would have
+ * answered. A single response (every call outside "Select all in folder" and its kind) is returned exactly as
+ * it came, so no field a future response may carry is ever silently dropped here.
+ */
 export function mergeBulkResponses(responses: readonly BulkMessageResponse[]): BulkMessageResponse {
 	if (responses.length === 0) return { ok: true };
+	if (responses.length === 1) return responses[0];
+	const sum = (pick: (response: BulkMessageResponse) => number | undefined) =>
+		responses.reduce((total, response) => total + (pick(response) ?? 0), 0);
 	return {
 		ok: responses.every((response) => response.ok !== false),
 		undo: responses.flatMap((response) => response.undo ?? []),
 		moved: responses.flatMap((response) => response.moved ?? []),
 		reports: responses.flatMap((response) => response.reports ?? []),
 		trainingUndoUnavailable: responses.some((response) => response.trainingUndoUnavailable === true),
-		superseded: responses.reduce((sum, response) => sum + (response.superseded ?? 0), 0),
+		superseded: sum((response) => response.superseded),
+		deleted: sum((response) => response.deleted),
+		skipped: sum((response) => response.skipped),
+		drafts: sum((response) => response.drafts),
+		draftsDeleted: sum((response) => response.draftsDeleted),
+		draftsRefused: sum((response) => response.draftsRefused),
+		sendPendingRefused: sum((response) => response.sendPendingRefused),
 	};
 }

@@ -72,3 +72,29 @@ test("mergeBulkResponses is false only when a batch answered false, and empty fo
 	assert.equal(mergeBulkResponses([{ ok: true }, { ok: true }]).ok, true);
 	assert.deepEqual(mergeBulkResponses([]), { ok: true });
 });
+
+test("a single response is returned exactly as it came, so no field the merge does not know about is dropped", () => {
+	const response = {
+		ok: true,
+		undo: [],
+		moved: ["a"],
+		draftsDeleted: 2,
+		draftsRefused: 1,
+		sendPendingRefused: 3,
+		drafts: 4,
+		code: "DRAFTS_NEED_CONFIRMATION",
+	};
+	assert.equal(mergeBulkResponses([response]), response);
+});
+
+test("mergeBulkResponses sums the drafts and send-pending counts a batch can carry", () => {
+	const merged = mergeBulkResponses([
+		{ ok: true, deleted: 10, skipped: 1, draftsDeleted: 2, draftsRefused: 1, sendPendingRefused: 1 },
+		{ ok: true, deleted: 5, skipped: 0, draftsDeleted: 0, draftsRefused: 2, sendPendingRefused: 0 },
+	]);
+	assert.equal(merged.deleted, 15);
+	assert.equal(merged.skipped, 1);
+	assert.equal(merged.draftsDeleted, 2);
+	assert.equal(merged.draftsRefused, 3);
+	assert.equal(merged.sendPendingRefused, 1);
+});

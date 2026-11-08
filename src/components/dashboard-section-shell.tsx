@@ -14,6 +14,7 @@ import { MobileMenuButton, SidebarAside } from "@/components/sidebar-aside";
 import { SidebarFrame } from "@/components/sidebar-frame";
 import { SidebarProvider } from "@/components/sidebar-state";
 import { MobileTabBar } from "@/components/mobile-tab-bar";
+import { MobileComposeFab } from "@/components/mobile-compose-fab";
 import { MAIN_CONTENT_ID, SkipToContent } from "@/components/skip-to-content";
 import { RouteTitle } from "@/components/route-title";
 
@@ -37,7 +38,9 @@ export function DashboardSectionShell({ children, nav, ...guard }: DashboardSect
 					<ComposeProvider>
 						<ShortcutsProvider>
 							<RouteTitle />
-							<div className="h-dvh overflow-hidden bg-[#f6f8fc]">
+							{/* viewport-fit=cover (src/app/layout.tsx) makes env(safe-area-inset-*) resolve app-wide, not
+							just at the bottom the tab bar and the compose button already account for. */}
+							<div className="h-dvh overflow-hidden bg-[#f6f8fc] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">
 								<SkipToContent />
 								<SidebarFrame
 									sidebar={
@@ -69,6 +72,7 @@ export function DashboardSectionShell({ children, nav, ...guard }: DashboardSect
 											{children}
 										</main>
 										<MobileTabBar />
+										<MobileComposeFab />
 									</div>
 								</SidebarFrame>
 								<FloatingComposer />

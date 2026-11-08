@@ -31,8 +31,9 @@ export function MessageRowStar({ starred, compact, icon: Icon, onToggle }: Messa
 					aria-label={t("Star")}
 					aria-pressed={starred}
 					className={clsx(
-						"rounded p-0.5 hover:bg-neutral-200",
-						!starred && "opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
+						"flex items-center justify-center rounded p-0.5 hover:bg-neutral-200",
+						"pointer-coarse:h-11 pointer-coarse:w-11 pointer-coarse:rounded-full",
+						!starred && "opacity-0 group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100",
 					)}
 				>
 					<Icon className={clsx("h-3.5 w-3.5", iconColor)} />

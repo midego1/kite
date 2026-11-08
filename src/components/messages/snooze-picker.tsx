@@ -15,7 +15,7 @@ export function SnoozeMenuItem({ messageId, expanded, onExpandedChange, onSnooze
 		<div data-snooze-expanded={expanded}>
 			<button
 				type="button"
-				className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm text-neutral-700 hover:bg-neutral-100"
+				className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm text-neutral-700 hover:bg-neutral-100 pointer-coarse:py-3"
 				aria-expanded={expanded}
 				onClick={() => onExpandedChange(!expanded)}
 			>
@@ -63,7 +63,7 @@ export function SnoozePicker({ messageId, onSnoozed }: SnoozePickerProps) {
 					type="button"
 					disabled={snoozing}
 					onClick={() => void snooze(preset.value)}
-					className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-start text-neutral-700 hover:bg-neutral-100 focus-visible:bg-neutral-100 focus-visible:outline-none disabled:text-neutral-400"
+					className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-start text-neutral-700 hover:bg-neutral-100 focus-visible:bg-neutral-100 focus-visible:outline-none disabled:text-neutral-400 pointer-coarse:py-3"
 				>
 					<span>{preset.label}</span>
 					<span className="ms-auto text-xs text-neutral-500">{formatSnoozePresetHint(preset.value)}</span>

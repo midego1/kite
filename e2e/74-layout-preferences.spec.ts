@@ -132,7 +132,9 @@ test("a choice made while the account's layout loads is saved when the page clos
 		if (route.request().method() !== "GET") return route.continue();
 		await new Promise(() => {});
 	});
-	await signIn(page, email, PASSWORD);
+	// This page already mocks the layout endpoint itself, hanging the GET on purpose; suppressing the tour
+	// through the same route would otherwise answer it instead, so this never actually hangs.
+	await signIn(page, email, PASSWORD, { skipMailboxTourSuppression: true });
 	await expect(page).toHaveURL(/\/inbox/);
 	await expect(page.getByRole("button", { name: "Compose new email", exact: true })).toBeVisible({ timeout: 15_000 });
 	await chooseLayout(page, "Compact");
@@ -165,7 +167,9 @@ test("before the database update the layout stays in the browser", async ({ brow
 	page.on("request", (request) => {
 		if (request.url().endsWith(LAYOUT_API) && request.method() === "PATCH") patches.push(request.url());
 	});
-	await signIn(page, email, PASSWORD);
+	// This page already mocks the layout endpoint itself, migration-pending included; the tour reads
+	// `ready: false` from that same mock as reason enough to stay closed on its own (no page.route needed here).
+	await signIn(page, email, PASSWORD, { skipMailboxTourSuppression: true });
 	await expect(page).toHaveURL(/\/inbox/);
 	await chooseLayout(page, "Below inbox");
 	await page.reload();

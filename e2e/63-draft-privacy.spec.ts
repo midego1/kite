@@ -1,6 +1,6 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import { DOMAIN, STORAGE_STATE } from "./support/constants";
-import { apiContext, apiSignIn, deliverInbound, uniqueToken } from "./support/helpers";
+import { apiContext, apiSignIn, deliverInbound, suppressMailboxTour, uniqueToken } from "./support/helpers";
 import { turnScreenerOff } from "./support/screener";
 
 // Drafts are private to their author, even in a shared mailbox: a teammate with full access reads the
@@ -118,6 +118,7 @@ test("a teammate on a shared mailbox cannot read another user's draft; its autho
 		);
 		const context = await browser.newContext({ storageState: await mate.storageState() });
 		const page = await context.newPage();
+		await suppressMailboxTour(page);
 		await showAllMailboxes(page, "/drafts");
 		const list = page.getByRole("list", { name: "Drafts" });
 		await expect(list.getByText(mateSubject)).toBeVisible();
@@ -171,6 +172,7 @@ test("a teammate on a shared mailbox cannot read another user's draft; its autho
 
 		const context = await browser.newContext({ storageState: STORAGE_STATE });
 		const page = await context.newPage();
+		await suppressMailboxTour(page);
 		await showAllMailboxes(page, "/starred");
 		for (const text of [subject, mailSubject]) {
 			const row = page.locator("[data-message-row]").filter({ has: page.getByText(text, { exact: true }) });
@@ -194,6 +196,7 @@ test("a teammate on a shared mailbox cannot read another user's draft; its autho
 		const leftBehind = await saveDraft(mate, address, sharedId, `Left behind ${token}`, "Mate's last words");
 		const context = await browser.newContext({ storageState: STORAGE_STATE });
 		const page = await context.newPage();
+		await suppressMailboxTour(page);
 		await page.goto(`/mailboxes/${sharedId}`);
 		await page.getByRole("button", { name: /^Remove / }).click();
 		const confirm = page.getByRole("alertdialog", { name: /access to this mailbox\?$/ });

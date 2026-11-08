@@ -13,7 +13,7 @@ import {
 	toolNames,
 } from "./support/chat";
 import { type FakeModel } from "./support/fake-model-types";
-import { postInbound, uniqueToken, waitForMessage } from "./support/helpers";
+import { postInbound, suppressMailboxTour, uniqueToken, waitForMessage } from "./support/helpers";
 import { createSignedInAccount, okJson, selectMailbox } from "./support/auto-read";
 import { futureAt, inviteAttachment } from "./support/invites";
 import { readSuggestions, waitForFinishedJob } from "./support/triage";
@@ -470,6 +470,7 @@ test("a calendar invitation suggestion is hidden while Calendar is off, no new o
 		const context = await browser.newContext({ baseURL: BASE_URL, storageState: await account.api.storageState() });
 		contexts.push(context);
 		const page = await context.newPage();
+		await suppressMailboxTour(page);
 		await selectMailbox(page, account.mailboxId);
 		await page.goto("/kite-activity");
 		const skipped = page.locator(`[data-activity-skipped="${second.job.id}"]`);

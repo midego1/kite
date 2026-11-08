@@ -99,7 +99,7 @@ export function HomeList({ state, emails, appName, icon, onOpen, dispatch, menuO
 					type="button"
 					aria-label="Open menu"
 					onClick={() => dispatch({ type: "toggleMenu" })}
-					className={`flex h-8 w-8 items-center justify-center rounded-md text-neutral-600 hover:bg-neutral-100 ${menuOnly ? "" : "split:lg:hidden"} ${FOCUS_RING}`}
+					className={`flex h-8 w-8 items-center justify-center rounded-md text-neutral-600 hover:bg-neutral-100 pointer-coarse:h-11 pointer-coarse:w-11 ${menuOnly ? "" : "split:lg:hidden"} ${FOCUS_RING}`}
 				>
 					<Menu className="h-4 w-4" aria-hidden="true" />
 				</button>

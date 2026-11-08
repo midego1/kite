@@ -152,6 +152,17 @@ export async function isAddressDelivered(db: AppDatabase, domainId: string, addr
 	return !parsed || !!(await findAddressMailbox(db, domainId, parsed));
 }
 
+/**
+ * Whether `hostname` is a domain of this install, whatever its status. A verified extra sender address
+ * (spec §5.3) must never be one of ours: a shared mailbox on one of our own domains would let anyone who can
+ * send as it verify its address as their own "extra" sender and so command another user's assistant. The same
+ * check `assertNotKiteDomain` makes for connecting an external account.
+ */
+export async function isInstallDomain(db: AppDatabase, hostname: string): Promise<boolean> {
+	const [domain] = await db.select({ id: domains.id }).from(domains).where(eq(domains.hostname, hostname)).limit(1);
+	return !!domain;
+}
+
 /** A personal mailbox's own id and owner. */
 type OwnMailbox = { mailboxId: string; userId: string };
 

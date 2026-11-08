@@ -244,6 +244,27 @@ test("a second mailbox whose address only differs by dots maps to its own owner,
 	assert.equal(rows[0].user_id, "other");
 });
 
+test("a verified extra address never maps on a domain of this install, even if one somehow exists (security review)", async (t) => {
+	const { env, database } = await setup(t);
+	// The intruder has their own mailbox on a different domain, so — if the install-domain check below were
+	// missing — mapping to them would succeed and defaultContextMailboxId would find a real mailbox to run in,
+	// exactly like a legitimate verified-extra-address request. Only the install-domain check stops it.
+	database.db.exec(`
+		INSERT INTO users (id, email, password_hash, name, created_at) VALUES ('intruder', 'intruder@attacker.test', 'hash', 'Intruder', 1);
+		INSERT INTO domains (id, user_id, hostname, zone_id, status, created_at) VALUES ('domain-2', 'intruder', 'attacker.test', 'zone-2', 'active', 1);
+		INSERT INTO mailboxes (id, user_id, domain_id, local_part, created_at) VALUES ('mailbox-intruder', 'intruder', 'domain-2', 'intruder', 1);
+		INSERT INTO user_ai_settings (user_id, assistant_email_enabled, assistant_email_daily_limit, updated_at) VALUES ('intruder', 1, 20, 1);
+	`);
+	// Simulates a row that somehow predates addSenderAddress's own refusal (a stale row, a direct insert): sender
+	// mapping must still refuse an install-domain address at read time, in depth. `random` is not a real mailbox
+	// or alias on example.com, so without this check it would otherwise fall through to the verified-address path.
+	database.db.exec(
+		"INSERT INTO assistant_sender_addresses (id, user_id, address, verified_at, created_at) VALUES ('row-1', 'intruder', 'random@example.com', 1, 1)",
+	);
+	await deliver(env, { from: "Random <random@example.com>", messageId: "<install-domain@example.com>" });
+	assert.equal((await requests(database)).length, 0);
+});
+
 test("a shared mailbox address does not count as an own address", async (t) => {
 	const { env, database } = await setup(t);
 	database.db.exec(

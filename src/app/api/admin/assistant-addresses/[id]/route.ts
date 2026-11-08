@@ -6,7 +6,13 @@ import { requireSessionAdmin } from "@/lib/api/auth";
 import { canManageDomains } from "@/lib/auth/admin";
 import { hasValidSessionMutationOrigin } from "@/lib/auth/origin";
 import { getEnv } from "@/lib/cloudflare";
-import { managedDomain, publicAssistantAddress } from "../utils";
+import { deleteEmailRoutingRuleForAddress } from "@/lib/cloudflare-api";
+import {
+	assistantAddressesPendingResponse,
+	assistantAddressesReady,
+	managedDomain,
+	publicAssistantAddress,
+} from "../utils";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -15,6 +21,7 @@ async function ownedAssistantAddress(request: Request, id: string) {
 	const auth = await requireSessionAdmin(env, request, canManageDomains);
 	if (auth.error) return { error: auth.error } as const;
 	const db = getDb(env);
+	if (!(await assistantAddressesReady(db))) return { error: assistantAddressesPendingResponse() } as const;
 	const [row] = await db.select().from(assistantAddresses).where(eq(assistantAddresses.id, id)).limit(1);
 	if (!row) return { error: NextResponse.json({ error: "Not found" }, { status: 404 }) } as const;
 	const domain = await managedDomain(db, auth.user, row.domainId);
@@ -43,5 +50,10 @@ export async function DELETE(request: Request, { params }: Params) {
 	if (owned.error) return owned.error;
 	if (!hasValidSessionMutationOrigin(request)) return NextResponse.json({ error: "Invalid origin" }, { status: 403 });
 	await owned.db.delete(assistantAddresses).where(eq(assistantAddresses.id, id));
+	await deleteEmailRoutingRuleForAddress(
+		owned.env,
+		owned.domain.zoneId,
+		`${owned.row.localPart}@${owned.domain.hostname}`,
+	);
 	return NextResponse.json({ ok: true });
 }

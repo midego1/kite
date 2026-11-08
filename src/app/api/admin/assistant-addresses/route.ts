@@ -7,9 +7,16 @@ import { requireSessionAdmin } from "@/lib/api/auth";
 import { canManageDomains } from "@/lib/auth/admin";
 import { hasValidSessionMutationOrigin } from "@/lib/auth/origin";
 import { getEnv } from "@/lib/cloudflare";
+import { ensureEmailRoutingRuleToWorker } from "@/lib/cloudflare-api";
 import { normalizeRecipientLocalPart } from "@/lib/email/recipient-address";
 import { newId } from "@/lib/ids";
-import { checkAssistantAddress, managedDomain, publicAssistantAddress } from "./utils";
+import {
+	assistantAddressesPendingResponse,
+	assistantAddressesReady,
+	checkAssistantAddress,
+	managedDomain,
+	publicAssistantAddress,
+} from "./utils";
 
 /** Every assistant address on a domain this admin can manage (Domains → domain details, spec §14). */
 export async function GET(request: Request) {
@@ -17,6 +24,7 @@ export async function GET(request: Request) {
 	const auth = await requireSessionAdmin(env, request, canManageDomains);
 	if (auth.error) return auth.error;
 	const db = getDb(env);
+	if (!(await assistantAddressesReady(db))) return assistantAddressesPendingResponse();
 	const managed = await db
 		.select({ id: domains.id, hostname: domains.hostname })
 		.from(domains)
@@ -55,6 +63,7 @@ export async function POST(request: Request) {
 	if (!domainId || !localPart) return NextResponse.json({ error: "Enter a domain and an address" }, { status: 400 });
 
 	const db = getDb(env);
+	if (!(await assistantAddressesReady(db))) return assistantAddressesPendingResponse();
 	const domain = await managedDomain(db, auth.user, domainId);
 	if (!domain) return NextResponse.json({ error: "Domain not found" }, { status: 404 });
 
@@ -63,6 +72,16 @@ export async function POST(request: Request) {
 
 	const id = newId("asa");
 	await db.insert(assistantAddresses).values({ id, domainId: domain.id, localPart, createdByUserId: auth.user.id });
+	try {
+		// Without this, Cloudflare never forwards mail for the address to the Worker at all: creating the row alone
+		// would silently do nothing on a real domain, exactly like a mailbox or alias (`ensureMailboxDomainRouting`,
+		// `ensureEmailRoutingRuleToWorker` in the aliases route).
+		await ensureEmailRoutingRuleToWorker(env, domain.zoneId, `${localPart}@${domain.hostname}`);
+	} catch (err) {
+		await db.delete(assistantAddresses).where(eq(assistantAddresses.id, id));
+		const message = err instanceof Error ? err.message : "Failed to create Cloudflare routing rule";
+		return NextResponse.json({ error: message }, { status: 502 });
+	}
 	const [row] = await db.select().from(assistantAddresses).where(eq(assistantAddresses.id, id)).limit(1);
 	return NextResponse.json({ assistantAddress: publicAssistantAddress(row!, domain.hostname) }, { status: 201 });
 }

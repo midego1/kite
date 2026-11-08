@@ -1,10 +1,31 @@
 import { and, eq, or } from "drizzle-orm";
+import { NextResponse } from "next/server";
 import type { AppDatabase } from "@/db";
 import { domains } from "@/db/schema";
 import { assistantAddresses } from "@/db/schema/assistant-email";
 import { isAddressDelivered, isAssistantAddressTaken } from "@/lib/email/routing";
+import { isNoSuchTableError } from "@/lib/modules/state-utils";
 import { normalizeRecipientLocalPart } from "@/lib/email/recipient-address";
 import type { SessionUser } from "@/lib/auth/types";
+
+/** 409, before migration 0096 creates `assistant_addresses`: there is nothing yet to list or create. */
+export function assistantAddressesPendingResponse() {
+	return NextResponse.json(
+		{ error: "Apply the pending database update first", code: "MIGRATION_PENDING" },
+		{ status: 409 },
+	);
+}
+
+/** Whether migration 0096 has run, so the table these routes read and write actually exists. */
+export async function assistantAddressesReady(db: AppDatabase): Promise<boolean> {
+	try {
+		await db.select({ id: assistantAddresses.id }).from(assistantAddresses).limit(1);
+		return true;
+	} catch (error) {
+		if (isNoSuchTableError(error)) return false;
+		throw error;
+	}
+}
 
 /** A domain this admin can manage: their own, or (as a manager) one owned by whoever created them. */
 export async function managedDomain(db: AppDatabase, admin: SessionUser, domainId: string) {

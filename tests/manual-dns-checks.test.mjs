@@ -47,7 +47,7 @@ const resendDepsPlugin = {
 	name: "resend-deps-stub",
 	setup(builder) {
 		const names = Object.keys(resendDepsStub)
-			.map((name) => name.replace(/[/.-]/g, "\\$&"))
+			.map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
 			.join("|");
 		builder.onResolve({ filter: new RegExp(`^(${names})$`) }, (args) => ({ path: args.path, namespace: "stub" }));
 		builder.onLoad({ filter: /.*/, namespace: "stub" }, (args) => ({

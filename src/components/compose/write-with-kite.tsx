@@ -8,6 +8,10 @@ import type { WriteWithKiteComposer, WriteWithKiteSelection } from "./write-with
 import { MAILBOX_AI_OFF_REASON, MAILBOX_AI_OFF_TEXT } from "@/lib/agent/mailbox-ai-utils";
 import { MAILBOXES_CHANGED_EVENT } from "@/components/mailbox-provider-utils";
 import { useT } from "@/lib/i18n/use-t";
+import { msg } from "@/lib/i18n/translator";
+
+/** No AI provider is set up for the install at all, so chat, Write with Kite and auto-drafts all refuse. */
+const NOT_CONFIGURED_TEXT = msg("No AI provider is set up.");
 
 // The panel, its requests and HTML handling load only when the button is used.
 const WriteWithKitePanel = lazy(() => import("./write-with-kite-panel"));
@@ -53,12 +57,18 @@ export function WriteWithKite({
 	const t = useT();
 	// The composer's own mailbox (its From), not the sidebar's. The answer is kept per mailbox, so changing From hides
 	// the button until that mailbox's answer arrives.
-	const [checked, setChecked] = useState<{ mailboxId: string; available: boolean; aiOff?: boolean } | null>(null);
+	const [checked, setChecked] = useState<{
+		mailboxId: string;
+		available: boolean;
+		aiOff?: boolean;
+		notConfigured?: boolean;
+	} | null>(null);
 	const [openState, setOpen] = useState<{ mailboxId: string; selection: WriteWithKiteSelection | null } | null>(null);
 	// A panel belongs to the mailbox it was opened for: changing From closes it, and it does not come back with the answer.
 	const open = openState?.mailboxId === mailboxId ? openState : null;
 	const available = !!mailboxId && checked?.mailboxId === mailboxId && checked.available;
 	const aiOff = !!mailboxId && checked?.mailboxId === mailboxId && !!checked.aiOff;
+	const notConfigured = !!mailboxId && checked?.mailboxId === mailboxId && !!checked.notConfigured;
 
 	// Checked again when the mailbox list changes, which is how "No AI for this mailbox" announces itself.
 	const [listVersion, setListVersion] = useState(0);
@@ -79,6 +89,7 @@ export function WriteWithKite({
 						mailboxId,
 						available: response.ok && data.available === true,
 						aiOff: data.reason === MAILBOX_AI_OFF_REASON,
+						notConfigured: data.reason === "not_configured",
 					});
 			})
 			.catch(() => undefined);
@@ -113,6 +124,22 @@ export function WriteWithKite({
 					aria-label={t("Write with Kite: {reason}", { reason: t(MAILBOX_AI_OFF_TEXT) })}
 					aria-disabled="true"
 					data-testid="write-with-kite-ai-off"
+					onMouseDown={(event) => event.preventDefault()}
+					className="cursor-not-allowed rounded-md p-1.5 text-neutral-400"
+				>
+					<Sparkles className="h-4 w-4" />
+				</button>
+			</Tooltip>
+		);
+	// No AI provider is set up at all: same disabled affordance, so the button is never just gone.
+	if (notConfigured)
+		return (
+			<Tooltip label={t(NOT_CONFIGURED_TEXT)}>
+				<button
+					type="button"
+					aria-label={t("Write with Kite: {reason}", { reason: t(NOT_CONFIGURED_TEXT) })}
+					aria-disabled="true"
+					data-testid="write-with-kite-not-configured"
 					onMouseDown={(event) => event.preventDefault()}
 					className="cursor-not-allowed rounded-md p-1.5 text-neutral-400"
 				>

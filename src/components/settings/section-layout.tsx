@@ -45,7 +45,7 @@ export function SectionLayout({ mode, children }: { mode: NavMode; children: Rea
 							target="_blank"
 							rel="noreferrer"
 							aria-label="Need a hand?"
-							className="flex h-8 w-8 items-center justify-center rounded-lg text-neutral-500 outline-none hover:bg-neutral-100 hover:text-neutral-900 focus-visible:ring-2 focus-visible:ring-blue-500"
+							className="flex h-8 w-8 items-center justify-center rounded-lg text-neutral-500 outline-none hover:bg-neutral-100 hover:text-neutral-900 focus-visible:ring-2 focus-visible:ring-blue-500 [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:w-11"
 						>
 							<LifeBuoy className="h-4 w-4" />
 						</a>

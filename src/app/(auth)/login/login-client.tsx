@@ -117,12 +117,12 @@ export function LoginClient({
 							{error}
 						</p>
 					)}
-					<Button type="submit" className="h-10 w-full" disabled={loading}>
+					<Button type="submit" className="h-10 w-full [@media(pointer:coarse)]:h-11" disabled={loading}>
 						{loading ? "Verifying..." : "Verify"}
 					</Button>
 					<button
 						type="button"
-						className="w-full rounded-md text-center text-sm text-neutral-500 outline-hidden hover:text-neutral-900 focus-visible:ring-2 focus-visible:ring-blue-500"
+						className="w-full rounded-md text-center text-sm text-neutral-500 outline-hidden hover:text-neutral-900 focus-visible:ring-2 focus-visible:ring-blue-500 [@media(pointer:coarse)]:min-h-11"
 						onClick={() => {
 							setChallengeToken(null);
 							setCode("");
@@ -162,7 +162,10 @@ export function LoginClient({
 				<div className="space-y-2">
 					<div className="flex items-center justify-between">
 						<Label htmlFor="password">Password</Label>
-						<Link href="/forgot-password" className="text-xs font-medium text-blue-600 hover:underline">
+						<Link
+							href="/forgot-password"
+							className="inline-flex items-center text-xs font-medium text-blue-600 hover:underline [@media(pointer:coarse)]:min-h-11"
+						>
 							Forgot password?
 						</Link>
 					</div>
@@ -186,7 +189,7 @@ export function LoginClient({
 					</p>
 				)}
 				<TurnstileField resetSignal={turnstileReset} />
-				<Button type="submit" className="h-10 w-full" disabled={loading}>
+				<Button type="submit" className="h-10 w-full [@media(pointer:coarse)]:h-11" disabled={loading}>
 					{loading ? "Signing in..." : "Sign in"}
 				</Button>
 			</form>

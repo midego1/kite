@@ -136,6 +136,26 @@ test.describe("on an unfolded foldable", () => {
 		expect(width).toBe("72px");
 	});
 
+	test("the Calendar toolbar fits without clipping New event off the right edge", async ({ page }) => {
+		await page.goto("/calendar");
+		const overflow = await page.evaluate(
+			() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
+		);
+		expect(overflow, "the page must not need horizontal scroll").toBe(false);
+		// At this width the toolbar's own container query swaps Today + the view select for the compact kebab
+		// menu, same as a phone, instead of showing both and running out of room.
+		await expect(page.getByRole("button", { name: "Today" })).toHaveCount(0);
+		await expect(page.getByLabel("Calendar view")).toHaveCount(0);
+		const newEvent = page.getByRole("button", { name: "New event" });
+		await expect(newEvent).toBeVisible();
+		const box = (await newEvent.boundingBox())!;
+		expect(box.x + box.width).toBeLessThanOrEqual(884);
+		await page.getByRole("button", { name: "Calendar options" }).click();
+		const menu = page.getByRole("menu");
+		await expect(menu.getByRole("menuitem", { name: "Today" })).toBeVisible();
+		await expect(menu.getByRole("menuitem", { name: "week", exact: true })).toBeVisible();
+	});
+
 	test("the Drive listing hides its Owner/Modified/Size columns instead of overlapping the Name column", async ({
 		page,
 	}) => {

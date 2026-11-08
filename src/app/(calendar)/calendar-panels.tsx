@@ -88,7 +88,9 @@ export function CalendarPanels({
 				</div>
 				{open && <UpcomingSidebar {...upcoming} />}
 			</SectionNavSheet>
-			<section className={cn("flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-white", SECTION_PANEL_CLASS)}>
+			<section
+				className={cn("@container flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-white", SECTION_PANEL_CLASS)}
+			>
 				<div className={cn(PANEL_HEADER_CLASS, "gap-3 max-md:h-auto max-md:flex-wrap max-md:py-2")}>
 					<CalendarSectionTabs />
 					<Tooltip label="Upcoming events" className="md:hidden">

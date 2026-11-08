@@ -36,12 +36,15 @@ export const messageEmbeddings = sqliteTable(
 );
 
 /**
- * Tombstones of deleted messages, drained by `processEmbeddingBatch` with `deleteByIds`. No primary key; the drain
- * removes processed rows by `rowid`. Internal, like `message_embeddings`.
+ * Tombstones of deleted messages, drained by `processEmbeddingBatch` with `deleteByIds`. `id` is `AUTOINCREMENT`
+ * (review round 3, S-A): a plain rowid is reused once the table empties, which let a tombstone from a brand-new
+ * delete land in the same id an overlapping drain was already about to delete, dropping it undrained and leaking
+ * its vectors. Internal, like `message_embeddings`.
  */
 export const messageEmbeddingDeletes = sqliteTable(
 	"message_embedding_deletes",
 	{
+		id: integer("id").primaryKey({ autoIncrement: true }),
 		vectorKey: text("vector_key"),
 		chunkCount: integer("chunk_count").notNull().default(0),
 		createdAt: integer("created_at", { mode: "timestamp" }).notNull(),

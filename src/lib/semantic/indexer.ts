@@ -379,12 +379,20 @@ async function applyFailures(
 }
 
 /**
- * Drains up to `TOMBSTONE_BATCH_SIZE` delete tombstones, removing their vectors from the store. Ordered by `rowid`,
+ * Drains up to `TOMBSTONE_BATCH_SIZE` delete tombstones, removing their vectors from the store. Ordered by `id`,
  * not `created_at`, so the page's rows are exactly "every row up to the highest one read": the delete can bind a
- * single maximum rowid rather than a cursor per row, which no longer grows past D1's 100-parameter limit however
+ * single maximum id rather than a cursor per row, which no longer grows past D1's 100-parameter limit however
  * large `TOMBSTONE_BATCH_SIZE` is (R3 of review round 2: a page of more than 100 tombstones used to bind one
  * parameter per row and fail the delete outright, retrying the same page forever and, since B2 drains tombstones
  * first, stopping the whole batch).
+ *
+ * `id` is `AUTOINCREMENT` (S-A of review round 3), which is what makes the range delete safe against two
+ * overlapping drains (the cron runs several batches, every `search.embed` queue message runs one, and inbound mail
+ * and sends each queue one, so overlap is normal): a plain rowid is reused once the table empties, so a tombstone
+ * a second delete inserted after this query already ran, but before this delete executes, could land at an id at
+ * or below `maxId` and be dropped here undrained, leaking its vectors. `AUTOINCREMENT` never reuses an id, so a
+ * freshly inserted tombstone's id is always higher than the top of any page already read, whatever the table's
+ * current size.
  *
  * Quiet, not just caught by the caller, before migration 0099 (S5 of review round 2): `worker.ts` and
  * `scheduler.ts` call this directly from cron, every tick, on every install (the feature is off by default), so
@@ -393,7 +401,7 @@ async function applyFailures(
 export async function drainDeleteTombstones(env: CloudflareEnv): Promise<void> {
 	try {
 		const { results } = await env.DB.prepare(
-			`SELECT rowid AS cursor, vector_key AS vectorKey, chunk_count AS chunkCount FROM message_embedding_deletes ORDER BY rowid LIMIT ?`,
+			`SELECT id AS cursor, vector_key AS vectorKey, chunk_count AS chunkCount FROM message_embedding_deletes ORDER BY id LIMIT ?`,
 		)
 			.bind(TOMBSTONE_BATCH_SIZE)
 			.all<{ cursor: number; vectorKey: string | null; chunkCount: number }>();
@@ -411,8 +419,8 @@ export async function drainDeleteTombstones(env: CloudflareEnv): Promise<void> {
 				return; // Nothing configured yet: leave the tombstones for a later run.
 			}
 		}
-		const maxCursor = results[results.length - 1].cursor;
-		await env.DB.prepare(`DELETE FROM message_embedding_deletes WHERE rowid <= ?`).bind(maxCursor).run();
+		const maxId = results[results.length - 1].cursor;
+		await env.DB.prepare(`DELETE FROM message_embedding_deletes WHERE id <= ?`).bind(maxId).run();
 	} catch (error) {
 		if (isNoSuchTableError(error)) return; // Migration 0099 not applied yet.
 		throw error;

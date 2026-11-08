@@ -232,6 +232,49 @@ test("drainDeleteTombstones clears a page of more than 100 tombstones without ex
 	assert.equal(db.db.prepare("SELECT count(*) AS n FROM message_embedding_deletes").get().n, 0);
 });
 
+/** An already-indexed message, permanently deleted at once, leaving one tombstone with vectors to remove. */
+function indexedThenDeleted(db, id, vectorKey) {
+	db.db.exec(`
+		INSERT INTO messages (id, user_id, mailbox_id, direction, from_addr, to_addr, subject, text_body, status, created_at)
+		VALUES ('${id}', 'owner', 'mailbox-a', 'inbound', 'x@example.net', 'a@example.com', 'Hi', 'Hello there', 'received', 10);
+	`);
+	db.db
+		.prepare("UPDATE message_embeddings SET status = 'indexed', vector_key = ?, chunk_count = 1 WHERE message_id = ?")
+		.run(vectorKey, id);
+	db.db.exec(`DELETE FROM messages WHERE id = '${id}'`);
+}
+
+test("two overlapping drains never drop a tombstone that arrives between a read and its delete (S-A of review round 3)", async (t) => {
+	const { db, env, deletedIds } = await setup(t);
+	indexedThenDeleted(db, "old1", "keyOld1");
+	indexedThenDeleted(db, "old2", "keyOld2");
+	assert.equal(db.db.prepare("SELECT count(*) AS n FROM message_embedding_deletes").get().n, 2);
+
+	let raced = false;
+	env.VECTORS.deleteByIds = async (ids) => {
+		deletedIds.push(...ids);
+		if (raced) return; // the nested "drain B" call below reaches here too; only the outer "drain A" races.
+		raced = true;
+		// "Drain B": races ahead of "drain A" (still awaiting this same call, for old1/old2's vectors) and fully
+		// drains the same two rows A already read. The table is now empty.
+		await drainDeleteTombstones(env);
+		assert.equal(db.db.prepare("SELECT count(*) AS n FROM message_embedding_deletes").get().n, 0);
+		// Only now, after the table emptied under A, is a third message permanently deleted. Without AUTOINCREMENT
+		// this reuses a low id (SQLite hands out rowid 1 again on an empty table), landing inside A's own page
+		// range and getting silently dropped, undrained, by A's upcoming range delete.
+		indexedThenDeleted(db, "new1", "keyNew1");
+	};
+	await drainDeleteTombstones(env); // "Drain A": finishes its range delete after B and the new insert, above.
+
+	// new1's tombstone survived A's delete (AUTOINCREMENT never reused old1/old2's ids), so a later run still
+	// drains it and removes its vectors; nothing was leaked.
+	assert.equal(db.db.prepare("SELECT count(*) AS n FROM message_embedding_deletes").get().n, 1);
+	assert.ok(!deletedIds.includes("keyNew1:0"), "new1's vectors must not be deleted by drain A itself");
+	await drainDeleteTombstones(env);
+	assert.equal(db.db.prepare("SELECT count(*) AS n FROM message_embedding_deletes").get().n, 0);
+	assert.deepEqual(deletedIds.sort(), ["keyNew1:0", "keyOld1:0", "keyOld1:0", "keyOld2:0", "keyOld2:0"].sort());
+});
+
 test("drainDeleteTombstones is quiet, not throwing, before migration 0099 (S5 of review round 2)", async (t) => {
 	const before = copyMigrationsBefore(scratch, 99);
 	const db = new SqliteDatabase(":memory:");

@@ -3,13 +3,16 @@
 -- `vector_key` is left for application code to fill in (the first 32 hex characters of SHA-256 of the message id;
 -- SQLite/D1 has no built-in SHA-256 function), so a message deleted before it was ever claimed by the drain leaves a
 -- tombstone with no key and nothing for the vector store to remove. `message_embedding_deletes` is the tombstone
--- queue the drain works through to remove vectors of deleted messages; it has no primary key, drained by rowid.
+-- queue the drain works through to remove vectors of deleted messages, drained by `id`: AUTOINCREMENT so SQLite
+-- never reuses one once the table empties (review round 3, S-A), which a plain rowid would once the highest rows
+-- were gone, letting two overlapping drains race a brand-new tombstone into an id an earlier drain was about to
+-- delete and drop it undrained, leaking its vectors.
 -- Both tables are internal (derived from `messages`, rebuilt by the triggers) and are not backed up.
 CREATE TABLE `message_embeddings` (`message_id` text PRIMARY KEY NOT NULL, `mailbox_id` text, `vector_key` text, `status` text DEFAULT 'pending' NOT NULL, `chunk_count` integer DEFAULT 0 NOT NULL, `content_hash` text, `model` text, `attempts` integer DEFAULT 0 NOT NULL, `error` text, `lease_until` integer, `queued_at` integer, `indexed_at` integer);--> statement-breakpoint
 CREATE INDEX `message_embeddings_status_queued_idx` ON `message_embeddings` (`status`,`queued_at`);--> statement-breakpoint
 CREATE INDEX `message_embeddings_mailbox_idx` ON `message_embeddings` (`mailbox_id`);--> statement-breakpoint
 CREATE INDEX `message_embeddings_vector_key_idx` ON `message_embeddings` (`vector_key`);--> statement-breakpoint
-CREATE TABLE `message_embedding_deletes` (`vector_key` text, `chunk_count` integer DEFAULT 0 NOT NULL, `created_at` integer NOT NULL);--> statement-breakpoint
+CREATE TABLE `message_embedding_deletes` (`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL, `vector_key` text, `chunk_count` integer DEFAULT 0 NOT NULL, `created_at` integer NOT NULL);--> statement-breakpoint
 CREATE INDEX `message_embedding_deletes_created_idx` ON `message_embedding_deletes` (`created_at`);--> statement-breakpoint
 -- Install settings: off by default for every install. `semantic_embedding_provider` names the Node fallback only
 -- (Workers always uses the `AI` binding); the compatible endpoint's key is sealed with APP_ENCRYPTION_KEY, as other

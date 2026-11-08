@@ -7,6 +7,14 @@ import { getVectorStore, VectorStoreUnavailableError } from "./vector-store";
 
 /** Rows are read and deleted in pages this large, so a large install never loads its whole index at once. */
 const PAGE_SIZE = 1_000;
+/** `message_embeddings` rows are inserted in batches this small to stay under D1's 100 bound-parameter limit. */
+const INSERT_CHUNK_SIZE = 20;
+
+function chunks<T>(items: readonly T[], size: number): T[][] {
+	const result: T[][] = [];
+	for (let index = 0; index < items.length; index += size) result.push(items.slice(index, index + size));
+	return result;
+}
 
 type IndexedRow = { vectorKey: string; chunkCount: number };
 
@@ -93,13 +101,20 @@ export async function disableSemanticSearch(env: CloudflareEnv): Promise<void> {
  * (which must keep the mailbox's mail away from every AI provider just as strictly): pending and running rows are
  * marked `skipped` and every vector the mailbox's rows name is deleted. Rows are kept (not deleted), so turning the
  * switch back on can tell apart "never indexed" from "was indexed, now excluded".
+ *
+ * Marked `skipped` *before* the vectors are deleted, and `chunk_count` is kept until the delete has gone through:
+ * a drain batch already past its `rowsStillRunning` check (for this same mailbox) reads `skipped`, not `running`,
+ * the moment it looks again, so it writes nothing for these rows. The search path (`search.ts`) only ever maps a
+ * vector key back to an `indexed` row of a mailbox whose switches still allow it, which is the real guarantee: it
+ * holds even in the narrow window a concurrent write could still land between these two statements.
  */
 export async function clearMailboxSemanticIndex(env: CloudflareEnv, mailboxId: string): Promise<void> {
-	await deleteKnownVectors(env, "mailbox_id = ?", [mailboxId]);
 	await getDb(env)
 		.update(messageEmbeddings)
-		.set({ status: "skipped", leaseUntil: null, chunkCount: 0 })
+		.set({ status: "skipped", leaseUntil: null })
 		.where(eq(messageEmbeddings.mailboxId, mailboxId));
+	await deleteKnownVectors(env, "mailbox_id = ?", [mailboxId]);
+	await getDb(env).update(messageEmbeddings).set({ chunkCount: 0 }).where(eq(messageEmbeddings.mailboxId, mailboxId));
 }
 
 /**
@@ -108,17 +123,61 @@ export async function clearMailboxSemanticIndex(env: CloudflareEnv, mailboxId: s
  * content-hash skip in `indexer.ts` must not keep them out. The triggers do not see this (no message status
  * changes) and the backfill cursor may have long passed these messages, so the switch does it itself.
  */
+/**
+ * Eligible messages of the mailbox with no `message_embeddings` row at all, paged: a message delivered while the
+ * mailbox was excluded never got one from the INSERT trigger, and the backfill, which only looks at messages with
+ * no row, had already walked past it (or skips the mailbox outright) while it was excluded.
+ */
+async function* pagesOfMissingRows(env: CloudflareEnv, mailboxId: string): AsyncGenerator<string[]> {
+	let cursor = 0;
+	for (;;) {
+		const { results } = await env.DB.prepare(
+			`SELECT m.rowid AS cursor, m.id AS id FROM messages m
+			LEFT JOIN message_embeddings me ON me.message_id = m.id
+			WHERE me.message_id IS NULL
+				AND m.mailbox_id = ?
+				AND m.status IN ('received', 'sent', 'archived')
+				AND (m.spam_verdict IS NULL OR m.spam_verdict <> 'spam')
+				AND m.rowid > ?
+			ORDER BY m.rowid LIMIT ?`,
+		)
+			.bind(mailboxId, cursor, PAGE_SIZE)
+			.all<{ cursor: number; id: string }>();
+		if (results.length === 0) return;
+		yield results.map((row) => row.id);
+		cursor = results[results.length - 1].cursor;
+		if (results.length < PAGE_SIZE) return;
+	}
+}
+
 export async function requeueMailboxSemanticIndex(env: CloudflareEnv, mailboxId: string): Promise<void> {
 	// Guarded by the mailbox's own switches, so a caller flipping "No AI for this mailbox" back off never requeues a
 	// mailbox whose manager separately turned "Search by meaning" off for it (and vice versa for ai_disabled).
+	const allowed = await env.DB.prepare(
+		`SELECT NOT coalesce((SELECT ai_disabled FROM mailbox_agent_settings WHERE mailbox_id = ?), false)
+			AND coalesce((SELECT semantic_index FROM mailbox_agent_settings WHERE mailbox_id = ?), true) = true AS ok`,
+	)
+		.bind(mailboxId, mailboxId)
+		.first<{ ok: number }>();
+	if (!allowed?.ok) return;
 	await env.DB.prepare(
 		`UPDATE message_embeddings SET status = 'pending', queued_at = CAST(strftime('%s', 'now') AS integer), lease_until = NULL, attempts = 0, error = NULL, content_hash = NULL
-		WHERE mailbox_id = ?
-			AND NOT coalesce((SELECT ai_disabled FROM mailbox_agent_settings WHERE mailbox_id = ?), false)
-			AND coalesce((SELECT semantic_index FROM mailbox_agent_settings WHERE mailbox_id = ?), true) = true`,
+		WHERE mailbox_id = ?`,
 	)
-		.bind(mailboxId, mailboxId, mailboxId)
+		.bind(mailboxId)
 		.run();
+	// A message delivered or imported while the mailbox was excluded, or already walked past by the backfill,
+	// never got a row at all: give it one now, instead of only ever resetting rows that already existed.
+	const db = getDb(env);
+	const now = new Date();
+	for await (const ids of pagesOfMissingRows(env, mailboxId)) {
+		for (const batch of chunks(ids, INSERT_CHUNK_SIZE)) {
+			await db
+				.insert(messageEmbeddings)
+				.values(batch.map((id) => ({ messageId: id, mailboxId, status: "pending" as const, queuedAt: now })))
+				.onConflictDoNothing();
+		}
+	}
 }
 
 export type ClearStaleVectorsResult = { supported: boolean; removed: number };

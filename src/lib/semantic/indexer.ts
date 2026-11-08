@@ -145,11 +145,13 @@ async function embeddingDrainAllowed(env: CloudflareEnv): Promise<boolean> {
  * of delete tombstones. Returns how many rows were claimed, so callers can stop once a run claims nothing.
  */
 export async function processEmbeddingBatch(env: CloudflareEnv): Promise<{ claimed: number }> {
+	// Deletes make no embedding call, so they drain even while the gate below is closed (a kill switch, a
+	// revoked external-provider opt-in): otherwise a deleted message's vectors would stay searchable indefinitely.
+	await drainDeleteTombstones(env);
 	if (!(await embeddingDrainAllowed(env))) return { claimed: 0 };
 	const now = new Date();
 	const claimed = await claimPendingRows(env, now);
 	if (claimed.length === 0) {
-		await drainDeleteTombstones(env);
 		return { claimed: 0 };
 	}
 	const messagesById = await loadClaimedMessages(
@@ -202,6 +204,8 @@ export async function processEmbeddingBatch(env: CloudflareEnv): Promise<{ claim
 	if (prepared.length > 0) await embedAndUpsert(env, prepared, claimed, now, toFail);
 	if (toFail.length > 0) await applyFailures(env, toFail);
 
+	// A message can be deleted while its own embedding call is still in flight (above), leaving a fresh
+	// tombstone this same run should still clear rather than waiting for the next one.
 	await drainDeleteTombstones(env);
 	return { claimed: claimed.length };
 }

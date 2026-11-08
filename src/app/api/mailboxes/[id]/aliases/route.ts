@@ -6,7 +6,7 @@ import { requireSessionUser } from "@/lib/api/auth";
 import type { SessionUser } from "@/lib/auth/types";
 import { getEnv } from "@/lib/cloudflare";
 import { deleteEmailRoutingRuleForAddress, ensureEmailRoutingRuleToWorker } from "@/lib/cloudflare-api";
-import { isAddressDelivered } from "@/lib/email/routing";
+import { isAddressDelivered, isAssistantAddressTaken } from "@/lib/email/routing";
 import { newId } from "@/lib/ids";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { createMailboxAliasSchema } from "@/lib/validators";
@@ -113,6 +113,12 @@ export async function POST(request: Request, { params }: MailboxRouteParams) {
 	}
 	if (await isAddressDelivered(db, domain.id, `${localPart}@${domain.hostname}`)) {
 		return NextResponse.json({ error: "This address already delivers to a mailbox" }, { status: 409 });
+	}
+	if (await isAssistantAddressTaken(db, domain.id, localPart)) {
+		return NextResponse.json(
+			{ error: "The assistant already uses this address", code: "ADDRESS_IN_USE" },
+			{ status: 409 },
+		);
 	}
 
 	const aliasId = newId("als");

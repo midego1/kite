@@ -20,6 +20,8 @@
 	"/api/admin/alerts/webhook",
 	"/api/admin/alerts/webhook/test",
 	"/api/admin/api-keys",
+	"/api/admin/assistant-addresses/[id]",
+	"/api/admin/assistant-addresses",
 	"/api/admin/attachment-storage",
 	"/api/admin/aws",
 	"/api/admin/database-size",

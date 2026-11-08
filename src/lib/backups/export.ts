@@ -26,6 +26,9 @@ const BACKUP_TABLES: DatabaseBackupTable[] = [
 	"external_account_folders",
 	// Send-as addresses verified with a code (migration 0089), without a pending code (`redactBackupRow`).
 	"external_identities",
+	// Verified extra addresses a user may send the assistant from (migration 0096). Codes are hashed and expire,
+	// so restoring them is harmless.
+	"assistant_sender_addresses",
 	"contacts",
 	"folders",
 	"api_keys",
@@ -36,6 +39,8 @@ const BACKUP_TABLES: DatabaseBackupTable[] = [
 	"shared_attachment_links",
 	"outbound_jobs",
 	"routing_rules",
+	// One assistant address per domain (migration 0096), after routing_rules since it references domains the same way.
+	"assistant_addresses",
 	"webhooks",
 	"webhook_deliveries",
 	"sessions",
@@ -75,6 +80,7 @@ const BACKUP_TABLES: DatabaseBackupTable[] = [
 	"user_ai_settings",
 	"writing_style_profiles",
 	"agent_conversations",
+	"assistant_email_requests",
 	"agent_chat_messages",
 	"agent_jobs",
 	"agent_draft_metadata",

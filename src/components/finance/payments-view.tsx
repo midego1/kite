@@ -12,12 +12,14 @@ import { currentLocale } from "@/lib/i18n/translator";
 import { useT } from "@/lib/i18n/use-t";
 import { PaymentDialog } from "./payment-dialog";
 import { PaymentRow } from "./payment-row";
-import type { MonthCurrencyTotal, PaymentFilters, PaymentItem, ScanState } from "./payments-types";
+import type { MonthCurrencyTotal, PaymentFilters, PaymentItem, ScanCoverageGap, ScanState } from "./payments-types";
 import {
 	filterOptions,
 	filterPayments,
 	monthLabel,
 	monthTotals,
+	scanCoverageTexts,
+	scanText,
 	STATUS_FILTERS,
 	STATUS_LABELS,
 	totalsByMonth,
@@ -71,25 +73,11 @@ function MonthTotals({ totals, locale }: { totals: MonthCurrencyTotal[]; locale:
 	);
 }
 
-function scanText(scan: ScanState, t: ReturnType<typeof useT>): string {
-	const values = { scanned: scan.scanned, recorded: scan.recorded, skipped: scan.skipped };
-	if (scan.status === "running")
-		return t("Scanning the last 90 days: {scanned, plural, one {# message} other {# messages}} checked so far", values);
-	if (scan.skipped)
-		return t(
-			"Last scan: {recorded, plural, =0 {no new payments} one {# new payment} other {# new payments}} in {scanned, plural, one {# message} other {# messages}}. {skipped, plural, one {# message} other {# messages}} could not be read.",
-			values,
-		);
-	return t(
-		"Last scan: {recorded, plural, =0 {no new payments} one {# new payment} other {# new payments}} in {scanned, plural, one {# message} other {# messages}}",
-		values,
-	);
-}
-
 function ScanButton({ scan, onStarted }: { scan: ScanState | null; onStarted: () => void }) {
 	const t = useT();
 	const [starting, setStarting] = useState(false);
 	const running = scan?.status === "running";
+	const failed = scan?.status === "failed";
 	async function start() {
 		setStarting(true);
 		const result = await financeWrite("/api/finance/payments/scan", "POST", undefined, t("Could not start the scan"));
@@ -108,8 +96,23 @@ function ScanButton({ scan, onStarted }: { scan: ScanState | null; onStarted: ()
 			data-payment-scan
 		>
 			<ScanSearch aria-hidden className="h-4 w-4" />
-			{running ? t("Scanning…") : t("Scan last 90 days")}
+			{running ? t("Scanning…") : failed ? t("Try again") : t("Scan last 90 days")}
 		</Button>
+	);
+}
+
+function ScanCoverageNote({ gaps }: { gaps: ScanCoverageGap[] }) {
+	const t = useT();
+	const texts = scanCoverageTexts(gaps, t);
+	if (texts.length === 0) return null;
+	return (
+		<div className="space-y-1" data-payment-scan-coverage>
+			{texts.map((text) => (
+				<p key={text} className="text-xs text-neutral-500">
+					{text}
+				</p>
+			))}
+		</div>
 	);
 }
 
@@ -205,6 +208,7 @@ export function PaymentsView() {
 						</p>
 						<ScanButton scan={list.scan} onStarted={reload} />
 					</div>
+					<ScanCoverageNote gaps={list.scanCoverage} />
 					{items.length === 0 ? (
 						<EmptyState
 							icon={Receipt}

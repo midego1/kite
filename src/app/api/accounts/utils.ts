@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import type { getDb } from "@/db";
 import { domains, mailboxes, users } from "@/db/schema";
 import { selectRow } from "@/lib/db/pending-columns";
@@ -6,6 +6,22 @@ import { requireSessionAdmin } from "@/lib/api/auth";
 import { getEnv } from "@/lib/cloudflare";
 
 type Db = ReturnType<typeof getDb>;
+
+type DomainAdminActor = {
+	id: string;
+	canManageMailboxes: boolean;
+	createdByUserId: string | null;
+};
+
+/**
+ * Domains an admin may use for mailboxes and account addresses. Matches
+ * mailbox creation and the domains API: a mailbox manager created by another
+ * admin may use that creator's domains as well as their own.
+ */
+export function domainOwnerIdsForAdmin(actor: DomainAdminActor): string[] {
+	if (actor.canManageMailboxes && actor.createdByUserId) return [actor.id, actor.createdByUserId];
+	return [actor.id];
+}
 
 export function listAccountsForAdmin(db: Db) {
 	return db
@@ -27,8 +43,12 @@ export function listAccountsForAdmin(db: Db) {
 		.orderBy(desc(users.createdAt));
 }
 
-export async function getDomainForAdmin(db: Db, adminUserId: string, domainId: string) {
-	const domain = await selectRow(db, domains, and(eq(domains.id, domainId), eq(domains.userId, adminUserId)));
+export async function getDomainForAdmin(db: Db, actor: DomainAdminActor, domainId: string) {
+	const domain = await selectRow(
+		db,
+		domains,
+		and(eq(domains.id, domainId), inArray(domains.userId, domainOwnerIdsForAdmin(actor))),
+	);
 	return domain ?? null;
 }
 

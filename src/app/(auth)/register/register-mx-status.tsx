@@ -29,7 +29,7 @@ export function RegisterMxStatus({
 	}
 	if (recordsExist === null) {
 		return (
-			<Button type="button" variant="outline" className="h-10 w-full" onClick={onRetry}>
+			<Button type="button" variant="outline" className="h-10 w-full [@media(pointer:coarse)]:h-11" onClick={onRetry}>
 				Check MX records again
 			</Button>
 		);

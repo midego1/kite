@@ -4,7 +4,7 @@ import type { AiUsageDetails, AiUsageOutcome } from "@/lib/ai/usage-types";
 
 /**
  * Every source that reserves spend: automatic reading, chat steps, composer requests, the Summarize button and its
- * translations, and the reader's Translate (the install cap covers all).
+ * translations, the reader's Translate, and a run of the assistant by email (the install cap covers all).
  */
 export type AutoSpendSource =
 	| "auto_triage"
@@ -15,7 +15,8 @@ export type AutoSpendSource =
 	| "summary_translation"
 	| "message_translation"
 	| "line_summary"
-	| "auto_triage_line";
+	| "auto_triage_line"
+	| "assistant_email";
 
 /** "cost" compares USD micros against the caps; "tokens" applies the input-token cap for models without rates. */
 export type SpendMode = "cost" | "tokens";

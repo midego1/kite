@@ -33,6 +33,7 @@ const GATED_SELECTOR = /\b(getAgentModel|selectInteractiveModel|selectAutoReadMo
 const MODEL_CALL_SITES = {
 	"src/lib/agent/chat.ts": "selects",
 	"src/lib/agent/compose.ts": "selects",
+	"src/lib/agent/email/process.ts": "selects",
 	"src/lib/agent/summaries/model-answer.ts": "selects",
 	"src/lib/agent/summaries/line-job.ts": "selects",
 	"src/lib/agent/auto-read/triage-model.ts": ["src/lib/agent/auto-read/triage-run.ts"],
@@ -54,6 +55,8 @@ const AI_SDK_IMPORTERS = [
 	"src/lib/agent/chat-tools.ts",
 	"src/lib/agent/chat.ts",
 	"src/lib/agent/compose.ts",
+	"src/lib/agent/email/email-tools.ts",
+	"src/lib/agent/email/process.ts",
 	"src/lib/agent/jobs/draft-generation.ts",
 	"src/lib/agent/jobs/utils.ts",
 	MODEL_FILE,

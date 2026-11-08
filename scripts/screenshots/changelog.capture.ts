@@ -744,6 +744,27 @@ const SHOTS: Shot[] = [
 		},
 	},
 	{
+		// Scan last 90 days partway through: the status line's own progress, over the real seeded rows (the scan status
+		// itself is faked, since a real scan of this little demo mail finishes before a screenshot could catch it running).
+		name: "2026-11-08-money-watch-scan-progress-light",
+		theme: "light",
+		viewport: { width: 1280, height: 900 },
+		open: async (page) => {
+			await seedPaymentsDemo();
+			await page.route("**/api/finance/payments", async (route) => {
+				const response = await route.fetch();
+				const data = (await response.json()) as object;
+				await route.fulfill({
+					response,
+					json: { ...data, scan: { status: "running", scanned: 42, recorded: 3, skipped: 0 } },
+				});
+			});
+			await page.goto("/finance?tab=payments");
+			await expect(page.locator("[data-payment-scan-status]")).toContainText("Scanning the last 90 days");
+			return page.locator("[data-finance-page]");
+		},
+	},
+	{
 		// The assistant panel's settings: No AI for this mailbox, turned on (it stays on in the e2e state afterwards).
 		name: "2026-11-05-mailbox-no-ai",
 		viewport: { width: 1280, height: 900 },

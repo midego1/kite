@@ -30,6 +30,7 @@ import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { AgentTurnView } from "./agent-turn";
 import { useRequestedAssistantPrompt } from "./assistant-prompt-request";
+import { useRequestedAssistantConversation } from "./assistant-conversation-request";
 import { KiteAvatar } from "./kite-avatar";
 import { ChatContext, ChatWelcome } from "./chat-welcome";
 import { AutoDraftProviderNote, ChatProviderNotice, chatProviderState, NO_PROVIDER } from "./external-provider-notice";
@@ -579,6 +580,7 @@ export function AgentPanel({ open, fullSize, docked, onClose, onToggleFullSize }
 		if (menuRef.current) menuRef.current.open = false;
 	};
 	useRequestedAssistantPrompt(open, mailboxId, inputRef, startNewChat, setInput);
+	useRequestedAssistantConversation(open, mailboxId, selectConversation);
 	const draftActions = uniqueAgentDraftActions(messages);
 	const activeTool = busy ? activeAgentTool(messages) : null;
 	const panelStyle = agentPanelStyle(docked);

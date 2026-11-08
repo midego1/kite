@@ -1,7 +1,7 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import { AUTO_READ_ACCOUNT_PASSWORD, createSignedInAccount } from "./support/auto-read";
 import { STORAGE_STATE } from "./support/constants";
-import { apiContext, uniqueToken, waitForMessage } from "./support/helpers";
+import { apiContext, suppressMailboxTour, uniqueToken, waitForMessage } from "./support/helpers";
 import { chooseOption, expectSelectValue } from "./support/select";
 import { sampleMessage, startFakeImap } from "../tests/support/fake-imap.mjs";
 
@@ -23,7 +23,9 @@ async function readAccounts(api: APIRequestContext): Promise<AccountsAnswer> {
 
 async function userPage(browser: import("@playwright/test").Browser, api: APIRequestContext) {
 	const context = await browser.newContext({ storageState: await api.storageState() });
-	return { context, page: await context.newPage() };
+	const page = await context.newPage();
+	await suppressMailboxTour(page);
+	return { context, page };
 }
 
 /** Fills the connect dialog for the fake server; `password` is the account's. */

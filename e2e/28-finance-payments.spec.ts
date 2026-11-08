@@ -5,7 +5,7 @@ import { beginAutoReadSnapshot, createSignedInAccount, okJson, restoreAutoReadSn
 import { startFakeModel } from "./support/fake-model";
 import type { FakeModel } from "./support/fake-model-types";
 import type { InboundMail } from "./support/helpers-types";
-import { apiContext, postInbound, uniqueToken, waitForMessage } from "./support/helpers";
+import { apiContext, postInbound, suppressMailboxTour, uniqueToken, waitForMessage } from "./support/helpers";
 import { chooseOption } from "./support/select";
 import { readSuggestions, waitForFinishedJob } from "./support/triage";
 
@@ -177,6 +177,7 @@ test.describe("Money Watch payments", () => {
 			expect(invoice).toMatchObject({ docType: "invoice", status: "open", amount: { minor: 12_000, currency: "EUR" } });
 
 			const page = await context.newPage();
+			await suppressMailboxTour(page);
 			await page.goto("/finance?tab=payments");
 			await expect(page.locator('[data-finance-tab="payments"]')).toHaveAttribute("aria-current", "page");
 			await expect(row(page, payment.id)).toContainText(merchant);
@@ -268,6 +269,7 @@ test.describe("Money Watch payments", () => {
 			);
 
 			const page = await context.newPage();
+			await suppressMailboxTour(page);
 			await page.goto("/finance?tab=payments");
 			await expect(page.getByText("No payments yet")).toBeVisible();
 			await page.locator("[data-payment-scan]").click();

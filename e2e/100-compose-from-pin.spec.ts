@@ -1,7 +1,14 @@
 import { expect, test, type APIRequestContext, type Browser, type Page } from "@playwright/test";
 import { createSharedMailbox, createSignedInAccount, okJson, selectMailbox, shareMailbox } from "./support/auto-read";
 import { DOMAIN, STORAGE_STATE } from "./support/constants";
-import { apiContext, deliverInbound, openMessage, setSendingSettings, uniqueToken } from "./support/helpers";
+import {
+	apiContext,
+	deliverInbound,
+	openMessage,
+	setSendingSettings,
+	suppressMailboxTour,
+	uniqueToken,
+} from "./support/helpers";
 import { chooseOption, expectSelectValue } from "./support/select";
 
 // A reopened draft goes back to its own mailbox once, when it loads. After that the From the user picks stays, the
@@ -46,6 +53,7 @@ async function setUp(api: APIRequestContext, ownSignature: string) {
 async function openAs(browser: Browser, account: { api: APIRequestContext }, mailboxId: string) {
 	const context = await browser.newContext({ storageState: await account.api.storageState() });
 	const page = await context.newPage();
+	await suppressMailboxTour(page);
 	await selectMailbox(page, mailboxId);
 	return { context, page };
 }

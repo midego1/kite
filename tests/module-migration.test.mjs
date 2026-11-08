@@ -65,8 +65,8 @@ const LATER_MIGRATIONS = [
 	"0094_add_finance_payments.sql",
 	"0095_add_finance_payment_scan_error.sql",
 	"0096_add_assistant_email.sql",
-	"0100_add_external_account_auth_recheck.sql",
 	"0097_add_cold_storage.sql",
+	"0100_add_external_account_auth_recheck.sql",
 ];
 /** Columns a later migration adds to a table this test pins; everything else must stay as it was. */
 const LATER_COLUMNS = {

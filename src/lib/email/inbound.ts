@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { messages } from "@/db/schema";
 import { newId } from "@/lib/ids";
+import { acceptAssistantRequest } from "@/lib/agent/email/intake";
 import { resolveInboundAddress } from "@/lib/email/routing";
 import { getMessageContactNames } from "@/lib/contacts/service";
 import { getEmailAddress } from "@/lib/email/address";
@@ -83,6 +84,15 @@ export async function processInboundMessage(
 	if (decision.action === "reject") {
 		console.warn(`Rejected inbound: ${payload.to}`);
 		await dropRaw();
+		return;
+	}
+
+	// The assistant by email (docs/specs/assistant-by-email.md §4): never a mailbox message, so the usual delivery
+	// path below does not apply. `acceptAssistantRequest` owns the raw object from here: it deletes it on every
+	// "drop silently" guard failure, and keeps it on the accepted row until the queue consumer (or the stale-raw
+	// sweep in `pruning.ts`) clears it.
+	if (decision.action === "assistant") {
+		await acceptAssistantRequest(env, payload, decision.assistantAddressId);
 		return;
 	}
 

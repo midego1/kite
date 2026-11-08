@@ -12,6 +12,7 @@ import {
 } from "@/db/schema";
 import { agentActions } from "@/db/schema/agent-auto-read";
 import { aiSummaries } from "@/db/schema/agent-summaries";
+import { assistantEmailRequests } from "@/db/schema/assistant-email";
 import { MCP_TOOL_CALL_ACTION } from "@/lib/mcp/audit";
 import type { PruningPolicy, PruningResult } from "./pruning-types";
 import {
@@ -79,6 +80,36 @@ export async function pruneMcpToolCallAudit(
 }
 
 /**
+ * A `queued`/`running` assistant-by-email request whose queue consumer never finished (docs/specs/
+ * assistant-by-email.md §12): its raw R2 object is deleted and the row is marked `failed` so the raw key is never
+ * read again, but the row itself is left for the 30-day sweep below, like any other finished request.
+ */
+export async function pruneStaleAssistantEmailRequests(
+	env: CloudflareEnv,
+	now = new Date(),
+	policy: PruningPolicy = PRUNING_POLICY,
+): Promise<number> {
+	const cutoff = getRetentionCutoff(now, policy.assistantEmailStaleRawDays);
+	if (!cutoff) return 0;
+	const db = getDb(env);
+	const stale = await db
+		.select({ id: assistantEmailRequests.id, rawR2Key: assistantEmailRequests.rawR2Key })
+		.from(assistantEmailRequests)
+		.where(
+			and(inArray(assistantEmailRequests.status, ["queued", "running"]), lt(assistantEmailRequests.createdAt, cutoff)),
+		)
+		.limit(PRUNING_BATCH_SIZE);
+	for (const row of stale) {
+		if (row.rawR2Key) await env.BUCKET.delete(row.rawR2Key).catch((error) => console.error("Stale raw delete", error));
+		await db
+			.update(assistantEmailRequests)
+			.set({ status: "failed", reason: "stale", rawR2Key: null })
+			.where(eq(assistantEmailRequests.id, row.id));
+	}
+	return stale.length;
+}
+
+/**
  * Delete operational rows past their retention so D1 stays small and indexes stay hot.
  * Every table is pruned independently, and a failure in one does not stop the others.
  */
@@ -89,6 +120,11 @@ export async function runDatabasePruning(
 ): Promise<PruningResult> {
 	const db = getDb(env);
 	const result: PruningResult = {};
+	try {
+		result.assistant_email_stale_raw = await pruneStaleAssistantEmailRequests(env, now, policy);
+	} catch (error) {
+		console.error("Pruning assistant_email_stale_raw failed", error);
+	}
 	const jobs: Array<[string, PrunableTable, number, (cutoff: Date) => SQL | undefined, number?]> = [
 		[
 			"outbound_jobs",
@@ -135,6 +171,12 @@ export async function runDatabasePruning(
 			MCP_AUDIT_DAILY_MAX_BATCHES,
 		],
 		["agent_actions", agentActions, policy.agentActionsDays, (cutoff) => lt(agentActions.createdAt, cutoff)],
+		[
+			"assistant_email_requests",
+			assistantEmailRequests,
+			policy.assistantEmailRequestsDays,
+			(cutoff) => lt(assistantEmailRequests.createdAt, cutoff),
+		],
 		[
 			"ai_summaries",
 			aiSummaries,

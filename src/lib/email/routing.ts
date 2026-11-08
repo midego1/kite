@@ -1,9 +1,11 @@
 import { eq, and, asc, desc } from "drizzle-orm";
 import type { AppDatabase } from "@/db";
+import { assistantAddresses } from "@/db/schema/assistant-email";
 import { domains, folders, mailboxAliases, mailboxes, routingRules } from "@/db/schema";
 import { selectRow } from "@/lib/db/pending-columns";
 import { getEmailAddress } from "@/lib/email/address";
 import { getMailboxDomainAddresses } from "@/lib/mailboxes/domain-addresses";
+import { isNoSuchTableError } from "@/lib/modules/state-utils";
 import { normalizeRecipientLocalPart, parseRecipientAddress } from "@/lib/email/recipient-address";
 
 export type ResolvedMailbox = {
@@ -17,7 +19,7 @@ export type ResolvedMailbox = {
 };
 
 export type RoutingDecision = {
-	action: "store" | "forward" | "reject";
+	action: "store" | "forward" | "reject" | "assistant";
 	mailbox?: ResolvedMailbox;
 	forwardTo?: string;
 	/** Forward rules drop the message unless the rule also keeps a copy in the mailbox. */
@@ -25,6 +27,8 @@ export type RoutingDecision = {
 	rejectReason?: string;
 	/** Set when a domain-scope rule produced this decision, so the caller can record a match. */
 	ruleId?: string;
+	/** Set only for `action: "assistant"` (docs/specs/assistant-by-email.md §4): which address matched. */
+	assistantAddressId?: string;
 };
 
 export type InboxRuleDestination = {
@@ -88,6 +92,13 @@ export async function resolveInboundAddress(
 		};
 	}
 
+	// Still phase 2: an assistant address (docs/specs/assistant-by-email.md §10) can never collide with a
+	// mailbox or alias (checked when either is created), so this order never matters for correctness.
+	const assistantAddressId = await findAssistantAddressId(db, domain.id, parsed.localPart);
+	if (assistantAddressId) {
+		return { action: "assistant", assistantAddressId };
+	}
+
 	// Phase 3 — catch-all and forwarding fallbacks.
 	for (const rule of domainRules) {
 		if (rule.action !== "forward" && rule.action !== "store") continue;
@@ -116,7 +127,7 @@ export async function resolveInboundAddress(
 }
 
 /** The mailbox an address on `domainId` delivers to: exact mailbox, then alias, then use-all-domains mailbox. */
-async function findAddressMailbox(
+export async function findAddressMailbox(
 	db: AppDatabase,
 	domainId: string,
 	parsed: { localPart: string; normalizedAddress: string },
@@ -139,6 +150,42 @@ async function findAddressMailbox(
 export async function isAddressDelivered(db: AppDatabase, domainId: string, address: string): Promise<boolean> {
 	const parsed = parseRecipientAddress(address);
 	return !parsed || !!(await findAddressMailbox(db, domainId, parsed));
+}
+
+/**
+ * The enabled assistant address on `domainId` matching `localPart`, or null. Missing-table-safe (migration 0096
+ * may not be applied yet), unlike the pending-columns case elsewhere in this file: before the migration the whole
+ * table is absent, so mail simply has no assistant address to match, exactly as before this feature existed.
+ */
+async function findAssistantAddressId(db: AppDatabase, domainId: string, localPart: string): Promise<string | null> {
+	try {
+		const rows = await db
+			.select({ id: assistantAddresses.id, localPart: assistantAddresses.localPart })
+			.from(assistantAddresses)
+			.where(and(eq(assistantAddresses.domainId, domainId), eq(assistantAddresses.enabled, true)));
+		return rows.find((row) => normalizeRecipientLocalPart(row.localPart) === localPart)?.id ?? null;
+	} catch (error) {
+		if (isNoSuchTableError(error)) return null;
+		throw error;
+	}
+}
+
+/**
+ * Whether `localPart` on `domainId` is already an assistant address (any status), so mailbox and alias creation,
+ * and creating another assistant address, can refuse a colliding local part in either direction (§10, §13).
+ */
+export async function isAssistantAddressTaken(db: AppDatabase, domainId: string, localPart: string): Promise<boolean> {
+	try {
+		const rows = await db
+			.select({ localPart: assistantAddresses.localPart })
+			.from(assistantAddresses)
+			.where(eq(assistantAddresses.domainId, domainId));
+		const normalized = normalizeRecipientLocalPart(localPart);
+		return rows.some((row) => normalizeRecipientLocalPart(row.localPart) === normalized);
+	} catch (error) {
+		if (isNoSuchTableError(error)) return false;
+		throw error;
+	}
 }
 
 async function listDomainRules(db: AppDatabase, domainId: string): Promise<RuleRow[]> {

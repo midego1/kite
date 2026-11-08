@@ -12,6 +12,7 @@ export const BACKUP_TABLE_GROUPS: { id: BackupTableGroupId; label: string; table
 			"external_accounts",
 			"external_account_folders",
 			"external_identities",
+			"assistant_sender_addresses",
 			"mailbox_aliases",
 			"contacts",
 			"api_keys",
@@ -53,7 +54,11 @@ export const BACKUP_TABLE_GROUPS: { id: BackupTableGroupId; label: string; table
 		label: "Drive files and sharing",
 		tables: ["drive_items", "drive_shares", "drive_links", "drive_settings", "drive_user_quotas"],
 	},
-	{ id: "automation", label: "Routing and webhooks", tables: ["routing_rules", "webhooks", "webhook_deliveries"] },
+	{
+		id: "automation",
+		label: "Routing and webhooks",
+		tables: ["routing_rules", "assistant_addresses", "webhooks", "webhook_deliveries"],
+	},
 	{
 		id: "assistant",
 		label: "Assistant and AI usage",
@@ -64,6 +69,7 @@ export const BACKUP_TABLE_GROUPS: { id: BackupTableGroupId; label: string; table
 			"composer_sends",
 			"ai_assisted_drafts",
 			"agent_conversations",
+			"assistant_email_requests",
 			"agent_chat_messages",
 			"agent_jobs",
 			"agent_draft_metadata",

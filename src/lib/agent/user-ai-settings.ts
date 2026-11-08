@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import type { AppDatabase } from "@/db";
 import { userAiSettings } from "@/db/schema/agent-writing";
+import { selectRow } from "@/lib/db/pending-columns";
 import { isNoSuchTableError } from "@/lib/modules/state-utils";
 import type { InstructionSet, PersonalInstructions } from "./instruction-types";
 import { EMPTY_INSTRUCTIONS } from "./instruction-utils";
@@ -10,6 +11,8 @@ export type UserAiSettingsState = {
 	ready: boolean;
 	writingStyleEnabled: boolean;
 	instructions: InstructionSet;
+	/** Assistant by email (migration 0096); empty and off while that migration is pending. */
+	assistantEmail: { enabled: boolean; mailboxId: string | null; dailyLimit: number };
 };
 
 /** Saving before migration 0069 is applied; routes answer 409 `MIGRATION_PENDING`. */
@@ -20,10 +23,16 @@ export class UserAiSettingsPendingError extends Error {
 	}
 }
 
-/** The user's own AI settings: no row means empty instructions and the style profile off. */
+const EMPTY_ASSISTANT_EMAIL = { enabled: false, mailboxId: null, dailyLimit: 20 };
+
+/**
+ * The user's own AI settings: no row means empty instructions and the style profile off. Reads with `selectRow`,
+ * so the assistant-by-email columns migration 0096 adds read as their defaults while it is pending, instead of
+ * failing every caller of this function (chat, drafting, the composer).
+ */
 export async function readUserAiSettings(db: AppDatabase, userId: string): Promise<UserAiSettingsState> {
 	try {
-		const [row] = await db.select().from(userAiSettings).where(eq(userAiSettings.userId, userId)).limit(1);
+		const row = await selectRow(db, userAiSettings, eq(userAiSettings.userId, userId));
 		return {
 			ready: true,
 			writingStyleEnabled: row?.writingStyleEnabled ?? false,
@@ -35,10 +44,22 @@ export async function readUserAiSettings(db: AppDatabase, userId: string): Promi
 						summary: row.summaryInstructions,
 					}
 				: { ...EMPTY_INSTRUCTIONS },
+			assistantEmail: row
+				? {
+						enabled: row.assistantEmailEnabled,
+						mailboxId: row.assistantEmailMailboxId,
+						dailyLimit: row.assistantEmailDailyLimit,
+					}
+				: { ...EMPTY_ASSISTANT_EMAIL },
 		};
 	} catch (error) {
 		if (!isNoSuchTableError(error)) throw error;
-		return { ready: false, writingStyleEnabled: false, instructions: { ...EMPTY_INSTRUCTIONS } };
+		return {
+			ready: false,
+			writingStyleEnabled: false,
+			instructions: { ...EMPTY_INSTRUCTIONS },
+			assistantEmail: { ...EMPTY_ASSISTANT_EMAIL },
+		};
 	}
 }
 

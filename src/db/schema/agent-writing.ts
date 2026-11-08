@@ -6,6 +6,11 @@ import { instructionColumns } from "./agent-columns";
  * A user's own AI preferences (migration 0069), private to them: personal instructions that apply in every
  * mailbox they work in, and the writing style opt-in. A separate table rather than `users` columns, so whole-row
  * reads of `users` keep working on a database whose migrations are behind. No row means everything empty and off.
+ *
+ * `assistantEmail*` (migration 0096, docs/specs/assistant-by-email.md) are read and written through
+ * `src/lib/db/pending-columns.ts`, not a plain whole-row select: a deploy of this code can run before the admin
+ * applies 0096, and a column `ALTER TABLE` adds to a table Drizzle already maps every column of would otherwise
+ * fail every settings read until the migration runs.
  */
 export const userAiSettings = sqliteTable("user_ai_settings", {
 	userId: text("user_id")
@@ -13,6 +18,11 @@ export const userAiSettings = sqliteTable("user_ai_settings", {
 		.references(() => users.id, { onDelete: "cascade" }),
 	writingStyleEnabled: integer("writing_style_enabled", { mode: "boolean" }).notNull().default(false),
 	...instructionColumns(),
+	/** Opted in to receiving requests at an assistant address (migration 0096). */
+	assistantEmailEnabled: integer("assistant_email_enabled", { mode: "boolean" }).notNull().default(false),
+	/** The mailbox a request from a verified extra address runs in; null defaults to the user's first personal mailbox. */
+	assistantEmailMailboxId: text("assistant_email_mailbox_id").references(() => mailboxes.id, { onDelete: "set null" }),
+	assistantEmailDailyLimit: integer("assistant_email_daily_limit").notNull().default(20),
 	updatedAt: integer("updated_at", { mode: "timestamp" })
 		.notNull()
 		.$defaultFn(() => new Date()),

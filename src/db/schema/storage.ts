@@ -104,6 +104,15 @@ export const objectLocations = sqliteTable(
 		movedAt: integer("moved_at", { mode: "timestamp" })
 			.notNull()
 			.$defaultFn(() => new Date()),
+		/** A fencing token (round-6 review, `B3`): whoever currently holds it is the only one allowed to change
+		 * this key's location or delete a copy of it, checked and cleared in the same statement that commits a
+		 * cold move's new location, so a lease that lapsed mid-move can never let that move and the orphan
+		 * delete pass (`cold-orphans.ts`) both act on stale information. `null` outside an in-flight claim. */
+		leaseToken: text("lease_token"),
+		/** When the token above stops protecting anything on its own (a crashed holder's claim is simply
+		 * reclaimed once this passes); renewed by a long-running move between steps, never trusted alone
+		 * without the token also still matching. */
+		claimedUntil: integer("claimed_until", { mode: "timestamp" }),
 	},
 	(t) => [
 		index("object_locations_class_idx").on(t.objectClass),
@@ -152,20 +161,6 @@ export const storageColdOrphans = sqliteTable(
 		index("storage_cold_orphans_orphaned_at_idx").on(t.orphanedAt),
 	],
 );
-
-/**
- * A short-lived, per-key mutual-exclusion lease (migration 0103) between whichever side is currently changing
- * where a key's bytes live: a cold move (verifying, recording and deleting its own old copy) and the orphan
- * delete pass (deleting a non-current candidate's copy, `cold-orphans.ts`). Whoever holds the lease is the only
- * one allowed to delete a copy of that key right now, which is what stops the delete pass from removing the
- * only readable copy while a move puts the key back onto the very store a candidate names (`B2`). Rows are
- * ephemeral: a caller deletes its own when done, and an expired one (`leaseUntil` in the past) is simply
- * reclaimed by whoever asks next, never swept separately.
- */
-export const storageKeyLeases = sqliteTable("storage_key_leases", {
-	key: text("key").primaryKey(),
-	leaseUntil: integer("lease_until", { mode: "timestamp" }).notNull(),
-});
 
 /**
  * One continuously-resumed sweep per class: the nightly cron (re)starts it when idle, batches ride

@@ -1,6 +1,7 @@
 import { getDb } from "@/db";
 import { storageColdOrphans } from "@/db/schema/storage";
 import { newId } from "@/lib/ids";
+import { missingColumnFromError } from "@/lib/auth/user-lookup-utils";
 import { isNoSuchTableError } from "@/lib/modules/state-utils";
 import type { RoutableClass } from "./types";
 
@@ -50,66 +51,124 @@ export async function clearOrphanCandidate(env: LocationEnv, storeId: string, ke
 	}
 }
 
-/** How long a key lease (below) is held before it is treated as abandoned and reclaimed by whoever asks next:
+/** How long a claim (below) is honoured before it is treated as abandoned and reclaimed by whoever asks next:
  * generous for a single cold move or delete, including a large multipart copy, without leaving a crashed
- * caller's claim stuck for long. */
-const KEY_LEASE_MS = 5 * 60_000;
+ * caller's claim stuck for long. A move that runs longer renews it (`renewLocationLease`) rather than relying
+ * on this alone, since nothing else re-checks a lease once it is handed out (`B3`). */
+const LEASE_SECONDS = 5 * 60;
+
+function isMissingLeaseColumn(error: unknown): boolean {
+	const column = missingColumnFromError(error);
+	return column === "lease_token" || column === "claimed_until";
+}
+
+export type LocationLease = { token: string };
 
 /**
- * Claims the exclusive right to change where `key` points or delete one of its copies, returning the lease's
- * expiry (seconds) on success or `null` when someone else already holds it. This is the one serialization
- * point between a cold move (about to verify, record and delete its own old copy) and the orphan delete pass
- * (about to delete a non-current candidate's copy), so neither can undo what the other just confirmed (`B2`).
- * Before migration 0103 there is no lease table to coordinate through; acquiring always "succeeds" there
- * rather than refusing every move and every cleanup run over a table that cannot exist yet.
+ * Claims the exclusive right to change `key`'s `object_locations` row or delete one of its copies: a fencing
+ * token written to that row, checked and cleared in the very statement that later commits a move's new
+ * location (`recordObjectLocation`) rather than a time limit alone, which round 5's design relied on and round
+ * 6 found could still let a lease-holder's write land after the lease had already been handed to someone else
+ * (`B3`). Returns the claim on success, `"none"` when the key has no row yet (a first-ever cold move: nothing
+ * exists for anything else to race over, so there is nothing to protect), or `null` when someone else already
+ * holds a still-valid claim on an existing row. Before migration 0103 there is no column to claim through;
+ * acquiring then answers `"none"` rather than refusing every move and every cleanup run over columns that
+ * cannot exist yet.
  */
-export async function claimKeyLease(env: LocationEnv, key: string, now = new Date()): Promise<number | null> {
+export async function claimLocationLease(
+	env: LocationEnv,
+	key: string,
+	now = new Date(),
+): Promise<LocationLease | "none" | null> {
 	const nowSeconds = Math.floor(now.getTime() / 1000);
-	const until = nowSeconds + Math.floor(KEY_LEASE_MS / 1000);
+	const token = newId("lease");
+	const until = nowSeconds + LEASE_SECONDS;
 	try {
 		const result = await env.DB.prepare(
-			`INSERT INTO storage_key_leases (key, lease_until) VALUES (?, ?)
-			 ON CONFLICT (key) DO UPDATE SET lease_until = excluded.lease_until WHERE lease_until < ?`,
+			`UPDATE object_locations SET lease_token = ?, claimed_until = ?
+			 WHERE key = ? AND (claimed_until IS NULL OR claimed_until < ?)`,
 		)
-			.bind(key, until, nowSeconds)
+			.bind(token, until, key, nowSeconds)
 			.run();
-		return (result.meta?.changes ?? 0) > 0 ? until : null;
+		if ((result.meta?.changes ?? 0) > 0) return { token };
+		const existing = await env.DB.prepare("SELECT 1 AS found FROM object_locations WHERE key = ?")
+			.bind(key)
+			.first<{ found: number }>();
+		return existing ? null : "none";
 	} catch (error) {
-		if (isNoSuchTableError(error)) return until;
+		if (isNoSuchTableError(error) || isMissingLeaseColumn(error)) return "none";
 		throw error;
 	}
 }
 
 /**
- * Releases a lease this caller holds, matched by the exact expiry `claimKeyLease` returned: a no-op once that
- * value no longer matches, which means either it was already released or it expired and someone else's claim
- * is there now, never a lease that is currently someone else's to hold.
+ * Extends a claim this caller still holds (its token still matches `key`'s row), for a long-running move
+ * between steps (between multipart parts, before the final verify, `B3`); `false` once that token no longer
+ * matches, meaning it already expired and someone else's claim is there now. Deliberately does not also
+ * require the old `claimedUntil` to still be in the future: renewing is exactly how a holder that is cutting it
+ * close keeps going, and the token match alone already proves nobody else has claimed the row since.
  */
-export async function releaseKeyLease(env: LocationEnv, key: string, until: number): Promise<void> {
+export async function renewLocationLease(
+	env: LocationEnv,
+	key: string,
+	token: string,
+	now = new Date(),
+): Promise<boolean> {
+	const until = Math.floor(now.getTime() / 1000) + LEASE_SECONDS;
 	try {
-		await env.DB.prepare("DELETE FROM storage_key_leases WHERE key = ? AND lease_until = ?").bind(key, until).run();
+		const result = await env.DB.prepare(
+			"UPDATE object_locations SET claimed_until = ? WHERE key = ? AND lease_token = ?",
+		)
+			.bind(until, key, token)
+			.run();
+		return (result.meta?.changes ?? 0) > 0;
 	} catch (error) {
-		if (isNoSuchTableError(error)) return;
+		if (isNoSuchTableError(error) || isMissingLeaseColumn(error)) return true;
 		throw error;
 	}
 }
 
-/** Thrown by `withKeyLease` when another cold move or the delete pass already holds `key`'s lease; caught the
- * same way any other per-item failure is, so the item is simply retried on a later batch or sweep. */
-class KeyLeaseError extends Error {}
+/**
+ * Releases a claim this caller holds, matched by its exact token: a no-op once that token no longer matches,
+ * which means either it was already released (`recordObjectLocation` clears it itself on a successful,
+ * fenced commit) or it expired and someone else's claim is there now, never a claim that is currently someone
+ * else's to hold.
+ */
+export async function releaseLocationLease(env: LocationEnv, key: string, token: string): Promise<void> {
+	try {
+		await env.DB.prepare(
+			"UPDATE object_locations SET lease_token = NULL, claimed_until = NULL WHERE key = ? AND lease_token = ?",
+		)
+			.bind(key, token)
+			.run();
+	} catch (error) {
+		if (isNoSuchTableError(error) || isMissingLeaseColumn(error)) return;
+		throw error;
+	}
+}
+
+/** Thrown by `withLocationLease` when another cold move or the delete pass already holds `key`'s claim; caught
+ * the same way any other per-item failure is, so the item is simply retried on a later batch or sweep. */
+class LocationLeaseError extends Error {}
 
 /**
- * Runs `fn` only while holding the exclusive lease on `key`, releasing it however `fn` ends. A cold move wraps
- * its own verify-copy-record-delete sequence in this (`B2`), so the delete pass can never remove the only copy
- * while a move is putting the key back onto that very store, and vice versa.
+ * Runs `fn` only while holding the claim on `key` (or while there is nothing yet to claim, `"none"`), releasing
+ * it however `fn` ends. A cold move wraps its own verify-copy-record-delete sequence in this (`B2`, `B3`), so
+ * the delete pass can never remove the only copy while a move is putting the key back onto that very store,
+ * and vice versa, for as long as the move keeps its claim renewed.
  */
-export async function withKeyLease<T>(env: LocationEnv, key: string, fn: () => Promise<T>): Promise<T> {
-	const lease = await claimKeyLease(env, key);
-	if (lease === null) throw new KeyLeaseError(`Another operation currently holds the lease for "${key}"`);
+export async function withLocationLease<T>(
+	env: LocationEnv,
+	key: string,
+	fn: (lease: LocationLease | undefined) => Promise<T>,
+): Promise<T> {
+	const claimed = await claimLocationLease(env, key);
+	if (claimed === null) throw new LocationLeaseError(`Another operation currently holds the lease for "${key}"`);
+	const lease = claimed === "none" ? undefined : claimed;
 	try {
-		return await fn();
+		return await fn(lease);
 	} finally {
-		await releaseKeyLease(env, key, lease);
+		if (lease) await releaseLocationLease(env, key, lease.token);
 	}
 }
 
@@ -123,12 +182,21 @@ export async function withKeyLease<T>(env: LocationEnv, key: string, fn: () => P
  * copy the same key to a different target and both reach here: whichever lands second is what this row ends up
  * naming, and the first target's copy has nothing pointing at it any more. The mark-then-overwrite below runs as
  * one D1 batch (one transaction) instead of a separate read then a separate write, so two truly concurrent
- * callers cannot both read "nothing previous" and both skip marking a copy the other is about to orphan.
+ * callers cannot both read "nothing previous" and both skip marking a copy the other is about to orphan. The
+ * same batch also drops any stale candidate already recorded for this exact new `(storeId, key)` (`M1`): a copy
+ * that is the recorded location is by definition not a leftover, so a later reference loss is found fresh by
+ * the scan instead of being judged against a stale candidate's old window and old grace clock.
+ *
+ * `lease`, when given, fences the location write itself: it only lands while that lease's token still matches
+ * `key`'s row, cleared in the same statement that commits (`B3`). Returns whether the write actually landed;
+ * a cold move that gets `false` back must not trust its new copy is recorded and must not delete its old one.
+ * Omit `lease` for a caller that never deletes a second copy of the same key (nothing here for it to race).
  */
 export async function recordObjectLocation(
 	env: LocationEnv,
 	input: { key: string; objectClass: RoutableClass; storeId: string; storageClass: string | null; size: number },
-): Promise<void> {
+	lease?: LocationLease,
+): Promise<boolean> {
 	const now = Math.floor(Date.now() / 1000);
 	const markPrevious = env.DB.prepare(
 		`INSERT INTO storage_cold_orphans (id, store_id, key, object_class, moved_at, orphaned_at, first_orphaned_at)
@@ -136,24 +204,37 @@ export async function recordObjectLocation(
 		 FROM object_locations WHERE key = ? AND store_id <> ?
 		 ON CONFLICT (store_id, key) DO NOTHING`,
 	).bind(newId("sco"), now, now, input.key, input.storeId);
-	const upsert = env.DB.prepare(
-		`INSERT INTO object_locations (key, object_class, store_id, storage_class, size, moved_at) VALUES (?, ?, ?, ?, ?, ?)
-		 ON CONFLICT (key) DO UPDATE SET store_id = excluded.store_id, storage_class = excluded.storage_class,
-		 size = excluded.size, moved_at = excluded.moved_at`,
-	).bind(input.key, input.objectClass, input.storeId, input.storageClass, input.size, now);
+	const upsert = lease
+		? env.DB.prepare(
+				`INSERT INTO object_locations (key, object_class, store_id, storage_class, size, moved_at, lease_token, claimed_until)
+				 VALUES (?, ?, ?, ?, ?, ?, NULL, NULL)
+				 ON CONFLICT (key) DO UPDATE SET store_id = excluded.store_id, storage_class = excluded.storage_class,
+				 size = excluded.size, moved_at = excluded.moved_at, lease_token = NULL, claimed_until = NULL
+				 WHERE lease_token = ? AND claimed_until > ?`,
+			).bind(input.key, input.objectClass, input.storeId, input.storageClass, input.size, now, lease.token, now)
+		: env.DB.prepare(
+				`INSERT INTO object_locations (key, object_class, store_id, storage_class, size, moved_at) VALUES (?, ?, ?, ?, ?, ?)
+				 ON CONFLICT (key) DO UPDATE SET store_id = excluded.store_id, storage_class = excluded.storage_class,
+				 size = excluded.size, moved_at = excluded.moved_at`,
+			).bind(input.key, input.objectClass, input.storeId, input.storageClass, input.size, now);
+	const clearTargetCandidate = env.DB.prepare("DELETE FROM storage_cold_orphans WHERE store_id = ? AND key = ?").bind(
+		input.storeId,
+		input.key,
+	);
 	try {
-		await env.DB.batch([markPrevious, upsert]);
-		return;
+		const results = await env.DB.batch([markPrevious, upsert, clearTargetCandidate]);
+		return lease ? (results[1].meta?.changes ?? 0) > 0 : true;
 	} catch (error) {
 		// `object_locations` exists (migration 0097) but `storage_cold_orphans` may not yet (migration 0103):
-		// the location still needs recording on its own, just without the orphan candidate mark, rather than
-		// the whole batch (and so the location write) failing over a table nothing here strictly needs yet.
+		// the location still needs recording on its own, just without the orphan candidate mark or clear, rather
+		// than the whole batch (and so the location write) failing over a table nothing here strictly needs yet.
 		if (!isNoSuchTableError(error)) throw error;
 	}
 	try {
-		await upsert.run();
+		const result = await upsert.run();
+		return lease ? (result.meta?.changes ?? 0) > 0 : true;
 	} catch (error) {
-		if (isNoSuchTableError(error)) return;
+		if (isNoSuchTableError(error) || isMissingLeaseColumn(error)) return true;
 		throw error;
 	}
 }

@@ -12,7 +12,13 @@ import { isNoSuchTableError } from "@/lib/modules/state-utils";
 import { beforeBodyColumn } from "./migration";
 import { isRoutableClass } from "./config-utils";
 import { getStorage, type StoragePlatformEnv } from "./index";
-import { claimKeyLease, lookupObjectLocation, markOrphanCandidate, releaseKeyLease } from "./object-locations";
+import {
+	claimLocationLease,
+	lookupObjectLocation,
+	markOrphanCandidate,
+	releaseLocationLease,
+	renewLocationLease,
+} from "./object-locations";
 import { driveItemIdFromObjectKey } from "./object-classes-utils";
 import type { RoutableClass, Storage } from "./types";
 
@@ -234,15 +240,19 @@ type OrphanCandidate = { id: string; key: string; objectClass: RoutableClass; st
  * whole decision: nothing else that deletes a copy of this key (a cold move putting it back onto this very
  * store) can run while this is held, which is what makes the re-read below authoritative instead of a snapshot
  * a concurrent mover can invalidate a moment later (`B2`). Deferred when the lease is already held, an
- * unreachable store answers, or the only other claimed copy does not actually exist yet (or any more).
+ * unreachable store answers, or the only other claimed copy does not actually exist yet (or any more). Right
+ * before the destructive delete, the lease is renewed under its own token one more time (`B3`): if that fails,
+ * someone else (most likely a cold move putting the key back onto this very store) has taken it since the
+ * checks above ran, and the delete must not happen after all.
  */
 async function finalizeOrphanCandidate(
 	env: ColdEnv,
 	storage: Storage,
 	candidate: OrphanCandidate,
 ): Promise<"deleted" | "kept" | "deferred"> {
-	const lease = await claimKeyLease(env, candidate.key);
-	if (lease === null) return "deferred";
+	const claimed = await claimLocationLease(env, candidate.key);
+	if (claimed === null) return "deferred";
+	const token = claimed === "none" ? null : claimed.token;
 	try {
 		// A key names the same bytes on whichever store holds it, so a live row's reference to the key cannot
 		// by itself tell this candidate's copy apart from the one `object_locations` currently points at for
@@ -265,6 +275,7 @@ async function finalizeOrphanCandidate(
 		}
 		const store = storage.store(candidate.storeId);
 		if (!store) return "deferred"; // blocked or missing right now (a bad endpoint, a revoked credential)
+		if (token && !(await renewLocationLease(env, candidate.key, token))) return "deferred";
 		try {
 			await store.bucket.delete(candidate.key);
 		} catch {
@@ -272,7 +283,7 @@ async function finalizeOrphanCandidate(
 		}
 		return "deleted";
 	} finally {
-		await releaseKeyLease(env, candidate.key, lease);
+		if (token) await releaseLocationLease(env, candidate.key, token);
 	}
 }
 

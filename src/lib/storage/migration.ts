@@ -209,9 +209,10 @@ export async function copyObject(
 	target: ObjectStore,
 	key: string,
 	targetKey = key,
-	options?: { storageClass?: string },
+	options?: { storageClass?: string; onPart?: () => Promise<void> },
 ): Promise<number | null> {
-	const metadata = { httpMetadata: head.httpMetadata, customMetadata: head.customMetadata, ...options };
+	const { onPart, ...rest } = options ?? {};
+	const metadata = { httpMetadata: head.httpMetadata, customMetadata: head.customMetadata, ...rest };
 	if (head.size > MULTIPART_COPY_THRESHOLD && target.bucket.createMultipartUpload) {
 		const upload = await target.bucket.createMultipartUpload(targetKey, metadata);
 		try {
@@ -226,6 +227,9 @@ export async function copyObject(
 						lengthOption(target, part.length),
 					),
 				);
+				// Keeps a long multipart copy's lease from lapsing mid-transfer (`B3`); a no-op for a caller
+				// that holds no lease, or none to renew (a first-ever move of this key).
+				await onPart?.();
 			}
 			await upload.complete(parts);
 		} catch (error) {

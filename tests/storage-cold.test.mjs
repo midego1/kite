@@ -854,10 +854,11 @@ test("recording a cold move marks the previous location as an orphan candidate i
 		env.DB.batch = originalBatch;
 	}
 
-	// Both the mark of sto_a's now-superseded row and the overwrite to sto_b happened as one `DB.batch` call
-	// (one SQLite transaction): there was never a window where a concurrent caller could see "nothing to mark
-	// yet" (the old separate read-then-write) in between them.
-	assert.deepEqual(batches, [2], "the mark and the overwrite ran together, in exactly one batch of 2 statements");
+	// The mark of sto_a's now-superseded row, the overwrite to sto_b and the M1 clear of any stale candidate
+	// already sitting on sto_b happened as one `DB.batch` call (one SQLite transaction): there was never a
+	// window where a concurrent caller could see "nothing to mark yet" (the old separate read-then-write)
+	// in between them.
+	assert.deepEqual(batches, [3], "the mark, the overwrite and the M1 clear ran together in one batch");
 	assert.equal(location(env, key).store_id, "sto_b");
 	assert.ok(orphan(env, key, "sto_a"), "the superseded row was still marked, from inside that one batch");
 });
@@ -1046,23 +1047,121 @@ test("B1: a genuine leftover is protected only by a backup retained within its o
 	assert.equal(location(env, key).store_id, "sto_b", "the current, unrelated location is never touched");
 });
 
+test("M1: recording a new location clears any stale candidate already sitting on that exact store, instead of leaving it to be judged by its old window and old grace clock", async (t) => {
+	const { env } = await fixture(t);
+	await addStore(env, "sto_c", "kite-target");
+	const key = "inbound/m.eml";
+	// A stale leftover from 180 days ago, deferred again only 2 days ago: without M1, this row survives
+	// recordObjectLocation untouched and gets judged by its OLD [movedAt, firstOrphanedAt) window and its OLD
+	// orphanedAt clock once it falls out of reference again, even though the key is about to become live here.
+	env.DB.db
+		.prepare(
+			"INSERT INTO storage_cold_orphans (id, store_id, key, object_class, moved_at, orphaned_at, first_orphaned_at) VALUES ('sco_stale', 'sto_c', ?, 'mail', ?, ?, ?)",
+		)
+		.run(key, NOW - 180 * DAY, NOW - 2 * DAY, NOW - 180 * DAY);
+
+	await recordObjectLocation(env, { key, objectClass: "mail", storeId: "sto_c", storageClass: null, size: 10 });
+
+	assert.equal(orphan(env, key, "sto_c"), undefined, "the stale row is gone: this copy is the live location now");
+	assert.equal(location(env, key).store_id, "sto_c");
+});
+
+test("M1: a later reference loss on a store that cleared a stale candidate is judged by a fresh grace period and backup window, not the cleared row's old one", async (t) => {
+	const { env } = await fixture(t);
+	await addStore(env, "sto_c", "kite-target");
+	const key = "inbound/m.eml";
+	await addMessage(env, "m", { createdAt: NOW - 200 * DAY });
+	fake.buckets.get("kite-target").objects.set(key, {
+		bytes: Buffer.from("raw m"),
+		meta: { custom: {} },
+		etag: "e1",
+		lastModified: new Date(),
+	});
+	// recordObjectLocation (below) stamps `movedAt` with the real clock, not the fixture's fictional `NOW`
+	// (the same reason the round-4 "migration that copies..." test below measures its own grace period against
+	// `Date.now()`), so this whole scenario is timed against the real clock to match.
+	const realNow = Math.floor(Date.now() / 1000);
+	// A stale leftover from long ago, deferred again only 2 days ago.
+	env.DB.db
+		.prepare(
+			"INSERT INTO storage_cold_orphans (id, store_id, key, object_class, moved_at, orphaned_at, first_orphaned_at) VALUES ('sco_stale', 'sto_c', ?, 'mail', ?, ?, ?)",
+		)
+		.run(key, realNow - 180 * DAY, realNow - 2 * DAY, realNow - 180 * DAY);
+
+	// The key becomes current on sto_c again right now: M1 clears the stale row as part of this.
+	await recordObjectLocation(env, { key, objectClass: "mail", storeId: "sto_c", storageClass: null, size: 10 });
+	assert.equal(orphan(env, key, "sto_c"), undefined);
+	// Backdated so the scan below (which marks a fresh candidate with today's clock as its firstOrphanedAt)
+	// leaves a real gap between that and movedAt for the safety backup to land inside of; recordObjectLocation
+	// itself always stamps the exact instant it runs, which would otherwise make that window a hair too narrow.
+	env.DB.db.prepare("UPDATE object_locations SET moved_at = ? WHERE key = ?").run(realNow - DAY, key);
+
+	// A safety backup completes while the message is still referenced on sto_c...
+	await addBackup(env, "safety", {
+		createdAt: realNow - Math.floor(DAY / 2),
+		completedAt: realNow - Math.floor(DAY / 2),
+	});
+	// ...then the reference is lost (an older-backup restore dropping the row, the M1 shape).
+	env.DB.db.prepare("DELETE FROM messages WHERE id = 'm'").run();
+
+	await cold.runStorageColdMaintenance(env, new Date());
+	assert.ok(orphan(env, key, "sto_c"), "freshly marked a candidate again, this time with today's window");
+
+	// Without M1, the cleared row's own old deadline (orphanedAt only 2 days old when it was cleared) would
+	// already have been well past its grace period by now, deleting the copy outright and ignoring the safety
+	// backup above (which postdates that old window entirely). With M1 this is a brand new candidate: the grace
+	// period and the backup-retention window both start fresh from today, and the safety backup still covers it.
+	await cold.runStorageColdMaintenance(env, new Date(Date.now() + GRACE_PERIOD_DAY * DAY * 1000));
+	assert.equal(
+		fake.buckets.get("kite-target").objects.has(key),
+		true,
+		"kept: the fresh window still covers the safety backup",
+	);
+});
+
+test("B3: recordObjectLocation's fenced write is refused once the token it was given no longer matches the row", async (t) => {
+	const { env } = await fixture(t);
+	await addStore(env, "sto_a", "kite-target");
+	const key = "inbound/old.eml";
+	await recordObjectLocation(env, { key, objectClass: "mail", storeId: "sto_a", storageClass: null, size: 10 });
+	const lease = await lib.objectLocations.claimLocationLease(env, key);
+	assert.ok(lease && lease !== "none");
+	// Someone else's claim is on the row now (a forced expiry and reclaim, or a genuine steal): the token this
+	// caller was handed is no longer the one that matters, directly exercising the fencing check itself rather
+	// than the belt-and-suspenders HEAD re-check around it.
+	env.DB.db.prepare("UPDATE object_locations SET lease_token = 'someone-elses-token' WHERE key = ?").run(key);
+
+	const recorded = await recordObjectLocation(
+		env,
+		{ key, objectClass: "mail", storeId: "sto_b", storageClass: null, size: 20 },
+		lease,
+	);
+	assert.equal(recorded, false, "refused: the token this caller holds is no longer the one on the row");
+	assert.equal(location(env, key).store_id, "sto_a", "the location was never actually changed");
+});
+
 test("B2: a cold move backs off instead of racing the delete pass while the delete pass already holds the key's lease", async (t) => {
 	const { env, queue } = await fixture(t);
-	await addStore(env, "sto_target", "kite-target");
+	await addStore(env, "sto_a", "kite-target");
+	await addStore(env, "sto_b", "kite-target-2");
 	await addMessage(env, "old", { createdAt: NOW - 60 * DAY });
-	await setColdRule(env, "mail", { afterDays: 30, target: "sto_target" });
+	await setColdRule(env, "mail", { afterDays: 30, target: "sto_a" });
+	await cold.runColdStorageSweep(env, new Date(NOW * 1000));
+	await drain(env, queue);
+	assert.equal(location(env, "inbound/old.eml").store_id, "sto_a");
 
 	// Simulate the delete pass being mid-decision on this exact key: it has already claimed the lease.
-	const lease = await lib.objectLocations.claimKeyLease(env, "inbound/old.eml");
-	assert.ok(lease !== null);
+	const lease = await lib.objectLocations.claimLocationLease(env, "inbound/old.eml");
+	assert.ok(lease && lease !== "none");
 
+	await setColdRule(env, "mail", { afterDays: 30, target: "sto_b" });
 	await cold.runColdStorageSweep(env, new Date(NOW * 1000));
 	await drain(env, queue);
 
 	assert.equal(job(env, "mail").errors, 1, "the move backed off instead of racing the held lease");
-	assert.equal(target().has("inbound/old.eml"), false, "nothing was ever copied to the target");
-	assert.equal(location(env, "inbound/old.eml"), undefined, "nothing was ever recorded");
-	assert.ok(await env.BUCKET.get("inbound/old.eml"), "the original copy is untouched");
+	assert.equal(fake.buckets.get("kite-target-2").objects.has("inbound/old.eml"), false, "nothing copied to sto_b");
+	assert.equal(location(env, "inbound/old.eml").store_id, "sto_a", "nothing was ever recorded");
+	assert.equal(fake.buckets.get("kite-target").objects.has("inbound/old.eml"), true, "the original copy is untouched");
 });
 
 test("B2: the delete pass defers a candidate instead of deleting it while a cold move already holds the key's lease, and resolves once the lease is free", async (t) => {
@@ -1095,27 +1194,41 @@ test("B2: the delete pass defers a candidate instead of deleting it while a cold
 	});
 
 	// Simulate a cold move already in progress for this exact key.
-	const lease = await lib.objectLocations.claimKeyLease(env, key);
-	assert.ok(lease !== null);
+	const lease = await lib.objectLocations.claimLocationLease(env, key);
+	assert.ok(lease && lease !== "none");
 
 	await cold.runStorageColdMaintenance(env, new Date(NOW * 1000));
 	assert.equal(fake.buckets.get("kite-target").objects.has(key), true, "deferred: the lease is held elsewhere");
 	assert.ok(orphan(env, key, "sto_c"));
 
-	await lib.objectLocations.releaseKeyLease(env, key, lease);
+	await lib.objectLocations.releaseLocationLease(env, key, lease.token);
 	await cold.runStorageColdMaintenance(env, new Date((NOW + GRACE_PERIOD_DAY * DAY) * 1000));
 	assert.equal(fake.buckets.get("kite-target").objects.has(key), false, "resolved once the lease is free again");
 	assert.equal(orphan(env, key, "sto_c"), undefined);
 });
 
-test("B2: a move back onto a candidate's own store survives the delete pass deciding the same candidate's fate at the same time", async (t) => {
-	const { env, queue } = await fixture(t);
-	await addStore(env, "sto_c", "kite-target");
-	await addStore(env, "sto_d", "kite-target-2");
+/**
+ * Hooks `env.DB.batch` so that the very first batch shaped like a cold move's fenced location record (the
+ * only one that ever mentions `claimed_until`) runs `onHook()` to completion first, then restores the real
+ * `batch` and lets that record attempt proceed: a real interleave of the delete pass (or anything else) landing
+ * between a mover's confirming HEAD and its own record, not two calls run one after the other (`B3` review).
+ */
+function interleaveBeforeRecord(env, onHook) {
+	const originalBatch = env.DB.batch.bind(env.DB);
+	let triggered = false;
+	env.DB.batch = async (statements) => {
+		if (!triggered && statements.some((statement) => statement.sql?.includes("claimed_until"))) {
+			triggered = true;
+			env.DB.batch = originalBatch;
+			await onHook();
+		}
+		return originalBatch(statements);
+	};
+}
+
+function setupB2RaceFixture(env) {
 	const key = "inbound/m.eml";
 	const content = "the real content of this message, to be found afterwards";
-	await addMessage(env, "m", { body: content, createdAt: NOW - 90 * DAY });
-
 	// The message is currently cold on sto_d...
 	fake.buckets.get("kite-target-2").objects.set(key, {
 		bytes: Buffer.from(content),
@@ -1140,19 +1253,55 @@ test("B2: a move back onto a candidate's own store survives the delete pass deci
 			"INSERT INTO storage_cold_orphans (id, store_id, key, object_class, moved_at, orphaned_at, first_orphaned_at) VALUES ('sco_m', 'sto_c', ?, 'mail', ?, ?, ?)",
 		)
 		.run(key, NOW - 120 * DAY, NOW - GRACE_PERIOD_DAY * DAY, NOW - GRACE_PERIOD_DAY * DAY);
+	return { key, content };
+}
 
-	// The rule now sends this class back onto sto_c, the very store the stale candidate names.
+test("B2: a move back onto a candidate's own store, really interleaved with the delete pass deciding that same candidate's fate, still leaves a readable copy", async (t) => {
+	const { env, queue } = await fixture(t);
+	await addStore(env, "sto_c", "kite-target");
+	await addStore(env, "sto_d", "kite-target-2");
+	const { key, content } = setupB2RaceFixture(env);
+	await addMessage(env, "m", { body: content, createdAt: NOW - 90 * DAY });
 	await setColdRule(env, "mail", { afterDays: 30, target: "sto_c" });
+
+	// The delete pass genuinely runs in the middle of the move, after its confirming HEAD and before its own
+	// record, not merely before or after it: the move still holds its lease, unexpired, so the delete pass can
+	// only defer the candidate it was about to judge.
+	interleaveBeforeRecord(env, () => cold.runStorageColdMaintenance(env, new Date(NOW * 1000)));
 	await cold.runColdStorageSweep(env, new Date(NOW * 1000));
 	await drain(env, queue);
 	assert.equal(job(env, "mail").errors, 0, job(env, "mail").last_error);
-
-	// Whichever order the cleanup and the move actually ran in, the lease they share means the cleanup could
-	// never have deleted sto_c's copy out from under the move: run it now and confirm exactly one copy reads.
-	await cold.runStorageColdMaintenance(env, new Date((NOW + GRACE_PERIOD_DAY * DAY) * 1000));
 
 	const routed = routerLib.createStorageRouter(env);
 	assert.equal(await (await routed.get(key)).text(), content, "the message still reads, with the right bytes");
 	assert.equal(location(env, key).store_id, "sto_c");
 	assert.equal(fake.buckets.get("kite-target-2").objects.has(key), false, "sto_d's copy was cleaned up by the move");
+});
+
+test("B2: a move whose lease has already lapsed mid-move, really interleaved with the delete pass, aborts instead of letting both copies be deleted", async (t) => {
+	const { env, queue } = await fixture(t);
+	await addStore(env, "sto_c", "kite-target");
+	await addStore(env, "sto_d", "kite-target-2");
+	const { key, content } = setupB2RaceFixture(env);
+	await addMessage(env, "m", { body: content, createdAt: NOW - 90 * DAY });
+	await setColdRule(env, "mail", { afterDays: 30, target: "sto_c" });
+
+	// Stands in for a move that ran past its lease window (a large Drive file, say): right where the delete
+	// pass would land between the confirming HEAD and the record, the lease is force-expired first, so the
+	// delete pass's own claim actually succeeds this time, exactly the round-6 B3 scenario.
+	interleaveBeforeRecord(env, async () => {
+		env.DB.db.prepare("UPDATE object_locations SET claimed_until = 0 WHERE key = ?").run(key);
+		await cold.runStorageColdMaintenance(env, new Date(NOW * 1000));
+	});
+	await cold.runColdStorageSweep(env, new Date(NOW * 1000));
+	await drain(env, queue);
+	assert.equal(job(env, "mail").errors, 1, "the move's own record lost the fence and aborted");
+
+	// Whatever the delete pass did to sto_c's copy in that window, the move never deleted sto_d's, because its
+	// own fenced record never landed: at least one copy is always left, and it is always the one readable
+	// through the router.
+	const routed = routerLib.createStorageRouter(env);
+	assert.equal(await (await routed.get(key)).text(), content, "a readable copy always survives");
+	assert.equal(location(env, key).store_id, "sto_d", "the move's record never landed; the old location stands");
+	assert.equal(fake.buckets.get("kite-target-2").objects.has(key), true, "the source the move never got to delete");
 });

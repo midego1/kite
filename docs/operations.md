@@ -439,17 +439,29 @@ retention the candidate stops being held back by backups at all, round-5 review'
 deliberately conservative within the window: never narrowed further to backups that provably still name this
 exact key, since reading each one's export to check would cost far more than the sweep saves), and, for a
 candidate that is not `object_locations`'s current row for its key, another copy of the key answers a HEAD at
-that current location first. That HEAD check alone does not close the window against a concurrent move, though:
-a cold move and this delete pass both take the same per-key lease (`storage_key_leases`, round-5 review's `B2`)
-before they may change where a key points or delete a copy of it, so the delete pass's final re-check and the
-move's own verify-record-delete sequence can never interleave — whichever acquires the lease first finishes
-before the other is allowed to start, instead of each confirming a copy the other is about to remove. A store an
-unresolved candidate still names cannot be deleted either. The five-minute maintenance runs this in two bounded
-passes, each a batch of up to 200 rows: `scanForOrphanCandidates` keyset-paginates through `object_locations`
-from a cursor saved in `storage_state` (round-robin, so a backlog larger than one batch is still fully covered
-over many runs instead of the same oldest rows absorbing every run forever) and marks what looks unreferenced;
+that current location first. A move that records a key onto a store that still carries a stale candidate for
+it clears that candidate in the same statement (round-6 review, `M1`): a copy that is the recorded location is
+by definition not a leftover, so a later reference loss is judged fresh instead of against that stale row's own
+old window and old grace clock.
+
+That HEAD check alone does not close the window against a concurrent move: a cold move and this delete pass
+both need the fencing token on the key's own `object_locations` row (`leaseToken`/`claimedUntil`) before either
+may change where the key points or delete a copy of it. A plain time-boxed lease (round 5's first attempt, with
+its own `storage_key_leases` table) is not enough by itself, because nothing re-checked it once handed out: a
+move that ran long enough for it to expire could still land its delete after the sweep had already taken over
+the key (round-6 review, `B3`). The token closes that instead of the timer: `recordObjectLocation` only commits
+while the exact token it was given is still the one on the row and `claimedUntil` has not passed, checked and
+cleared in the same statement, the same way `import_jobs.lease_until` fences a sync run's writes (above). A move
+renews its token between multipart parts and again right before that commit, so a legitimately long copy keeps
+it current; a move that falls behind anyway has its commit refused rather than trusted, and it must not delete
+its old copy once that happens (it may still remove its own unrecorded new one). The delete pass renews under
+its own token once more immediately before the destructive delete, for the same reason. A store an unresolved
+candidate still names cannot be deleted either. The five-minute maintenance runs this in two bounded passes,
+each a batch of up to 200 rows: `scanForOrphanCandidates` keyset-paginates through `object_locations` from a
+cursor saved in `storage_state` (round-robin, so a backlog larger than one batch is still fully covered over
+many runs instead of the same oldest rows absorbing every run forever) and marks what looks unreferenced;
 `deleteGracePeriodOrphans` deletes candidates whose grace period has passed, and otherwise pushes one it could
-not resolve (an unreachable store, a retained backup, the HEAD check above, the lease already held by a move in
+not resolve (an unreachable store, a retained backup, the HEAD check above, the token already held by a move in
 progress) to the back of its own queue (a fresh `orphanedAt`) instead of leaving it to block every candidate
 behind it indefinitely. The whole sweep skips entirely while a restore is active, needs recovery (an abandoned
 restore, or one whose own rollback failed, both left for the admin to resolve from the safety backup; the
@@ -466,9 +478,12 @@ Logs: `storage.cold_errors`, `storage.cold_batch_failed`, `storage.cold_orphans_
 `storage_cold_rules` and `object_locations` are in the `system` group; unlike `storage_stores` and
 `storage_routes`, a restore merges their rows into the target's current ones (`INSERT OR IGNORE`: a live row
 wins, and a row only the backup has is added back) rather than keeping or replacing them wholesale, since they
-are data that changes between backups, not store configuration. `storage_cold_jobs`, `storage_cold_orphans` and
-`storage_key_leases` are internal, so neither a sweep's progress, a pending candidate nor a lease is itself
-restored; a restored `object_locations` row is simply re-evaluated by the next scan.
+are data that changes between backups, not store configuration (a restored row's own `leaseToken`/`claimedUntil`
+are always stale, but harmless: either a live row already there wins outright, or the worst a stale value can
+do is make the row briefly unclaimable until its `claimedUntil` passes, after which it is reclaimed exactly as
+an expired one always is). `storage_cold_jobs` and `storage_cold_orphans` are internal, so neither a sweep's
+progress nor a pending candidate is itself restored; a restored `object_locations` row is simply re-evaluated by
+the next scan.
 
 A cold copy can still be lost if an admin disables scheduled backups (or their retention) entirely and then
 restores, or undoes a restore, more than seven days after a copy became unreferenced with no completed backup

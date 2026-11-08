@@ -40,6 +40,8 @@ export type Message = {
 	spamSignals?: string | null;
 	spamAnalyzedAt?: string | null;
 	spamAnalysisError?: string | null;
+	/** A trusted contact whose name this message's From header reuses with a different address; only set on the opened message. */
+	spoofedContact?: string | null;
 	/** Messages in the same conversation (excluding drafts and trash), when the list API computed it. */
 	threadCount?: number;
 	/** Unread messages in the conversation; zero means the grouped thread is read. */

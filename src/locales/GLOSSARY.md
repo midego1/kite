@@ -39,6 +39,8 @@ These are names, written in Latin letters in every language and never translated
 | Sender, Recipient | Afzender, Ontvanger | مرسل، مستلم | |
 | Phishing | Phishing | تصيد | |
 | AI | AI | الذكاء الاصطناعي | |
+| SPF, DKIM, DMARC | SPF, DKIM, DMARC | SPF، DKIM، DMARC | The authentication standards' own acronyms, kept in Latin letters in every language. |
+| Unverified sender | Niet-geverifieerde afzender | مُرسِل غير موثّق | The reader's sender authentication warning and its thread badge. |
 
 ## Arabic counts
 

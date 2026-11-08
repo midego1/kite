@@ -4,6 +4,7 @@ import { messages } from "@/db/schema";
 import { newId } from "@/lib/ids";
 import { resolveInboundAddress } from "@/lib/email/routing";
 import { getMessageContactNames } from "@/lib/contacts/service";
+import { findSpoofedSenderContact } from "@/lib/contacts/spoofed-sender";
 import { getEmailAddress } from "@/lib/email/address";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { listMessageAttachments } from "@/lib/email/attachments";
@@ -160,8 +161,16 @@ export async function getMessageWithBodyForUser(env: CloudflareEnv, user: Sessio
 	const unsubscribeUrl = await getUnsubscribeUrlFromRawR2Key(env, message.rawR2Key);
 	const sendState = (await loadSendStates(db, [message], user.id)).get(message.id);
 	const via = (await loadMessageVia(env, [message])).get(message.id);
+	const spoofedContact =
+		message.direction === "inbound" ? await findSpoofedSenderContact(env, message.userId, message.fromAddr) : null;
 	return {
-		message: { ...message, ...contactNames, ...(sendState ? { sendState } : {}), ...(via ? { via } : {}) },
+		message: {
+			...message,
+			...contactNames,
+			...(sendState ? { sendState } : {}),
+			...(via ? { via } : {}),
+			spoofedContact,
+		},
 		body: message,
 		attachments,
 		unsubscribeUrl,

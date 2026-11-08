@@ -41,6 +41,10 @@ Mail in Spam is not read by automatic reading and gets no automatic reply, notif
 
 Kite accepts mail before this analysis. Forward-only routing occurs before stored-message filtering and is outside the filter's v1 scope.
 
+### The reader's warning
+
+A message that stayed in the Inbox still shows what its authentication found: a failed SPF, DKIM or DMARC check, a DKIM signature that passed but was not issued for the From domain, a Reply-To address on a different domain than the message, or a display name that reuses a contact you have saved or mailed before with a different address, all show as a calm warning above the message, listing only the checks that actually apply, plus a small "Unverified sender" badge next to the sender's name there and on that message in the conversation. A message that passed cleanly shows neither, known contact or not, and so does one from before this feature shipped (`messages.spam_signals` was empty or missing). Nothing is re-checked to show it: the warning reads the signals already described above, and the display-name match reuses the same trusted-contact lookup automatic reading already makes when a sender's name matches a contact at a different address.
+
 ## Forged headers and sender names
 
 A sender writes its own From name, `Message-ID`, `In-Reply-To` and `References`. Kite does not let those headers change what you already have (upstream Mailflare #220, #223, #224, #226):

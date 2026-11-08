@@ -33,6 +33,8 @@ import { LinkifiedText } from "./linkified-text";
 import { useReaderBody, useTranslatedReaderBody, type ReaderBodyInput } from "./use-reader-body";
 import { SuggestionCard } from "../agent/suggestion-card";
 import { useT } from "@/lib/i18n/use-t";
+import { SenderAuthBadge } from "./sender-auth-badge";
+import { deriveSenderAuthWarning } from "./sender-auth-warning-utils";
 import { MessageTranslationBar } from "./message-translation-bar";
 import { useMessageTranslation } from "./use-message-translation";
 import { isSummaryEligible } from "@/lib/agent/summaries/summary-utils";
@@ -241,6 +243,8 @@ export function ConversationMessageCard({
 	const expanded = locallyExpanded;
 	const sender = getConversationSender(message, currentAccountName);
 	const senderEmail = getConversationSenderEmail(message);
+	// spamSignals is only ever set on inbound mail, so a sent message in the thread derives no warning.
+	const senderAuthWarning = deriveSenderAuthWarning(message.spamSignals, null);
 	const recipients = getConversationRecipients(message, showFullRecipientAddresses ? "full" : "address");
 	// const href = `${getMessageBackHref(message.direction, message.status)}/${message.id}`;
 	const outbound = message.direction === "outbound";
@@ -299,6 +303,7 @@ export function ConversationMessageCard({
 									)}
 								>
 									<span dir="auto">{sender}</span>
+									<SenderAuthBadge warning={senderAuthWarning} className="ms-1" />
 									{expanded && <span className="text-xs ms-1 opacity-50 font-normal">&lt;{senderEmail}&gt;</span>}
 								</span>
 								{expanded && recipients && (

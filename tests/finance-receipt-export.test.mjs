@@ -59,6 +59,23 @@ test("blankRemoteImages blanks the real src even when a data-src attribute comes
 	assert.ok(realSrc?.startsWith("data:"), `expected the real src to be blanked, got: ${out}`);
 });
 
+test("blankRemoteImages blanks the real src even when another attribute's value contains the literal text src=\" (S1')", () => {
+	// A regex anchored on an attribute name, however carefully it avoids matching inside another attribute's
+	// *name* (the data-src case above), still cannot tell that name from the same literal text sitting inside
+	// a *value* the sanitizer keeps verbatim (alt, title): `<img alt="pay src=" ... src="real">` reads, to a
+	// regex, as if "pay src=" had opened a second src attribute. A real parser never makes this mistake, since
+	// it tracks attribute boundaries, not substrings.
+	const html = `<img alt="pay src=" width="1" src="https://e.example/4c">`;
+	const out = blankRemoteImages(html);
+	assert.ok(!out.includes("e.example"), `expected the real src to be blanked, got: ${out}`);
+});
+
+test("noopenerLinks adds rel even when another attribute's value contains the literal text rel=\" (S1')", () => {
+	const html = `<a href="https://evil.example" title="see rel=" target="_blank">a</a>`;
+	const out = noopenerLinks(html);
+	assert.match(out, /rel="noopener noreferrer"/, `expected rel to be added, got: ${out}`);
+});
+
 test("blankRemoteStyleUrls drops the whole style value with a remote url(), but keeps a bare data: one", () => {
 	const html = `<div style="background:url('https://evil.example/bg.png')">x</div><div style="background:url(data:image/png;base64,AAAA)">y</div>`;
 	const out = blankRemoteStyleUrls(html);

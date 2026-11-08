@@ -2,25 +2,26 @@
  * Turns the already-stored-sanitized message HTML (`sanitizeStoredEmailHtml`, which keeps remote images and
  * `cid:` references so nothing visible is lost on screen) into a standalone document with no remote content: every
  * `<img src>` that is not already a `data:` URI is blanked, and a `style` attribute that could reference anything
- * (`url(`, `image-set(`, or a backslash, which CSS accepts as an escape inside a function name or a URL, including
- * the `&quot;`-escaped form the sanitizer's own output already uses for a literal quote) has its whole value
- * dropped rather than surgically edited: CSS has too many ways to spell the same function name to blocklist
- * reliably. `buildReceiptHtmlDocument` also sets a strict Content-Security-Policy (`img-src data:`, no
+ * (`url(`, `image-set(`, or a backslash, which CSS accepts as an escape inside a function name or a URL) has its
+ * whole value dropped rather than surgically edited: CSS has too many ways to spell the same function name to
+ * blocklist reliably. `buildReceiptHtmlDocument` also sets a strict Content-Security-Policy (`img-src data:`, no
  * `default-src`) as the real backstop, enforced by the browser's resource loader after full CSS parsing, so a
  * style-stripping gap here is defense in depth, not the only thing standing between the file and a remote request.
+ *
+ * This reads and rewrites attributes with `htmlparser2` (the same tokenizer `stored-html-utils.ts` sanitizes mail
+ * with), not regular expressions over the raw markup: a regex anchored on `\bsrc="` or `\brel="` cannot tell an
+ * `<img>`'s own `src` from the literal text `src="…"` sitting inside that same tag's `alt` or `title` value (which
+ * the sanitizer keeps verbatim), so a crafted `alt`/`title` could make the real attribute's value survive
+ * untouched. The parser never confuses one attribute's value for another's name.
  *
  * `cid:` inline images are blanked too (v1 does not embed them as `data:` URIs): the document stays strictly
  * self-contained rather than silently showing a half-resolved image.
  */
 
+import { Parser } from "htmlparser2";
+
 const BLANK_PIXEL = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
 
-/** `(?<![\w-])` (not `\b`) before `src=`, because `\b` fires between the hyphen and the `s` of `data-src=` just as
- * readily as before a real `src=`; the sanitizer keeps `data-*` attributes, so `<img data-src="..." src="...">`
- * is a real input, and a `\b`-based pattern matches `data-src`'s value instead, leaving the real `src` (the one a
- * browser or a less careful previewer actually loads) untouched. */
-const IMG_SRC = /(<img\b[^>]*?(?<![\w-])src=")([^"]*)(")/gi;
-const STYLE_ATTR = /(\sstyle=")([^"]*)(")/gi;
 /** A backslash (CSS's escape character, valid inside a function name or a URL) or a numeric character reference:
  * never needed by an ordinary style value, always suspicious here. */
 const ALWAYS_RISKY = /\\|&#/;
@@ -29,9 +30,9 @@ const ALWAYS_RISKY = /\\|&#/;
 const IMAGE_SET_FN = /image-set\(/i;
 /** Everything between one `url(` and its first `)`; a `data:` URI's base64 body never contains a paren. */
 const URL_FN = /url\(([^)]*)\)/gi;
-const QUOTE_PAIRS = ['"', "'", "&quot;"] as const;
+const QUOTE_PAIRS = ['"', "'"] as const;
 
-/** `url(...)`'s content with one matching pair of quotes removed, literal or the sanitizer's `&quot;` form. */
+/** `url(...)`'s content with one matching pair of quotes removed. */
 function unwrapUrlContent(raw: string): string {
 	const value = raw.trim();
 	for (const quote of QUOTE_PAIRS)
@@ -44,62 +45,117 @@ function isSafeDataUri(rawUrlContent: string): boolean {
 	return /^data:/i.test(unwrapUrlContent(rawUrlContent));
 }
 
-/** `(?<![\w-])` before `rel=`, the same reason `IMG_SRC` needs it before `src=`: `\brel="` fires inside a
- * `data-rel="..."` attribute too, so `<a target="_blank" data-rel="nofollow">` would read as "already has a
- * rel" and never get `rel="noopener noreferrer"` added, leaving `window.opener` reachable. */
-const BLANK_TARGET_LINK = /(<a\b(?=[^>]*\btarget=")(?![^>]*(?<![\w-])rel=")[^>]*)(>)/gi;
+/**
+ * The `style` value kept as is when every `url(...)` in it plainly names a `data:` URI, or `null` to drop the
+ * whole value: a bare `url(` the pattern below does not fully decode, `image-set(`, a CSS backslash escape or a
+ * numeric character reference anywhere in the value all drop it outright. CSS has too many ways to spell the
+ * same function name to blocklist exact forms reliably, so this errs toward dropping styling rather than risking
+ * a remote request; `buildReceiptHtmlDocument`'s Content-Security-Policy is the real backstop regardless.
+ */
+function sanitizedStyleValue(value: string): string | null {
+	if (ALWAYS_RISKY.test(value) || IMAGE_SET_FN.test(value)) return null;
+	const openCount = (value.match(/url\(/gi) ?? []).length;
+	let matched = 0;
+	URL_FN.lastIndex = 0;
+	for (let match = URL_FN.exec(value); match; match = URL_FN.exec(value)) {
+		matched += 1;
+		if (!isSafeDataUri(match[1])) return null;
+	}
+	// A "url(" with no matching ")", or more opens than this pass matched, is malformed enough to drop outright.
+	return matched === openCount ? value : null;
+}
 
 function isRemoteOrInlineImageSrc(src: string): boolean {
 	return !src.toLowerCase().startsWith("data:");
 }
 
+function escapeText(value: string): string {
+	return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function escapeAttribute(value: string): string {
+	return escapeText(value).replace(/"/g, "&quot;");
+}
+
+const VOID_TAGS = new Set([
+	"area",
+	"base",
+	"br",
+	"col",
+	"embed",
+	"hr",
+	"img",
+	"input",
+	"link",
+	"meta",
+	"source",
+	"track",
+	"wbr",
+]);
+
+type StripOptions = { images?: boolean; styles?: boolean; links?: boolean };
+
+/**
+ * One pass over the markup with `htmlparser2`, rewriting only the attributes `options` asks for and leaving
+ * everything else (tag and attribute order, text, entities already decoded back to their literal character)
+ * exactly as it was: the single implementation `blankRemoteImages`, `blankRemoteStyleUrls`, `noopenerLinks` and
+ * `stripRemoteContent` each call with a different subset enabled, so there is one tokenizing pass to keep
+ * correct instead of three separate regex implementations.
+ */
+function rewriteHtml(html: string, options: StripOptions): string {
+	const out: string[] = [];
+	const parser = new Parser(
+		{
+			onopentag(name, attributes) {
+				const attrs: Record<string, string> = { ...attributes };
+				if (options.images && name === "img" && typeof attrs.src === "string" && isRemoteOrInlineImageSrc(attrs.src)) {
+					attrs.src = BLANK_PIXEL;
+				}
+				if (options.links && name === "a" && "target" in attrs && !("rel" in attrs)) {
+					attrs.rel = "noopener noreferrer";
+				}
+				if (options.styles && typeof attrs.style === "string") {
+					attrs.style = sanitizedStyleValue(attrs.style) ?? "";
+				}
+				out.push(`<${name}`);
+				for (const [attrName, value] of Object.entries(attrs)) out.push(` ${attrName}="${escapeAttribute(value)}"`);
+				out.push(">");
+			},
+			onclosetag(name) {
+				if (!VOID_TAGS.has(name)) out.push(`</${name}>`);
+			},
+			ontext(text) {
+				out.push(escapeText(text));
+			},
+		},
+		{ decodeEntities: true, lowerCaseTags: true, lowerCaseAttributeNames: true },
+	);
+	parser.write(html);
+	parser.end();
+	return out.join("");
+}
+
 /** Blanks every image source that is not already a `data:` URI (remote `http(s)`/`//`, and `cid:` references). */
 export function blankRemoteImages(html: string): string {
-	return html.replace(IMG_SRC, (match, before: string, src: string, after: string) =>
-		isRemoteOrInlineImageSrc(src) ? `${before}${BLANK_PIXEL}${after}` : match,
-	);
+	return rewriteHtml(html, { images: true });
 }
 
 /**
  * Drops the whole value of a `style` attribute that could reach outside the document, leaving one with no such
- * risk untouched. A `url(...)` whose content is plainly (after stripping the quotes, including the `&quot;` form
- * the sanitizer's own output uses for a literal quote) a `data:` URI is kept, since that can never itself trigger
- * a further request; anything else — a bare `url(` the pattern above does not fully decode, `image-set(`, a CSS
- * backslash escape or a numeric character reference anywhere in the value — drops the whole value. CSS has too
- * many ways to spell the same function name to blocklist exact forms reliably, so this errs toward dropping
- * styling rather than risking a remote request; `buildReceiptHtmlDocument`'s Content-Security-Policy is the real
- * backstop regardless.
+ * risk untouched.
  */
 export function blankRemoteStyleUrls(html: string): string {
-	return html.replace(STYLE_ATTR, (_match, before: string, value: string, after: string) => {
-		if (ALWAYS_RISKY.test(value) || IMAGE_SET_FN.test(value)) return `${before}${after}`;
-		const openCount = (value.match(/url\(/gi) ?? []).length;
-		let matched = 0;
-		URL_FN.lastIndex = 0;
-		for (let match = URL_FN.exec(value); match; match = URL_FN.exec(value)) {
-			matched += 1;
-			if (!isSafeDataUri(match[1])) return `${before}${after}`;
-		}
-		// A "url(" with no matching ")", or more opens than this pass matched, is malformed enough to drop outright.
-		return matched === openCount ? `${before}${value}${after}` : `${before}${after}`;
-	});
+	return rewriteHtml(html, { styles: true });
 }
 
 /** Adds `rel="noopener noreferrer"` to a link opened in a new tab, so a standalone file never gets `window.opener`. */
 export function noopenerLinks(html: string): string {
-	return html.replace(
-		BLANK_TARGET_LINK,
-		(_match, start: string, close: string) => `${start} rel="noopener noreferrer"${close}`,
-	);
+	return rewriteHtml(html, { links: true });
 }
 
-/** Every stripping pass, in order; the result has no remote content and no scripts (already true of its input). */
+/** Every stripping concern, in one pass; the result has no remote content and no scripts (already true of its input). */
 export function stripRemoteContent(html: string): string {
-	return noopenerLinks(blankRemoteStyleUrls(blankRemoteImages(html)));
-}
-
-function escapeHtmlText(value: string): string {
-	return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+	return rewriteHtml(html, { images: true, styles: true, links: true });
 }
 
 export type ReceiptHtmlHeader = {
@@ -129,7 +185,7 @@ export function buildReceiptHtmlDocument(header: ReceiptHtmlHeader, bodyHtml: st
 <meta charset="utf-8">
 <meta name="robots" content="noindex">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'">
-<title>${escapeHtmlText(subject)}</title>
+<title>${escapeText(subject)}</title>
 <style>
 	body { margin: 0; padding: 24px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; color: #1a1a1a; background: #fff; }
 	.kite-receipt-header { border-bottom: 1px solid #ddd; margin-bottom: 20px; padding-bottom: 16px; }
@@ -141,9 +197,9 @@ export function buildReceiptHtmlDocument(header: ReceiptHtmlHeader, bodyHtml: st
 </head>
 <body>
 <dl class="kite-receipt-header">
-	<dt>From</dt><dd>${escapeHtmlText(from)}</dd>
-	<dt>Date</dt><dd>${escapeHtmlText(header.dateText)}</dd>
-	<dt>Subject</dt><dd>${escapeHtmlText(subject)}</dd>
+	<dt>From</dt><dd>${escapeText(from)}</dd>
+	<dt>Date</dt><dd>${escapeText(header.dateText)}</dd>
+	<dt>Subject</dt><dd>${escapeText(subject)}</dd>
 </dl>
 <div class="kite-receipt-body">${safeBody}</div>
 </body>

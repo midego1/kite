@@ -185,7 +185,10 @@ test("SPF for a Resend sender is found on Resend's return-path subdomains, not j
 });
 
 /** Stubs the Resend account state `getResendReceivingView` reads, then returns its "mx" step. */
-async function resendMxStep(t, { records = [], domainStatus = "pending", dnsAnswers = {} } = {}) {
+async function resendMxStep(
+	t,
+	{ records = [], domainStatus = "pending", dnsAnswers = {}, dnsFails = false, domain = {} } = {},
+) {
 	globalThis.__kiteResendKey = { configured: true, apiKey: "re_test", source: "settings" };
 	globalThis.__kiteResendDomain = {
 		id: "rd1",
@@ -196,8 +199,14 @@ async function resendMxStep(t, { records = [], domainStatus = "pending", dnsAnsw
 	};
 	globalThis.__kiteResendWebhooks = [{ id: "w1", endpoint: "https://app.example.com/api/inbound/resend" }];
 	globalThis.__kiteResendSettingsRows = [{ resendWebhookSecret: "whsec_test" }];
-	answerDns(t, dnsAnswers);
-	const view = await m.getResendReceivingView({}, manualDomain, "https://app.example.com");
+	if (dnsFails) {
+		t.mock.method(globalThis, "fetch", async () => {
+			throw new Error("offline");
+		});
+	} else {
+		answerDns(t, dnsAnswers);
+	}
+	const view = await m.getResendReceivingView({}, { ...manualDomain, ...domain }, "https://app.example.com");
 	return view.steps.find((step) => step.key === "mx");
 }
 
@@ -222,18 +231,42 @@ test("the Resend receiving MX step accepts any inbound-smtp record when Resend l
 	assert.equal(unrelated.ok, false);
 });
 
-test("an MX record Resend verified needs no DNS re-check", async (t) => {
-	const step = await resendMxStep(t, {
-		records: [resendMxRecord("inbound-smtp.ap-northeast-1.amazonaws.com", "verified")],
-		dnsAnswers: {},
-	});
-	assert.equal(step.ok, true);
-});
-
 test("an unrelated published MX still fails the Resend receiving MX step", async (t) => {
 	const step = await resendMxStep(t, {
 		records: [resendMxRecord("inbound-smtp.ap-northeast-1.amazonaws.com")],
 		dnsAnswers: { "example.com|MX": ["10 mail.other.net."] },
+	});
+	assert.equal(step.ok, false);
+});
+
+test("a record Resend once verified fails the step once its MX is gone from live DNS", async (t) => {
+	const step = await resendMxStep(t, {
+		records: [resendMxRecord("inbound-smtp.ap-northeast-1.amazonaws.com", "verified")],
+		dnsAnswers: {},
+	});
+	assert.equal(step.ok, false);
+});
+
+test("a verified record stands in only once live DNS cannot be checked from here", async (t) => {
+	const verified = await resendMxStep(t, {
+		records: [resendMxRecord("inbound-smtp.ap-northeast-1.amazonaws.com", "verified")],
+		dnsFails: true,
+	});
+	assert.equal(verified.ok, true);
+
+	const notVerified = await resendMxStep(t, {
+		records: [resendMxRecord("inbound-smtp.ap-northeast-1.amazonaws.com")],
+		dnsFails: true,
+	});
+	assert.equal(notVerified.ok, false);
+	assert.equal(notVerified.detail, m.MX_UNCHECKED);
+});
+
+test("an SES-receiving domain's own MX never counts as evidence for Resend's step", async (t) => {
+	const step = await resendMxStep(t, {
+		records: [],
+		dnsAnswers: { "example.com|MX": ["10 inbound-smtp.ap-northeast-1.amazonaws.com."] },
+		domain: { receivingProvider: "ses" },
 	});
 	assert.equal(step.ok, false);
 });

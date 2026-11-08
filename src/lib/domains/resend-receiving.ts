@@ -45,17 +45,33 @@ function inboundMx(records: { type: string; value: string; priority?: number; st
 }
 
 /**
- * A record Resend itself verified needs no second opinion. When Resend names
- * no inbound MX, any published inbound-smtp target proves the record.
+ * Live DNS evidence the domain's MX points at Resend: the exact record Resend named, or, when it named
+ * none, any inbound-smtp-shaped target — except on a domain whose receiving provider is already SES,
+ * where that same shape is the domain's own SES receiving, not Resend's.
+ */
+async function liveMxMatchesResend(
+	env: CloudflareEnv,
+	domain: DomainRow,
+	mx: { value: string } | null,
+): Promise<boolean | null> {
+	if (mx) return hasMx(env, domain, mx.value);
+	if (domain.receivingProvider === "ses") return false;
+	return hasMxMatching(env, domain, isInboundSmtpMx);
+}
+
+/**
+ * Live DNS first, so a record Resend once verified but whose MX was since removed or repointed shows as
+ * not pointing at Resend. Only when DNS cannot be checked from here does a record Resend itself reports
+ * as verified stand in for it.
  */
 async function resendMxOk(
 	env: CloudflareEnv,
 	domain: DomainRow,
 	mx: { value: string; status?: string } | null,
 ): Promise<boolean | null> {
-	if (mx?.status === "verified") return true;
-	if (mx) return hasMx(env, domain, mx.value);
-	return hasMxMatching(env, domain, isInboundSmtpMx);
+	const dnsOk = await liveMxMatchesResend(env, domain, mx);
+	if (dnsOk !== null) return dnsOk;
+	return mx?.status === "verified" ? true : null;
 }
 
 function isPublicHttps(origin: string): boolean {

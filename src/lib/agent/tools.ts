@@ -253,6 +253,7 @@ async function resolveSearchEmailsQuery(
 	const timeZone = context.timeZone ?? "UTC";
 	const parsed = parseSearchQuery(query, timeZone);
 	const tryHybrid = mode !== "keyword" && !input.cursor && parsed.text.trim().length > 0;
+	let note: string | undefined;
 	if (tryHybrid) {
 		const operatorConditions = await buildSearchConditions(query, timeZone, {
 			connectedAccounts: await viaSearchAvailable(context.env, query),
@@ -274,17 +275,17 @@ async function resolveSearchEmailsQuery(
 			};
 		// Explicitly asked for (unlike the UI chip's ambient default), so always worth a note, whether meaning is
 		// off for the install or failed outright for this one call (C-1 of review round 3: this used to print
-		// "(undefined)" whenever it was quietly off, since only a real failure ever sets semanticReason).
+		// "(undefined)" whenever it was quietly off, since only a real failure ever sets semanticReason). Falls
+		// through to the plain keyword conditions below rather than returning here (N-3 of review round 6): an
+		// early return skipped them, so the "keyword results instead" the note promised were actually the whole
+		// mailbox's newest mail, unfiltered by the query or its operators.
 		if (mode === "meaning")
-			return {
-				hybridIds: null,
-				note: result.semanticReason
-					? `Search by meaning is unavailable right now (${result.semanticReason}); these are keyword results instead.`
-					: "Search by meaning did not run for this search; these are keyword results instead.",
-			};
+			note = result.semanticReason
+				? `Search by meaning is unavailable right now (${result.semanticReason}); these are keyword results instead.`
+				: "Search by meaning did not run for this search; these are keyword results instead.";
 	}
 	conditions.push(...(await searchConditions(context, query)));
-	return { hybridIds: null };
+	return { hybridIds: null, ...(note ? { note } : {}) };
 }
 
 /** The fused, D1-rechecked ids in order (no cursor), or a date-ordered page with its cursor. */

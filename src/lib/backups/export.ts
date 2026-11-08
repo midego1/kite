@@ -173,6 +173,9 @@ const INTERNAL_TABLES = [
 	// live stores at the moment they were found, meaningless once restored into a database whose own sweep has
 	// not seen them, and the sweep finds any real ones again on its own.
 	"storage_cold_orphans",
+	// Per-key leases between a cold move and the orphan delete pass (migration 0103): always short-lived and
+	// meaningless once restored, since nothing in the restored database is actually holding one.
+	"storage_key_leases",
 	// The bookkeeping of a Money Watch "Scan last 90 days" (migration 0094): a cursor over the mail it was started on,
 	// meaningless in another database.
 	"finance_payment_scans",

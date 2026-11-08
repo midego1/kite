@@ -283,20 +283,23 @@ test("a Drive file whose source ETag is a multipart one (every Drive upload) sti
 	assert.equal(db.db.prepare("SELECT store_id FROM drive_items WHERE id = 'drv_a'").get().store_id, "sto_target");
 });
 
-test("a source object's SSE-KMS/SSE-C-shaped ETag (not a real content MD5, but no dash either) does not falsely fail the copy's verification", async (t) => {
+test("a source object's SSE-KMS/SSE-C ETag (a real, non-multipart 32-hex value that is not the content MD5) fails the copy's verification safely instead of corrupting anything", async (t) => {
 	const { env, db, queue } = await fixture(t);
 	await addStore(env, "sto_other", "kite-other");
 	await addStore(env, "sto_target", "kite-target");
 	const rawKey = "inbound/m2.eml";
 	const content = "bytes that came from an SSE-KMS or SSE-C encrypted source object";
-	// AWS documents SSE-KMS and SSE-C ETags as not being the object's content MD5, but they are not shaped like
-	// a multipart ETag either (no dash): the old `.includes("-")` check would have wrongly treated this as a
-	// real, comparable content hash and then failed the copy below when it does not match the fresh PUT's own
-	// real MD5 ETag.
+	// AWS documents SSE-KMS and SSE-C ETags as not being the object's content MD5, but on real AWS they are
+	// still exactly 32 hex characters, the same shape a real content MD5 has (round-5 review, L3b): there is no
+	// way to tell them apart from the shape alone, so `looksLikeContentMd5Etag` still treats this one as
+	// comparable. It still fails safe: the mismatch it finds below rejects the copy instead of trusting it, so
+	// nothing is ever corrupted, at the cost of retrying (and logging an error) every sweep without succeeding.
+	const sseEtag = "0123456789abcdef0123456789abcdef";
+	assert.notEqual(sseEtag, createHash("md5").update(content).digest("hex"), "must not coincide with the real MD5");
 	fake.buckets.get("kite-other").objects.set(rawKey, {
 		bytes: Buffer.from(content),
 		meta: { custom: {} },
-		etag: "a".repeat(40),
+		etag: sseEtag,
 		lastModified: new Date(),
 	});
 	db.db
@@ -313,9 +316,15 @@ test("a source object's SSE-KMS/SSE-C-shaped ETag (not a real content MD5, but n
 	});
 	await drain(env, queue);
 	const done = job(env, id);
-	assert.equal(done.errors, 0, done.last_error);
 	assert.equal(done.status, "completed");
-	assert.equal(targetText(rawKey), content, "copied despite the source's non-content-hash ETag");
+	assert.equal(done.errors, 2, "rejected once in the copy pass and once in verify, never silently trusted");
+	assert.match(done.last_error, /ETag does not match/);
+	assert.equal(fake.buckets.get("kite-target").objects.has(rawKey), false, "the rejected copy is not left behind");
+	assert.equal(
+		Buffer.from(fake.buckets.get("kite-other").objects.get(rawKey).bytes).toString("utf8"),
+		content,
+		"the source is never touched by a failed copy",
+	);
 });
 
 test("a cancelled migration stops after the current batch", async (t) => {

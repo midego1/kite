@@ -2,7 +2,7 @@ import { COLD_STORAGE_CLASS, R2_IA_TARGET, type ColdRule } from "./cold-utils";
 import { DEFAULT_STORE_ID } from "./config-utils";
 import { findSource, copyObject, locationAwareSources, matchesExisting } from "./migration";
 import { callStorageHook } from "./module-hooks";
-import { lookupObjectLocation, recordObjectLocation } from "./object-locations";
+import { clearOrphanCandidate, lookupObjectLocation, recordObjectLocation, withKeyLease } from "./object-locations";
 import type { Item } from "./cold-sources";
 import type { ObjectStore, RoutableClass, Storage } from "./types";
 
@@ -70,29 +70,38 @@ export async function moveColdObject(
 		});
 		return 0;
 	}
-	const present = await target.bucket.head(item.key);
-	let bytes = 0;
-	if (!matchesExisting(source.head, present, source.store.id, target.id)) {
-		const copied = await copyObject(source.store, source.head, target, item.key);
-		if (copied === null) throw new Error("The object disappeared from the source store during the copy");
-		bytes = copied;
-	} else {
-		bytes = present!.size;
-	}
-	const confirmed = await target.bucket.head(item.key);
-	if (!confirmed || confirmed.size !== source.head.size) throw new Error("The copy on the target store does not match");
-	// The location is recorded before the source copy is deleted: a crash in between leaves a harmless extra
-	// copy at the old store rather than an object nothing points to (`sourcesFor` above also self-heals by
-	// probing the rule's own target directly, in case the crash happened before this write ever lands).
-	await recordObjectLocation(env, {
-		key: item.key,
-		objectClass,
-		storeId: rule.target,
-		storageClass: null,
-		size: confirmed.size,
+	// The lease (held through the verify, the record and the delete below) is the one thing stopping the orphan
+	// delete pass from removing the only copy of this key while it is being moved back onto the very store a
+	// stale candidate names: the delete pass needs this same lease before it may delete anything either (`B2`).
+	return withKeyLease(env, item.key, async () => {
+		const present = await target.bucket.head(item.key);
+		let bytes = 0;
+		if (!matchesExisting(source.head, present, source.store.id, target.id)) {
+			const copied = await copyObject(source.store, source.head, target, item.key);
+			if (copied === null) throw new Error("The object disappeared from the source store during the copy");
+			bytes = copied;
+		} else {
+			bytes = present!.size;
+		}
+		const confirmed = await target.bucket.head(item.key);
+		if (!confirmed || confirmed.size !== source.head.size)
+			throw new Error("The copy on the target store does not match");
+		// The location is recorded before the source copy is deleted: a crash in between leaves a harmless extra
+		// copy at the old store rather than an object nothing points to (`sourcesFor` above also self-heals by
+		// probing the rule's own target directly, in case the crash happened before this write ever lands).
+		await recordObjectLocation(env, {
+			key: item.key,
+			objectClass,
+			storeId: rule.target,
+			storageClass: null,
+			size: confirmed.size,
+		});
+		await source.store.bucket.delete(item.key);
+		// The mark `recordObjectLocation` just made for this exact copy was only ever a precaution for the
+		// delete above failing; it did not, so there is nothing left for the orphan sweep to find here (`B1`).
+		await clearOrphanCandidate(env, source.store.id, item.key);
+		return bytes;
 	});
-	await source.store.bucket.delete(item.key);
-	return bytes;
 }
 
 /**
@@ -175,31 +184,37 @@ export async function moveColdDriveObject(
 		await callStorageHook("drive", "markCold", { ids: [item.id], storageClass: null, storeId: rule.target });
 		return { bytes: 0, moved: true };
 	}
-	const present = await target.bucket.head(item.key);
-	const bytes = matchesExisting(head, present, source.id, target.id)
-		? present!.size
-		: await copyObject(source, head, target, item.key);
-	if (bytes === null) throw new Error("The file disappeared from its store during the copy");
-	const confirmed = await target.bucket.head(item.key);
-	if (!confirmed || confirmed.size !== head.size) throw new Error("The copy on the target store does not match");
-	// The location is recorded before the row is repointed or the old copy is deleted, mirroring moveColdObject:
-	// a crash from here on still leaves a path to the bytes, through object_locations if nothing else.
-	await recordObjectLocation(env, {
-		key: item.key,
-		objectClass: "drive",
-		storeId: rule.target,
-		storageClass: null,
-		size: confirmed.size,
+	// Held through the verify, the record and the delete below, same reasoning as moveColdObject (`B2`): the
+	// orphan delete pass needs this same lease before it may delete any copy of this key either.
+	return withKeyLease(env, item.key, async () => {
+		const present = await target.bucket.head(item.key);
+		const bytes = matchesExisting(head, present, source.id, target.id)
+			? present!.size
+			: await copyObject(source, head, target, item.key);
+		if (bytes === null) throw new Error("The file disappeared from its store during the copy");
+		const confirmed = await target.bucket.head(item.key);
+		if (!confirmed || confirmed.size !== head.size) throw new Error("The copy on the target store does not match");
+		// The location is recorded before the row is repointed or the old copy is deleted, mirroring moveColdObject:
+		// a crash from here on still leaves a path to the bytes, through object_locations if nothing else.
+		await recordObjectLocation(env, {
+			key: item.key,
+			objectClass: "drive",
+			storeId: rule.target,
+			storageClass: null,
+			size: confirmed.size,
+		});
+		const marked = await callStorageHook<{ updated: number }>("drive", "markCold", {
+			ids: [item.id],
+			storageClass: null,
+			storeId: rule.target,
+		});
+		// The row may be gone by now (the file was trashed and purged, or deleted outright, since this item was
+		// read); only delete the old copy once the row is confirmed repointed, never on the strength of the copy
+		// alone, so a vanished row can never leave nothing pointing at either copy.
+		if (!marked?.updated) throw new Error("The file's row is gone; its old copy was kept");
+		await source.bucket.delete(item.key);
+		// Only a precaution for that delete failing; it did not, so there is nothing left to track (`B1`).
+		await clearOrphanCandidate(env, storeId, item.key);
+		return { bytes, moved: true };
 	});
-	const marked = await callStorageHook<{ updated: number }>("drive", "markCold", {
-		ids: [item.id],
-		storageClass: null,
-		storeId: rule.target,
-	});
-	// The row may be gone by now (the file was trashed and purged, or deleted outright, since this item was
-	// read); only delete the old copy once the row is confirmed repointed, never on the strength of the copy
-	// alone, so a vanished row can never leave nothing pointing at either copy.
-	if (!marked?.updated) throw new Error("The file's row is gone; its old copy was kept");
-	await source.bucket.delete(item.key);
-	return { bytes, moved: true };
 }

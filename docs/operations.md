@@ -422,39 +422,53 @@ deleted mid-sweep, a delete that could not reach its store last time, two delive
 different targets (the loser's copy has nothing naming it once the winner's `recordObjectLocation` overwrites
 the row, which marks it as part of the same write rather than a separate read-then-write so two truly
 simultaneous movers cannot both miss it), or a migration that finds the object reachable the normal way again
-and drops the now-stale cold location (`src/lib/storage/migration.ts`). Every one of these is recorded in
-`storage_cold_jobs`'s sibling table `storage_cold_orphans` as a candidate rather than deleted on the spot, and a
-candidate is only actually deleted once `orphanedAt` is at least `ORPHAN_GRACE_PERIOD_MS` old (seven days), no
-`completed` backup has been taken since the copy's own `movedAt` (restoring one merges `object_locations` rather
-than replacing it, so a retained backup can still expect these bytes to be there, however old the restore it
-came from — this is deliberately conservative: it is never narrowed to backups that provably still name this
+and drops the now-stale cold location (`src/lib/storage/migration.ts`). A move that deletes its own old copy
+itself (the normal case, `moveColdObject`/`moveColdDriveObject`) clears the mark `recordObjectLocation` made for
+it the moment that delete succeeds (round-5 review, `B1`): the mark exists only in case that delete fails, not
+as a permanent record, so a store a rule simply stopped targeting is never kept around by a leftover that was
+never actually left over.
+
+Every copy a move could not clean up itself is recorded in `storage_cold_jobs`'s sibling table
+`storage_cold_orphans` as a candidate rather than deleted on the spot, and a candidate is only actually deleted
+once `orphanedAt` is at least `ORPHAN_GRACE_PERIOD_MS` old (seven days), no `completed` backup finished in
+`[movedAt, firstOrphanedAt)` (restoring one merges `object_locations` rather than replacing it, so a backup
+retained from that exact window can still expect these bytes to be there; `firstOrphanedAt`, unlike `orphanedAt`,
+is never bumped by a deferral, so it stays the fixed moment this copy was actually superseded — a backup
+completed after that has the newer location instead, and once every backup in the window is itself pruned by
+retention the candidate stops being held back by backups at all, round-5 review's `B1`; this is still
+deliberately conservative within the window: never narrowed further to backups that provably still name this
 exact key, since reading each one's export to check would cost far more than the sweep saves), and, for a
 candidate that is not `object_locations`'s current row for its key, another copy of the key answers a HEAD at
-that current location first (closing the window where a new mover already claimed the key again but had not
-recorded it yet). A store an unresolved candidate still names cannot be deleted either. The five-minute
-maintenance runs this in two bounded passes, each a batch of up to 200 rows: `scanForOrphanCandidates`
-keyset-paginates through `object_locations` from a cursor saved in `storage_state` (round-robin, so a backlog
-larger than one batch is still fully covered over many runs instead of the same oldest rows absorbing every run
-forever) and marks what looks unreferenced; `deleteGracePeriodOrphans` deletes candidates whose grace period has
-passed, and otherwise pushes one it could not resolve (an unreachable store, a retained backup, the HEAD check
-above) to the back of its own queue (a fresh `orphanedAt`) instead of leaving it to block every candidate behind
-it indefinitely. The whole sweep skips entirely while a restore is active, needs recovery (an abandoned restore,
-or one whose own rollback failed, both left for the admin to resolve from the safety backup; the database is
-known to still be partially restored until that runs), or finished less than an hour ago: a restore's "deletes"
-segment empties `messages`, `message_attachments`, `drive_items` and `backups` before writing them back,
-possibly over several queue invocations (the rollback path does the same), and since `object_locations` survives
-a restore as a merge table, a sweep mid-restore would otherwise see every cold key as briefly unreferenced. A
-`backups` rule only sweeps the database export document each backup makes (`backups.r2_key`), not the mail file
-copies a [full backup](#full-backups) writes alongside it, which stay on their current store. **Run now**
-(`POST /api/admin/storage/cold/[class]`) starts a sweep immediately; saving a rule or running it now answers 409
-`MIGRATION_PENDING` before migration `0097` is applied, even once `0065` has been (`coldStorageTablesReady`).
-`GET /api/admin/storage/cold` reports each class's rule and its latest sweep. Logs: `storage.cold_errors`,
-`storage.cold_batch_failed`, `storage.cold_orphans_pruned`. Backups: `storage_cold_rules` and `object_locations`
-are in the `system` group; unlike `storage_stores` and `storage_routes`, a restore merges their rows into the
-target's current ones (`INSERT OR IGNORE`: a live row wins, and a row only the backup has is added back) rather
-than keeping or replacing them wholesale, since they are data that changes between backups, not store
-configuration. `storage_cold_jobs` and `storage_cold_orphans` are internal, so neither a sweep's progress nor a
-pending candidate is itself restored; a restored `object_locations` row is simply re-evaluated by the next scan.
+that current location first. That HEAD check alone does not close the window against a concurrent move, though:
+a cold move and this delete pass both take the same per-key lease (`storage_key_leases`, round-5 review's `B2`)
+before they may change where a key points or delete a copy of it, so the delete pass's final re-check and the
+move's own verify-record-delete sequence can never interleave — whichever acquires the lease first finishes
+before the other is allowed to start, instead of each confirming a copy the other is about to remove. A store an
+unresolved candidate still names cannot be deleted either. The five-minute maintenance runs this in two bounded
+passes, each a batch of up to 200 rows: `scanForOrphanCandidates` keyset-paginates through `object_locations`
+from a cursor saved in `storage_state` (round-robin, so a backlog larger than one batch is still fully covered
+over many runs instead of the same oldest rows absorbing every run forever) and marks what looks unreferenced;
+`deleteGracePeriodOrphans` deletes candidates whose grace period has passed, and otherwise pushes one it could
+not resolve (an unreachable store, a retained backup, the HEAD check above, the lease already held by a move in
+progress) to the back of its own queue (a fresh `orphanedAt`) instead of leaving it to block every candidate
+behind it indefinitely. The whole sweep skips entirely while a restore is active, needs recovery (an abandoned
+restore, or one whose own rollback failed, both left for the admin to resolve from the safety backup; the
+database is known to still be partially restored until that runs), or finished less than an hour ago: a
+restore's "deletes" segment empties `messages`, `message_attachments`, `drive_items` and `backups` before
+writing them back, possibly over several queue invocations (the rollback path does the same), and since
+`object_locations` survives a restore as a merge table, a sweep mid-restore would otherwise see every cold key
+as briefly unreferenced. A `backups` rule only sweeps the database export document each backup makes
+(`backups.r2_key`), not the mail file copies a [full backup](#full-backups) writes alongside it, which stay on
+their current store. **Run now** (`POST /api/admin/storage/cold/[class]`) starts a sweep immediately; saving a
+rule or running it now answers 409 `MIGRATION_PENDING` before migration `0097` is applied, even once `0065` has
+been (`coldStorageTablesReady`). `GET /api/admin/storage/cold` reports each class's rule and its latest sweep.
+Logs: `storage.cold_errors`, `storage.cold_batch_failed`, `storage.cold_orphans_pruned`. Backups:
+`storage_cold_rules` and `object_locations` are in the `system` group; unlike `storage_stores` and
+`storage_routes`, a restore merges their rows into the target's current ones (`INSERT OR IGNORE`: a live row
+wins, and a row only the backup has is added back) rather than keeping or replacing them wholesale, since they
+are data that changes between backups, not store configuration. `storage_cold_jobs`, `storage_cold_orphans` and
+`storage_key_leases` are internal, so neither a sweep's progress, a pending candidate nor a lease is itself
+restored; a restored `object_locations` row is simply re-evaluated by the next scan.
 
 A cold copy can still be lost if an admin disables scheduled backups (or their retention) entirely and then
 restores, or undoes a restore, more than seven days after a copy became unreferenced with no completed backup

@@ -139,12 +139,33 @@ export const storageColdOrphans = sqliteTable(
 		orphanedAt: integer("orphaned_at", { mode: "timestamp" })
 			.notNull()
 			.$defaultFn(() => new Date()),
+		/** When this row was first created, never bumped by a later deferral (unlike `orphanedAt` above): the
+		 * upper bound of the only window `(movedAt, firstOrphanedAt)` in which a completed backup could hold a
+		 * reference to this exact copy (`B1`). A backup completed after this copy was superseded has the newer
+		 * location instead, so it is never a reason to keep waiting. */
+		firstOrphanedAt: integer("first_orphaned_at", { mode: "timestamp" })
+			.notNull()
+			.$defaultFn(() => new Date()),
 	},
 	(t) => [
 		uniqueIndex("storage_cold_orphans_store_key_idx").on(t.storeId, t.key),
 		index("storage_cold_orphans_orphaned_at_idx").on(t.orphanedAt),
 	],
 );
+
+/**
+ * A short-lived, per-key mutual-exclusion lease (migration 0103) between whichever side is currently changing
+ * where a key's bytes live: a cold move (verifying, recording and deleting its own old copy) and the orphan
+ * delete pass (deleting a non-current candidate's copy, `cold-orphans.ts`). Whoever holds the lease is the only
+ * one allowed to delete a copy of that key right now, which is what stops the delete pass from removing the
+ * only readable copy while a move puts the key back onto the very store a candidate names (`B2`). Rows are
+ * ephemeral: a caller deletes its own when done, and an expired one (`leaseUntil` in the past) is simply
+ * reclaimed by whoever asks next, never swept separately.
+ */
+export const storageKeyLeases = sqliteTable("storage_key_leases", {
+	key: text("key").primaryKey(),
+	leaseUntil: integer("lease_until", { mode: "timestamp" }).notNull(),
+});
 
 /**
  * One continuously-resumed sweep per class: the nightly cron (re)starts it when idle, batches ride

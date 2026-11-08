@@ -236,7 +236,7 @@ test("deleting a store is refused while a route, a Drive file or a running migra
 	// leftover) has no object_locations row of its own any more, but still physically sits on the store.
 	env.DB.db
 		.prepare(
-			"INSERT INTO storage_cold_orphans (id, store_id, key, object_class, moved_at, orphaned_at) VALUES ('sco_1', 'sto_a', 'backups/database/leftover.json', 'backups', 1, 1)",
+			"INSERT INTO storage_cold_orphans (id, store_id, key, object_class, moved_at, orphaned_at, first_orphaned_at) VALUES ('sco_1', 'sto_a', 'backups/database/leftover.json', 'backups', 1, 1, 1)",
 		)
 		.run();
 	const orphanCopy = await stores.deleteStore(env, actor, "sto_a");

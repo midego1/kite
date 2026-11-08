@@ -10,7 +10,9 @@ type LocationEnv = { DB: D1Database };
  * Records a cold-moved copy nothing in `object_locations` points at any more as a candidate for the orphan
  * sweep (`cold.ts`), which deletes it only after a grace period (and no retained backup could still need it,
  * `movedAt`), re-checking its reference at that point. A second mark of the same copy is a no-op (`storeId, key`
- * is unique).
+ * is unique). `firstOrphanedAt` starts equal to `orphanedAt` but, unlike it, is never bumped by a later deferral
+ * (`B1`): it is the fixed upper bound of the only window a completed backup could still hold a reference to
+ * this exact copy in.
  */
 export async function markOrphanCandidate(
 	env: LocationEnv,
@@ -27,11 +29,87 @@ export async function markOrphanCandidate(
 				objectClass: input.objectClass,
 				movedAt: input.movedAt,
 				orphanedAt: now,
+				firstOrphanedAt: now,
 			})
 			.onConflictDoNothing();
 	} catch (error) {
 		if (isNoSuchTableError(error)) return;
 		throw error;
+	}
+}
+
+/** Drops a specific copy's orphan-candidate row once its own mover has deleted the bytes itself (`B1`): marking
+ * it was only ever a precaution for the case that delete failed, and it did not, so there is nothing left to
+ * track. Harmless if nothing was ever marked. */
+export async function clearOrphanCandidate(env: LocationEnv, storeId: string, key: string): Promise<void> {
+	try {
+		await env.DB.prepare("DELETE FROM storage_cold_orphans WHERE store_id = ? AND key = ?").bind(storeId, key).run();
+	} catch (error) {
+		if (isNoSuchTableError(error)) return;
+		throw error;
+	}
+}
+
+/** How long a key lease (below) is held before it is treated as abandoned and reclaimed by whoever asks next:
+ * generous for a single cold move or delete, including a large multipart copy, without leaving a crashed
+ * caller's claim stuck for long. */
+const KEY_LEASE_MS = 5 * 60_000;
+
+/**
+ * Claims the exclusive right to change where `key` points or delete one of its copies, returning the lease's
+ * expiry (seconds) on success or `null` when someone else already holds it. This is the one serialization
+ * point between a cold move (about to verify, record and delete its own old copy) and the orphan delete pass
+ * (about to delete a non-current candidate's copy), so neither can undo what the other just confirmed (`B2`).
+ * Before migration 0103 there is no lease table to coordinate through; acquiring always "succeeds" there
+ * rather than refusing every move and every cleanup run over a table that cannot exist yet.
+ */
+export async function claimKeyLease(env: LocationEnv, key: string, now = new Date()): Promise<number | null> {
+	const nowSeconds = Math.floor(now.getTime() / 1000);
+	const until = nowSeconds + Math.floor(KEY_LEASE_MS / 1000);
+	try {
+		const result = await env.DB.prepare(
+			`INSERT INTO storage_key_leases (key, lease_until) VALUES (?, ?)
+			 ON CONFLICT (key) DO UPDATE SET lease_until = excluded.lease_until WHERE lease_until < ?`,
+		)
+			.bind(key, until, nowSeconds)
+			.run();
+		return (result.meta?.changes ?? 0) > 0 ? until : null;
+	} catch (error) {
+		if (isNoSuchTableError(error)) return until;
+		throw error;
+	}
+}
+
+/**
+ * Releases a lease this caller holds, matched by the exact expiry `claimKeyLease` returned: a no-op once that
+ * value no longer matches, which means either it was already released or it expired and someone else's claim
+ * is there now, never a lease that is currently someone else's to hold.
+ */
+export async function releaseKeyLease(env: LocationEnv, key: string, until: number): Promise<void> {
+	try {
+		await env.DB.prepare("DELETE FROM storage_key_leases WHERE key = ? AND lease_until = ?").bind(key, until).run();
+	} catch (error) {
+		if (isNoSuchTableError(error)) return;
+		throw error;
+	}
+}
+
+/** Thrown by `withKeyLease` when another cold move or the delete pass already holds `key`'s lease; caught the
+ * same way any other per-item failure is, so the item is simply retried on a later batch or sweep. */
+class KeyLeaseError extends Error {}
+
+/**
+ * Runs `fn` only while holding the exclusive lease on `key`, releasing it however `fn` ends. A cold move wraps
+ * its own verify-copy-record-delete sequence in this (`B2`), so the delete pass can never remove the only copy
+ * while a move is putting the key back onto that very store, and vice versa.
+ */
+export async function withKeyLease<T>(env: LocationEnv, key: string, fn: () => Promise<T>): Promise<T> {
+	const lease = await claimKeyLease(env, key);
+	if (lease === null) throw new KeyLeaseError(`Another operation currently holds the lease for "${key}"`);
+	try {
+		return await fn();
+	} finally {
+		await releaseKeyLease(env, key, lease);
 	}
 }
 
@@ -53,11 +131,11 @@ export async function recordObjectLocation(
 ): Promise<void> {
 	const now = Math.floor(Date.now() / 1000);
 	const markPrevious = env.DB.prepare(
-		`INSERT INTO storage_cold_orphans (id, store_id, key, object_class, moved_at, orphaned_at)
-		 SELECT ?, store_id, key, object_class, moved_at, ?
+		`INSERT INTO storage_cold_orphans (id, store_id, key, object_class, moved_at, orphaned_at, first_orphaned_at)
+		 SELECT ?, store_id, key, object_class, moved_at, ?, ?
 		 FROM object_locations WHERE key = ? AND store_id <> ?
 		 ON CONFLICT (store_id, key) DO NOTHING`,
-	).bind(newId("sco"), now, input.key, input.storeId);
+	).bind(newId("sco"), now, now, input.key, input.storeId);
 	const upsert = env.DB.prepare(
 		`INSERT INTO object_locations (key, object_class, store_id, storage_class, size, moved_at) VALUES (?, ?, ?, ?, ?, ?)
 		 ON CONFLICT (key) DO UPDATE SET store_id = excluded.store_id, storage_class = excluded.storage_class,

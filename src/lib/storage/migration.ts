@@ -164,11 +164,14 @@ function lengthOption(target: ObjectStore, length: number) {
 }
 
 /**
- * Whether `etag` is shaped like a real single-part content MD5 (32 hex characters) rather than something that
- * only looks like an ETag: a multipart one (`<hash>-<parts>`, which also encodes the part boundaries used to
- * make it, not just the bytes) or one from SSE-KMS or SSE-C server-side encryption, which AWS documents as not
- * being a hash of the object data at all. An MD5 is always exactly this shape, so this can only under-trust an
- * ETag, never wrongly treat a non-comparable one as comparable.
+ * Whether `etag` is shaped like a real single-part content MD5 (32 hex characters): an MD5 is always exactly
+ * this shape, so this reliably catches a multipart ETag (`<hash>-<parts>`, which also encodes the part
+ * boundaries used to make it, not just the bytes). It does not reliably catch SSE-KMS or SSE-C server-side
+ * encryption on real AWS (round-5 review, `L3b`): those ETags are documented as not being a hash of the object
+ * data, but are still 32 hex characters, the same shape a real MD5 has, so there is no way to tell them apart
+ * by shape alone. The copy below still fails safe when that happens: the mismatch this lets through is caught
+ * there and rejected rather than trusted, so a wrongly "comparable" ETag can corrupt nothing, only make an
+ * S3-to-S3 copy off an SSE-KMS/SSE-C source retry every sweep instead of ever completing.
  */
 function looksLikeContentMd5Etag(etag: string): boolean {
 	return /^[0-9a-f]{32}$/i.test(etag);

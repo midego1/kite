@@ -443,7 +443,7 @@ function MailSelectionToolbar({
 			<div
 				aria-hidden="true"
 				ref={measureRef}
-				className="pointer-events-none absolute left-0 top-0 flex w-max items-center gap-2 opacity-0"
+				className="pointer-events-none absolute start-0 top-0 flex w-max items-center gap-2 opacity-0"
 				style={{ visibility: "hidden" }}
 			>
 				{items.map((item) => (

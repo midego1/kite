@@ -4,7 +4,7 @@
 export const MONO = "font-(family-name:--font-geist-mono) text-[13px] tracking-[0.02em]";
 
 const BUTTON =
-	"inline-flex h-9 items-center justify-center gap-2 rounded-lg text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1";
+	"inline-flex h-9 items-center justify-center gap-2 rounded-lg text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 pointer-coarse:h-11";
 
 /** The filled action of the chrome: Deploy to Cloudflare, Open dashboard. */
 export const ctaPrimary = `${BUTTON} bg-blue-600 px-3 text-white hover:bg-blue-700 sm:px-4`;

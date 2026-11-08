@@ -4,7 +4,7 @@ interface CloudflareEnv {
 	BUCKET: R2Bucket;
 	INBOUND_QUEUE: Queue<import("./src/lib/email/inbound").InboundQueueMessage>;
 	// The agent queue also carries writing style backfills, background IMAP import jobs, connected-account syncs,
-	// Money Watch payment scans and its "Keep receipts" backfill.
+	// connected-account authentication rechecks, Money Watch payment scans and its "Keep receipts" backfill.
 	AGENT_QUEUE?: Queue<
 		| { kind: "agent.draft"; jobId: string }
 		| { kind: "agent.triage"; jobId: string }
@@ -13,6 +13,7 @@ interface CloudflareEnv {
 		| import("./src/lib/import/jobs").ImportJobQueueMessage
 		| import("./src/lib/external-accounts/sync-utils").ExternalSyncMessage
 		| import("./src/lib/external-accounts/sync-utils").ExternalWritebackMessage
+		| import("./src/lib/external-accounts/auth-recheck-utils").AuthRecheckMessage
 		| import("./src/lib/finance/payment-scan").PaymentScanMessage
 		| import("./src/lib/finance/receipt-backfill").BackfillMessage
 		| { kind: "agent.assistant_email"; requestId: string }

@@ -90,7 +90,7 @@ export function SubscriptionRowMenu({ item, onEdit, onCancelLink, onChanged }: M
 				<button
 					type="button"
 					aria-label={`More actions for ${item.vendor}`}
-					className="shrink-0 rounded-md p-1.5 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+					className="flex shrink-0 items-center justify-center rounded-md p-1.5 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 pointer-coarse:h-11 pointer-coarse:w-11"
 				>
 					<MoreHorizontal aria-hidden className="h-4 w-4" />
 				</button>

@@ -161,7 +161,10 @@ const INTERNAL_TABLES = [
 	// The bookkeeping of a Money Watch "Scan last 90 days" (migration 0094): a cursor over the mail it was started on,
 	// meaningless in another database.
 	"finance_payment_scans",
-	// The bookkeeping of "Save receipts for existing payments" (migration 0098): a cursor over this
+	// The bookkeeping of "Recheck authentication" on a connected account (migration 0100): a cursor over that
+	// account's own mail, meaningless in another database.
+	"external_account_auth_rechecks",
+	// The bookkeeping of "Save receipts for existing payments" (migration 0101): a cursor over this
 	// database's own finance rows, meaningless in another database.
 	"finance_receipt_backfills",
 	// The direct-uploads setup note and the dismissed reminder (migration 0085): the outcome of this deployment's own

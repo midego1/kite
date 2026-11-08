@@ -4,7 +4,7 @@ import { useState, type ComponentProps, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ChevronDown, Plus, Receipt, Settings, WalletCards } from "lucide-react";
 import { useStaleCommandCenterCards } from "@/components/command-center/use-card-query";
-import { mobilePrimaryActionClass } from "@/components/page-header-utils";
+import { mobilePrimaryActionClass, mobileScrollClearsFloatingActionClass } from "@/components/page-header-utils";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { useT } from "@/lib/i18n/use-t";
@@ -208,7 +208,9 @@ export function SubscriptionsView() {
 					Add subscription
 				</Button>
 			)}
-			<div className="mx-auto w-full max-w-4xl space-y-6 px-4 py-6 md:px-8">
+			<div
+				className={cn("mx-auto w-full max-w-4xl space-y-6 px-4 py-6 md:px-8", mobileScrollClearsFloatingActionClass)}
+			>
 				{tab === "payments" && <PaymentsView />}
 				{tab === "subscriptions" && error && (
 					<p role="alert" className="text-sm text-red-600">

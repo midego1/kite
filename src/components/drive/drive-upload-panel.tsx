@@ -23,7 +23,7 @@ function UploadRow({ entry, onCancel }: { entry: DriveUploadEntry; onCancel: (id
 						type="button"
 						onClick={() => onCancel(entry.id)}
 						aria-label={`Cancel ${entry.name}`}
-						className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-neutral-500 hover:bg-neutral-100"
+						className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-neutral-500 hover:bg-neutral-100 pointer-coarse:h-11 pointer-coarse:w-11"
 					>
 						<X size={14} />
 					</button>
@@ -91,7 +91,7 @@ export function DriveUploadPanel({
 					onClick={onClose}
 					disabled={active > 0}
 					aria-label="Close uploads"
-					className="flex h-8 w-8 items-center justify-center rounded-full text-neutral-600 hover:bg-neutral-200 disabled:invisible"
+					className="flex h-8 w-8 items-center justify-center rounded-full text-neutral-600 hover:bg-neutral-200 disabled:invisible pointer-coarse:h-11 pointer-coarse:w-11"
 				>
 					<X size={16} />
 				</button>

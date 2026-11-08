@@ -107,7 +107,7 @@ export function DriveBulkBar({
 				type="button"
 				onClick={handlers.onClear}
 				aria-label="Clear selection"
-				className="flex h-8 w-8 items-center justify-center rounded-md hover:bg-blue-100"
+				className="flex h-8 w-8 items-center justify-center rounded-md hover:bg-blue-100 pointer-coarse:h-11 pointer-coarse:w-11"
 			>
 				<X size={16} />
 			</button>

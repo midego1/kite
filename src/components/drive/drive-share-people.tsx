@@ -34,7 +34,7 @@ function ShareRow({
 					type="button"
 					onClick={() => onRemove(share)}
 					aria-label={`Stop sharing with ${share.email}`}
-					className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-neutral-500 hover:bg-neutral-100"
+					className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-neutral-500 hover:bg-neutral-100 pointer-coarse:h-11 pointer-coarse:w-11"
 				>
 					<X size={16} />
 				</button>

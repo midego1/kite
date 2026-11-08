@@ -475,6 +475,9 @@ export function MessageFolderPage({
 					"min-h-0 flex-1 overflow-y-auto overscroll-contain scrollbar-gutter-stable",
 					// Keyboard focus scrolls a row clear of the sticky pager.
 					paged && "scroll-pt-8",
+					// Clears the floating "New mail" button (mobile-compose-fab.tsx), which would otherwise sit
+					// over the last row's own actions on a phone or folded screen.
+					"max-md:pb-20",
 				)}
 				data-density={density}
 			>
@@ -518,11 +521,13 @@ export function MessageFolderPage({
 								canManage={access.canManage(message.mailboxId)}
 								onSelectedChange={updateSelectedMessage}
 								onRowClick={selectRow}
-								onMessageAction={async (messageId, action) => {
+								onMessageAction={async (messageId, action, folderId) => {
+									if (action === "spam" && !(await confirmReportSpam(1))) return;
 									await runBulkMessageAction(
 										expandSelectedIds([messageId]),
 										action,
 										action !== "read" && action !== "unread",
+										folderId,
 									);
 								}}
 								dragMessageIds={expandSelectedIds(selectedIds.includes(message.id) ? selectedIds : [message.id])}

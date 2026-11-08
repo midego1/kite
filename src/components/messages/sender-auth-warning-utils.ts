@@ -14,9 +14,12 @@ const CONCERN_ORDER: SenderAuthConcern[] = [
 /**
  * Reads the concerns already on `messages.spam_signals` plus the display-name match the reader
  * loaded with the message — never re-checks authentication or re-scans the message itself. Returns
- * `null` for a sender with nothing to flag, including every message that predates spam analysis
- * (`spamSignalsRaw` is then `null`, so `parseSpamSignals` returns an empty array) and any sender
- * whose mail passed cleanly, known contact or not.
+ * `null` for a sender with nothing to flag: every message whose mail passed cleanly, known contact
+ * or not, including one that predates spam analysis (`spamSignalsRaw` is then `null`, so
+ * `parseSpamSignals` returns an empty array). The exception is `spoofedContact`, computed fresh
+ * from the owner's current contacts whenever the message loads (`findSpoofedSenderContact`), not
+ * from `spam_signals`: a message that predates spam analysis, or whose stored signals are otherwise
+ * empty, can still carry a `display_name_spoof` concern on its own.
  */
 export function deriveSenderAuthWarning(
 	spamSignalsRaw: string | null | undefined,

@@ -156,13 +156,19 @@ export async function getMessageWithBodyForUser(env: CloudflareEnv, user: Sessio
 	const access = await getMailboxAccessLevel(db, user, row.mailboxId);
 	if (!access?.canRead) return null;
 	const message = await loadMessageBody(env, row);
-	const contactNames = await getMessageContactNames(env, message.userId, message.fromAddr, message.toAddr);
-	const attachments = await listMessageAttachments(env, messageId);
-	const unsubscribeUrl = await getUnsubscribeUrlFromRawR2Key(env, message.rawR2Key);
-	const sendState = (await loadSendStates(db, [message], user.id)).get(message.id);
-	const via = (await loadMessageVia(env, [message])).get(message.id);
-	const spoofedContact =
-		message.direction === "inbound" ? await findSpoofedSenderContact(env, message.userId, message.fromAddr) : null;
+	const [contactNames, attachments, unsubscribeUrl, sendStates, viaById, spoofedContact] = await Promise.all([
+		getMessageContactNames(env, message.userId, message.fromAddr, message.toAddr),
+		listMessageAttachments(env, messageId),
+		getUnsubscribeUrlFromRawR2Key(env, message.rawR2Key),
+		loadSendStates(db, [message], user.id),
+		loadMessageVia(env, [message]),
+		// A failed or slow contact scan must never keep the message itself from opening.
+		message.direction === "inbound"
+			? findSpoofedSenderContact(env, message.userId, message.fromAddr).catch(() => null)
+			: Promise.resolve(null),
+	]);
+	const sendState = sendStates.get(message.id);
+	const via = viaById.get(message.id);
 	return {
 		message: {
 			...message,

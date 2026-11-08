@@ -45,6 +45,12 @@ test("a known contact whose mail passed cleanly gets no warning", () => {
 	assert.equal(deriveSenderAuthWarning(clean, null), null);
 });
 
+test("a message that predates spam analysis still gets a warning when its display name is spoofed", () => {
+	const warning = deriveSenderAuthWarning(null, "maya@example.com");
+	assert.deepEqual(warning.concerns, ["display_name_spoof"]);
+	assert.equal(warning.spoofedContact, "maya@example.com");
+});
+
 test("a failed SPF, DKIM or DMARC check is surfaced, most serious first", () => {
 	const failed = signals(
 		{ id: "spf_failed", score: 6, reason: "SPF authentication failed" },

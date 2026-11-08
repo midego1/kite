@@ -244,6 +244,9 @@ export function ConversationMessageCard({
 	const sender = getConversationSender(message, currentAccountName);
 	const senderEmail = getConversationSenderEmail(message);
 	// spamSignals is only ever set on inbound mail, so a sent message in the thread derives no warning.
+	// The display-name check is left out here (unlike the open message's own badge): it needs a
+	// per-sender contact scan, and a thread can hold many distinct senders, so it runs only once,
+	// for the message actually open in the reader, not once per row of every thread rendered.
 	const senderAuthWarning = deriveSenderAuthWarning(message.spamSignals, null);
 	const recipients = getConversationRecipients(message, showFullRecipientAddresses ? "full" : "address");
 	// const href = `${getMessageBackHref(message.direction, message.status)}/${message.id}`;

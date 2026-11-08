@@ -446,18 +446,27 @@ old window and old grace clock.
 
 That HEAD check alone does not close the window against a concurrent move: a cold move and this delete pass
 both need the fencing token on the key's own `object_locations` row (`leaseToken`/`claimedUntil`) before either
-may change where the key points or delete a copy of it. A plain time-boxed lease (round 5's first attempt, with
-its own `storage_key_leases` table) is not enough by itself, because nothing re-checked it once handed out: a
-move that ran long enough for it to expire could still land its delete after the sweep had already taken over
-the key (round-6 review, `B3`). The token closes that instead of the timer: `recordObjectLocation` only commits
-while the exact token it was given is still the one on the row and `claimedUntil` has not passed, checked and
-cleared in the same statement, the same way `import_jobs.lease_until` fences a sync run's writes (above). A move
-renews its token between multipart parts and again right before that commit, so a legitimately long copy keeps
-it current; a move that falls behind anyway has its commit refused rather than trusted, and it must not delete
-its old copy once that happens (it may still remove its own unrecorded new one). The delete pass renews under
-its own token once more immediately before the destructive delete, for the same reason. A store an unresolved
-candidate still names cannot be deleted either. The five-minute maintenance runs this in two bounded passes,
-each a batch of up to 200 rows: `scanForOrphanCandidates` keyset-paginates through `object_locations` from a
+may change where the key points or delete a copy of it; a key with no row yet (a store migration can leave
+exactly that, having just dropped one) is claimed by creating one under the claim rather than going unprotected
+(`claimOrCreateLocationLease`, round-7 review). A plain time-boxed lease (round 5's first attempt, with its own
+`storage_key_leases` table) is not enough by itself, because nothing re-checked it once handed out: a move that
+ran long enough for it to expire could still land its delete after the sweep had already taken over the key
+(round-6 review, `B3`). The token closes that instead of the timer: `recordObjectLocation` only commits while
+the exact token it was given is still the one on the row and `claimedUntil` has not passed, checked and cleared
+in the same statement, the same way `import_jobs.lease_until` fences a sync run's writes (above). A move renews
+its token between multipart parts, and once more after the copy (or the skip) and right before that commit, so
+neither a legitimately long multipart copy nor a plain single-part one loses it first; a move that falls behind
+anyway has its commit refused rather than trusted, and on a refused commit it deletes nothing (round-7 review,
+`B4`): a refusal means someone else has held the token since, and on that same key and target that someone may
+already be a second mover (a resent batch, a redelivered queue message) that has already recorded the target
+and deleted the source itself, so the target copy a refused move finds there can be the only copy left. It only
+marks the target a fresh orphan candidate, under one more claim and only while the live location does not
+already name it, so the normal grace period, backup window and lease-fenced delete pass settle its fate safely
+later. The delete pass renews under its own token once more immediately before its own destructive delete, for
+the same reason, though that renew-then-delete is not itself atomic: a stall of more than five minutes between
+the two, with a move taking the key back onto that exact store in between, could in theory still lose it. A
+store an unresolved candidate still names cannot be deleted either. The five-minute maintenance runs this in two
+bounded passes, each a batch of up to 200 rows: `scanForOrphanCandidates` keyset-paginates through `object_locations` from a
 cursor saved in `storage_state` (round-robin, so a backlog larger than one batch is still fully covered over
 many runs instead of the same oldest rows absorbing every run forever) and marks what looks unreferenced;
 `deleteGracePeriodOrphans` deletes candidates whose grace period has passed, and otherwise pushes one it could

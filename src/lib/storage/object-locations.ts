@@ -64,16 +64,35 @@ function isMissingLeaseColumn(error: unknown): boolean {
 
 export type LocationLease = { token: string };
 
+/** The claim attempt both variants below try first: steal an existing row's claim once it has expired, or take
+ * an unclaimed one. `null` means an existing row is validly claimed by someone else right now; what "no row at
+ * all" means is each caller's own to decide. */
+async function tryClaimExistingRow(
+	env: LocationEnv,
+	key: string,
+	token: string,
+	until: number,
+	nowSeconds: number,
+): Promise<LocationLease | null> {
+	const result = await env.DB.prepare(
+		`UPDATE object_locations SET lease_token = ?, claimed_until = ?
+		 WHERE key = ? AND (claimed_until IS NULL OR claimed_until < ?)`,
+	)
+		.bind(token, until, key, nowSeconds)
+		.run();
+	return (result.meta?.changes ?? 0) > 0 ? { token } : null;
+}
+
 /**
  * Claims the exclusive right to change `key`'s `object_locations` row or delete one of its copies: a fencing
  * token written to that row, checked and cleared in the very statement that later commits a move's new
  * location (`recordObjectLocation`) rather than a time limit alone, which round 5's design relied on and round
  * 6 found could still let a lease-holder's write land after the lease had already been handed to someone else
- * (`B3`). Returns the claim on success, `"none"` when the key has no row yet (a first-ever cold move: nothing
- * exists for anything else to race over, so there is nothing to protect), or `null` when someone else already
- * holds a still-valid claim on an existing row. Before migration 0103 there is no column to claim through;
- * acquiring then answers `"none"` rather than refusing every move and every cleanup run over columns that
- * cannot exist yet.
+ * (`B3`). Returns the claim on success, `"none"` when the key has no row yet (nothing exists for anything else
+ * to race over, so there is nothing to protect — the delete pass, the only caller left using this instead of
+ * `claimOrCreateLocationLease`, never writes a new location anyway), or `null` when someone else already holds
+ * a still-valid claim on an existing row. Before migration 0103 there is no column to claim through; acquiring
+ * then answers `"none"` rather than refusing every cleanup run over columns that cannot exist yet.
  */
 export async function claimLocationLease(
 	env: LocationEnv,
@@ -84,17 +103,51 @@ export async function claimLocationLease(
 	const token = newId("lease");
 	const until = nowSeconds + LEASE_SECONDS;
 	try {
-		const result = await env.DB.prepare(
-			`UPDATE object_locations SET lease_token = ?, claimed_until = ?
-			 WHERE key = ? AND (claimed_until IS NULL OR claimed_until < ?)`,
-		)
-			.bind(token, until, key, nowSeconds)
-			.run();
-		if ((result.meta?.changes ?? 0) > 0) return { token };
+		const claimed = await tryClaimExistingRow(env, key, token, until, nowSeconds);
+		if (claimed) return claimed;
 		const existing = await env.DB.prepare("SELECT 1 AS found FROM object_locations WHERE key = ?")
 			.bind(key)
 			.first<{ found: number }>();
 		return existing ? null : "none";
+	} catch (error) {
+		if (isNoSuchTableError(error) || isMissingLeaseColumn(error)) return "none";
+		throw error;
+	}
+}
+
+/**
+ * Claims the lease the same way as `claimLocationLease`, but when `key` has no row yet, creates one under the
+ * claim instead of answering `"none"` (round-7 review): a never-before-cold key is exactly the state a store
+ * migration leaves behind after dropping a stale location (`migration.ts`), and without a row to claim through,
+ * nothing stops a concurrent claimant from acting on the same key at the same time. `initial` is the caller's
+ * best-effort guess at the row it is working towards (its own intended target, which a successful
+ * `recordObjectLocation` call overwrites with the confirmed values; an aborted move simply leaves that guess
+ * behind, which is harmless: nothing yet depends on it, and the normal read chain is checked before this row
+ * ever is). Before migration 0103, or on a database still missing the lease columns from an earlier version of
+ * it (both degrade the same way `claimLocationLease` does), answers `"none"` rather than refusing every move
+ * over columns that cannot exist yet; otherwise either a row ends up claimed, or `null` because someone else
+ * already holds one.
+ */
+async function claimOrCreateLocationLease(
+	env: LocationEnv,
+	key: string,
+	initial: { objectClass: RoutableClass; storeId: string; storageClass: string | null; size: number },
+	now = new Date(),
+): Promise<LocationLease | "none" | null> {
+	const nowSeconds = Math.floor(now.getTime() / 1000);
+	const token = newId("lease");
+	const until = nowSeconds + LEASE_SECONDS;
+	try {
+		const claimed = await tryClaimExistingRow(env, key, token, until, nowSeconds);
+		if (claimed) return claimed;
+		const created = await env.DB.prepare(
+			`INSERT INTO object_locations (key, object_class, store_id, storage_class, size, moved_at, lease_token, claimed_until)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+			 ON CONFLICT (key) DO NOTHING`,
+		)
+			.bind(key, initial.objectClass, initial.storeId, initial.storageClass, initial.size, nowSeconds, token, until)
+			.run();
+		return (created.meta?.changes ?? 0) > 0 ? { token } : null;
 	} catch (error) {
 		if (isNoSuchTableError(error) || isMissingLeaseColumn(error)) return "none";
 		throw error;
@@ -152,17 +205,21 @@ export async function releaseLocationLease(env: LocationEnv, key: string, token:
 class LocationLeaseError extends Error {}
 
 /**
- * Runs `fn` only while holding the claim on `key` (or while there is nothing yet to claim, `"none"`), releasing
- * it however `fn` ends. A cold move wraps its own verify-copy-record-delete sequence in this (`B2`, `B3`), so
- * the delete pass can never remove the only copy while a move is putting the key back onto that very store,
- * and vice versa, for as long as the move keeps its claim renewed.
+ * Runs `fn` only while holding the claim on `key`, creating its `object_locations` row under that claim when
+ * it does not exist yet (`claimOrCreateLocationLease`; round-7 review), or while there is nothing to claim
+ * through at all before migration 0103 (`"none"`), releasing however `fn` ends. A cold move wraps its own
+ * verify-copy-record-delete sequence in this (`B2`, `B3`), so the delete pass can never remove the only copy
+ * while a move is putting the key back onto that very store, and vice versa, for as long as the move keeps its
+ * claim renewed; `initial` is the row the move is working towards, passed straight to
+ * `claimOrCreateLocationLease`.
  */
 export async function withLocationLease<T>(
 	env: LocationEnv,
 	key: string,
+	initial: { objectClass: RoutableClass; storeId: string; storageClass: string | null; size: number },
 	fn: (lease: LocationLease | undefined) => Promise<T>,
 ): Promise<T> {
-	const claimed = await claimLocationLease(env, key);
+	const claimed = await claimOrCreateLocationLease(env, key, initial);
 	if (claimed === null) throw new LocationLeaseError(`Another operation currently holds the lease for "${key}"`);
 	const lease = claimed === "none" ? undefined : claimed;
 	try {

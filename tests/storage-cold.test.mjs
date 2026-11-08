@@ -13,12 +13,14 @@ const { lib, fake, fixture, addStore } = await loadStorageServices(
 		router: "src/lib/storage/router.ts",
 		storageIndex: "src/lib/storage/index.ts",
 		objectLocations: "src/lib/storage/object-locations.ts",
+		coldMove: "src/lib/storage/cold-move.ts",
 	},
 );
 const { cold, router: routerLib, stores } = lib;
 const { clearStorageConfigCache } = lib.config;
 const { getStorage } = lib.storageIndex;
 const { recordObjectLocation } = lib.objectLocations;
+const { moveColdObject } = lib.coldMove;
 
 const schemaScratch = makeBundleDirectory("kite-storage-cold-schema-");
 after(() => rmSync(schemaScratch, { recursive: true, force: true }));
@@ -1140,6 +1142,43 @@ test("B3: recordObjectLocation's fenced write is refused once the token it was g
 	assert.equal(location(env, key).store_id, "sto_a", "the location was never actually changed");
 });
 
+test("a key with no object_locations row yet is still protected: claiming it creates the row under the claim, so a second claimant for the exact same never-before-cold key is refused", async (t) => {
+	const { env } = await fixture(t);
+	const key = "inbound/new.eml";
+	assert.equal(location(env, key), undefined, "never cold before: no row exists yet");
+
+	await lib.objectLocations.withLocationLease(
+		env,
+		key,
+		{ objectClass: "mail", storeId: "sto_a", storageClass: null, size: 10 },
+		async (lease) => {
+			assert.ok(lease, 'claimed by creating the row, not left unprotected as round 6\'s "none" did');
+			assert.equal(location(env, key).store_id, "sto_a", "the row now exists, under the claim");
+
+			// A second claimant on the exact same never-before-cold key (a store migration can leave exactly
+			// this state, round-7 review) is refused while the first still holds the row it created.
+			await assert.rejects(
+				() =>
+					lib.objectLocations.withLocationLease(
+						env,
+						key,
+						{ objectClass: "mail", storeId: "sto_b", storageClass: null, size: 20 },
+						async () => {},
+					),
+				/lease/i,
+			);
+		},
+	);
+
+	// Free again once the first claim released it.
+	await lib.objectLocations.withLocationLease(
+		env,
+		key,
+		{ objectClass: "mail", storeId: "sto_b", storageClass: null, size: 20 },
+		async (lease) => assert.ok(lease, "free again once the first claim released it"),
+	);
+});
+
 test("B2: a cold move backs off instead of racing the delete pass while the delete pass already holds the key's lease", async (t) => {
 	const { env, queue } = await fixture(t);
 	await addStore(env, "sto_a", "kite-target");
@@ -1304,4 +1343,159 @@ test("B2: a move whose lease has already lapsed mid-move, really interleaved wit
 	assert.equal(await (await routed.get(key)).text(), content, "a readable copy always survives");
 	assert.equal(location(env, key).store_id, "sto_d", "the move's record never landed; the old location stands");
 	assert.equal(fake.buckets.get("kite-target-2").objects.has(key), true, "the source the move never got to delete");
+});
+
+/**
+ * Reproduces B4: the lease lapses between a move's confirming HEAD and its own record, a second mover of the
+ * exact same key (a resent batch, a redelivered queue message — the normal recovery machinery a lapsed lease
+ * hands the key to) claims the freed lease and completes the whole move itself, and only then does the first
+ * mover's stale record attempt resume. The first mover's refusal must never delete the second mover's own,
+ * already-recorded copy: whichever direction, and whichever mover's own copy step actually ran, there must
+ * always be exactly the one copy the current location names, never zero.
+ */
+async function runSecondMoverTakeover(t, { sourceStoreId, sourceBucket, targetStoreId, targetBucket, skipCopy }) {
+	const { env } = await fixture(t);
+	await addStore(env, "sto_c", "kite-target");
+	await addStore(env, "sto_d", "kite-target-2");
+	const key = "inbound/m.eml";
+	const content = "the real content of this message, to be found afterwards";
+	await addMessage(env, "m", { body: content, createdAt: NOW - 90 * DAY });
+	// The message is currently cold on the source store...
+	fake.buckets.get(sourceBucket).objects.set(key, {
+		bytes: Buffer.from(content),
+		meta: { custom: {} },
+		etag: "es",
+		lastModified: new Date(),
+	});
+	env.DB.db
+		.prepare(
+			"INSERT INTO object_locations (key, object_class, store_id, storage_class, size, moved_at) VALUES (?, 'mail', ?, NULL, ?, ?)",
+		)
+		.run(key, sourceStoreId, Buffer.byteLength(content), NOW - 90 * DAY);
+	if (skipCopy) {
+		// The target already has byte-identical content, so the first mover's own copy step is skipped
+		// (`matchesExisting`); without this, it performs a real copy before the hook ever fires.
+		fake.buckets.get(targetBucket).objects.set(key, {
+			bytes: Buffer.from(content),
+			meta: { custom: {} },
+			etag: "et",
+			lastModified: new Date(),
+		});
+	}
+
+	const rule = { objectClass: "mail", afterDays: 30, minBytes: 0, target: targetStoreId };
+	const item = { id: "m", key, size: null, createdAt: new Date((NOW - 90 * DAY) * 1000) };
+	const storage = await getStorage(env);
+
+	interleaveBeforeRecord(env, async () => {
+		// Stands in for a move that ran past its lease window (a large Drive file, say).
+		env.DB.db.prepare("UPDATE object_locations SET claimed_until = 0 WHERE key = ?").run(key);
+		await moveColdObject(env, storage, "mail", rule, item);
+	});
+	await assert.rejects(() => moveColdObject(env, storage, "mail", rule, item), /lease/i);
+
+	const routed = routerLib.createStorageRouter(env);
+	assert.equal(await (await routed.get(key)).text(), content, "a readable copy always survives (B4)");
+	assert.equal(location(env, key).store_id, targetStoreId, "the second mover's own completed record stands");
+	assert.equal(fake.buckets.get(targetBucket).objects.has(key), true, "the live target copy was never deleted");
+}
+
+test("B4: a second mover D→C that takes over a lapsed lease and completes the move is never undone by the first mover's refused record (copy made)", async (t) => {
+	await runSecondMoverTakeover(t, {
+		sourceStoreId: "sto_d",
+		sourceBucket: "kite-target-2",
+		targetStoreId: "sto_c",
+		targetBucket: "kite-target",
+		skipCopy: false,
+	});
+});
+
+test("B4: a second mover D→C that takes over a lapsed lease and completes the move is never undone by the first mover's refused record (copy skipped)", async (t) => {
+	await runSecondMoverTakeover(t, {
+		sourceStoreId: "sto_d",
+		sourceBucket: "kite-target-2",
+		targetStoreId: "sto_c",
+		targetBucket: "kite-target",
+		skipCopy: true,
+	});
+});
+
+test("B4: a second mover C→D that takes over a lapsed lease and completes the move is never undone by the first mover's refused record (copy made)", async (t) => {
+	await runSecondMoverTakeover(t, {
+		sourceStoreId: "sto_c",
+		sourceBucket: "kite-target",
+		targetStoreId: "sto_d",
+		targetBucket: "kite-target-2",
+		skipCopy: false,
+	});
+});
+
+test("B4: a second mover C→D that takes over a lapsed lease and completes the move is never undone by the first mover's refused record (copy skipped)", async (t) => {
+	await runSecondMoverTakeover(t, {
+		sourceStoreId: "sto_c",
+		sourceBucket: "kite-target",
+		targetStoreId: "sto_d",
+		targetBucket: "kite-target-2",
+		skipCopy: true,
+	});
+});
+
+test("B4: the first mover's refused record only marks the target a candidate when the live location does not already name it", async (t) => {
+	const { env } = await fixture(t);
+	await addStore(env, "sto_c", "kite-target");
+	await addStore(env, "sto_d", "kite-target-2");
+	const { key, content } = setupB2RaceFixture(env);
+	await addMessage(env, "m", { body: content, createdAt: NOW - 90 * DAY });
+	const rule = { objectClass: "mail", afterDays: 30, minBytes: 0, target: "sto_c" };
+	const item = { id: "m", key, size: null, createdAt: new Date((NOW - 90 * DAY) * 1000) };
+	const storage = await getStorage(env);
+
+	interleaveBeforeRecord(env, async () => {
+		env.DB.db.prepare("UPDATE object_locations SET claimed_until = 0 WHERE key = ?").run(key);
+		await moveColdObject(env, storage, "mail", rule, item);
+	});
+	await assert.rejects(() => moveColdObject(env, storage, "mail", rule, item), /lease/i);
+
+	// The second mover's own record landed on sto_c, so the first mover's refusal must not mark that same
+	// copy a candidate (it is the live location, not a leftover): only the reverse case (B2/B3's tests above)
+	// exercises marking one, which this would otherwise immediately make eligible for deletion once a grace
+	// period passed, destroying the only copy all over again.
+	assert.equal(orphan(env, key, "sto_c"), undefined, "the live copy was never marked a candidate");
+});
+
+test("B4 (Drive): a second mover that takes over a lapsed lease and completes the move is never undone by the first mover's refused record", async (t) => {
+	const { env } = await fixture(t);
+	await addStore(env, "sto_c", "kite-target");
+	await addStore(env, "sto_d", "kite-target-2");
+	const content = Buffer.from("the real content of this drive file, to be found afterwards");
+	await addDriveFile(env, "drv_1", content, { storeId: "sto_d", createdAt: NOW - 90 * DAY });
+	env.DB.db
+		.prepare(
+			"INSERT INTO object_locations (key, object_class, store_id, storage_class, size, moved_at) VALUES ('drive/drv_1', 'drive', 'sto_d', NULL, ?, ?)",
+		)
+		.run(content.length, NOW - 90 * DAY);
+
+	const rule = { objectClass: "drive", afterDays: 30, minBytes: 0, target: "sto_c" };
+	const item = {
+		id: "drv_1",
+		key: "drive/drv_1",
+		size: content.length,
+		createdAt: new Date((NOW - 90 * DAY) * 1000),
+		storeId: "sto_d",
+	};
+	const storage = await getStorage(env);
+
+	interleaveBeforeRecord(env, async () => {
+		env.DB.db.prepare("UPDATE object_locations SET claimed_until = 0 WHERE key = ?").run(item.key);
+		await lib.coldMove.moveColdDriveObject(env, storage, rule, item);
+	});
+	await assert.rejects(() => lib.coldMove.moveColdDriveObject(env, storage, rule, item), /lease/i);
+
+	assert.equal(fake.buckets.get("kite-target").objects.has(item.key), true, "the live target copy was never deleted");
+	assert.equal(location(env, item.key).store_id, "sto_c", "the second mover's own completed record stands");
+	assert.equal(
+		env.DB.db.prepare("SELECT store_id FROM drive_items WHERE id = 'drv_1'").get().store_id,
+		"sto_c",
+		"the row was repointed by whichever mover actually finished",
+	);
 });

@@ -3,9 +3,12 @@ import { DEFAULT_STORE_ID } from "./config-utils";
 import { findSource, copyObject, locationAwareSources, matchesExisting } from "./migration";
 import { callStorageHook } from "./module-hooks";
 import {
+	claimLocationLease,
 	clearOrphanCandidate,
 	lookupObjectLocation,
+	markOrphanCandidate,
 	recordObjectLocation,
+	releaseLocationLease,
 	renewLocationLease,
 	withLocationLease,
 } from "./object-locations";
@@ -24,6 +27,33 @@ function sourcesFor(
 ): Promise<ObjectStore[]> {
 	const chain = [...storage.readChain(objectClass), storage.store(DEFAULT_STORE_ID)!];
 	return locationAwareSources(env, storage, chain, key, target);
+}
+
+/**
+ * On a refused record, never delete anything this mover has not itself recorded under a still-valid token
+ * (`B4`): the refusal means someone else has held the lease since, and on this exact key and target that may
+ * already be a second mover's own correctly recorded copy with its source already deleted; deleting it here
+ * would leave nothing. Under a fresh claim, mark the target a candidate only while the live location does not
+ * actually name it, so the normal grace period, backup window and lease-fenced delete pass settle its fate
+ * later instead of this mover destroying the only copy right now. Best effort: if the fresh claim itself loses
+ * the race, this mover leaves the target alone and lets whoever does hold it, or a later scan, sort it out.
+ */
+async function deferUnrecordedCopy(
+	env: LocationEnv,
+	key: string,
+	objectClass: RoutableClass,
+	targetStoreId: string,
+): Promise<void> {
+	const recheck = await claimLocationLease(env, key);
+	if (recheck === null || recheck === "none") return;
+	try {
+		const current = await lookupObjectLocation(env, key);
+		if (!current || current.storeId !== targetStoreId) {
+			await markOrphanCandidate(env, { storeId: targetStoreId, key, objectClass, movedAt: new Date() });
+		}
+	} finally {
+		await releaseLocationLease(env, key, recheck.token);
+	}
 }
 
 /**
@@ -81,61 +111,71 @@ export async function moveColdObject(
 	// being moved back onto the very store a stale candidate names: the delete pass needs this same lease
 	// before it may delete anything either (`B2`). A lapsed lease aborts instead of silently losing the race
 	// that leaves (`B3`): the record below only lands while it is still held, fenced in the same statement.
-	return withLocationLease(env, item.key, async (lease) => {
-		if (lease) await renewLocationLease(env, item.key, lease.token);
-		const present = await target.bucket.head(item.key);
-		let bytes = 0;
-		if (!matchesExisting(source.head, present, source.store.id, target.id)) {
-			const copied = await copyObject(source.store, source.head, target, item.key, item.key, {
-				onPart: lease
-					? async () => {
-							if (!(await renewLocationLease(env, item.key, lease.token)))
-								throw new Error("Lost the location lease during the copy");
-						}
-					: undefined,
-			});
-			if (copied === null) throw new Error("The object disappeared from the source store during the copy");
-			bytes = copied;
-		} else {
-			bytes = present!.size;
-		}
-		const confirmed = await target.bucket.head(item.key);
-		if (!confirmed || confirmed.size !== source.head.size)
-			throw new Error("The copy on the target store does not match");
-		// The location is recorded before the source copy is deleted: a crash in between leaves a harmless extra
-		// copy at the old store rather than an object nothing points to (`sourcesFor` above also self-heals by
-		// probing the rule's own target directly, in case the crash happened before this write ever lands).
-		const recorded = await recordObjectLocation(
-			env,
-			{ key: item.key, objectClass, storeId: rule.target, storageClass: null, size: confirmed.size },
-			lease,
-		);
-		if (!recorded) {
-			// The lease lapsed before the record could land: someone else (another move, or the delete pass)
-			// may already be acting on the old location, so the source must not be touched. The new copy on
-			// the target is not recorded anywhere, so it is safe to remove it ourselves (best effort only: it
-			// may already be gone, or something else may now be using it).
-			await target.bucket.delete(item.key).catch(() => undefined);
-			throw new Error("Lost the location lease before the move could be recorded; it will be retried");
-		}
-		// Belt and suspenders even though the record just succeeded under a lease that was still valid: confirm
-		// the copy it now names is actually still there before trusting it enough to delete the only other one.
-		if (!(await target.bucket.head(item.key))) {
-			await recordObjectLocation(env, {
-				key: item.key,
-				objectClass,
-				storeId: source.store.id,
-				storageClass: null,
-				size: source.head.size,
-			});
-			throw new Error("The target copy disappeared right after being recorded; kept the source instead");
-		}
-		await source.store.bucket.delete(item.key);
-		// The mark `recordObjectLocation` just made for this exact copy was only ever a precaution for the
-		// delete above failing; it did not, so there is nothing left for the orphan sweep to find here (`B1`).
-		await clearOrphanCandidate(env, source.store.id, item.key);
-		return bytes;
-	});
+	return withLocationLease(
+		env,
+		item.key,
+		{ objectClass, storeId: rule.target, storageClass: null, size: source.head.size },
+		async (lease) => {
+			if (lease) await renewLocationLease(env, item.key, lease.token);
+			const present = await target.bucket.head(item.key);
+			let bytes = 0;
+			if (!matchesExisting(source.head, present, source.store.id, target.id)) {
+				const copied = await copyObject(source.store, source.head, target, item.key, item.key, {
+					onPart: lease
+						? async () => {
+								if (!(await renewLocationLease(env, item.key, lease.token)))
+									throw new Error("Lost the location lease during the copy");
+							}
+						: undefined,
+				});
+				if (copied === null) throw new Error("The object disappeared from the source store during the copy");
+				bytes = copied;
+			} else {
+				bytes = present!.size;
+			}
+			const confirmed = await target.bucket.head(item.key);
+			if (!confirmed || confirmed.size !== source.head.size)
+				throw new Error("The copy on the target store does not match");
+			// Renewed once more right here, after the copy (or the skip) and before the record: covers both a
+			// single-part copy, which never goes through `onPart` above, and the gap after a multipart copy's
+			// last part, its own completion and the two HEADs above (`B4`).
+			if (lease && !(await renewLocationLease(env, item.key, lease.token)))
+				throw new Error("Lost the location lease before the record could be attempted; it will be retried");
+			// The location is recorded before the source copy is deleted: a crash in between leaves a harmless extra
+			// copy at the old store rather than an object nothing points to (`sourcesFor` above also self-heals by
+			// probing the rule's own target directly, in case the crash happened before this write ever lands).
+			const recorded = await recordObjectLocation(
+				env,
+				{ key: item.key, objectClass, storeId: rule.target, storageClass: null, size: confirmed.size },
+				lease,
+			);
+			if (!recorded) {
+				// Never delete anything this mover has not itself recorded under a still-valid token (`B4`): the
+				// refusal means someone else held the lease since, and may already have recorded this exact
+				// target and deleted the source itself. Only mark the target a candidate, and only while the
+				// live location does not actually name it, so the normal cleanup settles it safely later.
+				await deferUnrecordedCopy(env, item.key, objectClass, rule.target);
+				throw new Error("Lost the location lease before the move could be recorded; it will be retried");
+			}
+			// Belt and suspenders even though the record just succeeded under a lease that was still valid: confirm
+			// the copy it now names is actually still there before trusting it enough to delete the only other one.
+			if (!(await target.bucket.head(item.key))) {
+				await recordObjectLocation(env, {
+					key: item.key,
+					objectClass,
+					storeId: source.store.id,
+					storageClass: null,
+					size: source.head.size,
+				});
+				throw new Error("The target copy disappeared right after being recorded; kept the source instead");
+			}
+			await source.store.bucket.delete(item.key);
+			// The mark `recordObjectLocation` just made for this exact copy was only ever a precaution for the
+			// delete above failing; it did not, so there is nothing left for the orphan sweep to find here (`B1`).
+			await clearOrphanCandidate(env, source.store.id, item.key);
+			return bytes;
+		},
+	);
 }
 
 /**
@@ -221,57 +261,68 @@ export async function moveColdDriveObject(
 	// Held through the verify, the record and the delete below, renewed as needed for a long copy, same
 	// reasoning as moveColdObject (`B2`, `B3`): the orphan delete pass needs this same lease before it may
 	// delete any copy of this key either, and a lapsed lease aborts here instead of losing the race that leaves.
-	return withLocationLease(env, item.key, async (lease) => {
-		if (lease) await renewLocationLease(env, item.key, lease.token);
-		const present = await target.bucket.head(item.key);
-		const bytes = matchesExisting(head, present, source.id, target.id)
-			? present!.size
-			: await copyObject(source, head, target, item.key, item.key, {
-					onPart: lease
-						? async () => {
-								if (!(await renewLocationLease(env, item.key, lease.token)))
-									throw new Error("Lost the location lease during the copy");
-							}
-						: undefined,
+	return withLocationLease(
+		env,
+		item.key,
+		{ objectClass: "drive", storeId: rule.target, storageClass: null, size: head.size },
+		async (lease) => {
+			if (lease) await renewLocationLease(env, item.key, lease.token);
+			const present = await target.bucket.head(item.key);
+			const bytes = matchesExisting(head, present, source.id, target.id)
+				? present!.size
+				: await copyObject(source, head, target, item.key, item.key, {
+						onPart: lease
+							? async () => {
+									if (!(await renewLocationLease(env, item.key, lease.token)))
+										throw new Error("Lost the location lease during the copy");
+								}
+							: undefined,
+					});
+			if (bytes === null) throw new Error("The file disappeared from its store during the copy");
+			const confirmed = await target.bucket.head(item.key);
+			if (!confirmed || confirmed.size !== head.size) throw new Error("The copy on the target store does not match");
+			// Renewed once more right here, same reasoning as moveColdObject (`B4`): covers a single-part copy
+			// and the gap after a multipart copy's last part, its own completion and the two HEADs above.
+			if (lease && !(await renewLocationLease(env, item.key, lease.token)))
+				throw new Error("Lost the location lease before the record could be attempted; it will be retried");
+			// The location is recorded before the row is repointed or the old copy is deleted, mirroring moveColdObject:
+			// a crash from here on still leaves a path to the bytes, through object_locations if nothing else.
+			const recorded = await recordObjectLocation(
+				env,
+				{ key: item.key, objectClass: "drive", storeId: rule.target, storageClass: null, size: confirmed.size },
+				lease,
+			);
+			if (!recorded) {
+				// Never delete anything this mover has not itself recorded under a still-valid token (`B4`):
+				// see moveColdObject for the full reasoning.
+				await deferUnrecordedCopy(env, item.key, "drive", rule.target);
+				throw new Error("Lost the location lease before the move could be recorded; it will be retried");
+			}
+			// Belt and suspenders even though the record just succeeded under a lease that was still valid: confirm
+			// the copy it now names is actually still there before repointing the row and deleting the old copy.
+			if (!(await target.bucket.head(item.key))) {
+				await recordObjectLocation(env, {
+					key: item.key,
+					objectClass: "drive",
+					storeId,
+					storageClass: null,
+					size: head.size,
 				});
-		if (bytes === null) throw new Error("The file disappeared from its store during the copy");
-		const confirmed = await target.bucket.head(item.key);
-		if (!confirmed || confirmed.size !== head.size) throw new Error("The copy on the target store does not match");
-		// The location is recorded before the row is repointed or the old copy is deleted, mirroring moveColdObject:
-		// a crash from here on still leaves a path to the bytes, through object_locations if nothing else.
-		const recorded = await recordObjectLocation(
-			env,
-			{ key: item.key, objectClass: "drive", storeId: rule.target, storageClass: null, size: confirmed.size },
-			lease,
-		);
-		if (!recorded) {
-			await target.bucket.delete(item.key).catch(() => undefined);
-			throw new Error("Lost the location lease before the move could be recorded; it will be retried");
-		}
-		// Belt and suspenders even though the record just succeeded under a lease that was still valid: confirm
-		// the copy it now names is actually still there before repointing the row and deleting the old copy.
-		if (!(await target.bucket.head(item.key))) {
-			await recordObjectLocation(env, {
-				key: item.key,
-				objectClass: "drive",
-				storeId,
+				throw new Error("The target copy disappeared right after being recorded; kept the source instead");
+			}
+			const marked = await callStorageHook<{ updated: number }>("drive", "markCold", {
+				ids: [item.id],
 				storageClass: null,
-				size: head.size,
+				storeId: rule.target,
 			});
-			throw new Error("The target copy disappeared right after being recorded; kept the source instead");
-		}
-		const marked = await callStorageHook<{ updated: number }>("drive", "markCold", {
-			ids: [item.id],
-			storageClass: null,
-			storeId: rule.target,
-		});
-		// The row may be gone by now (the file was trashed and purged, or deleted outright, since this item was
-		// read); only delete the old copy once the row is confirmed repointed, never on the strength of the copy
-		// alone, so a vanished row can never leave nothing pointing at either copy.
-		if (!marked?.updated) throw new Error("The file's row is gone; its old copy was kept");
-		await source.bucket.delete(item.key);
-		// Only a precaution for that delete failing; it did not, so there is nothing left to track (`B1`).
-		await clearOrphanCandidate(env, storeId, item.key);
-		return { bytes, moved: true };
-	});
+			// The row may be gone by now (the file was trashed and purged, or deleted outright, since this item was
+			// read); only delete the old copy once the row is confirmed repointed, never on the strength of the copy
+			// alone, so a vanished row can never leave nothing pointing at either copy.
+			if (!marked?.updated) throw new Error("The file's row is gone; its old copy was kept");
+			await source.bucket.delete(item.key);
+			// Only a precaution for that delete failing; it did not, so there is nothing left to track (`B1`).
+			await clearOrphanCandidate(env, storeId, item.key);
+			return { bytes, moved: true };
+		},
+	);
 }

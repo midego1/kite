@@ -63,9 +63,20 @@ async function findExistingItem(
 	return existing?.id ?? null;
 }
 
-/** One folder segment of `Money Watch/Receipts/<year>`, found under its parent or created there. A concurrent
- * caller that loses the create races re-reads and keeps the older row (`findExistingItem` orders by `createdAt`,
- * then `id`), so two callers racing on the same name never leave two folders behind. */
+/** A stable id for the folder this exact `(ownerId, parentId, name)` triple would create: two calls racing to
+ * create the same folder, neither having yet seen the other's row, compute the identical id and so attempt the
+ * identical insert, which the primary key itself (not a re-read afterward, which a third, differently-timed call
+ * could still race ahead of) resolves to exactly one row. */
+async function folderClaimId(ownerId: string, parentId: string | null, name: string): Promise<string> {
+	const bytes = new TextEncoder().encode(`${ownerId}\u0000${parentId ?? ""}\u0000${name}`);
+	const digest = await crypto.subtle.digest("SHA-256", bytes);
+	const hex = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+	return `drvf_${hex.slice(0, 32)}`;
+}
+
+/** One folder segment of `Money Watch/Receipts/<year>`, found under its parent or created there. A folder from
+ * before this scheme, or created through Drive directly, is found and reused as is; a fresh one is claimed by a
+ * deterministic id, so two callers racing to create the same one can never end up with two different ids for it. */
 async function ensureFolder(
 	db: ReturnType<typeof getDb>,
 	ownerId: string,
@@ -74,9 +85,10 @@ async function ensureFolder(
 ): Promise<string> {
 	const existing = await findExistingItem(db, ownerId, parentId, "folder", name);
 	if (existing) return existing;
+	const id = await folderClaimId(ownerId, parentId, name);
 	const now = new Date();
 	const row: DriveRow = {
-		id: newId("drv"),
+		id,
 		ownerId,
 		parentId,
 		kind: "folder",
@@ -95,22 +107,10 @@ async function ensureFolder(
 		createdAt: now,
 		updatedAt: now,
 	};
-	try {
-		await db.insert(driveItems).values(row);
-	} catch {
-		// A concurrent call created it first; re-read and merge rather than add a second row with the same name.
-		const raced = await findExistingItem(db, ownerId, parentId, "folder", name);
-		if (raced) return raced;
-		throw new Error("Could not create or find the receipts folder");
-	}
-	// Even without an insert conflict, a concurrent caller may have committed a same-named folder a moment earlier
-	// or later; re-reading and keeping the oldest, deleting a newly-created loser, keeps exactly one canonical row.
-	const winner = await findExistingItem(db, ownerId, parentId, "folder", name);
-	if (winner && winner !== row.id) {
-		await db.delete(driveItems).where(eq(driveItems.id, row.id));
-		return winner;
-	}
-	return row.id;
+	// A losing insert here means a row with this exact id already exists (the primary key says so, atomically);
+	// `id` is the right answer regardless of which of the two calls' inserts actually landed.
+	await db.insert(driveItems).values(row).onConflictDoNothing();
+	return id;
 }
 
 /** Finds or creates every segment of a folder path under the owner's Drive root, in order. */

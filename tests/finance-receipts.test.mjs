@@ -259,7 +259,7 @@ test("ensureFolderPath reuses an existing folder instead of creating a second on
 	assert.equal(db.db.prepare("SELECT count(*) AS n FROM drive_items WHERE owner_id = 'owner'").get().n, 3);
 });
 
-test("two calls racing to create the same folder path end up with exactly one folder of each name, not two (re-read and merge)", async (t) => {
+test("two calls racing to create the same folder path end up with exactly one folder of each name, not two", async (t) => {
 	const { db, env } = await setup(t);
 	const [first, second] = await Promise.all([
 		ensureFolderPath(env, "owner", ["Money Watch", "Receipts", "2026"]),

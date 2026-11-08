@@ -13,7 +13,7 @@ import { FAKE_ABUSE_CH_KEYS, startFakeAbuseCh } from "./support/fake-abuse-ch";
 import { startFakeModel } from "./support/fake-model";
 import type { FakeModel } from "./support/fake-model-types";
 import type { InboundAttachment } from "./support/helpers-types";
-import { apiContext, postInbound, uniqueToken, waitForMessage } from "./support/helpers";
+import { apiContext, postInbound, suppressMailboxTour, uniqueToken, waitForMessage } from "./support/helpers";
 import { restoreModules, setModuleState } from "./support/modules";
 import { readSuggestions, waitForFinishedJob } from "./support/triage";
 
@@ -51,6 +51,7 @@ async function newAccount(prefix: string): Promise<Account> {
 async function openAs(browser: Browser, account: Account): Promise<Page> {
 	const context = await browser.newContext({ baseURL: BASE_URL, storageState: await account.api.storageState() });
 	const page = await context.newPage();
+	await suppressMailboxTour(page);
 	await selectMailbox(page, account.mailboxId);
 	await page.addInitScript((id) => localStorage.setItem("kite-session-user", id), account.id);
 	await page.addInitScript(() => {
@@ -357,6 +358,7 @@ test("Admin General shows that URLhaus and ThreatFox lookups are off without a k
 }) => {
 	const context = await browser.newContext({ baseURL: BASE_URL, storageState: STORAGE_STATE });
 	const page = await context.newPage();
+	await suppressMailboxTour(page);
 	const errors = collectConsoleErrors(page);
 	await page.goto("/general");
 	const card = page.locator("[data-threat-lookups]");
@@ -391,6 +393,7 @@ test("the owner saves an abuse.ch key in Admin General, inbound mail uses it, an
 	const abuseCh = await startFakeAbuseCh();
 	const context = await browser.newContext({ baseURL: BASE_URL, storageState: STORAGE_STATE });
 	const page = await context.newPage();
+	await suppressMailboxTour(page);
 	const errors = collectConsoleErrors(page);
 	const bodies: Promise<string>[] = [];
 	page.on("response", (response) => {

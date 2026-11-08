@@ -10,7 +10,7 @@ import {
 	TRANSLATION_CUT_OFF_MARKER,
 } from "./support/fake-model-scenarios";
 import type { FakeModel, FakeRecordedRequest } from "./support/fake-model-types";
-import { apiContext, postInbound, uniqueToken, waitForMessage } from "./support/helpers";
+import { apiContext, postInbound, suppressMailboxTour, uniqueToken, waitForMessage } from "./support/helpers";
 
 let api: APIRequestContext;
 let fake: FakeModel;
@@ -75,6 +75,7 @@ async function signedInPage(
 ) {
 	const context = await browser.newContext({ storageState: await account.api.storageState(), locale });
 	const page = await context.newPage();
+	await suppressMailboxTour(page);
 	await selectMailbox(page, account.mailboxId);
 	return { context, page };
 }

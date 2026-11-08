@@ -314,6 +314,19 @@ test("only the topmost Authentication-Results with the preset's own authserv-id,
 		field("authentication-results", "mx.google.com; dmarc=pass"),
 	];
 	assert.equal(externalAuthenticationResults(crafted, "mx.google.com"), "mx.google.com; dmarc=pass");
+	// Gmail's own "Check mail from other accounts" polls a POP3 account and copies a message in without it ever
+	// passing through Gmail's own SMTP-time checks: a Received line that still names mx.google.com but says POP3 (or
+	// IMAP) never counts, even with nothing else amiss.
+	const pop3Received = field("received", "by mx.google.com with POP3 id abc123 for <me@gmail.com>;");
+	assert.equal(
+		externalAuthenticationResults([pop3Received, field("authentication-results", google)], "mx.google.com"),
+		null,
+	);
+	const imapReceived = field("received", "by mx.google.com with IMAP id abc123;");
+	assert.equal(
+		externalAuthenticationResults([imapReceived, field("authentication-results", google)], "mx.google.com"),
+		null,
+	);
 	// Presets without an authserv-id (custom hosts, Microsoft) get none, and nor does an unreadable header block.
 	assert.equal(externalAuthenticationResults(delivered, null), null);
 	assert.equal(externalAuthenticationResults(null, "mx.google.com"), null);

@@ -33,7 +33,7 @@ function EmptyFolderButton({ emptyFolder }: { emptyFolder: NonNullable<MessageLi
 				aria-label={label}
 				disabled={emptyFolder.disabled}
 				onClick={emptyFolder.run}
-				className="gap-1.5 text-xs font-medium text-red-600 hover:text-red-700"
+				className="gap-1.5 text-xs font-medium text-red-600 hover:text-red-700 pointer-coarse:h-11"
 			>
 				<Trash2 className="h-4 w-4" />
 				{/* The label stays visible (it used to show only in the rare non-compact header), narrowing out only
@@ -148,7 +148,7 @@ export function MessageListHeader({
 									aria-pressed={selecting.value}
 									onClick={() => selecting.onChange(!selecting.value)}
 									className={clsx(
-										"h-8 gap-1.5 px-2 text-sm font-normal",
+										"h-8 gap-1.5 px-2 text-sm font-normal pointer-coarse:h-11",
 										selecting.value ? "bg-neutral-100 text-neutral-900" : "text-neutral-500 hover:text-neutral-900",
 									)}
 								>
@@ -162,7 +162,7 @@ export function MessageListHeader({
 							<Link
 								href="/settings/inbox"
 								aria-label={t("List settings")}
-								className="flex h-8 w-8 items-center justify-center rounded-lg text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
+								className="flex h-8 w-8 items-center justify-center rounded-lg text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 pointer-coarse:h-11 pointer-coarse:w-11"
 							>
 								<SlidersHorizontal className="h-4 w-4" />
 							</Link>

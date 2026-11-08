@@ -28,7 +28,7 @@ export function MessageReadingHeaderButton() {
 		<Tooltip label={label} className="inline-flex">
 			<button
 				type="button"
-				className="relative z-10 shrink-0 rounded-full p-2 text-neutral-600 duration-200 hover:bg-neutral-100 hover:text-neutral-900"
+				className="relative z-10 shrink-0 rounded-full p-2 text-neutral-600 duration-200 hover:bg-neutral-100 hover:text-neutral-900 pointer-coarse:p-[13px]"
 				onClick={handleClick}
 				aria-label={label}
 				aria-pressed={singleColumn ? undefined : visible}

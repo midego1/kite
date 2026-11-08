@@ -35,6 +35,8 @@ export const PRUNING_POLICY: PruningPolicy = {
 	// One audit row per MCP tool call; a quarter of history is enough to trace what a key did. Pruned every five
 	// minutes by pruneMcpToolCallAudit (the rows that just expired) and by the daily run (any backlog).
 	mcpToolCallAuditDays: 90,
+	assistantEmailRequestsDays: 30,
+	assistantEmailStaleRawDays: 7,
 };
 
 export const PRUNABLE_OUTBOUND_JOB_STATUSES = ["sent", "failed", "cancelled"] as const;

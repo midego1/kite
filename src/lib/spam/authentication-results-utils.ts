@@ -151,10 +151,21 @@ export function sesAuthenticationResults(
 	return results.length ? [SES_AUTHSERV_ID, ...results].join("; ") : null;
 }
 
-/** The host a `Received` field says accepted the message (`… by mx.google.com with …`), lower-case, or null. */
+/**
+ * `Received` protocols live SMTP delivery writes (RFC 5321 §4.4): `ESMTP`, `ESMTPS` or plain `SMTP`. Excludes `POP3`
+ * and `IMAP`, which Gmail's own "Check mail from other accounts" writes when it polls another account and copies a
+ * message in: that message never went through Gmail's own SMTP-time SPF/DKIM/DMARC checks, so an
+ * `Authentication-Results` header above it, even one naming `mx.google.com` as Gmail's own `Received` line also
+ * does, can be exactly what the account it polled handed Gmail, not Gmail's own verdict.
+ */
+const SMTP_PROTOCOLS = /\bwith\s+(ESMTPS|ESMTP|SMTP)\b/i;
+
+/** The host a `Received` field says accepted the message over SMTP (`… by mx.google.com with ESMTPS …`), lower-case, or null for a different host or a non-SMTP protocol. */
 function receivedBy(value: string): string | null {
-	const host = /\bby\s+([^\s;()]+)/i.exec(stripComments(value))?.[1];
-	return host ? host.toLowerCase().replace(/\.$/, "") : null;
+	const stripped = stripComments(value);
+	const host = /\bby\s+([^\s;()]+)/i.exec(stripped)?.[1];
+	if (!host || !SMTP_PROTOCOLS.test(stripped)) return null;
+	return host.toLowerCase().replace(/\.$/, "");
 }
 
 /**
@@ -162,9 +173,13 @@ function receivedBy(value: string): string | null {
  * that verified the sender, so only the topmost header of the raw message counts (`fields`, every header field in
  * message order, null when the header block could not be read whole), and only when its authserv-id is exactly the
  * one the account's preset names (such providers remove copies carrying their own authserv-id from incoming mail,
- * RFC 8601 §5) and a `Received` field above it records that same host accepting the message (`… by mx.google.com`),
- * as the provider writes at delivery. A message placed in the Inbox some other way (an IMAP APPEND, a migration
- * tool) normally has neither in that order. A preset without an authserv-id never gets results.
+ * RFC 8601 §5) and a `Received` field above it records that same host accepting the message over SMTP (`… by
+ * mx.google.com with ESMTPS …`), as the provider writes at delivery. A message placed in the Inbox some other way
+ * (an IMAP APPEND, a migration tool) normally has neither in that order, and the `Received` line Gmail's own "Check
+ * mail from other accounts" writes when it polls a POP3 account and copies a message in (`with POP3`, never SMTP)
+ * never counts either: that message never passed through Gmail's own SMTP-time checks, so a sender-planted
+ * `Authentication-Results` above it, even one naming `mx.google.com`, is not Gmail's own verdict. A preset without
+ * an authserv-id never gets results.
  */
 export function externalAuthenticationResults(
 	fields: readonly { name: string; value: string }[] | null,

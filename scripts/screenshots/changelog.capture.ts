@@ -19,7 +19,7 @@ import {
 	THAI_MAIL_TRANSLATED,
 	THREAD,
 } from "./demo-data";
-import { mockForYou, mockForYouPreview } from "./demo-mocks";
+import { mockConnectedAccountAuthRecheck, mockForYou, mockForYouPreview } from "./demo-mocks";
 import { sampleMessage, startFakeImap } from "../../tests/support/fake-imap.mjs";
 
 // Screenshots for the changelog (docs/releasing.md#screenshots-in-the-changelog), taken against the isolated,
@@ -181,6 +181,21 @@ const SHOTS: Shot[] = [
 			await rows.filter({ hasText: "Offsite agenda and travel details" }).first().getByRole("link").first().click();
 			await expect(page.getByRole("button", { name: /^via Gmail: show all mail through/ })).toBeVisible();
 			return page;
+		},
+	},
+	{
+		// A connected Gmail account with Recheck authentication already finished (demo-mocks: a real Gmail sign-in
+		// needs credentials this sandbox never has).
+		name: "2026-11-08-connected-account-auth-recheck-light",
+		theme: "light",
+		viewport: { width: 1040, height: 700 },
+		open: async (page) => {
+			await mockConnectedAccountAuthRecheck(page);
+			await page.goto("/settings/connected-accounts");
+			const row = page.locator("[data-external-account]");
+			await expect(row.getByRole("button", { name: "Recheck authentication" })).toBeVisible();
+			await expect(row.locator("[data-auth-recheck-status]")).toContainText("found a result for 12 of 214 messages");
+			return row;
 		},
 	},
 	{
@@ -779,6 +794,27 @@ const SHOTS: Shot[] = [
 		},
 	},
 	{
+		// Scan last 90 days partway through: the status line's own progress, over the real seeded rows (the scan status
+		// itself is faked, since a real scan of this little demo mail finishes before a screenshot could catch it running).
+		name: "2026-11-08-money-watch-scan-progress-light",
+		theme: "light",
+		viewport: { width: 1280, height: 900 },
+		open: async (page) => {
+			await seedPaymentsDemo();
+			await page.route("**/api/finance/payments", async (route) => {
+				const response = await route.fetch();
+				const data = (await response.json()) as object;
+				await route.fulfill({
+					response,
+					json: { ...data, scan: { status: "running", scanned: 42, recorded: 3, skipped: 0 } },
+				});
+			});
+			await page.goto("/finance?tab=payments");
+			await expect(page.locator("[data-payment-scan-status]")).toContainText("Scanning the last 90 days");
+			return page.locator("[data-finance-page]");
+		},
+	},
+	{
 		// The assistant panel's settings: No AI for this mailbox, turned on (it stays on in the e2e state afterwards).
 		name: "2026-11-05-mailbox-no-ai",
 		viewport: { width: 1280, height: 900 },
@@ -797,6 +833,42 @@ const SHOTS: Shot[] = [
 			}
 			await expect(toggleAi).toBeChecked();
 			return panel.getByTestId("mailbox-ai-setting");
+		},
+	},
+	{
+		// The assistant panel when no AI provider is configured at all: a notice instead of a silent, broken chat.
+		name: "2026-11-08-no-provider-notice-light",
+		viewport: { width: 1280, height: 900 },
+		open: async (page) => {
+			await page.route("**/api/agent/settings?*", (route) =>
+				route.fulfill({
+					json: {
+						settings: {
+							mailboxId: "demo",
+							enabled: true,
+							modelId: "demo",
+							autoDraftEnabled: false,
+							reviewerUserId: null,
+							instructions: "",
+							dailyLimit: 5,
+						},
+						models: ["demo"],
+						canManage: true,
+						providerConfigured: false,
+						externalProviderBlocked: false,
+						providerLabel: "",
+						autoReplyEnabled: false,
+						reviewers: [],
+					},
+				}),
+			);
+			await page.goto("/inbox");
+			const toggle = page.getByRole("button", { name: /^(Open|Close) email assistant$/ });
+			await expect(toggle).toBeVisible();
+			if ((await toggle.getAttribute("aria-label")) === "Open email assistant") await toggle.click({ timeout: 45_000 });
+			const panel = page.locator("#email-assistant-panel");
+			await expect(panel.getByTestId("no-provider-notice")).toBeVisible();
+			return panel;
 		},
 	},
 	...(["dark"] as const).map(

@@ -687,6 +687,27 @@
       "when": 1794009600000,
       "tag": "0094_add_finance_payments",
       "breakpoints": true
+    },
+    {
+      "idx": 98,
+      "version": "6",
+      "when": 1794096000000,
+      "tag": "0095_add_finance_payment_scan_error",
+      "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "6",
+      "when": 1794182400000,
+      "tag": "0096_add_assistant_email",
+      "breakpoints": true
+    },
+    {
+      "idx": 100,
+      "version": "6",
+      "when": 1794268800000,
+      "tag": "0100_add_external_account_auth_recheck",
+      "breakpoints": true
     }
   ]
 }

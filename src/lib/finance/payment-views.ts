@@ -11,9 +11,10 @@ import {
 	unpaidLedgerInvoices,
 	type PaymentListEntry,
 } from "./payment-list-utils";
-import { ownerScan, scanView } from "./payment-scan";
+import { ownerScan, scanView, SCAN_DAYS } from "./payment-scan";
 import { ledgerMessageIds, ownerPayments, type PaymentRow } from "./payments";
 import { dateToDay, type ChargeRow } from "./record-utils";
+import { scanCoverageGaps } from "./scan-coverage";
 import { ownerDocuments, ownerRows } from "./subscriptions";
 import type { ViewUser } from "./views";
 
@@ -97,17 +98,19 @@ async function messageRefs(user: ViewUser, entries: readonly PaymentListEntry[])
 
 /**
  * The Payments tab (spec §25.6): the owner's payment rows and every document of their tracked subscriptions, newest
- * first, with month totals per currency and the progress of "Scan last 90 days". A payment row whose message is in a
- * subscription's ledger is left out, so nothing counts twice. Before migration 0094: empty with `migrationPending`.
+ * first, with month totals per currency, the progress of "Scan last 90 days" and, when it leaves mail out, why
+ * (`scanCoverage`). A payment row whose message is in a subscription's ledger is left out, so nothing counts twice.
+ * Before migration 0094: empty with `migrationPending`.
  */
 export async function listPaymentsView(user: ViewUser) {
 	try {
-		const [payments, documents, subscriptions, inLedger, scan] = await Promise.all([
+		const [payments, documents, subscriptions, inLedger, scan, scanCoverage] = await Promise.all([
 			ownerPayments(user.userId),
 			ownerDocuments(user.userId),
 			ownerRows(user.userId),
 			ledgerMessageIds(user.userId),
 			ownerScan(user.userId),
+			scanCoverageGaps(user.userId, new Date(Date.now() - SCAN_DAYS * 86_400_000)),
 		]);
 		const vendors = new Map(subscriptions.map((row) => [row.id, row.vendor]));
 		const byId = new Map(payments.map((row) => [row.id, row]));
@@ -142,10 +145,18 @@ export async function listPaymentsView(user: ViewUser) {
 			})),
 			months: monthTotals(entries, paired),
 			scan: scanView(scan),
+			scanCoverage,
 		};
 	} catch (error) {
 		if (refusalOf(error)?.error === MIGRATION_PENDING_ERROR)
-			return { truncated: false, payments: [], months: [], scan: null, migrationPending: true as const };
+			return {
+				truncated: false,
+				payments: [],
+				months: [],
+				scan: null,
+				scanCoverage: [],
+				migrationPending: true as const,
+			};
 		throw error;
 	}
 }

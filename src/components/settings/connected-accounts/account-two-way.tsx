@@ -192,7 +192,7 @@ export function AccountTwoWay({ account, usable }: { account: ExternalAccountVie
 		<div className="space-y-1.5 pt-1 pb-2" data-account-two-way={account.address}>
 			<button
 				type="button"
-				className="flex w-full items-start gap-2 rounded-md text-start text-xs hover:text-neutral-900"
+				className="flex w-full items-center gap-2 rounded-md text-start text-xs hover:text-neutral-900 [@media(pointer:coarse)]:min-h-11"
 				aria-expanded={open}
 				onClick={() => setOpen(!open)}
 			>

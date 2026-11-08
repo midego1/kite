@@ -39,8 +39,13 @@ const ACTION_META: Record<DriveRowAction, { label: string; icon: LucideIcon; dan
 const menuItemClass =
 	"flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm text-neutral-700 outline-none data-[highlighted]:bg-neutral-100";
 
+// The extra columns need real room: a container query, not the viewport, so a foldable's nav panels that
+// narrow this listing well below the viewport width do not squeeze Owner/Modified/Size into the Name column.
+// @2xl (42rem/672px of the listing's own width, not the window's) is the narrowest point the fixed columns
+// (2+10+8+6+2.5rem plus five 1rem gaps = 33.5rem) still leave the Name column a readable ~8.5rem; a common
+// 1280px-wide desktop window still has over 46rem of listing here (checked with the sidebar expanded).
 export const DRIVE_GRID =
-	"grid grid-cols-[2rem_minmax(0,1fr)_2.5rem] items-center gap-x-4 md:grid-cols-[2rem_minmax(0,1fr)_10rem_8rem_6rem_2.5rem]";
+	"grid grid-cols-[2rem_minmax(0,1fr)_2.5rem] items-center gap-x-4 @2xl:grid-cols-[2rem_minmax(0,1fr)_10rem_8rem_6rem_2.5rem]";
 
 function RowMenu({ item, onAction }: { item: DriveItemDto; onAction: (action: DriveRowAction) => void }) {
 	const actions = driveRowActions(item);
@@ -51,7 +56,7 @@ function RowMenu({ item, onAction }: { item: DriveItemDto; onAction: (action: Dr
 				<button
 					type="button"
 					aria-label={`Actions for ${item.name}`}
-					className="flex h-8 w-8 items-center justify-center rounded-lg text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
+					className="flex h-8 w-8 items-center justify-center rounded-lg text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 pointer-coarse:h-11 pointer-coarse:w-11"
 				>
 					<MoreVertical size={16} />
 				</button>
@@ -155,9 +160,9 @@ export function DriveItemRow({
 					<Share2 size={12} className="shrink-0 text-neutral-400" aria-label="Shared" />
 				)}
 			</button>
-			<span className="hidden truncate text-neutral-600 md:block">{ownerLabel(item)}</span>
-			<span className="hidden text-neutral-600 md:block">{formatDriveDate(item.trashedAt ?? item.updatedAt)}</span>
-			<span className="hidden text-neutral-600 md:block">
+			<span className="hidden truncate text-neutral-600 @2xl:block">{ownerLabel(item)}</span>
+			<span className="hidden text-neutral-600 @2xl:block">{formatDriveDate(item.trashedAt ?? item.updatedAt)}</span>
+			<span className="hidden text-neutral-600 @2xl:block">
 				{item.kind === "file" ? formatDriveSize(item.size) : "-"}
 			</span>
 			<RowMenu item={item} onAction={onAction} />

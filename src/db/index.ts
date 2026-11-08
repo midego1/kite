@@ -1,5 +1,6 @@
 import { drizzle } from "drizzle-orm/d1";
 import * as coreTables from "@/db/schema";
+import * as assistantEmailTables from "@/db/schema/assistant-email";
 import * as autoReadTables from "@/db/schema/agent-auto-read";
 import * as backupTables from "@/db/schema/backups";
 import * as agentProviderTables from "@/db/schema/agent-providers";
@@ -8,6 +9,7 @@ import * as writingTables from "@/db/schema/agent-writing";
 import * as spamReportTables from "@/db/schema/spam-reports";
 import * as driveTables from "@/db/schema/drive";
 import {
+	externalAccountAuthRechecks,
 	externalAccountFolders,
 	externalAccounts,
 	externalIdentities,
@@ -24,6 +26,7 @@ import * as userPreferenceTables from "@/db/schema/user-preferences";
 
 const schema = {
 	...coreTables,
+	...assistantEmailTables,
 	...autoReadTables,
 	...backupTables,
 	...agentProviderTables,
@@ -37,6 +40,7 @@ const schema = {
 	...screenerTables,
 	...telemetryTables,
 	externalAccounts,
+	externalAccountAuthRechecks,
 	externalAccountFolders,
 	externalIdentities,
 	externalMessageRefs,

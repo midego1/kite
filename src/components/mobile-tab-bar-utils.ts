@@ -79,7 +79,8 @@ function matchesOwnArea(tab: MobileTabId, pathname: string): boolean {
 	}
 }
 
-function isMailPath(pathname: string): boolean {
+/** Whether a route falls under the Mail tab's umbrella (used for the active tab and the phone compose button). */
+export function isMailPath(pathname: string): boolean {
 	return MAIL_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 }
 
@@ -95,6 +96,16 @@ export function mobileActiveTabId(tabs: readonly MobileTabId[], pathname: string
 	return tabs.includes("mail") && isMailPath(pathname) ? "mail" : null;
 }
 
+const MESSAGE_DETAIL_PATTERNS = [
+	/^\/(inbox|starred|snoozed|sent|drafts|archived|spam|trash|screener)\/[^/]+\/?$/,
+	/^\/folders\/[^/]+\/[^/]+\/?$/,
+];
+
+/** Whether the route is a folder's open message, whatever the reading layout. */
+export function isMessageDetailPath(pathname: string): boolean {
+	return MESSAGE_DETAIL_PATTERNS.some((pattern) => pattern.test(pathname));
+}
+
 /**
  * A folder's message route (the reader) and the full-screen Compose page drop the bar: the reader keeps
  * its own Back button and reply bar, and the tab bar would only steal that room. With the list beside the
@@ -103,6 +114,5 @@ export function mobileActiveTabId(tabs: readonly MobileTabId[], pathname: string
 export function hidesMobileTabBar(pathname: string, listBesideReader = false): boolean {
 	if (pathname === "/compose" || pathname.startsWith("/compose/")) return true;
 	if (listBesideReader) return false;
-	if (/^\/(inbox|starred|snoozed|sent|drafts|archived|spam|trash|screener)\/[^/]+\/?$/.test(pathname)) return true;
-	return /^\/folders\/[^/]+\/[^/]+\/?$/.test(pathname);
+	return isMessageDetailPath(pathname);
 }

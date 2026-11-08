@@ -68,7 +68,7 @@ export function TemplateMenu({ applyContent, openOverlay }: ComposerSlotContext 
 											if (confirmed) void remove(template.id);
 										});
 									}}
-									className="shrink-0 rounded p-1 text-neutral-500 opacity-0 hover:text-red-600 group-hover:opacity-100 group-focus:opacity-100"
+									className="flex shrink-0 items-center justify-center rounded p-1 text-neutral-500 opacity-0 hover:text-red-600 group-hover:opacity-100 group-focus:opacity-100 pointer-coarse:h-11 pointer-coarse:w-11 pointer-coarse:opacity-100"
 								>
 									<Trash2 className="h-3.5 w-3.5" />
 								</button>

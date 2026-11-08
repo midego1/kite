@@ -6,6 +6,42 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.11.08.2] - 2026-11-08
+
+### Fixed
+
+- Money Watch's "Scan last 90 days" now shows its progress while it runs, finishes with a notice even after you leave the page, and offers Try again if it stalls. The Payments tab also explains a lower count than expected: a mailbox not set up for automatic reading, or mail from a connected account or an import that cannot be checked yet.
+  ![Scan last 90 days showing its progress: messages checked and payments found so far](/changelog/2026-11-08-money-watch-scan-progress-light.webp)
+
+## [2026.11.08.1] - 2026-11-08
+
+### Fixed
+
+- A sender whose display name contains a quotation mark, such as a business name with an inch or foot mark in it, is now matched correctly for blocking, safelisting and contact lookups instead of being treated as an unrecognized address.
+- A mailbox manager who was given delegated access to another admin's domains can now create new accounts on those domains, the same way they could already create a plain mailbox there. The account page used to say the domain could not be found.
+- Settings, Admin and sign-in are easier to use on a phone or a foldable: a mailbox rule's delete button no longer needs a mouse hover to appear, the Settings menu reaches a full touch size on an unfolded foldable or tablet, and a domain's actions menu and the two-way sync disclosure are full-size touch targets too.
+  ![Before and after: the rule delete action, a domain's actions menu and the Settings menu rows on touch](/changelog/2026-11-08-mobile-settings-admin-light.webp)
+- The Domains page no longer shows a correctly configured Resend sending domain as missing its SPF record: the health check now looks at the subdomain Resend actually publishes it on, not only the root domain. The Resend receiving MX check is also more forgiving of Resend's own published records.
+
+## [2026.11.08.0] - 2026-11-08
+
+### Added
+
+- A dismissible "Get started" checklist on the admin overview and at the end of first-run setup walks the owner through connecting a domain, inviting people, reviewing modules, turning on phishing lookups and backups, and connecting an AI provider. Each step explains itself in plain words, links to the page that does it, and ticks itself off as the owner sets things up.
+  ![The Get started checklist on the admin overview, five of eight steps already done](/changelog/2026-11-07-onboarding-checklist-light.webp)
+
+### Changed
+
+- The last plain dropdowns and one checkbox now match the rest of Kite: sharing Access in Drive, Repeat in the calendar, Meeting length and the time zone in Booking, the assistant's Draft reviewer and models, and a storage store's custom endpoint. They follow every look, dark mode and right-to-left, and work by keyboard.
+
+  ![The Access dropdown open in the Drive share dialog, with Can view selected and Can edit below it](/changelog/2026-11-07-select-checkbox-light.webp)
+
+### Fixed
+
+- In a connected account's view, Newer and Older now move only between that account's messages instead of stepping to other mail in the Inbox.
+- The composer's Write with Kite button no longer just disappears when no AI provider is set up; it now stays and says so, the same way it already does when AI is off for a mailbox. The assistant panel's notice for the same situation now also links the primary admin straight to where they add one.
+  ![The assistant panel saying no AI provider is configured, with a link to Admin → Agent](/changelog/2026-11-08-no-provider-notice-light.webp)
+
 ## [2026.11.07.5] - 2026-11-07
 
 ### Changed

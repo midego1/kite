@@ -120,7 +120,7 @@ export function HomeSidebar({ state, emails, dispatch, mailbox, footer, menuOnly
 						type="button"
 						aria-label="Close menu"
 						onClick={() => dispatch({ type: "closeMenu" })}
-						className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-neutral-600 ${column ? "split:lg:hidden" : ""} ${FOCUS_RING}`}
+						className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-neutral-600 pointer-coarse:h-11 pointer-coarse:w-11 ${column ? "split:lg:hidden" : ""} ${FOCUS_RING}`}
 					>
 						<X className="h-4 w-4" aria-hidden="true" />
 					</button>

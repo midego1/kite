@@ -27,12 +27,12 @@ export async function listDomainMx(env: CloudflareEnv, domain: DomainRow): Promi
 export const MX_UNCHECKED = "Could not check DNS from here";
 
 /** Public DNS answers MX data as "<priority> <host>". */
-async function hasPublicMx(hostname: string, content: string): Promise<boolean | null> {
+async function hasPublicMx(hostname: string, matches: (target: string) => boolean): Promise<boolean | null> {
 	try {
 		const answers = await queryDns(hostname, "MX");
 		return answers.some((answer) => {
 			const mx = answer.match(/^\d+\s+(\S+)\s*$/);
-			return mx !== null && same(mx[1], content);
+			return mx !== null && matches(mx[1]);
 		});
 	} catch {
 		return null;
@@ -44,8 +44,21 @@ async function hasPublicMx(hostname: string, content: string): Promise<boolean |
  * zone is managed outside Cloudflare; null when that lookup fails.
  */
 export async function hasMx(env: CloudflareEnv, domain: DomainRow, content: string): Promise<boolean | null> {
-	if (isManualZone(domain.zoneId)) return hasPublicMx(domain.hostname, content);
-	return (await listDomainMx(env, domain)).some((record) => same(record.content ?? "", content));
+	return hasMxMatching(env, domain, (target) => same(target, content));
+}
+
+/**
+ * Whether any MX target matching `matches` is published — for a provider that
+ * accepts a shape of target (e.g. one of several equivalent hosts) rather
+ * than one exact hostname.
+ */
+export async function hasMxMatching(
+	env: CloudflareEnv,
+	domain: DomainRow,
+	matches: (target: string) => boolean,
+): Promise<boolean | null> {
+	if (isManualZone(domain.zoneId)) return hasPublicMx(domain.hostname, matches);
+	return (await listDomainMx(env, domain)).some((record) => matches(record.content ?? ""));
 }
 
 /**

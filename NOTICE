@@ -20,6 +20,11 @@ Mailflare commits 43d656a, c824aeb, ec8cb0d and 36b3bed by Hieu Nguyen (AGPL-3.0
 The escaped-quote and backslash handling in display-name address parsing
 (src/lib/email/address.ts) is adapted from Mailflare commit e7d2146 by Hieu Nguyen (AGPL-3.0).
 
+The Resend return-path subdomain SPF check and the "trust a verified record" receiving MX
+match (src/lib/domains/dns-audit.ts, src/lib/domains/receiving-dns.ts,
+src/lib/domains/resend-receiving.ts) are adapted from Mailflare commit 64274a6 by
+Hieu Nguyen (AGPL-3.0).
+
 Third-party code
 ----------------
 

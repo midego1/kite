@@ -169,7 +169,7 @@ export function InboxRules() {
 										remove.mutate(rule.id);
 									}}
 									onKeyDown={(event) => event.stopPropagation()}
-									className="opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+									className="opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100 [@media(hover:none)]:h-11 [@media(hover:none)]:w-11"
 									aria-label="Delete rule"
 								>
 									<Trash2 className="h-4 w-4" />

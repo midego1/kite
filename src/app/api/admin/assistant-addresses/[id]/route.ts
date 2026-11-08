@@ -50,10 +50,13 @@ export async function DELETE(request: Request, { params }: Params) {
 	if (owned.error) return owned.error;
 	if (!hasValidSessionMutationOrigin(request)) return NextResponse.json({ error: "Invalid origin" }, { status: 403 });
 	await owned.db.delete(assistantAddresses).where(eq(assistantAddresses.id, id));
-	await deleteEmailRoutingRuleForAddress(
-		owned.env,
-		owned.domain.zoneId,
-		`${owned.row.localPart}@${owned.domain.hostname}`,
-	);
+	// Same gate as creation: a Worker route only exists, and only matters, when Cloudflare receives this domain's
+	// mail, so an SES-receiving domain's address was never routed through Cloudflare in the first place.
+	if (owned.domain.receivingProvider === "cloudflare")
+		await deleteEmailRoutingRuleForAddress(
+			owned.env,
+			owned.domain.zoneId,
+			`${owned.row.localPart}@${owned.domain.hostname}`,
+		);
 	return NextResponse.json({ ok: true });
 }

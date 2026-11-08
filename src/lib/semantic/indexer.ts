@@ -43,22 +43,29 @@ type ClaimedRow = {
 	queuedAt: number | null;
 };
 
-/** Claims up to `CLAIM_BATCH_SIZE` rows, newest queued first, so new mail is searchable before old mail is. */
-async function claimPendingRows(env: CloudflareEnv, now: Date): Promise<ClaimedRow[]> {
+/**
+ * Claims up to `CLAIM_BATCH_SIZE` rows, newest queued first, so new mail is searchable before old mail is. With
+ * `excludeBackfillOrigin`, leaves out any row old enough to only be the backfill's (S3 of review round 2): once
+ * the backfill's cap share is already spent for the day, claiming its rows anyway just to load their bodies and
+ * attachments and give them straight back wastes a whole batch's work, every batch, for the rest of the day.
+ */
+async function claimPendingRows(env: CloudflareEnv, now: Date, excludeBackfillOrigin: boolean): Promise<ClaimedRow[]> {
 	const leaseUntil = Math.floor((now.getTime() + LEASE_MS) / 1000);
 	const nowSeconds = Math.floor(now.getTime() / 1000);
+	const backfillCutoff = Math.floor((now.getTime() - BACKFILL_AGE_MARGIN_MS) / 1000);
 	const { results } = await env.DB.prepare(
 		`UPDATE message_embeddings
 		SET status = 'running', lease_until = ?
 		WHERE message_id IN (
 			SELECT message_id FROM message_embeddings
-			WHERE status = 'pending' OR (status = 'running' AND lease_until < ?)
+			WHERE (status = 'pending' OR (status = 'running' AND lease_until < ?))
+				AND (NOT ? OR queued_at IS NULL OR queued_at >= ?)
 			ORDER BY queued_at DESC
 			LIMIT ?
 		)
 		RETURNING message_id AS messageId, mailbox_id AS mailboxId, vector_key AS vectorKey, content_hash AS contentHash, chunk_count AS chunkCount, attempts, queued_at AS queuedAt`,
 	)
-		.bind(leaseUntil, nowSeconds, CLAIM_BATCH_SIZE)
+		.bind(leaseUntil, nowSeconds, excludeBackfillOrigin ? 1 : 0, backfillCutoff, CLAIM_BATCH_SIZE)
 		.all<ClaimedRow>();
 	return results;
 }
@@ -149,7 +156,13 @@ export async function processEmbeddingBatch(env: CloudflareEnv): Promise<{ claim
 	await drainDeleteTombstones(env);
 	if (!(await embeddingAvailability(env)).ok) return { claimed: 0 };
 	const now = new Date();
-	const claimed = await claimPendingRows(env, now);
+	const settings = await getSemanticInstallSettings(env);
+	// Checked before claiming, not just before embedding (S3 of review round 2): once the backfill's own share of
+	// the cap is spent, leaving its rows out of the claim entirely means a tick with nothing but backfill work left
+	// claims nothing and `runEmbeddingDrainBatches` stops early, instead of claiming, loading and giving back the
+	// same rows every batch for the rest of the day.
+	const backfillCapped = await backfillCapReached(env, settings.backfillCapShare);
+	const claimed = await claimPendingRows(env, now, backfillCapped);
 	if (claimed.length === 0) {
 		return { claimed: 0 };
 	}
@@ -214,7 +227,8 @@ export async function processEmbeddingBatch(env: CloudflareEnv): Promise<{ claim
 	const backfillItems = prepared.filter((item) => item.backfill);
 	if (liveItems.length > 0) await embedAndUpsert(env, liveItems, claimed, now, toFail, "embedding");
 	if (backfillItems.length > 0) {
-		const settings = await getSemanticInstallSettings(env);
+		// Re-checked fresh, not the pre-claim `backfillCapped` above: this is the one point that actually spends, and
+		// the cap may have been reached while bodies were loading and the embedding call was made.
 		if (await backfillCapReached(env, settings.backfillCapShare)) {
 			// Give these back to pending rather than spending past the backfill's own share; a later tick (a new
 			// UTC day, or live spend settling lower than its estimate) may have room again.
@@ -300,7 +314,11 @@ async function embedAndUpsert(
 				).map((chunk) => chunkVectorId(item.vectorKey, chunk));
 				await store.deleteByIds(shrunk);
 			}
-			await getDb(env)
+			// Guarded by `status = 'running'` (S1 of review round 2): a clear between the `rowsStillRunning` check
+			// above and this write (the loop awaits one upsert per message, so the window can be seconds) marks the
+			// row `skipped` before this runs, so the condition matches nothing — the vectors just written for an
+			// excluded or No-AI mailbox are then deleted again rather than left orphaned in the store.
+			const written = await getDb(env)
 				.update(messageEmbeddings)
 				.set({
 					status: "indexed",
@@ -312,7 +330,10 @@ async function embedAndUpsert(
 					leaseUntil: null,
 					indexedAt: now,
 				})
-				.where(eq(messageEmbeddings.messageId, item.messageId));
+				.where(and(eq(messageEmbeddings.messageId, item.messageId), eq(messageEmbeddings.status, "running")))
+				.returning({ messageId: messageEmbeddings.messageId });
+			if (written.length === 0)
+				await store.deleteByIds(itemVectors.map((_, chunk) => chunkVectorId(item.vectorKey, chunk)));
 		}
 	} catch (error) {
 		const code = embeddingErrorCode(error);
@@ -357,32 +378,45 @@ async function applyFailures(
 	}
 }
 
-/** Drains up to `TOMBSTONE_BATCH_SIZE` delete tombstones, removing their vectors from the store. */
+/**
+ * Drains up to `TOMBSTONE_BATCH_SIZE` delete tombstones, removing their vectors from the store. Ordered by `rowid`,
+ * not `created_at`, so the page's rows are exactly "every row up to the highest one read": the delete can bind a
+ * single maximum rowid rather than a cursor per row, which no longer grows past D1's 100-parameter limit however
+ * large `TOMBSTONE_BATCH_SIZE` is (R3 of review round 2: a page of more than 100 tombstones used to bind one
+ * parameter per row and fail the delete outright, retrying the same page forever and, since B2 drains tombstones
+ * first, stopping the whole batch).
+ *
+ * Quiet, not just caught by the caller, before migration 0099 (S5 of review round 2): `worker.ts` and
+ * `scheduler.ts` call this directly from cron, every tick, on every install (the feature is off by default), so
+ * logging the missing table as an error there would be permanent noise rather than a one-time thing.
+ */
 export async function drainDeleteTombstones(env: CloudflareEnv): Promise<void> {
-	const { results } = await env.DB.prepare(
-		`SELECT rowid AS cursor, vector_key AS vectorKey, chunk_count AS chunkCount FROM message_embedding_deletes ORDER BY created_at LIMIT ?`,
-	)
-		.bind(TOMBSTONE_BATCH_SIZE)
-		.all<{ cursor: number; vectorKey: string | null; chunkCount: number }>();
-	if (results.length === 0) return;
-	const ids = results.flatMap((row) =>
-		row.vectorKey && row.chunkCount > 0
-			? Array.from({ length: row.chunkCount }, (_, chunk) => chunkVectorId(row.vectorKey!, chunk))
-			: [],
-	);
-	if (ids.length > 0) {
-		try {
-			await getVectorStore(env).deleteByIds(ids);
-		} catch (error) {
-			if (!(error instanceof Error) || error.name !== "VectorStoreUnavailableError") throw error;
-			return; // Nothing configured yet: leave the tombstones for a later run.
+	try {
+		const { results } = await env.DB.prepare(
+			`SELECT rowid AS cursor, vector_key AS vectorKey, chunk_count AS chunkCount FROM message_embedding_deletes ORDER BY rowid LIMIT ?`,
+		)
+			.bind(TOMBSTONE_BATCH_SIZE)
+			.all<{ cursor: number; vectorKey: string | null; chunkCount: number }>();
+		if (results.length === 0) return;
+		const ids = results.flatMap((row) =>
+			row.vectorKey && row.chunkCount > 0
+				? Array.from({ length: row.chunkCount }, (_, chunk) => chunkVectorId(row.vectorKey!, chunk))
+				: [],
+		);
+		if (ids.length > 0) {
+			try {
+				await getVectorStore(env).deleteByIds(ids);
+			} catch (error) {
+				if (!(error instanceof Error) || error.name !== "VectorStoreUnavailableError") throw error;
+				return; // Nothing configured yet: leave the tombstones for a later run.
+			}
 		}
+		const maxCursor = results[results.length - 1].cursor;
+		await env.DB.prepare(`DELETE FROM message_embedding_deletes WHERE rowid <= ?`).bind(maxCursor).run();
+	} catch (error) {
+		if (isNoSuchTableError(error)) return; // Migration 0099 not applied yet.
+		throw error;
 	}
-	const cursors = results.map((row) => row.cursor);
-	const placeholders = cursors.map(() => "?").join(", ");
-	await env.DB.prepare(`DELETE FROM message_embedding_deletes WHERE rowid IN (${placeholders})`)
-		.bind(...cursors)
-		.run();
 }
 
 /** Runs up to `maxBatches` drain batches, stopping early once a batch claims nothing (cron: 4 on Workers, 2 on Node). */

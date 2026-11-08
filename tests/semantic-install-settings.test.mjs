@@ -2,17 +2,16 @@ import assert from "node:assert/strict";
 import { rmSync } from "node:fs";
 import test, { after } from "node:test";
 import { makeBundleDirectory } from "./support/bundle-directory.mjs";
-import { migrationsDir } from "./support/module-database.mjs";
+import { copyMigrationsBefore, migrationsDir } from "./support/module-database.mjs";
 import { bundleModules } from "./support/modules-bundle.mjs";
 
-const { SqliteDatabase, applyMigrations, saveSemanticAdminSettings, getSemanticInstallSettings } = await bundleModules(
-	"kite-semantic-install-settings-",
-	[
+const { SqliteDatabase, applyMigrations, saveSemanticAdminSettings, getSemanticInstallSettings, getSemanticStatus } =
+	await bundleModules("kite-semantic-install-settings-", [
 		["SqliteDatabase", "server/runtime/sqlite-database.ts"],
 		["applyMigrations", "server/runtime/migrate.ts"],
 		["saveSemanticAdminSettings, getSemanticInstallSettings", "src/lib/semantic/install-settings.ts"],
-	],
-);
+		["getSemanticStatus", "src/lib/semantic/status.ts"],
+	]);
 
 const scratch = makeBundleDirectory("kite-semantic-install-settings-dirs-");
 after(() => rmSync(scratch, { recursive: true, force: true }));
@@ -42,4 +41,17 @@ test("saveSemanticAdminSettings succeeds and creates the row when app_settings h
 	const settings = await getSemanticInstallSettings(env);
 	assert.equal(settings.enabled, true);
 	assert.equal(db.db.prepare("SELECT count(*) AS total FROM app_settings").get().total, 1);
+});
+
+test("getSemanticStatus reads ready: false before migration 0099, which PUT /api/admin/semantic-search checks before saving (S4 of review round 2)", async (t) => {
+	const before = copyMigrationsBefore(scratch, 99);
+	const db = new SqliteDatabase(":memory:");
+	t.after(() => db.db.close());
+	await applyMigrations(db, before);
+	const env = { DB: db };
+	const status = await getSemanticStatus(env);
+	assert.equal(status.ready, false);
+	// Without the route's `!before.ready` guard, this is what a direct save would throw: "no such column", not
+	// "no such table", so nothing catches it and the route used to answer a bare 500.
+	await assert.rejects(saveSemanticAdminSettings(env, { enabled: true }), /no such column/i);
 });

@@ -1,14 +1,11 @@
-import { getDb } from "@/db";
-import { messageEmbeddings } from "@/db/schema/semantic";
 import { AGENT_SETTINGS_ID } from "@/lib/agent/provider-constants";
 import { isNoSuchTableError } from "@/lib/modules/state-utils";
 import { formatBackfillCursor, getSemanticInstallSettings, type SemanticBackfillCursor } from "./install-settings";
+import { insertPendingEmbeddingRows } from "./queue-pending";
 import { backfillCapReached } from "./spend";
 
 /** Each cron tick inserts `pending` rows for up to this many more eligible messages. */
 const BACKFILL_PAGE_SIZE = 5_000;
-/** `message_embeddings` rows are inserted in batches this small to stay under D1's 100 bound-parameter limit. */
-const INSERT_CHUNK_SIZE = 20;
 /**
  * Nothing is inserted while at least this many rows are already `pending`: about 2x a Workers drain tick's
  * capacity (4 batches of `CLAIM_BATCH_SIZE`), so a single tick's 5,000-row page cannot build a backlog the drain
@@ -48,12 +45,6 @@ async function selectBackfillCandidates(
 	return results;
 }
 
-function chunks<T>(items: readonly T[], size: number): T[][] {
-	const result: T[][] = [];
-	for (let index = 0; index < items.length; index += size) result.push(items.slice(index, index + size));
-	return result;
-}
-
 /** Whether the queue already holds `PENDING_BACKLOG_LIMIT` or more rows waiting to be drained. */
 async function pendingBacklogTooDeep(env: CloudflareEnv): Promise<boolean> {
 	const row = await env.DB.prepare(
@@ -80,24 +71,13 @@ export async function runSemanticBackfillTick(env: CloudflareEnv): Promise<void>
 		if (await pendingBacklogTooDeep(env)) return;
 		const candidates = await selectBackfillCandidates(env, settings.backfillCursor);
 		if (candidates.length === 0) return;
-		const db = getDb(env);
-		for (const batch of chunks(candidates, INSERT_CHUNK_SIZE)) {
-			await db
-				.insert(messageEmbeddings)
-				.values(
-					batch.map((row) => ({
-						messageId: row.id,
-						mailboxId: row.mailboxId,
-						status: "pending" as const,
-						// Each message's own date, not "now": the drain (`indexer.ts`'s `isBackfillClaim`) tells a
-						// backfill batch apart from live mail by this, and it keeps a backfill page from claiming
-						// ahead of mail that arrives while it is still running (`queued_at DESC` favours the newer
-						// timestamp, which live mail's "now" almost always is).
-						queuedAt: new Date(row.createdAt * 1000),
-					})),
-				)
-				.onConflictDoNothing();
-		}
+		// Each message's own date, not "now": the drain (`indexer.ts`'s `isBackfillClaim`) tells a backfill batch
+		// apart from live mail by this, and it keeps a backfill page from claiming ahead of mail that arrives while
+		// it is still running (`queued_at DESC` favours the newer timestamp, which live mail's "now" almost always is).
+		await insertPendingEmbeddingRows(
+			env,
+			candidates.map((row) => ({ id: row.id, mailboxId: row.mailboxId, queuedAt: new Date(row.createdAt * 1000) })),
+		);
 		const last = candidates[candidates.length - 1];
 		await env.DB.prepare("UPDATE app_settings SET semantic_backfill_cursor = ? WHERE id = ?")
 			.bind(formatBackfillCursor({ createdAt: last.createdAt, id: last.id }), AGENT_SETTINGS_ID)

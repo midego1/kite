@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { rmSync } from "node:fs";
 import test, { after } from "node:test";
 import { makeBundleDirectory } from "./support/bundle-directory.mjs";
+import { D1_BOUND_PARAMETER_LIMIT, limitBoundParameters } from "./support/jmap-database.mjs";
 import { migrationsDir, seedAccountData } from "./support/module-database.mjs";
 import { bundleModules } from "./support/modules-bundle.mjs";
 
@@ -104,7 +105,7 @@ test("the backfill stops inserting once today's embedding spend reaches its shar
 	);
 });
 
-test("a claimed backfill-origin row gives way once the backfill's own share is spent, but a live row in the same batch still embeds", async (t) => {
+test("a backfill-origin row is left unclaimed once the backfill's own share is spent, but a live row in the same batch still embeds", async (t) => {
 	const { db, env } = await setup(
 		t,
 		`UPDATE app_settings SET agent_daily_spend_cap_micros = 1000, semantic_backfill_cap_share = 50;
@@ -117,11 +118,13 @@ test("a claimed backfill-origin row gives way once the backfill's own share is s
 	insertEligibleMessage(db, "live");
 	env.AI = { run: async (_model, input) => ({ data: fakeVectors(input.text.length) }) };
 	const result = await processEmbeddingBatch(env);
-	assert.equal(result.claimed, 2);
+	// Left out of the claim entirely (S3 of review round 2), not claimed and given back: with the cap already
+	// spent, there is no point loading its body only to find that out again at embed time.
+	assert.equal(result.claimed, 1);
 	assert.equal(
 		db.db.prepare("SELECT status FROM message_embeddings WHERE message_id = 'backfilled'").get().status,
 		"pending",
-		"given back, not spent past the backfill's own share",
+		"never claimed while the backfill's own share is spent",
 	);
 	assert.equal(
 		db.db.prepare("SELECT status FROM message_embeddings WHERE message_id = 'live'").get().status,
@@ -178,4 +181,30 @@ test("the backfill inserts nothing while the pending queue is already deep enoug
 		db.db.prepare("SELECT message_id FROM message_embeddings WHERE message_id = 'should-not-be-queued-yet'").all(),
 		[],
 	);
+});
+
+test("the backfill inserts pending rows for more candidates than one insert chunk without exceeding D1's bound-parameter limit (R1 of review round 2)", async (t) => {
+	const { db, env } = await setup(t);
+	// Off while these are delivered, so the trigger gives them no row: exactly what makes the backfill's own insert
+	// the one under test here, not the trigger's (same trick the backlog test above uses).
+	db.db.exec("UPDATE app_settings SET semantic_search_enabled = 0 WHERE id = 'default'");
+	const count = 45; // several times INSERT_CHUNK_SIZE (20), so the fix is exercised across multiple chunks.
+	const rows = Array.from(
+		{ length: count },
+		(_, index) =>
+			`('candidate-${index}', 'owner', 'mailbox-a', 'inbound', 'x@example.net', 'a@example.com', 'Hi', 'Hello', 'received', ${index})`,
+	).join(",\n");
+	db.db.exec(
+		`INSERT INTO messages (id, user_id, mailbox_id, direction, from_addr, to_addr, subject, text_body, status, created_at) VALUES ${rows};`,
+	);
+	db.db.exec("UPDATE app_settings SET semantic_search_enabled = 1 WHERE id = 'default'");
+	assert.equal(db.db.prepare("SELECT count(*) AS n FROM message_embeddings").get().n, 0);
+
+	const stats = limitBoundParameters(db);
+	await runSemanticBackfillTick(env);
+	assert.ok(stats.maxBound <= D1_BOUND_PARAMETER_LIMIT, `bound ${stats.maxBound}`);
+	// seedAccountData's own "message-1" in mailbox-a also has no row yet (semantic search was off when it was
+	// seeded), so the backfill picks it up too, same as these candidates.
+	const { n } = db.db.prepare("SELECT count(*) AS n FROM message_embeddings WHERE status = 'pending'").get();
+	assert.equal(n, count + 1);
 });

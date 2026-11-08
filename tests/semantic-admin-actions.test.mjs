@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { rmSync } from "node:fs";
 import test, { after } from "node:test";
 import { makeBundleDirectory } from "./support/bundle-directory.mjs";
+import { D1_BOUND_PARAMETER_LIMIT, limitBoundParameters } from "./support/jmap-database.mjs";
 import { migrationsDir, seedAccountData } from "./support/module-database.mjs";
 import { bundleModules } from "./support/modules-bundle.mjs";
 
@@ -193,7 +194,7 @@ test("requeueMailboxSemanticIndex inserts pending rows for eligible messages tha
 	assert.equal(row?.status, "pending");
 });
 
-test("requeueMailboxSemanticIndex inserts rows past more than one D1 insert chunk of missing rows", async (t) => {
+test("requeueMailboxSemanticIndex inserts rows past more than one D1 insert chunk of missing rows, without exceeding D1's bound-parameter limit (R2 of review round 2)", async (t) => {
 	const db = await database(t);
 	db.db.exec(
 		"INSERT INTO mailbox_agent_settings (mailbox_id, ai_disabled, updated_at) VALUES ('mailbox-a', 1, 1) ON CONFLICT(mailbox_id) DO UPDATE SET ai_disabled = 1",
@@ -208,7 +209,9 @@ test("requeueMailboxSemanticIndex inserts rows past more than one D1 insert chun
 	// seedAccountData's own "message-1" in mailbox-a also has no row yet (semantic search was off when it was seeded).
 	assert.equal(db.db.prepare("SELECT count(*) AS n FROM message_embeddings").get().n, 0);
 	db.db.exec("UPDATE mailbox_agent_settings SET ai_disabled = 0 WHERE mailbox_id = 'mailbox-a'");
+	const stats = limitBoundParameters(db);
 	await requeueMailboxSemanticIndex({ DB: db }, "mailbox-a");
+	assert.ok(stats.maxBound <= D1_BOUND_PARAMETER_LIMIT, `bound ${stats.maxBound}`);
 	const { n } = db.db.prepare("SELECT count(*) AS n FROM message_embeddings WHERE status = 'pending'").get();
 	assert.equal(n, ids.length + 1);
 });

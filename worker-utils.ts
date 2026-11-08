@@ -39,6 +39,7 @@ type CoreQueueMessageKind =
 	| "attachment_storage"
 	| "external_sync"
 	| "append_sent"
+	| "search_embed"
 	| "unknown";
 
 /** Core kinds plus the metric class each module declares for its own queue messages. */
@@ -61,6 +62,7 @@ const QUEUE_MESSAGE_KINDS: Record<string, QueueMessageKind> = {
 	"accounts.sync": "external_sync",
 	"accounts.writeback": "external_sync",
 	"accounts.append_sent": "append_sent",
+	"search.embed": "search_embed",
 	...Object.fromEntries(
 		MODULE_MANIFESTS.flatMap((manifest) => manifest.queueMessageTypes.map((entry) => [entry.kind, entry.metricClass])),
 	),

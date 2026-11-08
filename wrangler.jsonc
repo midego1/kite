@@ -88,6 +88,15 @@
 		},
 	],
 	"ai": { "binding": "AI", "remote": true },
+	// Search by meaning (docs/specs/semantic-search.md): the index and its `mailboxId` metadata index are created
+	// once, by hand, before the release that adds this binding is deployed (docs/deployment.md); never from a
+	// Mission. A Worker whose configuration binds an index that does not exist fails to deploy.
+	"vectorize": [
+		{
+			"binding": "VECTORIZE",
+			"index_name": "kite-messages",
+		},
+	],
 	"d1_databases": [
 		{
 			"binding": "DB",
@@ -169,6 +178,12 @@
 		},
 		"images": { "binding": "IMAGES" },
 		"ai": { "binding": "AI" },
+		"vectorize": [
+			{
+				"binding": "VECTORIZE",
+				"index_name": "kite-messages",
+			},
+		],
 		"version_metadata": { "binding": "CF_VERSION_METADATA" },
 		"analytics_engine_datasets": [{ "binding": "METRICS", "dataset": "kite_metrics_preview" }],
 		"ratelimits": [

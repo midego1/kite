@@ -83,6 +83,9 @@ export default defineConfig({
 			KITE_TELEMETRY_URL: E2E_TELEMETRY_URL,
 			// Storage credentials are only ever saved encrypted, so the storage spec needs a key; invented, e2e only.
 			APP_ENCRYPTION_KEY: E2E_APP_ENCRYPTION_KEY,
+			// wrangler dev has no local Vectorize emulation without remote access; search by meaning uses the D1-backed
+			// brute-force test store instead (e2e/104-semantic-search.spec.ts).
+			SEMANTIC_TEST_STORE: "1",
 		},
 		// A reused server keeps whatever state earlier runs left behind; opt in only while iterating.
 		reuseExistingServer: process.env.E2E_REUSE_SERVER === "1",

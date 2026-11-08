@@ -2,7 +2,9 @@
 
 Status: **proposed**; its open questions were decided by Michiel on 2026-10-26 (section 17). Written against `main` at `5c220ba` (release `2026.10.26.1`). Roadmap: proposed [milestone 29](../../ROADMAP.md#milestone-29-search-by-meaning-proposed). Idea adopted from [Zero](https://github.com/Mail-0/Zero) (MIT; the `InboxRag` tool in `apps/server/src/routes/agent/tools.ts`, which is commented out there); no code is ported.
 
-Migrations: the last one on `main` is `0068_add_abuse_ch_auth_key.sql`. This spec claims **`0071_add_semantic_search.sql`**, after [AI writing](ai-writing.md) (`0069`) and [thread summaries](thread-summaries.md) (`0070`), before [assistant by email](assistant-by-email.md) (`0072`). Whichever Mission starts first takes the next free number; keep `tests/migration-order.test.mjs` passing.
+Migrations: written when the last one on `main` was `0068_add_abuse_ch_auth_key.sql`, claiming `0071`. By the time this shipped, `main` had moved to `0094_add_finance_payments.sql` (AI writing landed as `0069`/`0070`, thread summaries as `0072`, and migrations `0071`, `0073`–`0094` are unrelated features). This feature is **`0095_add_semantic_search.sql`**. Keep `tests/migration-order.test.mjs` passing.
+
+**Update (implementation):** this section and a few others below were corrected against the code as it stood when this milestone was actually built, several weeks after the numbers above were written; see the "Updated" notes inline. Built in two pull requests per `docs/releasing.md`-style review limits: schema and the indexing pipeline first (features A/B, plus the Node store and Admin/mailbox UI from feature D, since they are indexing-pipeline controls), search second (feature C).
 
 New Cloudflare resource: a Vectorize index **`kite-messages`** (binding `VECTORIZE`). No existing resource is renamed.
 
@@ -30,8 +32,9 @@ Non-goals: searching attachment contents (PDF or image text), an answer box that
 | JMAP | `Email/query` `text` and `body` filters as `LIKE` (`src/lib/jmap/email-query.ts`) | Unchanged. |
 | Access | `listAccessibleMailboxIds` (`src/lib/mailboxes/access.ts`); D1's 100-parameter limit handled by `inJsonArray` and `queryInChunks` (`src/db/chunk-utils.ts`) | The vector filter and the D1 re-check both use the accessible ids. |
 | Workers AI | `"ai": { "binding": "AI", "remote": true }` in `wrangler.jsonc` (and in `previews`) | Embeddings on Workers. |
-| Node runtime | `server/runtime/env.ts`: no `env.AI`; better-sqlite3 (`^13`), `openKiteQueue`, file bucket; `CF_ACCOUNT_ID` and `CF_TOKEN` may be set for Cloudflare sending | Embeddings through the Workers AI REST API or an OpenAI-compatible endpoint; vectors in a local SQLite file. |
+| Node runtime | `server/runtime/env.ts`: no `env.AI`; better-sqlite3 (`^13`), `openKiteQueue`, file bucket; `CF_ACCOUNT_ID` and `CF_TOKEN` may be set for Cloudflare sending | Embeddings through the Workers AI REST API or an OpenAI-compatible endpoint; vectors in a local SQLite file. **Updated:** `CF_ACCOUNT_ID` was declared in `env.d.ts` but never actually read onto the Node `env` object before this feature; `server/runtime/env.ts` now sets it, since this is the first Node feature that needs it outside `mailerConfig()`'s own copy. |
 | Spend | `reserveAiSpend` / `reconcileAiSpend` (`src/lib/agent/auto-read/spend.ts`), install cap `agent_daily_spend_cap_micros`, token cap `UNKNOWN_RATES_INPUT_TOKEN_CAP` | Embedding calls reserve like model calls. |
+| No AI for this mailbox | `mailbox_agent_settings.ai_disabled` (migration 0091, after this spec's `main` revision), gate in `src/lib/agent/mailbox-ai.ts`; CLAUDE.md requires every new AI call site to honour it | **New since this spec was written.** Embeddings must never be made for an AI-off mailbox: the enqueue triggers check it (section 4.5), the drain re-checks it, and the backfill query excludes it. Turning it on clears the mailbox's vectors exactly like the feature's own `semantic_index` switch (section 5); turning it off re-queues the mailbox, guarded by both switches. |
 | Queues and cron | `AGENT_QUEUE` (`kite-agent`, `max_batch_size` 1), cron `*/5 * * * *` (Workers) and every minute (Node, `server/runtime/scheduler.ts`) | The indexer drains on both. |
 | Triggers precedent | FTS5 triggers (0030), `trashed_at` triggers (0053), [thread summaries](thread-summaries.md) §7.2 | The index queue and delete tombstones are kept by triggers. |
 | Backups | `INTERNAL_TABLES` in `src/lib/backups/export.ts`; `messages_fts%` skipped as derived | The index tables are internal. |
@@ -95,9 +98,9 @@ interface VectorStore {
 For each eligible message, `buildEmbeddingText` (pure, `chunk-utils.ts`):
 
 - A header: `Subject:`, `From:` (name and address), `To:` (first three), `Date:` (ISO date), and `Attachments:` (file names only).
-- The text: `htmlToReadableText` of the body (or `text_body`), with quoted replies removed (lines starting with `>`, the part after a `wrapQuotedHtml` marker or an `On … wrote:` line), whitespace collapsed.
+- The text: `htmlToReadableText` of the body (or `text_body`), with quoted replies removed. **Updated:** by the time `htmlToReadableText` has run, an HTML-level `wrapQuotedHtml` marker is already gone, so quote detection reuses `getLatestEmailContent` (`src/lib/email/reply-content-utils.ts`, already shared by reply handling) instead: lines starting with `>`, an `On … wrote:` line, or an `-- Original Message --` separator.
 - **Chunking:** about 1,500 characters (~400 tokens) per chunk, split at paragraph then sentence boundaries, 200 characters of overlap, the header repeated at the top of every chunk, at most **8 chunks** per message (the first ~12,000 characters). Text after that is still found by keyword search.
-- **Eligible:** status `received`, `sent` or `archived`, in a mailbox whose `semantic_index` is on, with spam verdict other than `spam`. Never `draft` (private to its author), `spam`, `trash`, `screening`, `template`, `queued` or `failed`.
+- **Eligible:** status `received`, `sent` or `archived`, in a mailbox whose `semantic_index` is on and whose "No AI for this mailbox" (`ai_disabled`, section 2) is off, with spam verdict other than `spam`. Never `draft` (private to its author), `spam`, `trash`, `screening`, `template`, `queued` or `failed`. `isSemanticEligibleMessage` (`chunk-utils.ts`) checks only the message row itself (status and spam verdict, mirroring `isSummaryEligible`); the mailbox's two switches are checked separately, by the triggers (`ai_disabled` only) and the drain (both).
 
 ### 4.5 Indexing pipeline
 
@@ -105,9 +108,9 @@ For each eligible message, `buildEmbeddingText` (pure, `chunk-utils.ts`):
 
 **Enqueueing by triggers**, so every path that creates or changes mail (inbound, send, JMAP import, IMAP import, Screener approval, a restore, moving out of Spam or Trash) is covered without code in each:
 
-- `AFTER INSERT ON messages` when the new status is eligible and `app_settings.semantic_search_enabled = 1` → `INSERT OR IGNORE` a `pending` row.
-- `AFTER UPDATE OF status ON messages` when the new status is eligible and the old one was not → upsert a `pending` row: `INSERT … ON CONFLICT(message_id) DO UPDATE SET status = 'pending', queued_at = <now>, lease_until = NULL WHERE message_embeddings.status = 'skipped'`. A row already `indexed` stays (its vectors still exist) and a `failed` row stays `failed` until a rebuild, but a `skipped` row becomes `pending` again, so a message restored from Trash or Spam after the drain skipped it is indexed instead of staying missing until a manual rebuild.
-- `AFTER DELETE ON messages` → copy `vector_key` and `chunk_count` into `message_embedding_deletes`, then delete the state row. (The state table has no foreign key to `messages` so that this trigger can still read it.)
+- `AFTER INSERT ON messages` when the new status is eligible, `app_settings.semantic_search_enabled = 1` and the mailbox's `ai_disabled` is off → `INSERT OR IGNORE` a `pending` row. **Updated:** the `ai_disabled` check was added (section 2); the per-mailbox `semantic_index` switch is deliberately *not* checked here (checked at drain time instead), so turning it off can skip and clear a mailbox's rows explicitly without waiting for the next message.
+- `AFTER UPDATE OF status ON messages` when the new status is eligible (including the mailbox checks above) and the old one was not → upsert a `pending` row: `INSERT … ON CONFLICT(message_id) DO UPDATE SET status = 'pending', queued_at = <now>, lease_until = NULL WHERE message_embeddings.status = 'skipped'`. A row already `indexed` stays (its vectors still exist) and a `failed` row stays `failed` until a rebuild, but a `skipped` row becomes `pending` again, so a message restored from Trash or Spam after the drain skipped it is indexed instead of staying missing until a manual rebuild.
+- `AFTER DELETE ON messages` → copy `vector_key` and `chunk_count` into `message_embedding_deletes`, then delete the state row. (The state table has no foreign key to `messages` so that this trigger can still read it.) **Updated:** `vector_key` is nullable and is filled in by the drain (below), not by this trigger, because SQLite/D1 has no built-in SHA-256 function; a message deleted before it was ever claimed leaves a tombstone with no key and `chunk_count` 0, which has nothing to remove.
 
 Messages moved to Spam or Trash keep their vectors until they are deleted for good; search re-checks status in D1, so they never show. Trash retention and mailbox purges delete the rows, and the tombstones remove the vectors.
 
@@ -115,16 +118,17 @@ Messages moved to Spam or Trash keep their vectors until they are deleted for go
 
 1. Gates: `semantic_search_enabled`, `agent_enabled`, a configured embedding provider; an external (compatible) provider also needs `agentExternalAutoReadAllowed`, re-read on every batch.
 2. Claim up to 32 `pending` rows (or `running` rows whose lease expired) with one `UPDATE … SET status = 'running', lease_until = ? WHERE message_id IN (SELECT … ORDER BY queued_at DESC LIMIT 32) RETURNING …`, newest first so new mail is searchable before old mail is.
-3. Load the messages, re-check eligibility (a row whose message became ineligible is set `skipped`), build chunks.
-4. Reserve spend (section 8); none left → release the claim and stop.
-5. Embed in one call per 32 texts; re-read the claimed rows and `upsert` the vectors only for those still `running` under this lease, then set them `indexed` with the content hash and chunk count. A message deleted while its embedding call was in flight lost its state row to the delete trigger, so it fails this re-check and its vectors are never written; its tombstone (saved with `chunk_count` 0) has nothing to remove. On a provider error: `attempts + 1`, back to `pending` until 3 attempts, then `failed` with the error code (no content).
-6. Delete vectors whose chunk count shrank, and drain up to 1,000 tombstones per run with `deleteByIds`.
+3. Load the messages, re-check eligibility (status, spam verdict, the mailbox's `semantic_index` and `ai_disabled`; a row that fails is set `skipped`), build chunks, and fill in `vector_key` (first 32 hex of SHA-256 of the message id) for a row that does not have one yet.
+4. Skip re-embedding a row whose content hash (of the chunk texts and model) has not changed since it was last indexed — the common case after **Rebuild index** — and mark it `indexed` again without a provider call.
+5. Reserve spend (section 8) for what is left; none left → release the claim and stop.
+6. Embed in one call per 32 texts; re-read the claimed rows and `upsert` the vectors only for those still `running` under this lease, then set them `indexed` with the content hash and chunk count, deleting any extra chunk ids left over from a larger chunk count the message had the last time it was indexed. A message deleted while its embedding call was in flight lost its state row to the delete trigger, so it fails this re-check and its vectors are never written; its tombstone (saved with `chunk_count` 0) has nothing to remove. On a provider error: `attempts + 1`, back to `pending` until 3 attempts, then `failed` with the error code (no content).
+7. Drain up to 1,000 tombstones with `deleteByIds`, every run (not only when something was claimed).
 
 **Triggering the drain.** After `processInboundMessage` and `sendEmail` store a message, they send `{ kind: "search.embed" }` on `AGENT_QUEUE` (cheap and idempotent: the claim makes duplicate messages no-ops). Every cron tick also runs up to 4 batches on Workers and 2 on Node, which is what moves a backfill along: about 128 messages per 5 minutes on Workers, roughly 37,000 a day, within the spend rules below. A separate queue binding is not added; the agent queue's batch size of 1 keeps embedding work from delaying triage for long.
 
 **Backfill.** Turning the feature on starts it: each cron tick inserts `pending` rows for up to 5,000 more eligible messages, newest first, from a cursor in `app_settings.semantic_backfill_cursor` (the `created_at, id` of the oldest message queued so far) until no message is left. Admin shows progress (indexed / eligible), the estimated cost to finish and **Pause**.
 
-**Rebuild.** **Rebuild index** in Admin sets every row back to `pending`; upserts overwrite the same ids. **Clear stale vectors** lists Vectorize ids page by page (1,000 per page) and deletes those whose key is not in `message_embeddings`, for an index left with orphans after a restore into a different database.
+**Rebuild.** **Rebuild index** in Admin sets every allowed row back to `pending` (never a mailbox whose `semantic_index` or `ai_disabled` excludes it); upserts overwrite the same ids. **Clear stale vectors** lists ids page by page (1,000 per page) and deletes those whose key is not in `message_embeddings`, for an index left with orphans after a restore into a different database. **Updated:** Vectorize's binding has no way to list every vector it holds (`describe`, `query`, `queryById`, `insert`, `upsert`, `deleteByIds`, `getByIds` only), so this action only works for the stores with a real table to page through (the Node and dev/e2e brute-force stores); on Workers it answers `{ supported: false }` until Cloudflare adds a listing API. Turning the feature off (section 13) does not need this: it deletes every vector *this install's own rows* name before truncating them, which needs no listing.
 
 ### 4.6 Querying and merging with FTS5
 
@@ -161,7 +165,7 @@ All routes are session routes through `requireSessionUser` (admin ones through `
 
 ## 7. Data model and migration
 
-`0071_add_semantic_search.sql` (hand-written, journal entry), schema in `src/db/schema/semantic.ts`:
+`0095_add_semantic_search.sql` (hand-written, journal entry), schema in `src/db/schema/semantic.ts`:
 
 `message_embeddings`
 
@@ -169,7 +173,7 @@ All routes are session routes through `requireSessionUser` (admin ones through `
 | --- | --- | --- |
 | `message_id` | text PK | No foreign key (the delete trigger needs the row; section 4.5) |
 | `mailbox_id` | text | For skipping excluded mailboxes |
-| `vector_key` | text NOT NULL | First 32 hex of SHA-256(message id); index |
+| `vector_key` | text | First 32 hex of SHA-256(message id), filled in by the drain, not NOT NULL (section 4.5: no SHA-256 in SQLite/D1); index |
 | `status` | text `pending \| running \| indexed \| skipped \| failed` | |
 | `chunk_count` | int default 0 | |
 | `content_hash` | text | SHA-256 of the embedded text and model; skip re-embedding when unchanged |
@@ -182,9 +186,9 @@ Indexes: `(status, queued_at)`, `(mailbox_id)`, `(vector_key)`.
 
 `message_embedding_deletes`: `vector_key` text, `chunk_count` int, `created_at`; drained by the indexer.
 
-Also: the three triggers of 4.5; `app_settings` columns `semantic_search_enabled` (default 0), `semantic_embedding_provider` (`workers_ai | compatible`, nullable; the model is fixed), `semantic_backfill_cursor`, `semantic_backfill_paused` (default 0), `semantic_backfill_cap_share` (percent, default 50); `mailbox_agent_settings.semantic_index` (default 1).
+Also: the three triggers of 4.5; `app_settings` columns `semantic_search_enabled` (default 0), `semantic_embedding_provider` (`workers_ai | compatible`, nullable; the model is fixed), `semantic_compatible_base_url`, `semantic_compatible_api_key` (sealed with `APP_ENCRYPTION_KEY`), `semantic_backfill_cursor`, `semantic_backfill_paused` (default 0), `semantic_backfill_cap_share` (percent, default 50); `mailbox_agent_settings.semantic_index` (default 1).
 
-**Before the migration:** `semantic_search_enabled` cannot be read, so search is keyword-only and Admin shows "Apply the database update". The `app_settings` and `mailbox_agent_settings` columns are read through `selectRow` (`src/lib/db/pending-columns.ts`).
+**Before the migration:** `semantic_search_enabled` cannot be read, so search is keyword-only and Admin shows "Apply the database update". `mailbox_agent_settings.semantic_index` is read through `selectRow`/mapped in the schema like `ai_disabled` (`src/lib/db/pending-columns.ts`). **Updated:** the seven `app_settings` columns above are deliberately **not** mapped in the Drizzle schema at all, unlike `mailbox_agent_settings.semantic_index` — `src/lib/semantic/install-settings.ts` reads and writes them with plain SQL instead. Mapping them turned out to break every other settings save that inserts a fresh `app_settings` row (resend key, agent settings, general settings, AWS config, SES and Resend receiving, the alert webhook, the abuse.ch key, branding): Drizzle names every mapped column in an `INSERT`, so each of those would fail with "no such column" on an install that has not applied this migration yet, exactly the bug the pre-existing comment on `attachment_storage_job` already warns about. `mailbox_agent_settings.semantic_index` does not have this problem because its one insert path already goes through `insertRow` (`pending-columns.ts`), which retries without a missing column.
 
 ## 8. Cost and spend caps
 
@@ -270,7 +274,7 @@ Vectorize has no local emulation in `wrangler dev` without remote access, which 
 - `semantic-drain.test.mjs`: a message deleted while its embedding call is in flight gets no vectors (the re-check before `upsert` finds no claimed row) and its tombstone drains with nothing to delete.
 - Backup tests: the two tables are internal; `queue-log-context` for `search.embed`.
 
-### 14.2 e2e (`e2e/56-semantic-search.spec.ts`; take the next free number)
+### 14.2 e2e (`e2e/104-semantic-search.spec.ts`; `56` was already taken twice by the time this shipped — take the next free number)
 
 The fake model gains `POST /embeddings` returning deterministic vectors: words are mapped through a small synonym table (`invoice`/`bill`/`factuur`, `roof`/`dak`, `dentist`/`tandarts`) and hashed into 1,024 dimensions, so "meaning" matches are predictable. It answers for the model name `bge-m3` only and records requests. It is a compatible provider, so the tests turn the external-provider opt-in on, and one test checks that nothing is embedded while it is off.
 
@@ -290,11 +294,14 @@ Work on `mission/semantic-search`; the usual validation (`npm run check:mission`
 | Feature | Work | Acceptance | Size |
 | --- | --- | --- | --- |
 | **A. Spike** | Deploy-button provisioning of the index, the metadata index on an existing install, bge-m3 quality on Dutch and English mail, Vectorize latency with `$in` filters, Node brute-force timings on 100,000 chunks | A short report in the PR: whether the Deploy button creates the index correctly, and Node timings that confirm brute force is enough | 1 day |
-| **B. Pipeline** | Migration 0071, triggers, `message_embeddings`, the drain, the Vectorize and test stores, embedding providers, spend, backfill, tombstones, the binding and docs | New and backfilled mail is indexed within the caps; deletes remove vectors | 4 days |
+| | **Not run.** This environment has no live Cloudflare account, so none of A's checks against real infrastructure (Deploy-button provisioning, bge-m3 quality, Vectorize latency) were performed; they stay as an operator task before relying on them in production. `semantic-sqlite-store.test.mjs` fixtures (50 random vectors) confirm the Node store's quantisation keeps the right order, which is a correctness check, not the 100,000-chunk timing this row calls for. | |
+| **B. Pipeline** | Migration 0095, triggers, `message_embeddings`, the drain, the Vectorize and test stores, embedding providers, spend, backfill, tombstones, the binding and docs | New and backfilled mail is indexed within the caps; deletes remove vectors | 4 days |
 | **C. Search** | `semanticSearch`, fusion, D1 re-check, `/api/messages`, `search_emails` and MCP `mode`, `/api/v1` `mode`, the search chip, e2e 1–8 | Section 4.6 and 5 behaviour; keyword search unchanged when off | 3 days |
 | **D. Node and Admin** | `data/vectors.sqlite` store, REST and compatible embeddings, Admin page (progress, pause, rebuild, clear stale), mailbox switch | Same behaviour on Node; `npm run build:node` passes | 2–3 days |
 
 Total: about 10 to 11 working days.
+
+**Updated (implementation):** shipped as two pull requests to stay reviewable, per features A/B/D-minus-the-embedding-providers-table in the first (schema, triggers, both drains, both vector stores, spend, backfill, Admin page, the mailbox switch — these are indexing-pipeline controls even though D also covers Node) and feature C in the second (search, fusion, the chip, the tool `mode`s, e2e).
 
 ## 16. Place in the roadmap
 

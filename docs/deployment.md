@@ -178,6 +178,20 @@ In the inbox, open **Assistant → Settings** for a mailbox, select its reviewer
 
 The assistant panel no longer exposes MCP key management. External MCP clients can still connect to `https://<your-kite-origin>/mcp` with a mailbox-scoped Bearer key created through the authenticated `/api/agent/mcp-keys` endpoint. Keys can be listed and revoked through that endpoint; a new key is shown only once. The server uses Streamable HTTP and accepts clients that can set a Bearer header. Its `request_send` tool returns a Kite review URL; the MCP key cannot confirm or deliver messages directly. MCP does not require Workers AI for read and draft tools.
 
+## Search by meaning (optional)
+
+Off by default; the primary admin turns it on in **Admin → Agent → Search by meaning** once it is deployed. It needs a Vectorize index that **must exist before the release that binds it is deployed** (`docs/specs/semantic-search.md` section 10) — a Worker whose configuration names a binding to an index that does not exist fails to deploy. Run once, with Wrangler logged in to this install's Cloudflare account, before deploying a Kite release that includes this feature:
+
+```bash
+npx wrangler vectorize create kite-messages --dimensions=1024 --metric=cosine
+npx wrangler vectorize create-metadata-index kite-messages --property-name=mailboxId --type=string
+npx wrangler vectorize info kite-messages    # check: 1024 dimensions, cosine
+```
+
+The metadata index must exist before the first vector is inserted, which is why both commands run before the deploy. This includes production and every Preview (they share the production database and the binding). An install that never turns the feature on still needs the index to exist once the binding is in the Worker's configuration; it stays empty until then. These are operator commands: never run `wrangler vectorize` (or any `wrangler ... --remote` command) from a Mission.
+
+Off Workers, the Node/Docker runtime needs no Vectorize index: it searches a local file (`data/vectors.sqlite`) instead, and the embedding provider is either the Workers AI REST API (`CF_ACCOUNT_ID` and `CF_TOKEN`) or an OpenAI-compatible endpoint serving `bge-m3`, configured in Admin.
+
 ## Updating Kite
 
 Deploy a new version the same way you deployed the first one: push to the repository connected to Cloudflare's Git integration, or run `npm run deploy`. Kite does not check for or pull updates by itself.

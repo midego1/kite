@@ -47,8 +47,11 @@ export function ConnectedAccountsSettings() {
 		queryKey: CONNECTED_ACCOUNTS_QUERY_KEY,
 		queryFn: fetchConnectedAccounts,
 		refetchOnWindowFocus: false,
-		// While a check runs, the list follows it until it is done.
-		refetchInterval: (query) => (query.state.data?.accounts.some((account) => account.sync.running) ? 3_000 : 60_000),
+		// While a check or a recheck runs, the list follows it until it is done.
+		refetchInterval: (query) =>
+			query.state.data?.accounts.some((account) => account.sync.running || account.authRecheck?.status === "running")
+				? 3_000
+				: 60_000,
 	});
 	const [editing, setEditing] = useState<Editing>(null);
 	const [notice, setNotice] = useState<{ text: string; accountId?: string; tone?: "success" | "warning" } | null>(null);

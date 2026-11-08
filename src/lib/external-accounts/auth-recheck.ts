@@ -1,4 +1,4 @@
-import { and, asc, eq, gt, gte, inArray, isNull, lt, or, sql } from "drizzle-orm";
+import { and, asc, eq, gt, gte, inArray, isNull, lt, ne, or, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { messages } from "@/db/schema";
 import { externalAccountAuthRechecks, externalAccounts, messageExternalAccounts } from "@/db/schema/external-accounts";
@@ -73,6 +73,12 @@ async function enqueue(env: CloudflareEnv, accountId: string): Promise<void> {
 	await env.AGENT_QUEUE?.send(authRecheckMessage(accountId));
 }
 
+/** The queue every account recheck message needs to ride; this install was not deployed with it bound. */
+function requireQueue(env: CloudflareEnv): void {
+	if (!env.AGENT_QUEUE)
+		throw new ExternalAccountRefusal(503, "Recheck authentication is not available on this server", "SYNC_UNAVAILABLE");
+}
+
 /**
  * Starts (or resumes) "Recheck authentication" for one of the signed-in user's accounts (spec §6.6.1): the last
  * `AUTH_RECHECK_SINCE_DAYS` days of that account's own mail, read again from its raw MIME for Google's own
@@ -82,6 +88,7 @@ async function enqueue(env: CloudflareEnv, accountId: string): Promise<void> {
 export async function startAuthRecheck(env: CloudflareEnv, actor: AccountActor, id: string, now = new Date()) {
 	const { row: account } = await ownEligibleAccount(env, actor, id);
 	if (!(await authRecheckTableReady(env))) throw new ExternalAccountRefusal(409, "Account not found");
+	requireQueue(env);
 	const existing = (
 		await getDb(env)
 			.select()
@@ -108,10 +115,16 @@ export async function startAuthRecheck(env: CloudflareEnv, actor: AccountActor, 
 		updatedAt: now,
 		finishedAt: null,
 	};
+	// A worker that took the row between the read above and this write (another tab's start, already queued) keeps
+	// its lease and progress: the conflict update never fires against an already-running row.
 	await getDb(env)
 		.insert(externalAccountAuthRechecks)
 		.values({ accountId: account.id, ...values })
-		.onConflictDoUpdate({ target: externalAccountAuthRechecks.accountId, set: values });
+		.onConflictDoUpdate({
+			target: externalAccountAuthRechecks.accountId,
+			setWhere: ne(externalAccountAuthRechecks.status, "running"),
+			set: values,
+		});
 	await enqueue(env, account.id);
 	const [row] = await getDb(env)
 		.select()
@@ -202,6 +215,7 @@ async function runPage(env: CloudflareEnv, row: AuthRecheckRow, authservId: stri
 		cursor = { createdAt: message.createdAt, id: message.id };
 		try {
 			if (await recheckOne(env, message, authservId)) updated += 1;
+			else skipped += 1;
 		} catch (error) {
 			skipped += 1;
 			log.warn("external.auth_recheck_message_failed", { messageId: message.id, error });

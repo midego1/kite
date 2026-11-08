@@ -1,15 +1,7 @@
-import { and, asc, eq, exists, gt, isNotNull, isNull, lt, not, notExists, or, sql, type SQL } from "drizzle-orm";
-import type { SQLiteColumn } from "drizzle-orm/sqlite-core";
+import { and, eq, isNull, lt, or } from "drizzle-orm";
 import { getDb } from "@/db";
-import { mailboxAgentSettings, messages, users } from "@/db/schema";
-import {
-	financeCharges,
-	financePayments,
-	financeReceipts,
-	financeReceiptSettings,
-	financeSubscriptions,
-} from "@/db/schema/finance";
-import { moduleSettings, userModuleAccess } from "@/db/schema/modules";
+import { users } from "@/db/schema";
+import { financeReceipts } from "@/db/schema/finance";
 import { missingColumnFromError } from "@/lib/auth/user-lookup-utils";
 import { APP_SETTINGS_ID } from "@/lib/branding/service";
 import { getEnv } from "@/lib/cloudflare";
@@ -21,23 +13,12 @@ import { moduleHost } from "@/lib/modules/host";
 import type { CapabilityCallContext } from "@/lib/modules/module-types";
 import { onReceiptTables, onReceiptTablesOr, receiptTablesReady } from "./receipt-tables";
 import { receiptsEnabledFor } from "./receipt-settings";
+import { receiptCandidates, type ReceiptCandidate, type ReceiptSourceTable } from "./receipt-candidates";
+
+export type { ReceiptCandidate, ReceiptSourceTable } from "./receipt-candidates";
+export { receiptCandidates } from "./receipt-candidates";
 
 const log = createLogger("finance");
-
-export type ReceiptSourceTable = "finance_charges" | "finance_payments" | "finance_subscriptions";
-
-export type ReceiptCandidate = {
-	sourceTable: ReceiptSourceTable;
-	sourceId: string;
-	userId: string;
-	mailboxId: string | null;
-	messageId: string;
-	attachmentId: string | null;
-	vendor: string;
-	docType: string | null;
-	documentAt: Date;
-	createdAt: Date;
-};
 
 const db = () => getDb(getEnv());
 
@@ -56,243 +37,6 @@ function claimLeaseMs(attempts: number): number {
 	return Math.min(MAX_CLAIM_LEASE_MS, CLAIM_LEASE_MS * 2 ** attempts);
 }
 
-/** A `finance_receipts` row for this source that is already claimed-or-filed: `done`, `skipped`, or `pending`
- * with a lease that has not yet expired. Anything else (no row, or a `pending` claim whose run died) is still
- * a candidate. */
-function claimedOrDone(table: ReceiptSourceTable, idColumn: SQLiteColumn, now: Date): SQL {
-	return exists(
-		db()
-			.select({ one: sql`1` })
-			.from(financeReceipts)
-			.where(
-				and(
-					eq(financeReceipts.sourceTable, table),
-					eq(financeReceipts.sourceId, idColumn),
-					or(
-						sql`${financeReceipts.status} != 'pending'`,
-						and(isNotNull(financeReceipts.leaseUntil), gt(financeReceipts.leaseUntil, now)),
-					),
-				),
-			),
-	);
-}
-
-/** Whether this owner is the primary admin, who `isModuleEnabledFor` (`src/lib/modules/state.ts`) always treats
- * as allowed, whatever a stale `user_module_access` row says. `ownerEligible` mirrors that here so such a row
- * does not silently exclude the primary admin's own receipts from the candidate pool. */
-function isPrimaryAdminOwner(userIdColumn: SQLiteColumn): SQL {
-	return exists(
-		db()
-			.select({ one: sql`1` })
-			.from(users)
-			.where(and(eq(users.id, userIdColumn), eq(users.role, "admin"), eq(users.isPrimaryAdmin, true))),
-	);
-}
-
-/** Not excluded by a per-user `user_module_access` row for `moduleId`, unless the owner is the primary admin,
- * who such a row never actually blocks. */
-function userModuleAllowed(userIdColumn: SQLiteColumn, moduleId: "drive" | "finance"): SQL {
-	return or(
-		isPrimaryAdminOwner(userIdColumn),
-		notExists(
-			db()
-				.select({ one: sql`1` })
-				.from(userModuleAccess)
-				.where(
-					and(
-						eq(userModuleAccess.userId, userIdColumn),
-						eq(userModuleAccess.moduleId, moduleId),
-						eq(userModuleAccess.allowed, false),
-					),
-				),
-		),
-	)!;
-}
-
-/** A row this feature's own setting, or the install's or the user's module state, already rules out: left out of
- * both the sweep and the backfill, so neither gets stuck offering a row that can never be filed for this owner.
- * `fileOneReceipt` checks the same things again before calling Drive (the authoritative gate); this is only what
- * keeps the candidate queries themselves from stalling on an owner who can never be filed for right now. */
-function ownerEligible(userIdColumn: SQLiteColumn): SQL {
-	return and(
-		notExists(
-			db()
-				.select({ one: sql`1` })
-				.from(financeReceiptSettings)
-				.where(and(eq(financeReceiptSettings.userId, userIdColumn), eq(financeReceiptSettings.enabled, false))),
-		),
-		notExists(
-			db()
-				.select({ one: sql`1` })
-				.from(moduleSettings)
-				.where(and(eq(moduleSettings.moduleId, "drive"), eq(moduleSettings.enabled, false))),
-		),
-		userModuleAllowed(userIdColumn, "drive"),
-		notExists(
-			db()
-				.select({ one: sql`1` })
-				.from(moduleSettings)
-				.where(and(eq(moduleSettings.moduleId, "finance"), eq(moduleSettings.enabled, false))),
-		),
-		userModuleAllowed(userIdColumn, "finance"),
-	)!;
-}
-
-/** A mailbox with "No AI for this mailbox" on: Money Watch's own rule is that such a mailbox is never sent to an
- * AI provider or copied out by an automatic feature, so it is left out of the candidate pool entirely rather than
- * claimed and immediately skipped on every tick. */
-function mailboxAiOn(mailboxIdColumn: SQLiteColumn): SQL {
-	return notExists(
-		db()
-			.select({ one: sql`1` })
-			.from(mailboxAgentSettings)
-			.where(and(eq(mailboxAgentSettings.mailboxId, mailboxIdColumn), eq(mailboxAgentSettings.aiDisabled, true))),
-	);
-}
-
-/** Unfiled, eligible `finance_charges` rows (a message and a subscription vendor, newest filings last). */
-async function chargeCandidates(limit: number, userId?: string, createdAfter?: Date): Promise<ReceiptCandidate[]> {
-	const now = new Date();
-	const rows = await onReceiptTables(() =>
-		db()
-			.select({
-				id: financeCharges.id,
-				userId: financeCharges.userId,
-				messageId: financeCharges.messageId,
-				attachmentId: financeCharges.attachmentId,
-				docType: financeCharges.docType,
-				documentAt: financeCharges.documentAt,
-				createdAt: financeCharges.createdAt,
-				mailboxId: messages.mailboxId,
-				vendor: financeSubscriptions.vendor,
-			})
-			.from(financeCharges)
-			.innerJoin(financeSubscriptions, eq(financeSubscriptions.id, financeCharges.subscriptionId))
-			.leftJoin(messages, eq(messages.id, financeCharges.messageId))
-			.where(
-				and(
-					isNotNull(financeCharges.messageId),
-					userId ? eq(financeCharges.userId, userId) : undefined,
-					createdAfter ? gt(financeCharges.createdAt, createdAfter) : undefined,
-					ownerEligible(financeCharges.userId),
-					mailboxAiOn(messages.mailboxId),
-					not(claimedOrDone("finance_charges", financeCharges.id, now)),
-				),
-			)
-			.orderBy(asc(financeCharges.createdAt), asc(financeCharges.id))
-			.limit(limit),
-	);
-	return rows
-		.filter((row) => row.messageId)
-		.map((row) => ({
-			sourceTable: "finance_charges" as const,
-			sourceId: row.id,
-			userId: row.userId,
-			mailboxId: row.mailboxId ?? null,
-			messageId: row.messageId!,
-			attachmentId: row.attachmentId,
-			vendor: row.vendor,
-			docType: row.docType,
-			documentAt: row.documentAt,
-			createdAt: row.createdAt,
-		}));
-}
-
-/** Unfiled, eligible `finance_payments` rows (not a removed tombstone). */
-async function paymentCandidates(limit: number, userId?: string, createdAfter?: Date): Promise<ReceiptCandidate[]> {
-	const now = new Date();
-	const rows = await onReceiptTables(() =>
-		db()
-			.select()
-			.from(financePayments)
-			.where(
-				and(
-					isNull(financePayments.removedAt),
-					isNotNull(financePayments.messageId),
-					userId ? eq(financePayments.userId, userId) : undefined,
-					createdAfter ? gt(financePayments.createdAt, createdAfter) : undefined,
-					ownerEligible(financePayments.userId),
-					mailboxAiOn(financePayments.mailboxId),
-					not(claimedOrDone("finance_payments", financePayments.id, now)),
-				),
-			)
-			.orderBy(asc(financePayments.createdAt), asc(financePayments.id))
-			.limit(limit),
-	);
-	return rows
-		.filter((row) => row.messageId)
-		.map((row) => ({
-			sourceTable: "finance_payments" as const,
-			sourceId: row.id,
-			userId: row.userId,
-			mailboxId: row.mailboxId,
-			messageId: row.messageId!,
-			attachmentId: row.attachmentId,
-			vendor: row.vendor,
-			docType: row.docType,
-			documentAt: row.documentAt,
-			createdAt: row.createdAt,
-		}));
-}
-
-/** Unfiled, eligible `finance_subscriptions` rows: the message that started tracking it, if any. */
-async function subscriptionCandidates(
-	limit: number,
-	userId?: string,
-	createdAfter?: Date,
-): Promise<ReceiptCandidate[]> {
-	const now = new Date();
-	const rows = await onReceiptTables(() =>
-		db()
-			.select()
-			.from(financeSubscriptions)
-			.where(
-				and(
-					isNotNull(financeSubscriptions.sourceMessageId),
-					userId ? eq(financeSubscriptions.userId, userId) : undefined,
-					createdAfter ? gt(financeSubscriptions.createdAt, createdAfter) : undefined,
-					ownerEligible(financeSubscriptions.userId),
-					mailboxAiOn(financeSubscriptions.mailboxId),
-					not(claimedOrDone("finance_subscriptions", financeSubscriptions.id, now)),
-				),
-			)
-			.orderBy(asc(financeSubscriptions.createdAt), asc(financeSubscriptions.id))
-			.limit(limit),
-	);
-	return rows
-		.filter((row) => row.sourceMessageId)
-		.map((row) => ({
-			sourceTable: "finance_subscriptions" as const,
-			sourceId: row.id,
-			userId: row.userId,
-			mailboxId: row.mailboxId,
-			messageId: row.sourceMessageId!,
-			attachmentId: null,
-			vendor: row.vendor,
-			docType: null,
-			documentAt: row.createdAt,
-			createdAt: row.createdAt,
-		}));
-}
-
-/** Unfiled rows across all three tables, oldest first, for the automatic sweep or one owner's backfill.
- * `createdAfter`, used only by the automatic sweep (never the explicit backfill, which must still reach a
- * user's whole history), excludes a row created at or before the sweep floor. */
-export async function receiptCandidates(
-	limit: number,
-	userId?: string,
-	createdAfter?: Date,
-): Promise<ReceiptCandidate[]> {
-	const [charges, payments, subscriptions] = await Promise.all([
-		chargeCandidates(limit, userId, createdAfter),
-		paymentCandidates(limit, userId, createdAfter),
-		subscriptionCandidates(limit, userId, createdAfter),
-	]);
-	return [...charges, ...payments, ...subscriptions]
-		.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
-		.slice(0, limit);
-}
-
 function receiptYear(candidate: ReceiptCandidate): number {
 	return candidate.documentAt.getUTCFullYear();
 }
@@ -304,10 +48,19 @@ function receiptYear(candidate: ReceiptCandidate): number {
  * its own. A retry of the same row keeps using this same name, which is exactly what makes a retry resume rather
  * than duplicate.
  */
-function receiptBaseName(candidate: ReceiptCandidate): string {
+/** A short, stable tag for one source row, for `receiptBaseName`'s suffix: distinct rows get distinct tags
+ * without printing the row's own internal id (`payment-…`, `fchg_…`) into a file name a user sees in Drive. */
+async function shortSourceTag(candidate: ReceiptCandidate): Promise<string> {
+	const bytes = new TextEncoder().encode(`${candidate.sourceTable}\u0000${candidate.sourceId}`);
+	const digest = await crypto.subtle.digest("SHA-256", bytes);
+	const hex = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+	return hex.slice(0, 8);
+}
+
+async function receiptBaseName(candidate: ReceiptCandidate): Promise<string> {
 	const day = candidate.documentAt.toISOString().slice(0, 10);
 	const parts = [day, candidate.vendor, candidate.docType ?? "tracked"].filter(Boolean);
-	const suffix = ` (${candidate.sourceId})`;
+	const suffix = ` (${await shortSourceTag(candidate)})`;
 	const base = parts.join(" ").slice(0, Math.max(1, 150 - suffix.length));
 	return `${base}${suffix}`;
 }
@@ -415,7 +168,7 @@ export async function fileOneReceipt(candidate: ReceiptCandidate): Promise<FileR
 		messageId: candidate.messageId,
 		attachmentId: candidate.attachmentId,
 		folderPath: ["Money Watch", "Receipts", String(receiptYear(candidate))],
-		baseName: receiptBaseName(candidate),
+		baseName: await receiptBaseName(candidate),
 	});
 	if (!result.ok) {
 		if (result.error.code === "module_disabled" || result.error.code === "forbidden") {
@@ -476,6 +229,24 @@ export async function fileOneReceipt(candidate: ReceiptCandidate): Promise<FileR
 			.where(eq(financeReceipts.id, claimId)),
 	);
 	return "filed";
+}
+
+/**
+ * Releases every one of an owner's claims still `pending` (their lease, not their `attempts`, so a row that
+ * keeps failing still backs off further on its next failure instead of being hammered every time this runs),
+ * so the next sweep tick or backfill batch can take them over right away instead of waiting out a lease that
+ * can by now be hours long. `startReceiptBackfill` calls this: pressing "Save receipts for existing payments"
+ * again is an explicit ask to retry now, and the dialog's "will be tried again automatically" line is only true
+ * if pressing the button actually does that instead of silently waiting on whatever lease a stuck row already
+ * holds.
+ */
+export async function releaseOwnerPendingClaims(userId: string): Promise<void> {
+	await onReceiptTables(() =>
+		db()
+			.update(financeReceipts)
+			.set({ leaseUntil: null, updatedAt: new Date() })
+			.where(and(eq(financeReceipts.userId, userId), eq(financeReceipts.status, "pending"))),
+	);
 }
 
 /**

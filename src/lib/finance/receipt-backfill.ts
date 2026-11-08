@@ -4,7 +4,7 @@ import { financeReceiptBackfills } from "@/db/schema/finance";
 import { getEnv } from "@/lib/cloudflare";
 import { createLogger } from "@/lib/logger.mjs";
 import type { CapabilityHandler, JsonValue } from "@/lib/modules/module-types";
-import { fileOneReceipt, receiptCandidates } from "./receipts";
+import { fileOneReceipt, receiptCandidates, releaseOwnerPendingClaims } from "./receipts";
 import { onReceiptTables, receiptTablesReady } from "./receipt-tables";
 
 const log = createLogger("finance");
@@ -59,13 +59,20 @@ async function enqueueBackfill(userId: string, delaySeconds?: number): Promise<b
 	return true;
 }
 
-/** Starts "Save receipts for existing payments", or leaves a running one alone. */
+/**
+ * Starts "Save receipts for existing payments", or leaves a running one alone. Releasing the owner's pending
+ * claims first is what makes this an actual retry rather than a report that a batch will find nothing new: a
+ * row a transient failure left pending still holds its lease (now up to 24 hours long, after backing off), so
+ * without this, pressing the button again right after fixing whatever was wrong (freeing quota, say) would run
+ * a batch that cannot even see that row yet.
+ */
 export async function startReceiptBackfill(userId: string, now = new Date()): Promise<BackfillRow> {
 	const existing = await ownerBackfill(userId);
 	if (existing?.status === "running") {
 		if (!existing.leaseUntil || existing.leaseUntil < now) await enqueueBackfill(userId);
 		return existing;
 	}
+	await releaseOwnerPendingClaims(userId);
 	const values = {
 		status: "running" as const,
 		scanned: 0,

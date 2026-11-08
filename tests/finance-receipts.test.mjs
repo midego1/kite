@@ -25,6 +25,8 @@ await build({
 		guard: join(root, "src/lib/finance/receipt-delete-guard.ts"),
 		backfill: join(root, "src/lib/finance/receipt-backfill.ts"),
 		driveReceipts: join(root, "src/lib/drive/receipts.ts"),
+		driveItems: join(root, "src/lib/drive/items.ts"),
+		driveRetention: join(root, "src/lib/drive/retention.ts"),
 		views: join(root, "src/lib/finance/views.ts"),
 		paymentViews: join(root, "src/lib/finance/payment-views.ts"),
 		manual: join(root, "src/lib/finance/manual.ts"),
@@ -58,6 +60,8 @@ const { receiptsEnabledFor, setReceiptsEnabled } = await load("settings");
 const { receiptsDeleteGuard, RECEIPTS_IN_DRIVE_ERROR } = await load("guard");
 const { startReceiptBackfill, ownerBackfill, backfillReceipts, resumeReceiptBackfills } = await load("backfill");
 const { ensureFolderPath } = await load("driveReceipts");
+const { createFolder, bulkItems } = await load("driveItems");
+const { purgeDrive } = await load("driveRetention");
 const { listSubscriptionsView } = await load("views");
 const { listPaymentsView } = await load("paymentViews");
 const { removeSubscription } = await load("manual");
@@ -71,6 +75,7 @@ const DAY_MS = 86_400_000;
  * derived the same way, so the assertion stays correct across the UTC year boundary (Jan 1-2) instead of
  * assuming "today's year" always matches a date computed two days in the past. */
 const DEFAULT_RECEIPT_YEAR = new Date(Date.now() - 2 * DAY_MS).getUTCFullYear().toString();
+const driveUser = { id: "owner", email: "owner@example.com", name: "Owner", role: "user", isPrimaryAdmin: false };
 
 let bucketCount = 0;
 async function setup(t, { migrationsBefore } = {}) {
@@ -553,6 +558,49 @@ test("quota filling partway through a row leaves it pending, not done with piece
 	assert.equal(afterRetry.filter((item) => item.kind === "file").length, 3, "eml, html and pdf, no duplicate .eml");
 });
 
+test("a burst of one owner's stuck rows does not starve a healthy owner's new row out of the same tick (S5)", async (t) => {
+	const { db, env } = await setup(t);
+	db.db.exec(`
+		INSERT INTO users (id, email, password_hash, name, created_at) VALUES ('stuck', 'stuck@example.com', 'hash', 'Stuck', 2);
+		INSERT INTO domains (id, user_id, hostname, zone_id, status, created_at) VALUES ('domain-stuck', 'stuck', 'stuck.example', 'zone-stuck', 'active', 2);
+		INSERT INTO mailboxes (id, user_id, domain_id, local_part, type, created_at) VALUES ('mailbox-stuck', 'stuck', 'domain-stuck', 'me', 'personal', 2);
+		INSERT INTO mailbox_agent_settings (mailbox_id, enabled, autonomy, reviewer_user_id, capabilities, updated_at) VALUES ('mailbox-stuck', 1, 'suggest', 'stuck', '{}', 2);
+		INSERT INTO drive_user_quotas (user_id, quota_bytes, updated_at) VALUES ('stuck', 1, 1);
+	`);
+	// Many older rows for an owner whose Drive is full: every attempt fails transiently, so (without a per-owner
+	// cap) these would always be the oldest-first sweep's entire pick, tick after tick, while their own backoff
+	// has not yet spaced them out far enough to stop being "due".
+	for (let i = 0; i < 20; i += 1) {
+		const stuckMessageId = await insertMessage(db, env, { mailboxId: "mailbox-stuck", userId: "stuck" });
+		insertPayment(db, {
+			mailboxId: "mailbox-stuck",
+			messageId: stuckMessageId,
+			userId: "stuck",
+			createdAtSeconds: 100 + i,
+		});
+	}
+	// One newer, perfectly healthy row for "owner".
+	const messageId = await insertMessage(db, env);
+	const paymentId = insertPayment(db, { messageId, createdAtSeconds: 100_000 });
+
+	const candidates = await receiptCandidates(50);
+	assert.ok(
+		candidates.some((c) => c.sourceId === paymentId),
+		"the healthy owner's row is in the pool despite 20 older rows from the stuck owner",
+	);
+	assert.ok(
+		candidates.filter((c) => c.userId === "stuck").length <= 5,
+		"the stuck owner's rows are capped, not the whole tick's budget",
+	);
+
+	// Exercise the exact same multi-owner candidate pool sweepReceipts uses (not fileEligible, which is scoped
+	// to one owner), without the sweep floor getting in the way of this fixture's deliberately old rows.
+	let filed = 0;
+	for (const candidate of candidates) if ((await fileOneReceipt(candidate)) === "filed") filed += 1;
+	assert.equal(filed, 1, "the healthy owner's row is actually filed on the very first tick");
+	assert.equal(receiptRow(db, paymentId).status, "done");
+});
+
 test("a user whose rows can never be eligible right now does not crowd an owner who is, out of the same tick", async (t) => {
 	const { db, env } = await setup(t);
 	db.db.exec(`
@@ -641,6 +689,73 @@ test("filing into a trashed Money Watch folder restores it, instead of silently 
 	assert.ok(receiptRow(db, firstPayment).eml_file_id);
 });
 
+test("moving Money Watch into a folder that is later trashed does not keep sending new receipts into it (B5)", async (t) => {
+	const { db, env } = await setup(t);
+	const firstMessageId = await insertMessage(db, env);
+	const firstPayment = insertPayment(db, { messageId: firstMessageId });
+	assert.equal(await fileEligible("owner"), 1, "the first receipt files normally");
+	const originalMoneyWatch = driveFolderChildren(db, null).find((item) => item.name === "Money Watch");
+	assert.ok(originalMoneyWatch);
+
+	// An ordinary tidy-up: put "Money Watch" inside a new "Old" folder, then trash "Old" (not "Money Watch" itself).
+	const created = await createFolder(env, driveUser, { name: "Old" });
+	assert.equal(created.status, 201, JSON.stringify(created.body));
+	const oldFolderId = created.body.item.id;
+	const moved = await bulkItems(env, driveUser, {
+		ids: [originalMoneyWatch.id],
+		action: "move",
+		parentId: oldFolderId,
+	});
+	assert.equal(moved.status, 200, JSON.stringify(moved.body));
+	const trashed = await bulkItems(env, driveUser, { ids: [oldFolderId], action: "trash" });
+	assert.equal(trashed.status, 200, JSON.stringify(trashed.body));
+
+	// Filing a second receipt must not land inside the now-trashed "Old/Money Watch": the deterministic id for
+	// (root, "Money Watch") still names that moved folder, so a naive "conflict means it's mine" reuse would
+	// silently file into a folder a trashed ancestor already hides and the next purge will destroy.
+	const secondMessageId = await insertMessage(db, env);
+	const secondPayment = insertPayment(db, { messageId: secondMessageId });
+	assert.equal(await fileEligible("owner"), 1, "the second receipt still files");
+	assert.equal(receiptRow(db, secondPayment).status, "done");
+
+	const liveMoneyWatch = driveFolderChildren(db, null).find((item) => item.name === "Money Watch");
+	assert.ok(liveMoneyWatch, "a fresh, root-level Money Watch exists for the new receipt");
+	assert.notEqual(liveMoneyWatch.id, originalMoneyWatch.id, "it is not the moved-and-trashed one");
+	assert.equal(
+		db.db.prepare("SELECT trashed_at FROM drive_items WHERE id = ?").get(liveMoneyWatch.id).trashed_at,
+		null,
+		"the fresh Money Watch is live, not trashed",
+	);
+	const liveReceiptsFolder = driveFolderChildren(db, liveMoneyWatch.id).find((item) => item.name === "Receipts");
+	assert.ok(liveReceiptsFolder);
+	const liveYearFolder = driveFolderChildren(db, liveReceiptsFolder.id).find(
+		(item) => item.name === DEFAULT_RECEIPT_YEAR,
+	);
+	assert.ok(liveYearFolder);
+	assert.equal(
+		driveFolderChildren(db, liveYearFolder.id).filter((item) => item.kind === "file").length,
+		3,
+		"the second receipt's eml, html and pdf landed in the fresh, live folder",
+	);
+
+	// Aging the trash and purging destroys "Old" and everything still inside it (the owner's own doing), but the
+	// fresh Money Watch the second receipt used is untouched.
+	await purgeDrive(env, new Date(Date.now() + 40 * DAY_MS));
+	assert.equal(db.db.prepare("SELECT count(*) AS n FROM drive_items WHERE id = ?").get(oldFolderId).n, 0);
+	assert.equal(db.db.prepare("SELECT count(*) AS n FROM drive_items WHERE id = ?").get(originalMoneyWatch.id).n, 0);
+	assert.equal(
+		db.db.prepare("SELECT count(*) AS n FROM drive_items WHERE id = ?").get(liveMoneyWatch.id).n,
+		1,
+		"the fresh Money Watch survives the purge of the folder it was never part of",
+	);
+	assert.equal(receiptRow(db, secondPayment).status, "done", "its ledger row still points at files that still exist");
+	assert.equal(
+		receiptRow(db, firstPayment).status,
+		"done",
+		"the first receipt's ledger row is untouched; only the Drive files inside the purged folder are gone, which is the owner's own trash-and-purge, not a filing bug",
+	);
+});
+
 test("a transient failure grows the claim's lease exponentially, instead of retrying on the same flat interval forever (B3)", async (t) => {
 	const { db, env } = await setup(t);
 	const messageId = await insertMessage(db, env);
@@ -682,6 +797,30 @@ test("a quota-stuck owner's backfill reports done with those rows still pending,
 	assert.equal(finished.filed, 0);
 	assert.equal(finished.skipped, 0, "a transient failure is not a permanent skip");
 	assert.equal(finished.pending, 1, "but it is not silently lost either: it is reported as still pending");
+});
+
+test('pressing "Save receipts for existing payments" again actually retries a pending row, instead of reporting done with nothing scanned (S2\')', async (t) => {
+	const { db, env } = await setup(t);
+	const messageId = await insertMessage(db, env);
+	insertPayment(db, { messageId });
+	db.db.prepare("INSERT INTO drive_user_quotas (user_id, quota_bytes, updated_at) VALUES ('owner', 1, 1)").run();
+
+	await startReceiptBackfill("owner");
+	await backfillReceipts({ kind: "finance.receipts_backfill", userId: "owner" }, {});
+	const stuck = await ownerBackfill("owner");
+	assert.equal(stuck.status, "done");
+	assert.equal(stuck.pending, 1, "stuck behind its own (by now possibly long) lease");
+
+	// Free the quota and press the button again at once, before any lease would naturally have expired.
+	db.db.exec("UPDATE drive_user_quotas SET quota_bytes = NULL WHERE user_id = 'owner'");
+	await startReceiptBackfill("owner");
+	await backfillReceipts({ kind: "finance.receipts_backfill", userId: "owner" }, {});
+
+	const retried = await ownerBackfill("owner");
+	assert.equal(retried.status, "done");
+	assert.equal(retried.scanned, 1, "the explicit retry actually looked at the row again, not nothing");
+	assert.equal(retried.filed, 1, "and completed it, now that the problem is fixed");
+	assert.equal(retried.pending, 0);
 });
 
 test("deleting a subscription with 150 documents stays within D1's 100 bound-parameter limit (B4)", async (t) => {

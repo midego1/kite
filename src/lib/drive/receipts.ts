@@ -1,4 +1,4 @@
-import { and, asc, eq, isNotNull, isNull } from "drizzle-orm";
+import { and, asc, eq, isNull } from "drizzle-orm";
 import { getDb } from "@/db";
 import { messages } from "@/db/schema";
 import { driveItems } from "@/db/schema/drive";
@@ -67,31 +67,49 @@ async function findExistingItem(
 	return existing?.id ?? null;
 }
 
-/** A stable id for the folder this exact `(ownerId, parentId, name)` triple would create: two calls racing to
- * create the same folder, neither having yet seen the other's row, compute the identical id and so attempt the
- * identical insert, which the primary key itself (not a re-read afterward, which a third, differently-timed call
- * could still race ahead of) resolves to exactly one row. */
-async function folderClaimId(ownerId: string, parentId: string | null, name: string): Promise<string> {
-	const bytes = new TextEncoder().encode(`${ownerId}\u0000${parentId ?? ""}\u0000${name}`);
+/** A stable id for the `generation`-th folder this `(ownerId, parentId, name)` triple would create: two calls
+ * racing to create the same folder, neither having yet seen the other's row, compute the identical id for the
+ * same generation and so attempt the identical insert, which the primary key itself (not a re-read afterward,
+ * which a third, differently-timed call could still race ahead of) resolves to exactly one row. Generation 0 is
+ * the id this triple has always used; a caller only reaches for generation 1 or later when that id now names a
+ * folder the owner moved or renamed elsewhere (`ensureFolder` below), so it is tried only on the rare path that
+ * finds a mismatch, not on every call. */
+async function folderClaimId(
+	ownerId: string,
+	parentId: string | null,
+	name: string,
+	generation: number,
+): Promise<string> {
+	const bytes = new TextEncoder().encode(`${ownerId}\u0000${parentId ?? ""}\u0000${name}\u0000${generation}`);
 	const digest = await crypto.subtle.digest("SHA-256", bytes);
 	const hex = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 	return `drvf_${hex.slice(0, 32)}`;
 }
 
-/** One folder segment of `Money Watch/Receipts/<year>`, found under its parent or created there. A folder from
- * before this scheme, or created through Drive directly, is found and reused as is; a fresh one is claimed by a
- * deterministic id, so two callers racing to create the same one can never end up with two different ids for it. */
-async function ensureFolder(
-	db: ReturnType<typeof getDb>,
-	ownerId: string,
-	parentId: string | null,
-	name: string,
-): Promise<string> {
-	const existing = await findExistingItem(db, ownerId, parentId, "folder", name);
-	if (existing) return existing;
-	const id = await folderClaimId(ownerId, parentId, name);
-	const now = new Date();
-	const row: DriveRow = {
+/** However many differently-timed callers raced through the generations below before one of them won, there is
+ * no realistic way the same `(ownerId, parentId, name)` is simultaneously the moved-away target of this many
+ * distinct earlier folders; past this, something is wrong enough that a fresh, non-deterministic id is simpler
+ * and safer than chasing the chain further. */
+const MAX_FOLDER_CLAIM_GENERATIONS = 8;
+
+/**
+ * One folder segment of `Money Watch/Receipts/<year>`, found under its parent or created there. A folder from
+ * before this scheme, or created through Drive directly, is found and reused as is.
+ *
+ * A fresh one is claimed by a deterministic id, so two callers racing to create the same one can never end up
+ * with two different ids for it — but the owner can rename or move a folder (Drive's own `bulkItems`), and its
+ * id stays the hash of where it was *created*, not of where it lives now. So a losing insert (the primary key
+ * says a row with this id already exists) is not enough on its own: that row is re-read and only treated as
+ * this folder if it is still at the requested `(parentId, name)`. When it is, and only trashed, it is restored
+ * (the owner trashed "Money Watch" to tidy up, or a concurrent purge ran between `findExistingItem` above and
+ * here) rather than silently filed into and then destroyed by the next retention sweep. When it is not — the
+ * owner moved "Money Watch" into another folder and later trashed that one, or renamed it to something else —
+ * the next generation's id is tried instead, so filing gets a fresh, live "Money Watch" of its own rather than
+ * the moved-away one, which keeps whatever the owner did with it (including, if they trashed it, eventually
+ * being purged, which is their own doing, not a bug).
+ */
+function folderRow(id: string, ownerId: string, parentId: string | null, name: string, now: Date): DriveRow {
+	return {
 		id,
 		ownerId,
 		parentId,
@@ -111,17 +129,37 @@ async function ensureFolder(
 		createdAt: now,
 		updatedAt: now,
 	};
-	// A losing insert here means a row with this exact id already exists (the primary key says so, atomically);
-	// `id` is the right answer regardless of which of the two calls' inserts actually landed. That existing row
-	// can only be this exact `(ownerId, parentId, name)` (the id is a hash of them), but it can be trashed: the
-	// owner trashed "Money Watch" to tidy up, or a concurrent purge ran between `findExistingItem` above and here.
-	// Restoring it, rather than silently filing into a folder that retention will delete, is what keeps a tidy-up
-	// from quietly destroying every receipt filed afterward.
-	await db.insert(driveItems).values(row).onConflictDoNothing();
-	await db
-		.update(driveItems)
-		.set({ trashedAt: null, updatedAt: now })
-		.where(and(eq(driveItems.id, id), isNotNull(driveItems.trashedAt)));
+}
+
+async function ensureFolder(
+	db: ReturnType<typeof getDb>,
+	ownerId: string,
+	parentId: string | null,
+	name: string,
+): Promise<string> {
+	const existing = await findExistingItem(db, ownerId, parentId, "folder", name);
+	if (existing) return existing;
+	const now = new Date();
+	for (let generation = 0; generation < MAX_FOLDER_CLAIM_GENERATIONS; generation += 1) {
+		const id = await folderClaimId(ownerId, parentId, name, generation);
+		await db
+			.insert(driveItems)
+			.values(folderRow(id, ownerId, parentId, name, now))
+			.onConflictDoNothing();
+		const [current] = await db
+			.select({ parentId: driveItems.parentId, name: driveItems.name, trashedAt: driveItems.trashedAt })
+			.from(driveItems)
+			.where(eq(driveItems.id, id))
+			.limit(1);
+		if (!current) continue; // Lost the row to a concurrent delete between the insert and this read; try again.
+		if (current.parentId !== parentId || current.name !== name) continue; // Moved or renamed away; try the next id.
+		if (current.trashedAt !== null)
+			await db.update(driveItems).set({ trashedAt: null, updatedAt: now }).where(eq(driveItems.id, id));
+		return id;
+	}
+	// Exhausted every generation (practically never): a fresh random id cannot collide with anything above.
+	const id = newId("drv");
+	await db.insert(driveItems).values(folderRow(id, ownerId, parentId, name, now));
 	return id;
 }
 

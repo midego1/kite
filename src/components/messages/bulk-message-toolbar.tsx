@@ -20,9 +20,9 @@ import {
 	X,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import type { ReactNode } from "react";
+import { forwardRef, type ReactNode } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import { Button } from "@/components/ui/button";
+import { Button, type ButtonProps } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
 import { useBulkSelectionAccess } from "./use-bulk-selection-access";
 import { useBulkToolbarOverflow } from "./use-bulk-toolbar-overflow";
@@ -70,22 +70,25 @@ function ToolbarButton({
 }
 
 /** The "Move to" dropdown's own trigger button, shared between the real inline trigger and its hidden
- * measurement clone so the two are always exactly the same width. */
-function MoveToTriggerButton({ disabled }: { disabled?: boolean }) {
+ * measurement clone so the two are always exactly the same width. Forwards its ref and every prop
+ * (`DropdownMenu.Trigger asChild` clones onClick, aria-haspopup, aria-expanded and a ref onto it): without
+ * that the trigger renders but never actually opens anything. */
+const MoveToTriggerButton = forwardRef<HTMLButtonElement, ButtonProps>(function MoveToTriggerButton(props, ref) {
 	const t = useT();
 	return (
 		<Button
 			variant="ghost"
 			size="sm"
 			className="gap-1.5 bg-white text-xs font-medium text-neutral-700"
-			disabled={disabled}
+			ref={ref}
+			{...props}
 		>
 			<FolderInput className="h-4 w-4" />
 			{t("Move to")}
 			<ChevronDown className="h-3.5 w-3.5 text-neutral-500" />
 		</Button>
 	);
-}
+});
 
 /** Shown in the move menu instead of folders when the selection spans mailboxes. */
 function CrossMailboxFolderHint({ show }: { show: boolean }) {

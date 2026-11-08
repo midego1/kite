@@ -247,3 +247,25 @@ test("on a 375px phone, a checked row in Spam still reaches Move to through More
 	await page.goto("/archived");
 	await expect(page.getByRole("main").getByText(subject, { exact: true })).toBeVisible();
 });
+
+test("the inline Move to trigger actually opens its dropdown in the single-pane list", async ({ page }) => {
+	// A single-pane list (no reading pane, nothing open) is wide enough that every action, including Move to,
+	// sits inline: the trigger forwards DropdownMenu.Trigger's injected ref and props (onClick, aria-haspopup,
+	// aria-expanded) through to the real button, or clicking it does nothing at all.
+	await page.setViewportSize({ width: 1400, height: 900 });
+	const subject = `Toolbar inline moveto ${uniqueToken()}`;
+	await deliverTo("inbox", subject);
+	await page.addInitScript(() => localStorage.setItem("kite-reading-pane", "none"));
+	await page.goto("/inbox");
+	await rowFor(page, subject).getByRole("checkbox").check();
+	const bar = toolbar(page);
+	const moveTo = bar.getByRole("button", { name: "Move to", exact: true });
+	await expect(moveTo).toBeVisible();
+	await moveTo.click();
+	const menu = page.getByRole("menu");
+	await expect(menu.getByRole("menuitem", { name: "Archived", exact: true })).toBeVisible();
+	await menu.getByRole("menuitem", { name: "Report phishing" }).click();
+	const confirm = page.getByRole("alertdialog", { name: /Report .*phishing/ });
+	await expect(confirm).toBeVisible();
+	await confirm.getByRole("button", { name: "Cancel" }).click();
+});

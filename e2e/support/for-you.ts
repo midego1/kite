@@ -1,7 +1,7 @@
 import { expect, type APIRequestContext, type Browser } from "@playwright/test";
 import { BASE_URL, DOMAIN } from "./constants";
 import { createSignedInAccount, okJson, selectMailbox } from "./auto-read";
-import { postInbound, uniqueToken, waitForMessage } from "./helpers";
+import { postInbound, suppressMailboxTour, uniqueToken, waitForMessage } from "./helpers";
 import { futureAt, inviteAttachment } from "./invites";
 import { waitForFinishedJob } from "./triage";
 
@@ -80,6 +80,7 @@ export async function openAs(
 		...options,
 	});
 	const page = await context.newPage();
+	await suppressMailboxTour(page);
 	await selectMailbox(page, mailboxId);
 	return { context, page };
 }

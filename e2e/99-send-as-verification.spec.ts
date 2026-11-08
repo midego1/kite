@@ -1,7 +1,7 @@
 import { expect, test, type APIRequestContext } from "@playwright/test";
 import { AUTO_READ_ACCOUNT_PASSWORD, createSignedInAccount } from "./support/auto-read";
 import { STORAGE_STATE } from "./support/constants";
-import { apiContext, setSendingSettings, uniqueToken } from "./support/helpers";
+import { apiContext, setSendingSettings, suppressMailboxTour, uniqueToken } from "./support/helpers";
 import { chooseOption, readOptions } from "./support/select";
 import { readMailedCode } from "./support/send-as";
 import { startFakeImap } from "../tests/support/fake-imap.mjs";
@@ -73,6 +73,7 @@ test("an Other provider's address and an alias are sent as only after their mail
 	await setSendingSettings(user.api, { previewEnabled: false, undoSeconds: 0 });
 	const context = await browser.newContext({ storageState: await user.api.storageState() });
 	const page = await context.newPage();
+	await suppressMailboxTour(page);
 	try {
 		const account = await connectOther(user.api, user.mailboxId, address, { imap: imap.port, smtp: smtp.port });
 		expect(account.sending.block).toBe("unproven");

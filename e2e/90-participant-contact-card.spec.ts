@@ -2,7 +2,14 @@ import { mkdirSync } from "node:fs";
 import { expect, test, type Browser, type Locator, type Page } from "@playwright/test";
 import { BASE_URL, DOMAIN, STORAGE_STATE, SUPPORT_ADDRESS } from "./support/constants";
 import { createSharedMailbox, createSignedInAccount, selectMailbox, shareMailbox } from "./support/auto-read";
-import { apiContext, deliverInbound, openMessage, uniqueToken, waitForMessage } from "./support/helpers";
+import {
+	apiContext,
+	deliverInbound,
+	openMessage,
+	suppressMailboxTour,
+	uniqueToken,
+	waitForMessage,
+} from "./support/helpers";
 
 // The thread header's participant chips are buttons: hover shows the full address, click opens a contact
 // card with Copy, New email, Search Inbox for mail from and the contact actions (only what the mailbox permission allows). The sender name in the message
@@ -237,6 +244,7 @@ async function openSharedAs(browser: Browser, permission: "read_only" | "send_as
 	await admin.dispose();
 	const context = await browser.newContext({ baseURL: BASE_URL, storageState: await member.api.storageState() });
 	const page = await context.newPage();
+	await suppressMailboxTour(page);
 	await selectMailbox(page, mailboxId);
 	await page.addInitScript((id) => localStorage.setItem("kite-session-user", id), member.id);
 	await page.setViewportSize({ width: 1440, height: 900 });

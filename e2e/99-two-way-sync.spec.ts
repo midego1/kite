@@ -2,7 +2,7 @@ import { expect, test, type APIRequestContext, type Page } from "@playwright/tes
 import { AUTO_READ_ACCOUNT_PASSWORD, createSignedInAccount } from "./support/auto-read";
 import { STORAGE_STATE } from "./support/constants";
 import { cronTick } from "./support/finance";
-import { apiContext, uniqueToken, waitForMessage } from "./support/helpers";
+import { apiContext, suppressMailboxTour, uniqueToken, waitForMessage } from "./support/helpers";
 import { chooseOption } from "./support/select";
 import { sampleMessage, startFakeImap } from "../tests/support/fake-imap.mjs";
 
@@ -143,6 +143,7 @@ test("each setting works both ways, and a trash move is a move, never an expunge
 	const { address, fake, admin, user, id } = await setup(token);
 	const context = await browser.newContext({ storageState: await user.api.storageState() });
 	const page = await context.newPage();
+	await suppressMailboxTour(page);
 	try {
 		const subjects = {
 			deleted: `${token} deleted in Kite`,
@@ -257,6 +258,7 @@ test("a move the provider refuses stays waiting and shows in the account's probl
 	const { address, fake, admin, user, id } = await setup(token);
 	const context = await browser.newContext({ storageState: await user.api.storageState() });
 	const page = await context.newPage();
+	await suppressMailboxTour(page);
 	try {
 		const subject = `${token} refused`;
 		addMail(fake, subject);

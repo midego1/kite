@@ -97,6 +97,7 @@ function parseLayoutPreferences(value: unknown): LayoutPreferences {
 	if (typeof input.conversationView === "boolean") layout.conversationView = input.conversationView;
 	if (typeof input.onboardingChecklistDismissed === "boolean")
 		layout.onboardingChecklistDismissed = input.onboardingChecklistDismissed;
+	if (typeof input.mailboxTourDismissed === "boolean") layout.mailboxTourDismissed = input.mailboxTourDismissed;
 	if (isInterfaceLanguageChoice(input.interfaceLanguage)) layout.interfaceLanguage = input.interfaceLanguage;
 	Object.assign(layout, parseTranslationChoices(input));
 	const listWidth = size(input.listWidth, LIST_WIDTH_LIMITS);

@@ -1,6 +1,13 @@
 import { expect, test, type APIRequestContext, type Browser, type Page } from "@playwright/test";
 import { DOMAIN, STORAGE_STATE } from "./support/constants";
-import { apiContext, apiSignIn, deliverInbound, setSendingSettings, uniqueToken } from "./support/helpers";
+import {
+	apiContext,
+	apiSignIn,
+	deliverInbound,
+	setSendingSettings,
+	suppressMailboxTour,
+	uniqueToken,
+} from "./support/helpers";
 import { turnScreenerOff } from "./support/screener";
 import { expectSelectValue } from "./support/select";
 
@@ -39,6 +46,7 @@ async function listMessages(query: string): Promise<ListedMessage[]> {
 async function openPage(browser: Browser, viewport?: { width: number; height: number }): Promise<Page> {
 	const context = await browser.newContext({ storageState, ...(viewport ? { viewport, hasTouch: true } : {}) });
 	const page = await context.newPage();
+	await suppressMailboxTour(page);
 	// These checks are about the text pill; the compact dot (the default) has its own spec, 100-message-labels.
 	await page.addInitScript(() => localStorage.setItem("kite-message-labels", "full"));
 	return page;

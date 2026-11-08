@@ -100,7 +100,7 @@ test("a list without a section label shows the pager in a slim row", async ({ pa
 	await page.reload();
 	await expect(next(page)).toBeVisible();
 	await settled(page);
-	await page.getByRole("button", { name: "Select", exact: true }).click();
+	// The select-all checkbox is always in the header; no "Select" mode is needed to check a row either.
 	await page.getByRole("main").getByRole("checkbox").nth(1).check();
 	await expect(next(page)).toBeHidden();
 	await shot(page, "selection-state");

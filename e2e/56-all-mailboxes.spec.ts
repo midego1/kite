@@ -54,6 +54,11 @@ function row(page: Page, subject: string) {
 		.filter({ has: page.getByText(subject, { exact: true }) });
 }
 
+/** The bulk toolbar in the list header: scopes an action button away from any row's own, same-named one. */
+function toolbar(page: Page) {
+	return page.getByText(/^\d+ selected$/).locator("..");
+}
+
 async function openSwitcher(page: Page) {
 	const trigger = page.getByRole("button", { name: /^Switch mailbox, current:/ });
 	// The first visit compiles the dashboard on a cold dev server.
@@ -269,7 +274,7 @@ test("bulk archive works across mailboxes and leaves read-only shared mail where
 	await page.getByRole("button", { name: "Move to" }).click();
 	await expect(page.getByText("Select mail from one mailbox to move it to a folder.")).toBeVisible();
 	await page.keyboard.press("Escape");
-	await page.getByRole("button", { name: "Archive", exact: true }).last().click();
+	await toolbar(page).getByRole("button", { name: "Archive", exact: true }).click();
 	await expect(page.getByText("1 read-only message was left as it was.")).toBeVisible();
 	await expect(row(page, subjects.home)).toHaveCount(0);
 	await expect(row(page, subjects.work)).toHaveCount(0);
@@ -289,9 +294,9 @@ test("read-only shared mail cannot be archived or deleted from the combined view
 	await showAllMailboxes(page);
 
 	await row(page, subject).getByRole("checkbox").click();
-	await expect(page.getByRole("button", { name: "Archive", exact: true }).last()).toBeDisabled();
-	await expect(page.getByRole("button", { name: "Delete", exact: true }).last()).toBeDisabled();
-	await expect(page.getByRole("button", { name: "Mark as read" }).last()).toBeEnabled();
+	await expect(toolbar(page).getByRole("button", { name: "Archive", exact: true })).toBeDisabled();
+	await expect(toolbar(page).getByRole("button", { name: "Delete", exact: true })).toBeDisabled();
+	await expect(toolbar(page).getByRole("button", { name: "Mark as read" })).toBeEnabled();
 	await row(page, subject).getByRole("checkbox").click();
 
 	await row(page, subject).getByRole("link").first().click();

@@ -40,7 +40,10 @@ export async function suppressMailboxTour(page: Page): Promise<void> {
 				json: { ...body, layout: { ...(body.layout ?? {}), mailboxTourDismissed: true } },
 			});
 		} catch {
-			// The page or context closed while this was in flight: nothing left to answer.
+			// A real failure (bad JSON, a network error) still needs an answer, or the page's own fetch call
+			// hangs forever; let the real request through unmodified. The page or context having already
+			// closed makes this a no-op too, instead of an unhandled rejection.
+			await route.continue().catch(() => {});
 		}
 	});
 }

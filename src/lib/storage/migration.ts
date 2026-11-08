@@ -142,7 +142,14 @@ async function drivePage(job: Job, cursor: MigrationCursor, after: string | null
 	return { items: page?.objects ?? [], exhausted: !page?.cursor };
 }
 
-function sized(body: ReadableStream, size: number): ReadableStream {
+/**
+ * The R2 binding learns a streamed body's length from a `FixedLengthStream` wrapper; an S3 target instead takes
+ * an explicit `contentLength` option (`lengthOption` below) and wraps the stream itself when signing the
+ * request, so wrapping it here too would pipe it through two independent `FixedLengthStream`s nested inside one
+ * another, which is fragile under real network conditions.
+ */
+function sized(body: ReadableStream, size: number, target: ObjectStore): ReadableStream {
+	if (target.id !== DEFAULT_STORE_ID) return body;
 	const Fixed = (globalThis as { FixedLengthStream?: new (length: number) => TransformStream }).FixedLengthStream;
 	return Fixed ? body.pipeThrough(new Fixed(size)) : body;
 }
@@ -178,7 +185,11 @@ export async function copyObject(
 				const range = await source.get(key, { range: { offset: part.offset, length: part.length } });
 				if (!range?.body) throw new Error("The source object changed during the copy");
 				parts.push(
-					await upload.uploadPart(part.partNumber, sized(range.body, part.length), lengthOption(target, part.length)),
+					await upload.uploadPart(
+						part.partNumber,
+						sized(range.body, part.length, target),
+						lengthOption(target, part.length),
+					),
 				);
 			}
 			await upload.complete(parts);
@@ -190,7 +201,7 @@ export async function copyObject(
 	}
 	const object = await source.get(key);
 	if (!object) return null;
-	const body = object.size === 0 ? new Uint8Array(0) : sized(object.body, object.size);
+	const body = object.size === 0 ? new Uint8Array(0) : sized(object.body, object.size, target);
 	await target.bucket.put(targetKey, body, { ...metadata, ...lengthOption(target, object.size) });
 	return object.size;
 }

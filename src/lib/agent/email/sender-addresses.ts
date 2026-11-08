@@ -6,6 +6,7 @@ import { hashSessionToken } from "@/lib/auth/session";
 import { escapeHtml } from "@/lib/auth/password-reset-utils";
 import { normalizeEmailAddress } from "@/lib/email/address";
 import { sendSystemEmail } from "@/lib/email/system-mail";
+import { generateIdentityCode } from "@/lib/external-accounts/identity-code-utils";
 import { getBranding } from "@/lib/branding/service";
 import { newId } from "@/lib/ids";
 import { isNoSuchTableError } from "@/lib/modules/state-utils";
@@ -48,11 +49,6 @@ export async function listSenderAddresses(db: AppDatabase, userId: string): Prom
 	}
 }
 
-/** A random 6-digit code, the same shape users already enter elsewhere in Kite. */
-function generateCode(): string {
-	return String(crypto.getRandomValues(new Uint32Array(1))[0] % 1_000_000).padStart(6, "0");
-}
-
 /**
  * Adds an address, pending verification (spec §5.3): generates a single-use code, valid 30 minutes, and emails
  * it to the address itself — never a sign that the address exists or belongs to someone else, so this cannot be
@@ -81,7 +77,7 @@ export async function addSenderAddress(
 	}
 	if (existingCount >= MAX_SENDER_ADDRESSES) return;
 
-	const code = generateCode();
+	const code = generateIdentityCode();
 	const codeHash = await hashSessionToken(code);
 	const codeExpiresAt = new Date(Date.now() + CODE_MINUTES * 60 * 1000);
 	try {

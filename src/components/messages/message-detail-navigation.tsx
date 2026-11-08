@@ -1,5 +1,6 @@
 "use client";
 
+import { useOptionalMailSearch } from "@/components/mail-search/mail-search-context";
 import { useViewHref } from "@/components/mail-search/use-view-href";
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -33,7 +34,9 @@ export function MessageDetailNavigationProvider({ children, config }: MessageDet
 	const [conversationView] = useConversationView();
 	const grouped = conversationView && config.folder !== "drafts";
 	const mailboxId = mailboxScope;
-	const key = `${config.folder}:${config.folderId ?? ""}:${mailboxId ?? "all"}:${grouped}`;
+	// The open account view narrows the list, so Newer and Older move between the view's messages only.
+	const view = useOptionalMailSearch()?.view ?? null;
+	const key = `${config.folder}:${config.folderId ?? ""}:${mailboxId ?? "all"}:${grouped}:${view ?? ""}`;
 	const [snapshot, setSnapshot] = useState<MessageDetailNavigationSnapshot>({ key: "", entries: [] });
 	const [openedUnread, setOpenedUnread] = useState<OpenedUnreadMessages>({ key: "", ids: new Set() });
 	const recordUnread = useCallback(
@@ -61,6 +64,7 @@ export function MessageDetailNavigationProvider({ children, config }: MessageDet
 		if (config.folderId) params.set("folderId", config.folderId);
 		setMailboxScopeParam(params, mailboxId);
 		if (grouped) params.set("group", "thread");
+		if (view) params.set("via", view);
 		void authFetch(`/api/messages/navigation?${params.toString()}`)
 			.then((response) => {
 				if (!response.ok) throw new Error("Unable to load message navigation");
@@ -75,7 +79,7 @@ export function MessageDetailNavigationProvider({ children, config }: MessageDet
 		return () => {
 			cancelled = true;
 		};
-	}, [config.folder, config.folderId, grouped, key, mailboxId, mailboxesLoading]);
+	}, [config.folder, config.folderId, grouped, key, mailboxId, mailboxesLoading, view]);
 
 	const unreadIds = openedUnread.key === key ? openedUnread.ids : null;
 	const entries =

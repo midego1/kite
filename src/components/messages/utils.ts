@@ -10,7 +10,8 @@ import type { MessageFolderConfig, MessageFolderName } from "./types";
 import type { PageRange } from "./types";
 import type { BulkMessageAction, BulkMessageResponse, PermanentDeleteFolder } from "@/app/api/messages/bulk/types";
 import { SEND_PENDING_MOVE_MESSAGE, SEND_PENDING_MOVE_REFUSED } from "@/lib/messages/send-state-utils";
-import { postBulkMessageAction } from "./bulk-request";
+import { postBulkMessageBatch } from "./bulk-request";
+import { draftDeletionConfirmation, draftsNeedingConfirmation } from "./bulk-request-utils";
 import {
 	BULK_ACTION_BATCH_SIZE,
 	chunkArray,
@@ -116,9 +117,11 @@ export function getSelectionToolbarFolder(config: Pick<MessageFolderConfig, "fol
 }
 
 /**
- * Runs a bulk action in batches of `BULK_ACTION_BATCH_SIZE`. A drafts-confirmation 409 is only ever asked once:
- * the first batch that needs it remembers the answer (from its response's `draftsDeleted`) for every batch
- * after it, so "Select all" over a mix of drafts and mail asks nothing twice.
+ * Runs a bulk action in batches of `BULK_ACTION_BATCH_SIZE`. A batch that would delete the caller's own drafts
+ * changes nothing and says how many (`settleDrafts` on the server); this first pass runs every batch without
+ * `deleteDrafts`, so a batch with no drafts in it completes outright and one that does is set aside instead of
+ * asking about it then and there, one true total across every batch set aside is asked about once, and only
+ * then are those batches re-sent with `deleteDrafts: true` — never a separate, undercounted question per batch.
  *
  * On a later batch's failure or decline, the batches that already completed keep their effects (Undo, the list
  * refresh, the left-view announcement all still run below) instead of losing them; `PartialBulkActionError`
@@ -128,27 +131,33 @@ export async function runBulkMessageAction(messageIds: string[], action: string,
 	const uniqueIds = Array.from(new Set(messageIds));
 	const responses: BulkMessageResponse[] = [];
 	const completedIds: string[] = [];
-	let deleteDraftsConfirmed = false;
+	const pendingDraftChunks: string[][] = [];
+	let unconfirmedDrafts = 0;
 	let failureMessage: string | null = null;
-	for (const chunk of chunkArray(uniqueIds, BULK_ACTION_BATCH_SIZE)) {
-		let response: Response | null;
+
+	/** Runs one batch and folds its outcome in; returns false when the run should stop at this batch. */
+	async function runChunk(chunk: string[], deleteDrafts?: boolean): Promise<boolean> {
+		let response: Response;
 		try {
-			response = await postBulkMessageAction({
-				messageIds: chunk,
-				action: action as BulkMessageAction,
-				folderId,
-				...(deleteDraftsConfirmed ? { deleteDrafts: true } : {}),
-			});
+			response = await postBulkMessageBatch(
+				{ messageIds: chunk, action: action as BulkMessageAction, folderId },
+				deleteDrafts,
+			);
 		} catch {
 			failureMessage = t("Unable to update selected messages");
-			break;
+			return false;
 		}
-		if (!response) {
-			// The user declined to delete their own drafts for good. With nothing completed yet this is a plain
-			// cancel (matches the pre-batching contract); after some success it is reported like any other stop.
-			if (completedIds.length === 0) return null;
-			failureMessage = t("Unable to update selected messages");
-			break;
+		if (!deleteDrafts && response.status === 409) {
+			const body = (await response
+				.clone()
+				.json()
+				.catch(() => null)) as BulkMessageResponse | null;
+			const drafts = draftsNeedingConfirmation(response.status, body);
+			if (drafts !== null) {
+				pendingDraftChunks.push(chunk);
+				unconfirmedDrafts += drafts;
+				return true;
+			}
 		}
 		if (!response.ok) {
 			const refused = (await response.json().catch(() => null)) as BulkMessageResponse | null;
@@ -156,13 +165,33 @@ export async function runBulkMessageAction(messageIds: string[], action: string,
 				refused?.code === SEND_PENDING_MOVE_REFUSED
 					? SEND_PENDING_MOVE_MESSAGE
 					: t("Unable to update selected messages");
-			break;
+			return false;
 		}
 		const data = (await response.json().catch(() => null)) as BulkMessageResponse | null;
-		if (data) {
-			responses.push(data);
-			completedIds.push(...chunk);
-			if ((data.draftsDeleted ?? 0) > 0) deleteDraftsConfirmed = true;
+		if (!data) {
+			failureMessage = t("Unable to update selected messages");
+			return false;
+		}
+		responses.push(data);
+		completedIds.push(...chunk);
+		return true;
+	}
+
+	for (const chunk of chunkArray(uniqueIds, BULK_ACTION_BATCH_SIZE)) {
+		if (!(await runChunk(chunk))) break;
+	}
+
+	if (!failureMessage && unconfirmedDrafts > 0) {
+		if (await requestConfirmation(draftDeletionConfirmation(unconfirmedDrafts))) {
+			for (const chunk of pendingDraftChunks) {
+				if (!(await runChunk(chunk, true))) break;
+			}
+		} else if (completedIds.length === 0) {
+			// Nothing ran yet (every batch either completed or is this drafts question): a plain cancel, matching
+			// the pre-batching contract.
+			return null;
+		} else {
+			failureMessage = t("Unable to update selected messages");
 		}
 	}
 
@@ -174,7 +203,8 @@ export async function runBulkMessageAction(messageIds: string[], action: string,
 		announceMessagesLeftView(bulkActionLeftView(action, completedIds, data));
 		if (action === "phishing") announcePhishingReports(data);
 	}
-	if (failureMessage) throw new PartialBulkActionError(failureMessage, completedIds.length, uniqueIds.length);
+	if (failureMessage)
+		throw new PartialBulkActionError(failureMessage, completedIds.length, uniqueIds.length, completedIds);
 	if (completedIds.length === 0) return null;
 	return data;
 }

@@ -32,18 +32,21 @@ function messageRow(page: Page, subject: string) {
 
 /**
  * Runs a bulk toolbar action by its label, whether the default split-pane list has room to show it inline
- * or, too narrow for that, it only reaches through "More actions" (Delete forever folds away there first;
- * Delete and Mark as read always stay inline).
+ * or, too narrow for that, it only reaches through "More actions": what fits there is measured against the
+ * panel's actual width, not a fixed set, so any action can fold away depending on what else is competing
+ * for the room.
  */
 async function clickBulkAction(page: Page, action: string) {
+	await (await bulkActionControl(page, action)).click();
+}
+
+/** The toolbar's own control for `action`, whichever of the inline row or "More actions" menu offers it. */
+async function bulkActionControl(page: Page, action: string) {
 	const toolbar = page.getByTestId("bulk-toolbar");
 	const inline = toolbar.getByRole("button", { name: action, exact: true });
-	if (await inline.isVisible()) {
-		await inline.click();
-		return;
-	}
+	if (await inline.isVisible()) return inline;
 	await toolbar.getByRole("button", { name: "More actions" }).click();
-	await page.getByRole("menu").getByRole("menuitem", { name: action, exact: true }).click();
+	return page.getByRole("menu").getByRole("menuitem", { name: action, exact: true });
 }
 
 async function bulk(messageIds: string[], action: string) {
@@ -171,8 +174,9 @@ test.describe("conversation unread state and skipped deletes (upstream #135)", (
 			await route.continue();
 		});
 		try {
+			const control = await bulkActionControl(page, "Mark as unread");
 			const request = page.waitForRequest("**/api/messages/bulk");
-			await page.getByRole("button", { name: "Mark as unread", exact: true }).first().click();
+			await control.click();
 			await request;
 			await expect(row.locator(".font-bold")).toHaveCount(0);
 			const response = page.waitForResponse("**/api/messages/bulk");

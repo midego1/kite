@@ -113,10 +113,11 @@ export function replaceSelection(current: SelectedMessage[], messages: Message[]
 }
 
 /**
- * Drops selected ids that no longer have a row; returns the same array when nothing changed. An entry marked
- * `offPage` (from "Select all in folder": every row past what the list had loaded) is never dropped here, since
- * it was never expected to have a row on this page in the first place — a refresh of the loaded page (new mail
- * arriving, a row action, Undo) must not silently cut a folder-wide selection back down to one page.
+ * Drops selected ids that no longer have a row; returns the same array when nothing changed. Every entry
+ * "Select all in folder" selected is marked `offPage` and never dropped here, whether or not it happened to be
+ * on the loaded page at the time: new mail or a move can push a row that was on it out of it afterward, and a
+ * refresh of the loaded page (new mail arriving, a row action, Undo) must not silently cut a folder-wide
+ * selection back down to whatever the page holds at that later moment.
  */
 export function pruneSelection<T extends { id: string; offPage?: boolean }>(
 	selected: T[],

@@ -647,3 +647,53 @@ test("Empty Trash from a later page with a message open stays on the empty pane"
 	await slow.settled();
 	await watch.assertNone();
 });
+
+test("deleting a selection of drafts and mail spanning more than a batch asks once, for the true total", async ({
+	page,
+}) => {
+	// Batches are BULK_ACTION_BATCH_SIZE (50) ids each: one draft lands in the first batch and, as the sole
+	// oldest item, one lands alone in the second. Each batch's own 409 would say just "1 draft" on its own;
+	// asking once for the true total across both is exactly what this guards.
+	test.setTimeout(240_000);
+	const token = uniqueToken();
+	const { mailboxes } = (await (await api.get("/api/mailboxes")).json()) as { mailboxes: { id: string }[] };
+	const mailboxId = mailboxes[0].id;
+	async function saveDraft(subject: string): Promise<string> {
+		const response = await api.post("/api/drafts", {
+			data: { mailboxId, from: SUPPORT_ADDRESS, to: "customer@outside.test", subject, text: subject },
+		});
+		expect(response.ok(), await response.text()).toBe(true);
+		return ((await response.json()) as { draft: { id: string } }).draft.id;
+	}
+	async function star(id: string) {
+		expect((await api.post(`/api/messages/${id}/star`)).ok()).toBe(true);
+	}
+
+	// Oldest first, so it alone ranks last (the second batch) once every item below is also starred.
+	const secondBatchDraft = await saveDraft(`Second batch draft ${token}`);
+	await star(secondBatchDraft);
+	const firstBatchDraft = await saveDraft(`First batch draft ${token}`);
+	await star(firstBatchDraft);
+	const mail = await deliverMany(`Batch mail ${token}`, 49);
+	for (const { message } of mail) await star(message.id);
+
+	await page.goto("/starred");
+	await expect(page.getByText(`First batch draft ${token}`, { exact: true })).toBeVisible();
+	await page.getByRole("checkbox", { name: "Select all visible messages" }).check();
+	const banner = page.getByRole("button", { name: /^Select all 51 in Starred$/ });
+	await expect(banner).toBeVisible();
+	await banner.click();
+	await expect(page.getByText("51 selected")).toBeVisible();
+
+	await clickBulkAction(page, "Delete");
+	const confirm = page.getByRole("alertdialog", { name: "Delete 2 drafts permanently?" });
+	await expect(confirm).toBeVisible();
+	await confirm.getByRole("button", { name: "Delete" }).click();
+
+	await expect.poll(() => messageStatusCode(secondBatchDraft)).toBe(404);
+	await expect.poll(() => messageStatusCode(firstBatchDraft)).toBe(404);
+	for (const { message } of mail) expect((await api.get(`/api/messages/${message.id}`)).status()).toBe(200);
+	await expect
+		.poll(async () => (await (await api.get(`/api/messages/${mail[0].message.id}`)).json()).message.status)
+		.toBe("trash");
+});

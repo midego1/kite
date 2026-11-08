@@ -65,8 +65,18 @@ test("selecting a message on a phone still offers the bulk actions", async ({ pa
 	// The compact phone header used to hide the bulk toolbar, leaving a selection with no actions.
 	await expect(page.getByText("1 selected")).toBeVisible();
 	await expect(page.getByRole("button", { name: "Delete", exact: true })).toBeVisible();
-	await expect(page.getByRole("button", { name: "Mark as read" })).toBeVisible();
-	await expect(page.getByRole("button", { name: "More actions" })).toBeVisible();
+	const more = page.getByRole("button", { name: "More actions" });
+	await expect(more).toBeVisible();
+	// Mark as read is reachable whether or not it has room inline at this width (what fits is measured, not
+	// a fixed set): checked through whichever of the toolbar or "More actions" actually offers it.
+	const inlineMarkAsRead = page.getByRole("button", { name: "Mark as read" });
+	if (await inlineMarkAsRead.isVisible()) {
+		await expect(inlineMarkAsRead).toBeVisible();
+	} else {
+		await more.click();
+		await expect(page.getByRole("menu").getByRole("menuitem", { name: "Mark as read" })).toBeVisible();
+		await page.keyboard.press("Escape");
+	}
 });
 
 test("the Select button only shows on a touch device; a pointer relies on the always-visible checkbox", async ({

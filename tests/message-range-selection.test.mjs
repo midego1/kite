@@ -35,6 +35,7 @@ const {
 	isApplePlatform,
 	openIdFromPath,
 	planRowSelection,
+	pruneSelection,
 	replaceSelection,
 	resolveSelectedRows,
 	resolveSelectionAnchor,
@@ -64,13 +65,32 @@ test("without an anchor on the page only the clicked row is used", () => {
 });
 
 test("rows that left the list leave the selection, and an unchanged selection keeps its identity", async () => {
-	const { pruneSelection } = await import(pathToFileURL(join(outDir, "entry.mjs")).href);
 	const selected = [
 		{ id: "a", read: true },
 		{ id: "b", read: false },
 	];
 	assert.deepEqual(pruneSelection(selected, [{ id: "a" }]), [{ id: "a", read: true }]);
 	assert.equal(pruneSelection(selected, [{ id: "a" }, { id: "b" }]), selected);
+});
+
+test("an offPage entry is never dropped, even once its row is gone from the loaded page entirely", () => {
+	// "Select all in folder" marks every row it selected offPage, not just the ones past what was loaded: a
+	// row that was on the page at selection time can still be pushed off it later by new mail or a move, and
+	// a refresh of the page must not silently shrink a folder-wide selection back down to what it now holds.
+	const selected = [
+		{ id: "a", read: true, offPage: true },
+		{ id: "b", read: false, offPage: true },
+	];
+	assert.deepEqual(pruneSelection(selected, []), selected);
+	assert.deepEqual(pruneSelection(selected, [{ id: "a" }]), selected);
+});
+
+test("an offPage entry is still dropped once a non-offPage entry beside it leaves the page", () => {
+	const selected = [
+		{ id: "a", read: true, offPage: true },
+		{ id: "b", read: false },
+	];
+	assert.deepEqual(pruneSelection(selected, []), [{ id: "a", read: true, offPage: true }]);
 });
 
 const click = (extra = {}) => ({ button: 0, shiftKey: false, metaKey: false, ctrlKey: false, altKey: false, ...extra });

@@ -108,7 +108,7 @@ export function useMessageListKeyboard({
 }: ListKeyboardOptions) {
 	const { shortcutsEnabled } = useShortcuts();
 
-	const shortcuts = useMemo<Array<ShortcutDefinition & { extend: boolean }>>(() => {
+	const shortcuts = useMemo<Array<ShortcutDefinition & { extend: boolean; acts: boolean }>>(() => {
 		const move = (step: 1 | -1) => {
 			const all = rows(listRef.current);
 			const current = focusedRow(listRef.current);
@@ -148,16 +148,24 @@ export function useMessageListKeyboard({
 				if (folder !== "trash") runOnRows("trash", focusedId());
 			},
 		};
-		return LIST_KEYS.map(({ id, ...meta }) => ({ ...meta, action: handlers[id], extend: id.startsWith("extend") }));
+		return LIST_KEYS.map(({ id, ...meta }) => ({
+			...meta,
+			action: handlers[id],
+			extend: id.startsWith("extend"),
+			acts: id === "archive" || id === "trash",
+		}));
 	}, [folder, listRef, runOnRows, toggleRowSelection, extendSelection]);
 
-	// With a selection the list is still what the user works with even while a message is open, so Shift+Arrow stays on.
+	// Navigation and x (select) need the list focused, which an open message's own reading pane has taken, so
+	// they stay off while one is open.
 	useHotkeys(
-		shortcuts.filter((shortcut) => !shortcut.extend),
+		shortcuts.filter((shortcut) => !shortcut.extend && !shortcut.acts),
 		{ enabled: shortcutsEnabled && !messageOpen },
 	);
+	// With a selection the list is still what the user works with even while a message is open, so Shift+Arrow
+	// and e/# (acting on the checked rows, not the open message) stay on.
 	useHotkeys(
-		shortcuts.filter((shortcut) => shortcut.extend),
+		shortcuts.filter((shortcut) => shortcut.extend || shortcut.acts),
 		{ enabled: shortcutsEnabled && (!messageOpen || selectionCount > 0) },
 	);
 

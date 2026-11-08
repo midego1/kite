@@ -69,8 +69,9 @@ function toolbar(page: Page) {
 
 /**
  * Runs a bulk toolbar action by its label, whether the default split-pane list has room to show it inline
- * or, too narrow for that, it only reaches through "More actions" (Archive, Report spam/Not spam, Delete
- * forever and Move to fold away there first; Delete and Mark as read always stay inline).
+ * or, too narrow for that, it only reaches through "More actions": what fits there is measured against the
+ * panel's actual width, not a fixed set, so any action can fold away depending on what else is competing
+ * for the room.
  */
 async function clickBulkAction(page: Page, action: string | RegExp) {
 	const inline = toolbar(page).getByRole("button", { name: action, exact: true });
@@ -80,6 +81,20 @@ async function clickBulkAction(page: Page, action: string | RegExp) {
 	}
 	await toolbar(page).getByRole("button", { name: "More actions" }).click();
 	await page.getByRole("menu").getByRole("menuitem", { name: action, exact: true }).click();
+}
+
+/** Asserts `action`'s enabled state through whichever of the inline toolbar or "More actions" offers it. */
+async function assertBulkActionEnabled(page: Page, action: string, enabled: boolean) {
+	const inline = toolbar(page).getByRole("button", { name: action, exact: true });
+	if (await inline.isVisible()) {
+		await expect(inline)[enabled ? "toBeEnabled" : "toBeDisabled"]();
+		return;
+	}
+	await toolbar(page).getByRole("button", { name: "More actions" }).click();
+	await expect(page.getByRole("menu").getByRole("menuitem", { name: action, exact: true }))[
+		enabled ? "toBeEnabled" : "toBeDisabled"
+	]();
+	await page.keyboard.press("Escape");
 }
 
 async function openSwitcher(page: Page) {
@@ -325,21 +340,11 @@ test("read-only shared mail cannot be archived or deleted from the combined view
 	await showAllMailboxes(page);
 
 	await row(page, subject).getByRole("checkbox").click();
-	// Neither Delete nor Archive has guaranteed room inline at the default split-pane width (what fits is
-	// measured, not a fixed set), so their disabled state is checked through whichever of the toolbar or
-	// "More actions" actually offers them.
-	await expect(toolbar(page).getByRole("button", { name: "Mark as read" })).toBeEnabled();
-	const inlineDelete = toolbar(page).getByRole("button", { name: "Delete", exact: true });
-	if (await inlineDelete.isVisible()) {
-		await expect(inlineDelete).toBeDisabled();
-	} else {
-		await toolbar(page).getByRole("button", { name: "More actions" }).click();
-		await expect(page.getByRole("menu").getByRole("menuitem", { name: "Delete", exact: true })).toBeDisabled();
-		await page.keyboard.press("Escape");
-	}
-	await toolbar(page).getByRole("button", { name: "More actions" }).click();
-	await expect(page.getByRole("menu").getByRole("menuitem", { name: "Archive", exact: true })).toBeDisabled();
-	await page.keyboard.press("Escape");
+	// None of these has guaranteed room inline at the default split-pane width (what fits is measured, not a
+	// fixed set), so each is checked through whichever of the toolbar or "More actions" actually offers it.
+	await assertBulkActionEnabled(page, "Mark as read", true);
+	await assertBulkActionEnabled(page, "Delete", false);
+	await assertBulkActionEnabled(page, "Archive", false);
 	await row(page, subject).getByRole("checkbox").click();
 
 	await row(page, subject).getByRole("link").first().click();

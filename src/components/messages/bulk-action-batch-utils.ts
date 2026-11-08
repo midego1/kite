@@ -14,13 +14,16 @@ export const BULK_ACTION_BATCH_SIZE = 50;
  * Thrown by `runBulkMessageAction` when a later batch failed (or the user declined a mid-run drafts
  * confirmation) after at least one earlier batch had already gone through. The earlier batches' effects (Undo,
  * the list refresh, the left-view announcement) still ran before this was thrown; `completed`/`total` let the
- * caller say how far it got instead of a plain "could not update the messages".
+ * caller say how far it got instead of a plain "could not update the messages", and `completedIds` lets it drop
+ * exactly those from the selection and from any optimistic-state rollback, so a retry never re-sends an id that
+ * already went through and a row that already changed is not flipped back only to be corrected again.
  */
 export class PartialBulkActionError extends Error {
 	constructor(
 		message: string,
 		readonly completed: number,
 		readonly total: number,
+		readonly completedIds: readonly string[] = [],
 	) {
 		super(message);
 		this.name = "PartialBulkActionError";

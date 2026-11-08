@@ -15,6 +15,7 @@ import type { BulkMessageAction } from "@/app/api/messages/bulk/types";
 import type { Message } from "@/hooks/types";
 import { UpdateNoticeRow } from "@/components/update-notice-row";
 import { useRegisterUpdateList } from "@/components/update-notice-store";
+import { PartialBulkActionError } from "./bulk-action-batch-utils";
 import { useClearSelection } from "./use-clear-selection";
 import { useOpenRowBridge } from "./use-open-row-bridge";
 import { MessageListHeader } from "./message-list-header";
@@ -222,12 +223,10 @@ export function MessageFolderPage({
 			// back a selection they already dismissed.
 			if (selectAllGeneration.current !== startGeneration) return;
 			selectionAnchor.current = null;
-			// Off-page entries (not on the currently loaded page) are never pruned by a later refresh; see
-			// `pruneSelection`.
-			const loadedIds = new Set(messages.map((message) => message.id));
-			setSelectedMessages(
-				matched.map((message) => ({ ...toSelectedMessage(message), offPage: !loadedIds.has(message.id) })),
-			);
+			// Every row this selected is marked offPage, not just the ones past the loaded page: new mail or a
+			// move can push a row that was on the page out of it after the fact, and a folder-wide selection must
+			// not shrink back down to whatever the page happens to hold later; see `pruneSelection`.
+			setSelectedMessages(matched.map((message) => ({ ...toSelectedMessage(message), offPage: true })));
 			if (truncated) reportSelectAllTruncated(SELECT_ALL_MAX_MESSAGES);
 		} catch (error) {
 			reportListActionError(error);
@@ -248,6 +247,9 @@ export function MessageFolderPage({
 			return;
 		}
 		selectionAnchor.current = messageId;
+		// Any explicit change to the selection invalidates a "Select all" still resolving in the background, the
+		// same as a view change or a clear: letting its answer land after this would silently undo it.
+		selectAllGeneration.current += 1;
 		setSelectedMessages((current) => applySelection(current, messages, [messageId], selected));
 	}
 
@@ -271,10 +273,20 @@ export function MessageFolderPage({
 			modifiers,
 		});
 		selectionAnchor.current = plan.anchorId;
+		selectAllGeneration.current += 1;
 		setSelectedMessages((current) => replaceSelection(current, messages, plan.selectedIds));
 	}
 
 	function toggleAllVisible(selected: boolean) {
+		selectAllGeneration.current += 1;
+		// Unchecking the header while the selection holds off-page entries (a resolved "Select all in folder")
+		// clears all of it: applying only to the visible rows would leave the header unchecked while the
+		// toolbar still said e.g. "975 selected," with no way back to the all-unchecked state from there.
+		if (!selected && selectedMessages.some((message) => message.offPage)) {
+			selectionAnchor.current = null;
+			setSelectedMessages([]);
+			return;
+		}
 		const visibleIds = messages.map((message) => message.id);
 		setSelectedMessages((current) => applySelection(current, messages, visibleIds, selected));
 	}
@@ -393,7 +405,29 @@ export function MessageFolderPage({
 			if ((await runListAction(expandSelectedIds(actionIds), action, folderId)) === LIST_ACTION_CANCELLED) return;
 			clearSelection();
 		} catch (error) {
-			if (readValue !== null) {
+			if (error instanceof PartialBulkActionError) {
+				// Only the rows an earlier batch did not reach are rolled back and kept selected: a row whose
+				// action already went through must not be flipped back only to be corrected again, and a retry
+				// (running the action again on what is still selected) must never re-send an id that is done.
+				const completed = new Set(error.completedIds);
+				const isRowDone = (rowId: string) => expandSelectedIds([rowId]).every((id) => completed.has(id));
+				const notDoneIds = new Set(actionIds.filter((id) => !isRowDone(id)));
+				if (readValue !== null && notDoneIds.size > 0) {
+					const previousById = new Map(previousMessages.map((message) => [message.id, message]));
+					updateMessages((current) =>
+						current.map((message) =>
+							notDoneIds.has(message.id) ? (previousById.get(message.id) ?? message) : message,
+						),
+					);
+					const revertedDelta = getInboxUnreadDelta(
+						selectedRows.filter((row) => notDoneIds.has(row.id)),
+						readValue,
+						affectsInboxUnreadCount(config),
+					);
+					if (revertedDelta) dispatchMessageCountsDelta({ inboxUnreadDelta: -revertedDelta });
+				}
+				setSelectedMessages((current) => current.filter((message) => notDoneIds.has(message.id)));
+			} else if (readValue !== null) {
 				updateMessages(previousMessages);
 				if (inboxUnreadDelta) dispatchMessageCountsDelta({ inboxUnreadDelta: -inboxUnreadDelta });
 			}

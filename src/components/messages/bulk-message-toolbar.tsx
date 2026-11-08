@@ -416,7 +416,7 @@ function MailSelectionToolbar({
 										<DropdownMenu.SubContent sideOffset={4} className={menuContentClass}>
 											<MoveMenuItems
 												moveOptions={moveOptions}
-												phishingItem={false}
+												phishingItem={phishingItem}
 												spansMailboxes={spansMailboxes}
 												folders={folders}
 												onAction={onAction}
@@ -425,7 +425,8 @@ function MailSelectionToolbar({
 									</DropdownMenu.Portal>
 								</DropdownMenu.Sub>
 							)}
-							{!moveToOverflowed && phishingItem}
+							{/* "Report phishing" always lives inside the Move-to menu (inline or, here, its submenu), as it
+							    does for the inline dropdown above: never duplicated as a standalone entry too. */}
 							<DropdownMenu.Separator className="my-1 h-px bg-neutral-100" />
 							<DropdownMenu.Item className={menuItemClass} onSelect={onClearSelection}>
 								<X className="h-4 w-4" />

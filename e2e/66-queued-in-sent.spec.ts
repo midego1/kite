@@ -63,9 +63,9 @@ function rowFor(page: Page, subject: string) {
 
 /**
  * The bulk toolbar's control for an action, whether the default split-pane list has room to show it inline
- * or, too narrow for that, it only reaches through "More actions" (Archive and Report spam fold away there
- * first; Delete always stays inline). Opens "More actions" if needed, so the returned control is the one
- * actually checkable for its disabled state.
+ * or, too narrow for that, it only reaches through "More actions" (what fits there is measured against the
+ * panel's actual width, not a fixed set). Opens "More actions" if needed, so the returned control is the one
+ * actually checkable for its disabled state; the caller presses Escape afterward either way.
  */
 async function bulkActionControl(page: Page, action: string) {
 	const inline = page.getByTestId("bulk-toolbar").getByRole("button", { name: action }).first();
@@ -173,6 +173,7 @@ test("a scheduled send shows its time, cannot be archived or trashed, and Edit o
 		await expect(await bulkActionControl(page, "Report spam")).toBeDisabled();
 		await page.keyboard.press("Escape");
 		await expect(await bulkActionControl(page, "Delete")).toBeDisabled();
+		await page.keyboard.press("Escape");
 		await rowFor(page, subject).getByRole("checkbox").uncheck();
 	});
 

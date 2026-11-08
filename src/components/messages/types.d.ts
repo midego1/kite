@@ -135,8 +135,9 @@ export type BulkMessageToolbarProps = {
  * A selected row; `status` lets a member without full access still delete their own drafts.
  * `threadMessageIds` (conversation view) travels with the row itself, so a selection built from
  * a page beyond the one loaded in the list, as "Select all in folder" does, can still expand to
- * every message of its thread. `offPage` marks exactly that case: a row "Select all" selected that
- * was never on the loaded page, so a refresh of that page must never prune it away. `direction`,
+ * every message of its thread. `offPage` is set on every row "Select all" selected, whether or not it
+ * happened to be on the loaded page at the time, since new mail or a move can push it out afterward; a
+ * refresh of that page must never prune it away. `direction`,
  * `threadUnread` and `threadInboundCount` travel the same way, so marking such a row read or unread
  * can still work out its effect on the sidebar Inbox count without a row on the loaded page to read it from.
  */

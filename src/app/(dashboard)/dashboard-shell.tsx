@@ -7,6 +7,7 @@ import { FloatingComposer } from "@/components/compose/floating-composer";
 import { MailSearchProvider } from "@/components/mail-search/mail-search-context";
 import { MailboxProvider } from "@/components/mailbox-provider";
 import { MailboxSelector } from "@/components/mailbox-selector";
+import { MailboxTourDialog } from "@/components/mailbox-tour-dialog";
 import { LazyAgentPanel } from "@/components/agent/agent-panel-lazy";
 import { ASSISTANT_PROMPT_EVENT, hasAssistantPrompt } from "@/components/agent/assistant-prompt-request";
 import { AssistantIconButton, AssistantNavItem } from "@/components/agent/assistant-nav-item";
@@ -182,6 +183,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
 							<ShortcutsProvider>
 								{assistantEnabled === true && <AssistantCommand toggle={toggleAssistant} />}
 								<RouteTitle />
+								<MailboxTourDialog />
 								<div className="h-dvh overflow-hidden bg-[#f6f8fc]">
 									<SkipToContent />
 									<SidebarFrame

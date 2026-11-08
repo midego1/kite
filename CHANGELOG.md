@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.11.08.0] - 2026-11-08
+
+### Added
+
+- A dismissible "Get started" checklist on the admin overview and at the end of first-run setup walks the owner through connecting a domain, inviting people, reviewing modules, turning on phishing lookups and backups, and connecting an AI provider. Each step explains itself in plain words, links to the page that does it, and ticks itself off as the owner sets things up.
+  ![The Get started checklist on the admin overview, five of eight steps already done](/changelog/2026-11-07-onboarding-checklist-light.webp)
+
+### Changed
+
+- The last plain dropdowns and one checkbox now match the rest of Kite: sharing Access in Drive, Repeat in the calendar, Meeting length and the time zone in Booking, the assistant's Draft reviewer and models, and a storage store's custom endpoint. They follow every look, dark mode and right-to-left, and work by keyboard.
+
+  ![The Access dropdown open in the Drive share dialog, with Can view selected and Can edit below it](/changelog/2026-11-07-select-checkbox-light.webp)
+
+### Fixed
+
+- In a connected account's view, Newer and Older now move only between that account's messages instead of stepping to other mail in the Inbox.
+- The composer's Write with Kite button no longer just disappears when no AI provider is set up; it now stays and says so, the same way it already does when AI is off for a mailbox. The assistant panel's notice for the same situation now also links the primary admin straight to where they add one.
+  ![The assistant panel saying no AI provider is configured, with a link to Admin → Agent](/changelog/2026-11-08-no-provider-notice-light.webp)
+
 ## [2026.11.07.5] - 2026-11-07
 
 ### Changed

@@ -48,7 +48,9 @@ async function addMessage(env, id, { body = `raw ${id}`, createdAt = NOW - 60 * 
 }
 
 async function addBackup(env, id, { size = 2048, createdAt = NOW - 60 * DAY, status = "completed" } = {}) {
-	const key = `backups/database/${id}.json`;
+	// The real shape (`BACKUP_PREFIX/<id>/<filename>`, `src/lib/backups/utils.ts`): the liveness check in
+	// `cold.ts`'s `stillReferenced` derives the backup id from this, so the fixture must match it exactly.
+	const key = `backups/database/${id}/${id}.json`;
 	env.DB.db
 		.prepare(
 			`INSERT INTO backups (id, status, trigger, r2_key, filename, size, created_at) VALUES (?, ?, 'manual', ?, ?, ?, ?)`,
@@ -88,7 +90,13 @@ async function drain(env, queue, limit = 200) {
 const job = (env, objectClass) =>
 	env.DB.db.prepare("SELECT * FROM storage_cold_jobs WHERE object_class = ?").get(objectClass);
 const location = (env, key) => env.DB.db.prepare("SELECT * FROM object_locations WHERE key = ?").get(key);
+const orphan = (env, key, storeId) =>
+	storeId
+		? env.DB.db.prepare("SELECT * FROM storage_cold_orphans WHERE key = ? AND store_id = ?").get(key, storeId)
+		: env.DB.db.prepare("SELECT * FROM storage_cold_orphans WHERE key = ?").get(key);
 const target = () => fake.buckets.get("kite-target").objects;
+/** Past the orphan sweep's 7-day grace period. */
+const GRACE_PERIOD_DAY = 8;
 
 test("a mail sweep moves only objects at or past the age cutoff to the target store, verified and recorded", async (t) => {
 	const { env, queue } = await fixture(t);
@@ -173,9 +181,9 @@ test("a backups rule only moves completed backups at or above the size floor", a
 	await setColdRule(env, "backups", { afterDays: 30, minBytes: 1024, target: "sto_target" });
 	await cold.runColdStorageSweep(env, new Date(NOW * 1000));
 	await drain(env, queue);
-	assert.equal(target().has("backups/database/big.json"), true);
-	assert.equal(target().has("backups/database/small.json"), false, "under the size floor");
-	assert.equal(target().has("backups/database/queued.json"), false, "not completed");
+	assert.equal(target().has("backups/database/big/big.json"), true);
+	assert.equal(target().has("backups/database/small/small.json"), false, "under the size floor");
+	assert.equal(target().has("backups/database/queued/queued.json"), false, "not completed");
 });
 
 test("a drive rule moves old files through the Drive hooks, updating each row's store and clearing its storage class", async (t) => {
@@ -450,7 +458,7 @@ test("a batch's progress write only lands while its claim is still the job's cur
 	assert.equal(job(env, "mail").cursor, afterFirstBatch, "the real progress is untouched");
 });
 
-test("the five-minute maintenance prunes an orphaned cold copy nothing references any more", async (t) => {
+test("the five-minute maintenance marks an unreferenced cold copy a candidate, then deletes it only once the grace period has passed", async (t) => {
 	const { env, queue } = await fixture(t);
 	await addStore(env, "sto_target", "kite-target");
 	await addMessage(env, "old", { createdAt: NOW - 60 * DAY });
@@ -465,8 +473,39 @@ test("the five-minute maintenance prunes an orphaned cold copy nothing reference
 	env.DB.db.prepare("DELETE FROM messages WHERE id = 'old'").run();
 
 	await cold.runStorageColdMaintenance(env, new Date(NOW * 1000));
+	assert.equal(target().has("inbound/old.eml"), true, "never deleted on first sighting");
+	assert.ok(location(env, "inbound/old.eml"), "the location survives being marked a candidate");
+	assert.ok(orphan(env, "inbound/old.eml", "sto_target"), "recorded as an orphan candidate");
+
+	// Immediately again: still within the grace period, so still untouched.
+	await cold.runStorageColdMaintenance(env, new Date((NOW + 1) * 1000));
+	assert.equal(target().has("inbound/old.eml"), true);
+
+	// Well past the grace period: the delete pass re-checks the reference (still gone) and removes it.
+	await cold.runStorageColdMaintenance(env, new Date((NOW + GRACE_PERIOD_DAY * DAY) * 1000));
 	assert.equal(target().has("inbound/old.eml"), false, "the orphaned copy itself is deleted");
 	assert.equal(location(env, "inbound/old.eml"), undefined, "and its record with it");
+	assert.equal(orphan(env, "inbound/old.eml", "sto_target"), undefined, "and the candidate row");
+});
+
+test("a candidate that became referenced again before its grace period is un-marked instead of deleted", async (t) => {
+	const { env, queue } = await fixture(t);
+	await addStore(env, "sto_target", "kite-target");
+	await addMessage(env, "old", { createdAt: NOW - 60 * DAY });
+	await setColdRule(env, "mail", { afterDays: 30, target: "sto_target" });
+	await cold.runColdStorageSweep(env, new Date(NOW * 1000));
+	await drain(env, queue);
+	env.DB.db.prepare("DELETE FROM messages WHERE id = 'old'").run();
+	await cold.runStorageColdMaintenance(env, new Date(NOW * 1000));
+	assert.ok(orphan(env, "inbound/old.eml", "sto_target"), "recorded as an orphan candidate");
+
+	// A restore (or anything else) brings the message back before the grace period is up.
+	await addMessage(env, "old", { createdAt: NOW - 60 * DAY });
+
+	await cold.runStorageColdMaintenance(env, new Date((NOW + GRACE_PERIOD_DAY * DAY) * 1000));
+	assert.equal(target().has("inbound/old.eml"), true, "the copy is kept: it is referenced again");
+	assert.ok(location(env, "inbound/old.eml"));
+	assert.equal(orphan(env, "inbound/old.eml", "sto_target"), undefined, "no longer a candidate");
 });
 
 test("the maintenance leaves an orphan's record alone while its store cannot be reached, for a later retry", async (t) => {
@@ -477,13 +516,16 @@ test("the maintenance leaves an orphan's record alone while its store cannot be 
 	await cold.runColdStorageSweep(env, new Date(NOW * 1000));
 	await drain(env, queue);
 	env.DB.db.prepare("DELETE FROM messages WHERE id = 'old'").run();
+	await cold.runStorageColdMaintenance(env, new Date(NOW * 1000));
+	assert.ok(orphan(env, "inbound/old.eml", "sto_target"));
 
 	// The store is now blocked (a bad endpoint, a revoked credential): built.store(storeId) finds nothing.
 	env.DB.db.prepare("UPDATE storage_stores SET endpoint = 'http://blocked.invalid' WHERE id = 'sto_target'").run();
 	clearStorageConfigCache();
 
-	await cold.runStorageColdMaintenance(env, new Date(NOW * 1000));
+	await cold.runStorageColdMaintenance(env, new Date((NOW + GRACE_PERIOD_DAY * DAY) * 1000));
 	assert.ok(location(env, "inbound/old.eml"), "kept for a retry once the store is reachable again");
+	assert.ok(orphan(env, "inbound/old.eml", "sto_target"), "the candidate stays recorded too");
 });
 
 test("the maintenance never touches a cold copy a live message still names", async (t) => {
@@ -494,8 +536,53 @@ test("the maintenance never touches a cold copy a live message still names", asy
 	await cold.runColdStorageSweep(env, new Date(NOW * 1000));
 	await drain(env, queue);
 
-	await cold.runStorageColdMaintenance(env, new Date(NOW * 1000));
+	await cold.runStorageColdMaintenance(env, new Date((NOW + GRACE_PERIOD_DAY * DAY) * 1000));
 	assert.ok(location(env, "inbound/old.eml"));
+	assert.equal(target().has("inbound/old.eml"), true);
+	assert.equal(orphan(env, "inbound/old.eml", "sto_target"), undefined, "never even marked a candidate");
+});
+
+test("the maintenance skips entirely while a restore is running, so it never marks every cold key unreferenced", async (t) => {
+	const { env, queue } = await fixture(t);
+	await addStore(env, "sto_target", "kite-target");
+	await addMessage(env, "old", { createdAt: NOW - 60 * DAY });
+	await setColdRule(env, "mail", { afterDays: 30, target: "sto_target" });
+	await cold.runColdStorageSweep(env, new Date(NOW * 1000));
+	await drain(env, queue);
+	// A restore's "deletes" segment empties messages before writing them back; object_locations (a merge
+	// table) is untouched, so a run landing in that window would otherwise see every cold key as unreferenced.
+	env.DB.db.prepare("DELETE FROM messages WHERE id = 'old'").run();
+	await env.BUCKET.put(
+		"system/backup-restore.json",
+		JSON.stringify({
+			version: 1,
+			id: "rst_1",
+			status: "restoring",
+			seq: 1,
+			lease: null,
+			userId: null,
+			createdAt: new Date(NOW * 1000).toISOString(),
+			updatedAt: new Date(NOW * 1000).toISOString(),
+			finishedAt: null,
+			source: { key: "backups/database/rst_1/rst_1.json", upload: false, filename: null },
+			kept: [],
+			plan: null,
+			safety: null,
+			rollbackPlan: null,
+			cursor: null,
+			interruptions: 0,
+			rowCount: 0,
+			error: null,
+			changed: true,
+			needsRecovery: false,
+			recoveryOf: null,
+			schema: null,
+		}),
+	);
+
+	await cold.runStorageColdMaintenance(env, new Date(NOW * 1000));
+	assert.equal(orphan(env, "inbound/old.eml", "sto_target"), undefined, "nothing was even marked");
+	assert.ok(location(env, "inbound/old.eml"), "the location is untouched");
 	assert.equal(target().has("inbound/old.eml"), true);
 });
 

@@ -83,12 +83,14 @@ async function writeRows(table: PreparedRestoreTable, context: SegmentContext): 
 	const builder = new TableInsertBuilder<RestorePosition>(table.name, columns, { ignoreConflicts: table.merge });
 	const emit = async (built: ReturnType<typeof builder.finish>) => {
 		if (!built) return;
-		await writer.add(built.statement, built.meta, {
-			table: table.name,
-			row: built.last,
-			primaryKey: table.primaryKey,
-			columns,
-		});
+		// A merge table's insert is `OR IGNORE` (idempotent: a row the batch already committed before an
+		// interruption is simply ignored the second time), so resuming needs no probe to tell whether it ran —
+		// it is always safe to run again, unlike a plain insert that would collide on an already-committed row.
+		await writer.add(
+			built.statement,
+			built.meta,
+			table.merge ? null : { table: table.name, row: built.last, primaryKey: table.primaryKey, columns },
+		);
 		context.reached = built.meta!;
 		context.checkDeadline();
 	};

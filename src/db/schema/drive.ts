@@ -1,4 +1,5 @@
 import { sqliteTable, text, integer, index, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { sql } from "drizzle-orm";
 import { users } from "./index";
 
 /** A Drive file or folder. Files keep their bytes at `object_key` on the store named by `store_id`. */
@@ -40,6 +41,11 @@ export const driveItems = sqliteTable(
 		index("drive_items_parent_idx").on(t.parentId),
 		index("drive_items_trashed_idx").on(t.trashedAt),
 		index("drive_items_upload_expiry_idx").on(t.uploadExpiresAt),
+		// The cold storage orphan sweep's liveness check (`cold.ts`'s `stillReferenced`) looks a key up here;
+		// folders (null) never match, so the index only covers files.
+		index("drive_items_object_key_idx")
+			.on(t.objectKey)
+			.where(sql`object_key IS NOT NULL`),
 	],
 );
 

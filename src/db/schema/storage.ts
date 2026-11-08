@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, index } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, index, uniqueIndex } from "drizzle-orm/sqlite-core";
 import { users } from "./index";
 
 /** S3-compatible object stores an admin added (src/lib/storage/config.ts); the `BUCKET` binding is `default` and has no row. */
@@ -105,7 +105,37 @@ export const objectLocations = sqliteTable(
 			.notNull()
 			.$defaultFn(() => new Date()),
 	},
-	(t) => [index("object_locations_class_idx").on(t.objectClass)],
+	(t) => [
+		index("object_locations_class_idx").on(t.objectClass),
+		// Keyset pagination for the orphan sweep (src/lib/storage/cold.ts): a stored (movedAt, key) cursor lets
+		// it page through the whole table a bounded batch at a time instead of rescanning the same prefix.
+		index("object_locations_moved_at_key_idx").on(t.movedAt, t.key),
+	],
+);
+
+/**
+ * A cold-moved copy nothing in `object_locations` points at any more: the losing side of two deliveries that
+ * raced to different targets for the same key (`object-locations.ts`), or a migration's old copy left behind
+ * once the object became reachable through the normal chain again (`migration.ts`). Deleted by the orphan sweep
+ * (src/lib/storage/cold.ts) only after `orphanedAt` is older than its grace period, re-checking references at
+ * delete time, so a copy a restore might still need is never removed out from under it. `(storeId, key)` is
+ * unique so the same copy is never queued twice.
+ */
+export const storageColdOrphans = sqliteTable(
+	"storage_cold_orphans",
+	{
+		id: text("id").primaryKey(),
+		storeId: text("store_id").notNull(),
+		key: text("key").notNull(),
+		objectClass: text("object_class", { enum: ["mail", "drive", "backups"] }).notNull(),
+		orphanedAt: integer("orphaned_at", { mode: "timestamp" })
+			.notNull()
+			.$defaultFn(() => new Date()),
+	},
+	(t) => [
+		uniqueIndex("storage_cold_orphans_store_key_idx").on(t.storeId, t.key),
+		index("storage_cold_orphans_orphaned_at_idx").on(t.orphanedAt),
+	],
 );
 
 /**
@@ -136,6 +166,8 @@ export const storageState = sqliteTable("storage_state", {
 	id: text("id").primaryKey(),
 	/** JSON `DirectUploadsState` (src/lib/storage/direct-uploads-state.ts); never a key. */
 	directUploads: text("direct_uploads"),
+	/** JSON `{ movedAt, key } | null`: where the orphan sweep's `object_locations` scan left off (`cold.ts`). */
+	coldOrphanCursor: text("cold_orphan_cursor"),
 	updatedAt: integer("updated_at", { mode: "timestamp" })
 		.notNull()
 		.$defaultFn(() => new Date()),

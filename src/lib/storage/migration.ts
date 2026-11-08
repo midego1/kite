@@ -31,7 +31,7 @@ import {
 } from "./migration-utils";
 import { callStorageHook } from "./module-hooks";
 import { objectClassOf } from "./object-classes-utils";
-import { deleteObjectLocations, lookupObjectLocation } from "./object-locations";
+import { deleteObjectLocations, lookupObjectLocation, markOrphanCandidate } from "./object-locations";
 import { ATTACHMENT_OBJECT_ROWS_SQL } from "@/lib/email/attachment-storage-utils";
 import type { ObjectStore, RoutableClass, Storage } from "./types";
 
@@ -225,11 +225,15 @@ export async function copyObject(
 	const written = await target.bucket.put(targetKey, body, { ...metadata, ...lengthOption(target, object.size) });
 	// A single-part PUT's ETag is the MD5 of the bytes on both R2 and plain S3-compatible stores, so it is
 	// comparable across them; the self-hosted Node runtime's file bucket makes up a random one on every write
-	// instead (never a content hash), so this only compares when neither side is that store.
+	// instead (never a content hash), so this only compares when neither side is that store. `head.etag` can
+	// still be a multipart one (`<hash>-<parts>`) when the source object was itself uploaded in parts, which is
+	// not a content hash and not comparable to this copy's own single-part ETag even for identical bytes (Drive
+	// uploads are always multipart, so every Drive file on a custom store has one of these).
 	if (
 		source.id !== DEFAULT_STORE_ID &&
 		target.id !== DEFAULT_STORE_ID &&
 		head.etag &&
+		!head.etag.includes("-") &&
 		written?.etag &&
 		head.etag !== written.etag
 	) {
@@ -320,8 +324,13 @@ async function runItems(
 			// The object is reachable through the normal chain now (it is on `to`); a location a cold move
 			// recorded outside this migration's own old/default chain is stale once that happens, and keeping
 			// it would needlessly block deleting that store and have the next cold sweep move the object again.
-			if (source && source.store.id !== from.id && source.store.id !== to.id)
+			// The cold copy still physically sits on that store, though, so it is marked an orphan candidate
+			// rather than just forgotten: the orphan sweep (`cold.ts`) deletes it after its own grace period,
+			// re-checking first, instead of it being a permanently untracked copy nothing points at any more.
+			if (source && source.store.id !== from.id && source.store.id !== to.id) {
 				await deleteObjectLocations(env, [item.key]);
+				await markOrphanCandidate(env, { storeId: source.store.id, key: item.key, objectClass: job.objectClass });
+			}
 			result.moved.push(item.id);
 		} catch (error) {
 			result.errors += 1;

@@ -244,6 +244,45 @@ test("a same-size but corrupted copy already on the target store is not mistaken
 	assert.equal(targetText("inbound/m1.eml"), content, "the ETag mismatch forced a real copy over the corrupt one");
 });
 
+test("a Drive file whose source ETag is a multipart one (every Drive upload) still copies S3-to-S3 under the single-part threshold", async (t) => {
+	const { env, db, queue } = await fixture(t);
+	await addStore(env, "sto_other", "kite-other");
+	await addStore(env, "sto_target", "kite-target");
+	const key = "drive/drv_a";
+	const content = Buffer.from("a Drive file uploaded in parts, copied with one PUT");
+	// Drive uploads are always multipart (proxied or direct), so a real custom-store ETag looks like this even
+	// for a file well under the single-part copy threshold: it is not a content hash and is never comparable to
+	// a fresh single-part PUT's own ETag, even when the bytes are byte-for-byte identical.
+	fake.buckets.get("kite-other").objects.set(key, {
+		bytes: content,
+		meta: { custom: {} },
+		etag: `${md5(content)}-2`,
+		lastModified: new Date(),
+	});
+	db.db
+		.prepare(
+			`INSERT INTO drive_items (id, owner_id, kind, name, size, store_id, object_key, status, created_at, updated_at)
+			 VALUES ('drv_a', 'owner', 'file', 'file.bin', ?, 'sto_other', ?, 'ready', 1, 1)`,
+		)
+		.run(content.length, key);
+	const id = await migration.queueStorageMigration(env, {
+		objectClass: "drive",
+		fromStoreId: "sto_other",
+		toStoreId: "sto_target",
+		createdByUserId: null,
+	});
+	await drain(env, queue);
+	const done = job(env, id);
+	assert.equal(done.errors, 0, done.last_error);
+	assert.equal(done.status, "completed");
+	assert.equal(
+		Buffer.from(fake.buckets.get("kite-target").objects.get(key).bytes).toString("utf8"),
+		content.toString("utf8"),
+		"copied despite the source's multipart-shaped ETag",
+	);
+	assert.equal(db.db.prepare("SELECT store_id FROM drive_items WHERE id = 'drv_a'").get().store_id, "sto_target");
+});
+
 test("a cancelled migration stops after the current batch", async (t) => {
 	const { env, queue } = await fixture(t);
 	await addStore(env, "sto_target", "kite-target");

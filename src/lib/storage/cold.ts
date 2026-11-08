@@ -1,11 +1,16 @@
-import { desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, lte, or } from "drizzle-orm";
 import { getDb } from "@/db";
-import { objectLocations, storageColdJobs, storageColdRules } from "@/db/schema/storage";
+import { objectLocations, storageColdJobs, storageColdOrphans, storageColdRules, storageState } from "@/db/schema/storage";
 import { ATTACHMENT_OBJECT_ROWS_SQL } from "@/lib/email/attachment-storage-utils";
+import { messageIdFromHtmlBodyObjectKey } from "@/lib/email/bodies-utils";
+import { backupIdFromR2Key } from "@/lib/backups/utils";
+import { readRestoreJob } from "@/lib/backups/restore-job-store";
+import { isActiveRestore } from "@/lib/backups/restore-job-utils";
+import { driveItemIdFromObjectKey } from "@/lib/drive/name-utils";
 import { createAuditLog } from "@/lib/mailboxes/audit";
 import { createLogger } from "@/lib/logger.mjs";
 import { isNoSuchTableError } from "@/lib/modules/state-utils";
-import { deleteObjectLocations } from "./object-locations";
+import { markOrphanCandidate } from "./object-locations";
 import {
 	COLD_STORAGE_CLASS,
 	initialColdCursor,
@@ -421,7 +426,7 @@ export async function runStorageColdMaintenance(env: ColdEnv, now = new Date()):
 		if (isStalled(state, now.getTime(), job.startedAt?.getTime() ?? job.createdAt.getTime()))
 			await enqueue(env, job.objectClass);
 	}
-	await pruneOrphanedColdLocations(env);
+	await pruneOrphanedColdLocations(env, now);
 }
 
 /**
@@ -429,17 +434,24 @@ export async function runStorageColdMaintenance(env: ColdEnv, now = new Date()):
  * it. False means nothing will ever read this key again: a message deleted between a mover copying its raw
  * mail (or an attachment, or an offloaded body) and recording the new location, a concurrent mover's own copy
  * to a different target left behind with its location overwritten, or a backup or Drive row gone the same way.
+ * A body, Drive or backup key embeds the owning row's id, so those look it up by its indexed primary key
+ * instead of scanning an unindexed column (`N3`); a key that does not parse as its class's shape can never be
+ * live, so it is treated as unreferenced without a query.
  */
 async function stillReferenced(env: ColdEnv, objectClass: RoutableClass, key: string): Promise<boolean> {
 	if (objectClass === "backups") {
-		const row = await env.DB.prepare("SELECT 1 AS found FROM backups WHERE r2_key = ? AND status = 'completed'")
-			.bind(key)
+		const id = backupIdFromR2Key(key);
+		if (!id) return false;
+		const row = await env.DB.prepare("SELECT 1 AS found FROM backups WHERE id = ? AND r2_key = ? AND status = 'completed'")
+			.bind(id, key)
 			.first<{ found: number }>();
 		return !!row;
 	}
 	if (objectClass === "drive") {
-		const row = await env.DB.prepare("SELECT 1 AS found FROM drive_items WHERE object_key = ?")
-			.bind(key)
+		const id = driveItemIdFromObjectKey(key);
+		if (!id) return false;
+		const row = await env.DB.prepare("SELECT 1 AS found FROM drive_items WHERE id = ? AND object_key = ?")
+			.bind(id, key)
 			.first<{ found: number }>();
 		return !!row;
 	}
@@ -453,10 +465,12 @@ async function stillReferenced(env: ColdEnv, objectClass: RoutableClass, key: st
 		.bind(key)
 		.first<{ found: number }>();
 	if (attachment) return true;
+	const messageId = messageIdFromHtmlBodyObjectKey(key);
+	if (!messageId) return false;
 	const body = await beforeBodyColumn(
 		() =>
-			env.DB.prepare("SELECT 1 AS found FROM messages WHERE html_body_key IS NOT NULL AND html_body_key = ?")
-				.bind(key)
+			env.DB.prepare("SELECT 1 AS found FROM messages WHERE id = ? AND html_body_key = ?")
+				.bind(messageId, key)
 				.first<{ found: number }>(),
 		null,
 	);
@@ -464,47 +478,182 @@ async function stillReferenced(env: ColdEnv, objectClass: RoutableClass, key: st
 }
 
 const PRUNE_BATCH = 200;
+/** A candidate waits this long as a recorded orphan before it is actually deleted, re-checking its reference
+ * at that point: long enough that a backup restore in progress always finishes well within it. A restore's
+ * "deletes" segment empties `messages`, `message_attachments`, `drive_items` and `backups` before writing them
+ * back, possibly over several queue invocations, and the rollback path does the same; `object_locations` is a
+ * merge table, so a sweep mid-restore would otherwise see every cold key as unreferenced. */
+const ORPHAN_GRACE_PERIOD_MS = 7 * 24 * 60 * 60 * 1000;
+/** How long after a restore finishes (or while one is active) the sweep skips a run entirely, on top of the
+ * grace period above: belt and suspenders, so a run landing in the middle of that window records no new
+ * candidates from state the restore has not finished settling. */
+const RESTORE_COOLDOWN_MS = 60 * 60 * 1000;
 
-/**
- * Cleans up `object_locations` rows nothing live references any more: the object is deleted from the store
- * that holds it (skipped, to try again later, when that store cannot be reached right now), then the record
- * itself. Called from the five-minute cron, so a delete `router.ts` could not complete and an orphan a crash
- * or a race left behind both get an actual retry instead of sitting forever. Oldest first, one bounded batch
- * per run: on an install with more live rows than that it falls behind rather than scanning the whole table
- * every five minutes, so a persistently large backlog still needs its own follow-up.
- */
-async function pruneOrphanedColdLocations(env: ColdEnv): Promise<{ checked: number; pruned: number }> {
-	let rows: { key: string; objectClass: string; storeId: string }[];
+/** Whether a restore is running, or finished recently enough that the sweep should stay out of its way. */
+async function restoreRanRecently(env: ColdEnv, now: number): Promise<boolean> {
+	const stored = await readRestoreJob(env.BUCKET);
+	if (!stored) return false;
+	if (isActiveRestore(stored.job)) return true;
+	if (!stored.job.finishedAt) return false;
+	return now - Date.parse(stored.job.finishedAt) < RESTORE_COOLDOWN_MS;
+}
+
+type ScanCursor = { movedAt: number; key: string };
+
+function parseScanCursor(value: string | null | undefined): ScanCursor | null {
+	if (!value) return null;
 	try {
-		rows = await getDb(env)
-			.select({ key: objectLocations.key, objectClass: objectLocations.objectClass, storeId: objectLocations.storeId })
-			.from(objectLocations)
-			.orderBy(objectLocations.movedAt)
-			.limit(PRUNE_BATCH);
+		const parsed = JSON.parse(value) as Partial<ScanCursor>;
+		return typeof parsed.movedAt === "number" && typeof parsed.key === "string"
+			? { movedAt: parsed.movedAt, key: parsed.key }
+			: null;
+	} catch {
+		return null;
+	}
+}
+
+async function readScanCursor(env: ColdEnv): Promise<ScanCursor | null> {
+	try {
+		const [row] = await getDb(env)
+			.select({ cursor: storageState.coldOrphanCursor })
+			.from(storageState)
+			.where(eq(storageState.id, "default"))
+			.limit(1);
+		return parseScanCursor(row?.cursor);
 	} catch (error) {
-		if (isNoSuchTableError(error)) return { checked: 0, pruned: 0 };
+		if (isNoSuchTableError(error)) return null;
 		throw error;
 	}
-	if (!rows.length) return { checked: 0, pruned: 0 };
-	const storage = await getStorage(env);
-	let pruned = 0;
+}
+
+async function writeScanCursor(env: ColdEnv, cursor: ScanCursor | null): Promise<void> {
+	const value = cursor ? JSON.stringify(cursor) : null;
+	try {
+		await getDb(env)
+			.insert(storageState)
+			.values({ id: "default", coldOrphanCursor: value, updatedAt: new Date() })
+			.onConflictDoUpdate({ target: storageState.id, set: { coldOrphanCursor: value, updatedAt: new Date() } });
+	} catch (error) {
+		if (isNoSuchTableError(error)) return;
+		throw error;
+	}
+}
+
+/**
+ * One bounded, round-robin pass over `object_locations`, keyset-paginated from a cursor saved in `storage_state`
+ * rather than always rechecking the same oldest rows: a backlog larger than one batch is still fully covered,
+ * a batch at a time, over many five-minute runs, instead of the same `PRUNE_BATCH` rows absorbing every run
+ * forever while anything behind them in the order is never reached (`N3`). A row found unreferenced becomes a
+ * candidate (`markOrphanCandidate`) rather than being deleted here; actually deleting it is `deleteGracePeriodOrphans`.
+ */
+async function scanForOrphanCandidates(env: ColdEnv, now: Date): Promise<{ checked: number }> {
+	const cursor = await readScanCursor(env);
+	let rows: { key: string; objectClass: string; storeId: string; movedAt: Date }[];
+	try {
+		rows = await getDb(env)
+			.select({
+				key: objectLocations.key,
+				objectClass: objectLocations.objectClass,
+				storeId: objectLocations.storeId,
+				movedAt: objectLocations.movedAt,
+			})
+			.from(objectLocations)
+			.where(
+				cursor
+					? or(
+							gt(objectLocations.movedAt, new Date(cursor.movedAt * 1000)),
+							and(eq(objectLocations.movedAt, new Date(cursor.movedAt * 1000)), gt(objectLocations.key, cursor.key)),
+						)
+					: undefined,
+			)
+			.orderBy(objectLocations.movedAt, objectLocations.key)
+			.limit(PRUNE_BATCH);
+	} catch (error) {
+		if (isNoSuchTableError(error)) return { checked: 0 };
+		throw error;
+	}
 	for (const row of rows) {
 		if (!isRoutableClass(row.objectClass)) continue;
 		try {
 			if (await stillReferenced(env, row.objectClass, row.key)) continue;
-			const store = storage.store(row.storeId);
+			await markOrphanCandidate(env, { storeId: row.storeId, key: row.key, objectClass: row.objectClass }, now);
+		} catch {
+			continue;
+		}
+	}
+	// Fewer rows than the limit means this batch ran off the end of the table; start over from the top next
+	// time rather than saving a cursor nothing is ever after.
+	const last = rows.length === PRUNE_BATCH ? rows.at(-1) : undefined;
+	await writeScanCursor(env, last ? { movedAt: Math.floor(last.movedAt.getTime() / 1000), key: last.key } : null);
+	return { checked: rows.length };
+}
+
+/**
+ * Deletes recorded orphan candidates whose grace period has passed, from the store that holds each, re-checking
+ * its reference first: a restore that lands during the grace period and brings a key's row back (or a message,
+ * Drive or backup row that references it again) takes it off the list instead of the delete happening anyway.
+ * Nothing is ever deleted here that was not already a recorded candidate.
+ */
+async function deleteGracePeriodOrphans(env: ColdEnv, now: number): Promise<{ pruned: number }> {
+	let candidates: { id: string; key: string; objectClass: string; storeId: string }[];
+	try {
+		candidates = await getDb(env)
+			.select({
+				id: storageColdOrphans.id,
+				key: storageColdOrphans.key,
+				objectClass: storageColdOrphans.objectClass,
+				storeId: storageColdOrphans.storeId,
+			})
+			.from(storageColdOrphans)
+			.where(lte(storageColdOrphans.orphanedAt, new Date(now - ORPHAN_GRACE_PERIOD_MS)))
+			.orderBy(storageColdOrphans.orphanedAt)
+			.limit(PRUNE_BATCH);
+	} catch (error) {
+		if (isNoSuchTableError(error)) return { pruned: 0 };
+		throw error;
+	}
+	if (!candidates.length) return { pruned: 0 };
+	const storage = await getStorage(env);
+	let pruned = 0;
+	for (const candidate of candidates) {
+		if (!isRoutableClass(candidate.objectClass)) continue;
+		try {
+			if (await stillReferenced(env, candidate.objectClass, candidate.key)) {
+				await getDb(env).delete(storageColdOrphans).where(eq(storageColdOrphans.id, candidate.id));
+				continue;
+			}
+			const store = storage.store(candidate.storeId);
 			if (!store) continue;
 			// A store that cannot be reached right now (a bad endpoint, a revoked credential) throws here;
-			// the record is left for the next run to try again, the same as router.ts's own delete.
-			await store.bucket.delete(row.key);
-			await deleteObjectLocations(env, [row.key]);
+			// the candidate is left for the next run to try again, the same as router.ts's own delete.
+			await store.bucket.delete(candidate.key);
+			await getDb(env).delete(storageColdOrphans).where(eq(storageColdOrphans.id, candidate.id));
+			// Only this exact copy's own row, never the winning copy's: a losing mover's candidate shares its
+			// key with the row `object_locations` currently points elsewhere with, not its store.
+			await getDb(env)
+				.delete(objectLocations)
+				.where(and(eq(objectLocations.key, candidate.key), eq(objectLocations.storeId, candidate.storeId)));
 			pruned += 1;
 		} catch {
 			continue;
 		}
 	}
-	if (pruned) log.warn("storage.cold_orphans_pruned", { checked: rows.length, pruned });
-	return { checked: rows.length, pruned };
+	if (pruned) log.warn("storage.cold_orphans_pruned", { checked: candidates.length, pruned });
+	return { pruned };
+}
+
+/**
+ * Cleans up cold-moved copies nothing live references any more, in two phases that never delete anything on
+ * first sighting (`N1`): `scanForOrphanCandidates` marks what looks unreferenced right now, and
+ * `deleteGracePeriodOrphans` only deletes a mark old enough to have survived a grace period, re-checking then.
+ * Skips the run entirely around a restore, active or recently finished, which could otherwise make every cold
+ * key look briefly unreferenced. Called from the five-minute cron.
+ */
+async function pruneOrphanedColdLocations(env: ColdEnv, now = new Date()): Promise<{ checked: number; pruned: number }> {
+	if (await restoreRanRecently(env, now.getTime())) return { checked: 0, pruned: 0 };
+	const { checked } = await scanForOrphanCandidates(env, now);
+	const { pruned } = await deleteGracePeriodOrphans(env, now.getTime());
+	return { checked, pruned };
 }
 
 /** The default store's current capability to hold a storage class, for the admin UI's target options. */
@@ -540,6 +689,12 @@ export async function coldReferenceBlocking(env: ColdEnv, id: string): Promise<s
 			.where(eq(objectLocations.storeId, id))
 			.limit(1);
 		if (object) return "Objects a cold storage sweep moved here are still on this store; move them back first";
+		const [orphan] = await getDb(env)
+			.select({ key: storageColdOrphans.key })
+			.from(storageColdOrphans)
+			.where(eq(storageColdOrphans.storeId, id))
+			.limit(1);
+		if (orphan) return "A copy a cold storage sweep left behind is still on this store; wait for the cleanup sweep first";
 		const activeJobs = await getDb(env)
 			.select({ objectClass: storageColdJobs.objectClass, cursor: storageColdJobs.cursor })
 			.from(storageColdJobs)

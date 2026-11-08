@@ -29,6 +29,13 @@ export function driveObjectKey(itemId: string): string {
 	return `drive/${itemId}`;
 }
 
+/** The item id `key` names, or null for anything else; the inverse of `driveObjectKey`. */
+export function driveItemIdFromObjectKey(key: string): string | null {
+	if (!key.startsWith("drive/")) return null;
+	const id = key.slice("drive/".length);
+	return id || null;
+}
+
 /**
  * Where an item opens. A file opens by its own id rather than under its folder, because a person it is
  * shared with may not see the folder.

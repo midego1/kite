@@ -415,19 +415,35 @@ through `object_locations` even when the new target is not the class's active ro
 targets, or that `object_locations` still names, cannot be deleted (`deleteStore` in `src/lib/storage/stores.ts`)
 until the rule points elsewhere or the objects are moved again; a sweep already running when a store is deleted
 (it keeps the rule as it was when it started, so a rule changed since would not otherwise show it) blocks the
-delete too. The five-minute maintenance also prunes `object_locations` rows nothing live references any more
-(a concurrent move, a message deleted mid-sweep, a delete that could not reach its store last time): up to 200
-of the oldest rows a run, each deleted from its store and then dropped, left alone for a later retry while its
-store cannot be reached right now. A `backups` rule only sweeps the database export document each backup makes
-(`backups.r2_key`), not the mail file copies a [full backup](#full-backups) writes alongside it, which stay on
-their current store. **Run now** (`POST /api/admin/storage/cold/[class]`) starts a sweep immediately; saving a
-rule or running it now answers 409 `MIGRATION_PENDING` before migration `0097` is applied, even once `0065` has
-been (`coldStorageTablesReady`). `GET /api/admin/storage/cold` reports each class's rule and its latest sweep.
-Logs: `storage.cold_errors`, `storage.cold_batch_failed`, `storage.cold_orphans_pruned`. Backups:
-`storage_cold_rules` and `object_locations` are in the `system` group; unlike `storage_stores` and
-`storage_routes`, a restore merges their rows into the target's current ones (`INSERT OR IGNORE`: a live row
-wins, and a row only the backup has is added back) rather than keeping or replacing them wholesale, since they
-are data that changes between backups, not store configuration. `storage_cold_jobs` is internal.
+delete too.
+
+**The orphan sweep.** A cold-moved copy can lose its only pointer without the bytes being gone: a message
+deleted mid-sweep, a delete that could not reach its store last time, two deliveries of the same move racing to
+different targets (the loser's copy has nothing naming it once the winner's `recordObjectLocation` overwrites
+the row), or a migration that finds the object reachable the normal way again and drops the now-stale cold
+location (`src/lib/storage/migration.ts`). Every one of these is recorded in `storage_cold_jobs`'s sibling table
+`storage_cold_orphans` as a candidate rather than deleted on the spot, and a candidate is only ever actually
+deleted once `orphanedAt` is at least `ORPHAN_GRACE_PERIOD_MS` old (seven days), re-checking at that point
+whether anything references it again; a store an unresolved candidate still names cannot be deleted either. The
+five-minute maintenance runs this in two bounded passes, each a batch of up to 200 rows: `scanForOrphanCandidates`
+keyset-paginates through `object_locations` from a cursor saved in `storage_state` (round-robin, so a backlog
+larger than one batch is still fully covered over many runs instead of the same oldest rows absorbing every run
+forever) and marks what looks unreferenced; `deleteGracePeriodOrphans` deletes candidates whose grace period has
+passed, from the store that holds each, left alone for a later retry while that store cannot be reached right
+now. The whole sweep skips entirely while a restore is active or finished less than an hour ago: a restore's
+"deletes" segment empties `messages`, `message_attachments`, `drive_items` and `backups` before writing them
+back, possibly over several queue invocations (the rollback path does the same), and since `object_locations`
+survives a restore as a merge table, a sweep mid-restore would otherwise see every cold key as briefly
+unreferenced. A `backups` rule only sweeps the database export document each backup makes (`backups.r2_key`),
+not the mail file copies a [full backup](#full-backups) writes alongside it, which stay on their current store.
+**Run now** (`POST /api/admin/storage/cold/[class]`) starts a sweep immediately; saving a rule or running it now
+answers 409 `MIGRATION_PENDING` before migration `0097` is applied, even once `0065` has been
+(`coldStorageTablesReady`). `GET /api/admin/storage/cold` reports each class's rule and its latest sweep. Logs:
+`storage.cold_errors`, `storage.cold_batch_failed`, `storage.cold_orphans_pruned`. Backups: `storage_cold_rules`
+and `object_locations` are in the `system` group; unlike `storage_stores` and `storage_routes`, a restore merges
+their rows into the target's current ones (`INSERT OR IGNORE`: a live row wins, and a row only the backup has is
+added back) rather than keeping or replacing them wholesale, since they are data that changes between backups,
+not store configuration. `storage_cold_jobs` and `storage_cold_orphans` are internal.
 
 ### Attachment storage
 

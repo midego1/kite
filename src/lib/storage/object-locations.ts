@@ -64,7 +64,14 @@ export async function recordObjectLocation(
 			 ON CONFLICT (key) DO UPDATE SET store_id = excluded.store_id, storage_class = excluded.storage_class,
 			 size = excluded.size, moved_at = excluded.moved_at`,
 		)
-			.bind(input.key, input.objectClass, input.storeId, input.storageClass, input.size, Math.floor(now.getTime() / 1000))
+			.bind(
+				input.key,
+				input.objectClass,
+				input.storeId,
+				input.storageClass,
+				input.size,
+				Math.floor(now.getTime() / 1000),
+			)
 			.run();
 	} catch (error) {
 		if (isNoSuchTableError(error)) return;

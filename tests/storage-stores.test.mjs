@@ -232,6 +232,17 @@ test("deleting a store is refused while a route, a Drive file or a running migra
 	assert.equal(coldObject.status, 409);
 	assert.match(coldObject.error, /cold storage sweep/);
 	env.DB.db.prepare("DELETE FROM object_locations").run();
+	// A copy the orphan sweep is still deciding whether to delete (a losing mover's copy, a migration's
+	// leftover) has no object_locations row of its own any more, but still physically sits on the store.
+	env.DB.db
+		.prepare(
+			"INSERT INTO storage_cold_orphans (id, store_id, key, object_class, orphaned_at) VALUES ('sco_1', 'sto_a', 'backups/database/leftover.json', 'backups', 1)",
+		)
+		.run();
+	const orphanCopy = await stores.deleteStore(env, actor, "sto_a");
+	assert.equal(orphanCopy.status, 409);
+	assert.match(orphanCopy.error, /cleanup sweep/);
+	env.DB.db.prepare("DELETE FROM storage_cold_orphans").run();
 	// A sweep already in flight keeps its rule as it was when it started (`cold.ts`'s cutoff snapshot), so a
 	// rule changed or disabled after that would not show up in the checks above; the job's own cursor must
 	// still be checked.

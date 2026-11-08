@@ -12,11 +12,13 @@ const { lib, fake, fixture, addStore } = await loadStorageServices(
 		cold: "src/lib/storage/cold.ts",
 		router: "src/lib/storage/router.ts",
 		storageIndex: "src/lib/storage/index.ts",
+		objectLocations: "src/lib/storage/object-locations.ts",
 	},
 );
 const { cold, router: routerLib } = lib;
 const { clearStorageConfigCache } = lib.config;
 const { getStorage } = lib.storageIndex;
+const { recordObjectLocation } = lib.objectLocations;
 
 const schemaScratch = makeBundleDirectory("kite-storage-cold-schema-");
 after(() => rmSync(schemaScratch, { recursive: true, force: true }));
@@ -624,6 +626,88 @@ test("a migration that copies a cold-moved object back into the new hot store dr
 	);
 	const routed = routerLib.createStorageRouter(env);
 	assert.equal(await (await routed.get("inbound/old.eml")).text(), "raw old", "still reads fine through the chain");
+
+	// The cold copy the migration left behind on sto_target still physically exists, though: it is tracked as
+	// an orphan candidate (L1) rather than silently forgotten, which also still blocks deleting that store,
+	// isolated here from the (already covered elsewhere) rule-still-targets-it block.
+	assert.ok(orphan(env, "inbound/old.eml", "sto_target"), "the leftover copy is tracked for cleanup");
+	env.DB.db.prepare("DELETE FROM storage_cold_rules").run();
+	assert.match(await cold.coldReferenceBlocking(env, "sto_target"), /cleanup sweep/);
+	assert.ok(target().has("inbound/old.eml"), "the bytes are still there, not yet deleted");
+
+	// The candidate was marked with the real clock (migration.ts does not run on the fixture's fictional NOW),
+	// so its grace period is measured against the real clock too.
+	await cold.runStorageColdMaintenance(env, new Date(Date.now() + GRACE_PERIOD_DAY * DAY * 1000));
+	assert.equal(target().has("inbound/old.eml"), false, "cleaned up once its grace period passed");
+	assert.equal(orphan(env, "inbound/old.eml", "sto_target"), undefined);
+	assert.equal(await cold.coldReferenceBlocking(env, "sto_target"), null, "sto_target is free to delete now");
+	assert.equal(await (await routed.get("inbound/old.eml")).text(), "raw old", "still reads fine from the hot store");
+});
+
+test("a losing mover's copy, when two deliveries raced to different targets for the same key, is tracked and cleaned up without ever touching the winner", async (t) => {
+	const { env } = await fixture(t);
+	await addStore(env, "sto_a", "kite-target");
+	await addStore(env, "sto_b", "kite-target-2");
+	const key = "inbound/old.eml";
+	// Two deliveries of the same cold-move work (a retried queue message, a genuinely concurrent worker) each
+	// copied the message to a different target and both called recordObjectLocation; the second lands here.
+	await recordObjectLocation(env, { key, objectClass: "mail", storeId: "sto_a", storageClass: null, size: 10 });
+	fake.buckets.get("kite-target").objects.set(key, {
+		bytes: Buffer.from("the loser's copy"),
+		meta: { custom: {} },
+		etag: "e1",
+		lastModified: new Date(),
+	});
+	await recordObjectLocation(env, { key, objectClass: "mail", storeId: "sto_b", storageClass: null, size: 10 });
+	fake.buckets.get("kite-target-2").objects.set(key, {
+		bytes: Buffer.from("the winner's copy"),
+		meta: { custom: {} },
+		etag: "e2",
+		lastModified: new Date(),
+	});
+
+	assert.equal(location(env, key).store_id, "sto_b", "the second write is what the row names");
+	assert.ok(orphan(env, key, "sto_a"), "the first target's now-untracked copy is a candidate");
+	assert.equal(orphan(env, key, "sto_b"), undefined, "the winner was never touched");
+	assert.match(await cold.coldReferenceBlocking(env, "sto_a"), /cleanup sweep/, "blocks deleting the loser's store");
+	// sto_b is separately blocked too, for the usual reason (it holds the live location) rather than a
+	// candidate of its own: the winner was never marked.
+	assert.match(await cold.coldReferenceBlocking(env, "sto_b"), /sweep moved here/);
+
+	// Well past the grace period: the loser's copy is deleted, the winner is still exactly as it was.
+	await cold.runStorageColdMaintenance(env, new Date(Date.now() + GRACE_PERIOD_DAY * DAY * 1000));
+	assert.equal(fake.buckets.get("kite-target").objects.has(key), false, "the loser's bytes are gone");
+	assert.equal(orphan(env, key, "sto_a"), undefined);
+	assert.equal(await cold.coldReferenceBlocking(env, "sto_a"), null, "sto_a is free to delete now");
+	assert.equal(location(env, key).store_id, "sto_b", "the winning row is untouched throughout");
+	assert.equal(
+		Buffer.from(fake.buckets.get("kite-target-2").objects.get(key).bytes).toString("utf8"),
+		"the winner's copy",
+		"the winner's bytes are untouched throughout",
+	);
+});
+
+test("the orphan scan advances a stored cursor across runs instead of only ever rechecking the same oldest batch", async (t) => {
+	const { env } = await fixture(t);
+	// 201 unreferenced locations: one more than a single scan batch, none backed by a live message, so every
+	// one of them should eventually become a candidate, just not necessarily on the very first run.
+	const insert = env.DB.db.prepare(
+		"INSERT INTO object_locations (key, object_class, store_id, storage_class, size, moved_at) VALUES (?, 'mail', 'sto_x', NULL, 10, ?)",
+	);
+	for (let index = 0; index < 201; index++) insert.run(`inbound/key-${String(index).padStart(3, "0")}.eml`, index + 1);
+
+	await cold.runStorageColdMaintenance(env, new Date());
+	const afterFirst = env.DB.db.prepare("SELECT count(*) AS n FROM storage_cold_orphans").get().n;
+	assert.equal(afterFirst, 200, "one batch's worth, oldest first");
+	assert.equal(orphan(env, "inbound/key-200.eml"), undefined, "the 201st key is not reached yet");
+
+	await cold.runStorageColdMaintenance(env, new Date());
+	assert.equal(
+		env.DB.db.prepare("SELECT count(*) AS n FROM storage_cold_orphans").get().n,
+		201,
+		"the second run resumes from the saved cursor and reaches the rest, instead of only rechecking the first 200 again",
+	);
+	assert.ok(orphan(env, "inbound/key-200.eml"));
 });
 
 test("saving a cold rule on a database that has 0065's storage tables but not 0097's answers migration pending, not a crash", async (t) => {

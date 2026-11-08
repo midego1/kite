@@ -154,6 +154,33 @@ function representativeRowsByThread(ids: readonly string[], loaded: readonly Lis
 	return order.map((key) => newestByKey.get(key)!);
 }
 
+/**
+ * How many of `ids` are a keyword match ("keyword" or "both" — only "meaning" is excluded), for "Show all N keyword
+ * matches" (N-2 of review round 5): `total` on a hybrid page counts meaning-only rows too, so comparing `keywordTotal`
+ * against `total` missed every case where the cap filled up with a mix of keyword and meaning-only rows rather than
+ * meaning-only rows alone — a search with, say, 40 keyword and 30 meaning-only hits fuses to a 50-row page that is
+ * about half meaning-only, leaving 15 keyword matches out with no link to reach them and no sign anything was cut.
+ */
+function keywordRowCount(ids: readonly string[], matchByMessageId: Map<string, SemanticMatch> | null): number {
+	return ids.filter((id) => matchByMessageId?.get(id) !== "meaning").length;
+}
+
+/** `keywordRowCount`, by thread: a thread counts once it has at least one keyword or "both" id among `ids`. */
+function keywordThreadCount(
+	ids: readonly string[],
+	loaded: readonly ListMessage[],
+	matchByMessageId: Map<string, SemanticMatch> | null,
+): number {
+	const rowById = new Map(loaded.map((row) => [row.id, row]));
+	const keys = new Set<string>();
+	for (const id of ids) {
+		if (matchByMessageId?.get(id) === "meaning") continue;
+		const row = rowById.get(id);
+		if (row) keys.add(rowConversationKey(row));
+	}
+	return keys.size;
+}
+
 /** Every message of each row's conversation (not just the ones a search matched), for `groupThreadMembers`. */
 async function loadScopedThreads(
 	db: AppDatabase,
@@ -272,6 +299,9 @@ export async function GET(request: Request) {
 	let total = 0;
 	let rows: ListMessage[];
 	let nextCursor: string | null = null;
+	// How many of this page's rows (or thread rows) are a keyword match, for "Show all N keyword matches" below
+	// (N-2 of review round 5): equal to `total` outside a hybrid page, where every row is one by definition.
+	let keywordRowsShown = 0;
 	// Which stored messages each visible row stands for, so acting on a
 	// conversation row acts on the whole conversation within this folder.
 	let scopedThreads: ScopedThreads = { ids: new Map(), unread: new Map(), inbound: new Map() };
@@ -287,6 +317,7 @@ export async function GET(request: Request) {
 		rows = representativeRowsByThread(hybridIds, loaded);
 		total = rows.length;
 		nextCursor = null;
+		keywordRowsShown = keywordThreadCount(hybridIds, loaded, matchByMessageId);
 		scopedThreads = await loadScopedThreads(db, where, threadKey, rows);
 	} else if (groupByThread) {
 		const page = await loadConversationPage({ db, where, offset, limit, cursor });
@@ -298,6 +329,7 @@ export async function GET(request: Request) {
 		const rowById = new Map(rows.map((row) => [row.id, row]));
 		rows = page.ids.map((id) => rowById.get(id)).filter((row): row is ListMessage => !!row);
 		nextCursor = getNextMessageCursor(rows, limit);
+		keywordRowsShown = total;
 		scopedThreads = await loadScopedThreads(db, where, threadKey, rows);
 	} else if (hybridIds) {
 		// The D1 re-check already applied `where`; repeating it would only add bound parameters. Hybrid results
@@ -311,6 +343,7 @@ export async function GET(request: Request) {
 		rows = hybridIds.map((id) => rowById.get(id)).filter((row): row is ListMessage => !!row);
 		total = rows.length;
 		nextCursor = null;
+		keywordRowsShown = keywordRowCount(hybridIds, matchByMessageId);
 	} else {
 		const [[totalRow], pageRows] = await Promise.all([
 			db.select({ total: count() }).from(messages).where(where),
@@ -325,6 +358,7 @@ export async function GET(request: Request) {
 		total = totalRow?.total ?? 0;
 		rows = pageRows;
 		nextCursor = getNextMessageCursor(rows, limit);
+		keywordRowsShown = total;
 	}
 	// Conversation sizes for the rows on this page, so the list can show "(3)"
 	// next to a subject the way threaded clients do.
@@ -448,9 +482,11 @@ export async function GET(request: Request) {
 		nextCursor,
 		grouped: groupByThread,
 		...(semanticStatus ? { semantic: semanticStatus, ...(semanticReason ? { semanticReason } : {}) } : {}),
-		// "Show all N keyword matches" (N-1 of review round 4): only while the honest cap above actually left some
-		// out, so the client knows both that there is more and how many, without a cursor that would have to skip
-		// or repeat rows to get there.
-		...(keywordTotal !== undefined && keywordTotal > total ? { keywordTotal } : {}),
+		// "Show all N keyword matches" (N-1 of review round 4): only while the honest cap above actually left
+		// keyword matches out, so the client knows both that there is more and how many, without a cursor that
+		// would have to skip or repeat rows to get there. Compared against `keywordRowsShown`, not `total` (N-2 of
+		// review round 5): `total` counts meaning-only rows too, so a page the cap filled with a mix of keyword and
+		// meaning-only rows — not meaning-only rows alone — still left keyword matches out with nothing to show for it.
+		...(keywordTotal !== undefined && keywordTotal > keywordRowsShown ? { keywordTotal } : {}),
 	});
 }

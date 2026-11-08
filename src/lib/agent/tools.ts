@@ -264,7 +264,14 @@ async function resolveSearchEmailsQuery(
 			queryText: parsed.text,
 			mailboxIds: [context.mailboxId],
 		});
-		if (result.semantic === "on") return { hybridIds: result.ids };
+		if (result.semantic === "on")
+			return {
+				hybridIds: result.ids,
+				// S-1 of review round 5: "Stop when nextCursor is null" (below) reads as "there is nothing more" to a
+				// model, but a hybrid page is a relevance-ranked cap, not a complete answer — some keyword matches may
+				// not have made it onto this page at all. mode: "keyword" pages through every one of them instead.
+				note: 'These results are ranked by relevance and capped at one page; some keyword matches may not be included. Use mode: "keyword" to page through every keyword match instead.',
+			};
 		// Explicitly asked for (unlike the UI chip's ambient default), so always worth a note, whether meaning is
 		// off for the install or failed outright for this one call (C-1 of review round 3: this used to print
 		// "(undefined)" whenever it was quietly off, since only a real failure ever sets semanticReason).
@@ -299,7 +306,9 @@ async function loadEmailPage(
 			.map((emailId) => byId.get(emailId))
 			.filter((row): row is (typeof loaded)[number] => !!row)
 			.slice(0, pageSize);
-		// Hybrid results have no cursor; "Show more" continues with keyword results by date.
+		// Hybrid results have no cursor: a relevance-ranked page is not a prefix of the date-ordered keyword list,
+		// so there is nothing to continue it with (same reasoning as the mailbox app's honest cap, N-1 of review
+		// round 4). mode: "keyword" (the `note` above, when mode is "both") runs the complete, paged list instead.
 		return { rows: (await withStoredBodies(db, ordered)).map(publicMessage), nextCursor: null };
 	}
 	const pageRows = await withStoredBodies(

@@ -185,3 +185,85 @@ test("with meaning on, every one of 120 keyword matches is reachable exactly onc
 		new Set(Array.from({ length: 120 }, (_, index) => `invoice-${String(index).padStart(3, "0")}`)),
 	);
 });
+
+/** 40 keyword matches ("invoice" in the subject) and 30 meaning-only ones (indexed, found only through a mocked
+ * vector store, no shared words with the query). Reciprocal rank fusion scores a keyword hit at rank r and a
+ * meaning hit at rank r identically (`1 / (60 + r)`), so with both lists ranked 1..N and no overlap, the fused,
+ * score-sorted top 50 is exactly ranks 1-25 of each list: 25 keyword, 25 meaning-only, deterministically. */
+async function fixtureWithMeaningOnlyMix(t) {
+	const database = new m.SqliteDatabase(":memory:");
+	t.after(() => database.db.close());
+	await m.applyMigrations(database, join(root, "drizzle/migrations"));
+	database.db.exec(`
+		INSERT INTO users (id, email, password_hash, name, role, created_at) VALUES ('owner', 'owner@example.test', 'hash', 'Owner', 'admin', 1);
+		INSERT INTO domains (id, user_id, hostname, zone_id, status, created_at) VALUES ('domain', 'owner', 'example.test', 'zone', 'active', 1);
+		INSERT INTO mailboxes (id, user_id, domain_id, local_part, created_at) VALUES ('box', 'owner', 'domain', 'owner', 1);
+		INSERT INTO app_settings (id, semantic_search_enabled, updated_at) VALUES ('default', 1, 1)
+			ON CONFLICT(id) DO UPDATE SET semantic_search_enabled = 1;
+	`);
+	const keywordRows = Array.from(
+		{ length: 40 },
+		(_, index) =>
+			`('kw-${String(index).padStart(2, "0")}', 'owner', 'box', 'inbound', 'a@partner.test', 'owner@example.test', 'Invoice ${index}', 'received', ${index + 1})`,
+	).join(",\n");
+	const meaningRows = Array.from(
+		{ length: 30 },
+		(_, index) =>
+			`('mn-${String(index).padStart(2, "0")}', 'owner', 'box', 'inbound', 'a@partner.test', 'owner@example.test', 'Note ${index}', 'received', ${1000 + index})`,
+	).join(",\n");
+	database.db.exec(
+		`INSERT INTO messages (id, user_id, mailbox_id, direction, from_addr, to_addr, subject, status, created_at) VALUES ${keywordRows}, ${meaningRows};`,
+	);
+	const vectorKeys = Array.from({ length: 30 }, (_, index) => index.toString(16).padStart(32, "0"));
+	for (let index = 0; index < 30; index++) {
+		// The 0099 trigger already queued a `pending` row for each message inserted above; overwrite it to `indexed`.
+		database.db
+			.prepare(
+				`INSERT INTO message_embeddings (message_id, mailbox_id, status, vector_key, chunk_count) VALUES (?, 'box', 'indexed', ?, 1)
+				ON CONFLICT(message_id) DO UPDATE SET status = 'indexed', vector_key = excluded.vector_key, chunk_count = 1`,
+			)
+			.run(`mn-${String(index).padStart(2, "0")}`, vectorKeys[index]);
+	}
+	const env = {
+		DB: database,
+		KITE_RUNTIME: "node",
+		AI: { run: async () => ({ data: [Array(1024).fill(0.01)] }) },
+		VECTORS: {
+			upsert: async () => {},
+			deleteByIds: async () => {},
+			// Best (rank 1) first, strictly decreasing and all above MIN_SIMILARITY (0.45).
+			query: async () => vectorKeys.map((key, index) => ({ id: `${key}:0`, score: 0.9 - index * 0.001 })),
+		},
+	};
+	globalThis.__kiteNodeEnv = env;
+	t.after(() => {
+		delete globalThis.__kiteNodeEnv;
+	});
+	const session = await m.createSession(env, "owner");
+	return async (query) => {
+		const response = await m.listMessages(
+			new Request(`https://kite.test/api/messages?mailboxId=box&status=received&${query}`, {
+				headers: { Authorization: `Bearer ${session}` },
+			}),
+		);
+		const body = await response.json();
+		assert.equal(response.status, 200, JSON.stringify(body));
+		return body;
+	};
+}
+
+test("'Show all N keyword matches' still shows when the cap fills with a mix of keyword and meaning-only rows, not meaning-only rows alone (N-2 of review round 5)", async (t) => {
+	const list = await fixtureWithMeaningOnlyMix(t);
+	const hybrid = await list("q=invoice&limit=50");
+	assert.equal(hybrid.semantic, "on");
+	assert.equal(hybrid.messages.length, 50);
+	assert.equal(hybrid.total, 50, "the page's own row count, meaning-only rows included");
+	assert.equal(hybrid.nextCursor, null);
+	const keywordShown = hybrid.messages.filter((row) => row.match !== "meaning").length;
+	const meaningOnlyShown = hybrid.messages.filter((row) => row.match === "meaning").length;
+	assert.equal(keywordShown, 25, "half the page, by construction");
+	assert.equal(meaningOnlyShown, 25);
+	// The bug (N-2): comparing keywordTotal against `total` (50) rather than the keyword rows actually shown (25)
+	// meant this never appeared, even though 15 of the 40 keyword matches (40 - 25) are not on this page.
+	assert.equal(hybrid.keywordTotal, 40, "present: the cap left keyword matches out, even though total === 50");
+});

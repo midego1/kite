@@ -48,12 +48,15 @@ export function MailboxTourDialog() {
 	const user = useCurrentUser();
 	const eligible = !!user && !user.isPrimaryAdmin;
 	const queryClient = useQueryClient();
+	const queryKey = [...MAILBOX_TOUR_QUERY, user?.id];
 	const [open, setOpen] = useState(false);
 	const [step, setStep] = useState(0);
-	const autoOpened = useRef(false);
+	// Which account's tour this already opened on its own, so switching to a different undismissed account
+	// (without this component unmounting) still gets its own auto-open instead of being blocked by the last one.
+	const autoOpenedFor = useRef<string | null>(null);
 
 	const { data: dismissed } = useQuery({
-		queryKey: MAILBOX_TOUR_QUERY,
+		queryKey,
 		queryFn: fetchMailboxTourDismissed,
 		enabled: eligible,
 		staleTime: 30_000,
@@ -61,11 +64,11 @@ export function MailboxTourDialog() {
 	});
 
 	useEffect(() => {
-		if (!eligible || dismissed !== false || autoOpened.current) return;
-		autoOpened.current = true;
+		if (!eligible || dismissed !== false || autoOpenedFor.current === user.id) return;
+		autoOpenedFor.current = user.id;
 		setStep(0);
 		setOpen(true);
-	}, [eligible, dismissed]);
+	}, [eligible, dismissed, user?.id]);
 
 	useEffect(() => {
 		if (!eligible) return;
@@ -82,8 +85,8 @@ export function MailboxTourDialog() {
 	function finish() {
 		setOpen(false);
 		if (dismissed === true) return;
-		queryClient.setQueryData(MAILBOX_TOUR_QUERY, true);
-		void saveMailboxTourDismissed(true).catch(() => queryClient.invalidateQueries({ queryKey: MAILBOX_TOUR_QUERY }));
+		queryClient.setQueryData(queryKey, true);
+		void saveMailboxTourDismissed(true).catch(() => queryClient.invalidateQueries({ queryKey }));
 	}
 
 	const last = step === MAILBOX_TOUR_STEPS.length - 1;

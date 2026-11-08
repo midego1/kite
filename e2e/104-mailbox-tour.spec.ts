@@ -53,7 +53,8 @@ test.describe("the mailbox tour", () => {
 		await expect(dialog).toBeHidden();
 
 		const api = await apiSignIn(email, PASSWORD);
-		expect((await layoutFor(api)).mailboxTourDismissed).toBe(true);
+		// The dialog closes as soon as it fires the save, not once the save lands.
+		await expect.poll(async () => (await layoutFor(api)).mailboxTourDismissed).toBe(true);
 
 		// Dismissed for good: a reload does not bring it back on its own.
 		await page.reload();

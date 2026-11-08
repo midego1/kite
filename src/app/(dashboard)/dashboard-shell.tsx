@@ -183,7 +183,10 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
 							<ShortcutsProvider>
 								{assistantEnabled === true && <AssistantCommand toggle={toggleAssistant} />}
 								<RouteTitle />
-								<div className="h-dvh overflow-hidden bg-[#f6f8fc]">
+								{/* viewport-fit=cover (src/app/layout.tsx) makes env(safe-area-inset-*) resolve app-wide, not just
+							at the bottom the tab bar and the compose button already account for: a landscape phone or a
+							device with rounded corners can have a real left/right inset too. */}
+								<div className="h-dvh overflow-hidden bg-[#f6f8fc] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">
 									<SkipToContent />
 									<SidebarFrame
 										sidebar={

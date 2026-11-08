@@ -10,6 +10,7 @@ import { splitEmailAddressList } from "@/lib/email/address";
 import { setMessageDragData } from "@/lib/messages/drag-utils";
 import { MessageListRowActions } from "./message-list-row-actions";
 import { MessageNavigationProgress } from "./message-navigation";
+import { RowActionsMenu } from "./row-actions-menu";
 import { rowCheckboxHandlers } from "./message-range-selection-utils";
 import { SendStateBadge } from "./send-state-badge";
 import { ViaAccountChip } from "./via-account-chip";
@@ -193,7 +194,14 @@ function StackedMessageRow(props: RowViewProps) {
 					onClick={row.onNavigate}
 					onMouseDown={row.onMouseDown}
 					aria-current={active ? "true" : undefined}
-					className="block min-w-0 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+					className={clsx(
+						"block min-w-0 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600",
+						// Reserved on every line, not overlaid on just one: RowActionsMenu's ⋯ (and the star beside
+						// it, when the row has one) sit at the bottom-end corner on a coarse pointer, floating over
+						// whichever line ends up last (the preview, usually). Reserving only the top line, where
+						// the corner's old hover pill sat, left the bottom lines to run underneath them.
+						row.hasRowActions && (row.starToggle ? "pointer-coarse:pe-24" : "pointer-coarse:pe-11"),
+					)}
 				>
 					<span
 						className={clsx(
@@ -231,23 +239,45 @@ function StackedMessageRow(props: RowViewProps) {
 				</Link>
 				{!inlineStar && <RowCornerStar row={row} icon={Icon} hoverActions={showHoverActions} />}
 				<ScreenerRowControls message={row.rowMessage} compact />
-				{/* A coarse (touch) pointer always gets this as a static action bar under the row, whether or not
-				the hover pill is enabled for a mouse here (see hoverReveal on MessageListRowActions). */}
-				{row.hasRowActions && (
-					<MessageListRowActions
-						message={row.rowMessage}
-						onAction={row.runRowAction}
-						compact
-						star={
-							showHoverActions && row.starToggle
-								? { starred: row.starred, icon: Icon, onToggle: row.toggleStar }
-								: undefined
-						}
-						hoverReveal={showHoverActions}
-					/>
-				)}
+				{row.hasRowActions && <StackedRowActionControls row={row} icon={Icon} showHoverActions={showHoverActions} />}
 			</div>
 		</div>
+	);
+}
+
+/** A mouse gets the hover pill; a coarse pointer gets the always-on ⋯ button and its sheet instead (both below). */
+function StackedRowActionControls({
+	row,
+	icon: Icon,
+	showHoverActions,
+}: {
+	row: RowState;
+	icon: MessageListRowProps["config"]["icon"];
+	showHoverActions: boolean;
+}) {
+	return (
+		<>
+			<MessageListRowActions
+				message={row.rowMessage}
+				onAction={row.runRowAction}
+				compact
+				star={
+					showHoverActions && row.starToggle
+						? { starred: row.starred, icon: Icon, onToggle: row.toggleStar }
+						: undefined
+				}
+				hoverReveal={showHoverActions}
+			/>
+			{/* A coarse pointer never hovers: the ⋯ button and its sheet cover every action instead
+			(docs/foldable-layout.md#touch-reachability). Always on, regardless of hoverReveal above. */}
+			<RowActionsMenu
+				message={row.rowMessage}
+				party={row.party}
+				onAction={row.runRowAction}
+				star={row.starToggle ? { starred: row.starred, icon: Icon, onToggle: row.toggleStar } : undefined}
+				compact
+			/>
+		</>
 	);
 }
 
@@ -371,7 +401,12 @@ function WideMessageRow(props: RowViewProps) {
 			<span
 				className={clsx(
 					"flex min-w-[96px] items-baseline justify-end gap-1.5",
-					row.hasRowActions && "group-hover:opacity-0 pointer-coarse:opacity-0",
+					// Reserved, not overlaid, and only for a mouse: the hover pill floats here, so the date steps
+					// aside on hover. A coarse pointer never hovers and the date always stays (its ⋯ button is a
+					// reserved corner of its own, see pe-11 below), which is also the fix for it having been
+					// permanently hidden here before.
+					row.hasRowActions && "group-hover:opacity-0",
+					row.hasRowActions && "pointer-coarse:pe-11",
 				)}
 			>
 				<AttachmentIndicator message={message} />
@@ -385,7 +420,14 @@ function WideMessageRow(props: RowViewProps) {
 					{formatMessageListTimestamp(message.createdAt)}
 				</time>
 			</span>
-			{row.hasRowActions && <MessageListRowActions message={row.rowMessage} onAction={row.runRowAction} />}
+			{row.hasRowActions && (
+				<>
+					<MessageListRowActions message={row.rowMessage} onAction={row.runRowAction} />
+					{/* No star prop: the wide row already has its own always-tappable star column (MessageRowStar
+					above), on every pointer type, so the sheet does not need to repeat it. */}
+					<RowActionsMenu message={row.rowMessage} party={row.party} onAction={row.runRowAction} />
+				</>
+			)}
 		</div>
 	);
 }

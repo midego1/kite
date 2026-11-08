@@ -9,10 +9,10 @@ import type { MailboxAccessLevel } from "@/lib/mailboxes/types";
 import { isNoSuchTableError } from "@/lib/modules/state-utils";
 import { clearMailboxSemanticIndex, requeueMailboxSemanticIndex } from "./admin-actions";
 
-/** "Include this mailbox in search by meaning" (Settings -> Assistant, `canManage`), migration 0095. */
+/** "Include this mailbox in search by meaning" (Settings -> Assistant, `canManage`), migration 0099. */
 const SEMANTIC_INDEX_AUDIT_ACTION = "search.mailbox_semantic_index";
 
-/** On by default, including on a database that has not applied migration 0095 yet. */
+/** On by default, including on a database that has not applied migration 0099 yet. */
 export async function isMailboxSemanticIndexOn(db: AppDatabase, mailboxId: string): Promise<boolean> {
 	try {
 		const [row] = await db

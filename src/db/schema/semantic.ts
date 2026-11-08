@@ -1,7 +1,7 @@
 import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
 /**
- * Search by meaning (migration 0095, `docs/specs/semantic-search.md`): one row per message tracking its embedding
+ * Search by meaning (migration 0099, `docs/specs/semantic-search.md`): one row per message tracking its embedding
  * state. No foreign key to `messages` so the `AFTER DELETE` trigger can still read the row it is about to remove.
  * `vectorKey` is filled in by `src/lib/semantic/indexer.ts` the first time a row is claimed (the first 32 hex
  * characters of SHA-256 of the message id) rather than by the trigger that inserts the row, because SQLite/D1 has no

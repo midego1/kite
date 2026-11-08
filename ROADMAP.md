@@ -251,7 +251,7 @@ Specified in [docs/specs/thread-summaries.md](docs/specs/thread-summaries.md); p
 
 ## Milestone 29: Search by meaning (proposed)
 
-Specified in [docs/specs/semantic-search.md](docs/specs/semantic-search.md); proposed, open questions decided on 2026-10-26. After milestone 28; before or together with large imports from milestone 6. Adds the Vectorize index `kite-messages`, created once by hand (`npx wrangler vectorize create kite-messages --dimensions=1024 --metric=cosine` plus its `mailboxId` metadata index) before the release that binds it. Migration `0095`.
+Specified in [docs/specs/semantic-search.md](docs/specs/semantic-search.md); proposed, open questions decided on 2026-10-26. After milestone 28; before or together with large imports from milestone 6. Adds the Vectorize index `kite-messages`, created once by hand (`npx wrangler vectorize create kite-messages --dimensions=1024 --metric=cosine` plus its `mailboxId` metadata index) before the release that binds it. Migration `0099`.
 
 1. **Spike** (1 day): Deploy-button provisioning, multilingual quality of `@cf/baai/bge-m3`, latency, and Node brute-force timings.
 2. **Indexing** (4 days): triggers queue new, changed and deleted mail; a drain on the agent queue and cron embeds in batches with backfill limited to a share of the spend cap; vectors carry no content.

@@ -157,7 +157,7 @@ export type AgentSettingsResponse = {
 	aiDisabled?: boolean;
 	/** False until migration 0091, when the switch cannot be saved yet. */
 	aiSwitchReady?: boolean;
-	/** "Include this mailbox in search by meaning" is on; on by default, including before migration 0095. */
+	/** "Include this mailbox in search by meaning" is on; on by default, including before migration 0099. */
 	semanticIndex?: boolean;
 };
 export type AgentConversationsResponse = { conversations: AgentConversation[] };

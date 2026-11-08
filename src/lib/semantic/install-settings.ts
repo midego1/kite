@@ -35,7 +35,7 @@ type SemanticSettingsRow = {
 
 /**
  * These seven columns are deliberately not mapped in the Drizzle `appSettings` schema (`src/db/schema/index.ts`),
- * so this is the only place that reads or writes them, with plain SQL: before migration 0095 the columns do not
+ * so this is the only place that reads or writes them, with plain SQL: before migration 0099 the columns do not
  * exist, which answers as "no such column", caught here and nowhere else.
  */
 async function readSemanticRow(env: CloudflareEnv): Promise<SemanticSettingsRow | null> {
@@ -73,7 +73,7 @@ function parseCursor(value: string | null | undefined): SemanticBackfillCursor |
 	}
 }
 
-/** Reads its defaults on a database that has not applied migration 0095 yet, or has no settings row saved. */
+/** Reads its defaults on a database that has not applied migration 0099 yet, or has no settings row saved. */
 export async function getSemanticInstallSettings(env: CloudflareEnv): Promise<SemanticInstallSettings> {
 	const saved = await readSemanticRow(env);
 	if (!saved) return DEFAULT_SETTINGS;
@@ -120,7 +120,7 @@ export type SaveSemanticAdminSettingsInput = {
 };
 
 /**
- * Saves the admin's changes. The row is created first (plain SQL, so it never fails before migration 0095 the way
+ * Saves the admin's changes. The row is created first (plain SQL, so it never fails before migration 0099 the way
  * a Drizzle insert naming every mapped column would), then updated with only the given columns. Turning the
  * feature off goes through `disableSemanticSearch` instead, which also clears the index; this never does that.
  */

@@ -2,7 +2,9 @@
 
 Status: **proposed**; its open questions were decided by Michiel on 2026-10-26 (section 17). Written against `main` at `5c220ba` (release `2026.10.26.1`). Roadmap: proposed [milestone 29](../../ROADMAP.md#milestone-29-search-by-meaning-proposed). Idea adopted from [Zero](https://github.com/Mail-0/Zero) (MIT; the `InboxRag` tool in `apps/server/src/routes/agent/tools.ts`, which is commented out there); no code is ported.
 
-Migrations: written when the last one on `main` was `0068_add_abuse_ch_auth_key.sql`, claiming `0071`. By the time this shipped, `main` had moved to `0094_add_finance_payments.sql` (AI writing landed as `0069`/`0070`, thread summaries as `0072`, and migrations `0071`, `0073`–`0094` are unrelated features). This feature is **`0095_add_semantic_search.sql`**. Keep `tests/migration-order.test.mjs` passing.
+Migrations: written when the last one on `main` was `0068_add_abuse_ch_auth_key.sql`, claiming `0071`. By the time this shipped, `main` had moved to `0094_add_finance_payments.sql` (AI writing landed as `0069`/`0070`, thread summaries as `0072`, and migrations `0071`, `0073`–`0094` are unrelated features). This feature is **`0099_add_semantic_search.sql`**. Keep `tests/migration-order.test.mjs` passing.
+
+**Updated:** first claimed as `0095`, but by the time this was reviewed, `0095`–`0098` had each been claimed by other in-flight missions (`0095` payment-scan errors, `0096` assistant by email, `0097` cold storage, `0098` reserved for a receipts mission), so this feature was renumbered to `0099` to keep the journal contiguous.
 
 **Update (implementation):** this section and a few others below were corrected against the code as it stood when this milestone was actually built, several weeks after the numbers above were written; see the "Updated" notes inline. Built in two pull requests per `docs/releasing.md`-style review limits: schema and the indexing pipeline first (features A/B, plus the Node store and Admin/mailbox UI from feature D, since they are indexing-pipeline controls), search second (feature C).
 
@@ -165,7 +167,7 @@ All routes are session routes through `requireSessionUser` (admin ones through `
 
 ## 7. Data model and migration
 
-`0095_add_semantic_search.sql` (hand-written, journal entry), schema in `src/db/schema/semantic.ts`:
+`0099_add_semantic_search.sql` (hand-written, journal entry), schema in `src/db/schema/semantic.ts`:
 
 `message_embeddings`
 
@@ -295,7 +297,7 @@ Work on `mission/semantic-search`; the usual validation (`npm run check:mission`
 | --- | --- | --- | --- |
 | **A. Spike** | Deploy-button provisioning of the index, the metadata index on an existing install, bge-m3 quality on Dutch and English mail, Vectorize latency with `$in` filters, Node brute-force timings on 100,000 chunks | A short report in the PR: whether the Deploy button creates the index correctly, and Node timings that confirm brute force is enough | 1 day |
 | | **Not run.** This environment has no live Cloudflare account, so none of A's checks against real infrastructure (Deploy-button provisioning, bge-m3 quality, Vectorize latency) were performed; they stay as an operator task before relying on them in production. `semantic-sqlite-store.test.mjs` fixtures (50 random vectors) confirm the Node store's quantisation keeps the right order, which is a correctness check, not the 100,000-chunk timing this row calls for. | |
-| **B. Pipeline** | Migration 0095, triggers, `message_embeddings`, the drain, the Vectorize and test stores, embedding providers, spend, backfill, tombstones, the binding and docs | New and backfilled mail is indexed within the caps; deletes remove vectors | 4 days |
+| **B. Pipeline** | Migration 0099, triggers, `message_embeddings`, the drain, the Vectorize and test stores, embedding providers, spend, backfill, tombstones, the binding and docs | New and backfilled mail is indexed within the caps; deletes remove vectors | 4 days |
 | **C. Search** | `semanticSearch`, fusion, D1 re-check, `/api/messages`, `search_emails` and MCP `mode`, `/api/v1` `mode`, the search chip, e2e 1–8 | Section 4.6 and 5 behaviour; keyword search unchanged when off | 3 days |
 | **D. Node and Admin** | `data/vectors.sqlite` store, REST and compatible embeddings, Admin page (progress, pause, rebuild, clear stale), mailbox switch | Same behaviour on Node; `npm run build:node` passes | 2–3 days |
 

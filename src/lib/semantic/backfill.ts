@@ -81,7 +81,7 @@ export async function runSemanticBackfillTick(env: CloudflareEnv): Promise<void>
 			.bind(formatBackfillCursor({ createdAt: last.createdAt, id: last.id }), AGENT_SETTINGS_ID)
 			.run();
 	} catch (error) {
-		if (isNoSuchTableError(error)) return; // Migration 0095 not applied yet.
+		if (isNoSuchTableError(error)) return; // Migration 0099 not applied yet.
 		throw error;
 	}
 }

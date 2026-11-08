@@ -92,7 +92,7 @@ export async function GET(request: Request) {
 		// "No AI for this mailbox"; `aiSwitchReady` is false until migration 0091, when the switch cannot be saved.
 		aiDisabled: await mailboxAiOff(env, mailboxId),
 		aiSwitchReady: await mailboxAiSwitchAvailable(env),
-		// "Include this mailbox in search by meaning"; on by default, including before migration 0095.
+		// "Include this mailbox in search by meaning"; on by default, including before migration 0099.
 		semanticIndex: await isMailboxSemanticIndexOn(db, mailboxId),
 		instructionContext: {
 			// False until migration 0069 adds the task instruction columns; the fields cannot be saved before.

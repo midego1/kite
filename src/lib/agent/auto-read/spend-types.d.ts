@@ -4,7 +4,7 @@ import type { AiUsageDetails, AiUsageOutcome } from "@/lib/ai/usage-types";
 
 /**
  * Every source that reserves spend: automatic reading, chat steps, composer requests, the Summarize button and its
- * translations, the reader's Translate, and (migration 0095) search by meaning's embedding batches and query
+ * translations, the reader's Translate, and (migration 0099) search by meaning's embedding batches and query
  * embeddings (the install cap covers all).
  */
 export type AutoSpendSource =

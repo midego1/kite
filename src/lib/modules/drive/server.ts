@@ -4,7 +4,9 @@ import { purgeDrive } from "@/lib/drive/retention";
 import {
 	countDriveObjectsOnStore,
 	driveStorageUsage,
+	listColdDriveCandidates,
 	listDriveObjectKeys,
+	markDriveObjectsCold,
 	markDriveObjectsMoved,
 } from "@/lib/drive/storage-hooks";
 import type { CapabilityHandler, JsonValue } from "../module-types";
@@ -25,4 +27,8 @@ export const driveHandlers: Record<string, CapabilityHandler> = {
 	storageCountOnStore: async (input) =>
 		await countDriveObjectsOnStore(getEnv(), input as Parameters<typeof countDriveObjectsOnStore>[1]),
 	storageUsage: async () => await driveStorageUsage(getEnv()),
+	storageColdCandidates: async (input) =>
+		await listColdDriveCandidates(getEnv(), input as Parameters<typeof listColdDriveCandidates>[1]),
+	storageMarkCold: async (input) =>
+		await markDriveObjectsCold(getEnv(), input as Parameters<typeof markDriveObjectsCold>[1]),
 };

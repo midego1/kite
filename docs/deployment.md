@@ -170,6 +170,20 @@ By default every file Kite keeps (raw mail, attachments, Drive files, backups) i
 
 The Worker can only reach public `https` endpoints. Store changes, switches and deletions are written to the audit log.
 
+### Cold storage (optional)
+
+Below the stores, **Cold storage** sets one age rule per class (Mail, Drive, Backups): move objects older than a
+chosen number of days, and at least a chosen size, to cheaper storage. **R2 Infrequent Access** rewrites an
+object in place on the default Cloudflare R2 store (unavailable on the Node runtime, which has no storage
+classes); a configured S3-compatible store copies the object there, verifies it and deletes the original once
+confirmed. Opening, downloading and searching a moved message or file need no extra step: Kite finds it wherever
+it last recorded it. The card explains the trade-off: Infrequent Access bills every read and keeps an object at
+least 30 days, so it rarely pays off for mail that is read again soon; a second store has no minimum but adds a
+copy and its own read cost. **Run now** starts a sweep immediately instead of waiting for the daily job; a sweep
+already running is shown instead of a second one starting. A store a rule still targets, or that still holds
+objects an earlier sweep moved there, cannot be deleted until the rule points elsewhere or the objects are moved
+again.
+
 ## Email assistant and MCP
 
 The assistant uses the Workers AI `AI` binding and a separate `kite-agent` queue. The Deploy to Cloudflare button creates the queue; for a manual deploy, create it before deploying. The five-minute cron recovers pending auto-draft work; the 02:00 UTC cron still runs backups.

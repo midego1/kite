@@ -214,6 +214,24 @@ test("deleting a store is refused while a route, a Drive file or a running migra
 	assert.equal(drive.status, 409);
 	assert.match(drive.error, /Drive/);
 	env.DB.db.prepare("DELETE FROM drive_items").run();
+	env.DB.db
+		.prepare(
+			"INSERT INTO storage_cold_rules (object_class, after_days, min_bytes, target, enabled, updated_at) VALUES ('backups', 30, 0, 'sto_a', 1, 1)",
+		)
+		.run();
+	const coldRule = await stores.deleteStore(env, actor, "sto_a");
+	assert.equal(coldRule.status, 409);
+	assert.match(coldRule.error, /cold storage rule/);
+	env.DB.db.prepare("DELETE FROM storage_cold_rules").run();
+	env.DB.db
+		.prepare(
+			"INSERT INTO object_locations (key, object_class, store_id, storage_class, size, moved_at) VALUES ('backups/database/old.json', 'backups', 'sto_a', NULL, 10, 1)",
+		)
+		.run();
+	const coldObject = await stores.deleteStore(env, actor, "sto_a");
+	assert.equal(coldObject.status, 409);
+	assert.match(coldObject.error, /cold storage sweep/);
+	env.DB.db.prepare("DELETE FROM object_locations").run();
 	const deleted = await stores.deleteStore(env, actor, "sto_a");
 	assert.equal(deleted.ok, true);
 	assert.equal(rows(env).length, 0);

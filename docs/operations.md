@@ -394,6 +394,28 @@ Drive (`src/lib/drive/`) keeps file contents under `drive/<itemId>` in the store
 - **Backups.** `storage_stores` and `storage_routes` are in the `system` group (credentials stay sealed); `storage_migrations` is internal. A restore leaves a live storage config alone: when the target already has stores or routes, both tables keep their current rows. Object contents are never in the database backup itself; [full backups](#full-backups) copy the mail objects next to it, and everything else (Drive files) needs a backup of each bucket. Moving the Backups class to another store does not move the copies full backups made: take a new full backup after the switch.
 - **`STORAGE_ALLOW_INSECURE_ENDPOINT` (dev and test only).** Allows `http` and loopback endpoints, as the e2e suite's fake S3 needs. Without the flag, or when `NODE_ENV` is `production`, the header does nothing.
 
+### Cold storage
+
+`src/lib/storage/cold.ts` (ROADMAP Milestone 7 item 3, `docs/specs/drive-storage.md` §10) runs one age rule per
+routable class (mail, Drive, backups), saved under **Admin → Storage → Cold storage**: objects older than
+`afterDays` and at least `minBytes` move to the rule's `target`, either `r2-ia` (a same-store rewrite to R2
+Infrequent Access, only where the active store reports that capability) or another configured store (a copy,
+verified by HEAD, then the source is deleted). The daily 02:00 UTC cron (`runColdStorageSweep`) starts a fresh
+sweep for every enabled rule whose previous one has finished; batches ride `OUTBOUND_QUEUE` as `storage.cold`
+messages and the five-minute cron (`runStorageColdMaintenance`) resends one whose lease expired without a later
+batch arriving, the same claim-and-batch pattern `storage_migrations` uses. Mail and backups record where a
+moved object now lives in `object_locations`, which the storage router (`src/lib/storage/router.ts`) consults
+once the normal read chain misses, so opening a cold message or file needs no extra step; Drive files record
+their own `store_id` and `storage_class` on `drive_items` instead, since that row is already the source of
+truth for where a file lives. Changing a rule's target after a sweep still finds an object through
+`object_locations` even when the new target is not the class's active route. A store a rule still targets, or
+that `object_locations` still names, cannot be deleted (`deleteStore` in `src/lib/storage/stores.ts`) until the
+rule points elsewhere or the objects are moved again. **Run now** (`POST /api/admin/storage/cold/[class]`) starts
+a sweep immediately; `GET /api/admin/storage/cold` reports each class's rule and its latest sweep. Logs:
+`storage.cold_errors`, `storage.cold_batch_failed`. Backups: `storage_cold_rules` and `object_locations` are in
+the `system` group and preserved on restore like `storage_stores` and `storage_routes`; `storage_cold_jobs` is
+internal.
+
 ### Attachment storage
 
 **Admin → Storage → Attachment storage** (`src/app/(admin)/storage/attachment-storage-card.tsx`, `GET` and `POST /api/admin/attachment-storage`) shows how attachments are stored: files with an object of their own, files served from their raw message, rows that share another row's object, and the received or imported files **Reclaim space** has not looked at yet. Starting or stopping a job takes the primary admin and a same-origin request; reading the counts takes any admin. See `docs/specs/attachments-once.md` §5.5.

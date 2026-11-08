@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { requestConfirmation } from "@/components/ui/confirm-dialog-utils";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { AttachmentStorageCard } from "./attachment-storage-card";
+import { ColdStorageCard } from "./cold-storage-card";
 import { DataRoutes } from "./data-routes";
 import { MigrationsCard } from "./migrations-card";
 import { StepList } from "./step-list";
@@ -249,6 +250,7 @@ export function StorageAdmin() {
 					<StoresCard overview={data} onDialog={setDialog} onChanged={refresh} />
 					<DataRoutes overview={data} onChanged={refresh} />
 					<MigrationsCard overview={data} onChanged={refresh} />
+					<ColdStorageCard overview={data} />
 				</>
 			)}
 			{data && <AttachmentStorageCard />}

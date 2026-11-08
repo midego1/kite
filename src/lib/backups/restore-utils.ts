@@ -12,9 +12,15 @@ import type {
 /**
  * The storage configuration says where this install's objects live right now. A backup's copy may name
  * stores whose credentials or contents differ, so a restore keeps the live rows when there are any and
- * restores the backup's only into an install that has none. The two tables move together: routes name stores.
+ * restores the backup's only into an install that has none. The four tables move together: routes name stores,
+ * and cold storage's rules and locations (src/lib/storage/cold.ts) are only meaningful against the live stores.
  */
-export const PRESERVED_ON_RESTORE = ["storage_stores", "storage_routes"] as const;
+export const PRESERVED_ON_RESTORE = [
+	"storage_stores",
+	"storage_routes",
+	"storage_cold_rules",
+	"object_locations",
+] as const;
 
 /** The tables a restore must leave untouched, given how many rows each preserved table has now. */
 export function preservedRestoreTables(liveRowCounts: Partial<Record<string, number>>): Set<string> {

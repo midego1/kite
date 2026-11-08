@@ -1,6 +1,7 @@
 import { getStorage, RAW_ENV, type Proxied, type StoragePlatformEnv } from "./index";
 import { objectClassOf } from "./object-classes-utils";
-import type { KiteBucket, ObjectStore } from "./types";
+import { lookupObjectLocation } from "./object-locations";
+import type { KiteBucket, ObjectStore, Storage } from "./types";
 
 type MultipartOptions = Parameters<NonNullable<KiteBucket["createMultipartUpload"]>>[1];
 
@@ -28,6 +29,11 @@ function groupByClass(keys: string[]) {
 	return groups;
 }
 
+/** The store a cold-moved key lives on, for the one extra lookup a chain miss takes (`cold.ts`, phase 3). */
+function coldStoreOf(storage: Storage, location: { storeId: string } | null): ObjectStore | null {
+	return location ? storage.store(location.storeId) : null;
+}
+
 function requireMultipart(store: ObjectStore) {
 	const { createMultipartUpload, resumeMultipartUpload } = store.bucket;
 	if (!createMultipartUpload || !resumeMultipartUpload)
@@ -51,13 +57,17 @@ export function createStorageRouter(env: StoragePlatformEnv): KiteBucket {
 	const router = {
 		async get(key: string, options?: R2GetOptions) {
 			if (objectClassOf(key) === "system") return binding.get(key, options);
-			const { readChain } = await storage();
-			return firstHit(readChain(objectClassOf(key)), (store) => store.bucket.get(key, options));
+			const built = await storage();
+			const hit = await firstHit(built.readChain(objectClassOf(key)), (store) => store.bucket.get(key, options));
+			if (hit) return hit;
+			return coldStoreOf(built, await lookupObjectLocation(env, key))?.bucket.get(key, options) ?? null;
 		},
 		async head(key: string) {
 			if (objectClassOf(key) === "system") return binding.head(key);
-			const { readChain } = await storage();
-			return firstHit(readChain(objectClassOf(key)), (store) => store.bucket.head(key));
+			const built = await storage();
+			const hit = await firstHit(built.readChain(objectClassOf(key)), (store) => store.bucket.head(key));
+			if (hit) return hit;
+			return coldStoreOf(built, await lookupObjectLocation(env, key))?.bucket.head(key) ?? null;
 		},
 		async put(key: string, value: Parameters<KiteBucket["put"]>[1], options?: R2PutOptions) {
 			if (objectClassOf(key) === "system") return binding.put(key, value, options);

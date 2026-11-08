@@ -25,6 +25,7 @@ import { storedEndpoint } from "./endpoint-utils";
 import { ACTIVE_MIGRATION_STATUSES, VALIDATION_FRESH_MS } from "./migration-utils";
 import { listStorageMigrations } from "./migration";
 import { callStorageHook } from "./module-hooks";
+import { coldReferenceBlocking } from "./cold";
 import { S3Bucket } from "./s3-bucket";
 import { corsRuleJson } from "./s3-utils";
 import { presetFor } from "./s3-presets-utils";
@@ -354,6 +355,8 @@ export async function deleteStore(env: StoresEnv, actor: Actor, id: string): Pro
 	if (routed.length) return fail(409, `Still used for ${routed.join(", ")}; switch those to another store first`);
 	const driveFiles = (await callStorageHook<{ count: number }>("drive", "countOnStore", { storeId: id }))?.count ?? 0;
 	if (driveFiles > 0) return fail(409, `${driveFiles} Drive files are still on this store; migrate them first`);
+	const coldReference = await coldReferenceBlocking(env, id);
+	if (coldReference) return fail(409, coldReference);
 	const [migration] = await getDb(env)
 		.select({ id: storageMigrations.id })
 		.from(storageMigrations)

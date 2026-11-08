@@ -25,6 +25,8 @@ export type DatabaseBackupTable =
 	| "backups"
 	| "storage_stores"
 	| "storage_routes"
+	| "storage_cold_rules"
+	| "object_locations"
 	| "app_settings"
 	| "agent_providers"
 	| "module_settings"

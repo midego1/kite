@@ -19,6 +19,7 @@ const DIRECT_READ_ALLOWLIST = new Set([ACCESSOR, JOB_BATCHES]);
 const OBJECT_COPIERS = [
 	"src/lib/backups/objects.ts",
 	"src/lib/storage/migration.ts",
+	"src/lib/storage/cold-sources.ts",
 	"src/lib/storage/stores.ts",
 	"src/lib/email/attachment-storage-report.ts",
 	"src/lib/email/attachment-repair.ts",

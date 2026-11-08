@@ -687,6 +687,13 @@
       "when": 1794009600000,
       "tag": "0094_add_finance_payments",
       "breakpoints": true
+    },
+    {
+      "idx": 98,
+      "version": "6",
+      "when": 1794096000000,
+      "tag": "0097_add_cold_storage",
+      "breakpoints": true
     }
   ]
 }

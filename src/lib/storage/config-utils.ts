@@ -173,7 +173,7 @@ export function activeStoreId(config: StorageConfig, objectClass: ObjectClass): 
 	return isUsableStore(config, storeId) ? storeId : DEFAULT_STORE_ID;
 }
 
-function isUsableStore(config: StorageConfig, storeId: string | null | undefined): storeId is string {
+export function isUsableStore(config: StorageConfig, storeId: string | null | undefined): storeId is string {
 	if (!storeId) return false;
 	if (storeId === DEFAULT_STORE_ID) return true;
 	const store = config.stores.get(storeId);

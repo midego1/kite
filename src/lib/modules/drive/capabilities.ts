@@ -49,5 +49,17 @@ export const driveCapabilities: ModuleCapabilities = {
 			effect: "read",
 			storage: { objectClass: "drive", hook: "usage" },
 		}),
+		describe("storageColdCandidates", {
+			surfaces: ["storage_hook"],
+			description: "List the Drive files due for a cold storage move.",
+			effect: "read",
+			storage: { objectClass: "drive", hook: "coldCandidates" },
+		}),
+		describe("storageMarkCold", {
+			surfaces: ["storage_hook"],
+			description: "Record that Drive files moved to cheaper storage.",
+			effect: "update",
+			storage: { objectClass: "drive", hook: "markCold" },
+		}),
 	],
 };

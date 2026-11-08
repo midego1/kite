@@ -48,6 +48,8 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/admin/storage/cloudflare/buckets`                      | POST                   | [source](../src/app/api/admin/storage/cloudflare/buckets/route.ts)                      |
 | `/api/admin/storage/cloudflare/direct-uploads`               | POST                   | [source](../src/app/api/admin/storage/cloudflare/direct-uploads/route.ts)               |
 | `/api/admin/storage/cloudflare`                              | GET                    | [source](../src/app/api/admin/storage/cloudflare/route.ts)                              |
+| `/api/admin/storage/cold/[class]`                            | POST, PUT              | [source](../src/app/api/admin/storage/cold/[class]/route.ts)                            |
+| `/api/admin/storage/cold`                                    | GET                    | [source](../src/app/api/admin/storage/cold/route.ts)                                    |
 | `/api/admin/storage/migrations/[id]`                         | GET, POST              | [source](../src/app/api/admin/storage/migrations/[id]/route.ts)                         |
 | `/api/admin/storage/reminder`                                | POST                   | [source](../src/app/api/admin/storage/reminder/route.ts)                                |
 | `/api/admin/storage`                                         | GET                    | [source](../src/app/api/admin/storage/route.ts)                                         |

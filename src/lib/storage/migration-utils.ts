@@ -121,12 +121,15 @@ export function copyParts(
 	return parts;
 }
 
-export function isLeased(cursor: MigrationCursor, now: number): boolean {
+/** Takes only the lease fields, so a cold storage sweep's cursor (`cold-utils.ts`) reuses it too. */
+type LeaseLike = { leaseUntil?: number; lastBatchAt?: number };
+
+export function isLeased(cursor: LeaseLike, now: number): boolean {
 	return !!cursor.leaseUntil && cursor.leaseUntil > now;
 }
 
 /** True when a running job has not finished a batch for a while and nobody holds it. */
-export function isStalled(cursor: MigrationCursor, now: number, startedAt: number | null): boolean {
+export function isStalled(cursor: LeaseLike, now: number, startedAt: number | null): boolean {
 	if (isLeased(cursor, now)) return false;
 	const last = cursor.lastBatchAt ?? startedAt ?? 0;
 	return now - last >= 5 * 60 * 1000;

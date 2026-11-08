@@ -311,8 +311,13 @@ export type CapabilityDescriptor = {
 	jmap?: { urn?: string; capability?: JsonValue; method?: string };
 };
 
-/** `listObjectKeys` pages `{ id, key, size }` on a store; `markMoved` records rows copied to another store; `countOnStore` and `usage` count them. */
-export type StorageHookName = "listObjectKeys" | "markMoved" | "countOnStore" | "usage";
+/**
+ * `listObjectKeys` pages `{ id, key, size }` on a store; `markMoved` records rows copied to another store;
+ * `countOnStore` and `usage` count them. `coldCandidates` pages files due for a cold move (`{ id, key, size,
+ * storeId, createdAt }`) and `markCold` records the result: a same-store rewrite (`storageClass`) or a move to
+ * another store (`storeId`, which clears `storageClass`).
+ */
+export type StorageHookName = "listObjectKeys" | "markMoved" | "countOnStore" | "usage" | "coldCandidates" | "markCold";
 
 export type ModuleCapabilities = {
 	moduleId: ModuleId;

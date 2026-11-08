@@ -53,8 +53,11 @@ async function enqueue(env: MigrationEnv, jobId: string, delaySeconds?: number):
 /** Offloaded HTML bodies (`src/lib/email/bodies.ts`); the column exists from migration 0074. */
 const BODY_KEY_COLUMN = "html_body_key";
 
-/** Runs a query over `messages.html_body_key`, answering `whenPending` before migration 0074 added it. */
-async function beforeBodyColumn<T>(query: () => Promise<T>, whenPending: T): Promise<T> {
+/**
+ * Runs a query over `messages.html_body_key`, answering `whenPending` before migration 0074 added it.
+ * @public Also used by `cold.ts`, whose mail sources are the same ones this file enumerates.
+ */
+export async function beforeBodyColumn<T>(query: () => Promise<T>, whenPending: T): Promise<T> {
 	try {
 		return await query();
 	} catch (error) {
@@ -155,6 +158,8 @@ function lengthOption(target: ObjectStore, length: number) {
 /**
  * Copies one object with its metadata; large objects go part by part with ranged reads. The copy is written to
  * `targetKey`, which is `key` for a move between stores and another name for the copies full backups keep.
+ * `storageClass`, used only by a same-store cold rewrite (`cold.ts`), rides along on the create/put call; a store
+ * that does not understand it (a plain S3-compatible bucket) ignores the extra option.
  */
 export async function copyObject(
 	source: KiteBucket,
@@ -162,8 +167,9 @@ export async function copyObject(
 	target: ObjectStore,
 	key: string,
 	targetKey = key,
+	options?: { storageClass?: string },
 ): Promise<number | null> {
-	const metadata = { httpMetadata: head.httpMetadata, customMetadata: head.customMetadata };
+	const metadata = { httpMetadata: head.httpMetadata, customMetadata: head.customMetadata, ...options };
 	if (head.size > MULTIPART_COPY_THRESHOLD && target.bucket.createMultipartUpload) {
 		const upload = await target.bucket.createMultipartUpload(targetKey, metadata);
 		try {

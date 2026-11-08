@@ -44,6 +44,10 @@ const BACKUP_TABLES: DatabaseBackupTable[] = [
 	"backups",
 	"storage_stores",
 	"storage_routes",
+	// One rule and object_locations row per cold-moved key (migration 0097): both describe the live stores, so a
+	// restore keeps the live rows when there are any (PRESERVED_ON_RESTORE in restore-utils.ts).
+	"storage_cold_rules",
+	"object_locations",
 	"app_settings",
 	"agent_providers",
 	"module_settings",
@@ -150,6 +154,9 @@ const INTERNAL_TABLES = [
 	// Storage migration jobs: transient work that points at the live stores, so replaying one into a
 	// restored database would restart a copy between stores that may no longer match.
 	"storage_migrations",
+	// One cold storage sweep per class (migration 0097): transient batch progress over the live stores, restarted
+	// fresh by the nightly cron, so replaying it would resume a sweep against stores that may no longer match.
+	"storage_cold_jobs",
 	// The bookkeeping of a Money Watch "Scan last 90 days" (migration 0094): a cursor over the mail it was started on,
 	// meaningless in another database.
 	"finance_payment_scans",

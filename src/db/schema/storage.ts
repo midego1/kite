@@ -70,6 +70,67 @@ export const storageMigrations = sqliteTable(
 	(t) => [index("storage_migrations_status_idx").on(t.status)],
 );
 
+/**
+ * One age-and-size rule per routable class, admin-managed under Admin → Storage → Cold storage
+ * (src/lib/storage/cold.ts, migration 0097). `target` is `"r2-ia"` (the default store's Infrequent Access class) or
+ * a `storage_stores` id.
+ */
+export const storageColdRules = sqliteTable("storage_cold_rules", {
+	objectClass: text("object_class", { enum: ["mail", "drive", "backups"] }).primaryKey(),
+	afterDays: integer("after_days").notNull(),
+	minBytes: integer("min_bytes").notNull().default(0),
+	target: text("target").notNull(),
+	enabled: integer("enabled", { mode: "boolean" }).notNull().default(false),
+	updatedAt: integer("updated_at", { mode: "timestamp" })
+		.notNull()
+		.$defaultFn(() => new Date()),
+	updatedBy: text("updated_by").references(() => users.id, { onDelete: "set null" }),
+});
+
+/**
+ * Where a mail or backups object now lives after a cold move; the router's read chain falls back to this on a
+ * miss (src/lib/storage/router.ts). Drive files record their own `store_id` and `storage_class` on `drive_items`
+ * instead, since that row is already the source of truth for where a file lives.
+ */
+export const objectLocations = sqliteTable(
+	"object_locations",
+	{
+		key: text("key").primaryKey(),
+		objectClass: text("object_class", { enum: ["mail", "drive", "backups"] }).notNull(),
+		storeId: text("store_id").notNull(),
+		/** Set only for a same-store rewrite (R2 Infrequent Access); null for a move to another store. */
+		storageClass: text("storage_class"),
+		size: integer("size").notNull(),
+		movedAt: integer("moved_at", { mode: "timestamp" })
+			.notNull()
+			.$defaultFn(() => new Date()),
+	},
+	(t) => [index("object_locations_class_idx").on(t.objectClass)],
+);
+
+/**
+ * One continuously-resumed sweep per class: the nightly cron (re)starts it when idle, batches ride
+ * `OUTBOUND_QUEUE` and the five-minute cron restarts a stalled one, on the same pattern as `storage_migrations`
+ * (src/lib/storage/cold.ts).
+ */
+export const storageColdJobs = sqliteTable("storage_cold_jobs", {
+	objectClass: text("object_class", { enum: ["mail", "drive", "backups"] }).primaryKey(),
+	status: text("status", { enum: ["queued", "running", "completed", "failed"] })
+		.notNull()
+		.default("queued"),
+	/** JSON `ColdCursor` (src/lib/storage/cold-utils.ts): the rule this pass started with, and its position per source. */
+	cursor: text("cursor"),
+	objectsDone: integer("objects_done").notNull().default(0),
+	bytesDone: integer("bytes_done").notNull().default(0),
+	errors: integer("errors").notNull().default(0),
+	lastError: text("last_error"),
+	createdAt: integer("created_at", { mode: "timestamp" })
+		.notNull()
+		.$defaultFn(() => new Date()),
+	startedAt: integer("started_at", { mode: "timestamp" }),
+	finishedAt: integer("finished_at", { mode: "timestamp" }),
+});
+
 /** One row (`default`): the last automatic R2 direct-uploads setup and the dismissed reminder (migration 0085). */
 export const storageState = sqliteTable("storage_state", {
 	id: text("id").primaryKey(),

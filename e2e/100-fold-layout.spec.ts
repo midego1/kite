@@ -78,6 +78,105 @@ test("an unfolded tablet shows the list beside the reader", async ({ page }) => 
 	await expect(layout).not.toHaveAttribute("data-fold-hinge", /.+/);
 });
 
+// At this width the phone shell's own breakpoint (768px) has already switched to the desktop sidebar, which
+// is built for a mouse: row actions must still not depend on hovering, because an unfolded foldable or
+// tablet this wide is still a touch screen. The list beside the reader is a stacked (compact) row, so this
+// gets the same corner star + ⋯ sheet as a phone (row-actions-menu.tsx).
+test("an unfolded tablet's stacked row actions work without hovering, via the ⋯ sheet", async ({ page }) => {
+	// Its own message: the shared `subject` one may already be read by another test in this file by now,
+	// which would rename the sheet's entry to "Mark as unread" instead.
+	const api = await apiContext(STORAGE_STATE);
+	const stackedSubject = `Foldable stacked row ${uniqueToken()}`;
+	await deliverInbound(api, {
+		from: `"Fold Sender" <fold@outside.test>`,
+		to: SUPPORT_ADDRESS,
+		subject: stackedSubject,
+	});
+	await api.dispose();
+
+	await page.setViewportSize(UNFOLDED);
+	await page.goto("/inbox");
+	await expectPosture(page, "unfolded");
+
+	const list = page.getByRole("main").locator("[data-density]");
+	const row = list.locator("[data-message-row]").filter({ hasText: stackedSubject });
+	await expect(row).toBeVisible();
+	// `hoverActions` is true here (beside a reader), but a coarse pointer never hovers: the corner star must
+	// still render as the same always-visible, toggleable 44px control phones get, beside the ⋯ button, with
+	// no overlap (review: RowCornerStar was pointer-coarse:hidden in this case, so touch showed no star at all).
+	const star = row.getByRole("button", { name: "Star" }).first();
+	const more = row.getByRole("button", { name: /^More actions for/ }).first();
+	await expect(star).toBeVisible();
+	await expect(more).toBeVisible();
+	const [starBox, moreBox] = await Promise.all([star.boundingBox(), more.boundingBox()]);
+	expect(starBox && starBox.width >= 44 && starBox.height >= 44, "Star is at least 44x44").toBe(true);
+	expect(moreBox && moreBox.width >= 44 && moreBox.height >= 44, "More actions is at least 44x44").toBe(true);
+	const overlap =
+		starBox &&
+		moreBox &&
+		!(
+			starBox.x + starBox.width <= moreBox.x ||
+			moreBox.x + moreBox.width <= starBox.x ||
+			starBox.y + starBox.height <= moreBox.y ||
+			moreBox.y + moreBox.height <= starBox.y
+		);
+	expect(overlap, "the corner star and the ⋯ button do not overlap").toBe(false);
+
+	await star.click();
+	await expect(star).toHaveAttribute("aria-pressed", "true");
+
+	await more.click();
+	const sheet = page.getByRole("dialog");
+	await expect(sheet.getByRole("button", { name: "Archive" })).toBeVisible();
+	await expect(sheet.getByRole("button", { name: "Trash" })).toBeVisible();
+	await sheet.getByRole("button", { name: "Mark as read" }).click();
+	await expect(sheet).toHaveCount(0);
+});
+
+// "No split" forces the wide (single-line, desktop-style) row even beside a reader (reading-layout-utils.ts).
+// A coarse pointer never hovers there either: the date must stay visible (not the old bug, item 2 of the
+// review) and the ⋯ sheet must still be reachable instead of the hover pill.
+test("an unfolded tablet's wide rows keep the date visible and reach actions via the ⋯ sheet", async ({ page }) => {
+	const api = await apiContext(STORAGE_STATE);
+	const wideSubject = `Foldable wide row ${uniqueToken()}`;
+	await deliverInbound(api, { from: `"Fold Sender" <fold@outside.test>`, to: SUPPORT_ADDRESS, subject: wideSubject });
+	await api.dispose();
+
+	await page.setViewportSize(UNFOLDED);
+	await page.addInitScript(() => localStorage.setItem("kite-reading-pane", "none"));
+	await page.goto("/inbox");
+	await expectPosture(page, "unfolded");
+
+	const row = page.locator("[data-message-row]").filter({ hasText: wideSubject });
+	await expect(row).toBeVisible();
+	const time = row.locator("time");
+	await expect(time).toBeVisible();
+	expect(await time.evaluate((element) => getComputedStyle(element).opacity)).toBe("1");
+
+	const more = row.getByRole("button", { name: /^More actions for/ }).first();
+	await expect(more).toBeVisible();
+	const [moreBox, timeBox] = await Promise.all([more.boundingBox(), time.boundingBox()]);
+	expect(moreBox && moreBox.width >= 44 && moreBox.height >= 44, "More actions is at least 44x44").toBe(true);
+	const overlap =
+		moreBox &&
+		timeBox &&
+		!(
+			moreBox.x + moreBox.width <= timeBox.x ||
+			timeBox.x + timeBox.width <= moreBox.x ||
+			moreBox.y + moreBox.height <= timeBox.y ||
+			timeBox.y + timeBox.height <= moreBox.y
+		);
+	expect(overlap, "the ⋯ button does not cover the date").toBe(false);
+
+	await more.click();
+	const sheet = page.getByRole("dialog");
+	await sheet.getByRole("button", { name: "Archive" }).click();
+	await expect(sheet).toHaveCount(0);
+	await expect(page.getByRole("main").getByText(wideSubject, { exact: true })).toHaveCount(0);
+	await page.goto("/archived");
+	await expect(page.getByRole("main").getByText(wideSubject, { exact: true })).toBeVisible();
+});
+
 test("an unfolded tablet keeps the No split and Below inbox choices", async ({ page }) => {
 	await page.setViewportSize(UNFOLDED);
 	// Only the first load: the later one must keep the choice made in between.

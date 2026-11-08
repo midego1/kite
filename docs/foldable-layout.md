@@ -111,3 +111,45 @@ width.
 4. On any viewport open **Settings → Appearance → Fold layout** and choose **Always two panes** or **Always
    single pane** to force the posture regardless of width; `<html data-fold-posture>` and `data-fold-layout`
    show the result.
+
+## Touch reachability
+
+A coarse pointer (a finger) never hovers, so nothing a mouse user reaches by hovering may be the only way to
+reach it on a touch screen — including an unfolded foldable or a tablet at `md` and up, which gets the desktop
+sidebar (a pure width breakpoint, `src/components/sidebar-mobile-utils.ts`) but is still a touch screen. The
+Tailwind `pointer-coarse:` variant (`@media (pointer: coarse)`) is how the app tells the two apart:
+
+- **Message list row actions** (star, archive, trash, mark read/unread, snooze, move) float over a row on hover
+  for a mouse (`message-list-row-actions.tsx`, unchanged, `pointer-fine:` only). An always-on action bar under
+  every row was tried and reverted: on a touch screen it doubled a stacked row's height (halving the list's
+  density for no reason — a swipe already marks read/unread and archives, `swipeable-row.tsx`) and, being
+  appended after the row's own content, pushed the corner star's `bottom-0` anchor down to collide with it. A
+  coarse pointer gets a single always-visible, 44px **⋯** button instead (`row-actions-menu.tsx`), beside the
+  corner star rather than above or below it — the row is rarely tall enough for two stacked 44px corners not to
+  overlap — opening a bottom sheet that lists every action as a full-width, 44px item, with Snooze and Move to
+  expanding in place for their own sub-choices (after `snooze-picker.tsx`'s `SnoozeMenuItem`). The row's text
+  reserves this corner's width on every line it has (not just the one a floating pill used to sit over), so nothing
+  needs to hide under it — the previous design's `pointer-coarse:opacity-0` on a wide row's date was that same
+  overlap bug from the other side: an overlay with no reserved space of its own.
+- **The reader toolbar** (Reply, Archive, Snooze, Move, Report spam, Mark read, More, Delete) wraps onto a second
+  line instead of overflowing the sticky header and pushing **More actions** off screen on a narrow phone or a
+  pinched reading pane (`message-actions.tsx`; ported from the upstream Mailflare review, item 14): the header
+  is `min-h-14`, not a fixed height, so it grows to fit (`src/app/(dashboard)/inbox/[messageId]/page.tsx`).
+  Not `overflow-x-auto` — that makes the row a clipping boundary Radix's Popper measures itself against, which
+  moves the Move-to and Snooze menus to the wrong place the moment the row has less room than its content needs.
+  Its buttons, and small icon buttons generally across the sidebar, the list header and the filter chips, grow
+  to at least 44px on a coarse pointer (`pointer-coarse:h-11`/`w-11`, or the `.reader-toolbar` rule in
+  `globals.css` for the `roundedSM` button size, which a higher-specificity rule there already sizes).
+- **New mail** is a floating button on phone and foldable screens (`mobile-compose-fab.tsx`), beside the tab
+  bar's own show/hide rules (`mobile-tab-bar-utils.ts`): it steps aside for an open message (whose own reply bar
+  would collide with it) even where the tab bar itself stays, with the list beside the reader. A folder list
+  adds its own bottom padding below `md` (`max-md:pb-20` in `message-folder-page.tsx`) so the button floats
+  clear of the last row's own star and ⋯ instead of covering them.
+- `viewport-fit: cover` (`src/app/layout.tsx`) is what makes `env(safe-area-inset-*)` — already used by the tab
+  bar, the compose button and the Drive upload panel — resolve to a real value instead of `0px`; paired with
+  `appleWebApp: { capable: true }`, a phone can run the page from its home screen without browser chrome today,
+  ahead of a full installable PWA (a manifest and a service worker are unplanned, see `ROADMAP.md`). It is a
+  page-wide meta tag, so it also makes a left or right inset real (a landscape phone's notch, a device's rounded
+  corners) wherever Kite had none before: the dashboard shell's own root pads for `safe-area-inset-left`/`-right`
+  (`dashboard-shell.tsx`, `dashboard-section-shell.tsx`), physical by nature like the insets at the bottom
+  (`tests/logical-css.test.mjs`'s `ALLOWED` list).

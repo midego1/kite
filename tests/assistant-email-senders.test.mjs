@@ -37,6 +37,40 @@ const load = (name) => import(pathToFileURL(join(outDir, `${name}.mjs`)).href);
 const { addSenderAddress, listSenderAddresses, removeSenderAddress, verifySenderAddress, SenderAddressesPendingError } =
 	await load("senderAddresses");
 
+// A second bundle whose `sendSystemEmail` always throws, for the one test that needs a real delivery failure
+// (not the usual "no domain can send" false) to prove the row it minted is cleaned up, not left to block a retry.
+const throwingOutDir = makeBundleDirectory("kite-assistant-email-senders-throwing-");
+after(() => rmSync(throwingOutDir, { recursive: true, force: true }));
+const stubThrowingSystemMail = {
+	name: "stub-throwing-system-mail",
+	setup(build) {
+		build.onResolve({ filter: /^@\/lib\/email\/system-mail$/ }, (args) => ({ path: args.path, namespace: "stub" }));
+		build.onLoad({ filter: /.*/, namespace: "stub" }, () => ({
+			contents: "export async function sendSystemEmail() { throw new Error('simulated send failure'); }",
+			loader: "js",
+		}));
+	},
+};
+await build({
+	entryPoints: { senderAddresses: join(root, "src/lib/agent/email/sender-addresses.ts") },
+	outdir: throwingOutDir,
+	outExtension: { ".js": ".mjs" },
+	bundle: true,
+	splitting: true,
+	sourcemap: "inline",
+	platform: "node",
+	format: "esm",
+	target: "node22",
+	logLevel: "silent",
+	packages: "external",
+	tsconfig: join(root, "tsconfig.json"),
+	plugins: [stubThrowingSystemMail],
+	alias: { "cloudflare:workers": join(root, "server/runtime/cloudflare-workers.ts") },
+});
+const { addSenderAddress: addSenderAddressThrowing } = await import(
+	pathToFileURL(join(throwingOutDir, "senderAddresses.mjs")).href
+);
+
 // Spec §5.3's documented cap and the security review's attempt/rate limits; not imported from the module so the
 // constants stay module-private.
 const MAX_SENDER_ADDRESSES = 5;
@@ -125,6 +159,20 @@ test("a code allows only MAX_CODE_ATTEMPTS wrong guesses, even in parallel, then
 
 	// The code is gone: even the right one no longer verifies, and a fresh code is needed.
 	assert.equal(await verifySenderAddress(env, db, "alice", "row-1", "123456"), false);
+});
+
+test("two parallel guesses of the same correct code verify the address exactly once (security review should-fix)", async (t) => {
+	const { database, env, db } = await setup(t);
+	await insertPending(database, { id: "row-1", userId: "alice", address: "alice@phone.test", code: "123456" });
+
+	const results = await Promise.all([
+		verifySenderAddress(env, db, "alice", "row-1", "123456"),
+		verifySenderAddress(env, db, "alice", "row-1", "123456"),
+	]);
+	assert.equal(results.filter(Boolean).length, 1, "exactly one of the two concurrent correct guesses succeeds");
+	assert.equal(auditActions(database, "assistant_email.sender_verified").length, 1, "audited once, not twice");
+	const [row] = await listSenderAddresses(db, "alice");
+	assert.equal(row.verified, true);
 });
 
 test("adding stops at the per-user cap and never throws for someone else's address", async (t) => {
@@ -324,6 +372,46 @@ test("a real database error is not swallowed as 'the code was sent' (security re
 	// A user id with no row in `users` trips the foreign key constraint on insert — a genuine failure that must
 	// propagate, unlike the unique-constraint conflict of someone else already holding the address.
 	await assert.rejects(() => addSenderAddress(env, db, "ghost", "alice@phone.test"));
+});
+
+test("a delivery failure does not leave a row nobody can ever enter the code for (security review should-fix)", async (t) => {
+	const { database, env, db } = await setup(t);
+	const result = await addSenderAddressThrowing(env, db, "alice", "undeliverable@phone.test");
+	assert.equal(result.ok, true, "still the generic success response: nothing about delivery is ever exposed");
+	assert.equal(
+		database.db.prepare("SELECT count(*) AS n FROM assistant_sender_addresses").get().n,
+		0,
+		"the row that could never be verified was cleaned up, not left to block a retry",
+	);
+	// A retry right away gets a fresh row instead of hitting a conflict with the dead one.
+	const retried = await addSenderAddress(env, db, "alice", "undeliverable@phone.test");
+	assert.equal(retried.ok, true);
+	assert.equal((await listSenderAddresses(db, "alice")).length, 1);
+});
+
+test("addSenderAddress can replace a user's own expired address even while already at MAX_SENDER_ADDRESSES", async (t) => {
+	const { database, env, db } = await setup(t);
+	for (let i = 0; i < MAX_SENDER_ADDRESSES - 1; i += 1) {
+		await insertPending(database, { id: `row-${i}`, userId: "alice", address: `alice-${i}@phone.test`, code: "1" });
+	}
+	await insertPending(database, {
+		id: "row-expired",
+		userId: "alice",
+		address: "alice-expired@phone.test",
+		code: "123456",
+		expired: true,
+	});
+	assert.equal((await listSenderAddresses(db, "alice")).length, MAX_SENDER_ADDRESSES, "set up right at the cap");
+
+	// Re-adding the one expired address replaces it, even though the user is at the cap: the stale row for this
+	// exact address is freed before the cap is checked, so this is not the same as adding a sixth address.
+	const result = await addSenderAddress(env, db, "alice", "alice-expired@phone.test");
+	assert.equal(result.ok, true);
+	const rows = await listSenderAddresses(db, "alice");
+	assert.equal(rows.length, MAX_SENDER_ADDRESSES, "still at the cap, not over it");
+	const replaced = rows.find((row) => row.address === "alice-expired@phone.test");
+	assert.ok(replaced);
+	assert.notEqual(replaced.id, "row-expired");
 });
 
 test("no code is sent, and nothing is audited, before migration 0101 is applied", async (t) => {

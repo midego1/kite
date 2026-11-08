@@ -281,9 +281,9 @@ export async function addSenderAddress(
 	const code = generateIdentityCode();
 	const codeHash = await hashSessionToken(code);
 	const codeExpiresAt = new Date(now.getTime() + CODE_MINUTES * 60 * 1000);
+	const id = newId("ases");
 	try {
-		if (!(await insertSenderAddressRow(db, newId("ases"), userId, normalized, codeHash, codeExpiresAt, now)))
-			return { ok: true }; // this user's own MAX_SENDER_ADDRESSES cap; the reservation above still counted
+		if (!(await insertSenderAddressRow(db, id, userId, normalized, codeHash, codeExpiresAt, now))) return { ok: true }; // this user's own MAX_SENDER_ADDRESSES cap; the reservation above still counted
 	} catch (error) {
 		if (!isUniqueViolation(error)) throw error;
 		// Someone already holds this exact address (this user's own still-pending row, or another user's,
@@ -291,19 +291,36 @@ export async function addSenderAddress(
 		return { ok: true };
 	}
 
-	const { appName } = await getBranding(env);
-	await sendSystemEmail(env, {
-		to: normalized,
-		subject: `Your code for ${appName}'s assistant`,
-		text: [
-			`Use this code to verify this address for ${appName}'s assistant by email:`,
-			"",
-			code,
-			"",
-			`It expires in ${CODE_MINUTES} minutes. If you did not request this, you can ignore this message.`,
-		].join("\n"),
-		html: `<p>Use this code to verify this address for ${escapeHtml(appName)}'s assistant by email:</p><p style="font-size:1.5em;font-weight:600;letter-spacing:0.1em">${escapeHtml(code)}</p><p>It expires in ${CODE_MINUTES} minutes. If you did not request this, you can ignore this message.</p>`,
-	});
+	// A thrown delivery failure (the provider itself rejected or errored on the attempt) must not leave a row
+	// nobody can ever enter the code for: the row is removed again, so retrying the same address right away
+	// gets a fresh attempt instead of having to wait for expiry or remove it by hand first (security review
+	// should-fix). `sendSystemEmail` returning `false` is not this: it means no domain can send at all — every
+	// future attempt would fail the exact same way, so this install already warns and moves on without deleting
+	// anything, the same posture `requestPasswordReset` takes for the same reason. Either way `ok: true`, like a
+	// real send, for the anti-enumeration reason above; a failure is only logged.
+	try {
+		const { appName } = await getBranding(env);
+		const sent = await sendSystemEmail(env, {
+			to: normalized,
+			subject: `Your code for ${appName}'s assistant`,
+			text: [
+				`Use this code to verify this address for ${appName}'s assistant by email:`,
+				"",
+				code,
+				"",
+				`It expires in ${CODE_MINUTES} minutes. If you did not request this, you can ignore this message.`,
+			].join("\n"),
+			html: `<p>Use this code to verify this address for ${escapeHtml(appName)}'s assistant by email:</p><p style="font-size:1.5em;font-weight:600;letter-spacing:0.1em">${escapeHtml(code)}</p><p>It expires in ${CODE_MINUTES} minutes. If you did not request this, you can ignore this message.</p>`,
+		});
+		if (!sent) console.warn(`Assistant email: no domain can send mail; a code for ${normalized} was not delivered`);
+	} catch (error) {
+		console.error(`Assistant email: failed to send a verification code to ${normalized}`, error);
+		// Scoped to the exact code just minted, so a verify that somehow already claimed this row first (it
+		// cannot know the code before delivery, but this is cheap insurance) is never undone by this cleanup.
+		await db
+			.delete(assistantSenderAddresses)
+			.where(and(eq(assistantSenderAddresses.id, id), eq(assistantSenderAddresses.codeHash, codeHash)));
+	}
 	return { ok: true };
 }
 

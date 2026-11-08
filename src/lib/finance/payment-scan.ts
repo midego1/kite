@@ -1,6 +1,7 @@
 import { and, asc, eq, gte, isNull, lt, or, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { financePaymentScans, financePayments } from "@/db/schema/finance";
+import { missingColumnFromError } from "@/lib/auth/user-lookup-utils";
 import { getEnv } from "@/lib/cloudflare";
 import { createLogger } from "@/lib/logger.mjs";
 import { buildCallContext } from "@/lib/modules/capability-utils";
@@ -15,18 +16,31 @@ import type { DetectStepInput } from "./types";
 
 const log = createLogger("finance");
 
-/** How far back "Scan last 90 days" reads. */
-const SCAN_DAYS = 90;
+/** How far back "Scan last 90 days" reads. @public Read by `listPaymentsView` to report mail the scan never covers. */
+export const SCAN_DAYS = 90;
 /** Messages one run lists; only the few that pass the prefilter have their body read. */
 const PAGE_SIZE = 200;
 /** A run stops handing out new work after this long, well inside the queue handler's timeout. */
 const RUN_BUDGET_MS = 20_000;
 /** A run's hold on a scan; a run that died is taken over once it ran out. */
 const LEASE_MS = 120_000;
+/**
+ * A running scan the five-minute safety net could not revive for this long is given up on instead of requeued
+ * forever, as `failStaleBackups` does for backups; the owner sees Try again instead of a silent retry loop.
+ */
+const STALE_SCAN_FAILED_AFTER_MS = 30 * 60_000;
+const SCAN_STALLED_ERROR = "The scan stopped making progress and could not be resumed.";
 const SCAN_KIND = "finance.scan" as const;
 const STEP_CAPABILITY = "payments";
 
-export type ScanRow = typeof financePaymentScans.$inferSelect;
+type ScanRow = typeof financePaymentScans.$inferSelect;
+/** What `startScan` and the Payments tab need to report a scan's status, never its cursor. */
+type ScanStatus = Pick<
+	ScanRow,
+	"userId" | "status" | "scanned" | "recorded" | "skipped" | "startedAt" | "finishedAt" | "leaseUntil"
+>;
+/** What one run needs to pick up a leased scan's cursor; never the columns the Payments tab reports. */
+type LeasedScan = Pick<ScanRow, "userId" | "sinceAt" | "cursorAt" | "cursorId" | "scanned" | "skipped" | "startedAt">;
 
 /** The agent queue message of one scan run. @public Named by `AGENT_QUEUE` in env.d.ts. */
 export type PaymentScanMessage = { kind: "finance.scan"; userId: string };
@@ -43,7 +57,7 @@ export type ScanView = {
 
 const db = () => getDb(getEnv());
 
-export function scanView(row: ScanRow | null): ScanView | null {
+export function scanView(row: ScanStatus | null): ScanView | null {
 	if (!row) return null;
 	return {
 		status: row.status,
@@ -55,9 +69,26 @@ export function scanView(row: ScanRow | null): ScanView | null {
 	};
 }
 
-export async function ownerScan(userId: string): Promise<ScanRow | null> {
+/**
+ * The owner's scan status, never its cursor (`leaseScan` reads that). Named columns only, so a deploy ahead of a
+ * migration that only adds a cursor or bookkeeping column (none pending today) would still read this row.
+ */
+export async function ownerScan(userId: string): Promise<ScanStatus | null> {
 	const [row] = await onPaymentTables(() =>
-		db().select().from(financePaymentScans).where(eq(financePaymentScans.userId, userId)).limit(1),
+		db()
+			.select({
+				userId: financePaymentScans.userId,
+				status: financePaymentScans.status,
+				scanned: financePaymentScans.scanned,
+				recorded: financePaymentScans.recorded,
+				skipped: financePaymentScans.skipped,
+				startedAt: financePaymentScans.startedAt,
+				finishedAt: financePaymentScans.finishedAt,
+				leaseUntil: financePaymentScans.leaseUntil,
+			})
+			.from(financePaymentScans)
+			.where(eq(financePaymentScans.userId, userId))
+			.limit(1),
 	);
 	return row ?? null;
 }
@@ -74,7 +105,7 @@ async function enqueueScan(userId: string, delaySeconds?: number): Promise<boole
  * Starts the owner's scan of the last 90 days, or leaves a running one alone; a finished scan starts again from the
  * beginning (rows already recorded or removed are never written twice). The work runs on the agent queue.
  */
-export async function startScan(userId: string, now = new Date()): Promise<ScanRow> {
+export async function startScan(userId: string, now = new Date()): Promise<ScanStatus> {
 	const existing = await ownerScan(userId);
 	if (existing?.status === "running") {
 		// A run holds it already; only a scan nobody holds is queued again.
@@ -106,7 +137,7 @@ export async function startScan(userId: string, now = new Date()): Promise<ScanR
 }
 
 /** Takes the scan for one run unless another run holds it; the row as taken, or null. */
-async function leaseScan(userId: string, now: Date): Promise<ScanRow | null> {
+async function leaseScan(userId: string, now: Date): Promise<LeasedScan | null> {
 	const [row] = await db()
 		.update(financePaymentScans)
 		.set({ leaseUntil: new Date(now.getTime() + LEASE_MS), updatedAt: now })
@@ -117,7 +148,15 @@ async function leaseScan(userId: string, now: Date): Promise<ScanRow | null> {
 				or(isNull(financePaymentScans.leaseUntil), lt(financePaymentScans.leaseUntil, now)),
 			),
 		)
-		.returning();
+		.returning({
+			userId: financePaymentScans.userId,
+			sinceAt: financePaymentScans.sinceAt,
+			cursorAt: financePaymentScans.cursorAt,
+			cursorId: financePaymentScans.cursorId,
+			scanned: financePaymentScans.scanned,
+			skipped: financePaymentScans.skipped,
+			startedAt: financePaymentScans.startedAt,
+		});
 	return row ?? null;
 }
 
@@ -167,7 +206,7 @@ async function recordWithRetry(
 }
 
 /** One run: a page of the owner's mail after the cursor, the prefilter, then the full step input for the rest. */
-async function scanPage(ctx: CapabilityCallContext, row: ScanRow, started: number): Promise<Progress> {
+async function scanPage(ctx: CapabilityCallContext, row: LeasedScan, started: number): Promise<Progress> {
 	const after = row.cursorAt && row.cursorId ? { receivedAt: row.cursorAt.toISOString(), id: row.cursorId } : null;
 	const page = await moduleHost.mail.backfillMessages(ctx, "finance", {
 		capability: STEP_CAPABILITY,
@@ -212,7 +251,7 @@ async function recordedSince(userId: string, startedAt: Date): Promise<number> {
 	return Number(row?.count ?? 0);
 }
 
-async function saveProgress(row: ScanRow, progress: Progress, now: Date): Promise<void> {
+async function saveProgress(row: LeasedScan, progress: Progress, now: Date): Promise<void> {
 	await db()
 		.update(financePaymentScans)
 		.set({
@@ -228,9 +267,17 @@ async function saveProgress(row: ScanRow, progress: Progress, now: Date): Promis
 		.where(eq(financePaymentScans.userId, row.userId));
 }
 
+/** The owner's notice once a scan finishes, over the same realtime path as a renewal reminder. */
+function scanFinishedNotice(recorded: number) {
+	const title =
+		recorded === 1 ? "Payment scan finished: 1 payment found" : `Payment scan finished: ${recorded} payments found`;
+	return { notice: "scan_finished", title, href: "/finance?tab=payments" };
+}
+
 /**
  * The `finance.scan` queue message: one leased run of an owner's scan, which hands on to the next run until the
- * cursor reaches today. Deterministic only: the scan never calls a model and sends no notice.
+ * cursor reaches today. Deterministic only: the scan never calls a model. A finished scan sends a realtime notice,
+ * so the owner hears about it after leaving the page; a notice that fails to send never fails the scan.
  */
 export const scanPayments: CapabilityHandler = async (raw, cron): Promise<JsonValue> => {
 	const userId = (raw as { userId?: unknown } | null)?.userId;
@@ -256,19 +303,48 @@ export const scanPayments: CapabilityHandler = async (raw, cron): Promise<JsonVa
 		throw error;
 	}
 	await saveProgress(row, progress, new Date());
-	if (!progress.done) await enqueueScan(userId);
+	if (!progress.done) {
+		await enqueueScan(userId);
+	} else {
+		const finished = await ownerScan(userId);
+		if (finished)
+			try {
+				await moduleHost.notify(ctx, "finance", [userId], scanFinishedNotice(finished.recorded));
+			} catch (error) {
+				log.warn("finance.scan_notify_failed", { error });
+			}
+	}
 	return { scanned: progress.scanned };
 };
 
 /**
+ * Gives up on a scan stalled past `STALE_SCAN_FAILED_AFTER_MS`: `error` is a column migration 0095 adds, so a
+ * deploy ahead of it just updates the other columns, as `aiOffSince` does for `ai_disabled_at`.
+ */
+async function failStalledScan(userId: string, now: Date): Promise<void> {
+	const condition = and(eq(financePaymentScans.userId, userId), eq(financePaymentScans.status, "running"));
+	const set = { status: "failed" as const, finishedAt: now, leaseUntil: null, updatedAt: now };
+	try {
+		await db()
+			.update(financePaymentScans)
+			.set({ ...set, error: SCAN_STALLED_ERROR })
+			.where(condition);
+	} catch (error) {
+		if (missingColumnFromError(error) !== "error") throw error;
+		await db().update(financePaymentScans).set(set).where(condition);
+	}
+}
+
+/**
  * The five-minute safety net: a running scan whose run died (no lease, or one that ran out) is queued again, as Mail
- * import does for its jobs. Without a queue binding the run happens here.
+ * import does for its jobs, unless it has been stalled for too long, which it gives up on instead (`failStalledScan`)
+ * so the owner sees Try again instead of a silent retry loop. Without a queue binding a resumed run happens here.
  */
 export const resumePaymentScans: CapabilityHandler = async (_input, cron): Promise<JsonValue> => {
-	if (!(await paymentTablesReady())) return { resumed: 0 };
+	if (!(await paymentTablesReady())) return { resumed: 0, failed: 0 };
 	const now = new Date();
 	const stalled = await db()
-		.select({ userId: financePaymentScans.userId })
+		.select({ userId: financePaymentScans.userId, updatedAt: financePaymentScans.updatedAt })
 		.from(financePaymentScans)
 		.where(
 			and(
@@ -279,7 +355,16 @@ export const resumePaymentScans: CapabilityHandler = async (_input, cron): Promi
 		)
 		.orderBy(asc(financePaymentScans.updatedAt))
 		.limit(20);
-	for (const { userId } of stalled)
-		if (!(await enqueueScan(userId))) await scanPayments({ kind: SCAN_KIND, userId }, cron);
-	return { resumed: stalled.length };
+	let resumed = 0;
+	let failed = 0;
+	for (const row of stalled) {
+		if (now.getTime() - row.updatedAt.getTime() > STALE_SCAN_FAILED_AFTER_MS) {
+			await failStalledScan(row.userId, now);
+			failed += 1;
+			continue;
+		}
+		if (!(await enqueueScan(row.userId))) await scanPayments({ kind: SCAN_KIND, userId: row.userId }, cron);
+		resumed += 1;
+	}
+	return { resumed, failed };
 };

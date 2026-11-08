@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import type { ModuleNoticeEvent } from "@/hooks/message-realtime-types";
+import { MODULE_NOTICE_EVENT } from "@/hooks/message-realtime-utils";
 import { authFetch } from "@/lib/auth/client";
 import type { PaymentList } from "./payments-types";
 
@@ -54,6 +56,15 @@ export function usePaymentList() {
 	useEffect(() => {
 		window.addEventListener("focus", reload);
 		return () => window.removeEventListener("focus", reload);
+	}, [reload]);
+
+	// A finished scan's realtime notice reaches every open tab, including one the owner left and came back to.
+	useEffect(() => {
+		function onNotice(event: Event) {
+			if ((event as CustomEvent<ModuleNoticeEvent>).detail?.moduleId === "finance") reload();
+		}
+		window.addEventListener(MODULE_NOTICE_EVENT, onNotice);
+		return () => window.removeEventListener(MODULE_NOTICE_EVENT, onNotice);
 	}, [reload]);
 
 	return { list, failed, reload };

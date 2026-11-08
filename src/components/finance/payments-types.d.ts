@@ -40,6 +40,9 @@ export type ScanState = {
 	finishedAt: string | null;
 };
 
+/** Mail "Scan last 90 days" never reads, and why, so the Payments tab can say why a count seems low. */
+export type ScanCoverageGap = { reason: "automatic_reading_off"; messages: number };
+
 export type PaymentList = {
 	payments: PaymentItem[];
 	/** Month totals over every row, also those past the list's cap. */
@@ -47,6 +50,7 @@ export type PaymentList = {
 	/** The list holds only the newest rows. */
 	truncated?: boolean;
 	scan: ScanState | null;
+	scanCoverage: ScanCoverageGap[];
 	migrationPending?: true;
 };
 

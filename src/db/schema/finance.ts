@@ -149,4 +149,6 @@ export const financePaymentScans = sqliteTable("finance_payment_scans", {
 	startedAt: integer("started_at", { mode: "timestamp" }).notNull(),
 	updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
 	finishedAt: integer("finished_at", { mode: "timestamp" }),
+	/** Why a stalled run was given up on (migration 0095); null while running or after a clean finish. */
+	error: text("error"),
 });

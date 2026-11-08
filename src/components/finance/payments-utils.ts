@@ -1,6 +1,6 @@
 import { formatDecimal, formatMoney } from "@/lib/finance/amount-utils";
 import { msg } from "@/lib/i18n/translator";
-import type { MessageKey } from "@/lib/i18n/i18n-types";
+import type { MessageKey, Translate } from "@/lib/i18n/i18n-types";
 import { isSameOriginPath } from "@/lib/modules/path-utils";
 import { parseAmountInput } from "./dialog-utils";
 import type {
@@ -10,6 +10,8 @@ import type {
 	PaymentForm,
 	PaymentItem,
 	PaymentListStatus,
+	ScanCoverageGap,
+	ScanState,
 } from "./payments-types";
 
 export const TYPE_LABELS: Record<PaymentDocType, MessageKey> = {
@@ -135,6 +137,36 @@ export function mailHref(item: Pick<PaymentItem, "message">): string | null {
 
 /** A payment row the viewer can correct: found in mail, not a subscription's document. */
 export const editable = (item: Pick<PaymentItem, "source">) => item.source === "payment";
+
+/** The Payments tab's scan status line: progress while running, the result once done, or Try again once failed. */
+export function scanText(scan: ScanState, t: Translate): string {
+	const values = { scanned: scan.scanned, recorded: scan.recorded, skipped: scan.skipped };
+	if (scan.status === "running")
+		return t(
+			"Scanning the last 90 days: {scanned, plural, one {# message} other {# messages}} checked, {recorded, plural, =0 {no payments} one {# payment} other {# payments}} found so far",
+			values,
+		);
+	if (scan.status === "failed") return t("Last scan could not finish. Try again.");
+	if (scan.skipped)
+		return t(
+			"Last scan: {recorded, plural, =0 {no new payments} one {# new payment} other {# new payments}} in {scanned, plural, one {# message} other {# messages}}. {skipped, plural, one {# message} other {# messages}} could not be read.",
+			values,
+		);
+	return t(
+		"Last scan: {recorded, plural, =0 {no new payments} one {# new payment} other {# new payments}} in {scanned, plural, one {# message} other {# messages}}",
+		values,
+	);
+}
+
+/** Why "Scan last 90 days" left mail out, when it did; null while there is nothing to explain. */
+export function scanCoverageText(gaps: readonly ScanCoverageGap[], t: Translate): string | null {
+	const gap = gaps.find((entry) => entry.reason === "automatic_reading_off");
+	if (!gap) return null;
+	return t(
+		"{count, plural, one {# message} other {# messages}} in mailboxes without automatic reading were not scanned",
+		{ count: gap.messages },
+	);
+}
 
 /** The amount as the input shows it, with the currency's own decimals ("17.99", "1500"). */
 function amountInput(item: Pick<PaymentItem, "amount">): string {

@@ -170,3 +170,33 @@ test("a correction sends only what changed, and refuses what cannot be saved", (
 	assert.equal(view.formFromPayment(item({ amount: { minor: 1500, currency: "JPY" } })).amount, "1500");
 	assert.equal(view.formFromPayment(ITEMS[5]).docType, "payment");
 });
+
+/** Echoes the key, so a test can tell which message `scanText`/`scanCoverageText` chose without formatting it. */
+const t = (key) => key;
+
+test("the scan status line picks the right message for each status", () => {
+	assert.equal(
+		view.scanText({ status: "running", scanned: 3, recorded: 1, skipped: 0 }, t),
+		"Scanning the last 90 days: {scanned, plural, one {# message} other {# messages}} checked, {recorded, plural, =0 {no payments} one {# payment} other {# payments}} found so far",
+	);
+	assert.equal(
+		view.scanText({ status: "failed", scanned: 0, recorded: 0, skipped: 0 }, t),
+		"Last scan could not finish. Try again.",
+	);
+	assert.equal(
+		view.scanText({ status: "done", scanned: 5, recorded: 2, skipped: 0 }, t),
+		"Last scan: {recorded, plural, =0 {no new payments} one {# new payment} other {# new payments}} in {scanned, plural, one {# message} other {# messages}}",
+	);
+	assert.equal(
+		view.scanText({ status: "done", scanned: 5, recorded: 2, skipped: 1 }, t),
+		"Last scan: {recorded, plural, =0 {no new payments} one {# new payment} other {# new payments}} in {scanned, plural, one {# message} other {# messages}}. {skipped, plural, one {# message} other {# messages}} could not be read.",
+	);
+});
+
+test("scanCoverageText explains a gap it finds, and says nothing when there is none", () => {
+	assert.equal(view.scanCoverageText([], t), null);
+	assert.equal(
+		view.scanCoverageText([{ reason: "automatic_reading_off", messages: 4 }], t),
+		"{count, plural, one {# message} other {# messages}} in mailboxes without automatic reading were not scanned",
+	);
+});

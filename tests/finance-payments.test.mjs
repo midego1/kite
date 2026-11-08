@@ -45,7 +45,7 @@ const { invokeCapability } = await load("invoke");
 const { buildCallContext } = await load("capability");
 const { clearModuleStateCache } = await load("state");
 const { undoAgentAction } = await load("execute");
-const { startScan, scanPayments } = await load("scan");
+const { startScan, scanPayments, resumePaymentScans } = await load("scan");
 const { listPaymentsView, senderOf } = await load("views");
 const { patchPayment, removePayment } = await load("manual");
 const { SqliteDatabase } = await load("runtime");
@@ -91,14 +91,23 @@ async function setup(t) {
 		UPDATE app_settings SET agent_enabled = 1, agent_auto_read_enabled = 1;
 	`);
 	const sent = [];
+	const notices = [];
 	const env = {
 		DB: db,
 		OUTBOUND_QUEUE: { send: async () => undefined },
 		AGENT_QUEUE: { send: async (message) => void sent.push(message) },
+		REALTIME: {
+			getByName: (userId) => ({
+				fetch: async (_url, init) => {
+					notices.push({ userId, ...JSON.parse(init.body) });
+					return new Response(null, { status: 200 });
+				},
+			}),
+		},
 	};
 	globalThis.__kiteNodeEnv = env;
 	clearModuleStateCache();
-	return { db, env, sent };
+	return { db, env, sent, notices };
 }
 
 let counter = 0;
@@ -379,6 +388,7 @@ test("before migration 0094 the step and the view report the pending update", as
 		payments: [],
 		months: [],
 		scan: null,
+		scanCoverage: [],
 		migrationPending: true,
 	});
 });
@@ -538,4 +548,53 @@ test("review 2: a database with an earlier draft of migration 0094 reads as an u
 	assert.equal((await listPaymentsView(viewOf(owner))).migrationPending, true);
 	const result = await invokeCapability("finance", "recordPayment", stepInput("message-x", STRIPE), stepContext());
 	assert.deepEqual(result.output, { suggestions: [], skipped: "migration_pending" });
+});
+
+test("the Payments tab explains mail Scan last 90 days leaves out", async (t) => {
+	const { db } = await setup(t);
+	insertMessage(db, STRIPE, { mailboxId: "mailbox-a", daysAgo: 1 });
+	insertMessage(db, STRIPE, { mailboxId: "mailbox-off", daysAgo: 2 });
+	insertMessage(db, INVOICE, { mailboxId: "mailbox-off", daysAgo: 3 });
+	insertMessage(db, INVOICE, { mailboxId: "mailbox-noai", daysAgo: 4 });
+	// Past the scan's 90-day window: never counted, eligible or not.
+	insertMessage(db, INVOICE, { mailboxId: "mailbox-off", daysAgo: 120 });
+	const { scanCoverage } = await listPaymentsView(viewOf(owner));
+	assert.deepEqual(scanCoverage, [{ reason: "automatic_reading_off", messages: 3 }]);
+});
+
+test("a finished scan sends a realtime notice of how many payments it found", async (t) => {
+	const { db, notices } = await setup(t);
+	insertMessage(db, STRIPE);
+	await startScan("owner");
+	for (let run = 0; run < 5 && (await listPaymentsView(viewOf(owner))).scan.status === "running"; run++)
+		await scanPayments({ kind: "finance.scan", userId: "owner" }, cronContext());
+	assert.deepEqual(notices, [
+		{
+			userId: "owner",
+			type: "module_notice",
+			moduleId: "finance",
+			notice: "scan_finished",
+			title: "Payment scan finished: 1 payment found",
+			body: null,
+			href: "/finance?tab=payments",
+		},
+	]);
+});
+
+test("a scan stalled past the safety net's patience fails with Try again, and starting it over clears that", async (t) => {
+	const { db } = await setup(t);
+	await startScan("owner");
+	db.db
+		.prepare("UPDATE finance_payment_scans SET updated_at = ?, lease_until = NULL WHERE user_id = 'owner'")
+		.run(Math.floor((Date.now() - 31 * 60_000) / 1000));
+	assert.deepEqual(await resumePaymentScans({}, cronContext()), { resumed: 0, failed: 1 });
+	let { scan } = await listPaymentsView(viewOf(owner));
+	assert.equal(scan.status, "failed");
+	assert.equal(
+		db.db.prepare("SELECT error FROM finance_payment_scans WHERE user_id = 'owner'").get().error,
+		"The scan stopped making progress and could not be resumed.",
+	);
+	await startScan("owner");
+	({ scan } = await listPaymentsView(viewOf(owner)));
+	assert.equal(scan.status, "running");
 });

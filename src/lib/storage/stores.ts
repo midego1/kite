@@ -25,7 +25,7 @@ import { storedEndpoint } from "./endpoint-utils";
 import { ACTIVE_MIGRATION_STATUSES, VALIDATION_FRESH_MS } from "./migration-utils";
 import { listStorageMigrations } from "./migration";
 import { callStorageHook } from "./module-hooks";
-import { coldReferenceBlocking } from "./cold";
+import { coldOrphanCount, coldReferenceBlocking } from "./cold";
 import { S3Bucket } from "./s3-bucket";
 import { corsRuleJson } from "./s3-utils";
 import { presetFor } from "./s3-presets-utils";
@@ -77,14 +77,13 @@ export type StoreView = {
 	source: "database" | "environment";
 	blocked: string | null;
 	usedBy: RoutableClass[];
+	/** Cold-moved copies tracked as orphan candidates on this store right now; "Delete leftovers" removes them. */
+	leftoverCount: number;
 };
 
 async function keyHintOf(env: StoresEnv, store: StoreRecord): Promise<string> {
-	try {
-		return keyHint((await openStoreCredentials(env, store)).accessKeyId);
-	} catch {
-		return "";
-	}
+	const credentials = await openStoreCredentials(env, store).catch(() => null);
+	return credentials ? keyHint(credentials.accessKeyId) : "";
 }
 
 async function storeView(env: StoresEnv, config: StorageConfig, store: StoreRecord): Promise<StoreView> {
@@ -104,6 +103,7 @@ async function storeView(env: StoresEnv, config: StorageConfig, store: StoreReco
 		source: store.source,
 		blocked: store.blocked,
 		usedBy: routesUsingStore(config, store.id),
+		leftoverCount: await coldOrphanCount(env, store.id),
 	};
 }
 
@@ -200,7 +200,7 @@ export async function storageOverview(env: StoresEnv) {
 	};
 }
 
-async function loadStore(env: StoresEnv, id: string): Promise<{ config: StorageConfig; store: StoreRecord | null }> {
+export async function loadStore(env: StoresEnv, id: string) {
 	const config = await readStorageConfig(env);
 	return { config, store: config.stores.get(id) ?? null };
 }

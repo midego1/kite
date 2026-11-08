@@ -497,7 +497,7 @@ test("a batch's progress write only lands while its claim is still the job's cur
 	assert.equal(job(env, "mail").cursor, afterFirstBatch, "the real progress is untouched");
 });
 
-test("the five-minute maintenance marks an unreferenced cold copy a candidate, then deletes it only once the grace period has passed", async (t) => {
+test("the five-minute maintenance marks an unreferenced cold copy a candidate; the manual purge deletes it only once the grace period has passed", async (t) => {
 	const { env, queue } = await fixture(t);
 	await addStore(env, "sto_target", "kite-target");
 	await addMessage(env, "old", { createdAt: NOW - 60 * DAY });
@@ -516,12 +516,18 @@ test("the five-minute maintenance marks an unreferenced cold copy a candidate, t
 	assert.ok(location(env, "inbound/old.eml"), "the location survives being marked a candidate");
 	assert.ok(orphan(env, "inbound/old.eml", "sto_target"), "recorded as an orphan candidate");
 
-	// Immediately again: still within the grace period, so still untouched.
-	await cold.runStorageColdMaintenance(env, new Date((NOW + 1) * 1000));
+	// The automatic maintenance never deletes (round-8 review: split out of the cron entirely), however far
+	// past the grace period it runs, nor does it even marking a candidate twice over change anything.
+	await cold.runStorageColdMaintenance(env, new Date((NOW + GRACE_PERIOD_DAY * DAY) * 1000));
+	assert.equal(target().has("inbound/old.eml"), true, "still untouched: only the manual purge ever deletes");
+	assert.ok(orphan(env, "inbound/old.eml", "sto_target"));
+
+	// Still within the grace period: the manual purge itself re-checks and leaves it alone too.
+	await cold.purgeColdOrphans(env, "sto_target", new Date((NOW + 1) * 1000));
 	assert.equal(target().has("inbound/old.eml"), true);
 
-	// Well past the grace period: the delete pass re-checks the reference (still gone) and removes it.
-	await cold.runStorageColdMaintenance(env, new Date((NOW + GRACE_PERIOD_DAY * DAY) * 1000));
+	// Well past the grace period: the purge re-checks the reference (still gone) and removes it.
+	await cold.purgeColdOrphans(env, "sto_target", new Date((NOW + GRACE_PERIOD_DAY * DAY) * 1000));
 	assert.equal(target().has("inbound/old.eml"), false, "the orphaned copy itself is deleted");
 	assert.equal(location(env, "inbound/old.eml"), undefined, "and its record with it");
 	assert.equal(orphan(env, "inbound/old.eml", "sto_target"), undefined, "and the candidate row");
@@ -541,7 +547,7 @@ test("a candidate that became referenced again before its grace period is un-mar
 	// A restore (or anything else) brings the message back before the grace period is up.
 	await addMessage(env, "old", { createdAt: NOW - 60 * DAY });
 
-	await cold.runStorageColdMaintenance(env, new Date((NOW + GRACE_PERIOD_DAY * DAY) * 1000));
+	await cold.purgeColdOrphans(env, "sto_target", new Date((NOW + GRACE_PERIOD_DAY * DAY) * 1000));
 	assert.equal(target().has("inbound/old.eml"), true, "the copy is kept: it is referenced again");
 	assert.ok(location(env, "inbound/old.eml"));
 	assert.equal(orphan(env, "inbound/old.eml", "sto_target"), undefined, "no longer a candidate");
@@ -575,7 +581,7 @@ test("a candidate that is not the current location waits for the current store t
 		)
 		.run(key, NOW);
 
-	await cold.runStorageColdMaintenance(env, new Date(NOW * 1000));
+	await cold.purgeColdOrphans(env, "sto_old", new Date(NOW * 1000));
 	assert.equal(target().has(key), true, "not deleted: sto_new cannot actually be read yet");
 	assert.ok(orphan(env, key, "sto_old"), "the candidate is deferred, not forgotten");
 	assert.equal(location(env, key).store_id, "sto_new", "untouched either way");
@@ -589,7 +595,7 @@ test("a candidate that is not the current location waits for the current store t
 	});
 
 	// The deferral above reset this candidate's own grace-period clock, so it needs a full grace period again.
-	await cold.runStorageColdMaintenance(env, new Date((NOW + GRACE_PERIOD_DAY * DAY) * 1000));
+	await cold.purgeColdOrphans(env, "sto_old", new Date((NOW + GRACE_PERIOD_DAY * DAY) * 1000));
 	assert.equal(target().has(key), false, "now safe to delete: another readable copy was confirmed first");
 	assert.equal(orphan(env, key, "sto_old"), undefined);
 	assert.equal(location(env, key).store_id, "sto_new", "the current location is never touched");
@@ -615,17 +621,16 @@ test("the maintenance leaves an orphan's record alone while its store cannot be 
 	env.DB.db.prepare("UPDATE storage_stores SET endpoint = 'http://blocked.invalid' WHERE id = 'sto_target'").run();
 	clearStorageConfigCache();
 
-	await cold.runStorageColdMaintenance(env, new Date((NOW + GRACE_PERIOD_DAY * DAY) * 1000));
+	await cold.purgeColdOrphans(env, "sto_target", new Date((NOW + GRACE_PERIOD_DAY * DAY) * 1000));
 	assert.ok(location(env, "inbound/old.eml"), "kept for a retry once the store is reachable again");
 	assert.ok(orphan(env, "inbound/old.eml", "sto_target"), "the candidate stays recorded too");
 });
 
-test("candidates stuck on a blocked store, filling a whole delete batch, do not permanently hold up a healthy one behind them", async (t) => {
+test("candidates whose lease is held elsewhere, filling a whole delete batch, do not permanently hold up a healthy one behind them in the same store's queue", async (t) => {
 	const { env } = await fixture(t);
-	await addStore(env, "sto_healthy", "kite-target");
-	await addStore(env, "sto_blocked", "kite-target-2");
+	await addStore(env, "sto_mixed", "kite-target");
 	const orphanRow = env.DB.db.prepare(
-		"INSERT INTO storage_cold_orphans (id, store_id, key, object_class, moved_at, orphaned_at, first_orphaned_at) VALUES (?, ?, ?, 'mail', ?, ?, ?)",
+		"INSERT INTO storage_cold_orphans (id, store_id, key, object_class, moved_at, orphaned_at, first_orphaned_at) VALUES (?, 'sto_mixed', ?, 'mail', ?, ?, ?)",
 	);
 	const pastGrace = NOW - GRACE_PERIOD_DAY * DAY;
 	const healthyKey = "inbound/healthy.eml";
@@ -636,48 +641,93 @@ test("candidates stuck on a blocked store, filling a whole delete batch, do not 
 		lastModified: new Date(),
 	});
 	// Just barely past its own grace period: the newest (least overdue) candidate of all of them.
-	orphanRow.run("sco_healthy", "sto_healthy", healthyKey, pastGrace, pastGrace, pastGrace);
-	// A full delete batch's worth of candidates on a blocked store, every one of them older than the healthy
-	// one, so without something pushing a deferred candidate out of the front of the queue, the healthy one
-	// behind them would never even be selected by `ORDER BY orphaned_at LIMIT 200`, no matter how many runs.
+	orphanRow.run("sco_healthy", healthyKey, pastGrace, pastGrace, pastGrace);
+	// A full delete batch's worth of candidates in the same store, every one of them older than the healthy
+	// one and each with its key's lease already claimed by something else (a cold move in progress), so
+	// without something pushing a deferred candidate out of the front of the queue, the healthy one behind
+	// them would never even be selected by `ORDER BY orphaned_at LIMIT 200`, no matter how many runs.
 	for (let index = 0; index < 200; index++) {
-		const key = `inbound/blocked-${String(index).padStart(3, "0")}.eml`;
-		fake.buckets.get("kite-target-2").objects.set(key, {
-			bytes: Buffer.from(`stuck behind a blocked store ${index}`),
+		const key = `inbound/stuck-${String(index).padStart(3, "0")}.eml`;
+		fake.buckets.get("kite-target").objects.set(key, {
+			bytes: Buffer.from(`held by a concurrent claimant ${index}`),
 			meta: { custom: {} },
-			etag: `eb${index}`,
+			etag: `es${index}`,
 			lastModified: new Date(),
 		});
+		await recordObjectLocation(env, { key, objectClass: "mail", storeId: "sto_mixed", storageClass: null, size: 10 });
+		const held = await lib.objectLocations.claimLocationLease(env, key);
+		assert.ok(
+			held && held !== "none",
+			"the lease is held for the rest of this test, standing in for a move in progress",
+		);
 		orphanRow.run(
-			`sco_blocked_${index}`,
-			"sto_blocked",
+			`sco_stuck_${index}`,
 			key,
 			pastGrace - 100_000 - index,
 			pastGrace - 100_000 - index,
 			pastGrace - 100_000 - index,
 		);
 	}
-	env.DB.db.prepare("UPDATE storage_stores SET endpoint = 'http://blocked.invalid' WHERE id = 'sto_blocked'").run();
-	clearStorageConfigCache();
 
-	// First run: the batch is entirely the 200 blocked candidates (all older than the healthy one), every one
-	// deferred. A second run at the very same moment proves they were pushed to the back of the queue rather
-	// than left exactly where they were: if they had not moved, this query would pick the same 200 again, for
-	// as many runs as it is tried, and the healthy one would never come up.
-	await cold.runStorageColdMaintenance(env, new Date(NOW * 1000));
-	await cold.runStorageColdMaintenance(env, new Date(NOW * 1000));
+	// One call drains the whole backlog itself (batch after batch until none is left to delete): the first
+	// batch is entirely the 200 lease-held candidates (all older than the healthy one), every one deferred to
+	// the back of the queue, which is what lets the next batch reach the healthy one behind them.
+	await cold.purgeColdOrphans(env, "sto_mixed", new Date(NOW * 1000));
 
 	assert.equal(fake.buckets.get("kite-target").objects.has(healthyKey), false, "the healthy copy got its turn");
-	assert.equal(orphan(env, healthyKey, "sto_healthy"), undefined);
+	assert.equal(orphan(env, healthyKey, "sto_mixed"), undefined);
 	assert.equal(
-		fake.buckets.get("kite-target-2").objects.size,
+		env.DB.db.prepare("SELECT COUNT(*) AS n FROM storage_cold_orphans WHERE store_id = 'sto_mixed'").get().n,
 		200,
-		"every blocked copy is kept, not lost, just deferred",
+		"every lease-held copy is kept, not lost, just deferred",
 	);
-	assert.equal(
-		env.DB.db.prepare("SELECT COUNT(*) AS n FROM storage_cold_orphans WHERE store_id = 'sto_blocked'").get().n,
-		200,
-	);
+});
+
+test("the manual purge and its count are scoped to one store: a deletable candidate on another store is never touched or counted", async (t) => {
+	const { env, queue } = await fixture(t);
+	await addStore(env, "sto_target", "kite-target");
+	await addStore(env, "sto_other", "kite-target-2");
+	await addMessage(env, "old", { createdAt: NOW - 60 * DAY });
+	await setColdRule(env, "mail", { afterDays: 30, target: "sto_target" });
+	await cold.runColdStorageSweep(env, new Date(NOW * 1000));
+	await drain(env, queue);
+	env.DB.db.prepare("DELETE FROM messages WHERE id = 'old'").run();
+	await cold.runStorageColdMaintenance(env, new Date(NOW * 1000));
+	assert.ok(orphan(env, "inbound/old.eml", "sto_target"), "recorded as a candidate on sto_target");
+
+	// A second, independently orphaned key, equally eligible for deletion, but tracked against sto_other.
+	const otherKey = "inbound/other.eml";
+	fake.buckets.get("kite-target-2").objects.set(otherKey, {
+		bytes: Buffer.from("an unrelated leftover on a different store"),
+		meta: { custom: {} },
+		etag: "eo",
+		lastModified: new Date(),
+	});
+	env.DB.db
+		.prepare(
+			"INSERT INTO storage_cold_orphans (id, store_id, key, object_class, moved_at, orphaned_at, first_orphaned_at) VALUES ('sco_other', 'sto_other', ?, 'mail', ?, ?, ?)",
+		)
+		.run(otherKey, NOW - 60 * DAY, NOW - GRACE_PERIOD_DAY * DAY, NOW - GRACE_PERIOD_DAY * DAY);
+
+	assert.equal(await cold.coldOrphanCount(env, "sto_target"), 1);
+	assert.equal(await cold.coldOrphanCount(env, "sto_other"), 1);
+
+	// Purging sto_target must never reach sto_other's equally overdue, equally deletable candidate.
+	const purgeTime = new Date((NOW + GRACE_PERIOD_DAY * DAY) * 1000);
+	const result = await cold.purgeColdOrphans(env, "sto_target", purgeTime);
+	assert.equal(result.pruned, 1);
+	assert.equal(target().has("inbound/old.eml"), false, "sto_target's own candidate is gone");
+	assert.equal(orphan(env, "inbound/old.eml", "sto_target"), undefined);
+	assert.equal(fake.buckets.get("kite-target-2").objects.has(otherKey), true, "sto_other's copy is untouched");
+	assert.ok(orphan(env, otherKey, "sto_other"), "sto_other's candidate is still tracked, never even looked at");
+	assert.equal(await cold.coldOrphanCount(env, "sto_target"), 0);
+	assert.equal(await cold.coldOrphanCount(env, "sto_other"), 1);
+
+	// Purging sto_other now reaches it, exactly as if sto_target's purge had never run.
+	const otherResult = await cold.purgeColdOrphans(env, "sto_other", purgeTime);
+	assert.equal(otherResult.pruned, 1);
+	assert.equal(fake.buckets.get("kite-target-2").objects.has(otherKey), false);
+	assert.equal(orphan(env, otherKey, "sto_other"), undefined);
 });
 
 test("the maintenance never touches a cold copy a live message still names", async (t) => {
@@ -782,12 +832,12 @@ test("a migration that copies a cold-moved object back into the new hot store dr
 	// isolated here from the (already covered elsewhere) rule-still-targets-it block.
 	assert.ok(orphan(env, "inbound/old.eml", "sto_target"), "the leftover copy is tracked for cleanup");
 	env.DB.db.prepare("DELETE FROM storage_cold_rules").run();
-	assert.match(await cold.coldReferenceBlocking(env, "sto_target"), /cleanup sweep/);
+	assert.match(await cold.coldReferenceBlocking(env, "sto_target"), /Delete leftovers/);
 	assert.ok(target().has("inbound/old.eml"), "the bytes are still there, not yet deleted");
 
 	// The candidate was marked with the real clock (migration.ts does not run on the fixture's fictional NOW),
 	// so its grace period is measured against the real clock too.
-	await cold.runStorageColdMaintenance(env, new Date(Date.now() + GRACE_PERIOD_DAY * DAY * 1000));
+	await cold.purgeColdOrphans(env, "sto_target", new Date(Date.now() + GRACE_PERIOD_DAY * DAY * 1000));
 	assert.equal(target().has("inbound/old.eml"), false, "cleaned up once its grace period passed");
 	assert.equal(orphan(env, "inbound/old.eml", "sto_target"), undefined);
 	assert.equal(await cold.coldReferenceBlocking(env, "sto_target"), null, "sto_target is free to delete now");
@@ -819,13 +869,13 @@ test("a losing mover's copy, when two deliveries raced to different targets for 
 	assert.equal(location(env, key).store_id, "sto_b", "the second write is what the row names");
 	assert.ok(orphan(env, key, "sto_a"), "the first target's now-untracked copy is a candidate");
 	assert.equal(orphan(env, key, "sto_b"), undefined, "the winner was never touched");
-	assert.match(await cold.coldReferenceBlocking(env, "sto_a"), /cleanup sweep/, "blocks deleting the loser's store");
+	assert.match(await cold.coldReferenceBlocking(env, "sto_a"), /Delete leftovers/, "blocks deleting the loser's store");
 	// sto_b is separately blocked too, for the usual reason (it holds the live location) rather than a
 	// candidate of its own: the winner was never marked.
 	assert.match(await cold.coldReferenceBlocking(env, "sto_b"), /sweep moved here/);
 
 	// Well past the grace period: the loser's copy is deleted, the winner is still exactly as it was.
-	await cold.runStorageColdMaintenance(env, new Date(Date.now() + GRACE_PERIOD_DAY * DAY * 1000));
+	await cold.purgeColdOrphans(env, "sto_a", new Date(Date.now() + GRACE_PERIOD_DAY * DAY * 1000));
 	assert.equal(fake.buckets.get("kite-target").objects.has(key), false, "the loser's bytes are gone");
 	assert.equal(orphan(env, key, "sto_a"), undefined);
 	assert.equal(await cold.coldReferenceBlocking(env, "sto_a"), null, "sto_a is free to delete now");
@@ -1035,7 +1085,7 @@ test("B1: a genuine leftover is protected only by a backup retained within its o
 	}
 
 	const firstRun = supersededAt + GRACE_PERIOD_DAY * DAY + DAY;
-	await cold.runStorageColdMaintenance(env, new Date(firstRun * 1000));
+	await cold.purgeColdOrphans(env, "sto_a", new Date(firstRun * 1000));
 	assert.equal(fake.buckets.get("kite-target").objects.has(key), true, "kept: the in-window backup is retained");
 	assert.ok(orphan(env, key, "sto_a"));
 
@@ -1043,7 +1093,7 @@ test("B1: a genuine leftover is protected only by a backup retained within its o
 	// these by now); once it is gone nothing is left in `[movedAt, supersededAt)` and the candidate is free.
 	env.DB.db.prepare("DELETE FROM backups WHERE id = 'within_window'").run();
 	const secondRun = firstRun + GRACE_PERIOD_DAY * DAY + DAY;
-	await cold.runStorageColdMaintenance(env, new Date(secondRun * 1000));
+	await cold.purgeColdOrphans(env, "sto_a", new Date(secondRun * 1000));
 	assert.equal(fake.buckets.get("kite-target").objects.has(key), false, "deletable once that one backup is pruned");
 	assert.equal(orphan(env, key, "sto_a"), undefined);
 	assert.equal(location(env, key).store_id, "sto_b", "the current, unrelated location is never touched");
@@ -1236,12 +1286,12 @@ test("B2: the delete pass defers a candidate instead of deleting it while a cold
 	const lease = await lib.objectLocations.claimLocationLease(env, key);
 	assert.ok(lease && lease !== "none");
 
-	await cold.runStorageColdMaintenance(env, new Date(NOW * 1000));
+	await cold.purgeColdOrphans(env, "sto_c", new Date(NOW * 1000));
 	assert.equal(fake.buckets.get("kite-target").objects.has(key), true, "deferred: the lease is held elsewhere");
 	assert.ok(orphan(env, key, "sto_c"));
 
 	await lib.objectLocations.releaseLocationLease(env, key, lease.token);
-	await cold.runStorageColdMaintenance(env, new Date((NOW + GRACE_PERIOD_DAY * DAY) * 1000));
+	await cold.purgeColdOrphans(env, "sto_c", new Date((NOW + GRACE_PERIOD_DAY * DAY) * 1000));
 	assert.equal(fake.buckets.get("kite-target").objects.has(key), false, "resolved once the lease is free again");
 	assert.equal(orphan(env, key, "sto_c"), undefined);
 });
@@ -1498,4 +1548,92 @@ test("B4 (Drive): a second mover that takes over a lapsed lease and completes th
 		"sto_c",
 		"the row was repointed by whichever mover actually finished",
 	);
+});
+
+test("B5: a failed first move of a key with no location row names where the bytes truly are, not the empty target, so the next sweep still finds and moves it", async (t) => {
+	const { env, queue } = await fixture(t);
+	await addStore(env, "sto_c", "kite-target");
+	await addMessage(env, "old", { createdAt: NOW - 60 * DAY });
+	await setColdRule(env, "mail", { afterDays: 30, target: "sto_c" });
+
+	// The very first move of this key (no object_locations row exists yet) fails after the claim creates one:
+	// the write to the target is denied.
+	fake.state.denied.add("PutObject");
+	await cold.runColdStorageSweep(env, new Date(NOW * 1000));
+	await drain(env, queue);
+	fake.state.denied.delete("PutObject");
+	assert.equal(job(env, "mail").errors, 1);
+	// The claim-created row must name where the bytes truly are (the default store), not the target nothing
+	// was ever actually copied to (`B5`): otherwise the key is silently excluded from every later sweep
+	// (`coldPage`'s own `NOT EXISTS … store_id = target` check) and the store can never be deleted either.
+	assert.equal(location(env, "inbound/old.eml")?.store_id, "default", "names the source, not the empty target");
+	assert.equal(fake.buckets.get("kite-target").objects.has("inbound/old.eml"), false, "nothing was ever copied");
+
+	env.DB.db.prepare("DELETE FROM storage_cold_jobs WHERE object_class = 'mail'").run();
+	await cold.runColdStorageSweep(env, new Date(NOW * 1000));
+	await drain(env, queue);
+	assert.equal(job(env, "mail").errors, 0, "the retry actually finds and moves it this time");
+	assert.equal(location(env, "inbound/old.eml").store_id, "sto_c");
+	assert.equal(fake.buckets.get("kite-target").objects.has("inbound/old.eml"), true);
+});
+
+test("m1: the 'already at target' shortcut takes the same lease too, so a concurrent mover cannot race its record", async (t) => {
+	const { env } = await fixture(t);
+	await addStore(env, "sto_c", "kite-target");
+	const key = "inbound/m.eml";
+	const content = "the real content of this message, already sitting on the target directly";
+	await addMessage(env, "m", { body: content, createdAt: NOW - 90 * DAY });
+	fake.buckets.get("kite-target").objects.set(key, {
+		bytes: Buffer.from(content),
+		meta: { custom: {} },
+		etag: "ec",
+		lastModified: new Date(),
+	});
+	env.DB.db
+		.prepare(
+			"INSERT INTO object_locations (key, object_class, store_id, storage_class, size, moved_at) VALUES (?, 'mail', 'sto_c', NULL, ?, ?)",
+		)
+		.run(key, Buffer.byteLength(content), NOW - 90 * DAY);
+
+	// Someone else (another mover, or the delete pass) already holds this key's lease.
+	const lease = await lib.objectLocations.claimLocationLease(env, key);
+	assert.ok(lease && lease !== "none");
+
+	const rule = { objectClass: "mail", afterDays: 30, minBytes: 0, target: "sto_c" };
+	const item = { id: "m", key, size: null, createdAt: new Date((NOW - 90 * DAY) * 1000) };
+	const storage = await getStorage(env);
+	// Before this fix, the shortcut recorded with no claim at all and would have gone through regardless.
+	await assert.rejects(() => moveColdObject(env, storage, "mail", rule, item), /lease/i);
+	assert.equal(location(env, key).store_id, "sto_c", "untouched while the lease is held elsewhere");
+
+	await lib.objectLocations.releaseLocationLease(env, key, lease.token);
+	await moveColdObject(env, storage, "mail", rule, item);
+	assert.equal(location(env, key).store_id, "sto_c", "succeeds normally once the lease is free");
+});
+
+test("m3: the shortcut marks a copy still on the normal chain a candidate, instead of leaving it untracked forever", async (t) => {
+	const { env, queue } = await fixture(t);
+	await addStore(env, "sto_c", "kite-target");
+	const key = "inbound/m.eml";
+	const content = "the real content of this message";
+	// The object is found directly on the target (the rule's own probe, before the normal chain is ever
+	// consulted), while the normal chain's own store (here, the default one `addMessage` writes to) still
+	// separately holds its own copy too.
+	await addMessage(env, "m", { body: content, createdAt: NOW - 60 * DAY });
+	fake.buckets.get("kite-target").objects.set(key, {
+		bytes: Buffer.from(content),
+		meta: { custom: {} },
+		etag: "ec",
+		lastModified: new Date(),
+	});
+
+	await setColdRule(env, "mail", { afterDays: 30, target: "sto_c" });
+	await cold.runColdStorageSweep(env, new Date(NOW * 1000));
+	await drain(env, queue);
+
+	assert.equal(job(env, "mail").errors, 0, job(env, "mail").last_error);
+	assert.equal(location(env, key).store_id, "sto_c");
+	// The default store's own copy is now redundant and was never deleted or recorded by the shortcut: left
+	// untracked, it would stay hot forever, defeating cold storage for this object with nobody the wiser.
+	assert.ok(orphan(env, key, "default"), "the normal chain's own copy is marked a candidate instead");
 });

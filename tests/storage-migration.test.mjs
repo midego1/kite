@@ -319,7 +319,10 @@ test("a source object's SSE-KMS/SSE-C ETag (a real, non-multipart 32-hex value t
 	assert.equal(done.status, "completed");
 	assert.equal(done.errors, 2, "rejected once in the copy pass and once in verify, never silently trusted");
 	assert.match(done.last_error, /ETag does not match/);
-	assert.equal(fake.buckets.get("kite-target").objects.has(rawKey), false, "the rejected copy is not left behind");
+	// Left in place rather than deleted (round-8 review, `m2`): a second mover could already have found this
+	// exact same-size copy, recorded it and deleted its own source by the time this call gets here, which
+	// would make deleting it here the one and only copy gone.
+	assert.equal(fake.buckets.get("kite-target").objects.has(rawKey), true, "the rejected copy is left for cleanup");
 	assert.equal(
 		Buffer.from(fake.buckets.get("kite-other").objects.get(rawKey).bytes).toString("utf8"),
 		content,

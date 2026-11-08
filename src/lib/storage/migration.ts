@@ -256,7 +256,11 @@ export async function copyObject(
 		written?.etag &&
 		head.etag !== written.etag
 	) {
-		await target.bucket.delete(targetKey).catch(() => undefined);
+		// Never delete a copy this call has not itself recorded anywhere (`m2`, round-8 review): if this
+		// mover stalled between the PUT above and this compare, a second mover could already have found this
+		// exact copy (same size, so its own copy step is skipped), recorded it and deleted its own source,
+		// making this the only copy left. Throwing without deleting leaves it for cleanup or the next mover to
+		// judge with the full picture, instead of trusting a size-only glance at a copy nothing here owns yet.
 		throw new Error("The copy's ETag does not match the source; the target store may have altered the bytes");
 	}
 	return object.size;

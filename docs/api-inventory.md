@@ -58,6 +58,7 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/admin/storage/routes/[class]`                          | PUT                    | [source](../src/app/api/admin/storage/routes/[class]/route.ts)                          |
 | `/api/admin/storage/stores/[id]/cors`                        | POST                   | [source](../src/app/api/admin/storage/stores/[id]/cors/route.ts)                        |
 | `/api/admin/storage/stores/[id]/lifecycle`                   | POST                   | [source](../src/app/api/admin/storage/stores/[id]/lifecycle/route.ts)                   |
+| `/api/admin/storage/stores/[id]/orphans`                     | DELETE                 | [source](../src/app/api/admin/storage/stores/[id]/orphans/route.ts)                     |
 | `/api/admin/storage/stores/[id]`                             | DELETE, PATCH          | [source](../src/app/api/admin/storage/stores/[id]/route.ts)                             |
 | `/api/admin/storage/stores/[id]/test`                        | POST                   | [source](../src/app/api/admin/storage/stores/[id]/test/route.ts)                        |
 | `/api/admin/storage/stores`                                  | POST                   | [source](../src/app/api/admin/storage/stores/route.ts)                                  |

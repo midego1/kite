@@ -465,24 +465,34 @@ already name it, so the normal grace period, backup window and lease-fenced dele
 later. The delete pass renews under its own token once more immediately before its own destructive delete, for
 the same reason, though that renew-then-delete is not itself atomic: a stall of more than five minutes between
 the two, with a move taking the key back onto that exact store in between, could in theory still lose it. A
-store an unresolved candidate still names cannot be deleted either. The five-minute maintenance runs this in two
-bounded passes, each a batch of up to 200 rows: `scanForOrphanCandidates` keyset-paginates through `object_locations` from a
-cursor saved in `storage_state` (round-robin, so a backlog larger than one batch is still fully covered over
-many runs instead of the same oldest rows absorbing every run forever) and marks what looks unreferenced;
-`deleteGracePeriodOrphans` deletes candidates whose grace period has passed, and otherwise pushes one it could
-not resolve (an unreachable store, a retained backup, the HEAD check above, the token already held by a move in
-progress) to the back of its own queue (a fresh `orphanedAt`) instead of leaving it to block every candidate
-behind it indefinitely. The whole sweep skips entirely while a restore is active, needs recovery (an abandoned
-restore, or one whose own rollback failed, both left for the admin to resolve from the safety backup; the
-database is known to still be partially restored until that runs), or finished less than an hour ago: a
-restore's "deletes" segment empties `messages`, `message_attachments`, `drive_items` and `backups` before
-writing them back, possibly over several queue invocations (the rollback path does the same), and since
-`object_locations` survives a restore as a merge table, a sweep mid-restore would otherwise see every cold key
-as briefly unreferenced. A `backups` rule only sweeps the database export document each backup makes
-(`backups.r2_key`), not the mail file copies a [full backup](#full-backups) writes alongside it, which stay on
-their current store. **Run now** (`POST /api/admin/storage/cold/[class]`) starts a sweep immediately; saving a
-rule or running it now answers 409 `MIGRATION_PENDING` before migration `0097` is applied, even once `0065` has
-been (`coldStorageTablesReady`). `GET /api/admin/storage/cold` reports each class's rule and its latest sweep.
+store an unresolved candidate still names cannot be deleted either.
+
+The five-minute maintenance runs only the marking half, `scanForOrphanCandidates`, in a batch of up to 200 rows:
+it keyset-paginates through `object_locations` from a cursor saved in `storage_state` (round-robin, so a
+backlog larger than one batch is still fully covered over many runs instead of the same oldest rows absorbing
+every run forever) and marks what looks unreferenced as a candidate, never deleting anything itself. Actually
+deleting a candidate once its grace period passes (`deleteGracePeriodOrphans`, the checks above) is never
+automatic (round-8 review: the reviewer's foreman decision split it out of the cron entirely, so nothing ever
+deletes a copy nobody asked for in that moment): it only runs from the **Delete leftovers** button next to a
+store in **Admin → Storage → Stores**, shown once that store has any tracked candidates (`leftoverCount`, the
+count the button's label carries), through `DELETE /api/admin/storage/stores/[id]/orphans`
+(`purgeStoreOrphans`/`purgeOrphanCandidates`, primary admin, origin-checked). It narrows the same batch to that
+one store and runs it repeatedly until the store's backlog is drained or 25 batches have run, whichever comes
+first, pushing an unresolved candidate (an unreachable store, a retained backup, the HEAD check above, the
+token already held by a move in progress) to the back of its own queue exactly as the old automatic pass did,
+and writes a `storage.orphans_purged` audit row with the number actually deleted. Reintroducing an automatic
+deleter, scoped and paced more conservatively than the original, is tracked as a follow-up. Both the marking
+pass and the manual delete skip entirely while a restore is active, needs recovery (an abandoned restore, or
+one whose own rollback failed, both left for the admin to resolve from the safety backup; the database is
+known to still be partially restored until that runs), or finished less than an hour ago: a restore's "deletes"
+segment empties `messages`, `message_attachments`, `drive_items` and `backups` before writing them back,
+possibly over several queue invocations (the rollback path does the same), and since `object_locations`
+survives a restore as a merge table, a sweep mid-restore would otherwise see every cold key as briefly
+unreferenced. A `backups` rule only sweeps the database export document each backup makes (`backups.r2_key`),
+not the mail file copies a [full backup](#full-backups) writes alongside it, which stay on their current
+store. **Run now** (`POST /api/admin/storage/cold/[class]`) starts a sweep immediately; saving a rule or
+running it now answers 409 `MIGRATION_PENDING` before migration `0097` is applied, even once `0065` has been
+(`coldStorageTablesReady`). `GET /api/admin/storage/cold` reports each class's rule and its latest sweep.
 Logs: `storage.cold_errors`, `storage.cold_batch_failed`, `storage.cold_orphans_pruned`. Backups:
 `storage_cold_rules` and `object_locations` are in the `system` group; unlike `storage_stores` and
 `storage_routes`, a restore merges their rows into the target's current ones (`INSERT OR IGNORE`: a live row

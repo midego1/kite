@@ -119,14 +119,14 @@ export async function claimLocationLease(
  * Claims the lease the same way as `claimLocationLease`, but when `key` has no row yet, creates one under the
  * claim instead of answering `"none"` (round-7 review): a never-before-cold key is exactly the state a store
  * migration leaves behind after dropping a stale location (`migration.ts`), and without a row to claim through,
- * nothing stops a concurrent claimant from acting on the same key at the same time. `initial` is the caller's
- * best-effort guess at the row it is working towards (its own intended target, which a successful
- * `recordObjectLocation` call overwrites with the confirmed values; an aborted move simply leaves that guess
- * behind, which is harmless: nothing yet depends on it, and the normal read chain is checked before this row
- * ever is). Before migration 0103, or on a database still missing the lease columns from an earlier version of
- * it (both degrade the same way `claimLocationLease` does), answers `"none"` rather than refusing every move
- * over columns that cannot exist yet; otherwise either a row ends up claimed, or `null` because someone else
- * already holds one.
+ * nothing stops a concurrent claimant from acting on the same key at the same time. `initial` must name where
+ * the bytes actually are *right now*, before any copy has happened — the caller's source, never its intended
+ * target (round-8 review, `B5`): a successful `recordObjectLocation` call overwrites it with the real,
+ * confirmed destination, but a move that aborts after creating this row leaves it as the only account of this
+ * key's location, and a target that nothing was ever copied to yet is simply false. Before migration 0103, or
+ * on a database still missing the lease columns from an earlier version of it (both degrade the same way
+ * `claimLocationLease` does), answers `"none"` rather than refusing every move over columns that cannot exist
+ * yet; otherwise either a row ends up claimed, or `null` because someone else already holds one.
  */
 async function claimOrCreateLocationLease(
 	env: LocationEnv,

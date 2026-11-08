@@ -1,4 +1,4 @@
-import { and, eq, gt, lte, or } from "drizzle-orm";
+import { and, eq, gt, lte, or, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { objectLocations, storageColdOrphans, storageState } from "@/db/schema/storage";
 import { ATTACHMENT_OBJECT_ROWS_SQL } from "@/lib/email/attachment-storage-utils";
@@ -291,9 +291,15 @@ async function finalizeOrphanCandidate(
  * Deletes recorded orphan candidates whose grace period has passed, from the store that holds each, re-checking
  * its reference first: a restore that lands during the grace period and brings a key's row back (or a message,
  * Drive or backup row that references it again) takes it off the list instead of the delete happening anyway.
- * Nothing is ever deleted here that was not already a recorded candidate.
+ * Nothing is ever deleted here that was not already a recorded candidate. Narrowed to `storeId` (round-8 review):
+ * this is now only ever run by the manual "Delete leftovers" admin action for one store, never the automatic
+ * cron, so a candidate on a different store must never be touched by a run meant for this one.
  */
-async function deleteGracePeriodOrphans(env: ColdEnv, now: number): Promise<{ pruned: number }> {
+async function deleteGracePeriodOrphans(
+	env: ColdEnv,
+	now: number,
+	storeId: string,
+): Promise<{ pruned: number; checked: number }> {
 	let candidates: {
 		id: string;
 		key: string;
@@ -313,14 +319,19 @@ async function deleteGracePeriodOrphans(env: ColdEnv, now: number): Promise<{ pr
 				firstOrphanedAt: storageColdOrphans.firstOrphanedAt,
 			})
 			.from(storageColdOrphans)
-			.where(lte(storageColdOrphans.orphanedAt, new Date(now - ORPHAN_GRACE_PERIOD_MS)))
+			.where(
+				and(
+					eq(storageColdOrphans.storeId, storeId),
+					lte(storageColdOrphans.orphanedAt, new Date(now - ORPHAN_GRACE_PERIOD_MS)),
+				),
+			)
 			.orderBy(storageColdOrphans.orphanedAt)
 			.limit(PRUNE_BATCH);
 	} catch (error) {
-		if (isNoSuchTableError(error)) return { pruned: 0 };
+		if (isNoSuchTableError(error)) return { pruned: 0, checked: 0 };
 		throw error;
 	}
-	if (!candidates.length) return { pruned: 0 };
+	if (!candidates.length) return { pruned: 0, checked: 0 };
 	const storage = await getStorage(env);
 	let pruned = 0;
 	for (const candidate of candidates) {
@@ -360,22 +371,61 @@ async function deleteGracePeriodOrphans(env: ColdEnv, now: number): Promise<{ pr
 		}
 	}
 	if (pruned) log.warn("storage.cold_orphans_pruned", { checked: candidates.length, pruned });
-	return { pruned };
+	return { pruned, checked: candidates.length };
 }
 
 /**
- * Cleans up cold-moved copies nothing live references any more, in two phases that never delete anything on
- * first sighting (`N1`): `scanForOrphanCandidates` marks what looks unreferenced right now, and
- * `deleteGracePeriodOrphans` only deletes a mark old enough to have survived a grace period, re-checking then.
- * Skips the run entirely around a restore, active or recently finished, which could otherwise make every cold
- * key look briefly unreferenced. Called from the five-minute cron.
+ * Marks cold-moved copies nothing live references any more as orphan candidates (`N1`: never deletes anything
+ * on first sighting). Skips the run entirely around a restore, active or recently finished, which could
+ * otherwise make every cold key look briefly unreferenced. Called from the five-minute cron.
+ *
+ * Deleting a candidate once its grace period passes used to happen automatically from here too; the reviewer's
+ * round-8 decision (foreman: split automatic orphan deletion out of this PR) replaced that with the manual,
+ * per-store `purgeOrphanCandidates` below, triggered from Admin → Storage, so nothing ever deletes a copy nobody
+ * asked for in the moment. See the PR body for the deferred automatic-deletion follow-up.
  */
-export async function pruneOrphanedColdLocations(
+export async function pruneOrphanedColdLocations(env: ColdEnv, now = new Date()): Promise<{ checked: number }> {
+	if (await restoreRanRecently(env, now.getTime())) return { checked: 0 };
+	return await scanForOrphanCandidates(env, now);
+}
+
+/** Caps how many grace-period batches one manual "Delete leftovers" call works through, so a very large
+ * backlog is handled over a few clicks instead of one request running indefinitely. */
+const PURGE_MAX_BATCHES = 25;
+
+/**
+ * The manual, lease-checked "Delete leftovers" admin action (round-8 review: split out of the automatic cron):
+ * runs the exact same grace-period, backup-window and lease-fenced deletion as the old automatic pass, narrowed
+ * to one store, for as many batches as it takes to drain that store's backlog (or `PURGE_MAX_BATCHES`, whichever
+ * comes first). Skips entirely around a restore, same as the automatic marking pass.
+ */
+export async function purgeOrphanCandidates(
 	env: ColdEnv,
+	storeId: string,
 	now = new Date(),
-): Promise<{ checked: number; pruned: number }> {
-	if (await restoreRanRecently(env, now.getTime())) return { checked: 0, pruned: 0 };
-	const { checked } = await scanForOrphanCandidates(env, now);
-	const { pruned } = await deleteGracePeriodOrphans(env, now.getTime());
-	return { checked, pruned };
+): Promise<{ pruned: number }> {
+	if (await restoreRanRecently(env, now.getTime())) return { pruned: 0 };
+	let pruned = 0;
+	for (let batch = 0; batch < PURGE_MAX_BATCHES; batch++) {
+		const result = await deleteGracePeriodOrphans(env, now.getTime(), storeId);
+		pruned += result.pruned;
+		if (result.checked < PRUNE_BATCH) break;
+	}
+	return { pruned };
+}
+
+/** The count the "Delete leftovers" button shows: every orphan candidate currently tracked for one store,
+ * whether or not its grace period has passed yet, so the admin sees the backlog building even before any of it
+ * is actually eligible to delete. */
+export async function countOrphanCandidates(env: ColdEnv, storeId: string): Promise<number> {
+	try {
+		const [row] = await getDb(env)
+			.select({ count: sql<number>`count(*)` })
+			.from(storageColdOrphans)
+			.where(eq(storageColdOrphans.storeId, storeId));
+		return row?.count ?? 0;
+	} catch (error) {
+		if (isNoSuchTableError(error)) return 0;
+		throw error;
+	}
 }

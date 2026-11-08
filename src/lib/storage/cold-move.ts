@@ -30,6 +30,33 @@ function sourcesFor(
 }
 
 /**
+ * When the "already at target" shortcut finds the object there without ever copying anything, it got there
+ * either through a recorded location or `locationAwareSources`' own direct probe of the rule's target, not
+ * necessarily by following the class's normal chain. That chain can still separately hold a copy of the same
+ * key — the one this object actually went cold from — which the shortcut never otherwise notices, deletes or
+ * tracks (`m3`, round-8 review): it would sit there untracked forever, defeating cold storage for this object
+ * without anyone ever finding out. Marks it a candidate instead of deleting it directly, since nothing fenced
+ * this read against a concurrent writer; the normal lease-checked cleanup settles it safely later.
+ */
+async function markRedundantChainCopy(
+	env: LocationEnv,
+	storage: Storage,
+	objectClass: RoutableClass,
+	key: string,
+	targetStoreId: string,
+): Promise<void> {
+	const chain = [...storage.readChain(objectClass), storage.store(DEFAULT_STORE_ID)!];
+	for (const store of chain) {
+		if (store.id === targetStoreId) continue;
+		const head = await store.bucket.head(key).catch(() => null);
+		if (head) {
+			await markOrphanCandidate(env, { storeId: store.id, key, objectClass, movedAt: new Date() });
+			return;
+		}
+	}
+}
+
+/**
  * On a refused record, never delete anything this mover has not itself recorded under a still-valid token
  * (`B4`): the refusal means someone else has held the lease since, and on this exact key and target that may
  * already be a second mover's own correctly recorded copy with its source already deleted; deleting it here
@@ -97,24 +124,47 @@ export async function moveColdObject(
 	const target = storage.store(rule.target);
 	if (!target) throw new Error("The target store is missing or blocked");
 	if (source.store.id === rule.target) {
-		await recordObjectLocation(env, {
-			key: item.key,
-			objectClass,
-			storeId: rule.target,
-			storageClass: null,
-			size: source.head.size,
-		});
-		return 0;
+		// Fenced too (`m1`, round-8 review): an unfenced write here could silently overwrite a concurrent
+		// mover's own fenced record of a different target for this same key, since a plain upsert with no
+		// token at all passes the fenced one's own WHERE clause by never being asked to match it.
+		return withLocationLease(
+			env,
+			item.key,
+			{ objectClass, storeId: rule.target, storageClass: null, size: source.head.size },
+			async (lease) => {
+				const recorded = await recordObjectLocation(
+					env,
+					{ key: item.key, objectClass, storeId: rule.target, storageClass: null, size: source.head.size },
+					lease,
+				);
+				if (!recorded)
+					throw new Error("Lost the location lease before the record could be attempted; it will be retried");
+				// The object was already at the target, found through a recorded location or the rule's own
+				// target probe rather than necessarily the normal chain: that chain can still separately hold
+				// a copy, the one this object actually went cold from, now redundant and otherwise untracked
+				// forever (`m3`, round-8 review).
+				await markRedundantChainCopy(env, storage, objectClass, item.key, rule.target);
+				return 0;
+			},
+		);
 	}
 	// The lease (held through the verify, the record and the delete below, renewed as needed for a long copy)
 	// is the one thing stopping the orphan delete pass from removing the only copy of this key while it is
 	// being moved back onto the very store a stale candidate names: the delete pass needs this same lease
 	// before it may delete anything either (`B2`). A lapsed lease aborts instead of silently losing the race
 	// that leaves (`B3`): the record below only lands while it is still held, fenced in the same statement.
+	// `initial` names the source, not the target (`B5`): nothing has been copied yet, so claiming by creating
+	// a row (a never-before-cold key) must describe where the bytes truly are right now, or an aborted first
+	// move leaves `object_locations` naming a store that never actually got anything.
 	return withLocationLease(
 		env,
 		item.key,
-		{ objectClass, storeId: rule.target, storageClass: null, size: source.head.size },
+		{
+			objectClass,
+			storeId: source.store.id,
+			storageClass: source.head.storageClass ?? null,
+			size: source.head.size,
+		},
 		async (lease) => {
 			if (lease) await renewLocationLease(env, item.key, lease.token);
 			const present = await target.bucket.head(item.key);
@@ -248,23 +298,32 @@ export async function moveColdDriveObject(
 	const target = storage.store(rule.target);
 	if (!target) throw new Error("The target store is missing or blocked");
 	if (storeId === rule.target) {
-		await recordObjectLocation(env, {
-			key: item.key,
-			objectClass: "drive",
-			storeId: rule.target,
-			storageClass: null,
-			size: head.size,
-		});
-		await callStorageHook("drive", "markCold", { ids: [item.id], storageClass: null, storeId: rule.target });
-		return { bytes: 0, moved: true };
+		// Fenced too (`m1`, round-8 review): same reasoning as moveColdObject's own shortcut.
+		return withLocationLease(
+			env,
+			item.key,
+			{ objectClass: "drive", storeId: rule.target, storageClass: null, size: head.size },
+			async (lease) => {
+				const recorded = await recordObjectLocation(
+					env,
+					{ key: item.key, objectClass: "drive", storeId: rule.target, storageClass: null, size: head.size },
+					lease,
+				);
+				if (!recorded)
+					throw new Error("Lost the location lease before the record could be attempted; it will be retried");
+				await callStorageHook("drive", "markCold", { ids: [item.id], storageClass: null, storeId: rule.target });
+				return { bytes: 0, moved: true };
+			},
+		);
 	}
 	// Held through the verify, the record and the delete below, renewed as needed for a long copy, same
 	// reasoning as moveColdObject (`B2`, `B3`): the orphan delete pass needs this same lease before it may
 	// delete any copy of this key either, and a lapsed lease aborts here instead of losing the race that leaves.
+	// `initial` names the source, not the target, same reasoning as moveColdObject (`B5`).
 	return withLocationLease(
 		env,
 		item.key,
-		{ objectClass: "drive", storeId: rule.target, storageClass: null, size: head.size },
+		{ objectClass: "drive", storeId, storageClass: head.storageClass ?? null, size: head.size },
 		async (lease) => {
 			if (lease) await renewLocationLease(env, item.key, lease.token);
 			const present = await target.bucket.head(item.key);

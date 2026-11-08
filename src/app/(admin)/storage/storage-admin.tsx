@@ -84,6 +84,26 @@ function StoreRow({
 		}
 	}
 
+	async function purgeLeftovers() {
+		const confirmed = await requestConfirmation({
+			title: `Delete leftover copies on ${store.name}?`,
+			description:
+				"Removes cold-moved copies this store is no longer the recorded location for, once their grace period has passed. Kite re-checks each one is really unused right before deleting it.",
+			confirmLabel: "Delete leftovers",
+		});
+		if (!confirmed) return;
+		setBusy(true);
+		setError(null);
+		try {
+			await storageRequest(`/stores/${encodeURIComponent(store.id)}/orphans`, { method: "DELETE" });
+			onChanged();
+		} catch (caught) {
+			setError(errorText(caught, "Could not delete the leftover copies"));
+		} finally {
+			setBusy(false);
+		}
+	}
+
 	return (
 		<li data-store={store.id} className="space-y-2 py-3">
 			<div className="flex flex-wrap items-center gap-3">
@@ -113,6 +133,11 @@ function StoreRow({
 							<Button size="sm" variant="outline" disabled={busy} onClick={() => onEdit(store)}>
 								Edit
 							</Button>
+							{store.leftoverCount > 0 && (
+								<Button size="sm" variant="outline" disabled={busy} onClick={() => void purgeLeftovers()}>
+									Delete leftovers ({store.leftoverCount})
+								</Button>
+							)}
 							<Button size="sm" variant="outline" disabled={busy} onClick={() => void remove()}>
 								Delete
 							</Button>

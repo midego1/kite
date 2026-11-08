@@ -15,8 +15,10 @@ export function instructionColumns() {
 
 /**
  * The columns only `mailbox_agent_settings` has after its instructions: the one-line summaries in the message list
- * (migration 0072), off by default, newsletters only when allowed, and their daily limit; and (migration 0091) the
- * "No AI for this mailbox" switch, which `src/lib/agent/mailbox-ai.ts` reads for every AI request.
+ * (migration 0072), off by default, newsletters only when allowed, and their daily limit; (migration 0091) the
+ * "No AI for this mailbox" switch, which `src/lib/agent/mailbox-ai.ts` reads for every AI request; and (migration
+ * 0095) the "Include this mailbox in search by meaning" switch, on by default, read by the embedding triggers' drain
+ * re-check and `docs/specs/semantic-search.md` section 5.
  */
 export function mailboxAgentExtraColumns() {
 	return {
@@ -27,6 +29,7 @@ export function mailboxAgentExtraColumns() {
 		aiDisabled: integer("ai_disabled", { mode: "boolean" }).notNull().default(false),
 		/** Migration 0092: when the switch was last turned on; set only when it flips, null while AI is on. */
 		aiDisabledAt: integer("ai_disabled_at", { mode: "timestamp" }),
+		semanticIndex: integer("semantic_index", { mode: "boolean" }).notNull().default(true),
 	};
 }
 

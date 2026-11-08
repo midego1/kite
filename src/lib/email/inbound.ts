@@ -15,6 +15,7 @@ import type { SessionUser } from "@/lib/auth/types";
 import { isHiddenDraft } from "@/lib/messages/draft-privacy-utils";
 import { loadSendStates } from "@/lib/messages/send-state";
 import { loadMessageVia } from "@/lib/external-accounts/via";
+import { triggerEmbeddingDrain } from "@/lib/semantic/indexer";
 
 /** Mail a connected account's sync fetched (spec §6.4), with the flags it had at the source. */
 export type InboundQueueSource = { kind: "external"; accountId: string; read: boolean; starred: boolean };
@@ -127,6 +128,13 @@ export async function processInboundMessage(
 		authenticationResults: payload.authenticationResults ?? null,
 		privateClient: payload.privateClient === true,
 	});
+	// Search by meaning: the trigger already queued the message, so this only nudges it sooner; its failure must
+	// never turn an accepted delivery into a retry.
+	try {
+		await triggerEmbeddingDrain(env);
+	} catch (error) {
+		console.error("Post-delivery step failed: search embedding drain", error);
+	}
 }
 
 export async function storeRawToR2(env: CloudflareEnv, from: string, to: string, raw: ArrayBuffer): Promise<string> {

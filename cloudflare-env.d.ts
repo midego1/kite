@@ -11,6 +11,7 @@ interface __BaseEnv_CloudflareEnv {
 	LOGIN_RATE_LIMIT: RateLimit;
 	AGENT_RATE_LIMIT: RateLimit;
 	AI: Ai;
+	VECTORIZE: Vectorize;
 	IMAGES: ImagesBinding;
 	ASSETS: Fetcher;
 	REALTIME: DurableObjectNamespace<import("./worker").RealtimeHub>;

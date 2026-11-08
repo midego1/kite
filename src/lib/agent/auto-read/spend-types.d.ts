@@ -4,7 +4,8 @@ import type { AiUsageDetails, AiUsageOutcome } from "@/lib/ai/usage-types";
 
 /**
  * Every source that reserves spend: automatic reading, chat steps, composer requests, the Summarize button and its
- * translations, and the reader's Translate (the install cap covers all).
+ * translations, the reader's Translate, and (migration 0095) search by meaning's embedding batches and query
+ * embeddings (the install cap covers all).
  */
 export type AutoSpendSource =
 	| "auto_triage"
@@ -15,7 +16,9 @@ export type AutoSpendSource =
 	| "summary_translation"
 	| "message_translation"
 	| "line_summary"
-	| "auto_triage_line";
+	| "auto_triage_line"
+	| "embedding"
+	| "embedding_query";
 
 /** "cost" compares USD micros against the caps; "tokens" applies the input-token cap for models without rates. */
 export type SpendMode = "cost" | "tokens";
@@ -31,7 +34,8 @@ export type ReserveAiSpendInput = {
 	env: CloudflareEnv;
 	details: AiUsageDetails;
 	source: AutoSpendSource;
-	mailboxId: string;
+	/** Null for a reservation with no single mailbox to charge (search by meaning's embedding batches). */
+	mailboxId: string | null;
 	/** The automatic reading job; null for chat. */
 	jobId: string | null;
 	promptChars: number;

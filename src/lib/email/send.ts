@@ -23,6 +23,7 @@ import { recordMetric } from "@/lib/metrics.mjs";
 import { isNodeRuntime } from "@/lib/runtime";
 import { assertWithinProviderLimit } from "@/lib/external-accounts/submit-utils";
 import { recordConnectedSend, requeueAfterRefusal, submissionFor } from "@/lib/email/send-connected";
+import { triggerEmbeddingDrain } from "@/lib/semantic/indexer";
 
 export type SendEmailInput = {
 	userId: string;
@@ -362,6 +363,8 @@ async function deliverEmail(
 		return "sent";
 	}
 	await recordConnectedSend(env, delivery, response);
+	// Search by meaning: the status trigger already queued the message, so it is searchable before the next cron tick.
+	await runPostDeliveryStep(`search embedding drain for ${messageId}`, () => triggerEmbeddingDrain(env));
 	await runPostDeliveryStep(`agent reply suggestions for ${messageId}`, () => supersedeOlderReplies(env, messageId));
 	await runPostDeliveryStep(`outbound contacts for ${messageId}`, () =>
 		recordOutboundContacts(env, input, [...to, ...cc, ...bcc]),

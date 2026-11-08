@@ -44,6 +44,8 @@ import { isAppendSentMessage } from "./src/lib/external-accounts/submit-utils";
 import { failStaleBackups } from "./src/lib/backups/service";
 import { processAgentQueueMessage } from "./src/lib/agent/queue";
 import { runAgentMaintenance } from "./src/lib/agent/maintenance";
+import { runEmbeddingDrainBatches } from "./src/lib/semantic/indexer";
+import { runSemanticBackfillTick } from "./src/lib/semantic/backfill";
 import { runTrashRetention } from "./src/lib/email/trash-retention";
 import { sweepOrphanedRawMail } from "./src/lib/email/raw-sweeper";
 import { pruneMcpToolCallAudit, runDatabasePruning } from "./src/lib/maintenance/pruning";
@@ -324,6 +326,13 @@ export default {
 			// Revives a restore whose invocation died and removes uploaded backup files left behind.
 			ctx.waitUntil(
 				runRestoreMaintenance(env, now).catch((error) => logger.error("backup.restore_maintenance_failed", { error })),
+			);
+			// Search by meaning: 4 drain batches (about 128 messages) per tick, and one backfill page.
+			ctx.waitUntil(
+				runEmbeddingDrainBatches(env, 4).catch((error) => logger.error("search.embedding_drain_failed", { error })),
+			);
+			ctx.waitUntil(
+				runSemanticBackfillTick(env).catch((error) => logger.error("search.embedding_backfill_failed", { error })),
 			);
 		}
 		ctx.waitUntil(runAgentMaintenance(env));

@@ -8,6 +8,7 @@ import { Notice } from "@/components/ui/notice";
 import { Switch } from "@/components/ui/switch";
 import { saveAssistantAvailability } from "@/lib/agent/availability-client";
 import { AutoReadAdminSettings } from "@/components/agent/auto-read-admin-settings";
+import { SemanticSearchAdminSettings } from "@/components/agent/semantic-search-admin-settings";
 import { AgentProviders } from "./agent-providers";
 import { RecentAiErrors } from "./recent-ai-errors";
 import type { AgentAdminSettingsResponse } from "./types";
@@ -87,6 +88,9 @@ export default function AdminAgentPage() {
 			</div>
 			<div id="automatic-reading" className="scroll-mt-6">
 				<AutoReadAdminSettings />
+			</div>
+			<div id="semantic-search" className="scroll-mt-6">
+				<SemanticSearchAdminSettings />
 			</div>
 			<div id="recent-ai-errors" className="scroll-mt-6">
 				<RecentAiErrors />

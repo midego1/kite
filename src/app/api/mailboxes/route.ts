@@ -9,15 +9,19 @@ import { newId } from "@/lib/ids";
 import { tracksAccountIdentity } from "@/lib/profile/identity-utils";
 import { mailboxSchema } from "@/lib/validators";
 import { ensureMailboxDomainRouting, getMailboxDomainAddresses } from "@/lib/mailboxes/domain-addresses";
-import { isAssistantAddressTaken } from "@/lib/email/routing";
+import { isAddressDelivered, isAssistantAddressTaken } from "@/lib/email/routing";
 import { listScreenerSettings, enableScreenerForNewMailbox } from "@/lib/screener/settings";
 import { aiOffMailboxIds } from "@/lib/agent/mailbox-ai";
 import { listSendIdentities } from "@/lib/external-accounts/identities";
 import { ensurePersonalMailbox } from "./utils";
 import type { AppDatabase } from "@/db";
 
-/** The error body for a local part that is already a mailbox, an alias, or the assistant address, or null. */
-async function localPartCollision(db: AppDatabase, domainId: string, localPart: string) {
+/**
+ * The error body for a local part that is already a mailbox, an alias, delivers to one once dots and `+tags` are
+ * folded the way delivery does (a use-all-domains mailbox, or a plain collision this exact check alone would miss,
+ * such as `o.wner` beside an existing `owner`), or the assistant address, or null.
+ */
+async function localPartCollision(db: AppDatabase, domainId: string, hostname: string, localPart: string) {
 	const [existing] = await db
 		.select({ id: mailboxes.id })
 		.from(mailboxes)
@@ -30,6 +34,8 @@ async function localPartCollision(db: AppDatabase, domainId: string, localPart: 
 		.where(and(eq(mailboxAliases.domainId, domainId), eq(mailboxAliases.localPart, localPart)))
 		.limit(1);
 	if (existingAlias) return { error: "An alias already uses this address" };
+	if (await isAddressDelivered(db, domainId, `${localPart}@${hostname}`))
+		return { error: "This address already delivers to a mailbox" };
 	if (await isAssistantAddressTaken(db, domainId, localPart))
 		return { error: "The assistant already uses this address", code: "ADDRESS_IN_USE" };
 	return null;
@@ -107,7 +113,7 @@ export async function POST(request: Request) {
 	}
 
 	const localPart = parsed.data.localPart.toLowerCase();
-	const collision = await localPartCollision(db, domain.id, localPart);
+	const collision = await localPartCollision(db, domain.id, domain.hostname, localPart);
 	if (collision) return NextResponse.json(collision, { status: 409 });
 
 	const id = newId("mbx");

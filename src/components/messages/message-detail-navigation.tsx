@@ -114,7 +114,10 @@ export function MessageDetailNavigation({ messageId, unread }: MessageDetailNavi
 	if (!context) return null;
 
 	return (
-		<div className="flex shrink-0 items-center gap-1 text-neutral-500">
+		// j/k are desktop shortcuts; on a phone this shares the sticky header with Reply, Trash, Report spam and
+		// More, which need the room more (docs/upstream/mailflare-review-2026-11-08.md #14) — Back to Inbox and
+		// opening another message from the list cover the same ground.
+		<div className="flex shrink-0 items-center gap-1 text-neutral-500 max-md:hidden">
 			<Tooltip label={shortcutsEnabled ? t("Newer email (k)") : t("Newer email")}>
 				<Button
 					type="button"

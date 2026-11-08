@@ -187,7 +187,9 @@ export default function MessageDetailPage() {
 			<div className="sticky top-0 z-40 flex h-14 items-center gap-1 border-b border-neutral-200 bg-white px-3">
 				<MessageReadingHeaderButton />
 				<MessageDetailNavigation messageId={message.id} unread={message.direction === "inbound" && !message.read} />
-				<span className="min-w-0 flex-1" />
+				{/* On a phone this space goes to the reader toolbar instead (message-actions.tsx is `max-md:flex-1`
+				there): Reply, Trash and Report spam need the room this spacer would otherwise keep empty. */}
+				<span className="min-w-0 flex-1 max-md:hidden" />
 				<SummarizeButton controller={summary} />
 				<MessageActions
 					messageId={message.id}

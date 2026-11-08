@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
  * row (the accent's lightest tint, as every style remaps it) instead of a solid accent.
  */
 const FILTER_CHIP_CLASS =
-	"inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-lg text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500";
+	"inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-lg text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 pointer-coarse:h-11";
 const FILTER_CHIP_ON_CLASS = "bg-blue-100 text-blue-900";
 const FILTER_CHIP_OFF_CLASS = "bg-neutral-100 text-neutral-600 hover:bg-neutral-200 hover:text-neutral-900";
 
@@ -43,7 +43,7 @@ export function FilterChip({
 	const classes = cn(
 		FILTER_CHIP_CLASS,
 		active ? FILTER_CHIP_ON_CLASS : FILTER_CHIP_OFF_CLASS,
-		iconOnly ? "w-8" : "px-3",
+		iconOnly ? "w-8 pointer-coarse:w-11" : "px-3",
 		className,
 	);
 	const content: ReactNode = (

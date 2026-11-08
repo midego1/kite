@@ -78,6 +78,25 @@ test("an unfolded tablet shows the list beside the reader", async ({ page }) => 
 	await expect(layout).not.toHaveAttribute("data-fold-hinge", /.+/);
 });
 
+// At this width the phone shell's own breakpoint (768px) has already switched to the desktop sidebar, which
+// is built for a mouse: row actions must still not depend on hovering, because an unfolded foldable or
+// tablet this wide is still a touch screen (message-list-row-actions.tsx's `pointer-coarse:` styling).
+test("an unfolded tablet's row actions work without hovering", async ({ page }) => {
+	await page.setViewportSize(UNFOLDED);
+	await page.goto("/inbox");
+	await expectPosture(page, "unfolded");
+
+	const list = page.getByRole("main").locator("[data-density]");
+	const row = list.locator("[data-message-row]").filter({ hasText: subject });
+	await expect(row).toBeVisible();
+	for (const name of ["Archive", "Trash", "Snooze"]) {
+		const button = row.getByRole("button", { name, exact: true });
+		await expect(button).toBeVisible();
+		const box = await button.boundingBox();
+		expect(box && box.width >= 44 && box.height >= 44, `${name} is at least 44x44`).toBe(true);
+	}
+});
+
 test("an unfolded tablet keeps the No split and Below inbox choices", async ({ page }) => {
 	await page.setViewportSize(UNFOLDED);
 	// Only the first load: the later one must keep the choice made in between.

@@ -118,7 +118,7 @@ export function AllMailboxesSquare({ onSelect }: { onSelect: () => void }) {
 			aria-pressed={allMailboxes}
 			onClick={onSelect}
 			className={cn(
-				"relative flex h-8 w-8 items-center justify-center rounded-lg",
+				"relative flex h-8 w-8 items-center justify-center rounded-lg pointer-coarse:h-11 pointer-coarse:w-11",
 				allMailboxes ? "ring-1 ring-neutral-300" : "opacity-70 hover:opacity-100",
 			)}
 		>

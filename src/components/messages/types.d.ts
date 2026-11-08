@@ -62,6 +62,8 @@ export type MessageListRowActionsProps = {
 	compact?: boolean;
 	/** The star toggle, first in the pill of the stacked rows (Zero's row actions). */
 	star?: { starred: boolean; icon: LucideIcon; onToggle: (event: MouseEvent<HTMLButtonElement>) => void };
+	/** Show the pill on mouse hover too, not just a coarse (touch) pointer. Default true. */
+	hoverReveal?: boolean;
 };
 
 export type SnoozePickerProps = {

@@ -76,3 +76,24 @@ test("auth guard: a failed check without an answer shows the error state, not a 
 		{ authorized: false, redirect: "/login" },
 	);
 });
+
+test("auth guard: a public page sends an already-signed-in visitor to /inbox, or its own redirect when given one", () => {
+	const session = { user: { role: "user", isPrimaryAdmin: false }, hasMailboxes: true, isSetup: true };
+	const base = { mode: "public", status: "success", session, pathname: "/login" };
+	assert.deepEqual(helpers.getAuthGuardDecision(base), { authorized: true, redirect: "/inbox" });
+	assert.deepEqual(helpers.getAuthGuardDecision({ ...base, allowAuthenticated: true }), {
+		authorized: true,
+		redirect: null,
+	});
+	// The first sign-in after registration: the login page's own "finish" and this guard must agree, or
+	// whichever fires second (a session the guard only just learned about) wins and undoes the other.
+	assert.deepEqual(helpers.getAuthGuardDecision({ ...base, authenticatedRedirect: "/admin" }), {
+		authorized: true,
+		redirect: "/admin",
+	});
+	// allowAuthenticated (adding another account) still wins over a redirect target.
+	assert.deepEqual(
+		helpers.getAuthGuardDecision({ ...base, allowAuthenticated: true, authenticatedRedirect: "/admin" }),
+		{ authorized: true, redirect: null },
+	);
+});

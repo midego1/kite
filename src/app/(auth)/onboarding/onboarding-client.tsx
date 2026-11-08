@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, ArrowRight, CheckCircle2, LoaderCircle, MailPlus } from "lucide-react";
 import { AuthShell } from "@/components/auth/auth-shell";
+import { OnboardingChecklistCard } from "@/components/admin-onboarding-checklist-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,9 +13,23 @@ import { checkDomain, createDomain, createMailbox, getDomains } from "./utils";
 import type { DomainCreateResult, DomainPreflight } from "./types";
 import { SkipDnsSwitch } from "@/components/skip-dns-switch";
 
+type OnboardingStep = 1 | 2 | 3;
+
+const STEP_TITLES: Record<OnboardingStep, string> = {
+	1: "Connect mail routing",
+	2: "Create your first mailbox",
+	3: "Get started",
+};
+
+const STEP_DESCRIPTIONS: Record<OnboardingStep, string> = {
+	1: "Add the Cloudflare domain that will receive mail and optionally send through this workspace.",
+	2: "Choose the mailbox address that should open directly into the inbox.",
+	3: "A short checklist for setting up the optional parts. Nothing here is required, and it stays on the admin overview until you dismiss it.",
+};
+
 export function OnboardingClient() {
 	const router = useRouter();
-	const [step, setStep] = useState<1 | 2>(1);
+	const [step, setStep] = useState<OnboardingStep>(1);
 	const [hostname, setHostname] = useState("");
 	const [domainCheck, setDomainCheck] = useState<DomainPreflight | null>(null);
 	const [domainChecking, setDomainChecking] = useState(false);
@@ -116,27 +131,26 @@ export function OnboardingClient() {
 			setError(data.error ?? "Failed to create mailbox");
 			return;
 		}
-		router.push("/inbox");
+		setStep(3);
 	}
 
 	return (
 		<AuthShell
 			icon={MailPlus}
-			title={step === 1 ? "Connect mail routing" : "Create your first mailbox"}
-			description={
-				step === 1
-					? "Add the Cloudflare domain that will receive mail and optionally send through this workspace."
-					: "Choose the mailbox address that should open directly into the inbox."
-			}
+			title={STEP_TITLES[step]}
+			description={STEP_DESCRIPTIONS[step]}
 			steps={[
 				{ label: "Domain", active: step === 1 },
 				{ label: "Mailbox", active: step === 2 },
+				{ label: "Get started", active: step === 3 },
 			]}
 			footer={
-				<span className="inline-flex items-center gap-2 text-neutral-500">
-					Setup completes in the inbox
-					<ArrowRight className="h-4 w-4 rtl:-scale-x-100" />
-				</span>
+				step === 3 ? undefined : (
+					<span className="inline-flex items-center gap-2 text-neutral-500">
+						Setup completes in the inbox
+						<ArrowRight className="h-4 w-4 rtl:-scale-x-100" />
+					</span>
+				)
 			}
 		>
 			<div className="space-y-5">
@@ -249,7 +263,15 @@ export function OnboardingClient() {
 							</div>
 						</div>
 						<Button onClick={addMailbox} disabled={!localPart || loading} className="h-10 w-full">
-							{loading ? "Creating..." : "Go to inbox"}
+							{loading ? "Creating..." : "Continue"}
+						</Button>
+					</>
+				)}
+				{step === 3 && (
+					<>
+						<OnboardingChecklistCard />
+						<Button onClick={() => router.push("/inbox")} className="h-10 w-full">
+							Go to inbox
 						</Button>
 					</>
 				)}

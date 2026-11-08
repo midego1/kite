@@ -11,7 +11,13 @@ import { Label } from "@/components/ui/label";
 import { TurnstileField } from "@/components/auth/turnstile";
 import { submitLogin, submitMfaCode } from "./utils";
 
-export function LoginClient({ adding = false }: { adding?: boolean }) {
+export function LoginClient({
+	adding = false,
+	justFinishedSetup = false,
+}: {
+	adding?: boolean;
+	justFinishedSetup?: boolean;
+}) {
 	const router = useRouter();
 	const [error, setError] = useState<string | null>(null);
 	const [loading, setLoading] = useState(false);
@@ -21,7 +27,7 @@ export function LoginClient({ adding = false }: { adding?: boolean }) {
 	const [code, setCode] = useState("");
 
 	function finish(redirect?: string) {
-		router.replace(redirect ?? "/inbox");
+		router.replace(justFinishedSetup ? "/admin" : (redirect ?? "/inbox"));
 		router.refresh();
 	}
 

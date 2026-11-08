@@ -25,11 +25,21 @@ function decideWithoutAnswer({
 export function getAuthGuardDecision(input: AuthGuardDecisionInput): AuthGuardDecision {
 	const early = decideWithoutAnswer(input);
 	if (early) return early;
-	const { mode, session, pathname, requireMailbox, requireRole, requirePrimary, allowAuthenticated } = input;
+	const {
+		mode,
+		session,
+		pathname,
+		requireMailbox,
+		requireRole,
+		requirePrimary,
+		allowAuthenticated,
+		authenticatedRedirect,
+	} = input;
 	if (!session) {
 		return mode === "protected" ? { authorized: false, redirect: "/login" } : { authorized: true, redirect: null };
 	}
-	if (mode === "public") return { authorized: true, redirect: allowAuthenticated ? null : "/inbox" };
+	if (mode === "public")
+		return { authorized: true, redirect: allowAuthenticated ? null : (authenticatedRedirect ?? "/inbox") };
 
 	const { user } = session;
 	if (

@@ -373,13 +373,15 @@ test("admin pages use the Settings layout with the mail sidebar and the Admin me
 		"Webhooks",
 	]);
 
-	// The overview keeps its heading and the database card; besides the count tiles the menu is the only nav.
+	// The overview keeps its heading, the database card and the "Get started" checklist, which links Domains,
+	// Mailboxes and Accounts a second time beside the menu and the count tiles.
 	await expect(page.getByRole("heading", { level: 1, name: "Overview" })).toBeVisible();
 	await expect(page.getByText("Database", { exact: true }).first()).toBeVisible();
+	await expect(page.getByTestId("onboarding-checklist")).toBeVisible();
 	for (const href of ["/agent", "/branding", "/api-keys"])
 		await expect(page.locator(`a[href="${href}"]`)).toHaveCount(1);
 	for (const href of ["/domains", "/mailboxes", "/accounts"])
-		await expect(page.locator(`a[href="${href}"]`)).toHaveCount(2);
+		await expect(page.locator(`a[href="${href}"]`)).toHaveCount(3);
 	await expect(menu.getByRole("link", { name: "Back to inbox" })).toHaveAttribute("href", "/inbox");
 });
 

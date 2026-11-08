@@ -27,6 +27,7 @@
 	"/api/admin/general",
 	"/api/admin/migrations",
 	"/api/admin/modules",
+	"/api/admin/onboarding-checklist",
 	"/api/admin/overview",
 	"/api/admin/resend-key",
 	"/api/admin/search-index",

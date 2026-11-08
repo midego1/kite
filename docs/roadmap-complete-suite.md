@@ -368,10 +368,10 @@ Position note: this exposes selected Kite page capabilities to compatible browse
 
 Position note: today's first run (`/setup`, then `/onboarding`) gets a domain and a first mailbox working and stops there. Owners then find modules, spam protection, threat lookup keys, the assistant and backups on their own. This milestone turns first run into a short guided tour that explains how Kite works and lets the owner set up the optional parts in place, without making any of them required.
 
-1. **Owner setup checklist**
+1. **Owner setup checklist** (shipped in [#425](https://github.com/midego1/kite/pull/425))
    - After the first mailbox exists, show a dismissible "Get started" checklist on the admin overview and in onboarding: domain and DNS status, sending and receiving providers, first mailbox, invite people, modules, spam and phishing protection (with the abuse.ch key), the assistant and its AI provider, backups and the update/migration card. Each item links to the page that does it, shows done or not done from real state (not from clicks), and can be skipped.
    - Test: e2e for a fresh install walks the checklist; items flip to done when their state changes elsewhere; dismissing hides it for that owner only.
-2. **Explain as you go**
+2. **Explain as you go** (shipped in [#425](https://github.com/midego1/kite/pull/425))
    - Short plain-language explanations on each step: how mail flows (Cloudflare Email Routing or a provider, the queue, spam filtering, the Screener), what each module does and that turning one off deletes nothing, what leaves the install (AI provider, URLhaus and ThreatFox lookups) and what does not. Link to the matching guide in `docs/`.
    - Keys are entered on the page that owns them (Admin → General for abuse.ch, the AI settings for the model provider), stored encrypted, and checked with a test button before they count as done. Never ask for a key in a generic wizard field.
 3. **Mailbox owner onboarding**

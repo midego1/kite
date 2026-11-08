@@ -44,6 +44,8 @@ export interface LayoutPreferences {
 	translateTo?: string;
 	/** Languages the reader no longer offers to translate, as ISO 639-1 codes. */
 	translateNever?: string[];
+	/** The admin overview and onboarding's "Get started" checklist, dismissed by this owner (`isPrimaryAdmin`). */
+	onboardingChecklistDismissed?: boolean;
 }
 
 /** What `GET` and `PATCH /api/settings/layout` answer. */

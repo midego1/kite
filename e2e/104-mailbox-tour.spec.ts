@@ -83,4 +83,31 @@ test.describe("the mailbox tour", () => {
 		await page.getByRole("button", { name: "Open account menu" }).click();
 		await expect(page.getByRole("button", { name: "Mailbox tour" })).toHaveCount(0);
 	});
+
+	test("the For you step is left out while the assistant is off for the install", async ({ page }) => {
+		const admin = await apiContext(STORAGE_STATE);
+		const off = await admin.put("/api/admin/agent", { data: { enabled: false } });
+		expect(off.ok(), await off.text()).toBe(true);
+		try {
+			const email = await createMailboxUser(`tournoai${uniqueToken()}`);
+			await signInWithoutDismissingTour(page, email, PASSWORD);
+			await expect(page).toHaveURL(/\/inbox/);
+
+			const dialog = page.getByTestId("mailbox-tour");
+			await expect(dialog).toBeVisible();
+			await expect(dialog.getByText("Welcome to your mailbox")).toBeVisible();
+
+			for (const step of ["Screener", "Not phishing and trusted senders", "Conversation view"]) {
+				await dialog.getByRole("button", { name: "Next" }).click();
+				await expect(dialog.getByRole("heading", { name: step })).toBeVisible();
+			}
+			await expect(dialog.getByRole("heading", { name: "For you" })).toHaveCount(0);
+			await dialog.getByRole("button", { name: "Done" }).click();
+			await expect(dialog).toBeHidden();
+		} finally {
+			const on = await admin.put("/api/admin/agent", { data: { enabled: true } });
+			expect(on.ok(), await on.text()).toBe(true);
+			await admin.dispose();
+		}
+	});
 });

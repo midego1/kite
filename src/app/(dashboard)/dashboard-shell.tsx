@@ -183,7 +183,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
 							<ShortcutsProvider>
 								{assistantEnabled === true && <AssistantCommand toggle={toggleAssistant} />}
 								<RouteTitle />
-								<MailboxTourDialog />
+								<MailboxTourDialog assistantAvailable={assistantEnabled} />
 								<div className="h-dvh overflow-hidden bg-[#f6f8fc]">
 									<SkipToContent />
 									<SidebarFrame

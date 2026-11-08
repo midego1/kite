@@ -23,9 +23,10 @@ export async function fetchMailboxTourDismissed(): Promise<boolean> {
 }
 
 export async function saveMailboxTourDismissed(dismissed: boolean): Promise<void> {
-	await authFetch("/api/settings/layout", {
+	const response = await authFetch("/api/settings/layout", {
 		method: "PATCH",
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify({ layout: { mailboxTourDismissed: dismissed } }),
 	});
+	if (!response.ok) throw new Error(`Saving the mailbox tour state failed (${response.status})`);
 }

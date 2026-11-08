@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Button } from "@/components/ui/button";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { useT } from "@/lib/i18n/use-t";
-import { MAILBOX_TOUR_STEPS } from "./mailbox-tour-steps";
+import { visibleMailboxTourSteps } from "./mailbox-tour-steps";
 import {
 	fetchMailboxTourDismissed,
 	MAILBOX_TOUR_QUERY,
@@ -43,10 +43,11 @@ export function MailboxTourMenuAction({ onNavigate }: { onNavigate: () => void }
  * `mailboxTourDismissed` in the account's layout preferences, so it does not open on its own again; replaying
  * leaves that choice as it was.
  */
-export function MailboxTourDialog() {
+export function MailboxTourDialog({ assistantAvailable }: { assistantAvailable: boolean | null }) {
 	const t = useT();
 	const user = useCurrentUser();
 	const eligible = !!user && !user.isPrimaryAdmin;
+	const steps = visibleMailboxTourSteps(assistantAvailable);
 	const queryClient = useQueryClient();
 	const queryKey = [...MAILBOX_TOUR_QUERY, user?.id];
 	const [open, setOpen] = useState(false);
@@ -89,8 +90,10 @@ export function MailboxTourDialog() {
 		void saveMailboxTourDismissed(true).catch(() => queryClient.invalidateQueries({ queryKey }));
 	}
 
-	const last = step === MAILBOX_TOUR_STEPS.length - 1;
-	const current = MAILBOX_TOUR_STEPS[step];
+	// The assistant can turn off between steps (availability refreshes on focus): never read past the end.
+	const clampedStep = Math.min(step, steps.length - 1);
+	const last = clampedStep === steps.length - 1;
+	const current = steps[clampedStep];
 	const Icon = current.icon;
 
 	return (
@@ -107,15 +110,15 @@ export function MailboxTourDialog() {
 				</DialogHeader>
 				<div className="flex items-center justify-between gap-3 pt-2">
 					<div className="flex items-center gap-1.5" role="presentation">
-						{MAILBOX_TOUR_STEPS.map((tourStep, index) => (
+						{steps.map((tourStep, index) => (
 							<span
 								key={tourStep.id}
 								aria-hidden="true"
-								className={`h-1.5 w-5 rounded-full transition-colors ${index === step ? "bg-blue-600" : "bg-neutral-200"}`}
+								className={`h-1.5 w-5 rounded-full transition-colors ${index === clampedStep ? "bg-blue-600" : "bg-neutral-200"}`}
 							/>
 						))}
 						<span className="sr-only">
-							{t("Step {step} of {total}", { step: step + 1, total: MAILBOX_TOUR_STEPS.length })}
+							{t("Step {step} of {total}", { step: clampedStep + 1, total: steps.length })}
 						</span>
 					</div>
 					<div className="flex items-center gap-2">

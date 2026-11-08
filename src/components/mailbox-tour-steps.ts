@@ -10,7 +10,7 @@ export type MailboxTourStep = {
 };
 
 /** The first-login tour for a mailbox user who is not the owner, in the order someone would meet each part. */
-export const MAILBOX_TOUR_STEPS: readonly MailboxTourStep[] = [
+const MAILBOX_TOUR_STEPS: readonly MailboxTourStep[] = [
 	{
 		id: "layout",
 		icon: Inbox,
@@ -24,7 +24,7 @@ export const MAILBOX_TOUR_STEPS: readonly MailboxTourStep[] = [
 		icon: ShieldCheck,
 		title: msg("Screener"),
 		description: msg(
-			"The first time someone new writes to you, their message waits for a decision instead of landing straight in your inbox. Approve them and everything they send afterwards arrives normally; deny them and their mail goes to Spam.",
+			"The first time someone new writes to you, their message waits for a decision instead of landing straight in your inbox (each mailbox can use this mode, or deliver to the inbox with a New sender mark instead). Approve them and their mail arrives normally from then on; deny them and their waiting mail moves to Spam, with anything later from them filed straight to Trash.",
 		),
 	},
 	{
@@ -52,3 +52,9 @@ export const MAILBOX_TOUR_STEPS: readonly MailboxTourStep[] = [
 		),
 	},
 ];
+
+/** The steps to show: "For you" is left out while the assistant is off, since it would be a dead end. */
+export function visibleMailboxTourSteps(assistantAvailable: boolean | null): readonly MailboxTourStep[] {
+	if (assistantAvailable === false) return MAILBOX_TOUR_STEPS.filter((step) => step.id !== "for-you");
+	return MAILBOX_TOUR_STEPS;
+}

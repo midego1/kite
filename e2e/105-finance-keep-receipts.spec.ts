@@ -112,6 +112,20 @@ async function runBackfillUntilDone(page: Page) {
 	await dialog.getByRole("button", { name: "Close" }).click();
 }
 
+/** Runs the backfill to completion through the API alone, never touching `page`, so a page already rendered with
+ * `hasReceipts: false` for this row stays exactly as stale as it would after a background sweep filed it. */
+async function fileReceiptsInTheBackground(account: Account) {
+	await okJson(await account.api.post("/api/finance/receipts/backfill"));
+	await expect
+		.poll(async () => {
+			const { backfill } = await okJson<{ backfill: { status: string } | null }>(
+				await account.api.get("/api/finance/receipts"),
+			);
+			return backfill?.status;
+		})
+		.toBe("done");
+}
+
 test.describe("Keep receipts", () => {
 	test("on by default: the backfill files a payment's mail into Drive, and removing it asks first", async ({
 		browser,
@@ -181,6 +195,51 @@ test.describe("Keep receipts", () => {
 			const dialog = await openReceiptSettings(page);
 			await expect(dialog).toContainText("Drive is turned off, so no copies are saved.");
 			await expect(dialog.getByRole("switch", { name: "Keep receipts" })).toHaveCount(0);
+		} finally {
+			await context.close();
+		}
+	});
+
+	test("a receipt filed after the list loaded still asks before removing, instead of silently acknowledging a delete the user never confirmed", async ({
+		browser,
+	}) => {
+		const account = await suggestAccount("frcptstale");
+		const context = await browser.newContext({ baseURL: BASE_URL, storageState: await account.api.storageState() });
+		try {
+			const merchant = `Harbor ${uniqueToken("").slice(-4)}`;
+			const payment = await deliverPaidReceipt(account, merchant);
+
+			const page = await context.newPage();
+			await page.goto("/finance?tab=payments");
+			await expect(row(page, payment.id)).toContainText(merchant);
+
+			// The backfill runs entirely through the API: this page's row keeps the `hasReceipts: false` it loaded
+			// with, exactly as it would if the automatic sweep had filed the receipt in the background.
+			await fileReceiptsInTheBackground(account);
+
+			await rowAction(page, payment.id, "Remove");
+			const confirm = page.getByRole("alertdialog", { name: "Remove this, even though it has saved copies in Drive?" });
+			await expect(confirm).toBeVisible();
+			await confirm.getByRole("button", { name: "Cancel" }).click();
+			await expect(row(page, payment.id)).toBeVisible();
+
+			await rowAction(page, payment.id, "Remove");
+			await page
+				.getByRole("alertdialog", { name: "Remove this, even though it has saved copies in Drive?" })
+				.getByRole("button", { name: "Remove" })
+				.click();
+			await expect(row(page, payment.id)).toHaveCount(0);
+
+			const root = await listItems(account.api);
+			const moneyWatch = root.find((item) => item.name === "Money Watch" && item.kind === "folder");
+			const receiptsFolder = (await listItems(account.api, `parent=${moneyWatch!.id}`)).find(
+				(item) => item.name === "Receipts",
+			);
+			const yearFolder = (await listItems(account.api, `parent=${receiptsFolder!.id}`))[0];
+			const filesAfter = (await listItems(account.api, `parent=${yearFolder!.id}`)).filter((item) =>
+				item.name.includes(merchant),
+			);
+			expect(filesAfter.length).toBeGreaterThan(0);
 		} finally {
 			await context.close();
 		}

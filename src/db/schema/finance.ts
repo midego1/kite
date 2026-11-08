@@ -165,10 +165,12 @@ export const financePaymentScans = sqliteTable("finance_payment_scans", {
  * `finance_charges` or `finance_payments` row whose mail was copied into the owner's Drive under
  * `Money Watch/Receipts/<year>/`, so the finance row keeps working after the mail is purged or deleted
  * forever. `source_table` and `source_id` point at that row without a foreign key, since the three
- * source tables differ. A row's presence is the idempotency claim: filing is skipped once it exists,
- * so a rescan or the backfill never files the same row twice. `status = "skipped"` is a permanent skip
- * (the message or attachment is already gone); a transient failure (Drive unavailable, quota full)
- * writes no row at all, so the next sweep retries it.
+ * source tables differ. A row is inserted `pending` (the claim, made before Drive is ever called) and
+ * then updated to `done` or `skipped`, so a concurrent sweep and backfill tick, or a retry after a crash,
+ * cannot file the same source twice: the claim itself, not the Drive write, is what makes filing
+ * idempotent. `status = "skipped"` is a permanent skip (the message or attachment is already gone, or
+ * there was never anything to file); a transient failure (Drive unavailable, quota full) leaves the row
+ * `pending` so the next sweep or backfill tick retries it, taking over the claim once `lease_until` passes.
  */
 export const financeReceipts = sqliteTable(
 	"finance_receipts",
@@ -187,8 +189,12 @@ export const financeReceipts = sqliteTable(
 		htmlFileId: text("html_file_id"),
 		pdfFileId: text("pdf_file_id"),
 		attachmentFileId: text("attachment_file_id"),
-		status: text("status", { enum: ["done", "skipped"] }).notNull(),
+		/** `pending` is a claim: a row written before Drive is called, so a concurrent sweep and backfill tick (or a
+		 * retry after a crash) cannot file the same source twice. `leaseUntil` bounds how long a claim stands before
+		 * another run may take it over (the same shape as `finance_payment_scans.lease_until`). */
+		status: text("status", { enum: ["pending", "done", "skipped"] }).notNull(),
 		skippedReason: text("skipped_reason"),
+		leaseUntil: integer("lease_until", { mode: "timestamp" }),
 		filedAt: integer("filed_at", { mode: "timestamp" }),
 		createdAt: integer("created_at", { mode: "timestamp" })
 			.notNull()

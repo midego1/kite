@@ -14,9 +14,11 @@ export async function GET(request: Request) {
 }
 
 /**
- * Adds a pending address and emails it a verification code (spec §5.3). The response never says whether the
- * address was new, already pending, already verified, or belongs to someone else: the same "code sent" state
- * either way, so this route cannot be used to find out who uses Kite's assistant or who owns an address.
+ * Adds a pending address and emails it a verification code (spec §5.3). For every outcome that could reveal
+ * whether the address was new, already pending, already verified, or belongs to someone else, the response is
+ * the same "code sent" state, so this route cannot be used to find out who uses Kite's assistant or who owns an
+ * address. An address on a domain of this install, or the hourly limit, are refused visibly instead (security
+ * review): neither leaks anything about the address itself.
  */
 export async function POST(request: Request) {
 	const env = getEnv();
@@ -26,11 +28,17 @@ export async function POST(request: Request) {
 	const body = (await request.json().catch(() => null)) as { address?: unknown } | null;
 	if (typeof body?.address !== "string" || !body.address.trim())
 		return NextResponse.json({ error: "An email address is required" }, { status: 400 });
+	let result;
 	try {
-		await addSenderAddress(env, getDb(env), auth.user.id, body.address);
+		result = await addSenderAddress(env, getDb(env), auth.user.id, body.address);
 	} catch (error) {
 		if (!(error instanceof SenderAddressesPendingError)) throw error;
 		return NextResponse.json({ error: error.message, code: "MIGRATION_PENDING" }, { status: 409 });
 	}
+	if (!result.ok)
+		return NextResponse.json(
+			{ error: result.error, code: result.code },
+			{ status: result.code === "RATE_LIMITED" ? 429 : 409 },
+		);
 	return NextResponse.json({ ok: true });
 }

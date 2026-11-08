@@ -27,7 +27,10 @@ export const assistantAddresses = sqliteTable(
  * A verified extra address (spec §5.3), for a user who wants to reach the assistant from somewhere other than a
  * Kite mailbox (their phone's mail account, for example). An address counts only once `verifiedAt` is set, by
  * confirming the single-use code sent to it; at most 5 per user (enforced where rows are inserted), and an address
- * belongs to at most one user in the install (the unique index).
+ * belongs to at most one user in the install (the unique index). Never a domain of this install itself (checked
+ * where rows are inserted, and again by sender mapping): a shared mailbox there would let anyone with send-as
+ * access verify its address as their own and command another user's assistant. `attempts` (migration 0097) counts
+ * wrong guesses against the current code only, reset to 0 whenever a new one is mailed.
  */
 export const assistantSenderAddresses = sqliteTable(
 	"assistant_sender_addresses",
@@ -39,6 +42,7 @@ export const assistantSenderAddresses = sqliteTable(
 		address: text("address").notNull(),
 		codeHash: text("code_hash"),
 		codeExpiresAt: integer("code_expires_at", { mode: "timestamp" }),
+		attempts: integer("attempts").notNull().default(0),
 		verifiedAt: integer("verified_at", { mode: "timestamp" }),
 		createdAt: integer("created_at", { mode: "timestamp" })
 			.notNull()

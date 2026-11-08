@@ -20,6 +20,7 @@ const {
 const scratch = makeBundleDirectory("kite-backup-assistant-email-dirs-");
 after(() => rmSync(scratch, { recursive: true, force: true }));
 const preDirectory = copyMigrationsBefore(scratch, 96);
+const preAttemptsDirectory = copyMigrationsBefore(scratch, 97);
 const ASSISTANT_TABLES = ["assistant_addresses", "assistant_sender_addresses", "assistant_email_requests"];
 
 async function database(t, dir = migrationsDir) {
@@ -54,6 +55,23 @@ test("a backup taken before 0096 restores after it, with the assistant off and n
 		[{ instructions: "Be brief.", assistant_email_enabled: 0, assistant_email_daily_limit: 20 }],
 	);
 	await assertBackupTablesCoverDatabase(db);
+});
+
+test("a backup taken before 0097 (security review's attempts column) restores after it, reading attempts as 0", async (t) => {
+	const legacy = await database(t, preAttemptsDirectory);
+	seedAccountData(legacy);
+	legacy.db.exec(
+		"INSERT INTO assistant_sender_addresses (id, user_id, address, verified_at, created_at) VALUES ('ase-1', 'owner', 'owner@phone.example', 3, 3)",
+	);
+	const document = await exportDocument(legacy);
+	assert.equal("attempts" in document.tables.assistant_sender_addresses[0], false);
+
+	const db = await database(t);
+	seedAccountData(db);
+	await restoreDatabaseRecords(db, encode(document));
+	assert.deepEqual(all(db, "SELECT address, attempts FROM assistant_sender_addresses"), [
+		{ address: "owner@phone.example", attempts: 0 },
+	]);
 });
 
 test("a backup after 0096 round-trips the assistant address, a verified sender and a request", async (t) => {

@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.11.08.1] - 2026-11-08
+
+### Fixed
+
+- A sender whose display name contains a quotation mark, such as a business name with an inch or foot mark in it, is now matched correctly for blocking, safelisting and contact lookups instead of being treated as an unrecognized address.
+- Settings, Admin and sign-in are easier to use on a phone or a foldable: a mailbox rule's delete button no longer needs a mouse hover to appear, the Settings menu reaches a full touch size on an unfolded foldable or tablet, and a domain's actions menu and the two-way sync disclosure are full-size touch targets too.
+  ![Before and after: the rule delete action, a domain's actions menu and the Settings menu rows on touch](/changelog/2026-11-08-mobile-settings-admin-light.webp)
+- The Domains page no longer shows a correctly configured Resend sending domain as missing its SPF record: the health check now looks at the subdomain Resend actually publishes it on, not only the root domain. The Resend receiving MX check is also more forgiving of Resend's own published records.
+
 ## [2026.11.08.0] - 2026-11-08
 
 ### Added

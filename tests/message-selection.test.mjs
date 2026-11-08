@@ -47,9 +47,9 @@ test("pruneSelection returns an empty selection unchanged", () => {
 
 test("applySelection adds once, removes, and marks threads with unread mail as unread", () => {
 	const { applySelection } = helpers;
-	const rows = [{ id: "a", read: true, threadUnread: 1 }];
+	const rows = [{ id: "a", read: true, direction: "inbound", threadUnread: 1 }];
 	const added = applySelection([], rows, ["a"], true);
-	assert.deepEqual(added, [{ id: "a", read: false }]);
+	assert.deepEqual(added, [{ id: "a", read: false, direction: "inbound" }]);
 	assert.deepEqual(applySelection(added, rows, ["a"], true), added);
 	assert.deepEqual(applySelection(added, rows, ["a"], false), []);
 });
@@ -57,14 +57,14 @@ test("applySelection adds once, removes, and marks threads with unread mail as u
 test("applySelection over every visible row selects them and only unselects visible ones", () => {
 	const { applySelection } = helpers;
 	const rows = [
-		{ id: "a", read: true },
-		{ id: "b", read: false },
+		{ id: "a", read: true, direction: "inbound" },
+		{ id: "b", read: false, direction: "inbound" },
 	];
 	const ids = ["a", "b"];
 	assert.deepEqual(applySelection([{ id: "z", read: true }], rows, ids, true), [
 		{ id: "z", read: true },
-		{ id: "a", read: true },
-		{ id: "b", read: false },
+		{ id: "a", read: true, direction: "inbound" },
+		{ id: "b", read: false, direction: "inbound" },
 	]);
 	assert.deepEqual(applySelection([{ id: "z", read: true }, ...rows], rows, ids, false), [{ id: "z", read: true }]);
 });
@@ -84,11 +84,18 @@ test("applySelection remembers the status of drafts and of sends waiting to go o
 
 test("toSelectedMessage keeps a row's thread ids, so a selection built past the loaded page can still expand", () => {
 	const { toSelectedMessage } = helpers;
-	assert.deepEqual(toSelectedMessage({ id: "a", read: true, threadMessageIds: ["a", "a2"] }), {
+	assert.deepEqual(toSelectedMessage({ id: "a", read: true, direction: "inbound", threadMessageIds: ["a", "a2"] }), {
 		id: "a",
 		read: true,
+		direction: "inbound",
 		threadMessageIds: ["a", "a2"],
+		threadUnread: 0,
+		threadInboundCount: 0,
 	});
-	// Not in conversation view: no field invented where the server sent none.
-	assert.deepEqual(toSelectedMessage({ id: "b", read: true }), { id: "b", read: true });
+	// Not in conversation view: no thread field invented where the server sent none.
+	assert.deepEqual(toSelectedMessage({ id: "b", read: true, direction: "inbound" }), {
+		id: "b",
+		read: true,
+		direction: "inbound",
+	});
 });

@@ -92,6 +92,78 @@ test("the Select button only shows on a touch device; a pointer relies on the al
 	await pointerContext.close();
 });
 
+test("a touch long press selects a row without opening it, and a trailing click never opens it either", async ({
+	browser,
+}) => {
+	const [first] = await deliverMany(["Long press first"]);
+	const context = await browser.newContext({
+		storageState: STORAGE_STATE,
+		hasTouch: true,
+		viewport: { width: 390, height: 844 },
+	});
+	const page = await context.newPage();
+	await page.goto("/inbox");
+	const row = rowFor(page, first);
+	await expect(row).toBeVisible();
+	const box = (await row.boundingBox())!;
+	const point = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+	const press = (pointerId: number) => ({
+		pointerId,
+		pointerType: "touch",
+		clientX: point.x,
+		clientY: point.y,
+		bubbles: true,
+	});
+
+	await row.dispatchEvent("pointerdown", press(1));
+	await page.waitForTimeout(650); // Past LONG_PRESS_MS (500ms).
+	await expect(page.getByText("1 selected")).toBeVisible();
+	await expect(row.getByRole("checkbox")).toBeChecked();
+	// The release (and the click a touchscreen can still fire after it) never opens the row.
+	await row.dispatchEvent("pointerup", press(1));
+	await row.dispatchEvent("click", { bubbles: true, cancelable: true });
+	await expect(page).toHaveURL(/\/inbox$/);
+	await context.close();
+});
+
+test("a touch long press with no click right after it leaves the row's next tap unaffected", async ({ browser }) => {
+	const [first] = await deliverMany(["Long press no click"]);
+	const context = await browser.newContext({
+		storageState: STORAGE_STATE,
+		hasTouch: true,
+		viewport: { width: 390, height: 844 },
+	});
+	const page = await context.newPage();
+	await page.goto("/inbox");
+	const row = rowFor(page, first);
+	await expect(row).toBeVisible();
+	const box = (await row.boundingBox())!;
+	const point = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+	const press = (pointerId: number) => ({
+		pointerId,
+		pointerType: "touch",
+		clientX: point.x,
+		clientY: point.y,
+		bubbles: true,
+	});
+
+	await row.dispatchEvent("pointerdown", press(1));
+	await page.waitForTimeout(650);
+	await expect(page.getByText("1 selected")).toBeVisible();
+	// Lifted with no click following at all (a scroll away, say): without resetting at the start of the next
+	// press, this would leave the row's very next, unrelated tap swallowed too.
+	await row.dispatchEvent("pointercancel", press(1));
+
+	// Dispatched on the subject text itself (inside the row's link), the way a real finger would land there,
+	// not on the outer row container the first press used only to drive its own long-press handlers.
+	const link = row.getByText(first, { exact: true });
+	await link.dispatchEvent("pointerdown", press(2));
+	await link.dispatchEvent("pointerup", press(2));
+	await link.dispatchEvent("click", { bubbles: true, cancelable: true });
+	await expect(page.getByRole("heading", { level: 1, name: first })).toBeVisible();
+	await context.close();
+});
+
 test("trashing a selected message from its row removes it from the selection", async ({ page }) => {
 	const subjects = await deliverMany(["Pick one", "Pick two"]);
 

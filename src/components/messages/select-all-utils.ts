@@ -1,13 +1,17 @@
-import { fetchMessageList, getMessageQueryParams } from "@/hooks/utils";
-import type { Message, MessageFolder } from "@/hooks/types";
+import { authFetch } from "@/lib/auth/client";
+import { getMessageQueryParams } from "@/hooks/utils";
+import type { Message, MessageFolder, MessageListResponse } from "@/hooks/types";
+import { t } from "@/lib/i18n/translator";
 
 /** The server page size; see `limit` in `src/app/api/messages/route.ts`. */
 const PAGE_SIZE = 100;
 
 /**
- * How many messages "Select all in folder" will gather in one go. The bulk route itself has no limit of its
- * own (it chunks its D1 queries, see `src/db/chunk-utils.ts`), but one request still runs inside one Worker
- * invocation, so a very large folder is capped rather than resolved in full.
+ * How many messages "Select all in folder" will gather in one go. A folder can hold far more, and the bulk
+ * route itself chunks its D1 queries so no single statement is too large (`src/db/chunk-utils.ts`), but the
+ * request that then acts on the resolved ids still runs inside one Worker invocation; `runBulkMessageAction`
+ * batches that request too (`bulk-action-batch-utils.ts`), so this cap is about keeping one resolve-and-act
+ * round reasonably sized, not a parameter or query-count limit on either side.
  */
 export const SELECT_ALL_MAX_MESSAGES = 1000;
 
@@ -19,9 +23,21 @@ export type SelectAllFilters = {
 };
 
 /**
+ * One page of "Select all in folder", outside `fetchMessageList`'s shared cache: these pages page deep by
+ * cursor and are not meant to be reused by the regular list, and unlike that helper this throws instead of
+ * quietly caching an error body as if it were an empty page.
+ */
+async function fetchSelectAllPage(params: URLSearchParams): Promise<MessageListResponse> {
+	const response = await authFetch(`/api/messages?${params}`);
+	if (!response.ok) throw new Error(t("Could not load every matching message. Please try again."));
+	return (await response.json()) as MessageListResponse;
+}
+
+/**
  * Every message (or, in conversation view, every thread row) matching the folder and its current filters,
  * resolved from the server page by page, up to `SELECT_ALL_MAX_MESSAGES`. Used by "Select all N in folder",
- * so a selection can reach past what the list has loaded.
+ * so a selection can reach past what the list has loaded. `truncated` is only ever true when the server still
+ * had more to give (`nextCursor` was set); a folder with exactly the cap's worth of matches is not truncated.
  */
 export async function resolveAllMatchingMessages(
 	folder: MessageFolder,
@@ -33,12 +49,12 @@ export async function resolveAllMatchingMessages(
 	let cursor: string | undefined;
 	for (;;) {
 		const params = getMessageQueryParams(folder, mailboxScope, { ...filters, limit: PAGE_SIZE, cursor }, folderId);
-		const data = await fetchMessageList(params, true);
+		const data = await fetchSelectAllPage(params);
 		collected.push(...(data.messages ?? []));
+		if (!data.nextCursor) return { messages: collected, truncated: false };
 		if (collected.length >= SELECT_ALL_MAX_MESSAGES) {
 			return { messages: collected.slice(0, SELECT_ALL_MAX_MESSAGES), truncated: true };
 		}
-		if (!data.nextCursor) return { messages: collected, truncated: false };
 		cursor = data.nextCursor;
 	}
 }

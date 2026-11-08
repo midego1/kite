@@ -34,6 +34,12 @@ test("a finger that moves past the tolerance, in either axis, cancels the press"
 	assert.equal(shouldCancelLongPress({ x: 0, y: 0 }, { x: 0, y: -11 }), true);
 });
 
+test("the cancel point matches SwipeableRow's own drag threshold exactly, so a real swipe always cancels", () => {
+	// SwipeableRow treats this same 10px as already a drag (`Math.abs(dx) < INTENT_DISTANCE` is the only escape),
+	// so the long press must give up here too: once it captures the pointer, this hook sees nothing more.
+	assert.equal(shouldCancelLongPress({ x: 0, y: 0 }, { x: 10, y: 0 }), true);
+});
+
 test("the hold is long enough to tell apart from a tap, short enough to still feel immediate", () => {
 	assert.ok(LONG_PRESS_MS >= 400 && LONG_PRESS_MS <= 600);
 });

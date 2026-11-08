@@ -23,9 +23,11 @@ import { ListSectionLabel, PagerSlot } from "./message-list-pager";
 import { MessageListRow } from "./message-list-row";
 import {
 	applySelection,
+	expandSelectedThreadIds,
 	openIdFromPath,
 	planRowSelection,
 	replaceSelection,
+	resolveSelectedRows,
 	resolveSelectionAnchor,
 	toSelectedMessage,
 	type RowClickModifiers,
@@ -152,14 +154,7 @@ export function MessageFolderPage({
 	// In conversation view a row stands for every message of its thread in this
 	// folder, so actions and drags carry all of them.
 	const rowMessageIds = (message: Message) => message.threadMessageIds ?? [message.id];
-	const expandSelectedIds = (ids: string[]) =>
-		ids.flatMap((id) => {
-			// "Select all in folder" can select rows past the loaded page, so its own thread ids travel with the
-			// selection itself (`toSelectedMessage`) instead of a lookup here, which only ever sees this page.
-			const selected = selectedMessages.find((message) => message.id === id);
-			if (selected?.threadMessageIds) return selected.threadMessageIds;
-			return rowMessageIds(messages.find((message) => message.id === id) ?? ({ id } as Message));
-		});
+	const expandSelectedIds = (ids: string[]) => expandSelectedThreadIds(ids, messages, selectedMessages);
 	// Once every row on the page is checked, and the folder holds more, offer to extend the selection to
 	// everything matching: capped at SELECT_ALL_MAX_MESSAGES, so the banner (and the bulk action after it) never
 	// has to resolve or act on an unbounded folder in one request.
@@ -175,6 +170,9 @@ export function MessageFolderPage({
 	// The setter can come from a parent's selection state and is not stable, so it is
 	// left out of the dependencies; listing it would clear the selection on every render.
 	const selectionAnchor = useRef<string | null>(null);
+	// Bumped by a view change (below) or an explicit clear, so a "Select all" result that resolves after either
+	// is discarded instead of silently repopulating a selection the user already left or cleared.
+	const selectAllGeneration = useRef(0);
 	// The open message (or draft) is the anchor of the next range, whether a click, a key or a link opened it.
 	const pathname = usePathname();
 	const openMessageId = selectedMessageId ?? openIdFromPath(pathname, config.hrefPrefix);
@@ -184,6 +182,7 @@ export function MessageFolderPage({
 	useEffect(() => {
 		selectionAnchor.current = null;
 		setSelectedMessages([]);
+		selectAllGeneration.current += 1;
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [listKey, offset]);
 
@@ -196,17 +195,20 @@ export function MessageFolderPage({
 	// An empty selection has no anchor: the next range starts from the open message or the focused row.
 	function clearSelection() {
 		selectionAnchor.current = null;
+		selectAllGeneration.current += 1;
 		clearAndLeave();
 	}
 	/** Escape: empties the selection and leaves the open message open (the pane falls back to it). */
 	function clearSelectionKeepOpen() {
 		selectionAnchor.current = null;
+		selectAllGeneration.current += 1;
 		setSelectedMessages([]);
 	}
 
 	/** "Select all N in folder": resolves every matching row from the server and replaces the selection with it. */
 	async function selectAllMatching() {
 		if (resolvingSelectAll) return;
+		const startGeneration = selectAllGeneration.current;
 		setResolvingSelectAll(true);
 		try {
 			const { messages: matched, truncated } = await resolveAllMatchingMessages(
@@ -215,8 +217,17 @@ export function MessageFolderPage({
 				{ query, read: unreadOnly ? "unread" : "all", group: grouped ? "thread" : undefined },
 				config.folderId,
 			);
+			// The search, filter, folder, mailbox or page changed, or the selection was cleared, while this was
+			// still resolving: applying it now would silently select mail the user can no longer see, or bring
+			// back a selection they already dismissed.
+			if (selectAllGeneration.current !== startGeneration) return;
 			selectionAnchor.current = null;
-			setSelectedMessages(matched.map(toSelectedMessage));
+			// Off-page entries (not on the currently loaded page) are never pruned by a later refresh; see
+			// `pruneSelection`.
+			const loadedIds = new Set(messages.map((message) => message.id));
+			setSelectedMessages(
+				matched.map((message) => ({ ...toSelectedMessage(message), offPage: !loadedIds.has(message.id) })),
+			);
 			if (truncated) reportSelectAllTruncated(SELECT_ALL_MAX_MESSAGES);
 		} catch (error) {
 			reportListActionError(error);
@@ -366,7 +377,9 @@ export function MessageFolderPage({
 		setPendingBulkAction(true);
 		const previousMessages = messages;
 		const readValue = action === "read" ? true : action === "unread" ? false : null;
-		const selectedRows = messages.filter((message) => actionIds.includes(message.id));
+		// Falls back to the selection's own snapshot for a row "Select all in folder" reached past the loaded
+		// page, so a folder-wide mark read/unread still moves the sidebar Inbox count by the right amount.
+		const selectedRows = resolveSelectedRows(actionIds, messages, selectedMessages);
 		const inboxUnreadDelta = getInboxUnreadDelta(selectedRows, readValue, affectsInboxUnreadCount(config));
 		if (readValue !== null) {
 			updateMessages((current) =>
@@ -423,6 +436,7 @@ export function MessageFolderPage({
 		selectionCount: selectedIds.length,
 		clearSelection: clearSelectionKeepOpen,
 		selectAllVisible: () => toggleAllVisible(true),
+		listVisible,
 	});
 
 	useOpenRowBridge({

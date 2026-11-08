@@ -13,6 +13,7 @@ import { layoutPixels, pixelsPerPercent } from "@/components/ui/resizable-utils"
 import { useSyncedPanel } from "@/components/ui/use-synced-panel";
 import { UpdateNoticeReader } from "@/components/update-notice-reader";
 import { UpdateReaderHostContext, closeUpdateReader, useUpdateReaderOpen } from "@/components/update-notice-store";
+import { ListSelectionContext } from "./list-selection-context";
 import { OpenRowContext, useRowLookupHolder } from "./open-row-context";
 import { MessageFolderPage } from "./message-folder-page";
 import { setListBesideReader } from "./list-beside-reader";
@@ -227,25 +228,27 @@ export function MessageSplitLayout({ children, config }: MessageSplitLayoutProps
 
 	const detail = (
 		<MessageListVisibilityContext.Provider value={visibility}>
-			<MessageDetailNavigationProvider config={config}>
-				<OpenRowContext.Provider value={rowLookup.lookup}>
-					<section
-						// A flex item of its panel: it fills the panel's height by stretching, without a percentage height to resolve.
-						className={clsx(
-							"flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-white",
-							split && PANEL_CLASS,
-						)}
-					>
-						{updateReaderOpen ? (
-							<UpdateNoticeReader />
-						) : visibleMessageId ? (
-							children
-						) : (
-							<ReadingPaneEmptyState config={config} />
-						)}
-					</section>
-				</OpenRowContext.Provider>
-			</MessageDetailNavigationProvider>
+			<ListSelectionContext.Provider value={selectedMessages.length}>
+				<MessageDetailNavigationProvider config={config}>
+					<OpenRowContext.Provider value={rowLookup.lookup}>
+						<section
+							// A flex item of its panel: it fills the panel's height by stretching, without a percentage height to resolve.
+							className={clsx(
+								"flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-white",
+								split && PANEL_CLASS,
+							)}
+						>
+							{updateReaderOpen ? (
+								<UpdateNoticeReader />
+							) : visibleMessageId ? (
+								children
+							) : (
+								<ReadingPaneEmptyState config={config} />
+							)}
+						</section>
+					</OpenRowContext.Provider>
+				</MessageDetailNavigationProvider>
+			</ListSelectionContext.Provider>
 		</MessageListVisibilityContext.Provider>
 	);
 

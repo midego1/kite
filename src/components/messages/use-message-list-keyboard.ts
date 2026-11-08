@@ -21,6 +21,8 @@ type ListKeyboardOptions = {
 	clearSelection: () => void;
 	/** Cmd/Ctrl+A: selects every loaded row, the same as the list header's checkbox. */
 	selectAllVisible: () => void;
+	/** False while the list panel is hidden (the mobile reader): Cmd/Ctrl+A then belongs to whatever is on screen. */
+	listVisible: boolean;
 };
 
 /**
@@ -38,10 +40,11 @@ function focusIsInList(list: HTMLElement | null): boolean {
 }
 
 /**
- * Whether a key belongs to the list's selection: the focus is on the page itself or in the folder page's own
- * area (its list and header carry `data-selection-scope`), and no popup is open. Used by Escape (to clear) and
- * Cmd/Ctrl+A (to select every loaded row), neither of which should fire while typing or while the reader, a
- * dialog or a menu owns the keyboard.
+ * Whether a key belongs to the list's selection: no popup is open, the focus is not on text being typed, and
+ * the target is the page itself (`body`/`documentElement`, nothing has taken the focus) or inside the folder
+ * page's own area (its list and header carry `data-selection-scope`). Used only by Escape: with nothing
+ * focused, Escape clearing a selection is the better default, and it is not a key the browser or page text
+ * does anything else with.
  */
 function isWithinSelectionScope(event: KeyboardEvent): boolean {
 	if (isTypingInInput(event.target)) return false;
@@ -53,6 +56,17 @@ function isWithinSelectionScope(event: KeyboardEvent): boolean {
 
 function escapeClearsSelection(event: KeyboardEvent): boolean {
 	return event.key === "Escape" && isWithinSelectionScope(event);
+}
+
+/**
+ * Whether Cmd/Ctrl+A belongs to the list: unlike Escape, a bare `body`/`documentElement` target does not count
+ * here, since clicking plain text in the open message (which takes no focus of its own) would otherwise steal
+ * the browser's own "select all page text" there. The target must be inside the folder page's own area.
+ */
+function isWithinListSelectionScope(event: KeyboardEvent): boolean {
+	if (isTypingInInput(event.target)) return false;
+	if (document.querySelector(OPEN_POPUPS)) return false;
+	return event.target instanceof HTMLElement && !!event.target.closest("[data-selection-scope]");
 }
 
 /** Cmd (Apple) or Ctrl+A, unmodified otherwise so Shift/Alt combinations are left to the browser. */
@@ -90,6 +104,7 @@ export function useMessageListKeyboard({
 	selectionCount,
 	clearSelection,
 	selectAllVisible,
+	listVisible,
 }: ListKeyboardOptions) {
 	const { shortcutsEnabled } = useShortcuts();
 
@@ -156,13 +171,14 @@ export function useMessageListKeyboard({
 				clearSelection();
 				return;
 			}
-			// Unlike Escape, Cmd/Ctrl+A is a shortcut like j/k/x/e/#, so it stays off with the rest of them.
-			if (shortcutsEnabled && isSelectAllChord(event) && isWithinSelectionScope(event)) {
+			// Unlike Escape, Cmd/Ctrl+A is a shortcut like j/k/x/e/#, so it stays off with the rest of them, and with
+			// the list itself: hidden (the mobile reader), it belongs to whatever is on screen instead.
+			if (shortcutsEnabled && listVisible && isSelectAllChord(event) && isWithinListSelectionScope(event)) {
 				event.preventDefault();
 				selectAllVisible();
 			}
 		};
 		window.addEventListener("keydown", onKeyDown, true);
 		return () => window.removeEventListener("keydown", onKeyDown, true);
-	}, [selectionCount, clearSelection, selectAllVisible, shortcutsEnabled]);
+	}, [selectionCount, clearSelection, selectAllVisible, shortcutsEnabled, listVisible]);
 }

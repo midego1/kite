@@ -1,13 +1,31 @@
 import type { BulkMessageResponse } from "@/app/api/messages/bulk/types";
 
 /**
- * Ids per request for an action whose server side is a sequential per-message loop: reporting spam or phishing
- * (each message trains the spam filter and writes its own receipt) and restoring a batch Undo brings back (each
- * state may undo a receipt's training too). "Select all in folder" can select up to a thousand rows, more once
- * conversation view expands them, so one request per message would risk a Worker's time and subrequest limits;
- * this keeps every request to a bounded number of messages, the same way permanently deleting a page does.
+ * Ids per bulk-action (and restore) request. "Select all in folder" can select up to a thousand rows, more once
+ * conversation view expands them, and one request's server-side work scales with how many ids it carries: a
+ * sequential per-message loop for spam, phishing and restoring a training receipt, and otherwise roughly 20
+ * SELECT/UPDATE pairs and up to 84 audit inserts per 1,000 ids, well past the ~50 D1 queries a Workers Free
+ * invocation allows (`docs/operations.md`). Every bulk action is batched at this size, the same as permanently
+ * deleting a page.
  */
-export const TRAINING_ACTION_BATCH_SIZE = 50;
+export const BULK_ACTION_BATCH_SIZE = 50;
+
+/**
+ * Thrown by `runBulkMessageAction` when a later batch failed (or the user declined a mid-run drafts
+ * confirmation) after at least one earlier batch had already gone through. The earlier batches' effects (Undo,
+ * the list refresh, the left-view announcement) still ran before this was thrown; `completed`/`total` let the
+ * caller say how far it got instead of a plain "could not update the messages".
+ */
+export class PartialBulkActionError extends Error {
+	constructor(
+		message: string,
+		readonly completed: number,
+		readonly total: number,
+	) {
+		super(message);
+		this.name = "PartialBulkActionError";
+	}
+}
 
 export function chunkArray<T>(items: readonly T[], size: number): T[][] {
 	if (items.length === 0) return [];

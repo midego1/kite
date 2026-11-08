@@ -108,6 +108,9 @@ export function MessageListHeader({
 						checked={selection.allVisible}
 						disabled={selection.disabled}
 						onChange={(event) => selection.toggleAll(event.target.checked)}
+						// A fingertip needs a bigger target than a mouse pointer does; the header's own gap
+						// around it has the room for it without crowding its neighbors.
+						className="pointer-coarse:h-6 pointer-coarse:w-6"
 						aria-label={t("Select all visible messages")}
 					/>
 				</Tooltip>

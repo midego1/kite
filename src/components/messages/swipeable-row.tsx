@@ -21,13 +21,19 @@ type SwipeableRowProps = {
 	endAction: SwipeAction;
 	disabled?: boolean;
 	role?: string;
+	/**
+	 * Called once the drag captures the pointer, so a sibling gesture (the row's own long press) can cancel
+	 * itself: a captured pointer's later move and up events are retargeted to this element, so they never reach
+	 * a handler on a child of it again.
+	 */
+	onDragStart?: () => void;
 };
 
 const COMMIT_DISTANCE = 88;
 const INTENT_DISTANCE = TOUCH_GESTURE_INTENT_DISTANCE;
 
 // Touch-only swipe gestures; vertical scrolling stays with the browser via touch-action: pan-y.
-export function SwipeableRow({ children, startAction, endAction, disabled, role }: SwipeableRowProps) {
+export function SwipeableRow({ children, startAction, endAction, disabled, role, onDragStart }: SwipeableRowProps) {
 	const [offset, setOffset] = useState(0);
 	const [dragging, setDragging] = useState(false);
 	const gesture = useRef<{ x: number; y: number; active: boolean; id: number } | null>(null);
@@ -53,6 +59,7 @@ export function SwipeableRow({ children, startAction, endAction, disabled, role 
 			current.active = true;
 			setDragging(true);
 			event.currentTarget.setPointerCapture(event.pointerId);
+			onDragStart?.();
 		}
 		setOffset(dx);
 	}

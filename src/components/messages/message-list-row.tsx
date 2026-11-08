@@ -89,6 +89,9 @@ function RowAvatar({ showCheckbox, ...props }: RowViewProps & { showCheckbox: bo
 				<Checkbox
 					checked={selected}
 					{...rowCheckboxHandlers(message.id, props.onSelectedChange)}
+					// A fingertip needs a bigger target than a mouse pointer does; the 36px avatar slot this
+					// replaces has the room for it.
+					className="pointer-coarse:h-6 pointer-coarse:w-6"
 					aria-label={rowCheckboxLabel(props)}
 				/>
 			</span>
@@ -182,12 +185,11 @@ function StackedSubjectLine({ inlineStar, ...props }: RowViewProps & { inlineSta
  * as small icons. The checkbox takes the avatar's place while selecting; it stays in the tab order and shows
  * when focused.
  */
-function StackedMessageRow(props: RowViewProps) {
-	const { message, config, selected, active = false, density = "default", hoverActions = true, row } = props;
+function StackedMessageRow(props: RowViewProps & { longPress: ReturnType<typeof useRowLongPress> }) {
+	const { message, config, selected, active = false, density = "default", hoverActions = true, row, longPress } = props;
 	const stackedDensity = getStackedRowDensity(density);
 	const showHoverActions = row.hasRowActions && hoverActions;
 	const showCheckbox = props.selecting || selected;
-	const longPress = useRowLongPress(() => props.onLongPressSelect?.(message.id));
 	const Icon = config.icon;
 	// With a mailbox label the pill sits flush right under the date, so a starred row's star moves in front of
 	// it instead of into the corner (where it would cover the pill). Without hover actions (phones) the star is
@@ -204,7 +206,7 @@ function StackedMessageRow(props: RowViewProps) {
 				row.draggable && "cursor-grab active:cursor-grabbing",
 			)}
 			{...dragHandlers(row, props.dragMessageIds)}
-			{...longPress}
+			{...longPress.handlers}
 		>
 			<MessageNavigationProgress progress={row.navigation.progress} />
 			<RowAvatar {...props} showCheckbox={showCheckbox} />
@@ -337,9 +339,8 @@ function RowMarkers({ placement, ...props }: RowViewProps & { placement: "leadin
 }
 
 /** The single-line row of a full-width list. */
-function WideMessageRow(props: RowViewProps) {
-	const { message, config, selected, active = false, density = "default", row } = props;
-	const longPress = useRowLongPress(() => props.onLongPressSelect?.(message.id));
+function WideMessageRow(props: RowViewProps & { longPress: ReturnType<typeof useRowLongPress> }) {
+	const { message, config, selected, active = false, density = "default", row, longPress } = props;
 	const Icon = config.icon;
 	return (
 		<div
@@ -352,15 +353,16 @@ function WideMessageRow(props: RowViewProps) {
 				row.draggable && "cursor-grab active:cursor-grabbing",
 			)}
 			{...dragHandlers(row, props.dragMessageIds)}
-			{...longPress}
+			{...longPress.handlers}
 		>
 			<MessageNavigationProgress progress={row.navigation.progress} />
 			<Checkbox
 				checked={selected}
 				{...rowCheckboxHandlers(message.id, props.onSelectedChange)}
-				// As in the stacked rows, checkboxes show while selecting, on hover and with keyboard focus.
+				// As in the stacked rows, checkboxes show while selecting, on hover and with keyboard focus; the
+				// bigger pointer-coarse size still fits this column, which is sized for it.
 				className={clsx(
-					"relative z-10",
+					"relative z-10 pointer-coarse:h-6 pointer-coarse:w-6",
 					!props.selecting && !selected && "opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
 				)}
 				aria-label={rowCheckboxLabel(props)}
@@ -460,13 +462,17 @@ function WideMessageRow(props: RowViewProps) {
 export function MessageListRow(props: MessageListRowProps) {
 	const t = useT();
 	const row = useMessageListRow(props);
+	// Lifted above the stacked/wide split so a swipe that captures the pointer (SwipeableRow, below) can cancel
+	// the same long-press instance the row renders with, not one it could never reach from outside.
+	const longPress = useRowLongPress(() => props.onLongPressSelect?.(props.message.id));
 	const { compact = false, config } = props;
-	if (!compact || config.folder === "drafts") return <WideMessageRow {...props} row={row} />;
-	const stacked = <StackedMessageRow {...props} row={row} />;
+	if (!compact || config.folder === "drafts") return <WideMessageRow {...props} row={row} longPress={longPress} />;
+	const stacked = <StackedMessageRow {...props} row={row} longPress={longPress} />;
 	if (!row.hasRowActions) return stacked;
 	return (
 		<SwipeableRow
 			role="listitem"
+			onDragStart={longPress.cancel}
 			startAction={{
 				label: row.read ? t("Mark unread") : t("Mark read"),
 				icon: row.read ? Mail : MailOpen,

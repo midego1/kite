@@ -22,7 +22,7 @@ await build({
 	logLevel: "silent",
 });
 
-const { chunkArray, mergeBulkResponses, TRAINING_ACTION_BATCH_SIZE } = await import(
+const { chunkArray, mergeBulkResponses, BULK_ACTION_BATCH_SIZE } = await import(
 	pathToFileURL(join(outDir, "entry.mjs")).href
 );
 
@@ -41,8 +41,8 @@ test("chunkArray returns no batches for nothing, and one for less than a full ba
 	assert.deepEqual(chunkArray(["a", "b"], 50), [["a", "b"]]);
 });
 
-test("the training batch size matches what Delete forever already uses", () => {
-	assert.equal(TRAINING_ACTION_BATCH_SIZE, 50);
+test("the bulk action batch size matches what Delete forever already uses", () => {
+	assert.equal(BULK_ACTION_BATCH_SIZE, 50);
 });
 
 test("mergeBulkResponses concatenates undo, moved and reports across every batch", () => {

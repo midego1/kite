@@ -11,11 +11,17 @@ import type { PageRange } from "./types";
 import type { BulkMessageAction, BulkMessageResponse, PermanentDeleteFolder } from "@/app/api/messages/bulk/types";
 import { SEND_PENDING_MOVE_MESSAGE, SEND_PENDING_MOVE_REFUSED } from "@/lib/messages/send-state-utils";
 import { postBulkMessageAction } from "./bulk-request";
-import { chunkArray, mergeBulkResponses, TRAINING_ACTION_BATCH_SIZE } from "./bulk-action-batch-utils";
+import {
+	BULK_ACTION_BATCH_SIZE,
+	chunkArray,
+	mergeBulkResponses,
+	PartialBulkActionError,
+} from "./bulk-action-batch-utils";
 import { announcePhishingReports } from "./phishing-report";
 import { offerUndoForMove } from "./undo-utils";
 import { announceMessagesLeftView, bulkActionLeftView } from "./left-view-utils";
 import { requestConfirmation } from "@/components/ui/confirm-dialog-utils";
+import { showProgressToast } from "@/components/ui/progress-toast";
 import type { EmptyFolderResponse } from "@/app/api/messages/empty/types";
 import { msg, t } from "@/lib/i18n/translator";
 
@@ -109,33 +115,67 @@ export function getSelectionToolbarFolder(config: Pick<MessageFolderConfig, "fol
 	return config.folderId ? undefined : config.folder;
 }
 
-/** Spam and phishing reports, and "Not spam", train the filter one message at a time on the server. */
-const TRAINING_ACTIONS = new Set<string>(["spam", "phishing", "inbox"]);
-
+/**
+ * Runs a bulk action in batches of `BULK_ACTION_BATCH_SIZE`. A drafts-confirmation 409 is only ever asked once:
+ * the first batch that needs it remembers the answer (from its response's `draftsDeleted`) for every batch
+ * after it, so "Select all" over a mix of drafts and mail asks nothing twice.
+ *
+ * On a later batch's failure or decline, the batches that already completed keep their effects (Undo, the list
+ * refresh, the left-view announcement all still run below) instead of losing them; `PartialBulkActionError`
+ * carries how far it got so the caller can say "N of M done" instead of a plain failure.
+ */
 export async function runBulkMessageAction(messageIds: string[], action: string, notify = true, folderId?: string) {
-	const batchSize = TRAINING_ACTIONS.has(action) ? TRAINING_ACTION_BATCH_SIZE : messageIds.length || 1;
+	const uniqueIds = Array.from(new Set(messageIds));
 	const responses: BulkMessageResponse[] = [];
-	for (const chunk of chunkArray(messageIds, batchSize)) {
-		const response = await postBulkMessageAction({ messageIds: chunk, action: action as BulkMessageAction, folderId });
-		// Cancelled: the selection held drafts and the user chose not to delete them.
-		if (!response) return null;
+	const completedIds: string[] = [];
+	let deleteDraftsConfirmed = false;
+	let failureMessage: string | null = null;
+	for (const chunk of chunkArray(uniqueIds, BULK_ACTION_BATCH_SIZE)) {
+		let response: Response | null;
+		try {
+			response = await postBulkMessageAction({
+				messageIds: chunk,
+				action: action as BulkMessageAction,
+				folderId,
+				...(deleteDraftsConfirmed ? { deleteDrafts: true } : {}),
+			});
+		} catch {
+			failureMessage = t("Unable to update selected messages");
+			break;
+		}
+		if (!response) {
+			// The user declined to delete their own drafts for good. With nothing completed yet this is a plain
+			// cancel (matches the pre-batching contract); after some success it is reported like any other stop.
+			if (completedIds.length === 0) return null;
+			failureMessage = t("Unable to update selected messages");
+			break;
+		}
 		if (!response.ok) {
 			const refused = (await response.json().catch(() => null)) as BulkMessageResponse | null;
-			throw new Error(
+			failureMessage =
 				refused?.code === SEND_PENDING_MOVE_REFUSED
 					? SEND_PENDING_MOVE_MESSAGE
-					: t("Unable to update selected messages"),
-			);
+					: t("Unable to update selected messages");
+			break;
 		}
 		const data = (await response.json().catch(() => null)) as BulkMessageResponse | null;
-		if (data) responses.push(data);
+		if (data) {
+			responses.push(data);
+			completedIds.push(...chunk);
+			if ((data.draftsDeleted ?? 0) > 0) deleteDraftsConfirmed = true;
+		}
 	}
+
 	const data = mergeBulkResponses(responses);
-	if (action === "read" || action === "unread") markMessagesReadInCaches(messageIds, action === "read");
-	if (notify) window.dispatchEvent(new Event("kite:messages-changed"));
-	offerUndoForMove(action, data);
-	announceMessagesLeftView(bulkActionLeftView(action, messageIds, data));
-	if (action === "phishing") announcePhishingReports(data);
+	if (completedIds.length > 0) {
+		if (action === "read" || action === "unread") markMessagesReadInCaches(completedIds, action === "read");
+		if (notify) window.dispatchEvent(new Event("kite:messages-changed"));
+		offerUndoForMove(action, data);
+		announceMessagesLeftView(bulkActionLeftView(action, completedIds, data));
+		if (action === "phishing") announcePhishingReports(data);
+	}
+	if (failureMessage) throw new PartialBulkActionError(failureMessage, completedIds.length, uniqueIds.length);
+	if (completedIds.length === 0) return null;
 	return data;
 }
 
@@ -148,6 +188,11 @@ export const LIST_ACTION_CANCELLED = "cancelled";
  * as anywhere, and nothing moves a draft to another folder. Resolves to `LIST_ACTION_CANCELLED` when the user
  * declines the confirmation.
  */
+/**
+ * Deletes drafts in batches of `BULK_ACTION_BATCH_SIZE`, parallel within a batch and sequential across them, so
+ * "Select all in Drafts" never fires up to a thousand DELETEs at once; a progress toast shows once there is more
+ * than one batch. On a batch's failure the ones before it keep their effect (the list still refreshes below).
+ */
 export async function runDraftListAction(draftIds: string[], action: string) {
 	if (action === "read" || action === "unread") return runBulkMessageAction(draftIds, action);
 	if (action !== "trash" && action !== "delete") throw new Error("Drafts can only be sent or deleted");
@@ -157,12 +202,32 @@ export async function runDraftListAction(draftIds: string[], action: string) {
 		confirmLabel: t("Delete"),
 	});
 	if (!confirmed) return LIST_ACTION_CANCELLED;
-	const responses = await Promise.all(
-		draftIds.map((id) => authFetch(`/api/drafts/${encodeURIComponent(id)}`, { method: "DELETE" })),
-	);
-	window.dispatchEvent(new Event("kite:messages-changed"));
-	// A draft that is already gone (sent or deleted elsewhere) is fine.
-	if (responses.some((response) => !response.ok && response.status !== 404)) throw new Error("Unable to delete drafts");
+	const uniqueIds = Array.from(new Set(draftIds));
+	const chunks = chunkArray(uniqueIds, BULK_ACTION_BATCH_SIZE);
+	const progress = chunks.length > 1 ? showProgressToast(t("Deleting drafts"), uniqueIds.length) : null;
+	let done = 0;
+	try {
+		for (const chunk of chunks) {
+			const responses = await Promise.all(
+				chunk.map((id) => authFetch(`/api/drafts/${encodeURIComponent(id)}`, { method: "DELETE" })),
+			);
+			// A draft that is already gone (sent or deleted elsewhere) is fine.
+			if (responses.some((response) => !response.ok && response.status !== 404)) {
+				progress?.fail(
+					t("{done} of {total} drafts deleted. The rest could not be deleted; please try again.", {
+						done,
+						total: uniqueIds.length,
+					}),
+				);
+				throw new Error("Unable to delete drafts");
+			}
+			done += chunk.length;
+			progress?.update(done);
+		}
+		progress?.succeed(t("{count, plural, one {# draft deleted} other {# drafts deleted}}", { count: done }));
+	} finally {
+		window.dispatchEvent(new Event("kite:messages-changed"));
+	}
 	return null;
 }
 

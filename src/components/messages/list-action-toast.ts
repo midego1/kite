@@ -1,13 +1,28 @@
 "use client";
 
 import toast from "react-hot-toast";
+import { PartialBulkActionError } from "./bulk-action-batch-utils";
 import { t } from "@/lib/i18n/translator";
 
 const LIST_ACTION_ERROR = "Could not update the messages. Please try again.";
 
-/** Tells the user a list or row action failed; one toast id, so repeated failures do not stack. */
+/**
+ * Tells the user a list or row action failed; one toast id, so repeated failures do not stack. A
+ * `PartialBulkActionError` (a later batch of a large bulk action failed or was declined after earlier ones
+ * already went through) says how far it got instead of the plain message.
+ */
 export function reportListActionError(error: unknown) {
 	console.error(error);
+	if (error instanceof PartialBulkActionError && error.completed > 0) {
+		toast.error(
+			t("{completed} of {total} done. The rest could not be updated; please try again.", {
+				completed: error.completed,
+				total: error.total,
+			}),
+			{ id: "list-action-error" },
+		);
+		return;
+	}
 	toast.error(LIST_ACTION_ERROR, { id: "list-action-error" });
 }
 

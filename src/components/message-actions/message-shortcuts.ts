@@ -71,3 +71,17 @@ export function messageShortcuts({
 		});
 	return shortcuts;
 }
+
+const LIST_SELECTION_SHORTCUT_KEYS = ["e", "y", "#"];
+
+/**
+ * With rows checked in the list beside it, e/y (archive) and # (trash) belong to that selection (the list's
+ * own hotkeys), not to this one open, unchecked message; reply/forward/report spam/print/back stay on.
+ */
+export function reachableMessageShortcuts(
+	shortcuts: ShortcutDefinition[],
+	listSelectionCount: number,
+): ShortcutDefinition[] {
+	if (listSelectionCount === 0) return shortcuts;
+	return shortcuts.filter((shortcut) => !LIST_SELECTION_SHORTCUT_KEYS.includes(shortcut.key));
+}

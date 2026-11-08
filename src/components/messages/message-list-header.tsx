@@ -93,6 +93,7 @@ export function MessageListHeader({
 	emptyFolder,
 	screenerVisible,
 	listVisible,
+	semanticUnavailable,
 }: MessageListHeaderProps) {
 	const t = useT();
 	// Only a selection pane beside the list replaces the toolbar; compact styling alone (a phone) must not.
@@ -173,6 +174,11 @@ export function MessageListHeader({
 			</div>
 			<div className="flex flex-col gap-3 px-3 pb-2 pt-3">
 				<MailSearchInput variant="panel" />
+				{semanticUnavailable && (
+					<p className="text-xs text-neutral-500">
+						{t("Showing keyword matches only — search by meaning is unavailable right now.")}
+					</p>
+				)}
 				<MessageListChips config={config} filter={filter} screenerVisible={screenerVisible} />
 			</div>
 		</div>

@@ -35,4 +35,6 @@ export type MessageListHeaderProps = {
 	screenerVisible: boolean;
 	filter: { value: MessageListFilter; onChange: (value: MessageListFilter) => void } | null;
 	emptyFolder: { folder: "trash" | "spam"; disabled: boolean; emptying: boolean; run: () => void } | null;
+	/** Shown under the search field while a search fell back to keyword matches only. */
+	semanticUnavailable?: boolean;
 };

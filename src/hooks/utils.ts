@@ -72,6 +72,7 @@ export function getMessageQueryParams(
 	if (filters?.offset) params.set("offset", String(filters.offset));
 	if (filters?.cursor) params.set("cursor", filters.cursor);
 	if (filters?.group) params.set("group", filters.group);
+	if (filters?.semantic === false) params.set("semantic", "0");
 
 	return params;
 }

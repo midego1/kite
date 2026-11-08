@@ -1,4 +1,4 @@
-import type { Message } from "@/hooks/types";
+import type { Message, MessageListResponse } from "@/hooks/types";
 import { authFetch } from "@/lib/auth/client";
 import { fetchMessageCounts, markMessagesReadInCaches } from "@/hooks/utils";
 import { planEmptyFolder } from "@/lib/mailboxes/scope-utils";
@@ -17,6 +17,11 @@ import { announceMessagesLeftView, bulkActionLeftView } from "./left-view-utils"
 import { requestConfirmation } from "@/components/ui/confirm-dialog-utils";
 import type { EmptyFolderResponse } from "@/app/api/messages/empty/types";
 import { msg, t } from "@/lib/i18n/translator";
+
+/** Whether a search fell back to keyword matches only, which is only worth saying while there is a search. */
+export function semanticUnavailableNote(query: string, semantic: MessageListResponse["semantic"]): boolean {
+	return !!query.trim() && semantic === "unavailable";
+}
 
 export function getMessageParty(message: Message, folder: MessageFolderConfig["folder"], currentAccountName?: string) {
 	if (folder === "drafts") return t("Draft");

@@ -11,7 +11,10 @@ import { getFirstEmailAddressEntry, normalizeEmailAddress } from "@/lib/email/ad
 import { listAccessibleMailboxes } from "@/lib/mailboxes/access";
 import { tracksAccountIdentity } from "@/lib/profile/identity-utils";
 import { buildSearchConditions } from "@/lib/search/conditions";
+import { parseSearchQuery } from "@/lib/search/query-utils";
 import { getRequestTimeZone } from "@/lib/time/utils";
+import { semanticSearch } from "@/lib/semantic/search";
+import type { SemanticMatch } from "@/lib/semantic/fusion-utils";
 import { queryInChunks } from "@/db/chunk-utils";
 import { decodeMessageCursor, getNextMessageCursor } from "@/lib/messages/cursor-utils";
 import { ownedStatusCondition } from "@/lib/modules/message-status";
@@ -30,6 +33,58 @@ import { conversationKey, rowConversationKey } from "@/lib/messages/conversation
 import { afterCursor, getMessageListColumns, loadConversationPage } from "./utils";
 import { groupThreadMembers, type ScopedThreads } from "@/lib/messages/thread-unread-utils";
 import type { ListMessage } from "./types";
+
+type ListQueryResolution = {
+	hybridIds: string[] | null;
+	matchByMessageId: Map<string, SemanticMatch> | null;
+	semanticStatus?: "on" | "unavailable";
+	semanticReason?: string;
+};
+
+/**
+ * `q`/`title` into `conditions` (pushed in place) and, when `tryHybrid` (not conversation view, no cursor, the
+ * By meaning chip is not turned off for this request) and there is free text, a fused and D1-rechecked id order
+ * from `semanticSearch` instead of the plain keyword condition (`docs/specs/semantic-search.md` section 4.6).
+ */
+async function resolveListQuery(input: {
+	env: CloudflareEnv;
+	conditions: SQL[];
+	query: string | undefined;
+	title: string | undefined;
+	timeZone: string;
+	mailboxIds: string[];
+	tryHybrid: boolean;
+}): Promise<ListQueryResolution> {
+	const { env, conditions, query, title, timeZone, mailboxIds } = input;
+	if (!query && !title) return { hybridIds: null, matchByMessageId: null };
+	// Operators (from:, has:attachment, before:) and free text go through the
+	// full-text index; `title` is the legacy subject filter and is folded in.
+	const search = title ? `${query ?? ""} subject:"${title}"` : (query ?? "");
+	const connectedAccounts = await viaSearchAvailable(env, search);
+	const parsed = parseSearchQuery(search, timeZone);
+	if (!input.tryHybrid || parsed.text.trim().length === 0) {
+		conditions.push(...buildSearchConditions(search, timeZone, { connectedAccounts }));
+		return { hybridIds: null, matchByMessageId: null };
+	}
+	const operatorConditions = buildSearchConditions(search, timeZone, { connectedAccounts, includeFullText: false });
+	const result = await semanticSearch({
+		env,
+		scopeWhere: and(...conditions, ...operatorConditions)!,
+		queryText: parsed.text,
+		mailboxIds,
+	});
+	if (result.semantic !== "on") {
+		conditions.push(...buildSearchConditions(search, timeZone, { connectedAccounts }));
+		return {
+			hybridIds: null,
+			matchByMessageId: null,
+			semanticStatus: result.semantic,
+			semanticReason: result.semanticReason,
+		};
+	}
+	conditions.push(...operatorConditions);
+	return { hybridIds: result.ids, matchByMessageId: result.matches, semanticStatus: result.semantic };
+}
 
 export async function GET(request: Request) {
 	const env = getEnv();
@@ -110,16 +165,15 @@ export async function GET(request: Request) {
 	if (read === "unread") {
 		conditions.push(eq(messages.read, false));
 	}
-	if (query || title) {
-		// Operators (from:, has:attachment, before:) and free text go through the
-		// full-text index; `title` is the legacy subject filter and is folded in.
-		const search = title ? `${query ?? ""} subject:"${title}"` : (query ?? "");
-		conditions.push(
-			...buildSearchConditions(search, getRequestTimeZone(request, user.timeZone), {
-				connectedAccounts: await viaSearchAvailable(env, search),
-			}),
-		);
-	}
+	const { hybridIds, matchByMessageId, semanticStatus, semanticReason } = await resolveListQuery({
+		env,
+		conditions,
+		query,
+		title,
+		timeZone: getRequestTimeZone(request, user.timeZone),
+		mailboxIds: mailboxScope.ids,
+		tryHybrid: url.searchParams.get("semantic") !== "0" && !groupByThread && !cursor,
+	});
 	const where = and(...conditions);
 	// Messages that were never threaded (older rows, drafts) stand alone, and a conversation
 	// never spans mailboxes: the same Message-ID delivered to two of them is two threads.
@@ -154,6 +208,16 @@ export async function GET(request: Request) {
 			);
 			scopedThreads = groupThreadMembers(members);
 		}
+	} else if (hybridIds) {
+		// The D1 re-check already applied `where`; repeating it would only add bound parameters. Hybrid results have
+		// no cursor: "Show more" continues with keyword results by date (`tryHybrid` above then stays off).
+		const loaded = await queryInChunks(hybridIds, (ids) =>
+			db.select(messageListColumns).from(messages).where(inArray(messages.id, ids)),
+		);
+		const rowById = new Map(loaded.map((row) => [row.id, row]));
+		rows = hybridIds.map((id) => rowById.get(id)).filter((row): row is ListMessage => !!row);
+		total = rows.length;
+		nextCursor = null;
 	} else {
 		const [[totalRow], pageRows] = await Promise.all([
 			db.select({ total: count() }).from(messages).where(where),
@@ -248,6 +312,12 @@ export async function GET(request: Request) {
 	// `Message.textBody`/`htmlBody` are optional on the wire type and the
 	// reading pane loads them from /api/messages/[id]/thread, so they are
 	// neither selected nor sent here.
+	const optionalRowFields = (messageId: string) => ({
+		...(screenerPending.has(messageId) ? { screenerPending: true } : {}),
+		...(sendStates.has(messageId) ? { sendState: sendStates.get(messageId) } : {}),
+		...(via.has(messageId) ? { via: via.get(messageId) } : {}),
+		...(matchByMessageId?.has(messageId) ? { match: matchByMessageId.get(messageId) } : {}),
+	});
 	const enrichedRows = rows.map(({ rawR2Key: _rawR2Key, ...message }) => {
 		const contactMap = contactMapsByUserId.get(message.userId);
 		const accountName = message.mailboxId ? mailboxNameMap.get(message.mailboxId) : null;
@@ -267,9 +337,7 @@ export async function GET(request: Request) {
 			hasAttachments: withAttachments.has(message.id),
 			...rowSuggestions(message.id),
 			...rowLines(message.id),
-			...(screenerPending.has(message.id) ? { screenerPending: true } : {}),
-			...(sendStates.has(message.id) ? { sendState: sendStates.get(message.id) } : {}),
-			...(via.has(message.id) ? { via: via.get(message.id) } : {}),
+			...optionalRowFields(message.id),
 			...(groupByThread
 				? {
 						threadMessageIds: scopedThreads.ids.get(key) ?? [message.id],
@@ -279,5 +347,13 @@ export async function GET(request: Request) {
 		};
 	});
 
-	return NextResponse.json({ messages: enrichedRows, total, limit, offset, nextCursor, grouped: groupByThread });
+	return NextResponse.json({
+		messages: enrichedRows,
+		total,
+		limit,
+		offset,
+		nextCursor,
+		grouped: groupByThread,
+		...(semanticStatus ? { semantic: semanticStatus, ...(semanticReason ? { semanticReason } : {}) } : {}),
+	});
 }

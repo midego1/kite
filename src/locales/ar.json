@@ -722,5 +722,9 @@
 	"{name} profile picture": "صورة الملف الشخصي لـ {name}",
 	"{start} - {end} of {total}": "{start} - {end} من {total}",
 	"{title}. Show all mail through this account": "{title}. إظهار كل البريد عبر هذا الحساب",
-	"{value} {caption}": "{value} {caption}"
+	"{value} {caption}": "{value} {caption}",
+	"By meaning": "حسب المعنى",
+	"Find mail by what it means, not only its exact words": "اعثر على البريد حسب معناه، لا حسب كلماته الحرفية فقط",
+	"Found by meaning, not exact words": "عُثر عليه حسب المعنى، لا حسب الكلمات الحرفية",
+	"Showing keyword matches only — search by meaning is unavailable right now.": "يتم عرض التطابقات حسب الكلمات المفتاحية فقط — البحث حسب المعنى غير متوفر حاليًا."
 }

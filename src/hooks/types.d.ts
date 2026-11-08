@@ -60,6 +60,8 @@ export type Message = {
 	via?: MessageVia;
 	/** The one-line AI summary shown instead of the preview, when the mailbox has them on and this mail got one. */
 	lineSummary?: string;
+	/** Set only on a hybrid search result: which search found this row ("meaning" gets the "Related" mark). */
+	match?: "keyword" | "meaning" | "both";
 	createdAt: string;
 };
 
@@ -95,6 +97,8 @@ export type MessageFilterOptions = {
 	cursor?: string | null;
 	/** "thread" collapses each conversation to its newest matching message. */
 	group?: "thread";
+	/** False turns off search by meaning for this request (the By meaning chip off); on by default. */
+	semantic?: boolean;
 };
 
 export type MessageListResponse = {
@@ -103,6 +107,9 @@ export type MessageListResponse = {
 	limit?: number;
 	offset?: number;
 	nextCursor?: string | null;
+	/** Set only when a query asked for search by meaning: whether it ran, or why it did not. */
+	semantic?: "on" | "unavailable";
+	semanticReason?: string;
 };
 
 export type FolderCount = {

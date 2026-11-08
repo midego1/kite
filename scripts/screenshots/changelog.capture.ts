@@ -366,6 +366,22 @@ const SHOTS: Shot[] = [
 		},
 	},
 	{
+		// The "By meaning" chip in the mail search box, typing a query that will also look for mail with the same meaning.
+		name: "2026-11-08-search-by-meaning-light",
+		theme: "light",
+		viewport: { width: 760, height: 160 },
+		open: async (page) => {
+			await page.goto("/inbox");
+			const panel = page.getByTestId("mail-search-panel");
+			const search = panel.getByRole("textbox", { name: /Search mail/ });
+			await search.click();
+			await search.fill("invoice");
+			const chip = panel.getByRole("button", { name: "By meaning" });
+			await expect(chip).toBeVisible();
+			return panel;
+		},
+	},
+	{
 		// Admin overview → the "Get started" checklist, part done and part not (the state is faked for a clean demo).
 		name: "2026-11-07-onboarding-checklist-light",
 		theme: "light",

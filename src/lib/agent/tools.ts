@@ -1,11 +1,12 @@
-import { and, count, desc, eq, isNull, lt, ne, or, type SQL } from "drizzle-orm";
+import { and, count, desc, eq, inArray, isNull, lt, ne, or, type SQL } from "drizzle-orm";
 import { z } from "zod";
-import { getDb } from "@/db";
+import { getDb, type AppDatabase } from "@/db";
 import { agentDraftMetadata, domains, mailboxes, messages } from "@/db/schema";
 import { buildSnippet } from "@/lib/email/parse";
 import { getAuthorizedSenderAddress } from "@/lib/email/sender";
 import { buildReplyReferences, formatMessageIdHeader, parseMessageIdList } from "@/lib/email/threading";
 import { buildSearchConditions } from "@/lib/search/conditions";
+import { parseSearchQuery } from "@/lib/search/query-utils";
 import { viaSearchAvailable } from "@/lib/external-accounts/via";
 import { SCREENING_STATUS } from "@/lib/screener/screener-utils";
 import { newId } from "@/lib/ids";
@@ -14,6 +15,8 @@ import { listMessageAttachments } from "@/lib/email/attachments";
 import { loadMessageBodies, loadMessageBody } from "@/lib/email/bodies";
 import { messageColumnsWithoutBodies, withStoredBodies } from "@/lib/messages/body-batches";
 import { htmlToReadableText } from "@/lib/email/reply-content-utils";
+import { queryInChunks } from "@/db/chunk-utils";
+import { semanticSearch } from "@/lib/semantic/search";
 import type { AgentToolContext, EmailToolName } from "./types";
 import { getReplyRecipients } from "./reply";
 import { formatAgentDraftBody } from "./draft-format";
@@ -55,7 +58,17 @@ export const emailToolSchemas = {
 	}),
 	get_email: z.object({ emailId: id }),
 	get_thread: z.object({ emailId: id }),
-	search_emails: z.object({ query: z.string().trim().min(1).max(300), folder: folder.optional(), limit }),
+	search_emails: z.object({
+		query: z.string().trim().min(1).max(300),
+		folder: folder.optional(),
+		limit,
+		mode: z
+			.enum(["keyword", "meaning", "both"])
+			.optional()
+			.describe(
+				"keyword matches exact words; meaning finds mail by what it means, for questions about topics rather than exact words; both (the default) tries meaning and falls back to keyword where it is unavailable.",
+			),
+	}),
 	count_emails: z.object({
 		query: z
 			.string()
@@ -117,7 +130,8 @@ export const emailToolDescriptions: Record<EmailToolName, string> = {
 		"List email metadata in a mailbox folder with pagination. Omit cursor or set it to null for the first page; use the returned nextCursor for later pages.",
 	get_email: "Read one email and its attachment metadata without marking it read.",
 	get_thread: "Read the recent conversation containing an email before drafting a reply.",
-	search_emails: "Search email subject and body in this mailbox.",
+	search_emails:
+		'Search email subject and body in this mailbox. Use mode: "meaning" (or the default "both") for questions about topics, not exact words, such as \'the quote for the roof repair\'; use "keyword" to match exact words only.',
 	count_emails:
 		'Count emails in this mailbox matching an optional search query, folder, and read state with one exact database count. Use this for any "how many" question instead of listing or searching and counting results yourself.',
 	draft_email: "Save a new email draft. This never sends.",
@@ -224,6 +238,98 @@ async function searchConditions(context: AgentToolContext, query: string): Promi
 	});
 }
 
+/**
+ * `search_emails`'s `mode`: tries meaning (and keyword, fused) unless `mode: "keyword"`, a cursor is given (hybrid
+ * results have no cursor) or the free text is empty. Falls back to plain keyword conditions, appended to
+ * `conditions`, whenever meaning is not tried or is unavailable; `hybridIds` is set only on a successful hybrid run.
+ */
+async function resolveSearchEmailsQuery(
+	context: AgentToolContext,
+	conditions: SQL[],
+	input: Record<string, unknown>,
+): Promise<{ hybridIds: string[] | null; note?: string }> {
+	const query = input.query as string;
+	const mode = (input.mode as "keyword" | "meaning" | "both" | undefined) ?? "both";
+	const timeZone = context.timeZone ?? "UTC";
+	const parsed = parseSearchQuery(query, timeZone);
+	const tryHybrid = mode !== "keyword" && !input.cursor && parsed.text.trim().length > 0;
+	if (tryHybrid) {
+		const operatorConditions = await buildSearchConditions(query, timeZone, {
+			connectedAccounts: await viaSearchAvailable(context.env, query),
+			includeFullText: false,
+		});
+		const result = await semanticSearch({
+			env: context.env,
+			scopeWhere: and(...conditions, ...operatorConditions)!,
+			queryText: parsed.text,
+			mailboxIds: [context.mailboxId],
+		});
+		if (result.semantic === "on") return { hybridIds: result.ids };
+		if (mode === "meaning")
+			return {
+				hybridIds: null,
+				note: `Search by meaning is unavailable right now (${result.semanticReason}); these are keyword results instead.`,
+			};
+	}
+	conditions.push(...(await searchConditions(context, query)));
+	return { hybridIds: null };
+}
+
+/** The fused, D1-rechecked ids in order (no cursor), or a date-ordered page with its cursor. */
+async function loadEmailPage(
+	db: AppDatabase,
+	conditions: SQL[],
+	hybridIds: string[] | null,
+	pageSize: number,
+): Promise<{ rows: Awaited<ReturnType<typeof publicMessage>>[]; nextCursor: string | null }> {
+	if (hybridIds) {
+		const loaded = await queryInChunks(hybridIds, (chunk) =>
+			db
+				.select(messageColumnsWithoutBodies)
+				.from(messages)
+				.where(and(...conditions, inArray(messages.id, chunk))),
+		);
+		const byId = new Map(loaded.map((row) => [row.id, row]));
+		const ordered = hybridIds
+			.map((emailId) => byId.get(emailId))
+			.filter((row): row is (typeof loaded)[number] => !!row)
+			.slice(0, pageSize);
+		// Hybrid results have no cursor; "Show more" continues with keyword results by date.
+		return { rows: (await withStoredBodies(db, ordered)).map(publicMessage), nextCursor: null };
+	}
+	const pageRows = await withStoredBodies(
+		db,
+		await db
+			.select(messageColumnsWithoutBodies)
+			.from(messages)
+			.where(and(...conditions))
+			.orderBy(desc(messages.createdAt))
+			.limit(pageSize + 1),
+	);
+	return {
+		rows: pageRows.slice(0, pageSize).map(publicMessage),
+		nextCursor: pageRows.length > pageSize ? (pageRows[pageSize - 1]?.id ?? null) : null,
+	};
+}
+
+async function listOrSearchEmails(
+	context: AgentToolContext,
+	db: AppDatabase,
+	name: "list_emails" | "search_emails",
+	input: Record<string, unknown>,
+) {
+	await requireAccess(context);
+	const conditions = mailboxFolderConditions(context, input.folder as string | undefined);
+	const { hybridIds, note } =
+		name === "search_emails" ? await resolveSearchEmailsQuery(context, conditions, input) : { hybridIds: null };
+	if (input.cursor) {
+		const cursor = await ownMessage(context, input.cursor as string, INVALID_CURSOR_MESSAGE);
+		conditions.push(lt(messages.createdAt, cursor.createdAt));
+	}
+	const { rows, nextCursor } = await loadEmailPage(db, conditions, hybridIds, input.limit as number);
+	return { emails: rows, nextCursor, ...(note ? { note } : {}) };
+}
+
 export async function runEmailTool(
 	context: AgentToolContext,
 	name: EmailToolName,
@@ -248,30 +354,7 @@ export async function runEmailTool(
 			unread: input.unread ?? null,
 		};
 	}
-	if (name === "list_emails" || name === "search_emails") {
-		await requireAccess(context);
-		const conditions = mailboxFolderConditions(context, input.folder as string | undefined);
-		if (name === "search_emails") conditions.push(...(await searchConditions(context, input.query as string)));
-		if (input.cursor) {
-			const cursor = await ownMessage(context, input.cursor as string, INVALID_CURSOR_MESSAGE);
-			conditions.push(lt(messages.createdAt, cursor.createdAt));
-		}
-		const pageSize = input.limit as number;
-		// Bodies in bounded batches: a page of large messages would pass D1's 50 MB result limit in one query.
-		const rows = await withStoredBodies(
-			db,
-			await db
-				.select(messageColumnsWithoutBodies)
-				.from(messages)
-				.where(and(...conditions))
-				.orderBy(desc(messages.createdAt))
-				.limit(pageSize + 1),
-		);
-		return {
-			emails: rows.slice(0, pageSize).map(publicMessage),
-			nextCursor: rows.length > pageSize ? rows[pageSize - 1]?.id : null,
-		};
-	}
+	if (name === "list_emails" || name === "search_emails") return listOrSearchEmails(context, db, name, input);
 	if (name === "get_email") {
 		const row = await loadMessageBody(context.env, await ownMessage(context, input.emailId as string));
 		const attachments = await listMessageAttachments(context.env, row.id);

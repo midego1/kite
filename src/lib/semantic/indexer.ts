@@ -2,17 +2,15 @@ import { and, eq, inArray } from "drizzle-orm";
 import { getDb } from "@/db";
 import { messages } from "@/db/schema";
 import { messageEmbeddings } from "@/db/schema/semantic";
-import { externalProviderRefused } from "@/lib/agent/external-provider";
-import { getAgentEnabled } from "@/lib/agent/provider";
 import { loadMessageBodies } from "@/lib/email/bodies";
 import { listMessageAttachments } from "@/lib/email/attachments";
 import { isNoSuchTableError } from "@/lib/modules/state-utils";
 import { buildEmbeddingText, isSemanticEligibleMessage } from "./chunk-utils";
 import {
+	embeddingAvailability,
 	embeddingErrorCode,
 	EmbeddingProviderUnavailableError,
 	getEmbeddingProvider,
-	resolvedEmbeddingProviderKind,
 } from "./embedding";
 import { chunkVectorId, vectorKeyFor } from "./filter-utils";
 import { getSemanticInstallSettings } from "./install-settings";
@@ -126,26 +124,12 @@ async function sha256Hex(value: string): Promise<string> {
 }
 
 /**
- * The gates in front of every batch, re-read every time (an external provider can be turned off between batches):
- * `semantic_search_enabled`, the install kill switch, and a configured embedding provider (the compatible kind also
- * needs the external-provider opt-in).
- */
-async function embeddingDrainAllowed(env: CloudflareEnv): Promise<boolean> {
-	const [settings, agentEnabled] = await Promise.all([getSemanticInstallSettings(env), getAgentEnabled(env)]);
-	if (!settings.enabled || !agentEnabled) return false;
-	const kind = await resolvedEmbeddingProviderKind(env);
-	if (kind === "compatible" && (await externalProviderRefused(env, "compatible"))) return false;
-	if (kind === "compatible" && !settings.compatibleBaseUrl) return false;
-	return true;
-}
-
-/**
  * One drain batch (`docs/specs/semantic-search.md` section 4.5): claims up to `CLAIM_BATCH_SIZE` rows, re-checks
  * eligibility, embeds the still-eligible ones under one spend reservation, upserts their vectors and drains a page
  * of delete tombstones. Returns how many rows were claimed, so callers can stop once a run claims nothing.
  */
 export async function processEmbeddingBatch(env: CloudflareEnv): Promise<{ claimed: number }> {
-	if (!(await embeddingDrainAllowed(env))) return { claimed: 0 };
+	if (!(await embeddingAvailability(env)).ok) return { claimed: 0 };
 	const now = new Date();
 	const claimed = await claimPendingRows(env, now);
 	if (claimed.length === 0) {

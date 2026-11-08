@@ -12,6 +12,7 @@ import type { ModuleSearchItem } from "@/lib/search/module-search-types";
 import { SearchDropdown } from "./search-dropdown";
 import { flattenSections, nextActiveIndex, searchItemKey } from "./search-dropdown-utils";
 import { useModuleSearch } from "./use-module-search";
+import { useSemanticSearchChip } from "./use-semantic-search-chip";
 import { useT } from "@/lib/i18n/use-t";
 
 /**
@@ -35,6 +36,7 @@ export function MailSearchInput({ variant = "header" }: { variant?: "header" | "
 	const [active, setActive] = useState(-1);
 	const items = flattenSections(sections);
 	const open = focused && items.length > 0 && closedFor !== query;
+	const [semanticOn, setSemanticOn] = useSemanticSearchChip();
 
 	function pick(item: ModuleSearchItem) {
 		setClosedFor(query);
@@ -76,6 +78,7 @@ export function MailSearchInput({ variant = "header" }: { variant?: "header" | "
 				<Search className="h-5 w-5" />
 			</button>
 			<div
+				data-testid="mail-search-panel"
 				className={clsx(
 					panel ? panelSearchClass : searchPillClass,
 					"relative",
@@ -105,15 +108,32 @@ export function MailSearchInput({ variant = "header" }: { variant?: "header" | "
 					className={searchPillInputClass}
 				/>
 				{query ? (
-					<button
-						type="button"
-						onMouseDown={(event) => event.preventDefault()}
-						onClick={() => setQuery("")}
-						className="rounded-full p-1 text-neutral-500 hover:bg-blue-100 hover:text-neutral-800"
-						aria-label={t("Clear search")}
-					>
-						<X className="h-4 w-4" />
-					</button>
+					<>
+						<button
+							type="button"
+							onMouseDown={(event) => event.preventDefault()}
+							onClick={() => setSemanticOn(!semanticOn)}
+							aria-pressed={semanticOn}
+							className={clsx(
+								"hidden shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium transition-colors sm:flex",
+								semanticOn
+									? "bg-blue-100 text-blue-700 hover:bg-blue-200"
+									: "bg-neutral-100 text-neutral-500 hover:bg-neutral-200 hover:text-neutral-900",
+							)}
+							title={t("Find mail by what it means, not only its exact words")}
+						>
+							{t("By meaning")}
+						</button>
+						<button
+							type="button"
+							onMouseDown={(event) => event.preventDefault()}
+							onClick={() => setQuery("")}
+							className="rounded-full p-1 text-neutral-500 hover:bg-blue-100 hover:text-neutral-800"
+							aria-label={t("Clear search")}
+						>
+							<X className="h-4 w-4" />
+						</button>
+					</>
 				) : showShortcutHints ? (
 					<button
 						type="button"

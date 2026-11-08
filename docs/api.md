@@ -235,6 +235,10 @@ Both list endpoints return results newest first and include `nextCursor` (null o
 
 Admins can check or rebuild the index with `GET` / `POST /api/admin/search-index`; triggers keep it current, so a rebuild is only needed after restoring a backup made before the index existed.
 
+### Search by meaning
+
+While [search by meaning](deployment.md#search-by-meaning-optional) is on for the install and the mailbox, both list endpoints accept `&mode=hybrid` (ignored without a `q`) to also match mail with no shared words with the query, merged with the keyword results by relevance. `GET /api/messages` only merges for the non-conversation-grouped view (`group` unset or not `thread`); with `group=thread` it falls back to keyword matching alone. A result found only through meaning carries `"match": "meaning"` (keyword hits carry `"keyword"`, a hit from both carries `"both"`); the response's `"semantic"` field is `"on"` or, when meaning search could not run for this request (the feature or mailbox has it off, or the install's spend cap was reached), `"unavailable"` with a `"semanticReason"` code, and the result is keyword matches only. The assistant's `search_emails` tool takes the same idea as a `mode` parameter: `keyword` (default), `meaning` or `both`.
+
 ## Webhooks
 
 **Admin → Webhooks** (`/webhooks`, primary admin; API `/api/webhooks`) posts events as JSON to an `http` or `https` URL on a public host, signed with the webhook's secret (`X-Email-Platform-Signature`), with failed deliveries retried with backoff.

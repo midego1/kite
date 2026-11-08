@@ -41,6 +41,32 @@ export async function reserveEmbeddingBatchSpend(
 	});
 }
 
+/**
+ * Reserves one search query's embedding (source `embedding_query`), tied to the mailbox the search ran in when
+ * there is a single one selected, else null (install cap only — a query over several mailboxes has no one mailbox
+ * to charge).
+ */
+export async function reserveEmbeddingQuerySpend(
+	env: CloudflareEnv,
+	providerKind: EmbeddingProvider["kind"],
+	mailboxId: string | null,
+	queryChars: number,
+): Promise<SpendReservation | null> {
+	const install = await getAutoReadInstallSettings(env);
+	return reserveAiSpend({
+		env,
+		source: "embedding_query",
+		mailboxId,
+		jobId: null,
+		details: { modelId: EMBEDDING_MODEL_ID, provider: providerName(providerKind), rates: embeddingRates() },
+		promptChars: queryChars,
+		maxOutputTokens: 0,
+		installCapMicros: install.dailySpendCapMicros,
+		mailboxCapMicros: null,
+		tokenCap: install.autoReadTokenCap,
+	});
+}
+
 /** Settles a reservation with the embedding call's actual input tokens, or keeps its estimate when it failed. */
 export async function settleEmbeddingSpend(
 	env: CloudflareEnv,

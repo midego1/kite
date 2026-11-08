@@ -36,12 +36,19 @@ function viaCondition(value: string): SQL {
  * caller ANDs these with its own scope (mailbox access, folder, status).
  * `connectedAccounts` says whether `via:` may read the connected-account tables (`viaSearchAvailable`, false before
  * migration 0079, when `via:` matches nothing). It is required, so no caller can forget to ask.
+ * `includeFullText` (default true) can be turned off to get the operator conditions alone, without the free-text
+ * FTS match — search by meaning's hybrid path (`src/lib/semantic/search.ts`) ranks the free text itself and uses
+ * these as the rest of its scope (`docs/specs/semantic-search.md` section 4.6).
  */
-export function buildSearchConditions(raw: string, timeZone: string, options: { connectedAccounts: boolean }): SQL[] {
+export function buildSearchConditions(
+	raw: string,
+	timeZone: string,
+	options: { connectedAccounts: boolean; includeFullText?: boolean },
+): SQL[] {
 	const parsed = parseSearchQuery(raw, timeZone);
 	const conditions: SQL[] = [];
 
-	const match = buildFtsMatch(parsed);
+	const match = options.includeFullText === false ? null : buildFtsMatch(parsed);
 	if (match) {
 		conditions.push(sql`${messages}.rowid IN (SELECT rowid FROM messages_fts WHERE messages_fts MATCH ${match})`);
 	}

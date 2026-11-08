@@ -722,5 +722,9 @@
 	"{name} profile picture": "Profielfoto van {name}",
 	"{start} - {end} of {total}": "{start} - {end} van {total}",
 	"{title}. Show all mail through this account": "{title}. Toon alle mail via dit account",
-	"{value} {caption}": "{value} {caption}"
+	"{value} {caption}": "{value} {caption}",
+	"By meaning": "Op betekenis",
+	"Find mail by what it means, not only its exact words": "Vind mail op betekenis, niet alleen op de exacte woorden",
+	"Found by meaning, not exact words": "Gevonden op betekenis, niet op exacte woorden",
+	"Showing keyword matches only — search by meaning is unavailable right now.": "Er worden alleen zoekwoorden getoond — zoeken op betekenis is nu niet beschikbaar."
 }

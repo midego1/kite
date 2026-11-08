@@ -447,9 +447,12 @@ async function runRequest(env: CloudflareEnv, db: AppDatabase, request: RequestR
 	const turn = await runModelTurn(env, db, request, eligible, conversationId, conversationUrl);
 	if (!turn.ok) return;
 
+	// The model run itself succeeded (any draft or pending action it created stands), but the reply that was
+	// supposed to tell the user about it never reached them: `answered` would claim they heard back when they
+	// did not, so this is `failed` instead, with the reason `sendReply` gives (`no_sending_provider`/`send_failed`).
 	const sent = await sendReply(env, db, request, { conversationId, links: turn.actionLinks });
 	if ("messageId" in sent) await finishRequest(db, request.id, { status: "answered", replyMessageId: sent.messageId });
-	else await finishRequest(db, request.id, { status: "answered", reason: sent.failed });
+	else await finishRequest(db, request.id, { status: "failed", reason: sent.failed });
 }
 
 /**

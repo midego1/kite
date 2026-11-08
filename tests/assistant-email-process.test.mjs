@@ -216,6 +216,22 @@ test("a forwarded hostile instruction inside the request is wrapped as data, and
 	assert.ok(!sent[0].text.includes("evil"));
 });
 
+test("a model run that succeeds but cannot send its reply is failed, never answered", async (t) => {
+	const { database, env, chat, requestId } = await setup(t);
+	chat.scriptStep({ content: "Done." });
+	env.EMAIL.send = async () => {
+		throw new Error("simulated send failure");
+	};
+
+	await processAssistantEmailRequest(env, requestId);
+
+	// The model run itself succeeded, but nobody was ever told: `answered` would say otherwise falsely.
+	const after = row(database, requestId);
+	assert.equal(after.status, "failed");
+	assert.equal(after.reason, "send_failed");
+	assert.equal(after.reply_message_id, null);
+});
+
 test("without an AI provider configured, the request is refused and the reply says so in plain words", async (t) => {
 	const { database, env, sent, requestId } = await setup(t);
 	delete env.AI_BASE_URL;

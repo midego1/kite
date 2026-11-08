@@ -42,6 +42,8 @@ const { addSenderAddress, listSenderAddresses, removeSenderAddress, verifySender
 const MAX_SENDER_ADDRESSES = 5;
 const MAX_CODE_ATTEMPTS = 5;
 const CODES_PER_USER_PER_HOUR = 5;
+const CODES_PER_ADDRESS_PER_HOUR = 3;
+const MAX_FAILED_CODES_PER_DAY = 10;
 const { getDb } = await load("db");
 const { SqliteDatabase } = await load("runtime");
 const { applyMigrations } = await load("migrate");
@@ -180,7 +182,7 @@ test("adding again after the code expires sends a fresh one instead of staying b
 });
 
 test("more than CODES_PER_USER_PER_HOUR code requests in an hour are refused, not silently dropped", async (t) => {
-	const { database, env, db } = await setup(t);
+	const { env, db } = await setup(t);
 	for (let i = 0; i < CODES_PER_USER_PER_HOUR; i += 1) {
 		const result = await addSenderAddress(env, db, "alice", `alice-${i}@phone.test`);
 		assert.equal(result.ok, true, `request ${i} should succeed`);
@@ -191,6 +193,145 @@ test("more than CODES_PER_USER_PER_HOUR code requests in an hour are refused, no
 	// Bob's own budget is untouched by Alice's requests.
 	const bob = await addSenderAddress(env, db, "bob", "bob-1@phone.test");
 	assert.equal(bob.ok, true);
+});
+
+test("a burst of parallel adds never lets concurrent requests past the per-user cap or the address cap (security review blocker a)", async (t) => {
+	const { database, env, db } = await setup(t);
+	// More parallel requests than either cap allows, each for its own brand-new address: without the atomic
+	// INSERT ... SELECT ... WHERE, every one of these would read "under the cap" before any of them committed.
+	const addresses = Array.from({ length: CODES_PER_USER_PER_HOUR + 5 }, (_, i) => `burst-${i}@phone.test`);
+	const results = await Promise.all(addresses.map((address) => addSenderAddress(env, db, "alice", address)));
+	assert.equal(
+		results.filter((result) => result.ok).length,
+		CODES_PER_USER_PER_HOUR,
+		"exactly the per-user cap of requests succeeded; the rest were refused as RATE_LIMITED, not silently dropped",
+	);
+	assert.ok(results.every((result) => result.ok || result.code === "RATE_LIMITED"));
+	assert.equal(
+		auditActions(database, "assistant_email.sender_code_requested").length,
+		CODES_PER_USER_PER_HOUR,
+		"exactly the per-user cap of code mails were reserved, not more",
+	);
+	assert.equal(
+		(await listSenderAddresses(db, "alice")).length,
+		CODES_PER_USER_PER_HOUR,
+		"exactly the per-user cap of rows were created, not more",
+	);
+});
+
+test("two users adding the same brand-new address in parallel: exactly one row is created, neither call throws", async (t) => {
+	const { database, env, db } = await setup(t);
+	const [aliceResult, bobResult] = await Promise.all([
+		addSenderAddress(env, db, "alice", "contested@phone.test"),
+		addSenderAddress(env, db, "bob", "contested@phone.test"),
+	]);
+	assert.equal(aliceResult.ok, true);
+	assert.equal(bobResult.ok, true);
+	const rows = database.db
+		.prepare("SELECT user_id FROM assistant_sender_addresses WHERE address = ?")
+		.all("contested@phone.test");
+	assert.equal(rows.length, 1, "only one of the two ever got a row, never both and never neither");
+});
+
+test("a code exhausted by wrong guesses frees the address for a different user, not just the same one (security review blocker b)", async (t) => {
+	const { database, env, db } = await setup(t);
+	await insertPending(database, { id: "row-1", userId: "alice", address: "exhausted@phone.test", code: "123456" });
+
+	// Exhaust alice's code with wrong guesses, same as the dedicated attempts test above.
+	await Promise.all(
+		Array.from({ length: MAX_CODE_ATTEMPTS + 2 }, () => verifySenderAddress(env, db, "alice", "row-1", "000000")),
+	);
+	const exhausted = database.db.prepare("SELECT code_hash FROM assistant_sender_addresses WHERE id = ?").get("row-1");
+	assert.equal(exhausted.code_hash, null, "the code is gone once its attempts are used up");
+
+	// Bob asking for the same address must not be blocked by alice's dead row forever.
+	const bobResult = await addSenderAddress(env, db, "bob", "exhausted@phone.test");
+	assert.equal(bobResult.ok, true);
+	const rows = database.db
+		.prepare("SELECT id, user_id, code_hash FROM assistant_sender_addresses WHERE address = ?")
+		.all("exhausted@phone.test");
+	assert.equal(rows.length, 1, "alice's exhausted row was replaced, not kept alongside bob's");
+	assert.equal(rows[0].user_id, "bob");
+	assert.ok(rows[0].code_hash, "bob got a fresh code");
+	assert.notEqual(rows[0].id, "row-1");
+});
+
+test("a code exhausted by wrong guesses also frees the address for the same user to try again", async (t) => {
+	const { database, env, db } = await setup(t);
+	await insertPending(database, { id: "row-1", userId: "alice", address: "retry@phone.test", code: "123456" });
+	await Promise.all(
+		Array.from({ length: MAX_CODE_ATTEMPTS + 2 }, () => verifySenderAddress(env, db, "alice", "row-1", "000000")),
+	);
+	const result = await addSenderAddress(env, db, "alice", "retry@phone.test");
+	assert.equal(result.ok, true);
+	const rows = await listSenderAddresses(db, "alice");
+	assert.equal(rows.length, 1);
+	assert.notEqual(rows[0].id, "row-1");
+});
+
+test("more than CODES_PER_ADDRESS requests for the same address in an hour are refused, even split across users", async (t) => {
+	const { database, env, db } = await setup(t);
+	database.db.exec(
+		"INSERT INTO users (id, email, password_hash, name, created_at) VALUES ('carol', 'carol@example.com', 'hash', 'Carol', 1), ('dave', 'dave@example.com', 'hash', 'Dave', 1)",
+	);
+	// alice and bob each request a code for the same address once, carol a second time: that is already
+	// CODES_PER_ADDRESS_PER_HOUR requests for this one address, none of them anywhere near their own per-user cap.
+	for (const userId of ["alice", "bob", "carol"]) {
+		const result = await addSenderAddress(env, db, userId, "popular@phone.test");
+		assert.equal(result.ok, true, userId);
+	}
+	// A fourth request for the very same address, by yet another user with plenty of their own budget left, is
+	// refused: the limit is per address, not only per requester.
+	const limited = await addSenderAddress(env, db, "dave", "popular@phone.test");
+	assert.equal(limited.ok, false);
+	assert.equal(limited.code, "RATE_LIMITED");
+	assert.equal(auditActions(database, "assistant_email.sender_code_requested").length, CODES_PER_ADDRESS_PER_HOUR);
+	// Dave's own, unrelated address is unaffected: this was never about his personal budget.
+	const daveOwn = await addSenderAddress(env, db, "dave", "dave-own@phone.test");
+	assert.equal(daveOwn.ok, true);
+});
+
+test("an address with MAX_FAILED_CODES_PER_DAY failed guesses across its codes refuses new codes until tomorrow", async (t) => {
+	const { database, env, db } = await setup(t);
+	await insertPending(database, { id: "row-1", userId: "alice", address: "bruteforced@phone.test", code: "111111" });
+	await Promise.all(
+		Array.from({ length: MAX_CODE_ATTEMPTS }, () => verifySenderAddress(env, db, "alice", "row-1", "000000")),
+	);
+	assert.equal(auditActions(database, "assistant_email.sender_verify_failed").length, MAX_CODE_ATTEMPTS);
+
+	// Only half of the daily cap is spent: a fresh code is still sent, exactly as the dedicated expiry test shows.
+	const refreshed = await addSenderAddress(env, db, "alice", "bruteforced@phone.test");
+	assert.equal(refreshed.ok, true);
+	const row2 = database.db
+		.prepare("SELECT id FROM assistant_sender_addresses WHERE address = ?")
+		.get("bruteforced@phone.test");
+	assert.notEqual(row2.id, "row-1");
+
+	// Exhaust the second code too: the day's total is now MAX_FAILED_CODES_PER_DAY.
+	await Promise.all(
+		Array.from({ length: MAX_CODE_ATTEMPTS }, () => verifySenderAddress(env, db, "alice", row2.id, "000000")),
+	);
+	assert.equal(auditActions(database, "assistant_email.sender_verify_failed").length, MAX_FAILED_CODES_PER_DAY);
+
+	// A third code is refused outright for the rest of the day, even though no code is currently pending for it.
+	const refused = await addSenderAddress(env, db, "alice", "bruteforced@phone.test");
+	assert.equal(refused.ok, false);
+	assert.equal(refused.code, "RATE_LIMITED");
+});
+
+test("a real database error is not swallowed as 'the code was sent' (security review should-fix)", async (t) => {
+	const { env, db } = await setup(t);
+	// A user id with no row in `users` trips the foreign key constraint on insert — a genuine failure that must
+	// propagate, unlike the unique-constraint conflict of someone else already holding the address.
+	await assert.rejects(() => addSenderAddress(env, db, "ghost", "alice@phone.test"));
+});
+
+test("no code is sent, and nothing is audited, before migration 0101 is applied", async (t) => {
+	const { database, env, db } = await setup(t);
+	database.db.exec("ALTER TABLE assistant_sender_addresses DROP COLUMN attempts");
+	await assert.rejects(() => addSenderAddress(env, db, "alice", "alice@phone.test"), SenderAddressesPendingError);
+	assert.equal(auditActions(database, "assistant_email.sender_code_requested").length, 0);
+	assert.equal(database.db.prepare("SELECT count(*) AS n FROM assistant_sender_addresses").get().n, 0);
 });
 
 test("removing only ever removes the caller's own row, and audits it", async (t) => {
@@ -214,7 +355,7 @@ test("before migration 0096, every operation reads or fails as pending, never th
 	await assert.rejects(() => removeSenderAddress(env, db, "alice", "row-1"), SenderAddressesPendingError);
 });
 
-test("before migration 0097, the table exists but attempts does not: the same pending behaviour applies", async (t) => {
+test("before migration 0101, the table exists but attempts does not: the same pending behaviour applies", async (t) => {
 	const { database, env, db } = await setup(t);
 	await insertPending(database, { id: "row-1", userId: "alice", address: "alice@phone.test", code: "123456" });
 	database.db.exec("ALTER TABLE assistant_sender_addresses DROP COLUMN attempts");

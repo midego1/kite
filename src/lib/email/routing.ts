@@ -159,7 +159,11 @@ export async function isAddressDelivered(db: AppDatabase, domainId: string, addr
  * check `assertNotKiteDomain` makes for connecting an external account.
  */
 export async function isInstallDomain(db: AppDatabase, hostname: string): Promise<boolean> {
-	const [domain] = await db.select({ id: domains.id }).from(domains).where(eq(domains.hostname, hostname)).limit(1);
+	const [domain] = await db
+		.select({ id: domains.id })
+		.from(domains)
+		.where(eq(domains.hostname, hostname.trim().toLowerCase()))
+		.limit(1);
 	return !!domain;
 }
 

@@ -55,7 +55,7 @@ await build({
 });
 const load = (name) => import(pathToFileURL(join(outDir, `${name}.mjs`)).href);
 const { processInboundMessage } = await load("emailInbound");
-const { resolveInboundAddress, isAssistantAddressTaken } = await load("routing");
+const { resolveInboundAddress, isAssistantAddressTaken, isInstallDomain } = await load("routing");
 const { processAssistantEmailRequest } = await load("process");
 const { readUserAiSettings } = await load("userAiSettings");
 const { getDb } = await load("db");
@@ -263,6 +263,17 @@ test("a verified extra address never maps on a domain of this install, even if o
 	);
 	await deliver(env, { from: "Random <random@example.com>", messageId: "<install-domain@example.com>" });
 	assert.equal((await requests(database)).length, 0);
+});
+
+test("isInstallDomain matches a domain of this install whatever case it is asked about (security review)", async (t) => {
+	const { db } = await setup(t);
+	// `domains.hostname` is always stored lower-case, but the check must not rely on every caller already
+	// having lower-cased what it passes in.
+	assert.equal(await isInstallDomain(db, "example.com"), true);
+	assert.equal(await isInstallDomain(db, "EXAMPLE.com"), true);
+	assert.equal(await isInstallDomain(db, "Example.COM"), true);
+	assert.equal(await isInstallDomain(db, "  example.com  "), true);
+	assert.equal(await isInstallDomain(db, "not-example.com"), false);
 });
 
 test("a shared mailbox address does not count as an own address", async (t) => {

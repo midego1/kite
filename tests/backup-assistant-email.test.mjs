@@ -20,7 +20,7 @@ const {
 const scratch = makeBundleDirectory("kite-backup-assistant-email-dirs-");
 after(() => rmSync(scratch, { recursive: true, force: true }));
 const preDirectory = copyMigrationsBefore(scratch, 96);
-const preAttemptsDirectory = copyMigrationsBefore(scratch, 97);
+const preAttemptsDirectory = copyMigrationsBefore(scratch, 101);
 const ASSISTANT_TABLES = ["assistant_addresses", "assistant_sender_addresses", "assistant_email_requests"];
 
 async function database(t, dir = migrationsDir) {
@@ -57,7 +57,7 @@ test("a backup taken before 0096 restores after it, with the assistant off and n
 	await assertBackupTablesCoverDatabase(db);
 });
 
-test("a backup taken before 0097 (security review's attempts column) restores after it, reading attempts as 0", async (t) => {
+test("a backup taken before 0101 (security review's attempts column) restores after it, reading attempts as 0", async (t) => {
 	const legacy = await database(t, preAttemptsDirectory);
 	seedAccountData(legacy);
 	legacy.db.exec(

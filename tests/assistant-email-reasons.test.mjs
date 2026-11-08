@@ -15,6 +15,7 @@ await build({
 	outdir: outDir,
 	outExtension: { ".js": ".mjs" },
 	bundle: true,
+	sourcemap: "inline",
 	platform: "node",
 	format: "esm",
 	target: "node22",

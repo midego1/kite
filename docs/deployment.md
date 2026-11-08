@@ -190,6 +190,8 @@ npx wrangler vectorize info kite-messages    # check: 1024 dimensions, cosine
 
 The metadata index must exist before the first vector is inserted, which is why both commands run before the deploy. This includes production and every Preview (they share the production database and the binding). An install that never turns the feature on still needs the index to exist once the binding is in the Worker's configuration; it stays empty until then. These are operator commands: never run `wrangler vectorize` (or any `wrangler ... --remote` command) from a Mission.
 
+Vectorize bills stored and queried vector dimensions separately from Workers AI embedding calls; neither is covered by the AI spend caps in Admin → Agent. Check current Vectorize pricing before a large backfill. Restoring a backup into a different database does not recreate its vectors: orphaned ones can be found and removed with **Clear stale vectors** in Admin → Agent → Search by meaning on the Node/Docker runtime, but Vectorize has no way to list every vector it holds, so that action is unsupported on Workers; recreating the index from scratch (delete it with `wrangler vectorize delete kite-messages`, then the two create commands above) and rebuilding from Admin is the only way to clear Workers orphans today.
+
 Off Workers, the Node/Docker runtime needs no Vectorize index: it searches a local file (`data/vectors.sqlite`) instead, and the embedding provider is either the Workers AI REST API (`CF_ACCOUNT_ID` and `CF_TOKEN`) or an OpenAI-compatible endpoint serving `bge-m3`, configured in Admin.
 
 ## Updating Kite

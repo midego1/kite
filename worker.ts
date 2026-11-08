@@ -44,7 +44,7 @@ import { isAppendSentMessage } from "./src/lib/external-accounts/submit-utils";
 import { failStaleBackups } from "./src/lib/backups/service";
 import { processAgentQueueMessage } from "./src/lib/agent/queue";
 import { runAgentMaintenance } from "./src/lib/agent/maintenance";
-import { runEmbeddingDrainBatches } from "./src/lib/semantic/indexer";
+import { drainDeleteTombstones, runEmbeddingDrainBatches } from "./src/lib/semantic/indexer";
 import { runSemanticBackfillTick } from "./src/lib/semantic/backfill";
 import { runTrashRetention } from "./src/lib/email/trash-retention";
 import { sweepOrphanedRawMail } from "./src/lib/email/raw-sweeper";
@@ -52,6 +52,7 @@ import { pruneMcpToolCallAudit, runDatabasePruning } from "./src/lib/maintenance
 import { runOperationalAlerts } from "./src/lib/alerts/run";
 import { runTelemetryHeartbeat } from "./src/lib/telemetry/heartbeat";
 import { eraseIdleExternalCredentials } from "./src/lib/external-accounts/retention";
+import { resumeAuthRechecks } from "./src/lib/external-accounts/auth-recheck";
 import { planExternalSync, processExternalAccountMessage } from "./src/lib/external-accounts/sync";
 import { dispatchModuleQueueMessage, runModuleCronTasks } from "./src/lib/modules/background";
 import { maybeAutoApplyPendingMigrations } from "./src/lib/migrations/auto-apply";
@@ -323,11 +324,22 @@ export default {
 			);
 			// Connected accounts whose check for new mail is due get one queued run each.
 			ctx.waitUntil(planExternalSync(env, now).catch((error) => logger.error("external.sync_plan_failed", { error })));
+			// An authentication recheck whose run died gets queued again, as the payment scan's own safety net does.
+			ctx.waitUntil(
+				resumeAuthRechecks(env, now).catch((error) =>
+					logger.error("external.auth_recheck_maintenance_failed", { error }),
+				),
+			);
 			// Revives a restore whose invocation died and removes uploaded backup files left behind.
 			ctx.waitUntil(
 				runRestoreMaintenance(env, now).catch((error) => logger.error("backup.restore_maintenance_failed", { error })),
 			);
-			// Search by meaning: 4 drain batches (about 128 messages) per tick, and one backfill page.
+			// Search by meaning: 4 drain batches (about 128 messages) per tick, and one backfill page. Tombstones
+			// drain here too, directly, so a deleted message's vectors are never left searchable only because
+			// runEmbeddingDrainBatches's own gate (the kill switch, a revoked external-provider opt-in) is closed.
+			ctx.waitUntil(
+				drainDeleteTombstones(env).catch((error) => logger.error("search.embedding_tombstone_drain_failed", { error })),
+			);
 			ctx.waitUntil(
 				runEmbeddingDrainBatches(env, 4).catch((error) => logger.error("search.embedding_drain_failed", { error })),
 			);

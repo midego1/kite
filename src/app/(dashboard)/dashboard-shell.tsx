@@ -9,6 +9,7 @@ import { MailboxProvider } from "@/components/mailbox-provider";
 import { MailboxSelector } from "@/components/mailbox-selector";
 import { LazyAgentPanel } from "@/components/agent/agent-panel-lazy";
 import { ASSISTANT_PROMPT_EVENT, hasAssistantPrompt } from "@/components/agent/assistant-prompt-request";
+import { consumeAssistantConversationParam } from "@/components/agent/assistant-conversation-request";
 import { AssistantIconButton, AssistantNavItem } from "@/components/agent/assistant-nav-item";
 import {
 	AssistantDockedContext,
@@ -123,6 +124,10 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
 	const assistantEnabled = useAssistantAvailability();
 	const assistantVisible = assistantEnabled === true && assistantOpen;
 	useAppBadge();
+	// An assistant-by-email reply's deep link (`?assistant=<conversationId>`); the panel itself takes the id once open.
+	useEffect(() => {
+		if (consumeAssistantConversationParam()) setAssistantOpen(true);
+	}, [setAssistantOpen]);
 	const assistantLoaded = useLatch(assistantVisible);
 	const [assistantLayout] = useAppearancePreference(ASSISTANT_LAYOUT_PREFERENCE);
 	const userId = useCurrentUser()?.id ?? null;

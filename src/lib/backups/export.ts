@@ -26,6 +26,9 @@ const BACKUP_TABLES: DatabaseBackupTable[] = [
 	"external_account_folders",
 	// Send-as addresses verified with a code (migration 0089), without a pending code (`redactBackupRow`).
 	"external_identities",
+	// Verified extra addresses a user may send the assistant from (migration 0096). Codes are hashed and expire,
+	// so restoring them is harmless.
+	"assistant_sender_addresses",
 	"contacts",
 	"folders",
 	"api_keys",
@@ -36,6 +39,8 @@ const BACKUP_TABLES: DatabaseBackupTable[] = [
 	"shared_attachment_links",
 	"outbound_jobs",
 	"routing_rules",
+	// One assistant address per domain (migration 0096), after routing_rules since it references domains the same way.
+	"assistant_addresses",
 	"webhooks",
 	"webhook_deliveries",
 	"sessions",
@@ -73,6 +78,7 @@ const BACKUP_TABLES: DatabaseBackupTable[] = [
 	"user_ai_settings",
 	"writing_style_profiles",
 	"agent_conversations",
+	"assistant_email_requests",
 	"agent_chat_messages",
 	"agent_jobs",
 	"agent_draft_metadata",
@@ -153,6 +159,9 @@ const INTERNAL_TABLES = [
 	// The bookkeeping of a Money Watch "Scan last 90 days" (migration 0094): a cursor over the mail it was started on,
 	// meaningless in another database.
 	"finance_payment_scans",
+	// The bookkeeping of "Recheck authentication" on a connected account (migration 0100): a cursor over that
+	// account's own mail, meaningless in another database.
+	"external_account_auth_rechecks",
 	// The direct-uploads setup note and the dismissed reminder (migration 0085): the outcome of this deployment's own
 	// R2 setup, not user data, so a restore into another install must not carry it over.
 	"storage_state",

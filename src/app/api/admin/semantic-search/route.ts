@@ -5,6 +5,7 @@ import { hasValidSessionMutationOrigin } from "@/lib/auth/origin";
 import { getEnv } from "@/lib/cloudflare";
 import { createAuditLog } from "@/lib/mailboxes/audit";
 import { clearStaleVectors, disableSemanticSearch, rebuildSemanticIndex } from "@/lib/semantic/admin-actions";
+import { parseCompatibleEmbeddingBaseUrl } from "@/lib/semantic/embedding";
 import { saveSemanticAdminSettings } from "@/lib/semantic/install-settings";
 import { getSemanticStatus } from "@/lib/semantic/status";
 
@@ -38,6 +39,13 @@ export async function PUT(request: Request) {
 		return Response.json({ error: "Invalid origin" }, { status: 403, headers: noStore });
 	const parsed = settingsSchema.safeParse(await request.json().catch(() => null));
 	if (!parsed.success) return Response.json({ error: "Invalid settings" }, { status: 400, headers: noStore });
+	if (parsed.data.compatibleBaseUrl) {
+		try {
+			parsed.data.compatibleBaseUrl = parseCompatibleEmbeddingBaseUrl(parsed.data.compatibleBaseUrl, env);
+		} catch {
+			return Response.json({ error: "Enter a valid HTTPS provider base URL" }, { status: 400, headers: noStore });
+		}
+	}
 	const before = await getSemanticStatus(env);
 	if (parsed.data.enabled === false && before.settings.enabled) {
 		await disableSemanticSearch(env);

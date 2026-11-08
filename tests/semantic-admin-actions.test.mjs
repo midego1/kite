@@ -160,3 +160,55 @@ test("requeueMailboxSemanticIndex sets a mailbox's rows back to pending, but onl
 	await requeueMailboxSemanticIndex(env, "mailbox-a");
 	assert.equal(db.db.prepare("SELECT status FROM message_embeddings WHERE message_id = 'm1'").get().status, "skipped");
 });
+
+test("clearMailboxSemanticIndex marks rows skipped before deleting their vectors, so a drain write losing the race still writes nothing", async (t) => {
+	const db = await database(t);
+	indexedRow(db, "m1", "key1", 2);
+	let statusDuringDelete = null;
+	const store = {
+		deleteByIds: async () => {
+			statusDuringDelete = db.db.prepare("SELECT status FROM message_embeddings WHERE message_id = 'm1'").get().status;
+		},
+	};
+	await clearMailboxSemanticIndex({ DB: db, VECTORS: store }, "mailbox-a");
+	assert.equal(statusDuringDelete, "skipped");
+});
+
+test("requeueMailboxSemanticIndex inserts pending rows for eligible messages that never got one, delivered while the mailbox was excluded", async (t) => {
+	const db = await database(t);
+	// The mailbox is No-AI when the message arrives: the trigger's WHEN clause skips it, so no row is created.
+	db.db.exec(
+		"INSERT INTO mailbox_agent_settings (mailbox_id, ai_disabled, updated_at) VALUES ('mailbox-a', 1, 1) ON CONFLICT(mailbox_id) DO UPDATE SET ai_disabled = 1",
+	);
+	db.db.exec(`
+		INSERT INTO messages (id, user_id, mailbox_id, direction, from_addr, to_addr, subject, text_body, status, created_at)
+		VALUES ('m1', 'owner', 'mailbox-a', 'inbound', 'x@example.net', 'a@example.com', 'Hi', 'Hello', 'received', 10);
+	`);
+	assert.equal(db.db.prepare("SELECT count(*) AS n FROM message_embeddings WHERE message_id = 'm1'").get().n, 0);
+
+	// Turning AI back on for the mailbox: requeue must give the message a row, not only reset ones that already exist.
+	db.db.exec("UPDATE mailbox_agent_settings SET ai_disabled = 0 WHERE mailbox_id = 'mailbox-a'");
+	await requeueMailboxSemanticIndex({ DB: db }, "mailbox-a");
+	const row = db.db.prepare("SELECT status FROM message_embeddings WHERE message_id = 'm1'").get();
+	assert.equal(row?.status, "pending");
+});
+
+test("requeueMailboxSemanticIndex inserts rows past more than one D1 insert chunk of missing rows", async (t) => {
+	const db = await database(t);
+	db.db.exec(
+		"INSERT INTO mailbox_agent_settings (mailbox_id, ai_disabled, updated_at) VALUES ('mailbox-a', 1, 1) ON CONFLICT(mailbox_id) DO UPDATE SET ai_disabled = 1",
+	);
+	const ids = Array.from({ length: 25 }, (_, index) => `m${index}`);
+	for (const id of ids) {
+		db.db.exec(`
+			INSERT INTO messages (id, user_id, mailbox_id, direction, from_addr, to_addr, subject, text_body, status, created_at)
+			VALUES ('${id}', 'owner', 'mailbox-a', 'inbound', 'x@example.net', 'a@example.com', 'Hi', 'Hello', 'received', 10);
+		`);
+	}
+	// seedAccountData's own "message-1" in mailbox-a also has no row yet (semantic search was off when it was seeded).
+	assert.equal(db.db.prepare("SELECT count(*) AS n FROM message_embeddings").get().n, 0);
+	db.db.exec("UPDATE mailbox_agent_settings SET ai_disabled = 0 WHERE mailbox_id = 'mailbox-a'");
+	await requeueMailboxSemanticIndex({ DB: db }, "mailbox-a");
+	const { n } = db.db.prepare("SELECT count(*) AS n FROM message_embeddings WHERE status = 'pending'").get();
+	assert.equal(n, ids.length + 1);
+});

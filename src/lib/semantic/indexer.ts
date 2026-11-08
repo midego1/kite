@@ -14,7 +14,7 @@ import {
 } from "./embedding";
 import { chunkVectorId, vectorKeyFor } from "./filter-utils";
 import { getSemanticInstallSettings } from "./install-settings";
-import { reserveEmbeddingBatchSpend, settleEmbeddingSpend } from "./spend";
+import { backfillCapReached, reserveEmbeddingBatchSpend, settleEmbeddingSpend } from "./spend";
 import { getVectorStore } from "./vector-store";
 
 /** Up to this many `pending` (or lease-expired `running`) rows are claimed per drain batch. */
@@ -25,6 +25,13 @@ const LEASE_MS = 5 * 60_000;
 const MAX_ATTEMPTS = 3;
 /** At most this many tombstones are drained per run. */
 const TOMBSTONE_BATCH_SIZE = 1_000;
+/**
+ * A claimed row is treated as backfill-origin when its `queued_at` is older than this, relative to the claim
+ * time: the backfill (`backfill.ts`) is the only writer that ever sets `queued_at` to a message's own `created_at`
+ * rather than "now", so a row queued this long ago can only be one of its pages, never a just-delivered message or
+ * a rebuild (both queue with "now"). Used to charge the backfill's own spend against its cap share (B6).
+ */
+const BACKFILL_AGE_MARGIN_MS = 10 * 60_000;
 
 type ClaimedRow = {
 	messageId: string;
@@ -33,6 +40,7 @@ type ClaimedRow = {
 	contentHash: string | null;
 	chunkCount: number;
 	attempts: number;
+	queuedAt: number | null;
 };
 
 /** Claims up to `CLAIM_BATCH_SIZE` rows, newest queued first, so new mail is searchable before old mail is. */
@@ -48,11 +56,17 @@ async function claimPendingRows(env: CloudflareEnv, now: Date): Promise<ClaimedR
 			ORDER BY queued_at DESC
 			LIMIT ?
 		)
-		RETURNING message_id AS messageId, mailbox_id AS mailboxId, vector_key AS vectorKey, content_hash AS contentHash, chunk_count AS chunkCount, attempts`,
+		RETURNING message_id AS messageId, mailbox_id AS mailboxId, vector_key AS vectorKey, content_hash AS contentHash, chunk_count AS chunkCount, attempts, queued_at AS queuedAt`,
 	)
 		.bind(leaseUntil, nowSeconds, CLAIM_BATCH_SIZE)
 		.all<ClaimedRow>();
 	return results;
+}
+
+/** Whether a claimed row was queued by the backfill rather than the trigger or a rebuild (see `BACKFILL_AGE_MARGIN_MS`). */
+function isBackfillClaim(queuedAt: number | null, now: Date): boolean {
+	if (queuedAt === null) return false;
+	return now.getTime() - queuedAt * 1000 > BACKFILL_AGE_MARGIN_MS;
 }
 
 /** Whether a mailbox has search by meaning on and AI allowed, re-checked at drain time (never at enqueue time for `semantic_index`). */
@@ -116,6 +130,7 @@ type PreparedChunk = {
 	texts: string[];
 	contentHash: string;
 	oldChunkCount: number;
+	backfill: boolean;
 };
 
 async function sha256Hex(value: string): Promise<string> {
@@ -129,11 +144,13 @@ async function sha256Hex(value: string): Promise<string> {
  * of delete tombstones. Returns how many rows were claimed, so callers can stop once a run claims nothing.
  */
 export async function processEmbeddingBatch(env: CloudflareEnv): Promise<{ claimed: number }> {
+	// Deletes make no embedding call, so they drain even while the gate below is closed (a kill switch, a
+	// revoked external-provider opt-in): otherwise a deleted message's vectors would stay searchable indefinitely.
+	await drainDeleteTombstones(env);
 	if (!(await embeddingAvailability(env)).ok) return { claimed: 0 };
 	const now = new Date();
 	const claimed = await claimPendingRows(env, now);
 	if (claimed.length === 0) {
-		await drainDeleteTombstones(env);
 		return { claimed: 0 };
 	}
 	const messagesById = await loadClaimedMessages(
@@ -167,7 +184,15 @@ export async function processEmbeddingBatch(env: CloudflareEnv): Promise<{ claim
 			continue;
 		}
 		const vectorKey = row.vectorKey ?? (await vectorKeyFor(message.id));
-		prepared.push({ messageId: message.id, mailboxId, vectorKey, texts, contentHash, oldChunkCount: row.chunkCount });
+		prepared.push({
+			messageId: message.id,
+			mailboxId,
+			vectorKey,
+			texts,
+			contentHash,
+			oldChunkCount: row.chunkCount,
+			backfill: isBackfillClaim(row.queuedAt, now),
+		});
 	}
 
 	if (toSkip.length > 0) await markSkipped(env, toSkip);
@@ -183,9 +208,33 @@ export async function processEmbeddingBatch(env: CloudflareEnv): Promise<{ claim
 			);
 	}
 
-	if (prepared.length > 0) await embedAndUpsert(env, prepared, claimed, now, toFail);
+	// Charged to separate ai_usage sources, so the backfill's own spend can be capped at its install-cap share
+	// (B6) without ever throttling a live, just-delivered message, which always classifies as "live" here.
+	const liveItems = prepared.filter((item) => !item.backfill);
+	const backfillItems = prepared.filter((item) => item.backfill);
+	if (liveItems.length > 0) await embedAndUpsert(env, liveItems, claimed, now, toFail, "embedding");
+	if (backfillItems.length > 0) {
+		const settings = await getSemanticInstallSettings(env);
+		if (await backfillCapReached(env, settings.backfillCapShare)) {
+			// Give these back to pending rather than spending past the backfill's own share; a later tick (a new
+			// UTC day, or live spend settling lower than its estimate) may have room again.
+			await getDb(env)
+				.update(messageEmbeddings)
+				.set({ status: "pending", leaseUntil: null })
+				.where(
+					inArray(
+						messageEmbeddings.messageId,
+						backfillItems.map((item) => item.messageId),
+					),
+				);
+		} else {
+			await embedAndUpsert(env, backfillItems, claimed, now, toFail, "embedding_backfill");
+		}
+	}
 	if (toFail.length > 0) await applyFailures(env, toFail);
 
+	// A message can be deleted while its own embedding call is still in flight (above), leaving a fresh
+	// tombstone this same run should still clear rather than waiting for the next one.
 	await drainDeleteTombstones(env);
 	return { claimed: claimed.length };
 }
@@ -196,6 +245,7 @@ async function embedAndUpsert(
 	claimed: ClaimedRow[],
 	now: Date,
 	toFail: { messageId: string; attempts: number; code: string }[],
+	source: "embedding" | "embedding_backfill",
 ): Promise<void> {
 	let provider: Awaited<ReturnType<typeof getEmbeddingProvider>>;
 	try {
@@ -208,7 +258,7 @@ async function embedAndUpsert(
 	}
 	const allTexts = prepared.flatMap((item) => item.texts);
 	const promptChars = allTexts.reduce((sum, text) => sum + text.length, 0);
-	const reservation = await reserveEmbeddingBatchSpend(env, provider.kind, promptChars);
+	const reservation = await reserveEmbeddingBatchSpend(env, provider.kind, promptChars, source);
 	if (!reservation) {
 		// No budget left: release the claim so another run (with room under the cap) can pick these up.
 		await getDb(env)

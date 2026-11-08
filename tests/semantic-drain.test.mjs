@@ -154,3 +154,22 @@ test("drainDeleteTombstones removes the vectors of a deleted, previously-indexed
 	assert.deepEqual(deletedIds.sort(), ["abc123:0", "abc123:1"]);
 	assert.equal(db.db.prepare("SELECT count(*) AS n FROM message_embedding_deletes").get().n, 0);
 });
+
+test("processEmbeddingBatch still drains tombstones while the embedding gate is closed (the kill switch off)", async (t) => {
+	const { db, env, deletedIds } = await setup(t);
+	db.db.exec(`
+		INSERT INTO messages (id, user_id, mailbox_id, direction, from_addr, to_addr, subject, text_body, status, created_at)
+		VALUES ('m1', 'owner', 'mailbox-a', 'inbound', 'x@example.net', 'a@example.com', 'Hi', 'Hello there', 'received', 10);
+	`);
+	db.db.exec(
+		"UPDATE message_embeddings SET status = 'indexed', vector_key = 'abc123', chunk_count = 2 WHERE message_id = 'm1'",
+	);
+	db.db.exec("DELETE FROM messages WHERE id = 'm1'");
+	assert.equal(db.db.prepare("SELECT count(*) AS n FROM message_embedding_deletes").get().n, 1);
+	// Closing the gate (the install kill switch) must not leave this mailbox's vectors searchable forever.
+	db.db.exec("UPDATE app_settings SET agent_enabled = 0 WHERE id = 'default'");
+	const { claimed } = await processEmbeddingBatch(env);
+	assert.equal(claimed, 0);
+	assert.deepEqual(deletedIds.sort(), ["abc123:0", "abc123:1"]);
+	assert.equal(db.db.prepare("SELECT count(*) AS n FROM message_embedding_deletes").get().n, 0);
+});

@@ -12,9 +12,10 @@ import { runModuleCronTasks } from "@/lib/modules/background";
 import { runStorageMigrationMaintenance } from "@/lib/storage/migration";
 import { runAttachmentJobMaintenance } from "@/lib/email/attachment-storage-jobs";
 import { runTelemetryHeartbeat } from "@/lib/telemetry/heartbeat";
+import { resumeAuthRechecks } from "@/lib/external-accounts/auth-recheck";
 import { eraseIdleExternalCredentials } from "@/lib/external-accounts/retention";
 import { planExternalSync } from "@/lib/external-accounts/sync";
-import { runEmbeddingDrainBatches } from "@/lib/semantic/indexer";
+import { drainDeleteTombstones, runEmbeddingDrainBatches } from "@/lib/semantic/indexer";
 import { runSemanticBackfillTick } from "@/lib/semantic/backfill";
 
 const logger = createLogger("node-scheduler");
@@ -27,6 +28,9 @@ export function startScheduler(env: CloudflareEnv) {
 		runAgentMaintenance(env).catch((error) => logger.error("agent.maintenance_failed", { error }));
 		runTrashRetention(env).catch((error) => logger.error("trash.retention_failed", { error }));
 		// Search by meaning: 2 drain batches and one backfill page per minute, matching worker.ts's 5-minute cadence.
+		// Tombstones drain directly too, so a deleted message's vectors are never left searchable only because
+		// runEmbeddingDrainBatches's own gate (the kill switch, a revoked external-provider opt-in) is closed.
+		drainDeleteTombstones(env).catch((error) => logger.error("search.embedding_tombstone_drain_failed", { error }));
 		runEmbeddingDrainBatches(env, 2).catch((error) => logger.error("search.embedding_drain_failed", { error }));
 		runSemanticBackfillTick(env).catch((error) => logger.error("search.embedding_backfill_failed", { error }));
 		const now = new Date();
@@ -51,6 +55,9 @@ export function startScheduler(env: CloudflareEnv) {
 			pruneMcpToolCallAudit(env, now).catch((error) => logger.error("mcp.audit_pruning_failed", { error }));
 			// Connected accounts, matching worker.ts.
 			planExternalSync(env, now).catch((error) => logger.error("external.sync_plan_failed", { error }));
+			resumeAuthRechecks(env, now).catch((error) =>
+				logger.error("external.auth_recheck_maintenance_failed", { error }),
+			);
 			runRestoreMaintenance(env, now).catch((error) => logger.error("backup.restore_maintenance_failed", { error }));
 		}
 		const day = now.toISOString().slice(0, 10);

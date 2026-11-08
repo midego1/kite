@@ -141,6 +141,7 @@
 	"/api/drive/uploads/[id]",
 	"/api/drive/uploads",
 	"/api/export/messages",
+	"/api/external-accounts/[id]/auth-recheck",
 	"/api/external-accounts/[id]/identities/[identityId]/code",
 	"/api/external-accounts/[id]/identities/[identityId]",
 	"/api/external-accounts/[id]/identities/[identityId]/verify",

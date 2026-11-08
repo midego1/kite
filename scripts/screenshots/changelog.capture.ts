@@ -19,7 +19,7 @@ import {
 	THAI_MAIL_TRANSLATED,
 	THREAD,
 } from "./demo-data";
-import { mockForYou, mockForYouPreview } from "./demo-mocks";
+import { mockConnectedAccountAuthRecheck, mockForYou, mockForYouPreview } from "./demo-mocks";
 import { sampleMessage, startFakeImap } from "../../tests/support/fake-imap.mjs";
 
 // Screenshots for the changelog (docs/releasing.md#screenshots-in-the-changelog), taken against the isolated,
@@ -152,6 +152,21 @@ const SHOTS: Shot[] = [
 			await rows.filter({ hasText: "Offsite agenda and travel details" }).first().getByRole("link").first().click();
 			await expect(page.getByRole("button", { name: /^via Gmail: show all mail through/ })).toBeVisible();
 			return page;
+		},
+	},
+	{
+		// A connected Gmail account with Recheck authentication already finished (demo-mocks: a real Gmail sign-in
+		// needs credentials this sandbox never has).
+		name: "2026-11-08-connected-account-auth-recheck-light",
+		theme: "light",
+		viewport: { width: 1040, height: 700 },
+		open: async (page) => {
+			await mockConnectedAccountAuthRecheck(page);
+			await page.goto("/settings/connected-accounts");
+			const row = page.locator("[data-external-account]");
+			await expect(row.getByRole("button", { name: "Recheck authentication" })).toBeVisible();
+			await expect(row.locator("[data-auth-recheck-status]")).toContainText("found a result for 12 of 214 messages");
+			return row;
 		},
 	},
 	{

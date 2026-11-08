@@ -55,8 +55,21 @@ export type ExternalAccountView = {
 	 * it, and aliases.
 	 */
 	identities: ExternalIdentityView[];
+	/** "Recheck authentication" (spec §6.6.1), for Gmail and Google Workspace accounts only; null once never run. */
+	authRecheck: ExternalAccountAuthRecheckView | null;
 	createdAt: string;
 	updatedAt: string;
+};
+
+/** Where "Recheck authentication" stands for one account. */
+export type ExternalAccountAuthRecheckView = {
+	status: "running" | "done" | "failed";
+	scanned: number;
+	updated: number;
+	skipped: number;
+	startedAt: string;
+	finishedAt: string | null;
+	error: string | null;
 };
 
 /** The settings a connect or edit request carries, validated (`parseAccountInput`). */

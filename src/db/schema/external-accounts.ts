@@ -275,3 +275,30 @@ export const externalProviderActions = sqliteTable(
 	},
 	(t) => [index("external_provider_actions_due_idx").on(t.accountId, t.nextAttemptAt)],
 );
+
+/**
+ * The bookkeeping of "Recheck authentication" (migration 0100, spec §6.6.1): a cursor over one account's own messages
+ * that re-reads each one's raw MIME for the `Authentication-Results` header Google added at delivery, for mail stored
+ * before that trust rule existed or whose result did not resolve the first time. One row per account; a finished run
+ * starts over from `since_at` and never writes a signal twice (`recheckMessage` only ever adds the authentication
+ * signals a message does not already have). Not in backups: a cursor over mail in another database is meaningless.
+ */
+export const externalAccountAuthRechecks = sqliteTable("external_account_auth_rechecks", {
+	accountId: text("account_id")
+		.primaryKey()
+		.references(() => externalAccounts.id, { onDelete: "cascade" }),
+	status: text("status", { enum: ["running", "done", "failed"] }).notNull(),
+	sinceAt: integer("since_at", { mode: "timestamp" }).notNull(),
+	cursorAt: integer("cursor_at", { mode: "timestamp" }),
+	cursorId: text("cursor_id"),
+	scanned: integer("scanned").notNull().default(0),
+	/** Messages whose stored signals gained an authentication result. */
+	updated: integer("updated").notNull().default(0),
+	/** Messages read but left alone: already had a result, had no raw MIME left, or Google's header did not resolve. */
+	skipped: integer("skipped").notNull().default(0),
+	error: text("error"),
+	leaseUntil: integer("lease_until", { mode: "timestamp" }),
+	startedAt: integer("started_at", { mode: "timestamp" }).notNull(),
+	updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
+	finishedAt: integer("finished_at", { mode: "timestamp" }),
+});

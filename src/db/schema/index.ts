@@ -905,7 +905,7 @@ export const agentDraftMetadata = sqliteTable("agent_draft_metadata", {
 	mailboxId: text("mailbox_id")
 		.notNull()
 		.references(() => mailboxes.id, { onDelete: "cascade" }),
-	origin: text("origin", { enum: ["chat", "auto", "mcp"] }).notNull(),
+	origin: text("origin", { enum: ["chat", "auto", "mcp", "email"] }).notNull(),
 	sourceMessageId: text("source_message_id").references(() => messages.id, { onDelete: "set null" }),
 	revision: integer("revision").notNull().default(1),
 	humanEditedAt: integer("human_edited_at", { mode: "timestamp" }),

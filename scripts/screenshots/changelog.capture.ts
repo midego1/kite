@@ -19,7 +19,7 @@ import {
 	THAI_MAIL_TRANSLATED,
 	THREAD,
 } from "./demo-data";
-import { mockForYou, mockForYouPreview } from "./demo-mocks";
+import { mockConnectedAccountAuthRecheck, mockForYou, mockForYouPreview } from "./demo-mocks";
 import { sampleMessage, startFakeImap } from "../../tests/support/fake-imap.mjs";
 
 // Screenshots for the changelog (docs/releasing.md#screenshots-in-the-changelog), taken against the isolated,
@@ -152,6 +152,21 @@ const SHOTS: Shot[] = [
 			await rows.filter({ hasText: "Offsite agenda and travel details" }).first().getByRole("link").first().click();
 			await expect(page.getByRole("button", { name: /^via Gmail: show all mail through/ })).toBeVisible();
 			return page;
+		},
+	},
+	{
+		// A connected Gmail account with Recheck authentication already finished (demo-mocks: a real Gmail sign-in
+		// needs credentials this sandbox never has).
+		name: "2026-11-08-connected-account-auth-recheck-light",
+		theme: "light",
+		viewport: { width: 1040, height: 700 },
+		open: async (page) => {
+			await mockConnectedAccountAuthRecheck(page);
+			await page.goto("/settings/connected-accounts");
+			const row = page.locator("[data-external-account]");
+			await expect(row.getByRole("button", { name: "Recheck authentication" })).toBeVisible();
+			await expect(row.locator("[data-auth-recheck-status]")).toContainText("found a result for 12 of 214 messages");
+			return row;
 		},
 	},
 	{
@@ -724,6 +739,27 @@ const SHOTS: Shot[] = [
 			await page.goto("/finance?tab=payments");
 			await expect(page.locator("[data-payment-row]").first()).toBeVisible();
 			await expect(page.locator("[data-payment-month]").first()).toBeVisible();
+			return page.locator("[data-finance-page]");
+		},
+	},
+	{
+		// Scan last 90 days partway through: the status line's own progress, over the real seeded rows (the scan status
+		// itself is faked, since a real scan of this little demo mail finishes before a screenshot could catch it running).
+		name: "2026-11-08-money-watch-scan-progress-light",
+		theme: "light",
+		viewport: { width: 1280, height: 900 },
+		open: async (page) => {
+			await seedPaymentsDemo();
+			await page.route("**/api/finance/payments", async (route) => {
+				const response = await route.fetch();
+				const data = (await response.json()) as object;
+				await route.fulfill({
+					response,
+					json: { ...data, scan: { status: "running", scanned: 42, recorded: 3, skipped: 0 } },
+				});
+			});
+			await page.goto("/finance?tab=payments");
+			await expect(page.locator("[data-payment-scan-status]")).toContainText("Scanning the last 90 days");
 			return page.locator("[data-finance-page]");
 		},
 	},

@@ -148,7 +148,7 @@ export default function PublicBookingEventPage() {
 							setError("");
 							writeBookingPageSelection(selectedDate, null, timeZone, true);
 						}}
-						className="mb-5 inline-flex items-center gap-2 self-start text-sm text-neutral-600 hover:text-blue-700 max-sm:ms-4"
+						className="mb-5 inline-flex items-center gap-2 self-start text-sm text-neutral-600 hover:text-blue-700 pointer-coarse:min-h-11 max-sm:ms-4"
 					>
 						<ArrowLeft className="h-4 w-4 rtl:-scale-x-100" />
 						Back to calendar
@@ -156,7 +156,7 @@ export default function PublicBookingEventPage() {
 				) : (
 					<Link
 						href={username ? `/c/${username}` : `/book/${userId}`}
-						className="mb-5 inline-flex items-center gap-2 self-start text-sm text-neutral-600 hover:text-blue-700 max-sm:ms-4"
+						className="mb-5 inline-flex items-center gap-2 self-start text-sm text-neutral-600 hover:text-blue-700 pointer-coarse:min-h-11 max-sm:ms-4"
 					>
 						<ArrowLeft className="h-4 w-4 rtl:-scale-x-100" />
 						All meetings
@@ -333,7 +333,7 @@ export default function PublicBookingEventPage() {
 											aria-label="Previous month"
 											disabled={!firstMonth || moveMonth(visibleMonth, -1) < firstMonth}
 											onClick={() => setMonth(moveMonth(visibleMonth, -1))}
-											className="flex h-8 w-8 items-center justify-center rounded-lg border border-neutral-200 text-blue-600 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-30"
+											className="flex h-8 w-8 items-center justify-center rounded-lg border border-neutral-200 text-blue-600 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-30 pointer-coarse:h-11 pointer-coarse:w-11"
 										>
 											<ChevronLeft className="h-5 w-5 rtl:-scale-x-100" />
 										</button>
@@ -342,7 +342,7 @@ export default function PublicBookingEventPage() {
 											aria-label="Next month"
 											disabled={!lastMonth || moveMonth(visibleMonth, 1) > lastMonth}
 											onClick={() => setMonth(moveMonth(visibleMonth, 1))}
-											className="flex h-8 w-8 items-center justify-center rounded-lg border border-neutral-200 text-blue-600 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-30"
+											className="flex h-8 w-8 items-center justify-center rounded-lg border border-neutral-200 text-blue-600 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-30 pointer-coarse:h-11 pointer-coarse:w-11"
 										>
 											<ChevronRight className="h-5 w-5 rtl:-scale-x-100" />
 										</button>

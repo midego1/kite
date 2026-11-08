@@ -18,7 +18,7 @@ export function HomeThemeToggle() {
 		<button
 			type="button"
 			onClick={toggle}
-			className="flex h-9 w-9 items-center justify-center rounded-lg text-neutral-600 hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+			className="flex h-9 w-9 items-center justify-center rounded-lg text-neutral-600 hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 pointer-coarse:h-11 pointer-coarse:w-11"
 		>
 			<Sun className="hidden h-[18px] w-[18px] dark:block" aria-hidden="true" />
 			<Moon className="block h-[18px] w-[18px] dark:hidden" aria-hidden="true" />

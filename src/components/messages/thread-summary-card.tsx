@@ -26,7 +26,7 @@ export function SummarizeButton({ controller }: { controller: ThreadSummaryContr
 					aria-label={t("Summarize: {reason}", { reason: t(MAILBOX_AI_OFF_TEXT) })}
 					aria-disabled="true"
 					data-testid="summarize-ai-off"
-					className="cursor-not-allowed gap-1.5 text-neutral-400 hover:bg-transparent"
+					className="cursor-not-allowed gap-1.5 pointer-coarse:h-11 text-neutral-400 hover:bg-transparent"
 				>
 					<Sparkles aria-hidden className="h-4 w-4" />
 					<span className="hidden sm:inline">{t("Summarize")}</span>
@@ -56,7 +56,10 @@ function EnabledSummarizeButton({ controller }: { controller: ThreadSummaryContr
 					onClick={() => {
 						if (!off) controller.summarize();
 					}}
-					className={clsx("gap-1.5 text-neutral-700", off && "cursor-default opacity-50 hover:bg-transparent")}
+					className={clsx(
+						"gap-1.5 pointer-coarse:h-11 text-neutral-700",
+						off && "cursor-default opacity-50 hover:bg-transparent",
+					)}
 				>
 					<Sparkles aria-hidden className="h-4 w-4" />
 					<span className="hidden sm:inline">

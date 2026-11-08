@@ -108,6 +108,34 @@ test.describe("on a phone", () => {
 		const [pillBox, barBox] = await Promise.all([pill.boundingBox(), bar.boundingBox()]);
 		expect(pillBox && barBox && pillBox.y + pillBox.height <= barBox.y).toBe(true);
 	});
+
+	test("New mail floats above the bar on a mail screen, and is gone where it would be the wrong action", async ({
+		page,
+	}) => {
+		await page.goto("/inbox");
+		const bar = primaryNav(page);
+		const fab = page.locator("[data-mobile-compose-fab]");
+		await expect(fab).toBeVisible();
+		const fabBox = await fab.boundingBox();
+		expect(fabBox && fabBox.width >= 44 && fabBox.height >= 44).toBe(true);
+		const barBox = await bar.boundingBox();
+		expect(fabBox && barBox && fabBox.y + fabBox.height <= barBox.y).toBe(true);
+
+		await fab.click();
+		await expect(page.getByRole("button", { name: "Close composer" }).first()).toBeVisible();
+		await page.getByRole("button", { name: "Close composer" }).first().click();
+
+		// Calendar and Drive have their own primary action; Mail's compose button would be the wrong one there.
+		await page.goto("/calendar");
+		await expect(fab).toHaveCount(0);
+		await page.goto("/drive");
+		await expect(fab).toHaveCount(0);
+
+		// An open message already offers Reply, so the button steps aside rather than sitting over its reply bar.
+		await page.goto("/inbox");
+		await openMessage(page, "Cannot access workspace");
+		await expect(fab).toHaveCount(0);
+	});
 });
 
 test("the bar folds away at the sidebar breakpoint and returns when the window narrows", async ({ page }) => {
@@ -148,11 +176,15 @@ test.describe("on an unfolded screen with the list beside the reader", () => {
 		await page.goto("/inbox");
 		await expect(page.locator("[data-reading-pane]")).toHaveAttribute("data-reading-pane", "right");
 		await expect(primaryNav(page)).toBeVisible();
+		// New mail is reachable before a message is open, beside the empty reading pane.
+		await expect(page.locator("[data-mobile-compose-fab]")).toBeVisible();
 
 		await openMessage(page, subject);
 		const list = page.getByRole("main").locator("[data-density]");
 		await expect(list).toBeVisible();
 		await expect(primaryNav(page)).toBeVisible();
+		// The open message's own reply bar sits where New mail would float, so it steps aside here too.
+		await expect(page.locator("[data-mobile-compose-fab]")).toHaveCount(0);
 
 		// The reader alone is the full-screen view again, so the bar steps aside as it does on a phone.
 		await page.getByRole("button", { name: "Hide email list" }).click();

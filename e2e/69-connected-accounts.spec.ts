@@ -285,3 +285,89 @@ test("the Connected accounts page reads in Kite, Kite light, Classic and dark mo
 		await fake.close();
 	}
 });
+
+/**
+ * "Recheck authentication" (spec §6.6.1) is only for Gmail and Google Workspace, whose host Kite always forces to the
+ * real one, so a Gmail-preset account can never point at this suite's fake IMAP server. The account list is a
+ * network-level stand-in instead, the same technique the changelog screenshots use (scripts/screenshots/demo-mocks.ts)
+ * for the same reason: this checks the button's own request and the page's progress reads, not the backend's header
+ * logic, which tests/external-auth-recheck-utils.test.mjs already pins against crafted headers.
+ */
+test("Recheck authentication posts to the account and the page follows its progress to done", async ({ browser }) => {
+	const admin = await apiContext(STORAGE_STATE);
+	const token = uniqueToken("xacct-recheck");
+	const { api, mailboxId } = await createSignedInAccount(admin, token);
+	const { context, page } = await userPage(browser, api);
+	try {
+		const now = new Date().toISOString();
+		const account = {
+			id: "acct-1",
+			label: "Gmail",
+			address: `${token}@gmail.example`,
+			displayName: null,
+			preset: "gmail",
+			presetLabel: "Gmail",
+			mailboxId,
+			imap: { host: "imap.gmail.com", port: 993, security: "tls" },
+			smtp: { host: "smtp.gmail.com", port: 465, security: "tls" },
+			username: `${token}@gmail.example`,
+			status: "active",
+			statusReason: null,
+			lastError: null,
+			hasPassword: true,
+			sync: {
+				enabled: true,
+				intervalMinutes: 5,
+				lastSuccessAt: now,
+				nextSyncAt: now,
+				failures: 0,
+				problem: null,
+				running: false,
+				junk: false,
+			},
+			sending: { enabled: true, appendSent: false, providerSavesSent: true, verified: true, block: null },
+			identities: [],
+			authRecheck: null as unknown,
+			createdAt: now,
+			updatedAt: now,
+		};
+		let posted = 0;
+		await page.route("**/api/external-accounts", (route) =>
+			route.fulfill({
+				json: { accounts: [account], refusal: null, refusalText: null, presets: [], migrationPending: false },
+			}),
+		);
+		await page.route("**/api/external-accounts/acct-1/auth-recheck", (route) => {
+			posted += 1;
+			account.authRecheck = {
+				status: "running",
+				scanned: 0,
+				updated: 0,
+				skipped: 0,
+				startedAt: now,
+				finishedAt: null,
+				error: null,
+			};
+			route.fulfill({ status: 202, json: { account } });
+		});
+		await page.goto("/settings/connected-accounts");
+		const row = page.locator("[data-external-account]");
+		const button = row.getByRole("button", { name: "Recheck authentication" });
+		await expect(button).toBeVisible();
+		await button.click();
+		await expect.poll(() => posted).toBe(1);
+		account.authRecheck = {
+			status: "done",
+			scanned: 90,
+			updated: 6,
+			skipped: 84,
+			startedAt: now,
+			finishedAt: now,
+			error: null,
+		};
+		await expect(row.locator("[data-auth-recheck-status]")).toContainText("found a result for 6 of 90 messages");
+		await expect(button).toBeEnabled();
+	} finally {
+		await context.close();
+	}
+});

@@ -96,7 +96,11 @@ type PaymentRow = {
 	messageId: string | null;
 	origin: string | null;
 };
-type PaymentList = { payments: PaymentRow[]; scan: { status: string; recorded: number } | null };
+type PaymentList = {
+	payments: PaymentRow[];
+	scan: { status: string; recorded: number } | null;
+	scanCoverage: { reason: string; messages: number }[];
+};
 
 async function suggestAccount(prefix: string) {
 	const username = `${prefix}${uniqueToken("")}`;
@@ -277,6 +281,90 @@ test.describe("Money Watch payments", () => {
 			await expect(page.locator("[data-payment-scan-status]")).toContainText("Last scan: 1 new payment");
 			const [found] = (await listPayments({ ...account, address: "" })).payments;
 			expect(found).toMatchObject({ messageId: message.id, origin: "scan", status: "paid" });
+		} finally {
+			await context.close();
+		}
+	});
+
+	test("Scan last 90 days shows progress while it runs, then finishes with a toast", async ({ browser }) => {
+		// A real scan over this little test mail finishes before the UI can poll it mid-run, so the server responses
+		// are stubbed to hold it at each step long enough to see: nothing started, running with rising counts, done.
+		const username = `fpprog${uniqueToken("")}`;
+		const account = await createSignedInAccount(api, username);
+		const context = await browser.newContext({ baseURL: BASE_URL, storageState: await account.api.storageState() });
+		try {
+			const page = await context.newPage();
+			let scan: { status: string; scanned: number; recorded: number; skipped: number } | null = null;
+			await page.route("**/api/finance/payments", (route) =>
+				route.fulfill({ json: { payments: [], months: [], scan, scanCoverage: [] } }),
+			);
+			await page.route("**/api/finance/payments/scan", async (route) => {
+				scan = { status: "running", scanned: 0, recorded: 0, skipped: 0 };
+				await route.fulfill({ json: { scan } });
+			});
+
+			await page.goto("/finance?tab=payments");
+			await expect(page.getByText("Payments that arrive by mail are added here on their own.")).toBeVisible();
+			await page.locator("[data-payment-scan]").click();
+			await expect(page.locator("[data-payment-scan-status]")).toContainText(
+				"Scanning the last 90 days: 0 messages checked, no payments found so far",
+			);
+			await expect(page.locator("[data-payment-scan]")).toBeDisabled();
+
+			scan = { status: "running", scanned: 4, recorded: 1, skipped: 0 };
+			await expect(page.locator("[data-payment-scan-status]")).toContainText(
+				"Scanning the last 90 days: 4 messages checked, 1 payment found so far",
+				{ timeout: 5_000 },
+			);
+
+			scan = { status: "done", scanned: 4, recorded: 1, skipped: 0 };
+			await expect(page.locator("[data-payment-scan-status]")).toContainText("Last scan: 1 new payment in 4 messages", {
+				timeout: 5_000,
+			});
+			await expect(page.locator("[data-payment-scan]")).toBeEnabled();
+
+			// The finished-scan notice reaches every open tab over the same realtime path as a renewal reminder.
+			await page.evaluate(() => {
+				window.dispatchEvent(
+					new CustomEvent("kite:module-notice", {
+						detail: {
+							type: "module_notice",
+							moduleId: "finance",
+							notice: "scan_finished",
+							title: "Payment scan finished: 1 payment found",
+							body: null,
+							href: "/finance?tab=payments",
+						},
+					}),
+				);
+			});
+			await expect(
+				page.getByRole("status").filter({ hasText: "Payment scan finished: 1 payment found" }),
+			).toBeVisible();
+		} finally {
+			await context.close();
+		}
+	});
+
+	test("the Payments tab explains mail Scan last 90 days could not cover", async ({ browser }) => {
+		const username = `fpcoverage${uniqueToken("")}`;
+		const account = await createSignedInAccount(api, username);
+		const context = await browser.newContext({ baseURL: BASE_URL, storageState: await account.api.storageState() });
+		try {
+			// Automatic reading stays off for this mailbox, as it does for most mailboxes by default.
+			const mail = stripeReceipt(`NoAutoRead ${uniqueToken("").slice(-4)}`, daysAgo(2));
+			await postInbound(account.api, { ...mail, to: `${username}@${DOMAIN}` });
+			await waitForMessage(account.api, mail.subject, { status: "received" });
+
+			const page = await context.newPage();
+			await page.goto("/finance?tab=payments");
+			await page.locator("[data-payment-scan]").click();
+			await expect(page.locator("[data-payment-scan-status]")).toContainText("Last scan: no new payments", {
+				timeout: 15_000,
+			});
+			await expect(page.locator("[data-payment-scan-coverage]")).toContainText(
+				"1 message in mailboxes without automatic reading were not scanned",
+			);
 		} finally {
 			await context.close();
 		}

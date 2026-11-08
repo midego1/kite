@@ -81,11 +81,15 @@ const ALLOWED = [
 		reason:
 			"DialogContent centres with a physical left-1/2, and Tailwind puts left after start/end, so the drawer can only undo it physically, per direction",
 	},
-	{
-		file: "src/app/home-mailbox.tsx",
+	...[
+		"src/app/home-mailbox.tsx",
+		"src/app/(dashboard)/dashboard-shell.tsx",
+		"src/components/dashboard-section-shell.tsx",
+	].map((file) => ({
+		file,
 		token: /^p[lr]-\[env\(safe-area-inset-(?:left|right)\)\]$/,
 		reason: "safe-area insets are physical device edges (a notch), not reading directions",
-	},
+	})),
 	{
 		file: "src/components/startup-steps.tsx",
 		token: /^(?:motion-reduce:)?border-r-(?:transparent|blue-600)$/,

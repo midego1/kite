@@ -2,7 +2,7 @@
 
 Status: **proposed**; its open questions were decided by Michiel on 2026-10-26 (section 21). Written against `main` at `5c220ba` (release `2026.10.26.1`). Roadmap: proposed [milestone 30](../../ROADMAP.md#milestone-30-assistant-by-email-proposed), which specifies item 1 of milestone 5 ("Email-addressable agents"). Ideas adopted from [Zero](https://github.com/Mail-0/Zero) (MIT; `apps/server/src/lib/assistant*.ts`); no code is ported.
 
-Migrations: the last one on `main` is `0068_add_abuse_ch_auth_key.sql`. This spec claims **`0072_add_assistant_email.sql`**, after [AI writing](ai-writing.md) (`0069`, which creates `user_ai_settings`), [thread summaries](thread-summaries.md) (`0070`) and [semantic search](semantic-search.md) (`0071`). If this Mission runs before AI writing, its migration creates `user_ai_settings` itself and AI writing only adds to it. Whichever Mission starts first takes the next free number; keep `tests/migration-order.test.mjs` passing.
+Migrations: the last one on `main` is `0068_add_abuse_ch_auth_key.sql`. This spec claims **`0072_add_assistant_email.sql`**, after [AI writing](ai-writing.md) (`0069`, which creates `user_ai_settings`), [thread summaries](thread-summaries.md) (`0070`) and [semantic search](semantic-search.md) (`0071`). If this Mission runs before AI writing, its migration creates `user_ai_settings` itself and AI writing only adds to it. Whichever Mission starts first takes the next free number; keep `tests/migration-order.test.mjs` passing. **Implemented as `0096_add_assistant_email.sql`**: `0072` went to thread summaries' `ai_summaries` table (`0070` went to the writing style, `0071` to install telemetry), and many unrelated migrations landed on `main` first (external accounts, user preferences, full-backup objects, external account address scope and send state, the Screener's strict-DMARC setting, direct uploads, folder colours, the audit log action index, attachment raw storage, external identities, the attachment storage job, mailbox AI off, two-way sync, Money Watch payments, and more — `0095` is reserved for other, unrelated in-flight work). [AI writing](ai-writing.md) shipped as `0069` as planned, so `user_ai_settings` already existed; this migration only adds its three `assistant_email_*` columns to it. [Semantic search](semantic-search.md) (milestone 29) has not been implemented, so `search_emails`'s `mode` parameter named in §8.3 does not exist yet, and the "more chat actions" work this spec originally called "being built now" (§20) has since shipped on `main` (see the §8.3 update below).
 
 ## 1. Goals and non-goals
 
@@ -127,18 +127,18 @@ Why wrap the user's own request: it is authenticated, but users forward mail to 
 
 ### 8.3 Tools
 
-A new `AgentToolContext.origin` value `"email"` and `CapabilityTrigger` value `"email"`. Tools are chosen from an explicit allowlist, so a tool added later (for example by the "more chat actions" work being built now: bulk mark unread, archive, trash, folders) is **not** offered by email until it is classified here:
+A new `AgentToolContext.origin` value `"email"` and `CapabilityTrigger` value `"email"`. Tools are chosen from an explicit allowlist, so a tool added later is **not** offered by email until it is classified here. The "more chat actions" work this section originally called "being built now" has since shipped on `main` (`organize-tools.ts`), adding `mark_emails_read`, `mark_emails_unread`, `move_emails_to_folder`, `create_folder` and `list_folders` to `EmailToolName`; they are classified below like every other tool instead of left for a future pass:
 
 | Tool | By email |
 | --- | --- |
-| `list_emails`, `search_emails` (including `mode` from [semantic search](semantic-search.md)), `count_emails`, `get_email`, `get_thread` | Yes |
+| `list_emails`, `search_emails` (`mode` from [semantic search](semantic-search.md) does not exist yet — see the migration note above), `count_emails`, `get_email`, `get_thread`, `list_folders` | Yes |
 | `draft_email`, `draft_reply`, `edit_draft` | Yes: drafts are inert and private to the user |
 | `review_draft_send` | Yes: creates the send review; sending needs the user's confirmation at `/agent/review/[id]` (its origin check accepts `email`) |
-| `mark_email_read`, `move_email`, `move_emails`, `discard_draft` | Yes, always returning `pending_approval`, confirmed in the assistant panel (`confirmAgentAction`) |
+| `mark_email_read`, `mark_emails_read`, `mark_emails_unread`, `move_email`, `move_emails`, `move_emails_to_folder`, `create_folder`, `discard_draft` | Yes, always returning `pending_approval`, confirmed in the assistant panel (`confirmAgentAction`) |
 | `open_page` | Yes (Kite paths only, as today) |
 | Module `assistant_tool`s with `effect` `none` or `read` (for example `list_subscriptions`, `get_schedule`, `find_free_time`) | Yes, through `invokeCapability` with trigger `email` |
 | Module tools with any other effect (Calendar `create_event`, `update_events`, `delete_events`, …) | No |
-| New chat tools from the "more chat actions" work | Only after classification; any that changes state must return `pending_approval` for `email` |
+| A chat tool added after this spec | Absent until it is classified here; any that changes state must return `pending_approval` for `email` |
 
 At most 8 steps (`min(user's Max steps, 8)`), `maxOutputTokens` 1,200 per step, `generateText` (no streaming).
 
@@ -164,6 +164,7 @@ A reply to the assistant's reply (its `In-Reply-To` names the assistant reply's 
 - **The Screener** never sees requests: there is no mailbox, and the authentication and sender checks are stricter than screening.
 - **Spam filter.** Not run; the request is not stored as a message. Authentication and the guards replace it.
 - **Automatic reading, webhooks, notifications, search.** None apply. Drafts and actions that result from a request are normal drafts and actions, with their usual webhooks once the user confirms.
+- **"No AI for this mailbox"** (`mailboxAgentSettings.aiDisabled`, migrations 0091 and 0092, shipped after this spec was written). The run's context mailbox (§8.1) is checked the same way chat and automatic reading are: `assertMailboxAiAllowed` before the model is used and again on every step, so turning the switch on while a run is in flight stops it exactly as it stops a chat turn. A request mapped to an AI-off mailbox gets the same refusal a chat turn would.
 - **Receiving providers.** Cloudflare: full support. Unknown senders are accepted and then dropped rather than refused with `setReject`, so the address does not reveal who may use it. SES: supported through the verdicts, where only a DMARC pass counts (5.2); providers cannot reject after accepting, so dropping is the only outcome anyway. Resend: out of scope for now (decision 19); the Domains page explains the restriction.
 - **Node runtime.** Supported through the Cloudflare relay and SES; not through the direct SMTP listener (5.1). Sending the reply uses the Node mailer behind the same `EMAIL` interface. The `agent.assistant_email` queue kind runs on the Node `agent` queue, and is added to `env.d.ts`, `worker.ts` `queue()`, `server/index.ts` and `worker-utils.ts`.
 - **MCP and `/api/v1`.** Unchanged.
@@ -279,7 +280,7 @@ Total: about 9 to 11 working days.
 ## 20. Place in the roadmap
 
 - **Replaces** item 1 of milestone 5 ("Email-addressable agents"); the Cloudflare Agents SDK evaluation that item mentions was done for automatic reading (auto-agent §13: the queue design was kept), and this spec builds on the same queue.
-- **After** [AI writing](ai-writing.md) (`user_ai_settings`, the shared untrusted-block helper, chat instructions) and after the "more chat actions" work being built now, so its new tools can be classified in 8.3 once instead of twice.
+- **After** [AI writing](ai-writing.md) (`user_ai_settings`, the shared untrusted-block helper, chat instructions) and after the "more chat actions" work, which has since shipped, so its new tools are classified in §8.3 once instead of twice.
 - **After or with** [thread summaries](thread-summaries.md) ("summarise my unread mail" reads cached summaries) and [semantic search](semantic-search.md) ("what did Jan say about the roof" is a meaning search); neither is required.
 
 ## 21. Decisions (2026-10-26, Michiel)

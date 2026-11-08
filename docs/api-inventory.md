@@ -33,6 +33,8 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/admin/alerts/webhook`                                  | DELETE, GET, PUT       | [source](../src/app/api/admin/alerts/webhook/route.ts)                                  |
 | `/api/admin/alerts/webhook/test`                             | POST                   | [source](../src/app/api/admin/alerts/webhook/test/route.ts)                             |
 | `/api/admin/api-keys`                                        | DELETE, GET, POST      | [source](../src/app/api/admin/api-keys/route.ts)                                        |
+| `/api/admin/assistant-addresses/[id]`                        | DELETE, PATCH          | [source](../src/app/api/admin/assistant-addresses/[id]/route.ts)                        |
+| `/api/admin/assistant-addresses`                             | GET, POST              | [source](../src/app/api/admin/assistant-addresses/route.ts)                             |
 | `/api/admin/attachment-storage`                              | GET, POST              | [source](../src/app/api/admin/attachment-storage/route.ts)                              |
 | `/api/admin/aws`                                             | DELETE, GET, POST, PUT | [source](../src/app/api/admin/aws/route.ts)                                             |
 | `/api/admin/database-size`                                   | GET                    | [source](../src/app/api/admin/database-size/route.ts)                                   |
@@ -152,6 +154,7 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/drive/uploads/[id]`                                    | DELETE                 | [source](../src/app/api/drive/uploads/[id]/route.ts)                                    |
 | `/api/drive/uploads`                                         | POST                   | [source](../src/app/api/drive/uploads/route.ts)                                         |
 | `/api/export/messages`                                       | GET                    | [source](../src/app/api/export/messages/route.ts)                                       |
+| `/api/external-accounts/[id]/auth-recheck`                   | POST                   | [source](../src/app/api/external-accounts/[id]/auth-recheck/route.ts)                   |
 | `/api/external-accounts/[id]/identities/[identityId]/code`   | POST                   | [source](../src/app/api/external-accounts/[id]/identities/[identityId]/code/route.ts)   |
 | `/api/external-accounts/[id]/identities/[identityId]`        | DELETE                 | [source](../src/app/api/external-accounts/[id]/identities/[identityId]/route.ts)        |
 | `/api/external-accounts/[id]/identities/[identityId]/verify` | POST                   | [source](../src/app/api/external-accounts/[id]/identities/[identityId]/verify/route.ts) |

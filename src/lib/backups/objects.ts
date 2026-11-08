@@ -5,7 +5,7 @@ import { missingColumnFromError } from "@/lib/auth/user-lookup-utils";
 import { selectRow } from "@/lib/db/pending-columns";
 import { createLogger } from "@/lib/logger.mjs";
 import { getStorage } from "@/lib/storage";
-import { copyObject, findSource, locationAwareSources } from "@/lib/storage/migration";
+import { copyObject, findSource, locationAwareSources, matchesExisting } from "@/lib/storage/migration";
 import type { Storage } from "@/lib/storage/types";
 import { ATTACHMENT_OBJECT_ROWS_SQL } from "@/lib/email/attachment-storage-utils";
 import type {
@@ -285,9 +285,9 @@ async function copyBatch(
 			const existing = source ? await target.bucket.head(copyKey) : null;
 			const size = !source
 				? null
-				: existing && existing.size === source.head.size
-					? existing.size
-					: await copyObject(source.store.bucket, source.head, target, item.key, copyKey);
+				: matchesExisting(source.head, existing, source.store.id, target.id)
+					? existing!.size
+					: await copyObject(source.store, source.head, target, item.key, copyKey);
 			if (size === null) part.missing.push(item.key);
 			else {
 				part.objects.push({ key: item.key, size });
@@ -450,7 +450,7 @@ async function restoreObject(
 	const sources = await locationAwareSources(env, storage, storage.readChain("backups"), copyKey);
 	const source = await findSource(sources, copyKey);
 	if (!source) return "failed";
-	const copied = await copyObject(source.store.bucket, source.head, storage.storeForKey(key), copyKey, key);
+	const copied = await copyObject(source.store, source.head, storage.storeForKey(key), copyKey, key);
 	return copied === null ? "failed" : "restored";
 }
 

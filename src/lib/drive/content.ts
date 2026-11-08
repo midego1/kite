@@ -2,9 +2,10 @@ import { getDb } from "@/db";
 import { attachmentDownloadGate, servesInline } from "@/lib/email/attachment-risk-store";
 import { getInlineContentType } from "@/lib/http/content-type-utils";
 import type { SessionUser } from "@/lib/auth/types";
+import type { KiteBucket } from "@/lib/storage/types";
 import { getDriveItem, getDriveRole } from "./access";
 import { readableAttachment } from "./attachments";
-import { browserSigner, bucketOfItem, storeOfItem } from "./objects";
+import { browserSigner, bucketOfItem, recoverDriveStore, storeOfItem } from "./objects";
 import { driveContentHeaders, driveEtag, requestedRange } from "./range-utils";
 import type { DriveRow } from "./types";
 
@@ -34,9 +35,17 @@ export async function streamDriveFile(
 		return new Response(null, { status: 416, headers });
 	}
 	const bucket = await bucketOfItem(env, item);
-	const object = range
-		? await bucket?.get(item.objectKey, { range: { offset: range.start, length: range.end - range.start + 1 } })
-		: await bucket?.get(item.objectKey);
+	const read = (bucket: KiteBucket) =>
+		range
+			? bucket.get(item.objectKey!, { range: { offset: range.start, length: range.end - range.start + 1 } })
+			: bucket.get(item.objectKey!);
+	let object = bucket && (await read(bucket));
+	// The row's own store may be stale (a restore rolled it back to a store a cold move already took the file
+	// off): object_locations still knows, and recovering through it repairs the row for next time.
+	if (!object) {
+		const recovered = await recoverDriveStore(env, item);
+		if (recovered) object = await read(recovered.bucket);
+	}
 	if (!object) return notStored();
 	const body = request.method === "HEAD" ? null : object.body;
 	if (!range) {
@@ -101,7 +110,11 @@ const PRESIGNED_DOWNLOAD_SECONDS = 5 * 60;
  */
 async function presignedDownload(env: CloudflareEnv, item: DriveRow): Promise<Response | null> {
 	if (item.status !== "ready" || !item.objectKey || item.size < DRIVE_PRESIGNED_DOWNLOAD_BYTES) return null;
-	const signer = browserSigner(env, await storeOfItem(env, item));
+	let store = await storeOfItem(env, item);
+	// A restore can roll the row back to a store a cold move already took the file off; a presigned URL to
+	// that store would just 404 at the provider, so this checks first and recovers through object_locations.
+	if (!store || !(await store.bucket.head(item.objectKey))) store = await recoverDriveStore(env, item);
+	const signer = browserSigner(env, store);
 	if (!signer) return null;
 	const url = await signer.presignGet(item.objectKey, {
 		expiresIn: PRESIGNED_DOWNLOAD_SECONDS,

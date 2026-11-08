@@ -1,6 +1,6 @@
 import { COLD_STORAGE_CLASS, R2_IA_TARGET, type ColdRule } from "./cold-utils";
 import { DEFAULT_STORE_ID } from "./config-utils";
-import { findSource, copyObject, locationAwareSources } from "./migration";
+import { findSource, copyObject, locationAwareSources, matchesExisting } from "./migration";
 import { callStorageHook } from "./module-hooks";
 import { recordObjectLocation } from "./object-locations";
 import type { Item } from "./cold-sources";
@@ -45,7 +45,7 @@ export async function moveColdObject(
 			});
 			return 0;
 		}
-		const copied = await copyObject(source.store.bucket, source.head, source.store, item.key, item.key, {
+		const copied = await copyObject(source.store, source.head, source.store, item.key, item.key, {
 			storageClass: COLD_STORAGE_CLASS,
 		});
 		if (copied === null) throw new Error("The object disappeared from the store during the rewrite");
@@ -72,12 +72,12 @@ export async function moveColdObject(
 	}
 	const present = await target.bucket.head(item.key);
 	let bytes = 0;
-	if (!present || present.size !== source.head.size) {
-		const copied = await copyObject(source.store.bucket, source.head, target, item.key);
+	if (!matchesExisting(source.head, present, source.store.id, target.id)) {
+		const copied = await copyObject(source.store, source.head, target, item.key);
 		if (copied === null) throw new Error("The object disappeared from the source store during the copy");
 		bytes = copied;
 	} else {
-		bytes = present.size;
+		bytes = present!.size;
 	}
 	const confirmed = await target.bucket.head(item.key);
 	if (!confirmed || confirmed.size !== source.head.size) throw new Error("The copy on the target store does not match");
@@ -96,12 +96,17 @@ export async function moveColdObject(
 }
 
 /**
- * Moves one Drive file by its own recorded store, since Drive's row (not a routed class) is its source of
- * truth. The row is repointed (`markCold`, one file at a time, not batched after the whole page) before the
- * old copy is deleted: a crash in between leaves a harmless extra copy at the old store rather than a row
- * pointing at a store that no longer has the file.
+ * Moves one Drive file by its own recorded store. `drive_items.store_id` is the normal source of truth for
+ * where a file lives, but a restore can roll a row back to a store a sweep already moved the file away from
+ * (the restored row names a store that no longer has it); `object_locations` (key `drive/<id>`, same as mail
+ * and backups) survives that, since restoring a backup merges it rather than replacing it wholesale
+ * (`MERGED_ON_RESTORE`), and `streamDriveFile` falls back to it and repairs the row. The location is recorded,
+ * then the row is repointed (`markCold`, one file at a time, not batched after the whole page), before the old
+ * copy is deleted: a crash in between leaves a harmless extra copy at the old store rather than nothing
+ * pointing at either copy.
  */
 export async function moveColdDriveObject(
+	env: LocationEnv,
 	storage: Storage,
 	rule: ColdRule,
 	item: Item & { storeId: string },
@@ -114,29 +119,60 @@ export async function moveColdDriveObject(
 		if (!source.capabilities.storageClasses.includes(COLD_STORAGE_CLASS)) return { bytes: 0, moved: false };
 		if (head.storageClass === COLD_STORAGE_CLASS) {
 			// The rewrite already happened (maybe in an earlier sweep that crashed before this call landed);
-			// repair the row so it does not stay stuck reporting the stale, pre-rewrite storage class.
+			// repair the row and the location so neither stays stuck reporting the stale, pre-rewrite state.
+			await recordObjectLocation(env, {
+				key: item.key,
+				objectClass: "drive",
+				storeId: source.id,
+				storageClass: COLD_STORAGE_CLASS,
+				size: head.size,
+			});
 			await callStorageHook("drive", "markCold", { ids: [item.id], storageClass: COLD_STORAGE_CLASS });
 			return { bytes: 0, moved: true };
 		}
-		const copied = await copyObject(source.bucket, head, source, item.key, item.key, {
+		const copied = await copyObject(source, head, source, item.key, item.key, {
 			storageClass: COLD_STORAGE_CLASS,
 		});
 		if (copied === null) throw new Error("The file disappeared from the store during the rewrite");
+		await recordObjectLocation(env, {
+			key: item.key,
+			objectClass: "drive",
+			storeId: source.id,
+			storageClass: COLD_STORAGE_CLASS,
+			size: copied,
+		});
 		await callStorageHook("drive", "markCold", { ids: [item.id], storageClass: COLD_STORAGE_CLASS });
 		return { bytes: copied, moved: true };
 	}
 	const target = storage.store(rule.target);
 	if (!target) throw new Error("The target store is missing or blocked");
 	if (item.storeId === rule.target) {
+		await recordObjectLocation(env, {
+			key: item.key,
+			objectClass: "drive",
+			storeId: rule.target,
+			storageClass: null,
+			size: head.size,
+		});
 		await callStorageHook("drive", "markCold", { ids: [item.id], storageClass: null, storeId: rule.target });
 		return { bytes: 0, moved: true };
 	}
 	const present = await target.bucket.head(item.key);
-	const bytes =
-		present && present.size === head.size ? present.size : await copyObject(source.bucket, head, target, item.key);
+	const bytes = matchesExisting(head, present, source.id, target.id)
+		? present!.size
+		: await copyObject(source, head, target, item.key);
 	if (bytes === null) throw new Error("The file disappeared from its store during the copy");
 	const confirmed = await target.bucket.head(item.key);
 	if (!confirmed || confirmed.size !== head.size) throw new Error("The copy on the target store does not match");
+	// The location is recorded before the row is repointed or the old copy is deleted, mirroring moveColdObject:
+	// a crash from here on still leaves a path to the bytes, through object_locations if nothing else.
+	await recordObjectLocation(env, {
+		key: item.key,
+		objectClass: "drive",
+		storeId: rule.target,
+		storageClass: null,
+		size: confirmed.size,
+	});
 	const marked = await callStorageHook<{ updated: number }>("drive", "markCold", {
 		ids: [item.id],
 		storageClass: null,

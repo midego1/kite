@@ -549,6 +549,55 @@ test("the rollback leaves the storage tables as they were when the install had n
 	assert.deepEqual(messageDigest(db), before);
 });
 
+test("the rollback undoes a cold storage merge that already ran before the restore failed", async (t) => {
+	const db = await seededDatabase(t);
+	db.db.exec(`
+		INSERT INTO storage_cold_rules (object_class, after_days, min_bytes, target, enabled, updated_at)
+			VALUES ('mail', 30, 0, 'r2-ia', 1, 1);
+		INSERT INTO object_locations (key, object_class, store_id, storage_class, size, moved_at)
+			VALUES ('inbound/from-backup.eml', 'mail', 'default', 'InfrequentAccess', 10, 1);
+	`);
+	const backup = await lib.exportDatabaseRecords(db);
+	// The install's own cold storage state changes between taking that backup and restoring it: a different
+	// rule and a different location, which must survive the restore and come back exactly if it fails.
+	db.db.exec(`
+		DELETE FROM storage_cold_rules;
+		DELETE FROM object_locations;
+		INSERT INTO storage_cold_rules (object_class, after_days, min_bytes, target, enabled, updated_at)
+			VALUES ('drive', 14, 1024, 'r2-ia', 1, 1);
+		INSERT INTO object_locations (key, object_class, store_id, storage_class, size, moved_at)
+			VALUES ('drive/live-item', 'drive', 'default', 'InfrequentAccess', 20, 1);
+	`);
+	const before = messageDigest(db);
+
+	// Fails once the backup's cold storage rows are merged in, on the first batch that writes app_settings
+	// (storage_cold_rules and object_locations are restored well before it).
+	let failed = false;
+	const env = jobEnv(
+		failing(db, (_call, sqls) => {
+			if (failed || !sqls.some((sql) => sql.startsWith("INSERT INTO `app_settings`"))) return false;
+			return (failed = true);
+		}),
+		bucket(),
+	);
+	await lib.startUploadedRestore(env, upload(backup), "owner");
+	await drain(env, SMALL_BATCHES);
+
+	const job = await restoreJob(env);
+	assert.equal(job.status, "rolled_back", job.error);
+	assert.deepEqual(
+		db.db.prepare("SELECT object_class, target FROM storage_cold_rules ORDER BY object_class").all(),
+		[{ object_class: "drive", target: "r2-ia" }],
+		"the backup's merged-in mail rule is gone again",
+	);
+	assert.deepEqual(
+		db.db.prepare("SELECT key, object_class FROM object_locations ORDER BY key").all(),
+		[{ key: "drive/live-item", object_class: "drive" }],
+		"the backup's merged-in location is gone again",
+	);
+	assert.deepEqual(messageDigest(db), before);
+});
+
 /**
  * A database whose `at`-th batch never returns, like an invocation killed mid-batch; `commit` lands it first.
  * `reached` resolves once that batch started.

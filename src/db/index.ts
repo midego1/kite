@@ -24,6 +24,11 @@ import * as storageTables from "@/db/schema/storage";
 import * as telemetryTables from "@/db/schema/telemetry";
 import * as userPreferenceTables from "@/db/schema/user-preferences";
 
+// `driveItemColdView` is a narrow view of `driveItems` (same underlying `drive_items` table, fewer columns),
+// kept out of the merged schema like the other narrow views (`message-bodies.ts`, `spam-policy.ts`): two
+// Drizzle table objects for one SQL table would confuse `drizzle-kit generate` and the relational query builder.
+const { driveItemColdView: _driveItemColdView, ...driveSchemaTables } = driveTables;
+
 const schema = {
 	...coreTables,
 	...assistantEmailTables,
@@ -35,7 +40,7 @@ const schema = {
 	...spamReportTables,
 	...moduleTables,
 	...financeTables,
-	...driveTables,
+	...driveSchemaTables,
 	...storageTables,
 	...screenerTables,
 	...telemetryTables,

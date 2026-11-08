@@ -80,7 +80,7 @@ async function writeRows(table: PreparedRestoreTable, context: SegmentContext): 
 	const { writer, index, from } = context;
 	if (!table.range?.rows) return;
 	const columns = new Set(table.columns);
-	const builder = new TableInsertBuilder<RestorePosition>(table.name, columns);
+	const builder = new TableInsertBuilder<RestorePosition>(table.name, columns, { ignoreConflicts: table.merge });
 	const emit = async (built: ReturnType<typeof builder.finish>) => {
 		if (!built) return;
 		await writer.add(built.statement, built.meta, {
@@ -168,7 +168,8 @@ export async function executeDatabaseRestore(
 			const segment = segments[context.index]!;
 			const next = { segment: context.index + 1, offset: null, rows: 0 };
 			if (segment.kind === "deletes") {
-				await writeRepeatable(writer, planRestoreDeletes(prepared.tables.map((table) => table.name)), context);
+				const emptied = prepared.tables.filter((table) => !table.merge).map((table) => table.name);
+				await writeRepeatable(writer, planRestoreDeletes(emptied), context);
 				// Its own batches: until they are in, rows that look restored may simply be the live ones, so no probe
 				// of a later batch can be trusted before them.
 				await writer.flush();

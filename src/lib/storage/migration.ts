@@ -31,9 +31,9 @@ import {
 } from "./migration-utils";
 import { callStorageHook } from "./module-hooks";
 import { objectClassOf } from "./object-classes-utils";
-import { lookupObjectLocation } from "./object-locations";
+import { deleteObjectLocations, lookupObjectLocation } from "./object-locations";
 import { ATTACHMENT_OBJECT_ROWS_SQL } from "@/lib/email/attachment-storage-utils";
-import type { KiteBucket, ObjectStore, RoutableClass, Storage } from "./types";
+import type { ObjectStore, RoutableClass, Storage } from "./types";
 
 const log = createLogger("storage");
 
@@ -164,13 +164,32 @@ function lengthOption(target: ObjectStore, length: number) {
 }
 
 /**
+ * Whether `existing` can stand in for `head` without copying: same size, and, when both stores are real
+ * S3-compatible ones (not the self-hosted file bucket, whose ETag is a random UUID rather than a content hash,
+ * `sized` above), the same ETag too. A multipart object's ETag is not a simple content hash (it also encodes the
+ * part boundaries used to make it), so two equal-size multipart ETags are not proof of equal bytes and two
+ * unequal ones are not proof they differ; this only tightens the single-part case the plain size check missed.
+ */
+export function matchesExisting(
+	head: R2Object,
+	existing: R2Object | null,
+	sourceId: string,
+	targetId: string,
+): boolean {
+	if (!existing || existing.size !== head.size) return false;
+	if (sourceId === DEFAULT_STORE_ID || targetId === DEFAULT_STORE_ID) return true;
+	if (!head.etag || !existing.etag || head.etag.includes("-") || existing.etag.includes("-")) return true;
+	return head.etag === existing.etag;
+}
+
+/**
  * Copies one object with its metadata; large objects go part by part with ranged reads. The copy is written to
  * `targetKey`, which is `key` for a move between stores and another name for the copies full backups keep.
  * `storageClass`, used only by a same-store cold rewrite (`cold.ts`), rides along on the create/put call; a store
  * that does not understand it (a plain S3-compatible bucket) ignores the extra option.
  */
 export async function copyObject(
-	source: KiteBucket,
+	source: ObjectStore,
 	head: R2Object,
 	target: ObjectStore,
 	key: string,
@@ -183,7 +202,7 @@ export async function copyObject(
 		try {
 			const parts = [];
 			for (const part of copyParts(head.size, COPY_PART_BYTES)) {
-				const range = await source.get(key, { range: { offset: part.offset, length: part.length } });
+				const range = await source.bucket.get(key, { range: { offset: part.offset, length: part.length } });
 				if (!range?.body) throw new Error("The source object changed during the copy");
 				parts.push(
 					await upload.uploadPart(
@@ -200,10 +219,23 @@ export async function copyObject(
 		}
 		return head.size;
 	}
-	const object = await source.get(key);
+	const object = await source.bucket.get(key);
 	if (!object) return null;
 	const body = object.size === 0 ? new Uint8Array(0) : sized(object.body, object.size, target);
-	await target.bucket.put(targetKey, body, { ...metadata, ...lengthOption(target, object.size) });
+	const written = await target.bucket.put(targetKey, body, { ...metadata, ...lengthOption(target, object.size) });
+	// A single-part PUT's ETag is the MD5 of the bytes on both R2 and plain S3-compatible stores, so it is
+	// comparable across them; the self-hosted Node runtime's file bucket makes up a random one on every write
+	// instead (never a content hash), so this only compares when neither side is that store.
+	if (
+		source.id !== DEFAULT_STORE_ID &&
+		target.id !== DEFAULT_STORE_ID &&
+		head.etag &&
+		written?.etag &&
+		head.etag !== written.etag
+	) {
+		await target.bucket.delete(targetKey).catch(() => undefined);
+		throw new Error("The copy's ETag does not match the source; the target store may have altered the bytes");
+	}
 	return object.size;
 }
 
@@ -280,11 +312,16 @@ async function runItems(
 			const sources = await locationAwareSources(env, storage, baseChain, item.key);
 			const source = await findSource(sources, item.key);
 			if (!source && !present) throw new Error("An object named in the database is missing from both stores");
-			if (source && (!present || present.size !== source.head.size)) {
-				const copied = await copyObject(source.store.bucket, source.head, to, item.key);
+			if (source && !matchesExisting(source.head, present, source.store.id, to.id)) {
+				const copied = await copyObject(source.store, source.head, to, item.key);
 				if (copied === null) throw new Error("The object disappeared from the old store during the copy");
 				result.bytes += copied;
 			}
+			// The object is reachable through the normal chain now (it is on `to`); a location a cold move
+			// recorded outside this migration's own old/default chain is stale once that happens, and keeping
+			// it would needlessly block deleting that store and have the next cold sweep move the object again.
+			if (source && source.store.id !== from.id && source.store.id !== to.id)
+				await deleteObjectLocations(env, [item.key]);
 			result.moved.push(item.id);
 		} catch (error) {
 			result.errors += 1;

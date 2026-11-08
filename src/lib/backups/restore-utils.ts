@@ -11,31 +11,28 @@ import type {
 
 /**
  * The storage configuration says where this install's objects live right now. A backup's copy may name
- * stores whose credentials or contents differ, so a restore keeps the live rows when there are any and
- * restores the backup's only into an install that has none. `storage_stores` and `storage_routes` move
- * together (a route names a store), and cold storage's rules and locations (src/lib/storage/cold.ts) move
- * with them too, so a restored rule or location can never outlive the store rows it was checked against.
+ * stores whose credentials or contents differ, so a restore keeps the live rows when there are any (sealed
+ * credentials are not something to merge silently) and restores the backup's only into an install that has
+ * none. `storage_stores` and `storage_routes` move together: a route names a store.
  */
-export const PRESERVED_ON_RESTORE = [
-	"storage_stores",
-	"storage_routes",
-	"storage_cold_rules",
-	"object_locations",
-] as const;
-
-/** `storage_stores` and `storage_routes`, which a cold rule or location on its own must not drag in: an
- * install that only ever used the same-store `r2-ia` rewrite has a cold rule and never a custom store. */
-const STORE_TABLES = ["storage_stores", "storage_routes"] as const;
+export const PRESERVED_ON_RESTORE = ["storage_stores", "storage_routes"] as const;
 
 /** The tables a restore must leave untouched, given how many rows each preserved table has now. */
 export function preservedRestoreTables(liveRowCounts: Partial<Record<string, number>>): Set<string> {
-	const storesLive = STORE_TABLES.some((table) => (liveRowCounts[table] ?? 0) > 0);
-	const coldLive = storesLive || PRESERVED_ON_RESTORE.some((table) => (liveRowCounts[table] ?? 0) > 0);
-	return new Set([
-		...(storesLive ? STORE_TABLES : []),
-		...(coldLive ? (["storage_cold_rules", "object_locations"] as const) : []),
-	]);
+	const storesLive = PRESERVED_ON_RESTORE.some((table) => (liveRowCounts[table] ?? 0) > 0);
+	return new Set(storesLive ? PRESERVED_ON_RESTORE : []);
 }
+
+/**
+ * `storage_cold_rules` and `object_locations` (src/lib/storage/cold.ts) point at data a sweep already moved,
+ * not at configuration, so unlike the store tables above they are never emptied or skipped outright: a normal
+ * restore merges the backup's rows in with `INSERT OR IGNORE` (a live row for the same class or key wins,
+ * whatever the backup lacks is added), so a rule or a location record a live but differently-provisioned
+ * install never had still comes back. A rollback passes an empty list instead, so a restore that merged some
+ * of these in and then failed for an unrelated reason is undone exactly like every other table: wiped and
+ * replaced with the pre-restore snapshot, rather than leaving a partial merge in place.
+ */
+export const MERGED_ON_RESTORE = ["storage_cold_rules", "object_locations"] as const;
 
 /** D1 rejects a statement with more bound parameters than this. */
 export const MAX_BOUND_PARAMETERS = 100;

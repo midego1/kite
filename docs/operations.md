@@ -405,20 +405,29 @@ sweep for every enabled rule whose previous one has finished; batches ride `OUTB
 messages and the five-minute cron (`runStorageColdMaintenance`) resends one whose lease expired without a later
 batch arriving, the same claim-and-batch pattern `storage_migrations` uses. Mail and backups record where a
 moved object now lives in `object_locations`, which the storage router (`src/lib/storage/router.ts`) consults
-once the normal read chain misses, so opening a cold message or file needs no extra step; Drive files record
-their own `store_id` and `storage_class` on `drive_items` instead, since that row is already the source of
-truth for where a file lives. Changing a rule's target after a sweep still finds an object through
-`object_locations` even when the new target is not the class's active route. A store a rule still targets, or
-that `object_locations` still names, cannot be deleted (`deleteStore` in `src/lib/storage/stores.ts`) until the
-rule points elsewhere or the objects are moved again; a sweep already running when a store is deleted (it keeps
-the rule as it was when it started, so a rule changed since would not otherwise show it) blocks the delete too.
-A `backups` rule only sweeps the database export document each backup makes (`backups.r2_key`), not the mail
-file copies a [full backup](#full-backups) writes alongside it, which stay on their current store. **Run now**
-(`POST /api/admin/storage/cold/[class]`) starts a sweep immediately; `GET /api/admin/storage/cold` reports each
-class's rule and its latest sweep. Logs:
-`storage.cold_errors`, `storage.cold_batch_failed`. Backups: `storage_cold_rules` and `object_locations` are in
-the `system` group and preserved on restore like `storage_stores` and `storage_routes`; `storage_cold_jobs` is
-internal.
+once the normal read chain misses, so opening a cold message or file needs no extra step. Drive files record
+their own `store_id` and `storage_class` on `drive_items`, since that row is already the source of truth for
+where a file lives, but a cold move writes the same `object_locations` row too (key `drive/<id>`, same as mail
+and backups): a restore can roll `drive_items.store_id` back to a store a later sweep already moved the file
+off, and the Drive read path (`streamDriveFile`, `presignedDownload`) falls back to `object_locations` and
+repairs the row the first time that happens. Changing a rule's target after a sweep still finds an object
+through `object_locations` even when the new target is not the class's active route. A store a rule still
+targets, or that `object_locations` still names, cannot be deleted (`deleteStore` in `src/lib/storage/stores.ts`)
+until the rule points elsewhere or the objects are moved again; a sweep already running when a store is deleted
+(it keeps the rule as it was when it started, so a rule changed since would not otherwise show it) blocks the
+delete too. The five-minute maintenance also prunes `object_locations` rows nothing live references any more
+(a concurrent move, a message deleted mid-sweep, a delete that could not reach its store last time): up to 200
+of the oldest rows a run, each deleted from its store and then dropped, left alone for a later retry while its
+store cannot be reached right now. A `backups` rule only sweeps the database export document each backup makes
+(`backups.r2_key`), not the mail file copies a [full backup](#full-backups) writes alongside it, which stay on
+their current store. **Run now** (`POST /api/admin/storage/cold/[class]`) starts a sweep immediately; saving a
+rule or running it now answers 409 `MIGRATION_PENDING` before migration `0097` is applied, even once `0065` has
+been (`coldStorageTablesReady`). `GET /api/admin/storage/cold` reports each class's rule and its latest sweep.
+Logs: `storage.cold_errors`, `storage.cold_batch_failed`, `storage.cold_orphans_pruned`. Backups:
+`storage_cold_rules` and `object_locations` are in the `system` group; unlike `storage_stores` and
+`storage_routes`, a restore merges their rows into the target's current ones (`INSERT OR IGNORE`: a live row
+wins, and a row only the backup has is added back) rather than keeping or replacing them wholesale, since they
+are data that changes between backups, not store configuration. `storage_cold_jobs` is internal.
 
 ### Attachment storage
 

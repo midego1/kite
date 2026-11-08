@@ -4,9 +4,10 @@ import type { RoutableClass } from "./types";
 type LocationEnv = { DB: D1Database };
 
 /**
- * Records where a mail or backups object now lives after a cold move (`cold.ts`); the router's read chain
- * (`router.ts`) consults this on a miss. Drive files record their own `store_id`/`storage_class` on
- * `drive_items` instead, so this table never names a `drive` object.
+ * Records where an object now lives after a cold move (`cold.ts`). Mail and backups are read through this on
+ * a chain miss (`router.ts`); Drive files are normally read by their row's own `store_id`/`storage_class`
+ * (`drive_items`), but are recorded here too (key `drive/<id>`), since a restore can roll that row back to a
+ * store a sweep already moved the file off of, which this is how `streamDriveFile` recovers from.
  */
 export async function recordObjectLocation(
 	env: LocationEnv,

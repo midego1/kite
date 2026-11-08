@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
-import test from "node:test";
-import { loadStorageServices } from "./support/storage-services.mjs";
+import { rmSync } from "node:fs";
+import test, { after } from "node:test";
+import { makeBundleDirectory } from "./support/bundle-directory.mjs";
+import { copyMigrationsBefore } from "./support/module-database.mjs";
+import { APP_ORIGIN, loadStorageServices } from "./support/storage-services.mjs";
 
 const { lib, fake, fixture, addStore } = await loadStorageServices(
 	"kite-storage-cold-",
@@ -14,6 +17,10 @@ const { lib, fake, fixture, addStore } = await loadStorageServices(
 const { cold, router: routerLib } = lib;
 const { clearStorageConfigCache } = lib.config;
 const { getStorage } = lib.storageIndex;
+
+const schemaScratch = makeBundleDirectory("kite-storage-cold-schema-");
+after(() => rmSync(schemaScratch, { recursive: true, force: true }));
+const beforeColdStorage = copyMigrationsBefore(schemaScratch, 97);
 
 const DAY = 24 * 60 * 60;
 const NOW = 1_700_000_000;
@@ -371,4 +378,188 @@ test("deleting a key whose store cannot be reached right now keeps the location 
 		location(env, "inbound/old.eml"),
 		"kept, since nothing actually deleted the object this store still (unreachably) holds",
 	);
+});
+
+test("a Drive row a restore rewound to its old store still finds the file through object_locations, and repairs the row", async (t) => {
+	const { env, queue } = await fixture(t);
+	await addStore(env, "sto_target", "kite-target");
+	await addDriveFile(env, "drv_old", "alpha", { createdAt: NOW - 60 * DAY });
+	await setColdRule(env, "drive", { afterDays: 30, target: "sto_target" });
+	await cold.runColdStorageSweep(env, new Date(NOW * 1000));
+	await drain(env, queue);
+	assert.equal(env.DB.db.prepare("SELECT store_id FROM drive_items WHERE id = 'drv_old'").get().store_id, "sto_target");
+	assert.ok(location(env, "drive/drv_old"), "the drive move is also recorded in object_locations");
+
+	// What restoring an older backup does: the row is rewound to the store the file no longer has it on (the
+	// backup predates the cold move, and the current default store never had this file to begin with).
+	env.DB.db.prepare("UPDATE drive_items SET store_id = 'default' WHERE id = 'drv_old'").run();
+
+	const item = env.DB.db.prepare("SELECT * FROM drive_items WHERE id = 'drv_old'").get();
+	const request = new Request("https://kite.test/api/drive/files/drv_old/content");
+	const response = await lib.driveContent.streamDriveFile(
+		env,
+		request,
+		{
+			id: item.id,
+			kind: item.kind,
+			status: item.status,
+			objectKey: item.object_key,
+			storeId: item.store_id,
+			size: item.size,
+			name: item.name,
+			contentType: "text/plain",
+			updatedAt: new Date(item.updated_at * 1000),
+		},
+		false,
+	);
+	assert.equal(response.status, 200, "found through object_locations despite the rewound row");
+	assert.equal(await response.text(), "alpha");
+
+	// Self-healed: a later read does not need the fallback again.
+	assert.equal(env.DB.db.prepare("SELECT store_id FROM drive_items WHERE id = 'drv_old'").get().store_id, "sto_target");
+});
+
+test("a batch's progress write only lands while its claim is still the job's current cursor", async (t) => {
+	const { env, queue } = await fixture(t);
+	await addStore(env, "sto_target", "kite-target");
+	await addMessage(env, "old", { createdAt: NOW - 60 * DAY });
+	await setColdRule(env, "mail", { afterDays: 30, target: "sto_target" });
+	await cold.runColdStorageSweep(env, new Date(NOW * 1000));
+	assert.equal(queue.length, 1);
+	const { message } = queue.shift();
+
+	// A legitimate batch: claims, moves the one eligible message, and writes its progress.
+	await cold.processStorageQueueMessage(env, message);
+	const afterFirstBatch = job(env, "mail").cursor;
+	assert.equal(JSON.parse(afterFirstBatch).sources.messages, "done", "the messages source really did advance");
+
+	// Simulates a worker whose own claim (back when the cursor still read "nothing done yet") finally finishes
+	// and tries to write its progress only after another delivery already moved the job past that point: the
+	// exact UPDATE processColdBatch uses, bound to the stale cursor a slow worker would still be holding.
+	const stale = JSON.stringify({
+		...JSON.parse(afterFirstBatch),
+		sources: { messages: null, attachments: null, bodies: null },
+	});
+	const result = env.DB.db
+		.prepare(
+			`UPDATE storage_cold_jobs SET cursor = ?, objects_done = objects_done + 1
+			 WHERE object_class = 'mail' AND status NOT IN ('failed') AND cursor = ?`,
+		)
+		.run(JSON.stringify({ sources: { messages: "stale-worker-wrote-this" } }), stale);
+	assert.equal(result.changes, 0, "the stale worker's write is rejected, not applied on top of the real progress");
+	assert.equal(job(env, "mail").cursor, afterFirstBatch, "the real progress is untouched");
+});
+
+test("the five-minute maintenance prunes an orphaned cold copy nothing references any more", async (t) => {
+	const { env, queue } = await fixture(t);
+	await addStore(env, "sto_target", "kite-target");
+	await addMessage(env, "old", { createdAt: NOW - 60 * DAY });
+	await setColdRule(env, "mail", { afterDays: 30, target: "sto_target" });
+	await cold.runColdStorageSweep(env, new Date(NOW * 1000));
+	await drain(env, queue);
+	assert.ok(location(env, "inbound/old.eml"));
+	assert.equal(target().has("inbound/old.eml"), true);
+
+	// A message deleted between a mover copying its raw mail and recording the location (or a race between
+	// two movers that leaves an unrecorded copy behind) ends up exactly here: a location nothing references.
+	env.DB.db.prepare("DELETE FROM messages WHERE id = 'old'").run();
+
+	await cold.runStorageColdMaintenance(env, new Date(NOW * 1000));
+	assert.equal(target().has("inbound/old.eml"), false, "the orphaned copy itself is deleted");
+	assert.equal(location(env, "inbound/old.eml"), undefined, "and its record with it");
+});
+
+test("the maintenance leaves an orphan's record alone while its store cannot be reached, for a later retry", async (t) => {
+	const { env, queue } = await fixture(t);
+	await addStore(env, "sto_target", "kite-target");
+	await addMessage(env, "old", { createdAt: NOW - 60 * DAY });
+	await setColdRule(env, "mail", { afterDays: 30, target: "sto_target" });
+	await cold.runColdStorageSweep(env, new Date(NOW * 1000));
+	await drain(env, queue);
+	env.DB.db.prepare("DELETE FROM messages WHERE id = 'old'").run();
+
+	// The store is now blocked (a bad endpoint, a revoked credential): built.store(storeId) finds nothing.
+	env.DB.db.prepare("UPDATE storage_stores SET endpoint = 'http://blocked.invalid' WHERE id = 'sto_target'").run();
+	clearStorageConfigCache();
+
+	await cold.runStorageColdMaintenance(env, new Date(NOW * 1000));
+	assert.ok(location(env, "inbound/old.eml"), "kept for a retry once the store is reachable again");
+});
+
+test("the maintenance never touches a cold copy a live message still names", async (t) => {
+	const { env, queue } = await fixture(t);
+	await addStore(env, "sto_target", "kite-target");
+	await addMessage(env, "old", { createdAt: NOW - 60 * DAY });
+	await setColdRule(env, "mail", { afterDays: 30, target: "sto_target" });
+	await cold.runColdStorageSweep(env, new Date(NOW * 1000));
+	await drain(env, queue);
+
+	await cold.runStorageColdMaintenance(env, new Date(NOW * 1000));
+	assert.ok(location(env, "inbound/old.eml"));
+	assert.equal(target().has("inbound/old.eml"), true);
+});
+
+test("a migration that copies a cold-moved object back into the new hot store drops its stale location", async (t) => {
+	const { env, queue } = await fixture(t);
+	const actor = { id: "owner" };
+	await addStore(env, "sto_target", "kite-target");
+	await addStore(env, "sto_hot", "kite-target-2");
+	await addMessage(env, "old", { createdAt: NOW - 60 * DAY });
+	await setColdRule(env, "mail", { afterDays: 30, target: "sto_target" });
+	await cold.runColdStorageSweep(env, new Date(NOW * 1000));
+	await drain(env, queue);
+	assert.equal(location(env, "inbound/old.eml").store_id, "sto_target");
+	assert.equal(await env.BUCKET.get("inbound/old.eml"), null, "gone from the default store");
+
+	// Mail's active route moves to a new hot store; the migration finds the cold copy through object_locations
+	// (otherwise it would read as missing from both the old and default stores) and copies it in.
+	const switched = await lib.routeSwitch.switchRoute(
+		env,
+		actor,
+		"mail",
+		{ storeId: "sto_hot", migrate: true },
+		APP_ORIGIN,
+	);
+	assert.equal(switched.ok, true, switched.ok ? undefined : switched.error);
+	await drain(env, queue);
+	assert.equal(
+		Buffer.from(fake.buckets.get("kite-target-2").objects.get("inbound/old.eml").bytes).toString("utf8"),
+		"raw old",
+		"copied into the new hot store",
+	);
+
+	// The object is reachable the normal way now; the location naming the old cold target is stale and would
+	// otherwise block deleting that store, and have the next cold sweep move the object again for nothing.
+	assert.equal(
+		location(env, "inbound/old.eml"),
+		undefined,
+		"dropped once the migration copies the object into the normal chain",
+	);
+	const routed = routerLib.createStorageRouter(env);
+	assert.equal(await (await routed.get("inbound/old.eml")).text(), "raw old", "still reads fine through the chain");
+});
+
+test("saving a cold rule on a database that has 0065's storage tables but not 0097's answers migration pending, not a crash", async (t) => {
+	const db = new lib.sqlite.SqliteDatabase(":memory:");
+	t.after(() => db.db.close());
+	await lib.migrate.applyMigrations(db, beforeColdStorage);
+	assert.equal(
+		db.db.prepare("SELECT count(*) AS n FROM sqlite_master WHERE name = 'storage_stores'").get().n,
+		1,
+		"0065 is applied",
+	);
+	assert.equal(
+		db.db.prepare("SELECT count(*) AS n FROM sqlite_master WHERE name = 'storage_cold_rules'").get().n,
+		0,
+		"0097 is not",
+	);
+	const result = await cold.updateColdRule({ DB: db }, "owner", "mail", {
+		afterDays: 30,
+		minBytes: 0,
+		target: "r2-ia",
+		enabled: true,
+	});
+	assert.equal(result.ok, false);
+	assert.equal(result.status, 409);
+	assert.equal(result.code, "MIGRATION_PENDING");
 });

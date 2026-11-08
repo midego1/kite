@@ -1,9 +1,11 @@
 import { desc, eq, inArray } from "drizzle-orm";
 import { getDb } from "@/db";
 import { objectLocations, storageColdJobs, storageColdRules } from "@/db/schema/storage";
+import { ATTACHMENT_OBJECT_ROWS_SQL } from "@/lib/email/attachment-storage-utils";
 import { createAuditLog } from "@/lib/mailboxes/audit";
 import { createLogger } from "@/lib/logger.mjs";
 import { isNoSuchTableError } from "@/lib/modules/state-utils";
+import { deleteObjectLocations } from "./object-locations";
 import {
 	COLD_STORAGE_CLASS,
 	initialColdCursor,
@@ -21,7 +23,7 @@ import {
 import { coldPage, driveColdPage, type Item } from "./cold-sources";
 import { moveColdObject, moveColdDriveObject } from "./cold-move";
 import { DEFAULT_STORE_ID, isRoutableClass, isUsableStore, ROUTABLE_CLASSES, type StorageConfig } from "./config-utils";
-import { processStorageMigration } from "./migration";
+import { beforeBodyColumn, processStorageMigration } from "./migration";
 import {
 	isLeased,
 	isStalled,
@@ -32,7 +34,7 @@ import {
 	takeBatch,
 	type MigrationSource,
 } from "./migration-utils";
-import { readStorageConfig } from "./config";
+import { coldStorageTablesReady, readStorageConfig } from "./config";
 import { getStorage, type StoragePlatformEnv } from "./index";
 import type { RoutableClass, Storage } from "./types";
 
@@ -124,7 +126,7 @@ async function saveColdRule(
 	return now;
 }
 
-type ColdRuleFailure = { ok: false; status: number; error: string; field?: string };
+type ColdRuleFailure = { ok: false; status: number; error: string; field?: string; code?: string };
 export type ColdRuleResult = ({ ok: true } & { rule: SaveColdRuleInput & { updatedAt: string } }) | ColdRuleFailure;
 
 const MAX_AFTER_DAYS = 3650;
@@ -137,6 +139,13 @@ export async function updateColdRule(
 	body: unknown,
 ): Promise<ColdRuleResult> {
 	if (!isRoutableClass(objectClass)) return { ok: false, status: 404, error: "Unknown object class" };
+	if (!(await coldStorageTablesReady(env)))
+		return {
+			ok: false,
+			status: 409,
+			error: "Apply the pending database update first",
+			code: "MIGRATION_PENDING",
+		};
 	if (!body || typeof body !== "object") return { ok: false, status: 400, error: "Choose the age, size and target" };
 	const { afterDays, minBytes, target, enabled } = body as Record<string, unknown>;
 	if (typeof afterDays !== "number" || !Number.isInteger(afterDays) || afterDays < 1 || afterDays > MAX_AFTER_DAYS)
@@ -259,14 +268,18 @@ async function runColdItems(
 
 /** Each file marks its own row cold as it moves (`moveColdDriveObject`), not batched after the whole page: a
  * crash partway through a page must not leave an earlier file's row stuck pointing at an already-deleted copy. */
-async function runDriveSource(storage: Storage, state: ColdCursor): Promise<{ next: ColdCursor; result: BatchResult }> {
+async function runDriveSource(
+	env: ColdEnv,
+	storage: Storage,
+	state: ColdCursor,
+): Promise<{ next: ColdCursor; result: BatchResult }> {
 	const after = state.sources.drive ?? null;
 	const page = await driveColdPage(state.rule, state.cutoffAt, after);
 	const batch = takeBatch(page.items, { objects: MAX_BATCH_OBJECTS, bytes: MAX_BATCH_BYTES });
 	const result: BatchResult = { processed: 0, bytes: 0, errors: 0, lastError: null };
 	for (const item of batch) {
 		try {
-			result.bytes += (await moveColdDriveObject(storage, state.rule, item)).bytes;
+			result.bytes += (await moveColdDriveObject(env, storage, state.rule, item)).bytes;
 			result.processed += 1;
 		} catch (error) {
 			result.errors += 1;
@@ -317,12 +330,16 @@ async function processColdBatch(
 	}
 	const { next, result } =
 		source === "drive"
-			? await runDriveSource(await getStorage(env), state)
+			? await runDriveSource(env, await getStorage(env), state)
 			: await runD1Source(env, objectClass, source, state);
 	const now = Date.now();
-	await env.DB.prepare(
+	// The write only lands while this worker's claim is still the row's current cursor: a batch slow enough to
+	// outlive its lease (LEASE_MS) can otherwise overlap with whoever reclaimed it next and overwrite that
+	// worker's own progress, or re-enqueue a batch nobody needs, on top of whatever moved objects already did.
+	const written = await env.DB.prepare(
 		`UPDATE storage_cold_jobs SET cursor = ?, objects_done = objects_done + ?, bytes_done = bytes_done + ?,
-		 errors = errors + ?, last_error = coalesce(?, last_error) WHERE object_class = ? AND status NOT IN ('failed')`,
+		 errors = errors + ?, last_error = coalesce(?, last_error)
+		 WHERE object_class = ? AND status NOT IN ('failed') AND cursor = ?`,
 	)
 		.bind(
 			JSON.stringify({ ...next, leaseUntil: undefined, lastBatchAt: now, failures: 0 }),
@@ -331,9 +348,14 @@ async function processColdBatch(
 			result.errors,
 			result.lastError,
 			objectClass,
+			JSON.stringify(state),
 		)
 		.run();
 	if (result.lastError) log.warn("storage.cold_errors", { objectClass, errors: result.errors });
+	if (!(written.meta?.changes ?? 0)) {
+		log.warn("storage.cold_lease_lost", { objectClass });
+		return { again: false };
+	}
 	return { again: true };
 }
 
@@ -399,6 +421,90 @@ export async function runStorageColdMaintenance(env: ColdEnv, now = new Date()):
 		if (isStalled(state, now.getTime(), job.startedAt?.getTime() ?? job.createdAt.getTime()))
 			await enqueue(env, job.objectClass);
 	}
+	await pruneOrphanedColdLocations(env);
+}
+
+/**
+ * Whether a live row still names `key` for `objectClass`, the way a sweep's own candidate queries would find
+ * it. False means nothing will ever read this key again: a message deleted between a mover copying its raw
+ * mail (or an attachment, or an offloaded body) and recording the new location, a concurrent mover's own copy
+ * to a different target left behind with its location overwritten, or a backup or Drive row gone the same way.
+ */
+async function stillReferenced(env: ColdEnv, objectClass: RoutableClass, key: string): Promise<boolean> {
+	if (objectClass === "backups") {
+		const row = await env.DB.prepare("SELECT 1 AS found FROM backups WHERE r2_key = ? AND status = 'completed'")
+			.bind(key)
+			.first<{ found: number }>();
+		return !!row;
+	}
+	if (objectClass === "drive") {
+		const row = await env.DB.prepare("SELECT 1 AS found FROM drive_items WHERE object_key = ?")
+			.bind(key)
+			.first<{ found: number }>();
+		return !!row;
+	}
+	const raw = await env.DB.prepare("SELECT 1 AS found FROM messages WHERE raw_r2_key = ?")
+		.bind(key)
+		.first<{ found: number }>();
+	if (raw) return true;
+	const attachment = await env.DB.prepare(
+		`SELECT 1 AS found FROM message_attachments WHERE r2_key = ? AND ${ATTACHMENT_OBJECT_ROWS_SQL}`,
+	)
+		.bind(key)
+		.first<{ found: number }>();
+	if (attachment) return true;
+	const body = await beforeBodyColumn(
+		() =>
+			env.DB.prepare("SELECT 1 AS found FROM messages WHERE html_body_key IS NOT NULL AND html_body_key = ?")
+				.bind(key)
+				.first<{ found: number }>(),
+		null,
+	);
+	return !!body;
+}
+
+const PRUNE_BATCH = 200;
+
+/**
+ * Cleans up `object_locations` rows nothing live references any more: the object is deleted from the store
+ * that holds it (skipped, to try again later, when that store cannot be reached right now), then the record
+ * itself. Called from the five-minute cron, so a delete `router.ts` could not complete and an orphan a crash
+ * or a race left behind both get an actual retry instead of sitting forever. Oldest first, one bounded batch
+ * per run: on an install with more live rows than that it falls behind rather than scanning the whole table
+ * every five minutes, so a persistently large backlog still needs its own follow-up.
+ */
+async function pruneOrphanedColdLocations(env: ColdEnv): Promise<{ checked: number; pruned: number }> {
+	let rows: { key: string; objectClass: string; storeId: string }[];
+	try {
+		rows = await getDb(env)
+			.select({ key: objectLocations.key, objectClass: objectLocations.objectClass, storeId: objectLocations.storeId })
+			.from(objectLocations)
+			.orderBy(objectLocations.movedAt)
+			.limit(PRUNE_BATCH);
+	} catch (error) {
+		if (isNoSuchTableError(error)) return { checked: 0, pruned: 0 };
+		throw error;
+	}
+	if (!rows.length) return { checked: 0, pruned: 0 };
+	const storage = await getStorage(env);
+	let pruned = 0;
+	for (const row of rows) {
+		if (!isRoutableClass(row.objectClass)) continue;
+		try {
+			if (await stillReferenced(env, row.objectClass, row.key)) continue;
+			const store = storage.store(row.storeId);
+			if (!store) continue;
+			// A store that cannot be reached right now (a bad endpoint, a revoked credential) throws here;
+			// the record is left for the next run to try again, the same as router.ts's own delete.
+			await store.bucket.delete(row.key);
+			await deleteObjectLocations(env, [row.key]);
+			pruned += 1;
+		} catch {
+			continue;
+		}
+	}
+	if (pruned) log.warn("storage.cold_orphans_pruned", { checked: rows.length, pruned });
+	return { checked: rows.length, pruned };
 }
 
 /** The default store's current capability to hold a storage class, for the admin UI's target options. */

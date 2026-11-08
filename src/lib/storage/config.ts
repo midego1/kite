@@ -119,19 +119,37 @@ async function readRows(env: StorageEnv): Promise<{ stores: StoreRow[]; routes: 
 }
 
 const STORAGE_TABLES = ["storage_stores", "storage_routes", "storage_migrations"];
-/** Migrations only add tables, so once they exist the check is skipped for the rest of the isolate's life. */
+const COLD_STORAGE_TABLES = ["storage_cold_rules", "object_locations", "storage_cold_jobs"];
+/** Migrations only add tables, so once a set exists the check for it is skipped for the rest of the isolate's life. */
 const readyDatabases = new WeakSet<object>();
+const coldReadyDatabases = new WeakSet<object>();
+
+async function tablesPresent(env: Pick<CloudflareEnv, "DB">, tables: readonly string[]): Promise<boolean> {
+	const row = await env.DB.prepare(
+		`SELECT count(*) AS present FROM sqlite_master WHERE type = 'table' AND name IN (${tables.map(() => "?").join(", ")})`,
+	)
+		.bind(...tables)
+		.first<{ present: number }>();
+	return Number(row?.present ?? 0) === tables.length;
+}
 
 /** Whether migration 0065 has been applied; reads only `sqlite_master`. */
 export async function storageTablesReady(env: Pick<CloudflareEnv, "DB">): Promise<boolean> {
 	if (readyDatabases.has(env.DB)) return true;
-	const row = await env.DB.prepare(
-		`SELECT count(*) AS present FROM sqlite_master WHERE type = 'table' AND name IN (${STORAGE_TABLES.map(() => "?").join(", ")})`,
-	)
-		.bind(...STORAGE_TABLES)
-		.first<{ present: number }>();
-	const ready = Number(row?.present ?? 0) === STORAGE_TABLES.length;
+	const ready = await tablesPresent(env, STORAGE_TABLES);
 	if (ready) readyDatabases.add(env.DB);
+	return ready;
+}
+
+/**
+ * Whether migration 0097 (cold storage) has been applied; reads only `sqlite_master`. A database can have 0065's
+ * stores and routes without this, since they landed in separate releases, and `storageTablesReady` alone would
+ * wave a cold rule save through onto tables that do not exist yet.
+ */
+export async function coldStorageTablesReady(env: Pick<CloudflareEnv, "DB">): Promise<boolean> {
+	if (coldReadyDatabases.has(env.DB)) return true;
+	const ready = await tablesPresent(env, COLD_STORAGE_TABLES);
+	if (ready) coldReadyDatabases.add(env.DB);
 	return ready;
 }
 

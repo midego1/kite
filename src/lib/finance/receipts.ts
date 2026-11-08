@@ -251,7 +251,7 @@ export async function releaseOwnerPendingClaims(userId: string): Promise<void> {
 
 /**
  * The ids of one owner's rows in a table that already have a filed receipt, for "this also has a Drive copy" UI
- * checks. Reads with `onReceiptTablesOr`: before migration 0101, nothing is filed yet, which is simply the true
+ * checks. Reads with `onReceiptTablesOr`: before migration 0102, nothing is filed yet, which is simply the true
  * answer, not a reason for the Subscriptions or Payments view itself to read as migration-pending.
  */
 export async function filedSourceIds(userId: string, table: ReceiptSourceTable): Promise<Set<string>> {
@@ -273,7 +273,7 @@ export async function filedSourceIds(userId: string, table: ReceiptSourceTable):
 /** Rows a cron tick files automatically, shortly after Money Watch records them. */
 const SWEEP_ROWS_PER_TICK = 50;
 
-/** Before migration 0101 (or on Node, a read error of the newly added column) the sweep floor cannot be read or
+/** Before migration 0102 (or on Node, a read error of the newly added column) the sweep floor cannot be read or
  * written: treated as "no floor yet", same as a fresh install. */
 function beforeSweepFloorColumn(error: unknown): boolean {
 	return missingColumnFromError(error) === "finance_receipts_sweep_since";

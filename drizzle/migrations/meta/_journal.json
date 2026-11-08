@@ -713,7 +713,7 @@
       "idx": 101,
       "version": "6",
       "when": 1794355200000,
-      "tag": "0101_add_finance_receipts",
+      "tag": "0102_add_finance_receipts",
       "breakpoints": true
     }
   ]

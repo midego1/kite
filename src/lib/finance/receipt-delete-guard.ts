@@ -14,7 +14,7 @@ export const RECEIPTS_IN_DRIVE_ERROR =
  * "Deleting a finance row does not delete the Drive copy silently: ask" (docs/specs/money-watch.md "Keep
  * receipts"). Refuses with 409 `RECEIPTS_IN_DRIVE` unless `acknowledge` is true, the same shape as a
  * flagged-attachment refusal; the Drive files are never touched either way. Reads with `onReceiptTablesOr`:
- * before migration 0101 nothing can possibly be filed, so every other delete (which has nothing to do with Keep
+ * before migration 0102 nothing can possibly be filed, so every other delete (which has nothing to do with Keep
  * receipts) must not start answering 409 `MIGRATION_PENDING` because of it. `sourceIds` is every document of a
  * subscription that can be removed in one request (`removeSubscription`), which a long-lived one can carry past
  * D1's 100 bound parameters; `inJsonArray` binds the whole list as one JSON parameter instead of one per id.

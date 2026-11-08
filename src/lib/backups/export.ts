@@ -164,7 +164,7 @@ const INTERNAL_TABLES = [
 	// The bookkeeping of "Recheck authentication" on a connected account (migration 0100): a cursor over that
 	// account's own mail, meaningless in another database.
 	"external_account_auth_rechecks",
-	// The bookkeeping of "Save receipts for existing payments" (migration 0101): a cursor over this
+	// The bookkeeping of "Save receipts for existing payments" (migration 0102): a cursor over this
 	// database's own finance rows, meaningless in another database.
 	"finance_receipt_backfills",
 	// The direct-uploads setup note and the dismissed reminder (migration 0085): the outcome of this deployment's own

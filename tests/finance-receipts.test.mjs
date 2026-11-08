@@ -348,8 +348,8 @@ test("receiptsDeleteGuard refuses removing a filed row unless acknowledged, and 
 	);
 });
 
-test("filedSourceIds and receiptsDeleteGuard answer normally on a database before migration 0101, instead of refusing", async (t) => {
-	const { db, env } = await setup(t, { migrationsBefore: 101 });
+test("filedSourceIds and receiptsDeleteGuard answer normally on a database before migration 0102, instead of refusing", async (t) => {
+	const { db, env } = await setup(t, { migrationsBefore: 102 });
 	const messageId = await insertMessage(db, env);
 	const paymentId = insertPayment(db, { messageId });
 
@@ -365,8 +365,8 @@ test("filedSourceIds and receiptsDeleteGuard answer normally on a database befor
 	);
 });
 
-test("the Subscriptions and Payments views, and their deletes, work before migration 0101 instead of reading as migrationPending", async (t) => {
-	const { db, env } = await setup(t, { migrationsBefore: 101 });
+test("the Subscriptions and Payments views, and their deletes, work before migration 0102 instead of reading as migrationPending", async (t) => {
+	const { db, env } = await setup(t, { migrationsBefore: 102 });
 	const messageId = await insertMessage(db, env);
 	const paymentId = insertPayment(db, { messageId });
 	const seconds = Math.floor(Date.now() / 1000);
@@ -380,7 +380,7 @@ test("the Subscriptions and Payments views, and their deletes, work before migra
 	const financeUser = { id: "owner", email: "owner@example.com", role: "user", isPrimaryAdmin: false, timeZone: "UTC" };
 
 	const subscriptions = await listSubscriptionsView(viewUser, null);
-	assert.equal(subscriptions.migrationPending, undefined, "0063/0094 are applied; only Keep receipts (0101) is not");
+	assert.equal(subscriptions.migrationPending, undefined, "0063/0094 are applied; only Keep receipts (0102) is not");
 	assert.deepEqual(
 		subscriptions.subscriptions.map((row) => row.id),
 		["sub-1"],

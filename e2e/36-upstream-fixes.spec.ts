@@ -46,8 +46,22 @@ async function snooze(id: string) {
 
 async function moveSelectionToInbox(page: Page, subject: string) {
 	await messageRow(page, subject).getByRole("checkbox").check();
-	await page.getByRole("button", { name: "Move to", exact: true }).first().click();
-	await page.getByRole("menuitem", { name: "Inbox", exact: true }).click();
+	// The default split-pane list has no room for "Move to" inline, so it is reached through "More actions"
+	// instead; the keyboard opens its submenu without a pointer path across the other items first.
+	const inline = page.getByRole("button", { name: "Move to", exact: true }).first();
+	if (await inline.isVisible()) {
+		await inline.click();
+		await page.getByRole("menuitem", { name: "Inbox", exact: true }).click();
+		return;
+	}
+	await page
+		.getByText(/^\d+ selected$/)
+		.locator("..")
+		.getByRole("button", { name: "More actions" })
+		.click();
+	const menu = page.getByRole("menu");
+	await menu.getByRole("menuitem", { name: "Move to", exact: true }).press("ArrowRight");
+	await menu.getByRole("menuitem", { name: "Inbox", exact: true }).click();
 }
 
 test("replying to mail sent from the mailbox's own address addresses that sender", async ({ page }) => {

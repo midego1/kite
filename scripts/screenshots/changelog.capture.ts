@@ -748,6 +748,27 @@ const SHOTS: Shot[] = [
 			return page.locator("#kite-message-list-panel");
 		},
 	},
+	{
+		// The same Spam list at its default, unresized width: Archive, Not spam and Move to have no room next
+		// to Delete, Delete forever and Mark as read, so they fold into "More actions" instead of clipping off
+		// the edge the way they used to.
+		name: "2026-11-08-easier-selection-narrow-light",
+		theme: "light",
+		viewport: { width: 1280, height: 420 },
+		open: async (page) => {
+			await seedSpamSelectionDemo();
+			await page.goto("/spam");
+			const rows = page.locator("[data-message-row]");
+			for (const [, , subject] of SPAM_SELECTION_MAIL) {
+				const row = rows.filter({ has: page.getByText(subject, { exact: true }) });
+				await expect(row).toBeVisible();
+				await row.getByRole("checkbox").check();
+			}
+			await expect(page.getByText(`${SPAM_SELECTION_MAIL.length} selected`)).toBeVisible();
+			await expect(page.getByRole("button", { name: "More actions" })).toBeVisible();
+			return page.locator("#kite-message-list-panel");
+		},
+	},
 	...(
 		[
 			["2026-11-06-interface-dutch", "nl", "Accountmenu openen"],

@@ -30,6 +30,22 @@ function messageRow(page: Page, subject: string) {
 		.last();
 }
 
+/**
+ * Runs a bulk toolbar action by its label, whether the default split-pane list has room to show it inline
+ * or, too narrow for that, it only reaches through "More actions" (Delete forever folds away there first;
+ * Delete and Mark as read always stay inline).
+ */
+async function clickBulkAction(page: Page, action: string) {
+	const toolbar = page.getByText(/^\d+ selected$/).locator("..");
+	const inline = toolbar.getByRole("button", { name: action, exact: true });
+	if (await inline.isVisible()) {
+		await inline.click();
+		return;
+	}
+	await toolbar.getByRole("button", { name: "More actions" }).click();
+	await page.getByRole("menu").getByRole("menuitem", { name: action, exact: true }).click();
+}
+
 async function bulk(messageIds: string[], action: string) {
 	const response = await api.post("/api/messages/bulk", { data: { messageIds, action } });
 	expect(response.ok(), await response.text()).toBe(true);
@@ -207,7 +223,7 @@ test.describe("conversation unread state and skipped deletes (upstream #135)", (
 		await messageRow(page, gone.subject!).getByRole("checkbox").check();
 		await bulk([kept.id], "archive");
 
-		await page.getByRole("button", { name: "Delete forever" }).first().click();
+		await clickBulkAction(page, "Delete forever");
 		await page
 			.getByRole("alertdialog", { name: "Delete forever?" })
 			.getByRole("button", { name: "Delete forever" })

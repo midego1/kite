@@ -5,6 +5,7 @@ import {
 	Archive,
 	ArchiveRestore,
 	ChevronDown,
+	ChevronRight,
 	Folder,
 	FolderInput,
 	Inbox,
@@ -19,6 +20,7 @@ import {
 	X,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import type { ReactNode } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -77,6 +79,54 @@ function CrossMailboxFolderHint({ show }: { show: boolean }) {
 		<>
 			<DropdownMenu.Separator className="my-1 h-px bg-neutral-100" />
 			<p className="px-3 py-2 text-xs text-neutral-500">{t("Select mail from one mailbox to move it to a folder.")}</p>
+		</>
+	);
+}
+
+type MoveTarget = { value: string; label: string; Icon: LucideIcon };
+type MoveMenuFolder = { id: string; name: string; color: string };
+
+/**
+ * The folder destinations of "Move to", shared between its own dropdown (container wide enough for an inline
+ * button) and the "Move to" entry of "More actions" (a container too narrow for one): the choices themselves
+ * never depend on how they are reached.
+ */
+function MoveMenuItems({
+	moveOptions,
+	phishingItem,
+	spansMailboxes,
+	folders,
+	onAction,
+}: {
+	moveOptions: MoveTarget[];
+	phishingItem: ReactNode;
+	spansMailboxes: boolean;
+	folders: MoveMenuFolder[];
+	onAction: (action: BulkMessageAction, folderId?: string) => void;
+}) {
+	const t = useT();
+	return (
+		<>
+			{moveOptions.map(({ value, label, Icon }) => (
+				<DropdownMenu.Item key={value} className={menuItemClass} onSelect={() => onAction(value as BulkMessageAction)}>
+					<Icon className="h-4 w-4" />
+					{label}
+				</DropdownMenu.Item>
+			))}
+			{phishingItem}
+			<CrossMailboxFolderHint show={spansMailboxes} />
+			{folders.length > 0 && (
+				<>
+					<DropdownMenu.Separator className="my-1 h-px bg-neutral-100" />
+					<DropdownMenu.Label className={menuLabelClass}>{t("Folders")}</DropdownMenu.Label>
+					{folders.map((item) => (
+						<DropdownMenu.Item key={item.id} className={menuItemClass} onSelect={() => onAction("folder", item.id)}>
+							<Folder className="h-4 w-4 shrink-0" style={{ color: item.color }} />
+							<span className="truncate">{item.name}</span>
+						</DropdownMenu.Item>
+					))}
+				</>
+			)}
 		</>
 	);
 }
@@ -182,8 +232,11 @@ function MailSelectionToolbar({
 					{t("{count} selected", { count: selectedCount })}
 				</span>
 			)}
-			<span className="flex-1 md:hidden" />
-			<span className="max-md:hidden">
+			<span className="flex-1 @xl:hidden" />
+			{/* Below @xl the header's own container (not the viewport: a narrow split-pane list on an otherwise
+			    wide screen is just as tight as a phone) has no room for these inline, so they move into "More
+			    actions" instead, never dropped. */}
+			<span className="@max-xl:hidden">
 				<ToolbarButton
 					label={archive.label}
 					icon={archive.Icon}
@@ -191,7 +244,7 @@ function MailSelectionToolbar({
 					disabled={manageDisabled}
 				/>
 			</span>
-			<span className="max-md:hidden">
+			<span className="@max-xl:hidden">
 				<ToolbarButton
 					label={spam.label}
 					icon={spam.Icon}
@@ -206,13 +259,15 @@ function MailSelectionToolbar({
 				disabled={trashDisabled}
 			/>
 			{canDeleteForever && (
-				<ToolbarButton
-					label={t("Delete forever")}
-					icon={Trash2}
-					onClick={() => onAction("delete")}
-					disabled={manageDisabled}
-					destructive
-				/>
+				<span className="@max-xl:hidden">
+					<ToolbarButton
+						label={t("Delete forever")}
+						icon={Trash2}
+						onClick={() => onAction("delete")}
+						disabled={manageDisabled}
+						destructive
+					/>
+				</span>
 			)}
 			<ToolbarButton
 				label={hasUnreadSelection ? t("Mark as read") : t("Mark as unread")}
@@ -220,14 +275,14 @@ function MailSelectionToolbar({
 				onClick={() => onAction(hasUnreadSelection ? "read" : "unread")}
 				disabled={pending}
 			/>
-			<span className="flex-1 max-md:hidden" />
+			<span className="flex-1 @max-xl:hidden" />
 			<DropdownMenu.Root>
-				<Tooltip label={t("Move selected messages")} className="max-md:hidden">
+				<Tooltip label={t("Move selected messages")} className="@max-xl:hidden">
 					<DropdownMenu.Trigger asChild>
 						<Button
 							variant="ghost"
 							size="sm"
-							className="max-md:hidden gap-1.5 bg-white text-xs font-medium text-neutral-700"
+							className="@max-xl:hidden gap-1.5 bg-white text-xs font-medium text-neutral-700"
 							disabled={manageDisabled}
 						>
 							<FolderInput className="h-4 w-4" />
@@ -238,38 +293,20 @@ function MailSelectionToolbar({
 				</Tooltip>
 				<DropdownMenu.Portal>
 					<DropdownMenu.Content align="end" sideOffset={4} className={menuContentClass}>
-						{moveOptions.map(({ value, label, Icon }) => (
-							<DropdownMenu.Item
-								key={value}
-								className={menuItemClass}
-								onSelect={() => onAction(value as BulkMessageAction)}
-							>
-								<Icon className="h-4 w-4" />
-								{label}
-							</DropdownMenu.Item>
-						))}
-						{phishingItem}
-						<CrossMailboxFolderHint show={spansMailboxes} />
-						{folders.length > 0 && (
-							<>
-								<DropdownMenu.Separator className="my-1 h-px bg-neutral-100" />
-								<DropdownMenu.Label className={menuLabelClass}>{t("Folders")}</DropdownMenu.Label>
-								{folders.map((item) => (
-									<DropdownMenu.Item
-										key={item.id}
-										className={menuItemClass}
-										onSelect={() => onAction("folder", item.id)}
-									>
-										<Folder className="h-4 w-4 shrink-0" style={{ color: item.color }} />
-										<span className="truncate">{item.name}</span>
-									</DropdownMenu.Item>
-								))}
-							</>
-						)}
+						<MoveMenuItems
+							moveOptions={moveOptions}
+							phishingItem={phishingItem}
+							spansMailboxes={spansMailboxes}
+							folders={folders}
+							onAction={onAction}
+						/>
 					</DropdownMenu.Content>
 				</DropdownMenu.Portal>
 			</DropdownMenu.Root>
-			<Tooltip label={t("Clear selection")} className="max-md:hidden">
+			{/* Small enough that, unlike Archive/Spam/Move to, it always has room: dismissing the toolbar is too
+			    common a thing to do to hide behind "More actions" just because the list beside a reading pane
+			    is narrow. The overflow menu still repeats it for the touch target it gives a coarse pointer. */}
+			<Tooltip label={t("Clear selection")}>
 				<Button
 					variant="ghost"
 					size="sm"
@@ -282,7 +319,7 @@ function MailSelectionToolbar({
 			</Tooltip>
 			<DropdownMenu.Root>
 				<DropdownMenu.Trigger asChild>
-					<Button variant="ghost" size="sm" className="md:hidden" disabled={pending} aria-label={t("More actions")}>
+					<Button variant="ghost" size="sm" className="@xl:hidden" disabled={pending} aria-label={t("More actions")}>
 						<MoreVertical className="h-4 w-4" />
 					</Button>
 				</DropdownMenu.Trigger>
@@ -290,11 +327,11 @@ function MailSelectionToolbar({
 					<DropdownMenu.Content
 						align="end"
 						sideOffset={4}
-						className="z-[130] min-w-44 rounded-xl border border-neutral-200 bg-white p-1 shadow-xl md:hidden"
+						className="z-[130] min-w-44 rounded-xl border border-neutral-200 bg-white p-1 shadow-xl @xl:hidden"
 					>
 						<DropdownMenu.Item
 							className={menuItemClass}
-							disabled={hasPendingSendSelection}
+							disabled={manageDisabled}
 							onSelect={() => onAction(archive.action as BulkMessageAction)}
 						>
 							<archive.Icon className="h-4 w-4" />
@@ -302,12 +339,32 @@ function MailSelectionToolbar({
 						</DropdownMenu.Item>
 						<DropdownMenu.Item
 							className={menuItemClass}
-							disabled={hasPendingSendSelection}
+							disabled={manageDisabled}
 							onSelect={() => onAction(spam.action as BulkMessageAction)}
 						>
 							<spam.Icon className="h-4 w-4" />
 							{spam.label}
 						</DropdownMenu.Item>
+						<DropdownMenu.Sub>
+							<DropdownMenu.SubTrigger className={clsx(menuItemClass, "justify-between")} disabled={manageDisabled}>
+								<span className="flex items-center gap-2">
+									<FolderInput className="h-4 w-4" />
+									{t("Move to")}
+								</span>
+								<ChevronRight aria-hidden className="h-4 w-4 text-neutral-400 rtl:-scale-x-100" />
+							</DropdownMenu.SubTrigger>
+							<DropdownMenu.Portal>
+								<DropdownMenu.SubContent sideOffset={4} className={menuContentClass}>
+									<MoveMenuItems
+										moveOptions={moveOptions}
+										phishingItem={false}
+										spansMailboxes={spansMailboxes}
+										folders={folders}
+										onAction={onAction}
+									/>
+								</DropdownMenu.SubContent>
+							</DropdownMenu.Portal>
+						</DropdownMenu.Sub>
 						{phishingItem}
 						{canDeleteForever && (
 							<DropdownMenu.Item className={`${menuItemClass} text-red-600`} onSelect={() => onAction("delete")}>

@@ -59,6 +59,21 @@ function toolbar(page: Page) {
 	return page.getByText(/^\d+ selected$/).locator("..");
 }
 
+/**
+ * Runs a bulk toolbar action by its label, whether the default split-pane list has room to show it inline
+ * or, too narrow for that, it only reaches through "More actions" (Archive, Report spam/Not spam, Delete
+ * forever and Move to fold away there first; Delete and Mark as read always stay inline).
+ */
+async function clickBulkAction(page: Page, action: string | RegExp) {
+	const inline = toolbar(page).getByRole("button", { name: action, exact: true });
+	if (await inline.isVisible()) {
+		await inline.click();
+		return;
+	}
+	await toolbar(page).getByRole("button", { name: "More actions" }).click();
+	await page.getByRole("menu").getByRole("menuitem", { name: action, exact: true }).click();
+}
+
 async function openSwitcher(page: Page) {
 	const trigger = page.getByRole("button", { name: /^Switch mailbox, current:/ });
 	// The first visit compiles the dashboard on a cold dev server.
@@ -271,10 +286,18 @@ test("bulk archive works across mailboxes and leaves read-only shared mail where
 	for (const subject of Object.values(subjects)) {
 		await row(page, subject).getByRole("checkbox").click();
 	}
-	await page.getByRole("button", { name: "Move to" }).click();
+	// The default split-pane list has no room for "Move to" inline, so it is reached through "More actions"
+	// here; the keyboard opens its submenu without a pointer path across the other items first.
+	const moveInline = toolbar(page).getByRole("button", { name: "Move to", exact: true });
+	if (await moveInline.isVisible()) {
+		await moveInline.click();
+	} else {
+		await toolbar(page).getByRole("button", { name: "More actions" }).click();
+		await page.getByRole("menu").getByRole("menuitem", { name: "Move to", exact: true }).press("ArrowRight");
+	}
 	await expect(page.getByText("Select mail from one mailbox to move it to a folder.")).toBeVisible();
 	await page.keyboard.press("Escape");
-	await toolbar(page).getByRole("button", { name: "Archive", exact: true }).click();
+	await clickBulkAction(page, "Archive");
 	await expect(page.getByText("1 read-only message was left as it was.")).toBeVisible();
 	await expect(row(page, subjects.home)).toHaveCount(0);
 	await expect(row(page, subjects.work)).toHaveCount(0);
@@ -294,9 +317,13 @@ test("read-only shared mail cannot be archived or deleted from the combined view
 	await showAllMailboxes(page);
 
 	await row(page, subject).getByRole("checkbox").click();
-	await expect(toolbar(page).getByRole("button", { name: "Archive", exact: true })).toBeDisabled();
 	await expect(toolbar(page).getByRole("button", { name: "Delete", exact: true })).toBeDisabled();
 	await expect(toolbar(page).getByRole("button", { name: "Mark as read" })).toBeEnabled();
+	// Archive has no room inline at the default split-pane width, so its disabled state is checked through
+	// "More actions" instead, where it is still offered (and still refused) the same way.
+	await toolbar(page).getByRole("button", { name: "More actions" }).click();
+	await expect(page.getByRole("menu").getByRole("menuitem", { name: "Archive", exact: true })).toBeDisabled();
+	await page.keyboard.press("Escape");
 	await row(page, subject).getByRole("checkbox").click();
 
 	await row(page, subject).getByRole("link").first().click();

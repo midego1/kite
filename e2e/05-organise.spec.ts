@@ -218,7 +218,7 @@ test("deleting forever from Trash asks for confirmation first", async ({ page })
 	const row = messageRow(page, subject);
 	await expect(row).toBeVisible();
 	await row.getByRole("checkbox").check();
-	await page.getByRole("button", { name: "Delete forever" }).click();
+	await clickBulkAction(page, "Delete forever");
 
 	const confirm = page.getByRole("alertdialog", { name: "Delete forever?" });
 	await expect(confirm).toBeVisible();
@@ -227,7 +227,7 @@ test("deleting forever from Trash asks for confirmation first", async ({ page })
 	await expect(row).toBeVisible();
 	expect(await messageStatusCode(message.id)).toBe(200);
 
-	await page.getByRole("button", { name: "Delete forever" }).click();
+	await clickBulkAction(page, "Delete forever");
 	await expect(confirm).toBeVisible();
 	await confirm.getByRole("button", { name: "Delete forever" }).click();
 	await expect(confirm).toBeHidden();
@@ -249,7 +249,7 @@ test("deleting a page of messages forever shows progress and removes them", asyn
 	const shown = await mine.allTextContents();
 	// The select-all checkbox is always in the list header; no separate "Select" mode is needed for a pointer.
 	await page.getByRole("checkbox", { name: "Select all visible messages" }).check();
-	await page.getByRole("button", { name: "Delete forever" }).click();
+	await clickBulkAction(page, "Delete forever");
 	await page
 		.getByRole("alertdialog", { name: "Delete forever?" })
 		.getByRole("button", { name: "Delete forever" })
@@ -269,6 +269,21 @@ test("deleting a page of messages forever shows progress and removes them", asyn
 /** The bulk toolbar in the list header: its action buttons sit beside the "N selected" count. */
 function selectionPane(page: Page) {
 	return page.getByText(/^\d+ selected$/).locator("..");
+}
+
+/**
+ * Runs a bulk toolbar action by its label, whether the list beside the open message has room to show it
+ * inline or, at the default split-pane width, it only reaches through "More actions" (Delete and Mark as
+ * read always stay inline; Archive, Report spam/Not spam, Delete forever and Move to fold away there first).
+ */
+async function clickBulkAction(page: Page, action: string) {
+	const inline = selectionPane(page).getByRole("button", { name: action, exact: true });
+	if (await inline.isVisible()) {
+		await inline.click();
+		return;
+	}
+	await selectionPane(page).getByRole("button", { name: "More actions" }).click();
+	await page.getByRole("menu").getByRole("menuitem", { name: action, exact: true }).click();
 }
 
 async function openWithSelection(page: Page, open: string, others: string[]) {
@@ -352,7 +367,7 @@ for (const action of ["Delete", "Archive"]) {
 		const c = await deliver(`Pick C ${token}`);
 		await openWithSelection(page, open.subject, [b.subject, c.subject]);
 
-		await selectionPane(page).getByRole("button", { name: action, exact: true }).click();
+		await clickBulkAction(page, action);
 
 		await expectEmptyPane(page, "/inbox");
 		await expect(page.getByRole("main").getByText(b.subject, { exact: true })).toHaveCount(0);

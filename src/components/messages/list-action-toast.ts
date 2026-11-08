@@ -19,3 +19,10 @@ export function reportReadOnlySkipped(skipped: number, nothingAllowed: boolean) 
 		: `${skipped === 1 ? "1 read-only message was" : `${skipped} read-only messages were`} left as it was.`;
 	toast(message, { id: "list-action-read-only" });
 }
+
+/** "Select all in folder" stopped at its cap instead of resolving the whole folder. */
+export function reportSelectAllTruncated(max: number) {
+	toast(t("Only the first {max} were selected. Narrow your search to select the rest.", { max }), {
+		id: "list-action-select-all-truncated",
+	});
+}

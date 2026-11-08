@@ -1,5 +1,6 @@
 "use client";
 
+import clsx from "clsx";
 import {
 	Archive,
 	ArchiveRestore,
@@ -17,6 +18,7 @@ import {
 	Undo2,
 	X,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -31,6 +33,41 @@ const menuItemClass =
 const menuLabelClass = "mt-1 px-3 pb-1 pt-2 text-sm font-medium text-neutral-500";
 const menuContentClass =
 	"z-[130] max-h-[min(24rem,var(--radix-dropdown-menu-content-available-height))] w-54 overflow-y-auto rounded-xl border border-neutral-200 bg-white p-2 shadow-lg";
+
+/**
+ * An action button of the toolbar: icon always, the label too once the header has room for it (the list beside
+ * a reading pane rarely does, a full-width list or a phone usually does), so the action is never just an icon
+ * with a tooltip only a pointer can reach.
+ */
+function ToolbarButton({
+	label,
+	icon: Icon,
+	onClick,
+	disabled,
+	destructive,
+}: {
+	label: string;
+	icon: LucideIcon;
+	onClick: () => void;
+	disabled?: boolean;
+	destructive?: boolean;
+}) {
+	return (
+		<Tooltip label={label}>
+			<Button
+				variant="ghost"
+				size="sm"
+				onClick={onClick}
+				disabled={disabled}
+				aria-label={label}
+				className={clsx("gap-1.5", destructive && "text-red-600 hover:text-red-700")}
+			>
+				<Icon className="h-4 w-4" />
+				<span className="hidden text-xs font-medium @lg:inline">{label}</span>
+			</Button>
+		</Tooltip>
+	);
+}
 
 /** Shown in the move menu instead of folders when the selection spans mailboxes. */
 function CrossMailboxFolderHint({ show }: { show: boolean }) {
@@ -64,11 +101,7 @@ function DraftSelectionToolbar({
 				</span>
 			)}
 			<span className="flex-1 md:hidden" />
-			<Tooltip label={t("Delete")}>
-				<Button variant="ghost" size="sm" onClick={() => onAction("trash")} disabled={pending} aria-label={t("Delete")}>
-					<Trash2 className="h-4 w-4" />
-				</Button>
-			</Tooltip>
+			<ToolbarButton label={t("Delete")} icon={Trash2} onClick={() => onAction("trash")} disabled={pending} />
 			<span className="flex-1 max-md:hidden" />
 			<Tooltip label={t("Clear selection")}>
 				<Button
@@ -150,64 +183,43 @@ function MailSelectionToolbar({
 				</span>
 			)}
 			<span className="flex-1 md:hidden" />
-			<Tooltip label={archive.label} className="max-md:hidden">
-				<Button
-					variant="ghost"
-					size="sm"
+			<span className="max-md:hidden">
+				<ToolbarButton
+					label={archive.label}
+					icon={archive.Icon}
 					onClick={() => onAction(archive.action as BulkMessageAction)}
 					disabled={manageDisabled}
-					aria-label={archive.label}
-				>
-					<archive.Icon className="h-4 w-4" />
-				</Button>
-			</Tooltip>
-			<Tooltip label={spam.label} className="max-md:hidden">
-				<Button
-					variant="ghost"
-					size="sm"
+				/>
+			</span>
+			<span className="max-md:hidden">
+				<ToolbarButton
+					label={spam.label}
+					icon={spam.Icon}
 					onClick={() => onAction(spam.action as BulkMessageAction)}
 					disabled={manageDisabled}
-					aria-label={spam.label}
-				>
-					<spam.Icon className="h-4 w-4" />
-				</Button>
-			</Tooltip>
-			<Tooltip label={trash.label}>
-				<Button
-					variant="ghost"
-					size="sm"
-					onClick={() => onAction(trash.action as BulkMessageAction)}
-					disabled={trashDisabled}
-					aria-label={trash.label}
-				>
-					<trash.Icon className="h-4 w-4" />
-				</Button>
-			</Tooltip>
+				/>
+			</span>
+			<ToolbarButton
+				label={trash.label}
+				icon={trash.Icon}
+				onClick={() => onAction(trash.action as BulkMessageAction)}
+				disabled={trashDisabled}
+			/>
 			{canDeleteForever && (
-				<Tooltip label={t("Delete forever")}>
-					<Button
-						variant="ghost"
-						size="sm"
-						className="text-red-600 hover:text-red-700"
-						onClick={() => onAction("delete")}
-						disabled={manageDisabled}
-						aria-label={t("Delete forever")}
-					>
-						<Trash2 className="h-4 w-4" />
-					</Button>
-				</Tooltip>
+				<ToolbarButton
+					label={t("Delete forever")}
+					icon={Trash2}
+					onClick={() => onAction("delete")}
+					disabled={manageDisabled}
+					destructive
+				/>
 			)}
-			<Tooltip label={hasUnreadSelection ? t("Mark as read") : t("Mark as unread")}>
-				<Button
-					variant="ghost"
-					size="sm"
-					onClick={() => onAction(hasUnreadSelection ? "read" : "unread")}
-					disabled={pending}
-					aria-label={hasUnreadSelection ? t("Mark as read") : t("Mark as unread")}
-				>
-					{hasUnreadSelection ? <MailOpen className="h-4 w-4" /> : <Mail className="h-4 w-4" />}
-				</Button>
-			</Tooltip>
+			<ToolbarButton
+				label={hasUnreadSelection ? t("Mark as read") : t("Mark as unread")}
+				icon={hasUnreadSelection ? MailOpen : Mail}
+				onClick={() => onAction(hasUnreadSelection ? "read" : "unread")}
+				disabled={pending}
+			/>
 			<span className="flex-1 max-md:hidden" />
 			<DropdownMenu.Root>
 				<Tooltip label={t("Move selected messages")} className="max-md:hidden">

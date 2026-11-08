@@ -3,7 +3,13 @@ import type { CheckboxChangeEvent } from "@/components/ui/checkbox-types";
 import type { Message } from "@/hooks/types";
 import { isSendPending } from "@/lib/messages/send-state-utils";
 
-type SelectedMessage = { id: string; read: boolean; mailboxId?: string | null };
+type SelectedMessage = {
+	id: string;
+	read: boolean;
+	mailboxId?: string | null;
+	status?: string;
+	threadMessageIds?: string[];
+};
 
 /**
  * The ids from the anchor row to the target row, inclusive and in list order, for
@@ -110,6 +116,22 @@ export function pruneSelection<T extends { id: string }>(selected: T[], rows: Ar
 	return kept.length === selected.length ? selected : kept;
 }
 
+/**
+ * A loaded row as a selected entry. `threadMessageIds` is kept too (conversation view) so a selection that
+ * reaches beyond the loaded page, as "Select all in folder" builds, can still expand each row to its thread
+ * without looking the row up in a page that may no longer hold it.
+ */
+export function toSelectedMessage(message: Message): SelectedMessage {
+	return {
+		id: message.id,
+		read: message.read && !(message.threadUnread ?? 0),
+		...(message.mailboxId ? { mailboxId: message.mailboxId } : {}),
+		// Drafts and sends waiting to go out are told apart, since the toolbar treats them differently.
+		...(message.status === "draft" || isSendPending(message.status) ? { status: message.status } : {}),
+		...(message.threadMessageIds ? { threadMessageIds: message.threadMessageIds } : {}),
+	};
+}
+
 /** Selects or clears `ids` among the loaded messages, keeping the rest of the selection. */
 export function applySelection(
 	current: SelectedMessage[],
@@ -120,15 +142,7 @@ export function applySelection(
 	if (!selected) return current.filter((item) => !ids.includes(item.id));
 	const next = new Map(current.map((item) => [item.id, item]));
 	for (const message of messages) {
-		if (ids.includes(message.id) && !next.has(message.id)) {
-			next.set(message.id, {
-				id: message.id,
-				read: message.read && !(message.threadUnread ?? 0),
-				...(message.mailboxId ? { mailboxId: message.mailboxId } : {}),
-				// Drafts and sends waiting to go out are told apart, since the toolbar treats them differently.
-				...(message.status === "draft" || isSendPending(message.status) ? { status: message.status } : {}),
-			});
-		}
+		if (ids.includes(message.id) && !next.has(message.id)) next.set(message.id, toSelectedMessage(message));
 	}
 	return Array.from(next.values());
 }

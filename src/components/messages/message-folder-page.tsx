@@ -2,7 +2,7 @@
 
 import clsx from "clsx";
 import { isSendPending } from "@/lib/messages/send-state-utils";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { useKeyChanged } from "@/hooks/use-synced-state";
 import { useMailSearch } from "@/components/mail-search/mail-search-context";
@@ -27,12 +27,15 @@ import {
 	planRowSelection,
 	replaceSelection,
 	resolveSelectionAnchor,
+	toSelectedMessage,
 	type RowClickModifiers,
 } from "./message-range-selection-utils";
 import { dispatchMessageCountsDelta } from "./message-list-row-actions-utils";
 import { useConversationView } from "./use-conversation-view";
 import { useMessageListDensity, useMessageListLabels } from "./use-reading-layout";
 import { useMessageListKeyboard } from "./use-message-list-keyboard";
+import { resolveAllMatchingMessages, SELECT_ALL_MAX_MESSAGES } from "./select-all-utils";
+import { SelectAllBanner } from "./select-all-banner";
 import type { MessageFolderPageProps, SelectedMessage } from "./types";
 import {
 	getPageRange,
@@ -58,7 +61,7 @@ import { requestConfirmation } from "@/components/ui/confirm-dialog-utils";
 import { showProgressToast } from "@/components/ui/progress-toast";
 import { confirmReportPhishing } from "./phishing-report";
 import { confirmReportSpam } from "./spam-report";
-import { reportListActionError, reportReadOnlySkipped } from "./list-action-toast";
+import { reportListActionError, reportReadOnlySkipped, reportSelectAllTruncated } from "./list-action-toast";
 import { MessageMailboxLabel } from "./message-mailbox-label";
 import { useMessageAccess } from "./use-message-access";
 import { useEmailPageTitle } from "./use-email-page-title";
@@ -102,6 +105,7 @@ export function MessageFolderPage({
 	const [emptyingFolder, setEmptyingFolder] = useState(false);
 	const [unreadOnly, setUnreadOnly] = useState(false);
 	const [selecting, setSelecting] = useState(false);
+	const [resolvingSelectAll, setResolvingSelectAll] = useState(false);
 	const [conversationView] = useConversationView();
 	const [density] = useMessageListDensity();
 	const [labels] = useMessageListLabels();
@@ -149,7 +153,18 @@ export function MessageFolderPage({
 	// folder, so actions and drags carry all of them.
 	const rowMessageIds = (message: Message) => message.threadMessageIds ?? [message.id];
 	const expandSelectedIds = (ids: string[]) =>
-		ids.flatMap((id) => rowMessageIds(messages.find((message) => message.id === id) ?? ({ id } as Message)));
+		ids.flatMap((id) => {
+			// "Select all in folder" can select rows past the loaded page, so its own thread ids travel with the
+			// selection itself (`toSelectedMessage`) instead of a lookup here, which only ever sees this page.
+			const selected = selectedMessages.find((message) => message.id === id);
+			if (selected?.threadMessageIds) return selected.threadMessageIds;
+			return rowMessageIds(messages.find((message) => message.id === id) ?? ({ id } as Message));
+		});
+	// Once every row on the page is checked, and the folder holds more, offer to extend the selection to
+	// everything matching: capped at SELECT_ALL_MAX_MESSAGES, so the banner (and the bulk action after it) never
+	// has to resolve or act on an unbounded folder in one request.
+	const selectAllCap = Math.min(total, SELECT_ALL_MAX_MESSAGES);
+	const showSelectAllBanner = allVisibleSelected && selectedIds.length < selectAllCap;
 
 	const listKey = [query, mailboxScope, config.folder, config.folderId, unreadOnly, grouped].join("\u0000");
 	if (useKeyChanged(listKey)) {
@@ -189,6 +204,27 @@ export function MessageFolderPage({
 		setSelectedMessages([]);
 	}
 
+	/** "Select all N in folder": resolves every matching row from the server and replaces the selection with it. */
+	async function selectAllMatching() {
+		if (resolvingSelectAll) return;
+		setResolvingSelectAll(true);
+		try {
+			const { messages: matched, truncated } = await resolveAllMatchingMessages(
+				config.folder,
+				mailboxScope,
+				{ query, read: unreadOnly ? "unread" : "all", group: grouped ? "thread" : undefined },
+				config.folderId,
+			);
+			selectionAnchor.current = null;
+			setSelectedMessages(matched.map(toSelectedMessage));
+			if (truncated) reportSelectAllTruncated(SELECT_ALL_MAX_MESSAGES);
+		} catch (error) {
+			reportListActionError(error);
+		} finally {
+			setResolvingSelectAll(false);
+		}
+	}
+
 	useEmailPageTitle(
 		{ location: folderTitle(config), total: titleTotal, unread: titleUnread, emailAddress: mailboxAddress },
 		mailboxesLoading,
@@ -206,13 +242,13 @@ export function MessageFolderPage({
 
 	/**
 	 * Shift-, Cmd- and Ctrl-click on a row (and Shift+Arrow). Rows beyond the loaded page are not in the list, so
-	 * a range selects only the loaded ones. A click without modifiers just becomes the anchor of the next range.
+	 * a range selects only the loaded ones. A click without modifiers just opens the row (or is on the open one
+	 * already) and becomes the anchor of the next range, leaving an existing checkbox selection as it was: opening
+	 * one message to read does not lose track of the others already checked.
 	 */
 	function selectRow(messageId: string, modifiers: RowClickModifiers | null, anchorId = selectionAnchor.current) {
 		if (!modifiers) {
-			// A plain click opens the row (or is on the open one already) and ends the selection.
 			selectionAnchor.current = messageId;
-			if (selectedIds.length > 0) setSelectedMessages([]);
 			return;
 		}
 		const plan = planRowSelection({
@@ -386,6 +422,7 @@ export function MessageFolderPage({
 			),
 		selectionCount: selectedIds.length,
 		clearSelection: clearSelectionKeepOpen,
+		selectAllVisible: () => toggleAllVisible(true),
 	});
 
 	useOpenRowBridge({
@@ -396,13 +433,6 @@ export function MessageFolderPage({
 		listRef,
 		folder: config.folder,
 		folderId: config.folderId,
-	});
-
-	const registerAction = selection?.registerAction;
-	useLayoutEffect(() => {
-		if (!registerAction) return;
-		registerAction(runSelectedAction);
-		return () => registerAction(null);
 	});
 
 	const pager = buildListPager({
@@ -428,7 +458,6 @@ export function MessageFolderPage({
 			<MessageListHeader
 				config={config}
 				compact={compact || isMobile}
-				selectionInPane={compact}
 				showTitle={compact || isMobile}
 				listVisible={listVisible}
 				selecting={{
@@ -490,6 +519,15 @@ export function MessageFolderPage({
 					)}
 				>
 					<UpdateNoticeRow compact={(compact || isMobile) && config.folder !== "drafts"} density={density} />
+					{showSelectAllBanner && (
+						<SelectAllBanner
+							total={total}
+							max={SELECT_ALL_MAX_MESSAGES}
+							folderLabel={folderTitle(config)}
+							pending={resolvingSelectAll}
+							onSelectAll={() => void selectAllMatching()}
+						/>
+					)}
 					{paged && <PagerSlot pager={pager} labelled={!!sections[0]?.label} />}
 					{sections.map((section, index) => [
 						<ListSectionLabel key={`section-${section.key}`} section={section} withPager={index === 0 && paged} />,
@@ -517,6 +555,10 @@ export function MessageFolderPage({
 								}
 								canManage={access.canManage(message.mailboxId)}
 								onSelectedChange={updateSelectedMessage}
+								onLongPressSelect={(messageId) => {
+									setSelecting(true);
+									updateSelectedMessage(messageId, true);
+								}}
 								onRowClick={selectRow}
 								onMessageAction={async (messageId, action) => {
 									await runBulkMessageAction(

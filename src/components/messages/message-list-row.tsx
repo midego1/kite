@@ -25,6 +25,7 @@ import { getStackedRowDensity, getWideRowDensity } from "./reading-layout-utils"
 import { SwipeableRow } from "./swipeable-row";
 import type { MessageListRowProps } from "./types";
 import { useMessageListRow } from "./use-message-list-row";
+import { useRowLongPress } from "./use-row-long-press";
 import { formatMessageListTimestamp, getMessagePartyClassName } from "./utils";
 import { useT } from "@/lib/i18n/use-t";
 import { t } from "@/lib/i18n/translator";
@@ -52,7 +53,10 @@ function rowAvatarAddress(message: RowViewProps["message"], folder: string) {
 	return folder === "sent" ? (splitEmailAddressList(message.toAddr)[0] ?? message.toAddr) : message.fromAddr;
 }
 
-/** The avatar with its unread dot, which the selection checkbox replaces while selecting. */
+/**
+ * The avatar with its unread dot, which the selection checkbox replaces while selecting, selected, hovered or
+ * focused (a finger gets neither, so it relies on "Select" or a long press instead).
+ */
 function RowAvatar({ showCheckbox, ...props }: RowViewProps & { showCheckbox: boolean }) {
 	const { message, config, selected, row } = props;
 	return (
@@ -62,19 +66,23 @@ function RowAvatar({ showCheckbox, ...props }: RowViewProps & { showCheckbox: bo
 				address={rowAvatarAddress(row.rowMessage, config.folder)}
 				name={row.party}
 				hasManagedAvatar={config.folder !== "sent" && message.fromContactHasAvatar}
-				className={clsx("h-9 w-9 text-sm", showCheckbox && "opacity-0", "group-has-[:focus-visible]:opacity-0")}
+				className={clsx(
+					"h-9 w-9 text-sm",
+					showCheckbox && "opacity-0",
+					"group-hover:opacity-0 group-has-[:focus-visible]:opacity-0",
+				)}
 			/>
 			{row.unread && !showCheckbox && (
 				<span
 					aria-hidden="true"
-					className="absolute bottom-0 end-0 h-2.5 w-2.5 rounded-full bg-blue-500 ring-2 ring-[var(--color-white)]"
+					className="absolute bottom-0 end-0 h-2.5 w-2.5 rounded-full bg-blue-500 ring-2 ring-[var(--color-white)] group-hover:opacity-0 group-has-[:focus-visible]:opacity-0"
 				/>
 			)}
 			<span
 				className={clsx(
 					"absolute inset-0 flex items-center justify-center",
 					!showCheckbox && "opacity-0",
-					"group-has-[:focus-visible]:opacity-100",
+					"group-hover:opacity-100 group-has-[:focus-visible]:opacity-100",
 				)}
 			>
 				<Checkbox
@@ -164,6 +172,7 @@ function StackedMessageRow(props: RowViewProps) {
 	const stackedDensity = getStackedRowDensity(density);
 	const showHoverActions = row.hasRowActions && hoverActions;
 	const showCheckbox = props.selecting || selected;
+	const longPress = useRowLongPress(() => props.onLongPressSelect?.(message.id));
 	const Icon = config.icon;
 	// With a mailbox label the pill sits flush right under the date, so a starred row's star moves in front of
 	// it instead of into the corner (where it would cover the pill). Without hover actions (phones) the star is
@@ -180,6 +189,7 @@ function StackedMessageRow(props: RowViewProps) {
 				row.draggable && "cursor-grab active:cursor-grabbing",
 			)}
 			{...dragHandlers(row, props.dragMessageIds)}
+			{...longPress}
 		>
 			<MessageNavigationProgress progress={row.navigation.progress} />
 			<RowAvatar {...props} showCheckbox={showCheckbox} />
@@ -277,6 +287,7 @@ function RowMarkers({ placement, ...props }: RowViewProps & { placement: "leadin
 /** The single-line row of a full-width list. */
 function WideMessageRow(props: RowViewProps) {
 	const { message, config, selected, active = false, density = "default", row } = props;
+	const longPress = useRowLongPress(() => props.onLongPressSelect?.(message.id));
 	const Icon = config.icon;
 	return (
 		<div
@@ -289,6 +300,7 @@ function WideMessageRow(props: RowViewProps) {
 				row.draggable && "cursor-grab active:cursor-grabbing",
 			)}
 			{...dragHandlers(row, props.dragMessageIds)}
+			{...longPress}
 		>
 			<MessageNavigationProgress progress={row.navigation.progress} />
 			<Checkbox

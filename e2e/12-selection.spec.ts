@@ -43,7 +43,7 @@ test("Shift-click selects every message between two checkboxes", async ({ page }
 	await expect(page.getByText("2 selected")).toBeVisible();
 });
 
-test("opening a message while others are selected shows it in the reading pane", async ({ page }) => {
+test("opening another message keeps an existing checkbox selection", async ({ page }) => {
 	const [first, second] = await deliverMany(["Open first", "Open second"]);
 	await page.goto("/inbox");
 	await rowFor(page, first).getByRole("checkbox").check();
@@ -51,12 +51,10 @@ test("opening a message while others are selected shows it in the reading pane",
 
 	await openMessage(page, second);
 	await expect(page.getByRole("heading", { level: 1, name: second })).toBeVisible();
-	await expect(page.getByText("1 selected")).toHaveCount(0);
-	await expect(rowFor(page, first).getByRole("checkbox")).not.toBeChecked();
-
-	// Selecting again while a message is open brings the selection pane back.
-	await rowFor(page, first).getByRole("checkbox").check();
+	// Opening a different message to read it does not lose track of what was already checked.
 	await expect(page.getByText("1 selected")).toBeVisible();
+	await expect(rowFor(page, first).getByRole("checkbox")).toBeChecked();
+	await expect(rowFor(page, second).getByRole("checkbox")).not.toBeChecked();
 });
 
 test("selecting a message on a phone still offers the bulk actions", async ({ page }) => {
@@ -83,4 +81,71 @@ test("trashing a selected message from its row removes it from the selection", a
 	await rows[0].getByRole("button", { name: "Trash" }).click();
 	await expect(page.getByRole("main").getByText(subjects[0], { exact: true })).toHaveCount(0);
 	await expect(page.getByText("1 selected")).toBeVisible();
+});
+
+test("the header checkbox and Cmd/Ctrl+A both select every loaded row, but Cmd/Ctrl+A leaves the search field alone", async ({
+	page,
+}) => {
+	const token = uniqueToken();
+	const subjects = await deliverMany([`Mass A ${token}`, `Mass B ${token}`, `Mass C ${token}`]);
+	await page.goto("/inbox");
+	// Scoped to these three: earlier tests in this file leave their own mail in the same Inbox.
+	const search = page.getByPlaceholder(/^Search mail/);
+	await search.fill(token);
+	await expect(page.getByText(subjects[0], { exact: true })).toBeVisible();
+
+	const selectAll = page.getByRole("checkbox", { name: "Select all visible messages" });
+	await selectAll.check();
+	await expect(page.getByText("3 selected")).toBeVisible();
+	for (const subject of subjects) await expect(rowFor(page, subject).getByRole("checkbox")).toBeChecked();
+	await selectAll.uncheck();
+	await expect(page.getByText(/\d+ selected/)).toHaveCount(0);
+
+	// Checking one row, then Cmd/Ctrl+A with the focus in the list selects every loaded row.
+	await rowFor(page, subjects[0]).getByRole("checkbox").check();
+	await expect(page.getByText("1 selected")).toBeVisible();
+	await search.click();
+	await page.keyboard.press("ControlOrMeta+a");
+	// The shortcut belongs to the search field here: the selection is untouched.
+	await expect(page.getByText("1 selected")).toBeVisible();
+
+	await page.getByRole("list", { name: "Inbox" }).focus();
+	await page.keyboard.press("ControlOrMeta+a");
+	await expect(page.getByText("3 selected")).toBeVisible();
+	for (const subject of subjects) await expect(rowFor(page, subject).getByRole("checkbox")).toBeChecked();
+});
+
+test("Select all N in the folder extends a selection past the loaded page", async ({ page }) => {
+	const token = uniqueToken();
+	const labels = Array.from({ length: 26 }, (_, index) => `Reach ${token} ${index + 1}`);
+	const subjects = await deliverMany(labels);
+	await page.goto("/inbox");
+	const search = page.getByPlaceholder(/^Search mail/);
+	await search.fill(token);
+	// Delivered oldest first, so the list shows the newest (last delivered) on its first page;
+	// the oldest, message 1, is the one row past it that only "Select all" can reach.
+	const newest = subjects.at(-1)!;
+	const oldest = subjects[0]!;
+	await expect(page.getByText(newest, { exact: true })).toBeVisible();
+	await expect(page.getByText(oldest, { exact: true })).toHaveCount(0);
+
+	await page.getByRole("checkbox", { name: "Select all visible messages" }).check();
+	await expect(page.getByText("25 selected")).toBeVisible();
+
+	const banner = page.getByRole("button", { name: /Select all 26 in Inbox/ });
+	await expect(banner).toBeVisible();
+	await banner.click();
+	// More than a page's worth, including the one message the list never loaded.
+	await expect(page.getByText("26 selected")).toBeVisible();
+
+	const toolbar = page.getByText(/^\d+ selected$/).locator("..");
+	await toolbar.getByRole("button", { name: "Archive", exact: true }).click();
+	await expect(page.getByText(newest, { exact: true })).toHaveCount(0);
+
+	const api = await apiContext(STORAGE_STATE);
+	const params = new URLSearchParams({ status: "archived", q: token, limit: "1" });
+	const response = await api.get(`/api/messages?${params}`);
+	const { total } = (await response.json()) as { total: number };
+	expect(total).toBe(26);
+	await api.dispose();
 });

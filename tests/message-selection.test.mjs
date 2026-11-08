@@ -81,3 +81,14 @@ test("applySelection remembers the status of drafts and of sends waiting to go o
 		["draft", "queued", undefined],
 	);
 });
+
+test("toSelectedMessage keeps a row's thread ids, so a selection built past the loaded page can still expand", () => {
+	const { toSelectedMessage } = helpers;
+	assert.deepEqual(toSelectedMessage({ id: "a", read: true, threadMessageIds: ["a", "a2"] }), {
+		id: "a",
+		read: true,
+		threadMessageIds: ["a", "a2"],
+	});
+	// Not in conversation view: no field invented where the server sent none.
+	assert.deepEqual(toSelectedMessage({ id: "b", read: true }), { id: "b", read: true });
+});

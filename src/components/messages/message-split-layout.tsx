@@ -11,10 +11,8 @@ import { LAYOUT_PREFERENCES_APPLIED_EVENT } from "@/components/layout-preference
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup, usePanelRef } from "@/components/ui/resizable";
 import { layoutPixels, pixelsPerPercent } from "@/components/ui/resizable-utils";
 import { useSyncedPanel } from "@/components/ui/use-synced-panel";
-import { useKeyChanged } from "@/hooks/use-synced-state";
 import { UpdateNoticeReader } from "@/components/update-notice-reader";
 import { UpdateReaderHostContext, closeUpdateReader, useUpdateReaderOpen } from "@/components/update-notice-store";
-import { BulkMessageSelectionPane } from "./bulk-message-selection-pane";
 import { OpenRowContext, useRowLookupHolder } from "./open-row-context";
 import { MessageFolderPage } from "./message-folder-page";
 import { setListBesideReader } from "./list-beside-reader";
@@ -31,8 +29,8 @@ import {
 } from "./message-list-visibility-utils";
 import { ReadingPaneEmptyState } from "./reading-pane-empty-state";
 import { LIST_HEIGHT, LIST_WIDTH, foldHingeStyle, foldListBounds, useFoldSplit } from "./use-fold-split";
-import { folderTitle, getSelectionToolbarFolder } from "./utils";
-import type { BulkSelectionAction, MessageListVisibility, MessageSplitLayoutProps, SelectedMessage } from "./types";
+import { folderTitle } from "./utils";
+import type { MessageListVisibility, MessageSplitLayoutProps, SelectedMessage } from "./types";
 import { BootStep } from "@/components/boot-step";
 import { useT } from "@/lib/i18n/use-t";
 
@@ -47,18 +45,6 @@ function readSavedListSize(
 	limits: { fallback: number; min: number; max: number },
 ) {
 	return readColumnWidth(userId, column, limits.fallback, limits.min, limits.max);
-}
-
-/**
- * Opening a message ends a checkbox selection; otherwise the selection pane would keep covering
- * every message the user clicks.
- */
-function useClearSelectionOnOpen(
-	openMessageId: string | undefined,
-	selectedMessages: SelectedMessage[],
-	setSelectedMessages: (messages: SelectedMessage[]) => void,
-) {
-	if (useKeyChanged(openMessageId) && openMessageId && selectedMessages.length > 0) setSelectedMessages([]);
 }
 
 /**
@@ -101,7 +87,6 @@ export function MessageSplitLayout({ children, config }: MessageSplitLayoutProps
 	const [listHeight, setListHeight] = useState(LIST_HEIGHT.fallback);
 	const [manualListVisible, setManualListVisible] = useState(true);
 	const { mode, groupKey, split, below, hinge, groupEdges, rtl, setMeasured, hingeListWidth } = useFoldSplit();
-	const bulkActionRef = useRef<BulkSelectionAction | null>(null);
 	const listPanelRef = usePanelRef();
 	const { userId } = useSidebar();
 	const assistantOpen = useAssistantOpen();
@@ -112,17 +97,12 @@ export function MessageSplitLayout({ children, config }: MessageSplitLayoutProps
 	const { visibleMessageId, leaveOpenMessage } = useLeaveOpenMessage(selectedMessageId, config);
 	// The list's lookup of the ids each row stands for, read by the reader when it moves the open message.
 	const rowLookup = useRowLookupHolder();
-	useClearSelectionOnOpen(selectedMessageId, selectedMessages, setSelectedMessages);
 	const updateReaderOpen = useUpdateReader(selectedMessageId, visibleMessageId, {
 		leaveOpenMessage,
 		clearSelection: () => {
 			if (selectedMessages.length > 0) setSelectedMessages([]);
 		},
 	});
-	const clearSelection = () => {
-		setSelectedMessages([]);
-		leaveOpenMessage();
-	};
 	// With the assistant open the list hides to make room unless the user chose to keep it there.
 	const [assistantListShown, setAssistantListShown] = useState(false);
 	// The hide-list toggle lives in the open message's header, so with nothing open the list always shows.
@@ -256,14 +236,7 @@ export function MessageSplitLayout({ children, config }: MessageSplitLayoutProps
 							split && PANEL_CLASS,
 						)}
 					>
-						{split && !below && selectedMessages.length > 0 ? (
-							<BulkMessageSelectionPane
-								folder={getSelectionToolbarFolder(config)}
-								selectedMessages={selectedMessages}
-								onAction={(action, folderId) => bulkActionRef.current?.(action, folderId) ?? Promise.resolve()}
-								onClearSelection={clearSelection}
-							/>
-						) : updateReaderOpen ? (
+						{updateReaderOpen ? (
 							<UpdateNoticeReader />
 						) : visibleMessageId ? (
 							children
@@ -333,9 +306,6 @@ export function MessageSplitLayout({ children, config }: MessageSplitLayoutProps
 								selectedMessages,
 								setSelectedMessages,
 								leaveOpenMessage,
-								registerAction: (run) => {
-									bulkActionRef.current = run;
-								},
 								registerRowLookup: rowLookup.register,
 							}}
 						/>

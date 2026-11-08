@@ -2,11 +2,11 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test, type Browser, type Locator, type Page } from "@playwright/test";
 import sharp from "sharp";
-import { ADMIN, STORAGE_STATE } from "../../e2e/support/constants";
+import { ADMIN, STORAGE_STATE, SUPPORT_ADDRESS } from "../../e2e/support/constants";
 import { useFakeProvider as connectFakeProvider } from "../../e2e/support/agent";
 import { startFakeModel } from "../../e2e/support/fake-model";
 import type { FakeModel } from "../../e2e/support/fake-model-types";
-import { apiContext, postInbound, waitForMessage } from "../../e2e/support/helpers";
+import { apiContext, deliverInbound, postInbound, waitForMessage } from "../../e2e/support/helpers";
 import { turnScreenerOff } from "../../e2e/support/screener";
 import {
 	RTL_MAIL,
@@ -115,6 +115,35 @@ async function seedCompactLabelsDemo(): Promise<void> {
 		if (messages.length > 0) continue;
 		await postInbound(api, { from: `"${name}" <${from}>`, to: `${localPart}@${box.hostname}`, subject, text: subject });
 		await waitForMessage(api, subject);
+	}
+	await api.dispose();
+}
+
+/** Three invented senders, reported as spam once, for the easier-selection shot's bulk toolbar. */
+const SPAM_SELECTION_MAIL = [
+	["Prize Center", "prize@sweepstakes-reward.test", "You've won! Claim your prize now"],
+	["Account Alerts", "security@account-verify-centre.test", "Account verification needed"],
+	["Crypto Bonus", "offers@crypto-bonus-deals.test", "Double your crypto in 24 hours"],
+] as const;
+
+async function seedSpamSelectionDemo(): Promise<void> {
+	const api = await apiContext(STORAGE_STATE);
+	await turnScreenerOff(api);
+	const probe = await api.get(
+		`/api/messages?${new URLSearchParams({ q: SPAM_SELECTION_MAIL[0][2], status: "spam", limit: "1" })}`,
+	);
+	const { messages: existing } = (await probe.json()) as { messages: unknown[] };
+	if (existing.length === 0) {
+		for (const [name, address, subject] of SPAM_SELECTION_MAIL) {
+			const stored = await deliverInbound(api, {
+				from: `"${name}" <${address}>`,
+				to: SUPPORT_ADDRESS,
+				subject,
+				text: subject,
+			});
+			const response = await api.post("/api/messages/bulk", { data: { messageIds: [stored.id], action: "spam" } });
+			expect(response.ok(), await response.text()).toBe(true);
+		}
 	}
 	await api.dispose();
 }
@@ -680,6 +709,28 @@ const SHOTS: Shot[] = [
 			await expect(page.getByRole("heading", { level: 1, name: "Weekly digest 24" })).toBeVisible();
 			await expect(page.getByRole("button", { name: "Next page" })).toBeVisible();
 			return page;
+		},
+	},
+	{
+		// The Spam list header once three invented reports are checked: the bulk toolbar's text labels next to
+		// its icons, where only unlabelled icons far from the list used to show. A list resized wider than the
+		// default 360px gives the labels room, as they also get in a full-width list or on a phone.
+		name: "2026-11-08-easier-selection-light",
+		theme: "light",
+		viewport: { width: 1280, height: 420 },
+		open: async (page) => {
+			await seedSpamSelectionDemo();
+			await page.addInitScript(() => localStorage.setItem("kite-column-width:message-list", "760"));
+			await page.goto("/spam");
+			const rows = page.locator("[data-message-row]");
+			// The seeded admin account already holds one spam example of its own; only check the three delivered here.
+			for (const [, , subject] of SPAM_SELECTION_MAIL) {
+				const row = rows.filter({ has: page.getByText(subject, { exact: true }) });
+				await expect(row).toBeVisible();
+				await row.getByRole("checkbox").check();
+			}
+			await expect(page.getByText(`${SPAM_SELECTION_MAIL.length} selected`)).toBeVisible();
+			return page.locator("#kite-message-list-panel");
 		},
 	},
 	...(

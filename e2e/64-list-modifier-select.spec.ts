@@ -115,13 +115,11 @@ test("a Shift-click range in conversation view carries every message of each con
 	await expect(page.getByText("3 selected")).toBeVisible();
 	await expect(checkbox(page, replySubject)).toBeChecked();
 
-	// Archiving the three rows archives all four messages.
-	await page
-		.getByText("3 selected")
-		.first()
-		.locator("..")
-		.getByRole("button", { name: "Archive", exact: true })
-		.click();
+	// Archiving the three rows archives all four messages. The default split-pane list, narrower with a
+	// message open, has no room for Archive inline, so it is reached through "More actions" instead.
+	const toolbar = page.getByText("3 selected").first().locator("..");
+	await toolbar.getByRole("button", { name: "More actions" }).click();
+	await page.getByRole("menu").getByRole("menuitem", { name: "Archive", exact: true }).click();
 	await expect(rowFor(page, replySubject)).toHaveCount(0);
 	const params = new URLSearchParams({ status: "archived", mailboxId: root.mailboxId, limit: "100" });
 	const archived = (await (await api.get(`/api/messages?${params}`)).json()) as { messages: Array<{ id: string }> };

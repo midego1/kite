@@ -203,6 +203,7 @@ test.describe("Keep receipts", () => {
 	test("a receipt filed after the list loaded still asks before removing, instead of silently acknowledging a delete the user never confirmed", async ({
 		browser,
 	}) => {
+		const restore = await useFakeProvider(api, fake);
 		const account = await suggestAccount("frcptstale");
 		const context = await browser.newContext({ baseURL: BASE_URL, storageState: await account.api.storageState() });
 		try {
@@ -242,6 +243,7 @@ test.describe("Keep receipts", () => {
 			expect(filesAfter.length).toBeGreaterThan(0);
 		} finally {
 			await context.close();
+			await restore();
 		}
 	});
 });

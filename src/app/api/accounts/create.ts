@@ -36,7 +36,7 @@ export async function createAccountResponse(
 	for (const [index, address] of requested.entries()) {
 		const domain = byId.get(address.domainId);
 		if (!domain || (index > 0 && domain.status !== "active")) {
-			return NextResponse.json({ error: "Choose an active alias domain owned by this admin account" }, { status: 400 });
+			return NextResponse.json({ error: "Choose an active alias domain available to this account" }, { status: 400 });
 		}
 		const localPart = normalizeRecipientLocalPart(address.localPart);
 		if (!localPart) return NextResponse.json({ error: "Enter a valid address username" }, { status: 400 });

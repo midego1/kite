@@ -209,6 +209,8 @@
 		"src/lib/email/word-wrap-utils.ts",
 		"src/lib/email/mime-body-utils.ts",
 		"src/lib/email/stored-html-utils.ts",
+		"src/lib/email/receipt-html-export-utils.ts",
+		"src/lib/email/receipt-pdf-utils.ts",
 		"src/lib/email/linkify-utils.ts",
 		"src/app/(dashboard)/inbox/[messageId]/email-html-sanitizer-utils.ts",
 		"src/lib/import/imap-utils.ts",

@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { appSettings } from "@/db/schema";
 import { isManualZone } from "@/lib/domains/provision";
-import { hasMx, isInboundSmtpMx, MX_UNCHECKED, publishMx, removeMx } from "@/lib/domains/receiving-dns";
+import { hasMx, hasMxMatching, isInboundSmtpMx, MX_UNCHECKED, publishMx, removeMx } from "@/lib/domains/receiving-dns";
 import { getResendApiKey, getResendKeyStatus } from "@/lib/email/outbound-provider";
 import {
 	createResendDomain,
@@ -40,8 +40,38 @@ async function storeWebhook(env: CloudflareEnv, id: string | null, secret: strin
 		.onConflictDoUpdate({ target: appSettings.id, set: values });
 }
 
-function inboundMx(records: { type: string; value: string; priority?: number }[] | undefined) {
+function inboundMx(records: { type: string; value: string; priority?: number; status?: string }[] | undefined) {
 	return (records ?? []).find((record) => record.type === "MX" && isInboundSmtpMx(record.value)) ?? null;
+}
+
+/**
+ * Live DNS evidence the domain's MX points at Resend: the exact record Resend named, or, when it named
+ * none, any inbound-smtp-shaped target — except on a domain whose receiving provider is already SES,
+ * where that same shape is the domain's own SES receiving, not Resend's.
+ */
+async function liveMxMatchesResend(
+	env: CloudflareEnv,
+	domain: DomainRow,
+	mx: { value: string } | null,
+): Promise<boolean | null> {
+	if (mx) return hasMx(env, domain, mx.value);
+	if (domain.receivingProvider === "ses") return false;
+	return hasMxMatching(env, domain, isInboundSmtpMx);
+}
+
+/**
+ * Live DNS first, so a record Resend once verified but whose MX was since removed or repointed shows as
+ * not pointing at Resend. Only when DNS cannot be checked from here does a record Resend itself reports
+ * as verified stand in for it.
+ */
+async function resendMxOk(
+	env: CloudflareEnv,
+	domain: DomainRow,
+	mx: { value: string; status?: string } | null,
+): Promise<boolean | null> {
+	const dnsOk = await liveMxMatchesResend(env, domain, mx);
+	if (dnsOk !== null) return dnsOk;
+	return mx?.status === "verified" ? true : null;
 }
 
 function isPublicHttps(origin: string): boolean {
@@ -124,7 +154,7 @@ export async function getResendReceivingView(
 			detail: !resend ? "Domain is not in Resend yet" : undefined,
 		});
 		const mx = inboundMx(resend?.records);
-		const mxOk = mx ? await hasMx(env, domain, mx.value) : false;
+		const mxOk = await resendMxOk(env, domain, mx);
 		steps.push({
 			key: "mx",
 			label: "MX record points to Resend",

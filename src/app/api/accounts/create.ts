@@ -12,23 +12,31 @@ import { ensureMailboxDomainRouting } from "@/lib/mailboxes/domain-addresses";
 import { enableScreenerForNewMailbox } from "@/lib/screener/settings";
 import { emitLifecycleEvent } from "@/lib/modules/lifecycle";
 import type { CreateUserAccountInput } from "./types";
-import { accountListItemFromUser, getDomainForAdmin } from "./utils";
+import { accountListItemFromUser, domainOwnerIdsForAdmin, getDomainForAdmin } from "./utils";
+
+type AccountAdminActor = { id: string; canManageMailboxes: boolean; createdByUserId: string | null };
 
 /** Shared by dashboard and admin API/MCP account creation. */
-export async function createAccountResponse(env: CloudflareEnv, adminUserId: string, input: CreateUserAccountInput) {
+export async function createAccountResponse(
+	env: CloudflareEnv,
+	actor: AccountAdminActor,
+	input: CreateUserAccountInput,
+) {
 	const db = getDb(env);
-	const primaryDomain = await getDomainForAdmin(db, adminUserId, input.domainId);
+	const adminUserId = actor.id;
+	const domainOwnerIds = domainOwnerIdsForAdmin(actor);
+	const primaryDomain = await getDomainForAdmin(db, actor, input.domainId);
 	if (!primaryDomain) return NextResponse.json({ error: "Domain not found" }, { status: 404 });
 	const username = input.username.toLowerCase().trim();
 	const email = `${username}@${primaryDomain.hostname}`;
 	const requested = [{ domainId: primaryDomain.id, localPart: username }, ...input.aliases];
-	const ownedDomains = await selectRows(db, domains, eq(domains.userId, adminUserId));
+	const ownedDomains = await selectRows(db, domains, inArray(domains.userId, domainOwnerIds));
 	const byId = new Map(ownedDomains.map((domain) => [domain.id, domain]));
 	const seen = new Set<string>();
 	for (const [index, address] of requested.entries()) {
 		const domain = byId.get(address.domainId);
 		if (!domain || (index > 0 && domain.status !== "active")) {
-			return NextResponse.json({ error: "Choose an active alias domain owned by this admin account" }, { status: 400 });
+			return NextResponse.json({ error: "Choose an active alias domain available to this account" }, { status: 400 });
 		}
 		const localPart = normalizeRecipientLocalPart(address.localPart);
 		if (!localPart) return NextResponse.json({ error: "Enter a valid address username" }, { status: 400 });
@@ -44,7 +52,7 @@ export async function createAccountResponse(env: CloudflareEnv, adminUserId: str
 	const [registered] = await db.select({ id: users.id }).from(users).where(eq(users.email, email)).limit(1);
 	if (registered) return NextResponse.json({ error: "Email already registered" }, { status: 409 });
 	// A subquery avoids one bound parameter per selected domain.
-	const ownedDomainIds = db.select({ id: domains.id }).from(domains).where(eq(domains.userId, adminUserId));
+	const ownedDomainIds = db.select({ id: domains.id }).from(domains).where(inArray(domains.userId, domainOwnerIds));
 	const [existingMailboxes, existingAliases] = await Promise.all([
 		db
 			.select({ domainId: mailboxes.domainId, localPart: mailboxes.localPart })

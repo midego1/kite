@@ -73,7 +73,7 @@ function NavGroup({
 							href={item.href}
 							aria-current={active ? "page" : undefined}
 							className={cn(
-								"flex h-9 items-center gap-3 rounded-lg px-3 text-sm transition-colors max-md:min-h-11 max-md:text-base",
+								"flex h-9 items-center gap-3 rounded-lg px-3 text-sm transition-colors max-md:min-h-11 max-md:text-base [@media(pointer:coarse)]:min-h-11 [@media(pointer:coarse)]:text-base",
 								focusRing,
 								active
 									? "bg-blue-100 font-medium text-blue-900"
@@ -138,7 +138,7 @@ export function SectionNav({ mode: modeProp }: { mode?: NavMode }) {
 						href="/inbox"
 						aria-label="Back to inbox"
 						className={cn(
-							"flex h-8 w-8 items-center justify-center rounded-lg text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900",
+							"flex h-8 w-8 items-center justify-center rounded-lg text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:w-11",
 							focusRing,
 						)}
 					>

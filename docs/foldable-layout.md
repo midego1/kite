@@ -87,6 +87,19 @@ supplies them, with the measured geometry as the fallback.
 The phone shell itself still follows the viewport width, so forcing two panes on a phone-sized window keeps the
 mobile sidebar and header, while the mail list and reader become two panes, as long as they fit.
 
+## Settings and Admin on a touch screen
+
+The Settings and Admin menu (`src/components/settings/section-nav.tsx`) follows Tailwind's `md` breakpoint for its
+own rows (`max-md:min-h-11`), which misses an unfolded foldable or a tablet at or above 768 px: still a touch screen,
+with no hover, but wide enough to show the inline menu column instead of the phone sheet. Those rows, and a few other
+small touch targets this area shares with sign-in (the Settings/Admin "Back to inbox" and "Need a hand?" buttons, a
+mailbox rule's hover-revealed delete button, a domain's actions menu, the connected account two-way sync disclosure,
+and the sign-in/setup primary buttons and secondary links), also check `(pointer: coarse)` directly
+(`[@media(pointer:coarse)]:min-h-11`, matching the `[@media(hover:none)]:opacity-100` already used for the agent
+panel's hover-revealed actions), so they reach a full 44 px touch target and stay visible without a hover state
+whatever the width. Test at 884×1104 with touch emulation on to see the difference from a mouse window of the same
+width.
+
 ## Demo
 
 1. In browser devtools start at 390×844 (folded): the Inbox is a single list; opening a mail replaces it and

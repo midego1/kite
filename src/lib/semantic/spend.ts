@@ -1,7 +1,7 @@
 import type { LanguageModelUsage } from "ai";
 import { getAutoReadInstallSettings } from "@/lib/agent/auto-read/install-settings";
 import { keepReservedEstimate, reconcileAiSpend, reserveAiSpend } from "@/lib/agent/auto-read/spend";
-import type { SpendReservation } from "@/lib/agent/auto-read/spend-types";
+import type { AutoSpendSource, SpendReservation } from "@/lib/agent/auto-read/spend-types";
 import { utcDayStartSeconds } from "@/lib/agent/auto-read/spend-utils";
 import { resolveAgentModelRates } from "@/lib/agent/model-prices-utils";
 import type { AgentModelRates } from "@/lib/agent/provider-types";
@@ -17,19 +17,22 @@ function providerName(kind: EmbeddingProvider["kind"]): string {
 }
 
 /**
- * Reserves the estimated cost of one embedding batch against the install cap only (source `embedding`, no mailbox:
- * a batch can cover messages from several mailboxes). Null means a cap would be exceeded; the drain releases its
- * claim and stops for this run.
+ * Reserves the estimated cost of one embedding batch against the install cap only (no mailbox: a batch can cover
+ * messages from several mailboxes). `source` is `embedding_backfill` for a batch of rows the backfill queued
+ * (`indexer.ts`'s `isBackfillClaim`), so `backfillCapReached` can tell its own spend apart from live indexing's;
+ * both still draw from the one install cap. Null means a cap would be exceeded; the drain releases its claim and
+ * stops for this run (or, for a backfill batch already past its own share, is simply not retried as that source).
  */
 export async function reserveEmbeddingBatchSpend(
 	env: CloudflareEnv,
 	providerKind: EmbeddingProvider["kind"],
 	promptChars: number,
+	source: Extract<AutoSpendSource, "embedding" | "embedding_backfill"> = "embedding",
 ): Promise<SpendReservation | null> {
 	const install = await getAutoReadInstallSettings(env);
 	return reserveAiSpend({
 		env,
-		source: "embedding",
+		source,
 		mailboxId: null,
 		jobId: null,
 		details: { modelId: EMBEDDING_MODEL_ID, provider: providerName(providerKind), rates: embeddingRates() },
@@ -59,11 +62,15 @@ export async function settleEmbeddingSpend(
 	await reconcileAiSpend({ env, reservation, rates: embeddingRates(), usage, outcome: { status: "ok" } });
 }
 
-/** Today's share of the install's daily spend cap the backfill has used, so the drain can give way to everything else. */
+/**
+ * Today's share of the install's daily spend cap the backfill itself has used (source `embedding_backfill` only,
+ * never live indexing's `embedding`), so both the insert side (`backfill.ts`) and the drain side (`indexer.ts`)
+ * can give way to everything else without live, just-delivered mail ever being held back by the backfill's cap.
+ */
 export async function backfillCapReached(env: CloudflareEnv, capSharePercent: number): Promise<boolean> {
 	const install = await getAutoReadInstallSettings(env);
 	const row = await env.DB.prepare(
-		"SELECT coalesce(sum(cost_usd_micros), 0) AS spent FROM ai_usage WHERE created_at >= ? AND source = 'embedding'",
+		"SELECT coalesce(sum(cost_usd_micros), 0) AS spent FROM ai_usage WHERE created_at >= ? AND source = 'embedding_backfill'",
 	)
 		.bind(utcDayStartSeconds(new Date()))
 		.first<{ spent: number }>();

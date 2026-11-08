@@ -80,7 +80,7 @@ test("the backfill stops inserting once today's embedding spend reaches its shar
 		INSERT INTO app_settings (id, semantic_search_enabled, agent_daily_spend_cap_micros, semantic_backfill_cap_share, updated_at)
 			VALUES ('default', 1, 1000, 50, 1)
 			ON CONFLICT(id) DO UPDATE SET semantic_search_enabled = 1, agent_daily_spend_cap_micros = 1000, semantic_backfill_cap_share = 50;
-		INSERT INTO ai_usage (id, created_at, provider, model, source, cost_usd_micros, reserved) VALUES ('u1', strftime('%s','now'), 'cloudflare', '@cf/baai/bge-m3', 'embedding', 600, 0);
+		INSERT INTO ai_usage (id, created_at, provider, model, source, cost_usd_micros, reserved) VALUES ('u1', strftime('%s','now'), 'cloudflare', '@cf/baai/bge-m3', 'embedding_backfill', 600, 0);
 	`);
 	const env = { DB: db, VECTORS: { upsert: async () => {}, deleteByIds: async () => {}, query: async () => [] } };
 	await runSemanticBackfillTick(env);
@@ -104,6 +104,32 @@ test("the backfill stops inserting once today's embedding spend reaches its shar
 	);
 });
 
+test("a claimed backfill-origin row gives way once the backfill's own share is spent, but a live row in the same batch still embeds", async (t) => {
+	const { db, env } = await setup(
+		t,
+		`UPDATE app_settings SET agent_daily_spend_cap_micros = 1000, semantic_backfill_cap_share = 50;
+		INSERT INTO ai_usage (id, created_at, provider, model, source, cost_usd_micros, reserved) VALUES ('u1', strftime('%s','now'), 'cloudflare', '@cf/baai/bge-m3', 'embedding_backfill', 600, 0);`,
+	);
+	// A row the backfill queued before its share ran out (queued_at set to a message date, well past
+	// BACKFILL_AGE_MARGIN_MS, exactly as backfill.ts itself queues one), and an ordinary trigger-queued row.
+	insertEligibleMessage(db, "backfilled");
+	db.db.exec("UPDATE message_embeddings SET queued_at = 10 WHERE message_id = 'backfilled'");
+	insertEligibleMessage(db, "live");
+	env.AI = { run: async (_model, input) => ({ data: fakeVectors(input.text.length) }) };
+	const result = await processEmbeddingBatch(env);
+	assert.equal(result.claimed, 2);
+	assert.equal(
+		db.db.prepare("SELECT status FROM message_embeddings WHERE message_id = 'backfilled'").get().status,
+		"pending",
+		"given back, not spent past the backfill's own share",
+	);
+	assert.equal(
+		db.db.prepare("SELECT status FROM message_embeddings WHERE message_id = 'live'").get().status,
+		"indexed",
+		"never throttled by the backfill's share",
+	);
+});
+
 test("once the full install cap is reached, no more embedding spend is reserved, and the claim is released back to pending", async (t) => {
 	const { db, env } = await setup(
 		t,
@@ -122,4 +148,34 @@ test("once the full install cap is reached, no more embedding spend is reserved,
 	assert.equal(result.claimed, 1);
 	assert.equal(called, false, "the provider is never called once the cap refuses the reservation");
 	assert.equal(db.db.prepare("SELECT status FROM message_embeddings WHERE message_id = 'm1'").get().status, "pending");
+});
+
+test("the backfill inserts nothing while the pending queue is already deep enough to keep a drain tick busy", async (t) => {
+	const { db, env } = await setup(t);
+	// A deep backlog already queued (well past PENDING_BACKLOG_LIMIT), none of it this test's doing.
+	const rows = Array.from(
+		{ length: 300 },
+		(_, index) =>
+			`('backlog-${index}', 'owner', 'mailbox-a', 'inbound', 'x@example.net', 'a@example.com', 'Hi', 'Hello', 'received', ${index})`,
+	).join(",\n");
+	db.db.exec(
+		`INSERT INTO messages (id, user_id, mailbox_id, direction, from_addr, to_addr, subject, text_body, status, created_at) VALUES ${rows};`,
+	);
+	assert.equal(db.db.prepare("SELECT count(*) AS n FROM message_embeddings WHERE status = 'pending'").get().n, 300);
+
+	// A message that arrived before the feature was ever on, so the trigger gave it no row: exactly what the
+	// backfill alone could find, if the deep backlog above did not hold it back.
+	db.db.exec("UPDATE app_settings SET semantic_search_enabled = 0 WHERE id = 'default'");
+	insertEligibleMessage(db, "should-not-be-queued-yet");
+	db.db.exec("UPDATE app_settings SET semantic_search_enabled = 1 WHERE id = 'default'");
+	assert.deepEqual(
+		db.db.prepare("SELECT message_id FROM message_embeddings WHERE message_id = 'should-not-be-queued-yet'").all(),
+		[],
+	);
+
+	await runSemanticBackfillTick(env);
+	assert.deepEqual(
+		db.db.prepare("SELECT message_id FROM message_embeddings WHERE message_id = 'should-not-be-queued-yet'").all(),
+		[],
+	);
 });

@@ -19,6 +19,7 @@ export type AutoSpendSource =
 	| "auto_triage_line"
 	| "assistant_email"
 	| "embedding"
+	| "embedding_backfill"
 	| "embedding_query";
 
 /** "cost" compares USD micros against the caps; "tokens" applies the input-token cap for models without rates. */

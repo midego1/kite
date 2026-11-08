@@ -31,6 +31,7 @@ import {
 } from "./migration-utils";
 import { callStorageHook } from "./module-hooks";
 import { objectClassOf } from "./object-classes-utils";
+import { lookupObjectLocation } from "./object-locations";
 import { ATTACHMENT_OBJECT_ROWS_SQL } from "@/lib/email/attachment-storage-utils";
 import type { KiteBucket, ObjectStore, RoutableClass, Storage } from "./types";
 
@@ -225,14 +226,41 @@ export async function findSource(
 }
 
 /**
+ * `chain` widened with wherever a cold move (`cold.ts`) may have put this key: wherever `object_locations`
+ * says it now lives, then `target` itself (a crash between confirming a cold move's copy and recording its
+ * location leaves the object there with nothing pointing to it yet, so a reader must still be able to find it
+ * directly), checked before the class's normal chain. Anything that reads an object by key outside `cold.ts`
+ * itself — a migration, a full backup — needs this too, or a cold-moved object reads back as missing.
+ */
+export async function locationAwareSources(
+	env: { DB: D1Database },
+	storage: Storage,
+	chain: ObjectStore[],
+	key: string,
+	target?: string,
+): Promise<ObjectStore[]> {
+	const location = await lookupObjectLocation(env, key);
+	const recorded = location && storage.store(location.storeId);
+	const targeted = target ? storage.store(target) : null;
+	const candidates = [recorded, targeted, ...chain].filter((store): store is ObjectStore => !!store);
+	return [...new Set(candidates)];
+}
+
+/**
  * Copy, verify or purge one batch. Sizes are compared between the two stores' HEADs rather than D1, which records
  * decoded sizes for some objects. An object already complete on the target is never copied again.
  */
-async function runItems(storage: Storage, job: Job, cursor: MigrationCursor, items: Item[]): Promise<BatchResult> {
+async function runItems(
+	env: { DB: D1Database },
+	storage: Storage,
+	job: Job,
+	cursor: MigrationCursor,
+	items: Item[],
+): Promise<BatchResult> {
 	const from = storage.store(job.fromStoreId);
 	const to = storage.store(job.toStoreId);
 	if (!from || !to) throw new Error("A store of this migration is missing or blocked");
-	const sources = [...new Set([from, storage.store(DEFAULT_STORE_ID)!])];
+	const baseChain = [...new Set([from, storage.store(DEFAULT_STORE_ID)!])];
 	const result: BatchResult = { processed: 0, bytes: 0, errors: 0, lastError: null, moved: [] };
 	for (const item of items) {
 		result.processed += 1;
@@ -247,6 +275,9 @@ async function runItems(storage: Storage, job: Job, cursor: MigrationCursor, ite
 				await from.bucket.delete(item.key);
 				continue;
 			}
+			// A cold move (`cold.ts`) may have already parked this key on a store outside this migration's
+			// own old/default chain; without this it reads back as missing from both stores.
+			const sources = await locationAwareSources(env, storage, baseChain, item.key);
 			const source = await findSource(sources, item.key);
 			if (!source && !present) throw new Error("An object named in the database is missing from both stores");
 			if (source && (!present || present.size !== source.head.size)) {
@@ -294,7 +325,7 @@ async function runSource(
 	const after = state.sources[source] ?? null;
 	const page = source === "drive" ? await drivePage(job, state, after) : await d1Page(env, source, after);
 	const batch = takeBatch(page.items);
-	const result = await runItems(await getStorage(env), job, state, batch);
+	const result = await runItems(env, await getStorage(env), job, state, batch);
 	const fromSource = state.phase !== "purge" && driveStoreFor(job, state) === job.fromStoreId;
 	if (source === "drive" && fromSource && result.moved.length)
 		await callStorageHook("drive", "markMoved", {

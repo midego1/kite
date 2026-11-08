@@ -734,6 +734,7 @@ test("settings input takes the mail files switch and checks schedule days", () =
 const storage = await loadStorageServices("kite-backup-objects-s3-", ["kite-backups"], {
 	router: "src/lib/storage/router.ts",
 	objects: "src/lib/backups/objects.ts",
+	cold: "src/lib/storage/cold.ts",
 });
 
 test("deleting a backup's copies reaches every store the Backups class may hold them in", async (t) => {
@@ -756,4 +757,58 @@ test("deleting a backup's copies reaches every store the Backups class may hold 
 	assert.equal((await env.BUCKET.list({ prefix })).objects.length, 0, "default store emptied");
 	assert.equal(storage.fake.object("kite-backups", `${prefix}manifest.json`), null, "new store emptied");
 	assert.deepEqual(queue, []);
+});
+
+/** Delivers whatever queued storage and backup-objects messages arrive, as `worker.ts` would dispatch them. */
+async function drainColdThenObjects(env, queue) {
+	let delivered = 0;
+	while (queue.length) {
+		const { message } = queue.shift();
+		if (!(await storage.lib.cold.processStorageQueueMessage(env, message)))
+			await storage.lib.objects.processBackupObjectsMessage(env, message);
+		delivered++;
+	}
+	return delivered;
+}
+
+test("a full backup still finds a mail object a cold storage sweep already moved to another store", async (t) => {
+	const { env, db, queue } = await storage.fixture(t);
+	await storage.addStore(env, "sto_backups", "kite-backups");
+	const DAY = 24 * 60 * 60;
+	const now = Math.floor(Date.parse("2026-11-08T00:00:00Z") / 1000);
+	const rawKey = "inbound/old.eml";
+	db.db
+		.prepare(
+			`INSERT INTO messages (id, user_id, mailbox_id, direction, from_addr, to_addr, subject, status, raw_r2_key, created_at)
+			 VALUES ('old', 'owner', 'mailbox-a', 'inbound', 'sender@example.net', 'a@example.com', 'Hello', 'received', ?, ?)`,
+		)
+		.run(rawKey, now - 60 * DAY);
+	await env.BUCKET.put(rawKey, "raw old bytes");
+
+	// A cold storage rule moves the raw mail object off the default store before any backup runs.
+	const saved = await storage.lib.cold.updateColdRule(env, "owner", "mail", {
+		afterDays: 30,
+		minBytes: 0,
+		target: "sto_backups",
+		enabled: true,
+	});
+	assert.equal(saved.ok, true, saved.ok ? undefined : saved.error);
+	await storage.lib.cold.runColdStorageSweep(env, new Date(now * 1000));
+	await drainColdThenObjects(env, queue);
+	assert.equal(await env.BUCKET.get(rawKey), null, "moved off the default store by the cold sweep");
+	assert.ok(storage.fake.object("kite-backups", rawKey), "and onto the cold target");
+
+	// A full backup's object copy must still find it, through object_locations rather than the plain mail chain.
+	const backupId = "bak_cold";
+	db.db
+		.prepare(
+			"INSERT INTO backups (id, status, `trigger`, created_at, objects_status) VALUES (?, 'completed', 'manual', unixepoch(), 'pending')",
+		)
+		.run(backupId);
+	assert.equal(await storage.lib.objects.startBackupObjectsCopy(env, backupId, new Date(now * 1000)), true);
+	await drainColdThenObjects(env, queue);
+	const row = backupRow(db, backupId);
+	assert.equal(row.objects_status, "completed");
+	assert.equal(row.objects_missing, 0, "the cold-moved mail object was found, not skipped as missing");
+	assert.equal(row.objects_count, 1);
 });

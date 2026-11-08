@@ -8,10 +8,12 @@ const { lib, fake, fixture, addStore } = await loadStorageServices(
 	{
 		cold: "src/lib/storage/cold.ts",
 		router: "src/lib/storage/router.ts",
+		storageIndex: "src/lib/storage/index.ts",
 	},
 );
 const { cold, router: routerLib } = lib;
 const { clearStorageConfigCache } = lib.config;
+const { getStorage } = lib.storageIndex;
 
 const DAY = 24 * 60 * 60;
 const NOW = 1_700_000_000;
@@ -56,7 +58,8 @@ async function addDriveFile(env, id, content, { storeId = "default", createdAt =
 			 VALUES (?, 'owner', 'file', ?, ?, ?, ?, 'ready', ?, ?)`,
 		)
 		.run(id, `${id}.txt`, content.length, storeId, `drive/${id}`, createdAt, createdAt);
-	await env.BUCKET.put(`drive/${id}`, content);
+	const storage = await getStorage(env);
+	await storage.store(storeId).bucket.put(`drive/${id}`, content);
 }
 
 async function setColdRule(env, objectClass, { afterDays = 30, minBytes = 0, target, enabled = true } = {}) {
@@ -247,4 +250,71 @@ test("changing a rule's target still finds an object a previous sweep already mo
 		"raw old",
 	);
 	assert.equal(location(env, "inbound/old.eml").store_id, "sto_target2");
+});
+
+test("deleting a cold-moved key reaches the store object_locations names, and clears the row", async (t) => {
+	const { env, queue } = await fixture(t);
+	await addStore(env, "sto_target", "kite-target");
+	await addMessage(env, "old", { createdAt: NOW - 60 * DAY });
+	await setColdRule(env, "mail", { afterDays: 30, target: "sto_target" });
+	await cold.runColdStorageSweep(env, new Date(NOW * 1000));
+	await drain(env, queue);
+	assert.equal(target().has("inbound/old.eml"), true);
+	assert.ok(location(env, "inbound/old.eml"), "recorded, outside the mail class's normal chain");
+
+	// Trash emptied, retention, account deletion and deleteBackup all go through env.BUCKET.delete; it must
+	// reach a key a cold move parked outside the class chain, not just leave it there forever.
+	const routed = routerLib.createStorageRouter(env);
+	await routed.delete("inbound/old.eml");
+	assert.equal(target().has("inbound/old.eml"), false, "reached through object_locations, not just the class chain");
+	assert.equal(location(env, "inbound/old.eml"), undefined, "dropped, so it never blocks deleting that store");
+});
+
+test("a cold move whose location record was lost still finds the object at the rule's target, and self-heals", async (t) => {
+	const { env, queue } = await fixture(t);
+	await addStore(env, "sto_target", "kite-target");
+	await addMessage(env, "old", { createdAt: NOW - 60 * DAY });
+	await setColdRule(env, "mail", { afterDays: 30, target: "sto_target" });
+	await cold.runColdStorageSweep(env, new Date(NOW * 1000));
+	await drain(env, queue);
+	assert.equal(target().has("inbound/old.eml"), true);
+	assert.ok(location(env, "inbound/old.eml"));
+
+	// Simulates a crash between confirming the copy on the target store and recording its location: the
+	// object already lives only on the target store (the source was already deleted), but nothing points to
+	// it in the database yet.
+	env.DB.db.prepare("DELETE FROM object_locations WHERE key = 'inbound/old.eml'").run();
+	env.DB.db.prepare("DELETE FROM storage_cold_jobs WHERE object_class = 'mail'").run();
+
+	await cold.runColdStorageSweep(env, new Date(NOW * 1000));
+	await drain(env, queue);
+	assert.equal(job(env, "mail").status, "completed");
+	assert.equal(job(env, "mail").errors, 0, "found directly at the rule's target instead of erroring as missing");
+	assert.equal(location(env, "inbound/old.eml").store_id, "sto_target", "the record is restored");
+});
+
+test("a drive cold move marks the row before deleting the old copy: a failed delete leaves the row already correct", async (t) => {
+	const { env, queue } = await fixture(t);
+	await addStore(env, "sto_source", "kite-target");
+	await addStore(env, "sto_target", "kite-target-2");
+	await addDriveFile(env, "drv_old", "alpha", { storeId: "sto_source", createdAt: NOW - 60 * DAY });
+	await setColdRule(env, "drive", { afterDays: 30, target: "sto_target" });
+
+	// The copy, its verification and the row's own repoint all land before the old copy is deleted; if that
+	// last step fails (here, simulated), the row must already be correct, not a crash away from pointing at a
+	// store that no longer has the file.
+	fake.state.denied.add("DeleteObject");
+	await cold.runColdStorageSweep(env, new Date(NOW * 1000));
+	await drain(env, queue);
+	assert.equal(job(env, "drive").errors, 1);
+	assert.equal(
+		env.DB.db.prepare("SELECT store_id, storage_class FROM drive_items WHERE id = 'drv_old'").get().store_id,
+		"sto_target",
+		"already repointed to where the file actually is",
+	);
+	assert.ok(fake.buckets.get("kite-target-2").objects.has("drive/drv_old"), "copied to the new store");
+	assert.ok(
+		fake.buckets.get("kite-target").objects.has("drive/drv_old"),
+		"the old copy is merely left behind, not lost",
+	);
 });

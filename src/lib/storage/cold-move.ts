@@ -1,26 +1,23 @@
 import { COLD_STORAGE_CLASS, R2_IA_TARGET, type ColdRule } from "./cold-utils";
 import { DEFAULT_STORE_ID } from "./config-utils";
-import { findSource, copyObject } from "./migration";
-import { lookupObjectLocation, recordObjectLocation } from "./object-locations";
+import { findSource, copyObject, locationAwareSources } from "./migration";
+import { callStorageHook } from "./module-hooks";
+import { recordObjectLocation } from "./object-locations";
 import type { Item } from "./cold-sources";
 import type { ObjectStore, RoutableClass, Storage } from "./types";
 
 type LocationEnv = { DB: D1Database };
 
-/**
- * Where a key currently lives: wherever an earlier cold move recorded (which may be neither the class's active
- * nor its previous store, if the rule's target changed since), then the class's active read chain.
- */
-async function sourcesFor(
+/** The class's normal chain, widened by `locationAwareSources` with wherever a cold move may already have put `key`. */
+function sourcesFor(
 	env: LocationEnv,
 	storage: Storage,
 	objectClass: RoutableClass,
 	key: string,
+	target?: string,
 ): Promise<ObjectStore[]> {
-	const location = await lookupObjectLocation(env, key);
-	const recorded = location && storage.store(location.storeId);
 	const chain = [...storage.readChain(objectClass), storage.store(DEFAULT_STORE_ID)!];
-	return [...new Set(recorded ? [recorded, ...chain] : chain)];
+	return locationAwareSources(env, storage, chain, key, target);
 }
 
 /**
@@ -34,7 +31,7 @@ export async function moveColdObject(
 	rule: ColdRule,
 	item: Item,
 ): Promise<number> {
-	const source = await findSource(await sourcesFor(env, storage, objectClass, item.key), item.key);
+	const source = await findSource(await sourcesFor(env, storage, objectClass, item.key, rule.target), item.key);
 	if (!source) throw new Error("Missing from every store in the read chain");
 	if (rule.target === R2_IA_TARGET) {
 		if (!source.store.capabilities.storageClasses.includes(COLD_STORAGE_CLASS)) return 0;
@@ -84,7 +81,9 @@ export async function moveColdObject(
 	}
 	const confirmed = await target.bucket.head(item.key);
 	if (!confirmed || confirmed.size !== source.head.size) throw new Error("The copy on the target store does not match");
-	await source.store.bucket.delete(item.key);
+	// The location is recorded before the source copy is deleted: a crash in between leaves a harmless extra
+	// copy at the old store rather than an object nothing points to (`sourcesFor` above also self-heals by
+	// probing the rule's own target directly, in case the crash happened before this write ever lands).
 	await recordObjectLocation(env, {
 		key: item.key,
 		objectClass,
@@ -92,10 +91,16 @@ export async function moveColdObject(
 		storageClass: null,
 		size: confirmed.size,
 	});
+	await source.store.bucket.delete(item.key);
 	return bytes;
 }
 
-/** Moves one Drive file by its own recorded store, since Drive's row (not a routed class) is its source of truth. */
+/**
+ * Moves one Drive file by its own recorded store, since Drive's row (not a routed class) is its source of
+ * truth. The row is repointed (`markCold`, one file at a time, not batched after the whole page) before the
+ * old copy is deleted: a crash in between leaves a harmless extra copy at the old store rather than a row
+ * pointing at a store that no longer has the file.
+ */
 export async function moveColdDriveObject(
 	storage: Storage,
 	rule: ColdRule,
@@ -112,6 +117,7 @@ export async function moveColdDriveObject(
 			storageClass: COLD_STORAGE_CLASS,
 		});
 		if (copied === null) throw new Error("The file disappeared from the store during the rewrite");
+		await callStorageHook("drive", "markCold", { ids: [item.id], storageClass: COLD_STORAGE_CLASS });
 		return { bytes: copied, moved: true };
 	}
 	const target = storage.store(rule.target);
@@ -123,6 +129,7 @@ export async function moveColdDriveObject(
 	if (bytes === null) throw new Error("The file disappeared from its store during the copy");
 	const confirmed = await target.bucket.head(item.key);
 	if (!confirmed || confirmed.size !== head.size) throw new Error("The copy on the target store does not match");
+	await callStorageHook("drive", "markCold", { ids: [item.id], storageClass: null, storeId: rule.target });
 	await source.bucket.delete(item.key);
 	return { bytes, moved: true };
 }

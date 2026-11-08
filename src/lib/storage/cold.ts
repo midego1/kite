@@ -32,7 +32,6 @@ import {
 	takeBatch,
 	type MigrationSource,
 } from "./migration-utils";
-import { callStorageHook } from "./module-hooks";
 import { readStorageConfig } from "./config";
 import { getStorage, type StoragePlatformEnv } from "./index";
 import type { RoutableClass, Storage } from "./types";
@@ -257,27 +256,22 @@ async function runColdItems(
 	return result;
 }
 
+/** Each file marks its own row cold as it moves (`moveColdDriveObject`), not batched after the whole page: a
+ * crash partway through a page must not leave an earlier file's row stuck pointing at an already-deleted copy. */
 async function runDriveSource(storage: Storage, state: ColdCursor): Promise<{ next: ColdCursor; result: BatchResult }> {
 	const after = state.sources.drive ?? null;
 	const page = await driveColdPage(state.rule, state.cutoffAt, after);
 	const batch = takeBatch(page.items, { objects: MAX_BATCH_OBJECTS, bytes: MAX_BATCH_BYTES });
 	const result: BatchResult = { processed: 0, bytes: 0, errors: 0, lastError: null };
-	const toIa: string[] = [];
-	const toStore: string[] = [];
 	for (const item of batch) {
 		result.processed += 1;
 		try {
-			const outcome = await moveColdDriveObject(storage, state.rule, item);
-			result.bytes += outcome.bytes;
-			if (outcome.moved) (state.rule.target === R2_IA_TARGET ? toIa : toStore).push(item.id);
+			result.bytes += (await moveColdDriveObject(storage, state.rule, item)).bytes;
 		} catch (error) {
 			result.errors += 1;
 			result.lastError = describeError(error);
 		}
 	}
-	if (toIa.length) await callStorageHook("drive", "markCold", { ids: toIa, storageClass: COLD_STORAGE_CLASS });
-	if (toStore.length)
-		await callStorageHook("drive", "markCold", { ids: toStore, storageClass: null, storeId: state.rule.target });
 	const exhausted = page.exhausted && batch.length === page.items.length;
 	const next = advanceColdCursor(state, "drive", batch.at(-1)?.id ?? after, exhausted);
 	return { next, result };

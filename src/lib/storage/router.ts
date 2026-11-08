@@ -1,6 +1,6 @@
 import { getStorage, RAW_ENV, type Proxied, type StoragePlatformEnv } from "./index";
 import { objectClassOf } from "./object-classes-utils";
-import { lookupObjectLocation } from "./object-locations";
+import { deleteObjectLocations, lookupObjectLocation, lookupObjectLocations } from "./object-locations";
 import type { KiteBucket, ObjectStore, Storage } from "./types";
 
 type MultipartOptions = Parameters<NonNullable<KiteBucket["createMultipartUpload"]>>[1];
@@ -74,9 +74,19 @@ export function createStorageRouter(env: StoragePlatformEnv): KiteBucket {
 			return (await storage()).storeForKey(key).bucket.put(key, value, options);
 		},
 		async delete(keys: string | string[]) {
-			const { deleteTargets } = await storage();
-			for (const [objectClass, group] of groupByClass(Array.isArray(keys) ? keys : [keys])) {
-				for (const store of deleteTargets(objectClass)) await store.bucket.delete(group);
+			const list = Array.isArray(keys) ? keys : [keys];
+			const built = await storage();
+			for (const [objectClass, group] of groupByClass(list)) {
+				for (const store of built.deleteTargets(objectClass)) await store.bucket.delete(group);
+			}
+			// A cold move can park a key on a store outside the normal chain (`cold.ts`); reach it too, and
+			// drop the record once the object itself is gone, so it never blocks deleting that store later.
+			const locations = await lookupObjectLocations(env, list);
+			if (locations.size) {
+				const byStore = new Map<string, string[]>();
+				for (const [key, storeId] of locations) byStore.set(storeId, [...(byStore.get(storeId) ?? []), key]);
+				for (const [storeId, storeKeys] of byStore) await built.store(storeId)?.bucket.delete(storeKeys);
+				await deleteObjectLocations(env, list);
 			}
 		},
 		async list(options?: R2ListOptions) {

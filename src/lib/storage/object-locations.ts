@@ -38,3 +38,32 @@ export async function lookupObjectLocation(env: LocationEnv, key: string): Promi
 		throw error;
 	}
 }
+
+/** Every recorded location among `keys`, for a delete that must reach a store outside the normal chain. */
+export async function lookupObjectLocations(env: LocationEnv, keys: readonly string[]): Promise<Map<string, string>> {
+	if (!keys.length) return new Map();
+	try {
+		const { results } = await env.DB.prepare(
+			"SELECT key, store_id FROM object_locations WHERE key IN (SELECT value FROM json_each(?))",
+		)
+			.bind(JSON.stringify(keys))
+			.all<{ key: string; store_id: string }>();
+		return new Map((results ?? []).map((row) => [row.key, row.store_id]));
+	} catch (error) {
+		if (isNoSuchTableError(error)) return new Map();
+		throw error;
+	}
+}
+
+/** Drops the recorded location for `keys` once the object itself is gone, so it never blocks deleting the store. */
+export async function deleteObjectLocations(env: LocationEnv, keys: readonly string[]): Promise<void> {
+	if (!keys.length) return;
+	try {
+		await env.DB.prepare("DELETE FROM object_locations WHERE key IN (SELECT value FROM json_each(?))")
+			.bind(JSON.stringify(keys))
+			.run();
+	} catch (error) {
+		if (isNoSuchTableError(error)) return;
+		throw error;
+	}
+}

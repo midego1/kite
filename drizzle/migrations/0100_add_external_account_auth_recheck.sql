@@ -1,0 +1,4 @@
+-- "Recheck authentication" for connected Gmail and Google Workspace accounts (spec §6.6.1): the bookkeeping of a
+-- cursor over one account's own messages, re-reading each one's raw MIME for the Authentication-Results header
+-- Google added at delivery. Internal (not in backups): a cursor over mail in another database is meaningless.
+CREATE TABLE `external_account_auth_rechecks` (`account_id` text PRIMARY KEY NOT NULL REFERENCES `external_accounts`(`id`) ON DELETE cascade, `status` text NOT NULL, `since_at` integer NOT NULL, `cursor_at` integer, `cursor_id` text, `scanned` integer DEFAULT 0 NOT NULL, `updated` integer DEFAULT 0 NOT NULL, `skipped` integer DEFAULT 0 NOT NULL, `error` text, `lease_until` integer, `started_at` integer NOT NULL, `updated_at` integer NOT NULL, `finished_at` integer);

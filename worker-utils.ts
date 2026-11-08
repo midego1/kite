@@ -63,6 +63,7 @@ const QUEUE_MESSAGE_KINDS: Record<string, QueueMessageKind> = {
 	"attachments.storage": "attachment_storage",
 	"accounts.sync": "external_sync",
 	"accounts.writeback": "external_sync",
+	"accounts.auth_recheck": "external_sync",
 	"accounts.append_sent": "append_sent",
 	"search.embed": "search_embed",
 	...Object.fromEntries(

@@ -1,4 +1,5 @@
 import type { externalAccounts } from "@/db/schema/external-accounts";
+import type { AuthRecheckView } from "./auth-recheck-utils";
 import { identityState } from "./identity-code-utils";
 import { sendBlock } from "./identity-utils";
 import { findPreset } from "./presets-utils";
@@ -59,6 +60,7 @@ export function serializeExternalAccount(
 	smtpVerifiedAt: Date | null = null,
 	now = new Date(),
 	identities: readonly IdentityFields[] = [],
+	authRecheck: AuthRecheckView = null,
 ): ExternalAccountView {
 	const addressVerified = hasVerified(identities, row.address);
 	return {
@@ -97,6 +99,7 @@ export function serializeExternalAccount(
 			block: sendBlock({ ...row, hasPassword: row.secret.length > 0, smtpVerifiedAt }, null, addressVerified),
 		},
 		identities: serializeIdentities(identities, row.address, now),
+		authRecheck,
 		createdAt: row.createdAt.toISOString(),
 		updatedAt: row.updatedAt.toISOString(),
 	};

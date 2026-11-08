@@ -212,6 +212,9 @@ test("moving a row to spam from its ⋯ sheet's expandable Move to entry moves i
 	await moveEntry.click();
 	await expect(moveEntry).toHaveAttribute("aria-expanded", "true");
 	await sheet.getByRole("button", { name: "Report spam" }).click();
+	const confirm = page.getByRole("alertdialog", { name: "Report as spam?" });
+	await expect(confirm).toBeVisible();
+	await confirm.getByRole("button", { name: "Report spam" }).click();
 	await expect(sheet).toHaveCount(0);
 	await expect(page.getByRole("main").getByText(spamSubject, { exact: true })).toHaveCount(0);
 	await page.goto("/spam");

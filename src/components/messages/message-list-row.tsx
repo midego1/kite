@@ -100,16 +100,26 @@ function RowCornerStar({
 }) {
 	if (!row.starToggle) return null;
 	const Icon = icon;
-	// With hover actions the toggle lives in their pill; the corner then only marks a starred row at rest.
+	// With a mouse, hover actions carry the toggle in their pill; the corner then only marks a starred row at
+	// rest, hidden once the pill shows. A coarse pointer never hovers the pill (RowActionsMenu's ⋯ covers it
+	// instead), so it gets the same always-visible, toggleable corner star phones use below, at end-0, 44px —
+	// `hoverActions` only decides which fine-pointer treatment applies, never whether touch gets a star at all.
 	if (hoverActions)
-		return row.starred ? (
-			<span
-				aria-hidden="true"
-				className="absolute bottom-1 end-1 group-hover:hidden group-has-[:focus-visible]:hidden pointer-coarse:hidden"
-			>
-				<Icon className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
-			</span>
-		) : null;
+		return (
+			<>
+				{row.starred && (
+					<span
+						aria-hidden="true"
+						className="absolute bottom-1 end-1 group-hover:hidden group-has-[:focus-visible]:hidden pointer-coarse:hidden"
+					>
+						<Icon className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
+					</span>
+				)}
+				<span className="absolute bottom-0 end-0 hidden pointer-coarse:block">
+					<MessageRowStar starred={row.starred} compact icon={icon} onToggle={row.toggleStar} />
+				</span>
+			</>
+		);
 	return (
 		<span
 			className={clsx(

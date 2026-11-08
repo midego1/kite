@@ -101,10 +101,29 @@ test("an unfolded tablet's stacked row actions work without hovering, via the �
 	const list = page.getByRole("main").locator("[data-density]");
 	const row = list.locator("[data-message-row]").filter({ hasText: stackedSubject });
 	await expect(row).toBeVisible();
+	// `hoverActions` is true here (beside a reader), but a coarse pointer never hovers: the corner star must
+	// still render as the same always-visible, toggleable 44px control phones get, beside the ⋯ button, with
+	// no overlap (review: RowCornerStar was pointer-coarse:hidden in this case, so touch showed no star at all).
+	const star = row.getByRole("button", { name: "Star" }).first();
 	const more = row.getByRole("button", { name: /^More actions for/ }).first();
+	await expect(star).toBeVisible();
 	await expect(more).toBeVisible();
-	const moreBox = await more.boundingBox();
+	const [starBox, moreBox] = await Promise.all([star.boundingBox(), more.boundingBox()]);
+	expect(starBox && starBox.width >= 44 && starBox.height >= 44, "Star is at least 44x44").toBe(true);
 	expect(moreBox && moreBox.width >= 44 && moreBox.height >= 44, "More actions is at least 44x44").toBe(true);
+	const overlap =
+		starBox &&
+		moreBox &&
+		!(
+			starBox.x + starBox.width <= moreBox.x ||
+			moreBox.x + moreBox.width <= starBox.x ||
+			starBox.y + starBox.height <= moreBox.y ||
+			moreBox.y + moreBox.height <= starBox.y
+		);
+	expect(overlap, "the corner star and the ⋯ button do not overlap").toBe(false);
+
+	await star.click();
+	await expect(star).toHaveAttribute("aria-pressed", "true");
 
 	await more.click();
 	const sheet = page.getByRole("dialog");

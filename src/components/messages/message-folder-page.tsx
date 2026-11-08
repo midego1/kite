@@ -522,6 +522,7 @@ export function MessageFolderPage({
 								onSelectedChange={updateSelectedMessage}
 								onRowClick={selectRow}
 								onMessageAction={async (messageId, action, folderId) => {
+									if (action === "spam" && !(await confirmReportSpam(1))) return;
 									await runBulkMessageAction(
 										expandSelectedIds([messageId]),
 										action,

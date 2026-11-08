@@ -55,9 +55,19 @@ export function ChatProviderNotice({ provider }: { provider: ChatProviderState }
 		);
 	if (!provider.configured)
 		return (
-			<p className="rounded-2xl border border-amber-100 bg-amber-50 p-3 text-amber-800">
-				Configure an AI provider to use chat and auto-drafts.
-			</p>
+			<div
+				className="space-y-1 rounded-2xl border border-amber-100 bg-amber-50 p-3 text-amber-800"
+				data-testid="no-provider-notice"
+			>
+				<p>Configure an AI provider to use chat and auto-drafts.</p>
+				{primaryAdmin ? (
+					<Link href="/agent#ai-provider" className="font-medium text-blue-700 hover:underline">
+						Set one up in Admin → Agent
+					</Link>
+				) : (
+					<p>Ask the primary admin to set one up in Admin → Agent.</p>
+				)}
+			</div>
 		);
 	if (!provider.externalBlocked) return null;
 	return (

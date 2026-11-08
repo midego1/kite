@@ -115,6 +115,51 @@ test.describe("Kite AI entry points", () => {
 		await expect(page.getByRole("region", { name: "Email assistant" })).toBeHidden();
 	});
 
+	test("Write with Kite says why it does nothing when no AI provider is configured", async ({ page }) => {
+		await page.route("**/api/agent/compose?*", (route) =>
+			route.fulfill({ json: { available: false, reason: "not_configured" } }),
+		);
+		await openMessage(page);
+		await page.getByRole("button", { name: /^Reply( \(r\))?$/ }).click();
+		const button = page.getByRole("button", { name: "Write with Kite: No AI provider is set up." });
+		await expect(button).toBeVisible();
+		await expect(button).toHaveAttribute("aria-disabled", "true");
+	});
+
+	test("the assistant panel points to Admin → Agent when no AI provider is configured", async ({ page }) => {
+		await page.route("**/api/agent/settings?*", (route) =>
+			route.fulfill({
+				json: {
+					settings: {
+						mailboxId: "demo",
+						enabled: true,
+						modelId: "demo",
+						autoDraftEnabled: false,
+						reviewerUserId: null,
+						instructions: "",
+						dailyLimit: 5,
+					},
+					models: ["demo"],
+					canManage: true,
+					providerConfigured: false,
+					externalProviderBlocked: false,
+					providerLabel: "",
+					autoReplyEnabled: false,
+					reviewers: [],
+				},
+			}),
+		);
+		await page.goto("/inbox");
+		await sidebarAssistant(page).click();
+		const panel = page.getByRole("region", { name: "Email assistant" });
+		const notice = panel.getByTestId("no-provider-notice");
+		await expect(notice).toContainText("Configure an AI provider to use chat and auto-drafts.");
+		await expect(notice.getByRole("link", { name: "Set one up in Admin → Agent" })).toHaveAttribute(
+			"href",
+			"/agent#ai-provider",
+		);
+	});
+
 	test("the Ask Kite AI bubble stays with a reply docked in the reader and steps aside for the floating composer", async ({
 		page,
 	}) => {

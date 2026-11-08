@@ -158,14 +158,20 @@ export function scanText(scan: ScanState, t: Translate): string {
 	);
 }
 
-/** Why "Scan last 90 days" left mail out, when it did; null while there is nothing to explain. */
-export function scanCoverageText(gaps: readonly ScanCoverageGap[], t: Translate): string | null {
-	const gap = gaps.find((entry) => entry.reason === "automatic_reading_off");
-	if (!gap) return null;
-	return t(
-		"{count, plural, one {# message} other {# messages}} in mailboxes without automatic reading were not scanned",
-		{ count: gap.messages },
-	);
+/** One line per reason "Scan last 90 days" left mail out, so a fix that would not help one reason is never implied. */
+export function scanCoverageTexts(gaps: readonly ScanCoverageGap[], t: Translate): string[] {
+	return gaps.map((gap) => {
+		const values = { count: gap.messages };
+		return gap.reason === "automatic_reading_off"
+			? t(
+					"{count, plural, one {# message} other {# messages}} in mailboxes without automatic reading were not scanned",
+					values,
+				)
+			: t(
+					"{count, plural, one {# message} other {# messages}} from connected accounts or imports have no authentication result and are not recorded yet",
+					values,
+				);
+	});
 }
 
 /** The amount as the input shows it, with the currency's own decimals ("17.99", "1500"). */

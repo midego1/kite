@@ -18,7 +18,7 @@ import {
 	filterPayments,
 	monthLabel,
 	monthTotals,
-	scanCoverageText,
+	scanCoverageTexts,
 	scanText,
 	STATUS_FILTERS,
 	STATUS_LABELS,
@@ -103,12 +103,16 @@ function ScanButton({ scan, onStarted }: { scan: ScanState | null; onStarted: ()
 
 function ScanCoverageNote({ gaps }: { gaps: ScanCoverageGap[] }) {
 	const t = useT();
-	const text = scanCoverageText(gaps, t);
-	if (!text) return null;
+	const texts = scanCoverageTexts(gaps, t);
+	if (texts.length === 0) return null;
 	return (
-		<p className="text-xs text-neutral-500" data-payment-scan-coverage>
-			{text}
-		</p>
+		<div className="space-y-1" data-payment-scan-coverage>
+			{texts.map((text) => (
+				<p key={text} className="text-xs text-neutral-500">
+					{text}
+				</p>
+			))}
+		</div>
 	);
 }
 

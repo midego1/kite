@@ -3,6 +3,7 @@ import { getDb } from "@/db";
 import { financePaymentScans, financePayments } from "@/db/schema/finance";
 import { missingColumnFromError } from "@/lib/auth/user-lookup-utils";
 import { getEnv } from "@/lib/cloudflare";
+import { selectRows } from "@/lib/db/pending-columns";
 import { createLogger } from "@/lib/logger.mjs";
 import { buildCallContext } from "@/lib/modules/capability-utils";
 import { moduleHost } from "@/lib/modules/host";
@@ -251,20 +252,32 @@ async function recordedSince(userId: string, startedAt: Date): Promise<number> {
 	return Number(row?.count ?? 0);
 }
 
+/**
+ * A page this run actually handled, whether or not it recorded anything: `progressAt` is the only place real
+ * forward movement is timestamped, never `updatedAt` (`leaseScan` bumps that on every pickup, crashed run included),
+ * so the five-minute safety net can tell a scan that keeps being leased and crashing from one making progress.
+ * `progress_at` is a column migration 0095 adds; a deploy ahead of it just saves without it.
+ */
 async function saveProgress(row: LeasedScan, progress: Progress, now: Date): Promise<void> {
-	await db()
-		.update(financePaymentScans)
-		.set({
-			cursorAt: progress.cursor ? new Date(progress.cursor.receivedAt) : row.cursorAt,
-			cursorId: progress.cursor?.id ?? row.cursorId,
-			scanned: row.scanned + progress.scanned,
-			recorded: await recordedSince(row.userId, row.startedAt),
-			skipped: row.skipped + progress.skipped,
-			leaseUntil: null,
-			updatedAt: now,
-			...(progress.done ? { status: "done" as const, finishedAt: now } : {}),
-		})
-		.where(eq(financePaymentScans.userId, row.userId));
+	const set = {
+		cursorAt: progress.cursor ? new Date(progress.cursor.receivedAt) : row.cursorAt,
+		cursorId: progress.cursor?.id ?? row.cursorId,
+		scanned: row.scanned + progress.scanned,
+		recorded: await recordedSince(row.userId, row.startedAt),
+		skipped: row.skipped + progress.skipped,
+		leaseUntil: null,
+		updatedAt: now,
+		...(progress.done ? { status: "done" as const, finishedAt: now } : {}),
+	};
+	try {
+		await db()
+			.update(financePaymentScans)
+			.set({ ...set, progressAt: now })
+			.where(eq(financePaymentScans.userId, row.userId));
+	} catch (error) {
+		if (missingColumnFromError(error) !== "progress_at") throw error;
+		await db().update(financePaymentScans).set(set).where(eq(financePaymentScans.userId, row.userId));
+	}
 }
 
 /** The owner's notice once a scan finishes, over the same realtime path as a renewal reminder. */
@@ -317,50 +330,68 @@ export const scanPayments: CapabilityHandler = async (raw, cron): Promise<JsonVa
 	return { scanned: progress.scanned };
 };
 
+/** The lease and freshness condition a row must still meet to count as stalled, re-checked at write time (below). */
+function stalledCondition(now: Date) {
+	return and(
+		eq(financePaymentScans.status, "running"),
+		or(isNull(financePaymentScans.leaseUntil), lt(financePaymentScans.leaseUntil, now)),
+		lt(financePaymentScans.updatedAt, new Date(now.getTime() - 60_000)),
+	);
+}
+
 /**
  * Gives up on a scan stalled past `STALE_SCAN_FAILED_AFTER_MS`: `error` is a column migration 0095 adds, so a
- * deploy ahead of it just updates the other columns, as `aiOffSince` does for `ai_disabled_at`.
+ * deploy ahead of it just updates the other columns, as `aiOffSince` does for `ai_disabled_at`. The same lease and
+ * freshness condition the caller selected on is repeated in the `WHERE`, so a run that leased and started making
+ * progress between that read and this write is never clobbered; true when a row actually matched and was failed.
+ * @public Exercised directly by the bundled unit tests, which can otherwise only see the two sides of the race from
+ * the same tick.
  */
-async function failStalledScan(userId: string, now: Date): Promise<void> {
-	const condition = and(eq(financePaymentScans.userId, userId), eq(financePaymentScans.status, "running"));
+export async function failStalledScan(userId: string, now: Date): Promise<boolean> {
+	const condition = and(eq(financePaymentScans.userId, userId), stalledCondition(now));
 	const set = { status: "failed" as const, finishedAt: now, leaseUntil: null, updatedAt: now };
+	const returning = { userId: financePaymentScans.userId };
 	try {
-		await db()
-			.update(financePaymentScans)
-			.set({ ...set, error: SCAN_STALLED_ERROR })
-			.where(condition);
+		return (
+			(
+				await db()
+					.update(financePaymentScans)
+					.set({ ...set, error: SCAN_STALLED_ERROR })
+					.where(condition)
+					.returning(returning)
+			).length > 0
+		);
 	} catch (error) {
 		if (missingColumnFromError(error) !== "error") throw error;
-		await db().update(financePaymentScans).set(set).where(condition);
+		return (await db().update(financePaymentScans).set(set).where(condition).returning(returning)).length > 0;
 	}
 }
 
 /**
  * The five-minute safety net: a running scan whose run died (no lease, or one that ran out) is queued again, as Mail
- * import does for its jobs, unless it has been stalled for too long, which it gives up on instead (`failStalledScan`)
- * so the owner sees Try again instead of a silent retry loop. Without a queue binding a resumed run happens here.
+ * import does for its jobs, unless `progressAt` (or `startedAt`, before any page has saved) shows no real progress
+ * for `STALE_SCAN_FAILED_AFTER_MS`, which it gives up on instead (`failStalledScan`) so the owner sees Try again
+ * instead of a silent retry loop. `updatedAt` alone could not drive this: `leaseScan` bumps it on every pickup, so a
+ * run that leases and crashes every cycle would never go stale by that measure. Without a queue binding a resumed
+ * run happens here. `selectRows` reads the whole row so a deploy ahead of migration 0095 still sees `progressAt` as
+ * null (never pending) instead of failing the query that finds stalled scans at all.
  */
 export const resumePaymentScans: CapabilityHandler = async (_input, cron): Promise<JsonValue> => {
 	if (!(await paymentTablesReady())) return { resumed: 0, failed: 0 };
 	const now = new Date();
-	const stalled = await db()
-		.select({ userId: financePaymentScans.userId, updatedAt: financePaymentScans.updatedAt })
-		.from(financePaymentScans)
-		.where(
-			and(
-				eq(financePaymentScans.status, "running"),
-				or(isNull(financePaymentScans.leaseUntil), lt(financePaymentScans.leaseUntil, now)),
-				lt(financePaymentScans.updatedAt, new Date(now.getTime() - 60_000)),
-			),
-		)
-		.orderBy(asc(financePaymentScans.updatedAt))
-		.limit(20);
+	const stalled = await selectRows(
+		db(),
+		financePaymentScans,
+		stalledCondition(now),
+		20,
+		asc(financePaymentScans.updatedAt),
+	);
 	let resumed = 0;
 	let failed = 0;
 	for (const row of stalled) {
-		if (now.getTime() - row.updatedAt.getTime() > STALE_SCAN_FAILED_AFTER_MS) {
-			await failStalledScan(row.userId, now);
-			failed += 1;
+		const progressSince = row.progressAt ?? row.startedAt;
+		if (now.getTime() - progressSince.getTime() > STALE_SCAN_FAILED_AFTER_MS) {
+			if (await failStalledScan(row.userId, now)) failed += 1;
 			continue;
 		}
 		if (!(await enqueueScan(row.userId))) await scanPayments({ kind: SCAN_KIND, userId: row.userId }, cron);

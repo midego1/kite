@@ -45,7 +45,7 @@ const { invokeCapability } = await load("invoke");
 const { buildCallContext } = await load("capability");
 const { clearModuleStateCache } = await load("state");
 const { undoAgentAction } = await load("execute");
-const { startScan, scanPayments, resumePaymentScans } = await load("scan");
+const { startScan, scanPayments, resumePaymentScans, failStalledScan } = await load("scan");
 const { listPaymentsView, senderOf } = await load("views");
 const { patchPayment, removePayment } = await load("manual");
 const { SqliteDatabase } = await load("runtime");
@@ -562,6 +562,24 @@ test("the Payments tab explains mail Scan last 90 days leaves out", async (t) =>
 	assert.deepEqual(scanCoverage, [{ reason: "automatic_reading_off", messages: 3 }]);
 });
 
+test("imported or connected-account mail is never blamed on automatic reading being off", async (t) => {
+	const { db } = await setup(t);
+	// Never analyzed for spam or authentication (no `spam_signals`), as import and connected-account sync leave it:
+	// counted as `no_authentication` whether or not its mailbox is eligible, never as `automatic_reading_off`.
+	insertMessage(db, STRIPE, { mailboxId: "mailbox-a", daysAgo: 1, signals: null });
+	insertMessage(db, INVOICE, { mailboxId: "mailbox-off", daysAgo: 2, signals: null });
+	// A normal, analyzed message in the same ineligible mailbox still counts the other way.
+	insertMessage(db, INVOICE, { mailboxId: "mailbox-off", daysAgo: 3 });
+	const { scanCoverage } = await listPaymentsView(viewOf(owner));
+	assert.deepEqual(
+		scanCoverage.sort((a, b) => a.reason.localeCompare(b.reason)),
+		[
+			{ reason: "automatic_reading_off", messages: 1 },
+			{ reason: "no_authentication", messages: 2 },
+		],
+	);
+});
+
 test("a finished scan sends a realtime notice of how many payments it found", async (t) => {
 	const { db, notices } = await setup(t);
 	insertMessage(db, STRIPE);
@@ -581,12 +599,17 @@ test("a finished scan sends a realtime notice of how many payments it found", as
 	]);
 });
 
-test("a scan stalled past the safety net's patience fails with Try again, and starting it over clears that", async (t) => {
+/** Seconds since the epoch, matching how `insertMessage` and the schema's integer timestamp columns store one. */
+const epochSeconds = (msAgo) => Math.floor((Date.now() - msAgo) / 1000);
+
+test("a scan that never made progress since it started fails after 30 minutes, and Try again clears that", async (t) => {
 	const { db } = await setup(t);
 	await startScan("owner");
 	db.db
-		.prepare("UPDATE finance_payment_scans SET updated_at = ?, lease_until = NULL WHERE user_id = 'owner'")
-		.run(Math.floor((Date.now() - 31 * 60_000) / 1000));
+		.prepare(
+			"UPDATE finance_payment_scans SET started_at = ?, updated_at = ?, lease_until = NULL WHERE user_id = 'owner'",
+		)
+		.run(epochSeconds(31 * 60_000), epochSeconds(31 * 60_000));
 	assert.deepEqual(await resumePaymentScans({}, cronContext()), { resumed: 0, failed: 1 });
 	let { scan } = await listPaymentsView(viewOf(owner));
 	assert.equal(scan.status, "failed");
@@ -597,4 +620,43 @@ test("a scan stalled past the safety net's patience fails with Try again, and st
 	await startScan("owner");
 	({ scan } = await listPaymentsView(viewOf(owner)));
 	assert.equal(scan.status, "running");
+});
+
+test("a lease that keeps being picked up and crashing still fails: updated_at alone never proves progress", async (t) => {
+	const { db } = await setup(t);
+	await startScan("owner");
+	// started 31 minutes ago, never once saved progress, but a run grabbed (and then crashed out of) the lease a
+	// little over a minute ago, which is exactly what bumps `updated_at` without moving `progress_at`.
+	db.db
+		.prepare(
+			"UPDATE finance_payment_scans SET started_at = ?, updated_at = ?, lease_until = NULL WHERE user_id = 'owner'",
+		)
+		.run(epochSeconds(31 * 60_000), epochSeconds(65_000));
+	assert.deepEqual(await resumePaymentScans({}, cronContext()), { resumed: 0, failed: 1 });
+	assert.equal((await listPaymentsView(viewOf(owner))).scan.status, "failed");
+});
+
+test("real, recent progress keeps a long-running scan alive even once its lease goes stale", async (t) => {
+	const { db } = await setup(t);
+	await startScan("owner");
+	// Started well past the patience window, but a page saved progress two minutes ago: not stalled.
+	db.db
+		.prepare(
+			"UPDATE finance_payment_scans SET started_at = ?, progress_at = ?, updated_at = ?, lease_until = NULL WHERE user_id = 'owner'",
+		)
+		.run(epochSeconds(45 * 60_000), epochSeconds(2 * 60_000), epochSeconds(65_000));
+	assert.deepEqual(await resumePaymentScans({}, cronContext()), { resumed: 1, failed: 0 });
+	assert.equal((await listPaymentsView(viewOf(owner))).scan.status, "running");
+});
+
+test("failStalledScan never fails a scan an active lease still holds", async (t) => {
+	const { db } = await setup(t);
+	await startScan("owner");
+	db.db
+		.prepare("UPDATE finance_payment_scans SET started_at = ?, lease_until = ? WHERE user_id = 'owner'")
+		.run(epochSeconds(31 * 60_000), epochSeconds(-60_000));
+	// A run holds the lease (in the future): the race guard in failStalledScan's own WHERE must refuse to touch it,
+	// whatever the caller already decided from an earlier read.
+	assert.equal(await failStalledScan("owner", new Date()), false);
+	assert.equal((await listPaymentsView(viewOf(owner))).scan.status, "running");
 });

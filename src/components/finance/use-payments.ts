@@ -13,15 +13,17 @@ const IDLE_POLL_MS = 60_000;
 
 /**
  * Every payment row and subscription document of the viewer; the view filters them itself. The list is read again
- * every few seconds while a scan runs (also after a failed read), every minute otherwise while the tab is visible,
- * and when the window regains focus, so payments recorded from new mail appear without a reload.
+ * every few seconds while a scan runs, every minute otherwise, and when the window regains focus, so payments
+ * recorded from new mail appear without a reload; either interval only fires while the tab is visible, so a
+ * background tab never polls. A failed read (Money Watch turned off while a scan looked to be running included)
+ * stops the fast interval at once instead of trusting the last list's stale `scan` status.
  */
 export function usePaymentList() {
 	const [list, setList] = useState<PaymentList | null>(null);
 	const [failed, setFailed] = useState(false);
 	const [version, setVersion] = useState(0);
 	const reload = useCallback(() => setVersion((current) => current + 1), []);
-	const scanning = list?.scan?.status === "running";
+	const scanning = !failed && list?.scan?.status === "running";
 
 	useEffect(() => {
 		let live = true;
@@ -46,7 +48,7 @@ export function usePaymentList() {
 	useEffect(() => {
 		const timer = window.setTimeout(
 			() => {
-				if (scanning || document.visibilityState === "visible") reload();
+				if (document.visibilityState === "visible") reload();
 			},
 			scanning ? SCAN_POLL_MS : IDLE_POLL_MS,
 		);

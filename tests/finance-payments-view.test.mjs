@@ -171,7 +171,7 @@ test("a correction sends only what changed, and refuses what cannot be saved", (
 	assert.equal(view.formFromPayment(ITEMS[5]).docType, "payment");
 });
 
-/** Echoes the key, so a test can tell which message `scanText`/`scanCoverageText` chose without formatting it. */
+/** Echoes the key, so a test can tell which message `scanText`/`scanCoverageTexts` chose without formatting it. */
 const t = (key) => key;
 
 test("the scan status line picks the right message for each status", () => {
@@ -193,10 +193,19 @@ test("the scan status line picks the right message for each status", () => {
 	);
 });
 
-test("scanCoverageText explains a gap it finds, and says nothing when there is none", () => {
-	assert.equal(view.scanCoverageText([], t), null);
-	assert.equal(
-		view.scanCoverageText([{ reason: "automatic_reading_off", messages: 4 }], t),
-		"{count, plural, one {# message} other {# messages}} in mailboxes without automatic reading were not scanned",
+test("scanCoverageTexts explains each gap it finds, never implying automatic reading fixes unauthenticated mail", () => {
+	assert.deepEqual(view.scanCoverageTexts([], t), []);
+	assert.deepEqual(
+		view.scanCoverageTexts(
+			[
+				{ reason: "automatic_reading_off", messages: 4 },
+				{ reason: "no_authentication", messages: 7 },
+			],
+			t,
+		),
+		[
+			"{count, plural, one {# message} other {# messages}} in mailboxes without automatic reading were not scanned",
+			"{count, plural, one {# message} other {# messages}} from connected accounts or imports have no authentication result and are not recorded yet",
+		],
 	);
 });

@@ -704,6 +704,7 @@
 	"{count, plural, one {# inbox rule files mail into this folder; it will be turned off.} other {# inbox rules file mail into this folder; they will be turned off.}}": "{count, plural, one {# inboxregel plaatst mail in deze map; die wordt uitgeschakeld.} other {# inboxregels plaatsen mail in deze map; die worden uitgeschakeld.}}",
 	"{count, plural, one {# mailbox in one view} other {# mailboxes in one view}}": "{count, plural, one {# mailbox in één overzicht} other {# mailboxen in één overzicht}}",
 	"{count, plural, one {# mailbox} other {# mailboxes}}": "{count, plural, one {# mailbox} other {# mailboxen}}",
+	"{count, plural, one {# message} other {# messages}} from connected accounts or imports have no authentication result and are not recorded yet": "{count, plural, one {# bericht} other {# berichten}} van gekoppelde accounts of importen heeft geen authenticatieresultaat en wordt nog niet vastgelegd",
 	"{count, plural, one {# message} other {# messages}} in mailboxes without automatic reading were not scanned": "{count, plural, one {# bericht} other {# berichten}} in mailboxen zonder automatisch lezen zijn niet doorzocht",
 	"{count, plural, one {# newer message} other {# newer messages}}": "{count, plural, one {# nieuwer bericht} other {# nieuwere berichten}}",
 	"{count, plural, one {# older message} other {# older messages}}": "{count, plural, one {# ouder bericht} other {# oudere berichten}}",

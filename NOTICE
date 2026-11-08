@@ -17,6 +17,11 @@ The sender authentication policy (src/lib/spam/engine.ts, src/lib/spam/dmarc-pol
 the SMTP listener's limits and SPF/DKIM/DMARC checks (server/runtime/smtp*.ts) are adapted from
 Mailflare commits 43d656a, c824aeb, ec8cb0d and 36b3bed by Hieu Nguyen (AGPL-3.0).
 
+The Resend return-path subdomain SPF check and the "trust a verified record" receiving MX
+match (src/lib/domains/dns-audit.ts, src/lib/domains/receiving-dns.ts,
+src/lib/domains/resend-receiving.ts) are adapted from Mailflare commit 64274a6 by
+Hieu Nguyen (AGPL-3.0).
+
 Third-party code
 ----------------
 

@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { appSettings } from "@/db/schema";
 import { isManualZone } from "@/lib/domains/provision";
-import { hasMx, isInboundSmtpMx, MX_UNCHECKED, publishMx, removeMx } from "@/lib/domains/receiving-dns";
+import { hasMx, hasMxMatching, isInboundSmtpMx, MX_UNCHECKED, publishMx, removeMx } from "@/lib/domains/receiving-dns";
 import { getResendApiKey, getResendKeyStatus } from "@/lib/email/outbound-provider";
 import {
 	createResendDomain,
@@ -40,8 +40,22 @@ async function storeWebhook(env: CloudflareEnv, id: string | null, secret: strin
 		.onConflictDoUpdate({ target: appSettings.id, set: values });
 }
 
-function inboundMx(records: { type: string; value: string; priority?: number }[] | undefined) {
+function inboundMx(records: { type: string; value: string; priority?: number; status?: string }[] | undefined) {
 	return (records ?? []).find((record) => record.type === "MX" && isInboundSmtpMx(record.value)) ?? null;
+}
+
+/**
+ * A record Resend itself verified needs no second opinion. When Resend names
+ * no inbound MX, any published inbound-smtp target proves the record.
+ */
+async function resendMxOk(
+	env: CloudflareEnv,
+	domain: DomainRow,
+	mx: { value: string; status?: string } | null,
+): Promise<boolean | null> {
+	if (mx?.status === "verified") return true;
+	if (mx) return hasMx(env, domain, mx.value);
+	return hasMxMatching(env, domain, isInboundSmtpMx);
 }
 
 function isPublicHttps(origin: string): boolean {
@@ -124,7 +138,7 @@ export async function getResendReceivingView(
 			detail: !resend ? "Domain is not in Resend yet" : undefined,
 		});
 		const mx = inboundMx(resend?.records);
-		const mxOk = mx ? await hasMx(env, domain, mx.value) : false;
+		const mxOk = await resendMxOk(env, domain, mx);
 		steps.push({
 			key: "mx",
 			label: "MX record points to Resend",

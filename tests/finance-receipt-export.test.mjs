@@ -84,6 +84,12 @@ test("buildReceiptHtmlDocument escapes a subject with HTML-significant character
 	assert.ok(!doc.includes("<title><b>"));
 });
 
+test("buildReceiptHtmlDocument falls back to the bare address with no sender name, and to a placeholder subject", () => {
+	const doc = buildReceiptHtmlDocument({ ...HEADER, fromName: null, subject: null }, "<p>Body</p>");
+	assert.ok(doc.includes("<title>(no subject)</title>"));
+	assert.ok(doc.includes("<dd>billing@hosting.example</dd>"));
+});
+
 test("paragraphsFromReadableText keeps quote depth from leading '>' markers", () => {
 	const text = "Hello\n> quoted once\n>> quoted twice\nback to normal";
 	assert.deepEqual(paragraphsFromReadableText(text), [
@@ -105,4 +111,10 @@ test("buildReceiptPdfDocument prefers the plain-text body over the HTML", () => 
 	const doc = buildReceiptPdfDocument(HEADER, "Plain text body", "<p>HTML body</p>");
 	assert.ok(doc.blocks.some((block) => block.text === "Plain text body"));
 	assert.ok(!doc.blocks.some((block) => block.text?.includes("HTML body")));
+});
+
+test("buildReceiptPdfDocument falls back to the bare address with no sender name, and to a placeholder subject", () => {
+	const doc = buildReceiptPdfDocument({ ...HEADER, fromName: null, subject: null }, "Body", null);
+	assert.equal(doc.title, "(no subject)");
+	assert.ok(doc.blocks.some((block) => block.text === "From: billing@hosting.example"));
 });

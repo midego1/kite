@@ -276,6 +276,29 @@ test("isInstallDomain matches a domain of this install whatever case it is asked
 	assert.equal(await isInstallDomain(db, "not-example.com"), false);
 });
 
+test("a verified extra address is still refused on a stored domain whose own case is mixed (security review)", async (t) => {
+	const { env, database } = await setup(t);
+	// Simulates a domain row whose hostname predates lower-casing on write (a restored backup, a hand-inserted
+	// row): the comparison itself must not depend on the stored value already being lower-case either.
+	database.db.exec(`
+		INSERT INTO users (id, email, password_hash, name, created_at) VALUES ('intruder', 'intruder@attacker.test', 'hash', 'Intruder', 1);
+		INSERT INTO domains (id, user_id, hostname, zone_id, status, created_at) VALUES ('domain-2', 'intruder', 'Mixed.Case.Test', 'zone-2', 'active', 1);
+		INSERT INTO domains (id, user_id, hostname, zone_id, status, created_at) VALUES ('domain-3', 'intruder', 'attacker.test', 'zone-3', 'active', 1);
+		INSERT INTO mailboxes (id, user_id, domain_id, local_part, created_at) VALUES ('mailbox-intruder', 'intruder', 'domain-3', 'intruder', 1);
+		INSERT INTO user_ai_settings (user_id, assistant_email_enabled, assistant_email_daily_limit, updated_at) VALUES ('intruder', 1, 20, 1);
+		INSERT INTO assistant_sender_addresses (id, user_id, address, verified_at, created_at) VALUES ('row-1', 'intruder', 'random@mixed.case.test', 1, 1);
+	`);
+	await deliver(env, {
+		from: "Random <random@mixed.case.test>",
+		messageId: "<mixed-case-domain@example.com>",
+		// DMARC aligned with the From domain actually used here, not the default's example.com, so this is
+		// refused by the install-domain check itself and not by authentication failing first.
+		authenticationResults:
+			"mx.cloudflare.net; spf=none smtp.mailfrom=owner.test; dkim=none; dmarc=pass header.from=mixed.case.test",
+	});
+	assert.equal((await requests(database)).length, 0);
+});
+
 test("a shared mailbox address does not count as an own address", async (t) => {
 	const { env, database } = await setup(t);
 	database.db.exec(

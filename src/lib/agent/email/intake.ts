@@ -1,4 +1,4 @@
-import { and, asc, count, eq, gte, isNotNull } from "drizzle-orm";
+import { and, asc, count, eq, gte, isNotNull, sql } from "drizzle-orm";
 import { getDb, type AppDatabase } from "@/db";
 import { domains, mailboxes, users } from "@/db/schema";
 import { assistantEmailRequests, assistantSenderAddresses } from "@/db/schema/assistant-email";
@@ -64,12 +64,13 @@ async function mapSenderToUser(
 	const hostname = fromAddress.slice(at + 1);
 	// A domain of this install, whatever its status: only an own mailbox or alias counts on it, never a verified
 	// extra address (addSenderAddress already refuses to verify one there) — a defence against a stale or
-	// otherwise-created row, on top of refusing it at the source (security review).
+	// otherwise-created row, on top of refusing it at the source (security review). Case-insensitive, like
+	// `isInstallDomain` itself, so a restored or hand-inserted mixed-case domain is still recognised.
 	if (await isInstallDomain(db, hostname)) {
 		const [domain] = await db
 			.select({ id: domains.id })
 			.from(domains)
-			.where(and(eq(domains.hostname, hostname), eq(domains.status, "active")))
+			.where(and(sql`lower(${domains.hostname}) = ${hostname.toLowerCase()}`, eq(domains.status, "active")))
 			.limit(1);
 		if (!domain) return null;
 		const mailbox = await findSenderMailbox(db, domain.id, hostname, fromAddress);
@@ -182,7 +183,7 @@ async function isFromAnAssistantAddress(
 	const [fromDomain] = await db
 		.select({ id: domains.id })
 		.from(domains)
-		.where(eq(domains.hostname, address.domain))
+		.where(sql`lower(${domains.hostname}) = ${address.domain.toLowerCase()}`)
 		.limit(1);
 	return !!fromDomain && (await isAssistantAddressTaken(db, fromDomain.id, address.localPart));
 }

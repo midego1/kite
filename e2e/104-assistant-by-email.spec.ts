@@ -66,7 +66,9 @@ test("an admin creates, disables and removes the domain's assistant address", as
 	const section = page.locator("section", { hasText: "Assistant address" });
 	await expect(section.getByRole("heading", { name: "Assistant address" })).toBeVisible();
 	await section.getByRole("button", { name: "Create" }).click();
-	await expect(page.getByText(`assistant@${domain.hostname}`)).toBeVisible();
+	// The explanatory copy above also names "assistant@<hostname>" as an example, in DOM order before the created
+	// address row, so the row's own instance is the second (index 1) match rather than the only one.
+	await expect(page.getByText(`assistant@${domain.hostname}`).nth(1)).toBeVisible();
 
 	await section.getByRole("button", { name: "Disable" }).click();
 	await expect(section.getByRole("button", { name: "Enable" })).toBeVisible();

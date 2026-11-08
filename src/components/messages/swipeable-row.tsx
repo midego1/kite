@@ -4,6 +4,7 @@ import clsx from "clsx";
 import { useRef, useState, type PointerEvent, type ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 import { toInlineDelta } from "@/components/interface-direction-utils";
+import { TOUCH_GESTURE_INTENT_DISTANCE } from "./touch-gesture-thresholds";
 
 type SwipeAction = {
 	label: string;
@@ -23,7 +24,7 @@ type SwipeableRowProps = {
 };
 
 const COMMIT_DISTANCE = 88;
-const INTENT_DISTANCE = 10;
+const INTENT_DISTANCE = TOUCH_GESTURE_INTENT_DISTANCE;
 
 // Touch-only swipe gestures; vertical scrolling stays with the browser via touch-action: pan-y.
 export function SwipeableRow({ children, startAction, endAction, disabled, role }: SwipeableRowProps) {

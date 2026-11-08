@@ -136,7 +136,7 @@ export function useMessageListKeyboard({
 		return LIST_KEYS.map(({ id, ...meta }) => ({ ...meta, action: handlers[id], extend: id.startsWith("extend") }));
 	}, [folder, listRef, runOnRows, toggleRowSelection, extendSelection]);
 
-	// While the selection pane covers the open message the list is what the user works with, so Shift+Arrow stays on.
+	// With a selection the list is still what the user works with even while a message is open, so Shift+Arrow stays on.
 	useHotkeys(
 		shortcuts.filter((shortcut) => !shortcut.extend),
 		{ enabled: shortcutsEnabled && !messageOpen },
@@ -156,12 +156,13 @@ export function useMessageListKeyboard({
 				clearSelection();
 				return;
 			}
-			if (isSelectAllChord(event) && isWithinSelectionScope(event)) {
+			// Unlike Escape, Cmd/Ctrl+A is a shortcut like j/k/x/e/#, so it stays off with the rest of them.
+			if (shortcutsEnabled && isSelectAllChord(event) && isWithinSelectionScope(event)) {
 				event.preventDefault();
 				selectAllVisible();
 			}
 		};
 		window.addEventListener("keydown", onKeyDown, true);
 		return () => window.removeEventListener("keydown", onKeyDown, true);
-	}, [selectionCount, clearSelection, selectAllVisible]);
+	}, [selectionCount, clearSelection, selectAllVisible, shortcutsEnabled]);
 }

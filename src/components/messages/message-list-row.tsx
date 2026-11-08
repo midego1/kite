@@ -199,7 +199,8 @@ function StackedMessageRow(props: RowViewProps) {
 					onClick={row.onNavigate}
 					onMouseDown={row.onMouseDown}
 					aria-current={active ? "true" : undefined}
-					className="block min-w-0 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+					// A long press selects the row; iOS's own link callout (copy, open in new tab) would otherwise show first.
+					className="block min-w-0 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 [-webkit-touch-callout:none]"
 				>
 					<span
 						className={clsx(
@@ -349,7 +350,8 @@ function WideMessageRow(props: RowViewProps) {
 						onClick={config.folder === "drafts" ? row.onSelectClick : row.onNavigate}
 						onMouseDown={row.onMouseDown}
 						aria-current={active ? "true" : undefined}
-						className="after:absolute after:inset-0 focus-visible:outline-none"
+						// A long press selects the row; iOS's own link callout (copy, open in new tab) would otherwise show first.
+						className="after:absolute after:inset-0 focus-visible:outline-none [-webkit-touch-callout:none]"
 					>
 						<span dir="auto" className={clsx("reading-font", row.unread && "font-medium text-neutral-900")}>
 							{row.rowMessage.subject ?? "(no subject)"}

@@ -450,6 +450,9 @@ export function MessageFolderPage({
 
 	return (
 		<div className="flex h-full min-h-0 flex-1 flex-col" data-selection-scope="">
+			{/* The toolbar's own "{count} selected" is a text swap, not announced on its own; this live region
+			announces the count on every change, including what "Select all in folder" grows it to. Worded apart
+			from the toolbar's text so the two never collide under a plain text query. */}
 			<p role="status" aria-live="polite" className="sr-only">
 				{selectedIds.length > 0
 					? `${selectedIds.length} ${selectedIds.length === 1 ? "email" : "emails"} selected`

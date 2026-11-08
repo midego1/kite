@@ -69,6 +69,29 @@ test("selecting a message on a phone still offers the bulk actions", async ({ pa
 	await expect(page.getByRole("button", { name: "More actions" })).toBeVisible();
 });
 
+test("the Select button only shows on a touch device; a pointer relies on the always-visible checkbox", async ({
+	browser,
+}) => {
+	const [subject] = await deliverMany(["Touch check"]);
+
+	// A touch device: "Select" reveals every row's checkbox for a finger that gets no hover.
+	const touchContext = await browser.newContext({ storageState: STORAGE_STATE, hasTouch: true });
+	const touchPage = await touchContext.newPage();
+	await touchPage.goto("/inbox");
+	await expect(touchPage.getByText(subject, { exact: true })).toBeVisible();
+	await expect(touchPage.getByRole("button", { name: "Select", exact: true })).toBeVisible();
+	await touchContext.close();
+
+	// A pointer never sees it: the header checkbox and hover both work without a mode switch.
+	const pointerContext = await browser.newContext({ storageState: STORAGE_STATE });
+	const pointerPage = await pointerContext.newPage();
+	await pointerPage.goto("/inbox");
+	await expect(pointerPage.getByText(subject, { exact: true })).toBeVisible();
+	await expect(pointerPage.getByRole("button", { name: "Select", exact: true })).toHaveCount(0);
+	await expect(pointerPage.getByRole("checkbox", { name: "Select all visible messages" })).toBeVisible();
+	await pointerContext.close();
+});
+
 test("trashing a selected message from its row removes it from the selection", async ({ page }) => {
 	const subjects = await deliverMany(["Pick one", "Pick two"]);
 

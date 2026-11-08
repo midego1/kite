@@ -11,6 +11,7 @@ import type { PageRange } from "./types";
 import type { BulkMessageAction, BulkMessageResponse, PermanentDeleteFolder } from "@/app/api/messages/bulk/types";
 import { SEND_PENDING_MOVE_MESSAGE, SEND_PENDING_MOVE_REFUSED } from "@/lib/messages/send-state-utils";
 import { postBulkMessageAction } from "./bulk-request";
+import { chunkArray, mergeBulkResponses, TRAINING_ACTION_BATCH_SIZE } from "./bulk-action-batch-utils";
 import { announcePhishingReports } from "./phishing-report";
 import { offerUndoForMove } from "./undo-utils";
 import { announceMessagesLeftView, bulkActionLeftView } from "./left-view-utils";
@@ -108,17 +109,28 @@ export function getSelectionToolbarFolder(config: Pick<MessageFolderConfig, "fol
 	return config.folderId ? undefined : config.folder;
 }
 
+/** Spam and phishing reports, and "Not spam", train the filter one message at a time on the server. */
+const TRAINING_ACTIONS = new Set<string>(["spam", "phishing", "inbox"]);
+
 export async function runBulkMessageAction(messageIds: string[], action: string, notify = true, folderId?: string) {
-	const response = await postBulkMessageAction({ messageIds, action: action as BulkMessageAction, folderId });
-	// Cancelled: the selection held drafts and the user chose not to delete them.
-	if (!response) return null;
-	if (!response.ok) {
-		const refused = (await response.json().catch(() => null)) as BulkMessageResponse | null;
-		throw new Error(
-			refused?.code === SEND_PENDING_MOVE_REFUSED ? SEND_PENDING_MOVE_MESSAGE : t("Unable to update selected messages"),
-		);
+	const batchSize = TRAINING_ACTIONS.has(action) ? TRAINING_ACTION_BATCH_SIZE : messageIds.length || 1;
+	const responses: BulkMessageResponse[] = [];
+	for (const chunk of chunkArray(messageIds, batchSize)) {
+		const response = await postBulkMessageAction({ messageIds: chunk, action: action as BulkMessageAction, folderId });
+		// Cancelled: the selection held drafts and the user chose not to delete them.
+		if (!response) return null;
+		if (!response.ok) {
+			const refused = (await response.json().catch(() => null)) as BulkMessageResponse | null;
+			throw new Error(
+				refused?.code === SEND_PENDING_MOVE_REFUSED
+					? SEND_PENDING_MOVE_MESSAGE
+					: t("Unable to update selected messages"),
+			);
+		}
+		const data = (await response.json().catch(() => null)) as BulkMessageResponse | null;
+		if (data) responses.push(data);
 	}
-	const data = (await response.json().catch(() => null)) as BulkMessageResponse | null;
+	const data = mergeBulkResponses(responses);
 	if (action === "read" || action === "unread") markMessagesReadInCaches(messageIds, action === "read");
 	if (notify) window.dispatchEvent(new Event("kite:messages-changed"));
 	offerUndoForMove(action, data);

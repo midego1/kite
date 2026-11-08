@@ -2,6 +2,7 @@ import type { BulkMessageResponse, MessageRestoreState } from "@/app/api/message
 import toast from "react-hot-toast";
 import { showUndoToast } from "@/components/ui/undo-toast";
 import { authFetch } from "@/lib/auth/client";
+import { chunkArray, TRAINING_ACTION_BATCH_SIZE } from "./bulk-action-batch-utils";
 import { describeDraftsDeleted, describeSendPendingRefused } from "./bulk-request-utils";
 import { t } from "@/lib/i18n/translator";
 
@@ -13,16 +14,27 @@ export function describeUndoableMove(action: string, count: number): string | nu
 	return null;
 }
 
+/**
+ * A restore applies each state in one sequential server-side loop (undoing a report's training needs its own
+ * receipt lookup), so a large Undo is sent in bounded batches too, the same reasoning as `runBulkMessageAction`.
+ */
 export async function restoreMessages(states: MessageRestoreState[]): Promise<void> {
-	const response = await authFetch("/api/messages/bulk", {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({ action: "restore", restore: states }),
-	});
-	if (!response.ok) throw new Error("Unable to undo");
-	window.dispatchEvent(new Event("kite:messages-changed"));
-	const data = (await response.json().catch(() => null)) as BulkMessageResponse | null;
-	if (data?.superseded) toast(SUPERSEDED_NOTICE);
+	let superseded = 0;
+	try {
+		for (const batch of chunkArray(states, TRAINING_ACTION_BATCH_SIZE)) {
+			const response = await authFetch("/api/messages/bulk", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ action: "restore", restore: batch }),
+			});
+			if (!response.ok) throw new Error("Unable to undo");
+			const data = (await response.json().catch(() => null)) as BulkMessageResponse | null;
+			superseded += data?.superseded ?? 0;
+		}
+	} finally {
+		window.dispatchEvent(new Event("kite:messages-changed"));
+	}
+	if (superseded) toast(SUPERSEDED_NOTICE);
 }
 
 /** Offers to undo an archive or trash the bulk endpoint reported previous states for. */

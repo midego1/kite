@@ -165,7 +165,7 @@ test("Shift+Arrow extends the selection from the focused row", async ({ page }) 
 	await expect(page.getByText("2 selected")).toBeVisible();
 	await expect(checkbox(page, c)).not.toBeChecked();
 
-	// It keeps working while the selection pane covers an open message.
+	// It keeps working with a message open.
 	await page.keyboard.press("Escape");
 	await expect(page.getByText(/\d+ selected/)).toHaveCount(0);
 	await subjectOf(page, e).click();

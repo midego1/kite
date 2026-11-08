@@ -550,6 +550,20 @@ test("review 2: a database with an earlier draft of migration 0094 reads as an u
 	assert.deepEqual(result.output, { suggestions: [], skipped: "migration_pending" });
 });
 
+test("starting or restarting a scan still works before migration 0095 adds error and progress_at", async (t) => {
+	const { db } = await setup(t);
+	// The exact 0094 shape (paymentTablesReady checks sqlite_master's stored SQL text for a backtick-quoted
+	// `skipped`, so this has to match the migration's own quoting, not just have the same columns).
+	db.db.exec(`DROP TABLE finance_payment_scans;
+		CREATE TABLE \`finance_payment_scans\` (\`user_id\` text PRIMARY KEY NOT NULL REFERENCES \`users\`(\`id\`) ON DELETE cascade, \`status\` text NOT NULL, \`since_at\` integer NOT NULL, \`cursor_at\` integer, \`cursor_id\` text, \`scanned\` integer DEFAULT 0 NOT NULL, \`recorded\` integer DEFAULT 0 NOT NULL, \`skipped\` integer DEFAULT 0 NOT NULL, \`lease_until\` integer, \`started_at\` integer NOT NULL, \`updated_at\` integer NOT NULL, \`finished_at\` integer);`);
+	// startScan's insert and conflict-update never name error or progress_at, so a deploy ahead of 0095 can still
+	// start a scan; only the stall safety net reads those two columns.
+	assert.equal((await startScan("owner")).status, "running");
+	db.db.prepare("UPDATE finance_payment_scans SET status = 'done' WHERE user_id = 'owner'").run();
+	// Try again hits the same insert's `onConflictDoUpdate`, not a fresh row: that path must skip them too.
+	assert.equal((await startScan("owner")).status, "running");
+});
+
 test("the Payments tab explains mail Scan last 90 days leaves out", async (t) => {
 	const { db } = await setup(t);
 	insertMessage(db, STRIPE, { mailboxId: "mailbox-a", daysAgo: 1 });
@@ -578,6 +592,29 @@ test("imported or connected-account mail is never blamed on automatic reading be
 			{ reason: "no_authentication", messages: 2 },
 		],
 	);
+});
+
+test("the owner's own mailbox reviewed by someone else is called out, not blamed on automatic reading", async (t) => {
+	const { db } = await setup(t);
+	db.db.exec(
+		"INSERT INTO users (id, email, password_hash, name, created_at) VALUES ('colleague', 'colleague@example.com', 'hash', 'Colleague', 1);",
+	);
+	db.db
+		.prepare("UPDATE mailbox_agent_settings SET reviewer_user_id = 'colleague' WHERE mailbox_id = 'mailbox-a'")
+		.run();
+	// Still eligible by every other measure (autonomy on, AI on, the switch on): only the reviewer handoff excludes it.
+	insertMessage(db, STRIPE, { mailboxId: "mailbox-a", daysAgo: 1 });
+	const { scanCoverage } = await listPaymentsView(viewOf(owner));
+	assert.deepEqual(scanCoverage, [{ reason: "different_reviewer", messages: 1 }]);
+});
+
+test("automatic reading off for the whole install counts every owned mailbox, not just the ones already off", async (t) => {
+	const { db } = await setup(t);
+	// mailbox-a reads as eligible on its own settings; the install-level switch overrides that for everyone.
+	insertMessage(db, STRIPE, { mailboxId: "mailbox-a", daysAgo: 1 });
+	db.db.exec("UPDATE app_settings SET agent_auto_read_enabled = 0");
+	const { scanCoverage } = await listPaymentsView(viewOf(owner));
+	assert.deepEqual(scanCoverage, [{ reason: "automatic_reading_off", messages: 1 }]);
 });
 
 test("a finished scan sends a realtime notice of how many payments it found", async (t) => {
@@ -658,5 +695,39 @@ test("failStalledScan never fails a scan an active lease still holds", async (t)
 	// A run holds the lease (in the future): the race guard in failStalledScan's own WHERE must refuse to touch it,
 	// whatever the caller already decided from an earlier read.
 	assert.equal(await failStalledScan("owner", new Date()), false);
+	assert.equal((await listPaymentsView(viewOf(owner))).scan.status, "running");
+});
+
+test("Try again does not inherit a failed run's stale progress and get failed again at once", async (t) => {
+	const { db } = await setup(t);
+	await startScan("owner");
+	// A previous run's progress_at, left over from before this restart (startScan never touches it); started_at
+	// and updated_at are fresh, as Try again leaves them, except updated_at is aged past the 60-second freshness
+	// check alone, as a run that crashed right after restarting would.
+	db.db
+		.prepare(
+			"UPDATE finance_payment_scans SET progress_at = ?, updated_at = ?, lease_until = NULL WHERE user_id = 'owner'",
+		)
+		.run(epochSeconds(45 * 60_000), epochSeconds(65_000));
+	assert.deepEqual(await resumePaymentScans({}, cronContext()), { resumed: 1, failed: 0 });
+	assert.equal((await listPaymentsView(viewOf(owner))).scan.status, "running");
+});
+
+test("a scan waiting for Money Watch to come back on is never failed, however long it waits", async (t) => {
+	const { db } = await setup(t);
+	await startScan("owner");
+	db.db
+		.prepare(
+			"UPDATE finance_payment_scans SET started_at = ?, updated_at = ?, lease_until = NULL WHERE user_id = 'owner'",
+		)
+		.run(epochSeconds(45 * 60_000), epochSeconds(45 * 60_000));
+	db.db.exec("INSERT INTO module_settings (id, module_id, enabled, updated_at) VALUES ('ms-finance', 'finance', 0, 1)");
+	clearModuleStateCache();
+	await scanPayments({ kind: "finance.scan", userId: "owner" }, cronContext());
+	const row = db.db.prepare("SELECT progress_at FROM finance_payment_scans WHERE user_id = 'owner'").get();
+	assert.ok(row.progress_at, "the wait path moved progress_at, not just updated_at");
+	// Time passes again before the next cron tick; progress_at from the wait itself is what keeps it alive.
+	db.db.prepare("UPDATE finance_payment_scans SET updated_at = ? WHERE user_id = 'owner'").run(epochSeconds(65_000));
+	assert.deepEqual(await resumePaymentScans({}, cronContext()), { resumed: 1, failed: 0 });
 	assert.equal((await listPaymentsView(viewOf(owner))).scan.status, "running");
 });

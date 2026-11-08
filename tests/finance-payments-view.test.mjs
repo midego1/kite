@@ -193,18 +193,20 @@ test("the scan status line picks the right message for each status", () => {
 	);
 });
 
-test("scanCoverageTexts explains each gap it finds, never implying automatic reading fixes unauthenticated mail", () => {
+test("scanCoverageTexts explains each gap it finds, never implying automatic reading fixes what it cannot", () => {
 	assert.deepEqual(view.scanCoverageTexts([], t), []);
 	assert.deepEqual(
 		view.scanCoverageTexts(
 			[
 				{ reason: "automatic_reading_off", messages: 4 },
+				{ reason: "different_reviewer", messages: 2 },
 				{ reason: "no_authentication", messages: 7 },
 			],
 			t,
 		),
 		[
 			"{count, plural, one {# message} other {# messages}} in mailboxes without automatic reading were not scanned",
+			"{count, plural, one {# message} other {# messages}} are in mailboxes someone else reviews and were not scanned",
 			"{count, plural, one {# message} other {# messages}} from connected accounts or imports have no authentication result and are not recorded yet",
 		],
 	);

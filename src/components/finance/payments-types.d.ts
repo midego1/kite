@@ -42,10 +42,12 @@ export type ScanState = {
 
 /**
  * Mail "Scan last 90 days" never records, and why, so the Payments tab can say why a count seems low without
- * promising that turning on automatic reading would fix mail it cannot (`no_authentication`).
+ * promising a fix that would not help (`no_authentication`, `different_reviewer`).
  */
 export type ScanCoverageGap =
-	{ reason: "automatic_reading_off"; messages: number } | { reason: "no_authentication"; messages: number };
+	| { reason: "automatic_reading_off"; messages: number }
+	| { reason: "no_authentication"; messages: number }
+	| { reason: "different_reviewer"; messages: number };
 
 export type PaymentList = {
 	payments: PaymentItem[];

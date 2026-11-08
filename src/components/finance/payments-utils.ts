@@ -159,19 +159,20 @@ export function scanText(scan: ScanState, t: Translate): string {
 }
 
 /** One line per reason "Scan last 90 days" left mail out, so a fix that would not help one reason is never implied. */
+const SCAN_COVERAGE_KEYS: Record<ScanCoverageGap["reason"], MessageKey> = {
+	automatic_reading_off: msg(
+		"{count, plural, one {# message} other {# messages}} in mailboxes without automatic reading were not scanned",
+	),
+	different_reviewer: msg(
+		"{count, plural, one {# message} other {# messages}} are in mailboxes someone else reviews and were not scanned",
+	),
+	no_authentication: msg(
+		"{count, plural, one {# message} other {# messages}} from connected accounts or imports have no authentication result and are not recorded yet",
+	),
+};
+
 export function scanCoverageTexts(gaps: readonly ScanCoverageGap[], t: Translate): string[] {
-	return gaps.map((gap) => {
-		const values = { count: gap.messages };
-		return gap.reason === "automatic_reading_off"
-			? t(
-					"{count, plural, one {# message} other {# messages}} in mailboxes without automatic reading were not scanned",
-					values,
-				)
-			: t(
-					"{count, plural, one {# message} other {# messages}} from connected accounts or imports have no authentication result and are not recorded yet",
-					values,
-				);
-	});
+	return gaps.map((gap) => t(SCAN_COVERAGE_KEYS[gap.reason], { count: gap.messages }));
 }
 
 /** The amount as the input shows it, with the currency's own decimals ("17.99", "1500"). */

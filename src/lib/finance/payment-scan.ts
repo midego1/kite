@@ -3,7 +3,7 @@ import { getDb } from "@/db";
 import { financePaymentScans, financePayments } from "@/db/schema/finance";
 import { missingColumnFromError } from "@/lib/auth/user-lookup-utils";
 import { getEnv } from "@/lib/cloudflare";
-import { selectRows } from "@/lib/db/pending-columns";
+import { insertRow, selectRows } from "@/lib/db/pending-columns";
 import { createLogger } from "@/lib/logger.mjs";
 import { buildCallContext } from "@/lib/modules/capability-utils";
 import { moduleHost } from "@/lib/modules/host";
@@ -127,12 +127,23 @@ export async function startScan(userId: string, now = new Date()): Promise<ScanS
 		updatedAt: now,
 		finishedAt: null,
 	};
-	await onPaymentTables(() =>
-		db()
-			.insert(financePaymentScans)
-			.values({ userId, ...values })
-			.onConflictDoUpdate({ target: financePaymentScans.userId, set: values }),
-	);
+	await onPaymentTables(async () => {
+		const pg = db();
+		try {
+			await pg
+				.insert(financePaymentScans)
+				.values({ userId, ...values })
+				.onConflictDoUpdate({ target: financePaymentScans.userId, set: values });
+		} catch (error) {
+			if (!missingColumnFromError(error)) throw error;
+			// Migration 0095 not applied yet: `values` never names `error` or `progress_at`, but a single-row insert
+			// still fills in every nullable, default-less column of the schema, those two included. `insertRow`'s own
+			// retry drops exactly the missing ones (both are already null here, so nothing is lost) to get the row to
+			// exist; the update that follows only ever names `values`' own columns, which never has this problem.
+			await insertRow(pg, financePaymentScans, { userId, ...values }, { ignoreConflict: true });
+			await pg.update(financePaymentScans).set(values).where(eq(financePaymentScans.userId, userId));
+		}
+	});
 	await enqueueScan(userId);
 	return (await ownerScan(userId))!;
 }
@@ -297,11 +308,17 @@ export const scanPayments: CapabilityHandler = async (raw, cron): Promise<JsonVa
 	if (typeof userId !== "string" || !(await paymentTablesReady())) return { scanned: 0 };
 	const ctx = await ownerContext(cron, userId);
 	if (!ctx) {
-		// Money Watch is off for the owner: the scan waits, at the back of the recovery queue so it never blocks others.
-		await db()
-			.update(financePaymentScans)
-			.set({ updatedAt: new Date() })
-			.where(and(eq(financePaymentScans.userId, userId), eq(financePaymentScans.status, "running")));
+		// Money Watch is off for the owner: the scan waits, at the back of the recovery queue so it never blocks
+		// others, for as long as it takes; `progressAt` moves too, so the 30-minute safety net never mistakes a
+		// deliberate, possibly long wait for a stuck scan and fails it before Money Watch is back on.
+		const waiting = new Date();
+		const condition = and(eq(financePaymentScans.userId, userId), eq(financePaymentScans.status, "running"));
+		try {
+			await db().update(financePaymentScans).set({ updatedAt: waiting, progressAt: waiting }).where(condition);
+		} catch (error) {
+			if (missingColumnFromError(error) !== "progress_at") throw error;
+			await db().update(financePaymentScans).set({ updatedAt: waiting }).where(condition);
+		}
 		return { scanned: 0 };
 	}
 	const started = Date.now();
@@ -389,7 +406,10 @@ export const resumePaymentScans: CapabilityHandler = async (_input, cron): Promi
 	let resumed = 0;
 	let failed = 0;
 	for (const row of stalled) {
-		const progressSince = row.progressAt ?? row.startedAt;
+		// Never just `progressAt`: Try again resets `startedAt` to the restart but leaves a previous run's
+		// `progressAt` exactly as it was (`startScan` never writes it, only a page save or the Money-Watch-off wait
+		// does), so the later of the two is this attempt's own clock.
+		const progressSince = new Date(Math.max(row.progressAt?.getTime() ?? 0, row.startedAt.getTime()));
 		if (now.getTime() - progressSince.getTime() > STALE_SCAN_FAILED_AFTER_MS) {
 			if (await failStalledScan(row.userId, now)) failed += 1;
 			continue;

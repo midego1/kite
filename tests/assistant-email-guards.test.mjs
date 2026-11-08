@@ -11,9 +11,10 @@ const {
 	normalizedFromAddress,
 	normalizeMessageId,
 	senderHeaderNamesOther,
+	stripQuotedReplyText,
 } = await bundleModules("kite-assistant-email-guards-", [
 	[
-		"hasAssistantLoopHeader, hasSingleFromAddress, isEmptyEnvelopeSender, isNonRepliableSender, isWithinReplayWindow, normalizedFromAddress, normalizeMessageId, senderHeaderNamesOther",
+		"hasAssistantLoopHeader, hasSingleFromAddress, isEmptyEnvelopeSender, isNonRepliableSender, isWithinReplayWindow, normalizedFromAddress, normalizeMessageId, senderHeaderNamesOther, stripQuotedReplyText",
 		"src/lib/agent/email/guards-utils.ts",
 	],
 ]);
@@ -81,7 +82,25 @@ test("isWithinReplayWindow enforces the 24h-old, 1h-future window and fails clos
 
 test("normalizedFromAddress and normalizeMessageId are simple and case-insensitive", () => {
 	assert.equal(normalizedFromAddress("Jan <Jan@Example.com>"), "jan@example.com");
-	assert.equal(normalizeMessageId(" <REQ-1@Example.com> "), "<req-1@example.com>");
+	assert.equal(normalizeMessageId(" <REQ-1@Example.com> "), "req-1@example.com");
 	assert.equal(normalizeMessageId(null), null);
 	assert.equal(normalizeMessageId(""), null);
+});
+
+test("stripQuotedReplyText cuts at the first quote introduction, and leaves plain text whole", () => {
+	assert.equal(
+		stripQuotedReplyText(
+			"Thanks, that works.\n\nOn Mon, Jan 5, 2026 at 9:00 AM Jan <jan@example.com> wrote:\n> Tuesday?",
+		),
+		"Thanks, that works.",
+	);
+	assert.equal(
+		stripQuotedReplyText("Sounds good.\n\n----- Original Message -----\nFrom: Jan\nTuesday?"),
+		"Sounds good.",
+	);
+	assert.equal(stripQuotedReplyText("Sounds good.\n\n> Tuesday?\n> Does that work?"), "Sounds good.");
+	assert.equal(
+		stripQuotedReplyText("No quote marker here, just > a lone one."),
+		"No quote marker here, just > a lone one.",
+	);
 });

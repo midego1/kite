@@ -151,6 +151,27 @@ async function parseAndGuard(
 	return { parsed, fromAddress };
 }
 
+/**
+ * The earlier request this one follows up on (spec §8.5): a prior accepted request from the same user whose own
+ * reply's Message-ID this one's `In-Reply-To` names. Null for a fresh request. Checked after sender mapping, so
+ * only the owner's own `In-Reply-To` can continue their conversation, never anyone else's.
+ */
+async function findFollowUpParent(
+	db: AppDatabase,
+	userId: string,
+	inReplyTo: string | null,
+): Promise<{ conversationId: string; mailboxId: string } | null> {
+	if (!inReplyTo) return null;
+	const [parent] = await db
+		.select({ conversationId: assistantEmailRequests.conversationId, mailboxId: assistantEmailRequests.mailboxId })
+		.from(assistantEmailRequests)
+		.where(and(eq(assistantEmailRequests.userId, userId), eq(assistantEmailRequests.replyMessageId, inReplyTo)))
+		.limit(1);
+	return parent?.conversationId && parent.mailboxId
+		? { conversationId: parent.conversationId, mailboxId: parent.mailboxId }
+		: null;
+}
+
 /** Whether `address` is itself an assistant address of this install (never answered, to avoid a reply loop). */
 async function isFromAnAssistantAddress(
 	db: AppDatabase,
@@ -199,9 +220,10 @@ async function withinLimits(env: CloudflareEnv, db: AppDatabase, userId: string,
 
 /**
  * Accepts or drops a request to an assistant address (docs/specs/assistant-by-email.md §4, §5, §6, §7). Owns the
- * raw R2 object from here: every "drop silently" path deletes it without creating a row or making a model call
- * (there is no model call at all yet — this Mission ends at `status: "queued"`; a later one runs the chat engine
- * and sends the reply, including the "could not answer" reply this function's limit checks do not send today).
+ * raw R2 object from here: every "drop silently" path deletes it without creating a row or making a model call.
+ * A request that passes every check is inserted as `queued` and handed to `processAssistantEmailRequest`
+ * (`process.ts`), which runs the model and sends the reply, including the "could not answer" reply a limit this
+ * function enforces does not send itself (it has no conversation yet to point that reply at).
  */
 export async function acceptAssistantRequest(
 	env: CloudflareEnv,
@@ -222,7 +244,11 @@ export async function acceptAssistantRequest(
 	const messageId = normalizeMessageId(parsed.messageId);
 	if (!messageId) return drop();
 
-	const mailboxId = authorized.mailboxId ?? (await defaultContextMailboxId(db, authorized.userId));
+	// A follow-up's quoted earlier answer carries the parent's mailbox and continues its conversation (§8.5); every
+	// other check above still applies to it, same as a fresh request.
+	const followUp = await findFollowUpParent(db, authorized.userId, normalizeMessageId(parsed.inReplyTo));
+	const mailboxId =
+		followUp?.mailboxId ?? authorized.mailboxId ?? (await defaultContextMailboxId(db, authorized.userId));
 	if (!mailboxId) return drop();
 
 	const requestId = newId("aer");
@@ -233,6 +259,7 @@ export async function acceptAssistantRequest(
 			userId: authorized.userId,
 			assistantAddressId: assistantAddressId ?? null,
 			mailboxId,
+			conversationId: followUp?.conversationId ?? null,
 			rawR2Key: payload.rawR2Key,
 			providerMessageId: messageId,
 			fromAddr: fromAddress,

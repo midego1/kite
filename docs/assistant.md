@@ -314,7 +314,7 @@ Work in progress ([milestone 30](../ROADMAP.md#milestone-30-assistant-by-email-p
 
 A request only ever runs for the person who sent it: Kite checks that the message passed strict sender authentication (a DMARC pass, or a DKIM signature aligned with the From domain) from a hop it trusts, and that the From address is exactly one of the user's own mailboxes or aliases. Anything else — an unauthenticated sender, a mail loop, an auto-reply, a replayed message, an unknown or shared-mailbox address — is dropped without a reply and without being recorded, so it costs nothing and reveals nothing about who uses the address.
 
-A request that passes every check today is only recorded as received; nothing yet runs it or replies. No user can opt in yet, so nothing reaches this path for a real mailbox until that lands. See [Privacy](privacy.md) for what is stored about a request and for how long.
+Mail sent to the assistant is treated the same way a chat request is: nothing is sent or changed without a confirmation inside Kite, and the reply by email never contains the answer itself, only a link that opens the conversation in the assistant panel (with the owner signed in), plus one line for each draft review or other pending action it would like to take. The conversation shows up in the panel like any other chat, with an envelope icon marking it as a request by email; replying to the assistant's own reply continues the same conversation instead of starting a new one. When a request cannot be answered (the daily limit is reached, no AI provider is configured, the mailbox's AI is off), the reply says so in plain words instead, at most once an hour. See [Privacy](privacy.md) for what is stored about a request and for how long.
 
 ## Evaluating a model
 

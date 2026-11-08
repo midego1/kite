@@ -175,13 +175,16 @@ test("an authenticated request from the owner's own mailbox is accepted and queu
 	assert.deepEqual(queued, [{ kind: "agent.assistant_email", requestId: rows[0].id }]);
 	assert.ok(await bucket.get(rawR2Key), "the raw object is kept until the queue consumer runs");
 
-	// This Mission's queue consumer runs no model and sends no reply, so it leaves the row exactly as intake left
-	// it — still `queued`, raw object and all — rather than claiming `answered`. A later Mission replaces it.
+	// This fixture configures no AI provider and no sending provider, so the run ends in a refusal rather than
+	// an answer; the chat engine itself is exercised end to end in `e2e/104-assistant-by-email.spec.ts`, with a
+	// real test model and a sending provider. Here the point is that the raw object and the row are always
+	// finished off, however the run ends.
 	await processAssistantEmailRequest(env, rows[0].id);
 	const after = await requests(database);
-	assert.equal(after[0].status, "queued");
-	assert.equal(after[0].raw_r2_key, rawR2Key);
-	assert.ok(await bucket.get(rawR2Key));
+	assert.equal(after[0].status, "refused");
+	assert.match(after[0].reason, /^not_configured/);
+	assert.equal(after[0].raw_r2_key, null);
+	assert.equal(await bucket.get(rawR2Key), null);
 });
 
 test("an aligned DKIM pass with no SPF result also authenticates the request", async (t) => {

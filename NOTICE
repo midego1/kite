@@ -25,6 +25,9 @@ match (src/lib/domains/dns-audit.ts, src/lib/domains/receiving-dns.ts,
 src/lib/domains/resend-receiving.ts) are adapted from Mailflare commit 64274a6 by
 Hieu Nguyen (AGPL-3.0).
 
+The mailbox-manager domain delegation in account creation (src/app/api/accounts/create.ts,
+src/app/api/accounts/utils.ts) is adapted from Mailflare commit 638a5e6 by Hieu Nguyen (AGPL-3.0).
+
 Third-party code
 ----------------
 

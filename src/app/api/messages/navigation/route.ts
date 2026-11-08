@@ -5,11 +5,14 @@ import { getDb } from "@/db";
 import { messages } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/cookies";
 import { getEnv } from "@/lib/cloudflare";
+import { viaSearchAvailable } from "@/lib/external-accounts/via";
+import { viaSearchQuery } from "@/lib/external-accounts/via-utils";
 import { listAccessibleMailboxIds } from "@/lib/mailboxes/access";
 import { resolveMailboxScope } from "@/lib/mailboxes/scope-utils";
 import { rowConversationKey } from "@/lib/messages/conversation-key";
 import { mailboxScopeCondition } from "@/lib/messages/mailbox-scope";
 import { SENT_FOLDER_STATUSES } from "@/lib/messages/send-state-utils";
+import { buildSearchConditions } from "@/lib/search/conditions";
 import type { MessageFolder } from "@/hooks/types";
 import { SCREENING_STATUS } from "@/lib/screener/screener-utils";
 import type { MessageNavigationEntry } from "./types";
@@ -66,6 +69,14 @@ export async function GET(request: Request) {
 	const conditions: SQL[] = [mailboxScopeCondition(scope.ids, user.id)];
 
 	conditions.push(...folderConditions(folder, folderId));
+	// An open account view (`?via=`) narrows the list to that account's mail, so Newer and Older stay inside it too.
+	const view = params.get("via")?.trim();
+	if (view) {
+		const search = viaSearchQuery({ address: view });
+		conditions.push(
+			...buildSearchConditions(search, "UTC", { connectedAccounts: await viaSearchAvailable(env, search) }),
+		);
+	}
 
 	const rows = await db
 		.select({

@@ -209,13 +209,20 @@ function markLabel(output: Record<string, unknown>): string {
 /** A pending action's one reply line (spec §9): a send review gets its own URL, everything else the conversation's. */
 async function actionLink(
 	db: AppDatabase,
+	appUrl: string | null | undefined,
 	conversationUrl: string | null,
 	toolName: string,
 	output: Record<string, unknown>,
 ): Promise<AssistantReplyLink | null> {
 	if (output.status !== "pending_approval") return null;
 	if (toolName === "review_draft_send") {
-		const url = typeof output.reviewUrl === "string" ? output.reviewUrl : conversationUrl;
+		// `reviewUrl` is a bare path (`/agent/review/<id>`) meant for a browser already on Kite; a reply read in an
+		// email client has no such context, so it must be made absolute the same way the conversation link is, and
+		// fall back to the conversation link (never a dead relative URL) when no public origin is configured.
+		const url =
+			typeof output.reviewUrl === "string"
+				? (absoluteAppUrl(appUrl, output.reviewUrl) ?? conversationUrl)
+				: conversationUrl;
 		return url ? { label: `Review the draft to ${await reviewDraftRecipient(db, output.draftId)}`, url } : null;
 	}
 	const label = PENDING_ACTION_LABELS[toolName]?.(output);
@@ -325,6 +332,7 @@ function buildUserTurn(request: RequestRow, parsed: EligibleRequest["parsed"]): 
 /** Stores every tool call's result exactly as chat does, and collects the reply lines they earn (spec §9). */
 async function persistToolResults(
 	db: AppDatabase,
+	appUrl: string | null | undefined,
 	conversationId: string,
 	conversationUrl: string | null,
 	toolResults: readonly { toolName: string; output: unknown }[],
@@ -341,6 +349,7 @@ async function persistToolResults(
 		if (!toolResult.output || typeof toolResult.output !== "object") continue;
 		const link = await actionLink(
 			db,
+			appUrl,
 			conversationUrl,
 			toolResult.toolName,
 			toolResult.output as Record<string, unknown>,
@@ -410,7 +419,7 @@ async function runModelTurn(
 				await spend.afterStep(usage, finishReason);
 			},
 		});
-		const actionLinks = await persistToolResults(db, conversationId, conversationUrl, result.toolResults);
+		const actionLinks = await persistToolResults(db, env.APP_URL, conversationId, conversationUrl, result.toolResults);
 		const response = result.text.trim() || (result.finishReason === "tool-calls" ? AGENT_STEP_LIMIT_FALLBACK : "");
 		if (response)
 			await db

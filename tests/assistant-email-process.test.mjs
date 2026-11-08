@@ -51,7 +51,10 @@ function startFakeChatServer() {
 		let raw = "";
 		for await (const part of request) raw += part;
 		requests.push(JSON.parse(raw));
-		const step = steps.shift() ?? { content: "Done." };
+		const entry = steps.shift() ?? { content: "Done." };
+		// A function step reads the previous step's real tool result (a generated draft id, say) out of the
+		// conversation history the request carries, so a later tool call can reference it correctly.
+		const step = typeof entry === "function" ? entry(requests[requests.length - 1]) : entry;
 		const message = step.toolCalls
 			? {
 					role: "assistant",
@@ -230,6 +233,30 @@ test("a model run that succeeds but cannot send its reply is failed, never answe
 	assert.equal(after.status, "failed");
 	assert.equal(after.reason, "send_failed");
 	assert.equal(after.reply_message_id, null);
+});
+
+test("a send review's link is an absolute URL, not the bare path meant for a browser already on Kite", async (t) => {
+	const { database, chat, sent, requestId } = await setup(t);
+	chat.scriptStep({
+		toolCalls: [{ name: "draft_reply", arguments: { emailId: "m1", body: "Tuesday works for the roof." } }],
+	});
+	chat.scriptStep((lastRequest) => {
+		const toolMessage = [...lastRequest.messages].reverse().find((message) => message.role === "tool");
+		const { draftId } = JSON.parse(toolMessage.content);
+		return { toolCalls: [{ name: "review_draft_send", arguments: { draftId, expectedRevision: 1 } }] };
+	});
+	chat.scriptStep({ content: "I drafted a reply for your review." });
+
+	await processAssistantEmailRequest(globalThis.__kiteNodeEnv, requestId);
+
+	const after = row(database, requestId);
+	assert.equal(after.status, "answered");
+	assert.equal(sent.length, 1);
+	const reviewLine = sent[0].text.split("\n").find((line) => line.startsWith("Review the draft to"));
+	assert.ok(reviewLine, sent[0].text);
+	const url = reviewLine.split(": ")[1];
+	// A bare `/agent/review/<id>` means nothing read in an email client; it must carry the configured origin.
+	assert.match(url, /^https:\/\/mail\.example\.com\/agent\/review\//);
 });
 
 test("without an AI provider configured, the request is refused and the reply says so in plain words", async (t) => {

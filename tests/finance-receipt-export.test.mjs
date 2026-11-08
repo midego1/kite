@@ -48,12 +48,39 @@ test("blankRemoteImages replaces every non-data image source, including cid: ref
 	assert.ok(out.includes("data:image/png;base64,AAAA"));
 });
 
-test("blankRemoteStyleUrls removes a remote url() but keeps data: and relative values", () => {
+test("blankRemoteStyleUrls drops the whole style value with a remote url(), but keeps a bare data: one", () => {
 	const html = `<div style="background:url('https://evil.example/bg.png')">x</div><div style="background:url(data:image/png;base64,AAAA)">y</div>`;
 	const out = blankRemoteStyleUrls(html);
 	assert.ok(!out.includes("evil.example"));
-	assert.ok(out.includes("background:none"));
+	assert.ok(out.includes('<div style="">x</div>'));
 	assert.ok(out.includes("data:image/png;base64,AAAA"));
+});
+
+test("blankRemoteStyleUrls drops a style value whose data: claim does not actually start the url() content", () => {
+	const html = `<div style="background:url(https://evil.example/data:fake)">x</div>`;
+	assert.ok(!blankRemoteStyleUrls(html).includes("evil.example"));
+});
+
+test("blankRemoteStyleUrls catches the four bypasses of the naive quoted-url blocklist", () => {
+	const cases = [
+		// &quot; is what the stored-mail sanitizer writes for a literal quote in an attribute value.
+		`<div style="background:url(&quot;https://evil.example/p.gif&quot;)">x</div>`,
+		// A CSS backslash escape inside the function name itself.
+		`<div style="background:u\\72l(https://evil.example/p.gif)">x</div>`,
+		// A CSS backslash escape inside the URL.
+		`<div style="background:url(\\68ttps://evil.example/p.gif)">x</div>`,
+		// image-set() is a second CSS function that can fetch a remote image.
+		`<div style="background-image:image-set('https://evil.example/p.gif' 1x)">x</div>`,
+	];
+	for (const html of cases) {
+		const out = blankRemoteStyleUrls(html);
+		assert.ok(!out.includes("evil.example"), html);
+	}
+});
+
+test("blankRemoteStyleUrls leaves an ordinary style value with no url-like content untouched", () => {
+	const html = `<div style="color: red; font-weight: bold">x</div>`;
+	assert.equal(blankRemoteStyleUrls(html), html);
 });
 
 test("noopenerLinks adds rel to a target-opened link without touching an existing rel", () => {
@@ -76,6 +103,16 @@ test("buildReceiptHtmlDocument is self-contained: no remote image reference, hea
 	assert.ok(doc.includes("<title>Invoice INV-2041</title>"));
 	assert.ok(doc.includes("Hosting Co &lt;billing@hosting.example&gt;"));
 	assert.ok(doc.includes("€120.00"));
+});
+
+test("buildReceiptHtmlDocument sets a Content-Security-Policy that blocks anything but an inlined image", () => {
+	const doc = buildReceiptHtmlDocument(HEADER, "<p>Body</p>");
+	assert.match(doc, /<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:;/);
+});
+
+test("buildReceiptHtmlDocument contains the body so a sender's position: fixed/absolute cannot cover the header", () => {
+	const doc = buildReceiptHtmlDocument(HEADER, `<p style="position:fixed">fake header</p>`);
+	assert.match(doc, /\.kite-receipt-body\s*\{[^}]*contain:\s*paint/);
 });
 
 test("buildReceiptHtmlDocument escapes a subject with HTML-significant characters", () => {

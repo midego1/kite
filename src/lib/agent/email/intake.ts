@@ -10,7 +10,7 @@ import { wasForwardedByKite } from "@/lib/email/account-forwarding";
 import type { InboundQueueMessage } from "@/lib/email/inbound";
 import { MimeLimitError, parseRawMime } from "@/lib/email/parse";
 import { parseRecipientAddress } from "@/lib/email/recipient-address";
-import { findAddressMailbox, isAssistantAddressTaken } from "@/lib/email/routing";
+import { findSenderMailbox, isAssistantAddressTaken } from "@/lib/email/routing";
 import { newId } from "@/lib/ids";
 import { analyzeAuthentication } from "@/lib/spam/analyzers/authentication";
 import {
@@ -49,21 +49,27 @@ async function deleteRaw(env: CloudflareEnv, rawR2Key: string): Promise<void> {
 	}
 }
 
-/** The user a From address belongs to (spec §5.3): an own mailbox or alias (personal only), or a verified extra address. */
+/**
+ * The user a From address belongs to (spec §5.3): an own mailbox or alias (personal only), matched exactly —
+ * dots and `+tags` kept as written, never folded the way a *receiving* address is — or a verified extra address.
+ * Folding here would let anyone who can create a mailbox or alias on the owner's domain (`owner+bot@…`, `o.wner@…`)
+ * have their request mapped onto the owner, since delivery folds those variants onto the same inbox.
+ */
 async function mapSenderToUser(
 	db: AppDatabase,
 	fromAddress: string,
 ): Promise<{ userId: string; mailboxId: string | null } | null> {
-	const parsed = parseRecipientAddress(fromAddress);
-	if (parsed) {
+	const at = fromAddress.lastIndexOf("@");
+	if (at > 0) {
+		const hostname = fromAddress.slice(at + 1);
 		const [domain] = await db
 			.select({ id: domains.id })
 			.from(domains)
-			.where(and(eq(domains.hostname, parsed.domain), eq(domains.status, "active")))
+			.where(and(eq(domains.hostname, hostname), eq(domains.status, "active")))
 			.limit(1);
 		if (domain) {
-			const mailbox = await findAddressMailbox(db, domain.id, parsed);
-			if (mailbox && mailbox.type === "personal") return { userId: mailbox.userId, mailboxId: mailbox.id };
+			const mailbox = await findSenderMailbox(db, domain.id, hostname, fromAddress);
+			if (mailbox) return { userId: mailbox.userId, mailboxId: mailbox.mailboxId };
 		}
 	}
 	// A verified extra address (added and confirmed through Settings → Assistant, a later Mission); unverified or

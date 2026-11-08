@@ -127,7 +127,7 @@ export async function resolveInboundAddress(
 }
 
 /** The mailbox an address on `domainId` delivers to: exact mailbox, then alias, then use-all-domains mailbox. */
-export async function findAddressMailbox(
+async function findAddressMailbox(
 	db: AppDatabase,
 	domainId: string,
 	parsed: { localPart: string; normalizedAddress: string },
@@ -150,6 +150,69 @@ export async function findAddressMailbox(
 export async function isAddressDelivered(db: AppDatabase, domainId: string, address: string): Promise<boolean> {
 	const parsed = parseRecipientAddress(address);
 	return !parsed || !!(await findAddressMailbox(db, domainId, parsed));
+}
+
+/** A personal mailbox's own id and owner. */
+type OwnMailbox = { mailboxId: string; userId: string };
+
+/**
+ * The personal mailbox whose own address is exactly `address` (already lower-cased; dots and `+tags` are never
+ * folded), or null. Unlike `findAddressMailbox` (receiving, which folds dots and `+tags` the way delivery does so
+ * a tagged variant still reaches the right inbox), this is for deciding *whose* request a message is — spec
+ * §5.3 keeps the From address written exactly, because anyone who can create a mailbox or alias on a domain the
+ * owner's assistant uses could otherwise send as `owner+x@domain` and have it fold onto the owner's own mailbox.
+ * A shared mailbox never matches here (several people can send as it), and a disabled one never matches either.
+ */
+export async function findSenderMailbox(
+	db: AppDatabase,
+	domainId: string,
+	hostname: string,
+	address: string,
+): Promise<OwnMailbox | null> {
+	const at = address.lastIndexOf("@");
+	if (at <= 0) return null;
+	const localPart = address.slice(0, at);
+
+	const [exact] = await db
+		.select({ mailboxId: mailboxes.id, userId: mailboxes.userId })
+		.from(mailboxes)
+		.where(
+			and(
+				eq(mailboxes.domainId, domainId),
+				eq(mailboxes.localPart, localPart),
+				eq(mailboxes.type, "personal"),
+				eq(mailboxes.disabled, false),
+			),
+		)
+		.limit(1);
+	if (exact) return exact;
+
+	const [viaAlias] = await db
+		.select({ mailboxId: mailboxes.id, userId: mailboxes.userId })
+		.from(mailboxAliases)
+		.innerJoin(mailboxes, eq(mailboxAliases.mailboxId, mailboxes.id))
+		.where(
+			and(
+				eq(mailboxAliases.domainId, domainId),
+				eq(mailboxAliases.localPart, localPart),
+				eq(mailboxes.type, "personal"),
+				eq(mailboxes.disabled, false),
+			),
+		)
+		.limit(1);
+	if (viaAlias) return viaAlias;
+
+	// A use-all-domains mailbox answers on every active domain of its owner; `getMailboxDomainAddresses` already
+	// returns its exact addresses (primary, aliases, every assigned domain), none of them folded.
+	const candidates = await db
+		.select()
+		.from(mailboxes)
+		.where(and(eq(mailboxes.useAllDomains, true), eq(mailboxes.type, "personal"), eq(mailboxes.disabled, false)));
+	for (const mailbox of candidates) {
+		const addresses = await getMailboxDomainAddresses(db, mailbox);
+		if (addresses.includes(address)) return { mailboxId: mailbox.id, userId: mailbox.userId };
+	}
+	return null;
 }
 
 /**

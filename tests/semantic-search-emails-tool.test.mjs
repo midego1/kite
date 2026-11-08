@@ -127,3 +127,74 @@ test('search_emails mode: "meaning" still filters by the query when meaning genu
 	);
 	assert.match(result.note, /unavailable right now \(no_vector_store\)/);
 });
+
+/** 45 messages matching "invoice" in one mailbox, plus 10 unrelated ones, search by meaning off (the default). */
+async function fixtureForPaging(t) {
+	const database = new m.SqliteDatabase(":memory:");
+	t.after(() => database.db.close());
+	await m.applyMigrations(database, join(root, "drizzle/migrations"));
+	database.db.exec(`
+		INSERT INTO users (id, email, password_hash, name, role, created_at) VALUES ('owner', 'owner@example.test', 'hash', 'Owner', 'admin', 1);
+		INSERT INTO domains (id, user_id, hostname, zone_id, status, created_at) VALUES ('domain', 'owner', 'example.test', 'zone', 'active', 1);
+		INSERT INTO mailboxes (id, user_id, domain_id, local_part, created_at) VALUES ('box', 'owner', 'domain', 'owner', 1);
+	`);
+	const matching = Array.from(
+		{ length: 45 },
+		(_, index) =>
+			`('kw-${String(index).padStart(2, "0")}', 'owner', 'box', 'inbound', 'a@partner.test', 'owner@example.test', 'Invoice ${index}', 'received', ${index + 1})`,
+	).join(",\n");
+	const other = Array.from(
+		{ length: 10 },
+		(_, index) =>
+			`('other-${String(index).padStart(2, "0")}', 'owner', 'box', 'inbound', 'b@elsewhere.test', 'owner@example.test', 'Weekend plans ${index}', 'received', ${1000 + index})`,
+	).join(",\n");
+	database.db.exec(
+		`INSERT INTO messages (id, user_id, mailbox_id, direction, from_addr, to_addr, subject, status, created_at) VALUES ${matching}, ${other};`,
+	);
+	const env = { DB: database, KITE_RUNTIME: "node" };
+	const context = {
+		env,
+		user: { id: "owner", email: "owner@example.test", role: "admin" },
+		mailboxId: "box",
+		origin: "mcp",
+	};
+	return (input) => m.runEmailTool(context, "search_emails", input);
+}
+
+/** Pages through `search(input)` by its own returned `nextCursor` until null, collecting every email id seen. */
+async function pageThrough(search, input) {
+	const seen = [];
+	let cursor;
+	for (let guard = 0; guard < 10; guard++) {
+		const page = await search({ ...input, cursor });
+		seen.push(...page.emails.map((email) => email.id));
+		if (!page.nextCursor) return seen;
+		cursor = page.nextCursor;
+	}
+	throw new Error("too many pages");
+}
+
+test("search_emails pages through every match exactly once with its own nextCursor, which the input schema used to drop (N-4 of review round 7)", async (t) => {
+	const search = await fixtureForPaging(t);
+	const allMatches = new Set(Array.from({ length: 45 }, (_, index) => `kw-${String(index).padStart(2, "0")}`));
+
+	// Keyword mode: the plain keyword path, paginated by id.
+	const keywordSeen = await pageThrough(search, { query: "invoice", mode: "keyword", limit: 20 });
+	assert.equal(keywordSeen.length, 45, "every match, no gaps");
+	assert.equal(new Set(keywordSeen).size, 45, "no match reached twice");
+	assert.deepEqual(new Set(keywordSeen), allMatches);
+
+	// An operator-only query (no free text once "from:" is split out): tryHybrid needs free text, so this always
+	// takes the same plain keyword path, cursor and all, whatever mode asks for.
+	const operatorSeen = await pageThrough(search, { query: "from:a@partner.test", mode: "both", limit: 20 });
+	assert.equal(operatorSeen.length, 45);
+	assert.equal(new Set(operatorSeen).size, 45);
+	assert.deepEqual(new Set(operatorSeen), allMatches);
+
+	// The fallback case (N-3 of review round 6): meaning asked for for every page, but never attempted (the
+	// feature is off in this fixture) — each page still falls through to the plain keyword path and its cursor.
+	const fallbackSeen = await pageThrough(search, { query: "invoice", mode: "meaning", limit: 20 });
+	assert.equal(fallbackSeen.length, 45);
+	assert.equal(new Set(fallbackSeen).size, 45);
+	assert.deepEqual(new Set(fallbackSeen), allMatches);
+});

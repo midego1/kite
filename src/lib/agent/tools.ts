@@ -68,6 +68,11 @@ export const emailToolSchemas = {
 			.describe(
 				"keyword matches exact words; meaning finds mail by what it means, for questions about topics rather than exact words; both (the default) tries meaning and falls back to keyword where it is unavailable.",
 			),
+		cursor: id
+			.nullish()
+			.describe(
+				"Omit or set to null for the first page. For later pages, pass only the exact nextCursor returned by search_emails for this mailbox, query and mode. Stop when nextCursor is null. Never invent a cursor or use a page number or offset such as '0'.",
+			),
 	}),
 	count_emails: z.object({
 		query: z

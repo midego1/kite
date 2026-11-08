@@ -175,11 +175,13 @@ test("an authenticated request from the owner's own mailbox is accepted and queu
 	assert.deepEqual(queued, [{ kind: "agent.assistant_email", requestId: rows[0].id }]);
 	assert.ok(await bucket.get(rawR2Key), "the raw object is kept until the queue consumer runs");
 
+	// This Mission's queue consumer runs no model and sends no reply, so it leaves the row exactly as intake left
+	// it — still `queued`, raw object and all — rather than claiming `answered`. A later Mission replaces it.
 	await processAssistantEmailRequest(env, rows[0].id);
 	const after = await requests(database);
-	assert.equal(after[0].status, "answered");
-	assert.equal(after[0].raw_r2_key, null);
-	assert.equal(await bucket.get(rawR2Key), null);
+	assert.equal(after[0].status, "queued");
+	assert.equal(after[0].raw_r2_key, rawR2Key);
+	assert.ok(await bucket.get(rawR2Key));
 });
 
 test("an aligned DKIM pass with no SPF result also authenticates the request", async (t) => {

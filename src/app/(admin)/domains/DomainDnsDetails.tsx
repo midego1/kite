@@ -8,6 +8,7 @@ import {
 	getSendingStatusLabel,
 } from "./utils";
 import { ROW_GRID, StatusBadge, StatusRow } from "./status-row";
+import AssistantAddressSection from "./AssistantAddressSection";
 import CloudflareReceivingConfig from "./CloudflareReceivingConfig";
 import DnsSetupFeedback from "./DnsSetupFeedback";
 import ReceivingSetupSection from "./ReceivingSetupSection";
@@ -150,6 +151,7 @@ export default function DomainDnsDetails({
 				cloudflareConfig={cloudflareConfig}
 				cloudflareOk={!!sendingOk && audit?.dkim.status === "ok"}
 			/>
+			<AssistantAddressSection domain={domain} />
 		</div>
 	);
 }

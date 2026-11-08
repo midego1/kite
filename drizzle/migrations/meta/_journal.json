@@ -694,6 +694,13 @@
       "when": 1794096000000,
       "tag": "0095_add_finance_payment_scan_error",
       "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "6",
+      "when": 1794182400000,
+      "tag": "0096_add_assistant_email",
+      "breakpoints": true
     }
   ]
 }

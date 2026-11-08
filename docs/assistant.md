@@ -309,6 +309,14 @@ Ask the assistant to add a receipt or invoice to your subscriptions ("add this t
 
 The `open_page` tool gives you a link to a page in Kite, such as the inbox, Settings or a date in Calendar. The model can only pick from the pages that are on for you, and Kite builds the link itself, so it always points inside Kite. Nothing opens until you click the link. `open_page` exists only in chat. Automatic reading never gets tools.
 
+## Assistant by email
+
+Work in progress ([milestone 30](../ROADMAP.md#milestone-30-assistant-by-email-proposed)): an admin can create one assistant address per domain under Domains → a domain's details, such as `assistant@your-domain`, once the domain is active, receives through Cloudflare Email Routing or Amazon SES, and has a sending provider set up (Resend-received domains and the direct SMTP listener are not supported yet).
+
+A request only ever runs for the person who sent it: Kite checks that the message passed strict sender authentication (a DMARC pass, or a DKIM signature aligned with the From domain) from a hop it trusts, and that the From address is exactly one of the user's own mailboxes or aliases. Anything else — an unauthenticated sender, a mail loop, an auto-reply, a replayed message, an unknown or shared-mailbox address — is dropped without a reply and without being recorded, so it costs nothing and reveals nothing about who uses the address.
+
+A request that passes every check today is only recorded as received; nothing yet runs it or replies. No user can opt in yet, so nothing reaches this path for a real mailbox until that lands. See [Privacy](privacy.md) for what is stored about a request and for how long.
+
 ## Evaluating a model
 
 `node scripts/agent/injection-eval.mjs` runs a corpus of hostile messages through the real triage and draft pipeline against a model you choose and exits non-zero on a policy breach. `node scripts/agent/fake-model-server.mjs` starts a local fake model for manual checks, which needs `AI_ALLOW_INSECURE_LOOPBACK` outside production. With that flag, `AI_TEST_TIMEOUT_MS` shortens the Summarize timeout (the e2e server sets 5 seconds), so a spec can show the timeout message; it is ignored in production. Neither runs in CI against a real provider.

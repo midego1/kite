@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { STORAGE_STATE, SUPPORT_ADDRESS } from "./support/constants";
-import { apiContext, deliverInbound, openMessage, uniqueToken } from "./support/helpers";
+import { apiContext, deliverInbound, openMessage, uniqueToken, waitForMessage } from "./support/helpers";
 
 async function deliverMany(labels: string[]): Promise<string[]> {
 	const api = await apiContext(STORAGE_STATE);
@@ -161,6 +161,54 @@ test("a touch long press with no click right after it leaves the row's next tap 
 	await link.dispatchEvent("pointerup", press(2));
 	await link.dispatchEvent("click", { bubbles: true, cancelable: true });
 	await expect(page.getByRole("heading", { level: 1, name: first })).toBeVisible();
+	await context.close();
+});
+
+test("a touch long press that fires mid-gesture disarms a swipe the same finger goes on to make", async ({
+	browser,
+}) => {
+	const api = await apiContext(STORAGE_STATE);
+	const subject = `Long press then swipe ${uniqueToken()}`;
+	const message = await deliverInbound(api, { from: `"Picker" <picker@outside.test>`, to: SUPPORT_ADDRESS, subject });
+	await api.dispose();
+	const context = await browser.newContext({
+		storageState: STORAGE_STATE,
+		hasTouch: true,
+		viewport: { width: 390, height: 844 },
+	});
+	const page = await context.newPage();
+	await page.goto("/inbox");
+	const row = rowFor(page, subject);
+	await expect(row).toBeVisible();
+	const box = (await row.boundingBox())!;
+	const point = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+	const move = (pointerId: number, dx: number) => ({
+		pointerId,
+		pointerType: "touch",
+		clientX: point.x + dx,
+		clientY: point.y,
+		bubbles: true,
+	});
+
+	await row.dispatchEvent("pointerdown", move(1, 0));
+	await page.waitForTimeout(650); // Past LONG_PRESS_MS (500ms): the row is now selected.
+	await expect(page.getByText("1 selected")).toBeVisible();
+	await expect(row.getByRole("checkbox")).toBeChecked();
+
+	// The same finger, still down, now drags well past the swipe's own commit distance (88px) and releases:
+	// without disarming the row's swipe-to-archive on the long press firing, this would archive the message
+	// the long press had just selected instead.
+	await row.dispatchEvent("pointermove", move(1, -120));
+	await row.dispatchEvent("pointerup", move(1, -120));
+	await expect(row).toBeVisible();
+	await expect(row.getByRole("checkbox")).toBeChecked();
+
+	const check = await apiContext(STORAGE_STATE);
+	try {
+		await waitForMessage(check, subject, { status: "received" });
+	} finally {
+		await check.dispose();
+	}
 	await context.close();
 });
 

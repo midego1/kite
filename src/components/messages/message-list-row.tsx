@@ -2,6 +2,7 @@
 
 import clsx from "clsx";
 import Link from "next/link";
+import { useRef } from "react";
 import { Archive, Mail, MailOpen } from "lucide-react";
 import { ContactAvatar } from "@/components/contacts/contact-avatar";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -23,7 +24,7 @@ import {
 	UnreadDot,
 } from "./message-row-parts";
 import { getStackedRowDensity, getWideRowDensity } from "./reading-layout-utils";
-import { SwipeableRow } from "./swipeable-row";
+import { SwipeableRow, type SwipeableRowHandle } from "./swipeable-row";
 import type { MessageListRowProps } from "./types";
 import { useMessageListRow } from "./use-message-list-row";
 import { useRowLongPress } from "./use-row-long-press";
@@ -462,15 +463,23 @@ function WideMessageRow(props: RowViewProps & { longPress: ReturnType<typeof use
 export function MessageListRow(props: MessageListRowProps) {
 	const t = useT();
 	const row = useMessageListRow(props);
+	// A swipe that captures the pointer cancels a pending long press (onDragStart below); the long press firing
+	// first must just as surely disarm the swipe, since the same still-touching finger moving on from there
+	// would otherwise read as the start of one and can trigger it on release.
+	const swipeRef = useRef<SwipeableRowHandle>(null);
 	// Lifted above the stacked/wide split so a swipe that captures the pointer (SwipeableRow, below) can cancel
 	// the same long-press instance the row renders with, not one it could never reach from outside.
-	const longPress = useRowLongPress(() => props.onLongPressSelect?.(props.message.id));
+	const longPress = useRowLongPress(() => {
+		swipeRef.current?.cancel();
+		props.onLongPressSelect?.(props.message.id);
+	});
 	const { compact = false, config } = props;
 	if (!compact || config.folder === "drafts") return <WideMessageRow {...props} row={row} longPress={longPress} />;
 	const stacked = <StackedMessageRow {...props} row={row} longPress={longPress} />;
 	if (!row.hasRowActions) return stacked;
 	return (
 		<SwipeableRow
+			ref={swipeRef}
 			role="listitem"
 			onDragStart={longPress.cancel}
 			startAction={{

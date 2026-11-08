@@ -129,21 +129,23 @@ const SPAM_SELECTION_MAIL = [
 async function seedSpamSelectionDemo(): Promise<void> {
 	const api = await apiContext(STORAGE_STATE);
 	await turnScreenerOff(api);
-	const probe = await api.get(
-		`/api/messages?${new URLSearchParams({ q: SPAM_SELECTION_MAIL[0][2], status: "spam", limit: "1" })}`,
-	);
-	const { messages: existing } = (await probe.json()) as { messages: unknown[] };
-	if (existing.length === 0) {
-		for (const [name, address, subject] of SPAM_SELECTION_MAIL) {
-			const stored = await deliverInbound(api, {
-				from: `"${name}" <${address}>`,
-				to: SUPPORT_ADDRESS,
-				subject,
-				text: subject,
-			});
-			const response = await api.post("/api/messages/bulk", { data: { messageIds: [stored.id], action: "spam" } });
-			expect(response.ok(), await response.text()).toBe(true);
-		}
+	// Each fixture is checked on its own: a run against a reused server that was interrupted after reporting
+	// only some of them (or after delivering one but not yet reporting it) must still seed the rest, not skip
+	// the whole set because the first one alone already exists, or redeliver one that is already there but not
+	// yet reported.
+	for (const [name, address, subject] of SPAM_SELECTION_MAIL) {
+		const spamProbe = await api.get(`/api/messages?${new URLSearchParams({ q: subject, status: "spam", limit: "1" })}`);
+		const { messages: inSpam } = (await spamProbe.json()) as { messages: unknown[] };
+		if (inSpam.length > 0) continue;
+		const anyProbe = await api.get(`/api/messages?${new URLSearchParams({ q: subject, limit: "1" })}`);
+		const { messages: existing } = (await anyProbe.json()) as { messages: { id: string }[] };
+		const id =
+			existing[0]?.id ??
+			(
+				await deliverInbound(api, { from: `"${name}" <${address}>`, to: SUPPORT_ADDRESS, subject, text: subject })
+			).id;
+		const response = await api.post("/api/messages/bulk", { data: { messageIds: [id], action: "spam" } });
+		expect(response.ok(), await response.text()).toBe(true);
 	}
 	await api.dispose();
 }

@@ -47,10 +47,16 @@ export async function resolveAllMatchingMessages(
 ): Promise<{ messages: Message[]; truncated: boolean }> {
 	const collected: Message[] = [];
 	let cursor: string | undefined;
+	// From the first page: a folder whose count lands exactly on the cap still has `nextCursor` set (the page
+	// was full, so the server cannot yet tell there is nothing after it), which `total` resolves without
+	// another request.
+	let total: number | undefined;
 	for (;;) {
 		const params = getMessageQueryParams(folder, mailboxScope, { ...filters, limit: PAGE_SIZE, cursor }, folderId);
 		const data = await fetchSelectAllPage(params);
 		collected.push(...(data.messages ?? []));
+		if (total === undefined) total = data.total;
+		if (total !== undefined && collected.length >= total) return { messages: collected, truncated: false };
 		if (!data.nextCursor) return { messages: collected, truncated: false };
 		if (collected.length >= SELECT_ALL_MAX_MESSAGES) {
 			return { messages: collected.slice(0, SELECT_ALL_MAX_MESSAGES), truncated: true };

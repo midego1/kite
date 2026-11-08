@@ -14,7 +14,7 @@ import { startFakeModel } from "./support/fake-model";
 import type { FakeModel, FakeRecordedRequest } from "./support/fake-model-types";
 import { execFileSync } from "node:child_process";
 import { AGENT_STEP_LIMIT_FALLBACK } from "../src/lib/agent/step-limit-utils";
-import { apiContext, postInbound, uniqueToken } from "./support/helpers";
+import { apiContext, postInbound, suppressMailboxTour, uniqueToken } from "./support/helpers";
 import { readJobs } from "./support/triage";
 import { readUsageRows } from "./support/ai-usage";
 
@@ -78,6 +78,7 @@ function userTurns(request: FakeRecordedRequest): string {
 async function openSettings(browser: Browser, account: Account) {
 	const context = await browser.newContext({ storageState: await account.api.storageState() });
 	const page = await context.newPage();
+	await suppressMailboxTour(page);
 	await selectMailbox(page, account.mailboxId);
 	await page.goto("/inbox");
 	const toggle = page.getByRole("button", { name: /^(Open|Close) email assistant$/ });

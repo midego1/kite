@@ -7,6 +7,7 @@ import { FloatingComposer } from "@/components/compose/floating-composer";
 import { MailSearchProvider } from "@/components/mail-search/mail-search-context";
 import { MailboxProvider } from "@/components/mailbox-provider";
 import { MailboxSelector } from "@/components/mailbox-selector";
+import { MailboxTourDialog } from "@/components/mailbox-tour-dialog";
 import { LazyAgentPanel } from "@/components/agent/agent-panel-lazy";
 import { ASSISTANT_PROMPT_EVENT, hasAssistantPrompt } from "@/components/agent/assistant-prompt-request";
 import { consumeAssistantConversationParam } from "@/components/agent/assistant-conversation-request";
@@ -188,6 +189,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
 							<ShortcutsProvider>
 								{assistantEnabled === true && <AssistantCommand toggle={toggleAssistant} />}
 								<RouteTitle />
+								<MailboxTourDialog assistantAvailable={assistantEnabled} />
 								{/* viewport-fit=cover (src/app/layout.tsx) makes env(safe-area-inset-*) resolve app-wide, not just
 							at the bottom the tab bar and the compose button already account for: a landscape phone or a
 							device with rounded corners can have a real left/right inset too. */}

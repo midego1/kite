@@ -38,7 +38,14 @@ import {
 	type Account,
 	type SubscriptionView,
 } from "./support/finance";
-import { apiContext, apiSignIn, uniqueToken, waitForBackup, waitForRestore } from "./support/helpers";
+import {
+	apiContext,
+	apiSignIn,
+	suppressMailboxTour,
+	uniqueToken,
+	waitForBackup,
+	waitForRestore,
+} from "./support/helpers";
 import { createMcpKey, mcpCall, mcpToolNames } from "./support/mcp";
 import { expectNotFoundPage, expectPaletteCommands } from "./support/module-flows";
 import { restoreModules, setModuleState } from "./support/modules";
@@ -299,6 +306,7 @@ test.describe("Money Watch off means absent", () => {
 			await expectRoutes(account.api, 404);
 			await expectRoutes(anonymous, 404);
 			const page = await context.newPage();
+			await suppressMailboxTour(page);
 			const errors = collectConsoleErrors(page);
 			const financeCalls: string[] = [];
 			page.on("request", (request) => {
@@ -446,6 +454,7 @@ test.describe("Money Watch off means absent", () => {
 			});
 			contexts.push(view);
 			const page = await view.newPage();
+			await suppressMailboxTour(page);
 			const errors = collectConsoleErrors(page);
 			await selectMailbox(page, restricted.mailboxId);
 			await gotoSignedIn(page, "/inbox");
@@ -537,6 +546,7 @@ test.describe("Money Watch across areas", () => {
 			const key = await createMcpKey(account.api, "E2E finance lifecycle", ["mcp:finance-read"], []);
 			keyId = key.id;
 			const page = await context.newPage();
+			await suppressMailboxTour(page);
 			const errors = collectConsoleErrors(page);
 			await selectMailbox(page, account.mailboxId);
 			const paidOnView = async (text: string | null) => {
@@ -728,6 +738,7 @@ test.describe("Money Watch across areas", () => {
 			expect((await member.api.get("/api/webhooks")).status()).toBe(403);
 
 			const page = await context.newPage();
+			await suppressMailboxTour(page);
 			const errors = collectConsoleErrors(page);
 			await selectMailbox(page, sharedId);
 			await page.goto(`/inbox/${message.id}`);
@@ -780,6 +791,7 @@ test.describe("Money Watch across areas", () => {
 			expect(await subscriptionSearch(api, vendor)).toBeNull();
 
 			const page = await context.newPage();
+			await suppressMailboxTour(page);
 			const errors = collectConsoleErrors(page);
 			await selectMailbox(page, account.mailboxId);
 			await page.goto("/inbox");
@@ -868,6 +880,7 @@ test.describe("Money Watch backups", () => {
 			const context = await browser.newContext({ baseURL: BASE_URL, storageState: await signedIn.storageState() });
 			try {
 				const page = await context.newPage();
+				await suppressMailboxTour(page);
 				await selectMailbox(page, account.mailboxId);
 				await page.goto(`/finance?subscription=${subscription.id}`);
 				const entries = page.locator("[data-finance-drawer] [data-finance-document]");

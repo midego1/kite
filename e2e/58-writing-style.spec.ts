@@ -5,7 +5,7 @@ import { createSignedInAccount, okJson, selectMailbox } from "./support/auto-rea
 import { chatRequests, sendChat, systemPrompt } from "./support/chat";
 import { startFakeModel } from "./support/fake-model";
 import type { FakeModel } from "./support/fake-model-types";
-import { apiContext, uniqueToken } from "./support/helpers";
+import { apiContext, suppressMailboxTour, uniqueToken } from "./support/helpers";
 
 let api: APIRequestContext;
 let fake: FakeModel;
@@ -73,6 +73,7 @@ async function composeSystem(account: Account, data: Record<string, unknown>): P
 async function openSettings(browser: Browser, account: Account) {
 	const context = await browser.newContext({ storageState: await account.api.storageState() });
 	const page = await context.newPage();
+	await suppressMailboxTour(page);
 	await selectMailbox(page, account.mailboxId);
 	await page.goto("/inbox");
 	const toggle = page.getByRole("button", { name: /^(Open|Close) email assistant$/ });

@@ -1,6 +1,13 @@
 import { expect, test, type Page } from "@playwright/test";
 import { DOMAIN, STORAGE_STATE, SUPPORT_ADDRESS } from "./support/constants";
-import { apiContext, deliverInbound, postInbound, uniqueToken, waitForMessage } from "./support/helpers";
+import {
+	apiContext,
+	deliverInbound,
+	postInbound,
+	suppressMailboxTour,
+	uniqueToken,
+	waitForMessage,
+} from "./support/helpers";
 import { PALETTE_PLACEHOLDER, openPalette } from "./support/module-flows";
 import { createSharedMailbox, createSignedInAccount, shareMailbox } from "./support/auto-read";
 import { setScreener } from "./support/screener";
@@ -361,6 +368,7 @@ test("a sender held in a shared mailbox the user can read is marked In Screener 
 
 		const context = await browser.newContext({ storageState: await member.api.storageState() });
 		const page = await context.newPage();
+		await suppressMailboxTour(page);
 		await page.addInitScript((id) => localStorage.setItem("kite-session-user", id), member.id);
 		try {
 			await openInbox(page);
@@ -386,6 +394,7 @@ test("on a phone the palette fills the screen with the categories as a chip row"
 		hasTouch: true,
 	});
 	const page = await context.newPage();
+	await suppressMailboxTour(page);
 	try {
 		await page.goto("/inbox");
 		await expect(page.getByRole("list", { name: "Inbox" })).toBeVisible();

@@ -314,7 +314,7 @@ An admin can create one assistant address per domain under Domains → a domain'
 
 A request only ever runs for the person who sent it: Kite checks that the message passed strict sender authentication (a DMARC pass, or a DKIM signature aligned with the From domain) from a hop it trusts, and that the From address is one of the user's own mailboxes or aliases, or an address they separately verified. Anything else — an unauthenticated sender, a mail loop, an auto-reply, a replayed message — is dropped without a reply and without being recorded, so it costs nothing and reveals nothing about who uses the address.
 
-Mail sent to the assistant is treated the same way a chat request is: nothing is sent or changed without a confirmation inside Kite, and the reply by email never contains the answer itself, only a link to it. See [Privacy](privacy.md) for what is stored about a request and for how long.
+Mail sent to the assistant is treated the same way a chat request is: nothing is sent or changed without a confirmation inside Kite, and the reply by email never contains the answer itself, only a link that opens the conversation in the assistant panel (with the owner signed in), plus one line for each draft review or other pending action it would like to take. The conversation shows up in the panel like any other chat, with an envelope icon marking it as a request by email; replying to the assistant's own reply continues the same conversation instead of starting a new one. When a request cannot be answered (the daily limit is reached, no AI provider is configured, the mailbox's AI is off), the reply says so in plain words instead, at most once an hour. See [Privacy](privacy.md) for what is stored about a request and for how long.
 
 ## Evaluating a model
 

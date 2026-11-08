@@ -94,7 +94,7 @@ type CallContextInput = {
 
 /** Builds the JSON call context for a trigger; the other triggers must name their grants. */
 export function buildCallContext(input: CallContextInput): CapabilityCallContext {
-	const session = input.trigger === "chat" || input.trigger === "api";
+	const session = input.trigger === "chat" || input.trigger === "api" || input.trigger === "email";
 	const grants = input.grants ?? (session ? sessionGrants(input.manifests ?? [], input.enabled ?? []) : []);
 	return {
 		viewer: input.viewer,

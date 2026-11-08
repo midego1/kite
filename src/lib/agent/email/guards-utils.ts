@@ -64,11 +64,30 @@ export function isWithinReplayWindow(date: Date | null, now: Date): boolean {
 
 /** The lower-cased, bracket-stripped Message-ID a header names, or null. */
 export function normalizeMessageId(value: string | null | undefined): string | null {
-	const trimmed = value?.trim();
+	const trimmed = value?.trim().replace(/^<|>$/g, "").trim();
 	return trimmed ? trimmed.toLowerCase() : null;
 }
 
 /** The normalised address of a `From` header, the way the rest of the codebase keys contacts and mailboxes. */
 export function normalizedFromAddress(fromHeader: string): string {
 	return normalizeEmailAddress(getEmailAddress(fromHeader));
+}
+
+const QUOTE_INTRO = /^on .{0,300}\bwrote:\s*$/i;
+const ORIGINAL_MESSAGE = /^-{2,}\s*original message\s*-{2,}$/i;
+
+/**
+ * The text above a follow-up's quoted earlier answer (spec §8.5), cut at the first line that introduces a quote
+ * ("On ... wrote:", "----- Original Message -----") or the first of two consecutive `>`-quoted lines. A text with
+ * none of those is returned whole: better to wrap a little quoted text than to cut a genuine request short.
+ */
+export function stripQuotedReplyText(text: string): string {
+	const lines = text.split("\n");
+	for (let index = 0; index < lines.length; index += 1) {
+		const line = lines[index].trim();
+		if (QUOTE_INTRO.test(line) || ORIGINAL_MESSAGE.test(line)) return lines.slice(0, index).join("\n").trim();
+		if (line.startsWith(">") && lines[index + 1]?.trim().startsWith(">"))
+			return lines.slice(0, index).join("\n").trim();
+	}
+	return text.trim();
 }

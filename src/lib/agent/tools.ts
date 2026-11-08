@@ -336,7 +336,8 @@ export async function runEmailTool(
 	}
 	if (name === "edit_draft") return editAgentDraft(context, input as unknown as AgentDraftEditInput);
 	if (name === "review_draft_send") {
-		if (context.origin !== "chat") throw new Error("Open the draft in Kite to review delivery");
+		if (context.origin !== "chat" && context.origin !== "email")
+			throw new Error("Open the draft in Kite to review delivery");
 		const draft = await ownMessage(context, input.draftId as string);
 		if (draft.status !== "draft") throw new Error("Draft not found in the selected mailbox");
 		const result = await requestAgentSend(
@@ -362,7 +363,7 @@ export async function runEmailTool(
 			.limit(1);
 		if (row.status !== "draft" || !metadata || metadata.revision !== input.expectedRevision || metadata.humanEditedAt)
 			throw new Error("Draft changed or cannot be discarded");
-		if (context.origin === "chat")
+		if (context.origin === "chat" || context.origin === "email")
 			return {
 				action: name,
 				status: "pending_approval",

@@ -12,17 +12,57 @@ import { SnoozePicker } from "./snooze-picker";
 import { reportListActionError } from "./list-action-toast";
 import { useT } from "@/lib/i18n/use-t";
 
-export function MessageListRowActions({ message, onAction, compact = false, star }: MessageListRowActionsProps) {
+/**
+ * On a fine pointer (a mouse) this pill only shows on hover or keyboard focus, floating over the row. A coarse
+ * pointer (touch) never hovers, so there it drops the overlay and becomes a static, wrapped, always-visible
+ * action bar under the row instead — the same actions, reachable without a mouse. `hoverReveal=false` keeps the
+ * narrowest compact rows free of the hover pill even with a mouse, as before, while touch still gets the bar.
+ */
+export function MessageListRowActions({
+	message,
+	onAction,
+	compact = false,
+	star,
+	hoverReveal = true,
+}: MessageListRowActionsProps) {
 	const t = useT();
 	const [snoozeOpen, setSnoozeOpen] = useState(false);
 	const snoozed = isMessageSnoozed(message.snoozedUntil);
 	const readAction = message.read ? "unread" : "read";
-	const buttonClassName = compact ? "h-[22px] w-6 rounded p-0" : undefined;
+	const buttonClassName = cn(
+		"pointer-coarse:h-11 pointer-coarse:w-11",
+		compact && "h-[22px] w-6 rounded p-0 pointer-coarse:rounded-lg",
+	);
 
 	return (
 		<>
 			<div
-				className={`absolute z-10 flex items-center gap-1 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-has-[:focus-visible]:pointer-events-auto group-has-[:focus-visible]:opacity-100 ${snoozeOpen ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0"} ${compact ? "-end-1 -top-1.5 h-6 gap-0 rounded-md border border-neutral-200 bg-white shadow-sm" : "end-6 top-1/2 -translate-y-1/2 bg-[#f2f6fc] ps-3"}`}
+				className={cn(
+					"flex flex-wrap items-center justify-end gap-1",
+					// Fine pointer (a mouse): float over the row, hidden until hover or focus, unless `hoverReveal`
+					// is off (the narrowest compact rows keep this out of the way even with a mouse).
+					hoverReveal
+						? cn(
+								"pointer-fine:absolute pointer-fine:z-10 pointer-fine:transition-opacity",
+								"pointer-fine:group-hover:pointer-events-auto pointer-fine:group-hover:opacity-100",
+								"pointer-fine:group-has-[:focus-visible]:pointer-events-auto pointer-fine:group-has-[:focus-visible]:opacity-100",
+								snoozeOpen
+									? "pointer-fine:pointer-events-auto pointer-fine:opacity-100"
+									: "pointer-fine:pointer-events-none pointer-fine:opacity-0",
+								compact
+									? "pointer-fine:-end-1 pointer-fine:-top-1.5 pointer-fine:h-6 pointer-fine:gap-0 pointer-fine:rounded-md pointer-fine:border pointer-fine:border-neutral-200 pointer-fine:bg-white pointer-fine:shadow-sm"
+									: "pointer-fine:end-6 pointer-fine:top-1/2 pointer-fine:-translate-y-1/2 pointer-fine:bg-[#f2f6fc] pointer-fine:ps-3",
+							)
+						: "pointer-fine:hidden",
+					// Coarse pointer (touch) never hovers, so it is always visible and tappable here, whatever
+					// `hoverReveal` says. The stacked row is normal block flow, so it can safely drop the overlay
+					// and flow in as its own wrapped, full-width line under the row. The wide row is a CSS grid,
+					// where a stray extra item can land in the wrong cell, so it keeps the overlay position and
+					// only grows the buttons and reveals it.
+					compact
+						? "pointer-coarse:static pointer-coarse:mt-1.5 pointer-coarse:w-full pointer-coarse:gap-1.5 pointer-coarse:rounded-lg pointer-coarse:border pointer-coarse:border-neutral-200 pointer-coarse:bg-white pointer-coarse:p-1 pointer-coarse:opacity-100 pointer-coarse:shadow-sm"
+						: "absolute pointer-coarse:end-2 pointer-coarse:top-1/2 pointer-coarse:z-10 pointer-coarse:-translate-y-1/2 pointer-coarse:opacity-100",
+				)}
 			>
 				{star && (
 					// One name in both states, so the pressed state carries it ("Star", pressed); the tooltip says what a click does.
@@ -104,7 +144,7 @@ export function MessageListRowActions({ message, onAction, compact = false, star
 								sideOffset={6}
 								collisionPadding={8}
 								aria-label={t("Snooze")}
-								className="z-50 w-72 rounded-xl border border-neutral-200 bg-white p-2 shadow-lg"
+								className="z-50 max-h-[min(70vh,24rem)] w-72 overflow-y-auto rounded-xl border border-neutral-200 bg-white p-2 shadow-lg"
 							>
 								<SnoozePicker messageId={message.id} onSnoozed={() => setSnoozeOpen(false)} />
 							</Popover.Content>

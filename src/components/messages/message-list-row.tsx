@@ -102,7 +102,10 @@ function RowCornerStar({
 	// With hover actions the toggle lives in their pill; the corner then only marks a starred row at rest.
 	if (hoverActions)
 		return row.starred ? (
-			<span aria-hidden="true" className="absolute bottom-1 end-1 group-hover:hidden group-has-[:focus-visible]:hidden">
+			<span
+				aria-hidden="true"
+				className="absolute bottom-1 end-1 group-hover:hidden group-has-[:focus-visible]:hidden pointer-coarse:hidden"
+			>
 				<Icon className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
 			</span>
 		) : null;
@@ -110,7 +113,8 @@ function RowCornerStar({
 		<span
 			className={clsx(
 				"absolute bottom-0 end-0",
-				!row.starred && "opacity-0 group-hover:opacity-100 group-has-[:focus-visible]:opacity-100",
+				!row.starred &&
+					"opacity-0 group-hover:opacity-100 group-has-[:focus-visible]:opacity-100 pointer-coarse:opacity-100",
 			)}
 		>
 			<MessageRowStar starred={row.starred} compact icon={icon} onToggle={row.toggleStar} />
@@ -227,12 +231,19 @@ function StackedMessageRow(props: RowViewProps) {
 				</Link>
 				{!inlineStar && <RowCornerStar row={row} icon={Icon} hoverActions={showHoverActions} />}
 				<ScreenerRowControls message={row.rowMessage} compact />
-				{showHoverActions && (
+				{/* A coarse (touch) pointer always gets this as a static action bar under the row, whether or not
+				the hover pill is enabled for a mouse here (see hoverReveal on MessageListRowActions). */}
+				{row.hasRowActions && (
 					<MessageListRowActions
 						message={row.rowMessage}
 						onAction={row.runRowAction}
 						compact
-						star={row.starToggle ? { starred: row.starred, icon: Icon, onToggle: row.toggleStar } : undefined}
+						star={
+							showHoverActions && row.starToggle
+								? { starred: row.starred, icon: Icon, onToggle: row.toggleStar }
+								: undefined
+						}
+						hoverReveal={showHoverActions}
 					/>
 				)}
 			</div>
@@ -357,7 +368,12 @@ function WideMessageRow(props: RowViewProps) {
 				<SendStateBadge message={row.rowMessage} />
 				<RowMarkers {...props} row={row} placement="trailing" />
 			</span>
-			<span className="flex min-w-[96px] items-baseline justify-end gap-1.5 group-hover:opacity-0">
+			<span
+				className={clsx(
+					"flex min-w-[96px] items-baseline justify-end gap-1.5",
+					row.hasRowActions && "group-hover:opacity-0 pointer-coarse:opacity-0",
+				)}
+			>
 				<AttachmentIndicator message={message} />
 				<time
 					dateTime={message.createdAt}

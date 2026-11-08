@@ -73,3 +73,45 @@ test("the list's search and category chips share the phone header without hiding
 	await expect(title).toBeVisible();
 	expect(await title.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
 });
+
+// A touch screen never hovers, so a row's quick actions (archive, trash, mark read, snooze and the star) must
+// not depend on it: they show as a static, always-on action bar under the row instead (message-list-row-actions.tsx).
+test("a row's archive, trash, snooze and star are visible and at least 44px without hovering", async ({ page }) => {
+	await page.goto("/inbox");
+	const row = page.locator("[data-message-row]").filter({ hasText: subject });
+	await expect(row).toBeVisible();
+
+	for (const name of ["Archive", "Trash", "Snooze"]) {
+		const button = row.getByRole("button", { name, exact: true });
+		await expect(button).toBeVisible();
+		const box = await button.boundingBox();
+		expect(box && box.width >= 44 && box.height >= 44, `${name} is at least 44x44`).toBe(true);
+	}
+	// One accessible name in both states (message-row-parts.tsx); the pressed state carries whether it is starred.
+	const star = row.getByRole("button", { name: "Star" }).first();
+	await expect(star).toBeVisible();
+	await expect(star).toHaveAttribute("aria-pressed", "false");
+	const starBox = await star.boundingBox();
+	expect(starBox && starBox.width >= 44 && starBox.height >= 44, "Star is at least 44x44").toBe(true);
+
+	await star.click();
+	await expect(star).toHaveAttribute("aria-pressed", "true");
+});
+
+// Upstream Mailflare review (docs/upstream/mailflare-review-2026-11-08.md #14): the reader's own toolbar row
+// (Reply, Trash, Report spam, More) must not overflow the sticky header and push More off screen on a narrow
+// phone — it scrolls inside itself instead (message-actions.tsx), and More stays pinned after it.
+test("the reader toolbar's More trigger stays on screen on a small phone", async ({ page }) => {
+	await page.setViewportSize({ width: 320, height: 568 });
+	await page.goto("/inbox");
+	await page.getByRole("list", { name: "Inbox" }).getByText(subject, { exact: true }).click();
+	await expect(page.getByRole("heading", { level: 1, name: subject })).toBeVisible();
+
+	const more = page.getByRole("button", { name: "More actions" });
+	await expect(more).toBeVisible();
+	const box = await more.boundingBox();
+	expect(box && box.x >= 0 && box.x + box.width <= 320, "More actions stays within the 320px viewport").toBe(true);
+
+	await more.click();
+	await expect(page.getByRole("button", { name: "Show original" })).toBeVisible();
+});

@@ -20,6 +20,7 @@ import { DashboardNav } from "@/components/dashboard-nav";
 import { SidebarProvider } from "@/components/sidebar-state";
 import { SidebarAside, MobileMenuButton } from "@/components/sidebar-aside";
 import { MobileTabBar } from "@/components/mobile-tab-bar";
+import { MobileComposeFab } from "@/components/mobile-compose-fab";
 import { SidebarFrame } from "@/components/sidebar-frame";
 import { DashboardNotices } from "@/components/dashboard-notices";
 import { ShortcutsProvider } from "@/components/shortcuts";
@@ -252,6 +253,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
 												)}
 											</div>
 											<MobileTabBar />
+											<MobileComposeFab />
 										</div>
 									</SidebarFrame>
 									{assistantLayout === "floating" && assistantEnabled === true && (

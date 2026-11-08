@@ -111,3 +111,31 @@ width.
 4. On any viewport open **Settings → Appearance → Fold layout** and choose **Always two panes** or **Always
    single pane** to force the posture regardless of width; `<html data-fold-posture>` and `data-fold-layout`
    show the result.
+
+## Touch reachability
+
+A coarse pointer (a finger) never hovers, so nothing a mouse user reaches by hovering may be the only way to
+reach it on a touch screen — including an unfolded foldable or a tablet at `md` and up, which gets the desktop
+sidebar (a pure width breakpoint, `src/components/sidebar-mobile-utils.ts`) but is still a touch screen. The
+Tailwind `pointer-coarse:` variant (`@media (pointer: coarse)`) is how the app tells the two apart:
+
+- **Message list row actions** (star, archive, trash, mark read/unread, snooze) float over a row on hover for a
+  mouse; on a coarse pointer they are always visible instead — a static, wrapped bar under a stacked row, or an
+  enlarged version of the same floating pill for a wide row (`message-list-row-actions.tsx`). The corner star
+  shown without the pill follows the same rule (`message-list-row.tsx`, `message-row-parts.tsx`).
+- **The reader toolbar** (Reply, Archive, Snooze, Move, Report spam, Mark read, More, Delete) wraps onto a second
+  line instead of overflowing the sticky header and pushing **More actions** off screen on a narrow phone or a
+  pinched reading pane (`message-actions.tsx`; ported from the upstream Mailflare review, item 14): the header
+  is `min-h-14`, not a fixed height, so it grows to fit (`src/app/(dashboard)/inbox/[messageId]/page.tsx`).
+  Not `overflow-x-auto` — that makes the row a clipping boundary Radix's Popper measures itself against, which
+  moves the Move-to and Snooze menus to the wrong place the moment the row has less room than its content needs.
+  Its buttons, and small icon buttons generally across the sidebar, the list header and the filter chips, grow
+  to at least 44px on a coarse pointer (`pointer-coarse:h-11`/`w-11`, or the `.reader-toolbar` rule in
+  `globals.css` for the `roundedSM` button size, which a higher-specificity rule there already sizes).
+- **New mail** is a floating button on phone and foldable screens (`mobile-compose-fab.tsx`), beside the tab
+  bar's own show/hide rules (`mobile-tab-bar-utils.ts`): it steps aside for an open message (whose own reply bar
+  would collide with it) even where the tab bar itself stays, with the list beside the reader.
+- `viewport-fit: cover` (`src/app/layout.tsx`) is what makes `env(safe-area-inset-*)` — already used by the tab
+  bar, the compose button and the Drive upload panel — resolve to a real value instead of `0px`; paired with
+  `appleWebApp: { capable: true }`, a phone can run the page from its home screen without browser chrome today,
+  ahead of a full installable PWA (a manifest and a service worker are unplanned, see `ROADMAP.md`).

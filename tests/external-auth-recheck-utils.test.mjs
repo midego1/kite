@@ -82,6 +82,14 @@ test("recheckSignals finds nothing for a forged lower header, a wrong authserv-i
 	assert.deepEqual(recheckSignals(null, [RECEIVED], "mx.google.com", "billing@vendor.example"), { kind: "unchanged" });
 });
 
+test("recheckSignals finds nothing for mail Gmail's own POP3 import copied in, never checked at SMTP time", () => {
+	const pop3 = field("received", "by mx.google.com with POP3 id x for <me@gmail.com>;");
+	assert.deepEqual(
+		recheckSignals(null, [pop3, field("authentication-results", GOOGLE)], "mx.google.com", "billing@vendor.example"),
+		{ kind: "unchanged" },
+	);
+});
+
 test("the queue message kind round-trips and nothing else is mistaken for it", () => {
 	const message = authRecheckMessage("xacct_1");
 	assert.deepEqual(message, { kind: "accounts.auth_recheck", accountId: "xacct_1" });

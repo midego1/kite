@@ -80,7 +80,7 @@ function PublicDriveView({
 							<button
 								type="button"
 								onClick={() => onOpen(crumb.id)}
-								className="rounded-md px-1.5 py-0.5 hover:bg-neutral-200/60 hover:text-neutral-900"
+								className="flex items-center rounded-md px-1.5 py-0.5 hover:bg-neutral-200/60 hover:text-neutral-900 pointer-coarse:min-h-11"
 							>
 								{crumb.name}
 							</button>
@@ -90,7 +90,7 @@ function PublicDriveView({
 				{isFile && (
 					<a
 						href={publicContentUrl(token, item.id, true)}
-						className="ms-auto inline-flex h-9 items-center gap-2 rounded-lg bg-blue-600 px-4 text-sm font-medium text-white hover:bg-blue-700"
+						className="ms-auto inline-flex h-9 items-center gap-2 rounded-lg bg-blue-600 px-4 text-sm font-medium text-white hover:bg-blue-700 pointer-coarse:h-11"
 					>
 						<Download size={16} />
 						Download
@@ -144,7 +144,7 @@ function PublicRow({ entry, token, onOpen }: { entry: PublicDriveItem; token: st
 				<a
 					href={publicContentUrl(token, entry.id, true)}
 					aria-label={`Download ${entry.name}`}
-					className="shrink-0 rounded-lg p-2 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
+					className="flex shrink-0 items-center justify-center rounded-lg p-2 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 pointer-coarse:h-11 pointer-coarse:w-11"
 				>
 					<Download size={16} />
 				</a>

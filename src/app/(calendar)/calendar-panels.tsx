@@ -80,7 +80,7 @@ export function CalendarPanels({
 							onClick={() => setStored(!open)}
 							aria-expanded={open}
 							aria-label={open ? "Hide upcoming events" : "Show upcoming events"}
-							className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-neutral-500 outline-none hover:bg-neutral-100 hover:text-neutral-900 focus-visible:ring-2 focus-visible:ring-blue-500 max-md:hidden"
+							className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-neutral-500 outline-none hover:bg-neutral-100 hover:text-neutral-900 focus-visible:ring-2 focus-visible:ring-blue-500 max-md:hidden pointer-coarse:h-11 pointer-coarse:w-11"
 						>
 							<PanelLeft className="h-4 w-4 rtl:-scale-x-100" aria-hidden="true" />
 						</button>
@@ -88,7 +88,9 @@ export function CalendarPanels({
 				</div>
 				{open && <UpcomingSidebar {...upcoming} />}
 			</SectionNavSheet>
-			<section className={cn("flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-white", SECTION_PANEL_CLASS)}>
+			<section
+				className={cn("@container flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-white", SECTION_PANEL_CLASS)}
+			>
 				<div className={cn(PANEL_HEADER_CLASS, "gap-3 max-md:h-auto max-md:flex-wrap max-md:py-2")}>
 					<CalendarSectionTabs />
 					<Tooltip label="Upcoming events" className="md:hidden">
@@ -98,7 +100,7 @@ export function CalendarPanels({
 							aria-haspopup="dialog"
 							aria-expanded={sheetOpen}
 							aria-label="Upcoming events"
-							className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-neutral-500 outline-none hover:bg-neutral-100 hover:text-neutral-900 focus-visible:ring-2 focus-visible:ring-blue-500 md:hidden"
+							className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-neutral-500 outline-none hover:bg-neutral-100 hover:text-neutral-900 focus-visible:ring-2 focus-visible:ring-blue-500 md:hidden pointer-coarse:h-11 pointer-coarse:w-11"
 						>
 							<CalendarDays className="h-4 w-4" aria-hidden="true" />
 						</button>

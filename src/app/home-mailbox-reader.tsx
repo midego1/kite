@@ -6,7 +6,7 @@ import { FOCUS_RING } from "./home-mailbox-sidebar";
 import { WELCOME_ID } from "./home-mailbox-state-utils";
 import type { HomeEmailMeta, HomeMailboxAction, HomeMailboxState, HomePerson } from "./home-mailbox-types";
 
-const TOOL_BUTTON = `flex h-8 items-center justify-center gap-1.5 rounded-lg bg-neutral-100 px-2.5 text-sm text-neutral-700 hover:bg-neutral-200 ${FOCUS_RING}`;
+const TOOL_BUTTON = `flex h-8 items-center justify-center gap-1.5 rounded-lg bg-neutral-100 px-2.5 text-sm text-neutral-700 hover:bg-neutral-200 pointer-coarse:h-11 ${FOCUS_RING}`;
 
 /** A reply keeps an existing Re: prefix instead of doubling it. */
 const replySubject = (subject: string) => (/^re:/i.test(subject) ? subject : `Re: ${subject}`);
@@ -74,7 +74,7 @@ export const HomeReader = forwardRef<HTMLDivElement, ReaderProps>(function HomeR
 					type="button"
 					aria-label="Back to list"
 					onClick={() => dispatch({ type: "back" })}
-					className={`flex h-8 w-8 items-center justify-center rounded-lg bg-neutral-100 hover:bg-neutral-200 split:hidden ${FOCUS_RING}`}
+					className={`flex h-8 w-8 items-center justify-center rounded-lg bg-neutral-100 hover:bg-neutral-200 pointer-coarse:h-11 pointer-coarse:w-11 split:hidden ${FOCUS_RING}`}
 				>
 					<ArrowLeft className="h-4 w-4 rtl:-scale-x-100" aria-hidden="true" />
 				</button>
@@ -86,7 +86,7 @@ export const HomeReader = forwardRef<HTMLDivElement, ReaderProps>(function HomeR
 							aria-pressed={starred}
 							aria-label={starred ? "Unstar" : "Star"}
 							onClick={() => dispatch({ type: "star", id: current.id })}
-							className={`${TOOL_BUTTON} w-8 px-0`}
+							className={`${TOOL_BUTTON} w-8 px-0 pointer-coarse:w-11`}
 						>
 							<Star className={`h-4 w-4 ${starred ? "fill-amber-400 text-amber-500" : ""}`} aria-hidden="true" />
 						</button>

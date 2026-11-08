@@ -59,7 +59,7 @@ async function resolveMailboxScope(
 type QueryResolution = {
 	conditions: SQL[];
 	hybridIds: string[] | null;
-	semantic?: "on" | "unavailable";
+	semantic?: "on" | "off" | "unavailable";
 	semanticReason?: string;
 };
 
@@ -86,11 +86,13 @@ async function resolveQuery(
 			mailboxIds: vectorMailboxIds,
 		});
 		if (result.semantic === "on") return { conditions: [], hybridIds: result.ids, semantic: "on" };
-		// Unavailable: fall back to the ordinary keyword conditions (operators and free text together).
+		// "off" (feature or assistant off, or too short to embed) and "unavailable" (a real failure) both fall back
+		// to the ordinary keyword conditions (operators and free text together); only "unavailable" names a reason
+		// (C-1 of review round 3, same distinction `/api/messages` makes).
 		return {
 			conditions: buildSearchConditions(query, timeZone, { connectedAccounts }),
 			hybridIds: null,
-			semantic: "unavailable",
+			semantic: result.semantic,
 			semanticReason: result.semanticReason,
 		};
 	}
@@ -136,7 +138,7 @@ export async function GET(request: Request) {
 
 	const timeZone = getRequestTimeZone(request, user.timeZone);
 	let hybridIds: string[] | null = null;
-	let semantic: "on" | "unavailable" | undefined;
+	let semantic: "on" | "off" | "unavailable" | undefined;
 	let semanticReason: string | undefined;
 	if (query) {
 		const resolved = await resolveQuery(env, conditions, scope.vectorMailboxIds, query, timeZone, mode, !!cursor);
@@ -181,6 +183,6 @@ export async function GET(request: Request) {
 	return NextResponse.json({
 		messages: rows,
 		nextCursor: getNextMessageCursor(rows, limit),
-		...(mode === "hybrid" && query ? { semantic: semantic ?? "unavailable", semanticReason } : {}),
+		...(mode === "hybrid" && query ? { semantic: semantic ?? "off", semanticReason } : {}),
 	});
 }

@@ -3,6 +3,7 @@ import { rmSync } from "node:fs";
 import test, { after } from "node:test";
 import { and, eq, ne } from "drizzle-orm";
 import { makeBundleDirectory } from "./support/bundle-directory.mjs";
+import { D1_BOUND_PARAMETER_LIMIT, limitBoundParameters } from "./support/jmap-database.mjs";
 import { migrationsDir, seedAccountData } from "./support/module-database.mjs";
 import { bundleModules } from "./support/modules-bundle.mjs";
 
@@ -244,7 +245,7 @@ test("a message found by both the keyword and the meaning search is labelled bot
 	assert.equal(result.matches.get("both-1"), "both");
 });
 
-test("when the feature is off, the meaning half is skipped and the keyword half still answers, quietly (not reported as unavailable)", async (t) => {
+test("when the feature is off, semanticSearch does no keyword work at all and answers off, quietly (not unavailable)", async (t) => {
 	const { db, env } = await setup(t);
 	db.db.exec("UPDATE app_settings SET semantic_search_enabled = 0 WHERE id = 'default'");
 	insertMessage(db, "keyword-only", { subject: "Roof repair quote" });
@@ -262,15 +263,17 @@ test("when the feature is off, the meaning half is skipped and the keyword half 
 		queryText: "roof repair",
 		mailboxIds: ["mailbox-a"],
 	});
-	assert.deepEqual(result.ids, ["keyword-only"]);
-	// "off" is not a runtime failure (every default install would otherwise show the note on every search); the
-	// chip itself is hidden on the client instead, through GET /api/mailboxes's semanticSearchAvailable.
-	assert.equal(result.semantic, "on");
+	// Not attempted at all (C-1 of review round 3): the caller must run its own unchanged keyword path instead of
+	// these (empty) ids, which is why this answers "off", not "on" with a keyword-only fused list — "off" is not a
+	// runtime failure (every default install would otherwise show the note on every search); the chip itself is
+	// hidden on the client instead, through GET /api/mailboxes's semanticSearchAvailable.
+	assert.deepEqual(result.ids, []);
+	assert.equal(result.semantic, "off");
 	assert.equal(result.semanticReason, undefined);
 	assert.equal(called, false, "no embedding call is made while the feature is off");
 });
 
-test("when the assistant is disabled, the meaning half is skipped and the keyword half still answers, quietly", async (t) => {
+test("when the assistant is disabled, semanticSearch does no keyword work at all and answers off, quietly", async (t) => {
 	const { db, env } = await setup(t);
 	db.db.exec("UPDATE app_settings SET agent_enabled = 0 WHERE id = 'default'");
 	insertMessage(db, "keyword-only-2", { subject: "Dentist appointment" });
@@ -288,13 +291,13 @@ test("when the assistant is disabled, the meaning half is skipped and the keywor
 		queryText: "dentist appointment",
 		mailboxIds: ["mailbox-a"],
 	});
-	assert.deepEqual(result.ids, ["keyword-only-2"]);
-	assert.equal(result.semantic, "on");
+	assert.deepEqual(result.ids, []);
+	assert.equal(result.semantic, "off");
 	assert.equal(result.semanticReason, undefined);
 	assert.equal(called, false, "no embedding call is made while the assistant is disabled");
 });
 
-test("a query shorter than 3 characters is keyword-only, and not reported as unavailable", async (t) => {
+test("a query shorter than 3 characters answers off, not unavailable, doing no keyword work either", async (t) => {
 	const { db, env } = await setup(t);
 	insertMessage(db, "short-query", { subject: "ok" });
 	let called = false;
@@ -310,8 +313,8 @@ test("a query shorter than 3 characters is keyword-only, and not reported as una
 		queryText: "ok",
 		mailboxIds: ["mailbox-a"],
 	});
-	assert.deepEqual(result.ids, ["short-query"]);
-	assert.equal(result.semantic, "on");
+	assert.deepEqual(result.ids, []);
+	assert.equal(result.semantic, "off");
 	assert.equal(called, false);
 });
 
@@ -333,4 +336,28 @@ test("a similarity score below the minimum is dropped before fusion", async (t) 
 		mailboxIds: ["mailbox-a"],
 	});
 	assert.deepEqual(result.ids, []);
+});
+
+test("meaning search still runs with more than 100 accessible mailboxes, without exceeding D1's bound-parameter limit (C-2 of review round 3)", async (t) => {
+	const { db, env } = await setup(t);
+	insertMessage(db, "needle", { subject: "Afspraak bij de tandarts", text: "Uw afspraak is bevestigd." });
+	vectorKeyRow(db, "needle", KEY_1);
+	env.VECTORS = {
+		upsert: async () => {},
+		deleteByIds: async () => {},
+		query: async () => [{ id: `${KEY_1}:0`, score: 0.9 }],
+	};
+	env.AI = { run: async () => ({ data: [Array(1024).fill(0.01)] }) };
+	const mailboxIds = ["mailbox-a", ...Array.from({ length: 150 }, (_, index) => `mailbox-extra-${index}`)];
+
+	const stats = limitBoundParameters(db);
+	const result = await semanticSearch({
+		env,
+		scopeWhere: buildScope("mailbox-a"),
+		queryText: "dentist appointment",
+		mailboxIds,
+	});
+	assert.ok(stats.maxBound <= D1_BOUND_PARAMETER_LIMIT, `bound ${stats.maxBound}`);
+	assert.equal(result.semantic, "on");
+	assert.deepEqual(result.ids, ["needle"]);
 });

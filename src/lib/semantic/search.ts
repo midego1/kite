@@ -1,8 +1,8 @@
-import { and, eq, inArray, sql, type SQL } from "drizzle-orm";
+import { and, eq, inArray, or, sql, type SQL } from "drizzle-orm";
 import { getDb, type AppDatabase } from "@/db";
-import { messages } from "@/db/schema";
+import { mailboxAgentSettings, messages } from "@/db/schema";
 import { messageEmbeddings } from "@/db/schema/semantic";
-import { queryInChunks } from "@/db/chunk-utils";
+import { inJsonArray, queryInChunks } from "@/db/chunk-utils";
 import { buildFtsMatch, parseSearchQuery } from "@/lib/search/query-utils";
 import { type FusedHit, reciprocalRankFusion, type SemanticMatch } from "./fusion-utils";
 import { parseChunkVectorId } from "./filter-utils";
@@ -64,10 +64,20 @@ export type SemanticSearchInput = {
 };
 
 export type SemanticSearchResult = {
-	/** Message ids in fused, re-checked order, newest-ranked first, capped at `RESULT_LIMIT`. */
+	/** Message ids in fused, re-checked order, newest-ranked first, capped at `RESULT_LIMIT`. Empty, and never
+	 * meaningful, whenever `semantic` is not `"on"`: every caller must use its own unchanged keyword path then,
+	 * not these ids (C-1 of review round 3 — this was the mistake: "off" used to answer exactly like "on" with an
+	 * empty meaning half, which silently capped and re-ordered a plain keyword search for every default install). */
 	ids: string[];
 	matches: Map<string, SemanticMatch>;
-	semantic: "on" | "unavailable";
+	/**
+	 * `"on"`: meaning genuinely ran (found something or not) and `ids` is the fused, capped order a caller may use.
+	 * `"off"`: meaning was never attempted at all (the feature or the assistant is off, or the query is too short
+	 * to embed) — quiet, not a failure, and callers must run their own unchanged keyword path instead of this
+	 * function's `ids`. `"unavailable"`: a real runtime failure (`semanticReason` says which); same fallback as
+	 * `"off"`, but worth telling the searcher about.
+	 */
+	semantic: "on" | "off" | "unavailable";
 	semanticReason?: string;
 };
 
@@ -91,14 +101,19 @@ async function keywordRankedIds(db: AppDatabase, scopeWhere: SQL, ftsMatch: stri
  */
 async function allowedSemanticMailboxIds(env: CloudflareEnv, mailboxIds: readonly string[]): Promise<string[]> {
 	if (mailboxIds.length === 0) return [];
-	const placeholders = mailboxIds.map(() => "?").join(", ");
-	const { results } = await env.DB.prepare(
-		`SELECT mailbox_id AS mailboxId FROM mailbox_agent_settings
-		WHERE mailbox_id IN (${placeholders}) AND (ai_disabled = 1 OR semantic_index = 0)`,
-	)
-		.bind(...mailboxIds)
-		.all<{ mailboxId: string }>();
-	const excluded = new Set(results.map((row) => row.mailboxId));
+	// `inJsonArray`, not one bound parameter per id (C-2 of review round 3): someone with more than 100 accessible
+	// mailboxes made every search answer "unavailable" outright, since a plain `IN (...)` here failed the whole
+	// query on D1 before a fallback could even run.
+	const excludedRows = await getDb(env)
+		.select({ mailboxId: mailboxAgentSettings.mailboxId })
+		.from(mailboxAgentSettings)
+		.where(
+			and(
+				inJsonArray(mailboxAgentSettings.mailboxId, mailboxIds),
+				or(eq(mailboxAgentSettings.aiDisabled, true), eq(mailboxAgentSettings.semanticIndex, false)),
+			),
+		);
+	const excluded = new Set(excludedRows.map((row) => row.mailboxId));
 	return mailboxIds.filter((id) => !excluded.has(id));
 }
 
@@ -161,14 +176,32 @@ async function meaningRankedIds(
 		.map((row) => row.id);
 }
 
+const NOT_ATTEMPTED: SemanticSearchResult = { ids: [], matches: new Map(), semantic: "off" };
+
 /**
  * Hybrid search (`docs/specs/semantic-search.md` section 4.6): keyword hits are always ranked; meaning hits are
  * added when the feature is on, the query has at least `MIN_QUERY_CHARS` characters and the embedding call and
  * spend cap allow it. The two lists are fused (reciprocal rank fusion), then every fused id is re-checked against
  * `scopeWhere` (the same guarantee the keyword path already has) before the top `RESULT_LIMIT` are returned.
- * Falls back to keyword-only (never throws) whenever meaning search is unavailable.
+ *
+ * Answers `"off"` (never throwing, and doing no keyword work at all — every caller must run its own unchanged
+ * keyword path instead) the moment meaning is not even going to be attempted: too short to embed, the feature
+ * off, or the assistant off. C-1 of review round 3: this function used to still run the fused, capped, unpaged
+ * path for these exact cases, answering `"on"` quietly — which was fine for a short query (always a narrow edge
+ * case) but, once the install feature itself joined the list of quiet reasons (review round 1's C1), meant every
+ * default install (the feature is off by default) took the hybrid path for every free-text search, for no reason:
+ * capped at `RESULT_LIMIT`, in keyword-rank order instead of by date, with no real pagination. `"unavailable"` is
+ * the other non-"on" answer, for a real runtime failure (`semanticReason` says which); every caller must treat it
+ * exactly like `"off"` for the fallback decision, the one difference being that it is worth telling the searcher.
  */
 export async function semanticSearch(input: SemanticSearchInput): Promise<SemanticSearchResult> {
+	if (input.queryText.trim().length < MIN_QUERY_CHARS) return NOT_ATTEMPTED;
+	const availability = await embeddingAvailability(input.env);
+	if (!availability.ok) {
+		if (availability.reason === "off" || availability.reason === "assistant_disabled") return NOT_ATTEMPTED;
+		return { ids: [], matches: new Map(), semantic: "unavailable", semanticReason: availability.reason };
+	}
+
 	const db = getDb(input.env);
 	const parsed = parseSearchQuery(input.queryText);
 	const ftsMatch = buildFtsMatch(parsed);
@@ -177,33 +210,17 @@ export async function semanticSearch(input: SemanticSearchInput): Promise<Semant
 	let semantic: "on" | "unavailable" = "on";
 	let semanticReason: string | undefined;
 	let meaningIds: string[] = [];
-	if (input.queryText.trim().length < MIN_QUERY_CHARS) {
-		// Too short to embed; keyword-only, but not "unavailable" (nothing failed).
-	} else {
-		const availability = await embeddingAvailability(input.env);
-		if (!availability.ok) {
-			// "off" and "assistant_disabled" are not runtime failures: every default-install search would otherwise
-			// report "unavailable" and show the note, and the chip itself is already hidden on the client while the
-			// feature has nothing to do (`GET /api/mailboxes`'s semanticSearchAvailable) — nothing here to tell the
-			// searcher about this request in particular. Treated exactly like a too-short query: keyword-only, quietly.
-			if (availability.reason !== "off" && availability.reason !== "assistant_disabled") {
-				semantic = "unavailable";
-				semanticReason = availability.reason;
-			}
-		} else {
-			try {
-				const spendMailboxId = input.mailboxIds.length === 1 ? input.mailboxIds[0] : null;
-				meaningIds = await meaningRankedIds(input.env, db, input.queryText, input.mailboxIds, spendMailboxId);
-			} catch (error) {
-				semantic = "unavailable";
-				semanticReason =
-					error instanceof VectorStoreUnavailableError
-						? "no_vector_store"
-						: error instanceof MeaningSearchTimeoutError
-							? "timeout"
-							: embeddingErrorCode(error);
-			}
-		}
+	try {
+		const spendMailboxId = input.mailboxIds.length === 1 ? input.mailboxIds[0] : null;
+		meaningIds = await meaningRankedIds(input.env, db, input.queryText, input.mailboxIds, spendMailboxId);
+	} catch (error) {
+		semantic = "unavailable";
+		semanticReason =
+			error instanceof VectorStoreUnavailableError
+				? "no_vector_store"
+				: error instanceof MeaningSearchTimeoutError
+					? "timeout"
+					: embeddingErrorCode(error);
 	}
 
 	const fused = reciprocalRankFusion(keywordIds, meaningIds);

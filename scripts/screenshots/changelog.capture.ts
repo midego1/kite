@@ -381,11 +381,22 @@ const SHOTS: Shot[] = [
 		},
 	},
 	{
-		// The "By meaning" chip in the mail search box, typing a query that will also look for mail with the same meaning.
+		// The "By meaning" chip in the mail search box, on, typing a query that will also look for mail with the
+		// same meaning. C-4 of review round 3: the chip only renders while search by meaning is available for the
+		// install, which is off on the seeded e2e server (as everywhere, off by default), so `GET /api/mailboxes`'s
+		// `semanticSearchAvailable` is patched true here rather than flipping the real, shared admin setting (which
+		// would leak into every other shot run after this one in the same, sequential, single-worker suite); the
+		// chip is then clicked on rather than assuming its stored per-browser default, since an earlier capture in
+		// the same browser session could otherwise leave it off.
 		name: "2026-11-08-search-by-meaning-light",
 		theme: "light",
 		viewport: { width: 760, height: 160 },
 		open: async (page) => {
+			await page.route("**/api/mailboxes", async (route) => {
+				const response = await route.fetch();
+				const body = (await response.json()) as Record<string, unknown>;
+				await route.fulfill({ response, json: { ...body, semanticSearchAvailable: true } });
+			});
 			await page.goto("/inbox");
 			const panel = page.getByTestId("mail-search-panel");
 			const search = panel.getByRole("textbox", { name: /Search mail/ });
@@ -393,6 +404,8 @@ const SHOTS: Shot[] = [
 			await search.fill("invoice");
 			const chip = panel.getByRole("button", { name: "By meaning" });
 			await expect(chip).toBeVisible();
+			if ((await chip.getAttribute("aria-pressed")) !== "true") await chip.click();
+			await expect(chip).toHaveAttribute("aria-pressed", "true");
 			return panel;
 		},
 	},

@@ -265,10 +265,15 @@ async function resolveSearchEmailsQuery(
 			mailboxIds: [context.mailboxId],
 		});
 		if (result.semantic === "on") return { hybridIds: result.ids };
+		// Explicitly asked for (unlike the UI chip's ambient default), so always worth a note, whether meaning is
+		// off for the install or failed outright for this one call (C-1 of review round 3: this used to print
+		// "(undefined)" whenever it was quietly off, since only a real failure ever sets semanticReason).
 		if (mode === "meaning")
 			return {
 				hybridIds: null,
-				note: `Search by meaning is unavailable right now (${result.semanticReason}); these are keyword results instead.`,
+				note: result.semanticReason
+					? `Search by meaning is unavailable right now (${result.semanticReason}); these are keyword results instead.`
+					: "Search by meaning is off for this install; these are keyword results instead.",
 			};
 	}
 	conditions.push(...(await searchConditions(context, query)));

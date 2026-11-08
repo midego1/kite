@@ -1,5 +1,21 @@
 import { NextResponse } from "next/server";
-import { eq, desc, and, or, count, isNull, isNotNull, inArray, lte, gt, ne, notInArray, sql, sum } from "drizzle-orm";
+import {
+	eq,
+	desc,
+	and,
+	or,
+	count,
+	countDistinct,
+	isNull,
+	isNotNull,
+	inArray,
+	lte,
+	gt,
+	ne,
+	notInArray,
+	sql,
+	sum,
+} from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 import { getEnv } from "@/lib/cloudflare";
 import { getCurrentUser } from "@/lib/auth/cookies";
@@ -16,7 +32,7 @@ import { getRequestTimeZone } from "@/lib/time/utils";
 import { semanticSearch } from "@/lib/semantic/search";
 import type { SemanticMatch } from "@/lib/semantic/fusion-utils";
 import { queryInChunks } from "@/db/chunk-utils";
-import { decodeMessageCursor, getNextMessageCursor } from "@/lib/messages/cursor-utils";
+import { decodeMessageCursor, encodeMessageCursor, getNextMessageCursor } from "@/lib/messages/cursor-utils";
 import { ownedStatusCondition } from "@/lib/modules/message-status";
 import { loadRowSuggestions } from "@/lib/agent/auto-read/message-suggestions";
 import { loadRowLines } from "@/lib/agent/summaries/lines";
@@ -39,6 +55,10 @@ type ListQueryResolution = {
 	matchByMessageId: Map<string, SemanticMatch> | null;
 	semanticStatus?: "on" | "unavailable";
 	semanticReason?: string;
+	/** How many messages the plain keyword text alone matches, for a hybrid page's `total` and its "Show more"
+	 * (C-3 of review round 3): the fused list is capped well below this whenever there are more keyword matches
+	 * than the cap, and the cursor only ever continues by keyword order, so this is the number that number means. */
+	keywordTotal?: number;
 };
 
 /**
@@ -55,8 +75,9 @@ async function resolveListQuery(input: {
 	timeZone: string;
 	mailboxIds: string[];
 	tryHybrid: boolean;
+	groupByThread: boolean;
 }): Promise<ListQueryResolution> {
-	const { env, conditions, query, title, timeZone, mailboxIds } = input;
+	const { env, conditions, query, title, timeZone, mailboxIds, groupByThread } = input;
 	if (!query && !title) return { hybridIds: null, matchByMessageId: null };
 	// Operators (from:, has:attachment, before:) and free text go through the
 	// full-text index; `title` is the legacy subject filter and is folded in.
@@ -68,6 +89,11 @@ async function resolveListQuery(input: {
 		return { hybridIds: null, matchByMessageId: null };
 	}
 	const operatorConditions = buildSearchConditions(search, timeZone, { connectedAccounts, includeFullText: false });
+	// `semanticSearch` answers "off" (the feature or the assistant is off, or the query is too short to embed) and
+	// "unavailable" (a real runtime failure) exactly alike here: both mean no meaning run to use, so the ordinary
+	// keyword path is unchanged for the overwhelming majority of installs, which have the feature off by default
+	// (C-1 of review round 3: this used to only check for `!== "on"`, but "off" itself answered "on" quietly, so
+	// every default-install search took the capped, unpaged hybrid path below for no reason).
 	const result = await semanticSearch({
 		env,
 		scopeWhere: and(...conditions, ...operatorConditions)!,
@@ -79,12 +105,26 @@ async function resolveListQuery(input: {
 		return {
 			hybridIds: null,
 			matchByMessageId: null,
-			semanticStatus: result.semantic,
-			semanticReason: result.semanticReason,
+			...(result.semantic === "unavailable"
+				? { semanticStatus: result.semantic, semanticReason: result.semanticReason }
+				: {}),
 		};
 	}
+	const fullConditions = buildSearchConditions(search, timeZone, { connectedAccounts });
+	const keywordWhere = and(...conditions, ...fullConditions);
+	const [{ total: keywordTotal }] = groupByThread
+		? await getDb(env)
+				.select({ total: countDistinct(conversationKey()) })
+				.from(messages)
+				.where(keywordWhere)
+		: await getDb(env).select({ total: count() }).from(messages).where(keywordWhere);
 	conditions.push(...operatorConditions);
-	return { hybridIds: result.ids, matchByMessageId: result.matches, semanticStatus: result.semantic };
+	return {
+		hybridIds: result.ids,
+		matchByMessageId: result.matches,
+		semanticStatus: result.semantic,
+		keywordTotal,
+	};
 }
 
 /**
@@ -111,6 +151,21 @@ function representativeRowsByThread(ids: readonly string[], loaded: readonly Lis
 		}
 	}
 	return order.map((key) => newestByKey.get(key)!);
+}
+
+/**
+ * "Show more" after a hybrid page (`docs/specs/semantic-search.md` 4.6 step 6): a cursor keyed on the oldest row
+ * actually shown, not the array's last entry (these rows are in relevance order, not date order). `tryHybrid`
+ * turns itself off once a cursor is sent (C-3 of review round 3: hybrid used to answer `nextCursor: null`
+ * unconditionally, so a search with more keyword matches than the fused cap could never reach the rest while the
+ * chip stayed on), so the next page is the plain keyword path, by date, from here on — some of the dates between
+ * this cursor and the newest row shown may repeat (a keyword match the relevance order did not surface on this
+ * page), which the client already dedupes by id, same as any other "Show more".
+ */
+function hybridPageCursor(rows: readonly ListMessage[]): string | null {
+	if (rows.length === 0) return null;
+	const oldest = rows.reduce((a, b) => (b.createdAt < a.createdAt ? b : a));
+	return encodeMessageCursor({ createdAt: oldest.createdAt, id: oldest.id });
 }
 
 /** Every message of each row's conversation (not just the ones a search matched), for `groupThreadMembers`. */
@@ -210,7 +265,7 @@ export async function GET(request: Request) {
 	if (read === "unread") {
 		conditions.push(eq(messages.read, false));
 	}
-	const { hybridIds, matchByMessageId, semanticStatus, semanticReason } = await resolveListQuery({
+	const { hybridIds, matchByMessageId, semanticStatus, semanticReason, keywordTotal } = await resolveListQuery({
 		env,
 		conditions,
 		query,
@@ -218,6 +273,7 @@ export async function GET(request: Request) {
 		timeZone: getRequestTimeZone(request, user.timeZone),
 		mailboxIds: mailboxScope.ids,
 		tryHybrid: url.searchParams.get("semantic") !== "0" && !cursor,
+		groupByThread,
 	});
 	const where = and(...conditions);
 	// Messages that were never threaded (older rows, drafts) stand alone, and a conversation
@@ -234,14 +290,15 @@ export async function GET(request: Request) {
 	// conversation row acts on the whole conversation within this folder.
 	let scopedThreads: ScopedThreads = { ids: new Map(), unread: new Map(), inbound: new Map() };
 	if (groupByThread && hybridIds) {
-		// Hybrid results have no cursor, in conversation view too: "Show more" continues with keyword results by
-		// date (tryHybrid above turns off once a cursor is sent). The D1 re-check already applied `where`.
+		// "Show more" continues with keyword results by date (C-3 of review round 3): `tryHybrid` turns itself off
+		// once a cursor is sent, so the next request takes the plain grouped path below. The D1 re-check already
+		// applied `where`.
 		const loaded = await queryInChunks(hybridIds, (ids) =>
 			db.select(messageListColumns).from(messages).where(inArray(messages.id, ids)),
 		);
 		rows = representativeRowsByThread(hybridIds, loaded);
-		total = rows.length;
-		nextCursor = null;
+		total = Math.max(keywordTotal ?? 0, rows.length);
+		nextCursor = hybridPageCursor(rows);
 		scopedThreads = await loadScopedThreads(db, where, threadKey, rows);
 	} else if (groupByThread) {
 		const page = await loadConversationPage({ db, where, offset, limit, cursor });
@@ -255,15 +312,16 @@ export async function GET(request: Request) {
 		nextCursor = getNextMessageCursor(rows, limit);
 		scopedThreads = await loadScopedThreads(db, where, threadKey, rows);
 	} else if (hybridIds) {
-		// The D1 re-check already applied `where`; repeating it would only add bound parameters. Hybrid results have
-		// no cursor: "Show more" continues with keyword results by date (`tryHybrid` above then stays off).
+		// The D1 re-check already applied `where`; repeating it would only add bound parameters. "Show more"
+		// continues with keyword results by date (C-3 of review round 3): `tryHybrid` turns itself off once a
+		// cursor is sent, so the next request takes the plain path below, by date, from `nextCursor`.
 		const loaded = await queryInChunks(hybridIds, (ids) =>
 			db.select(messageListColumns).from(messages).where(inArray(messages.id, ids)),
 		);
 		const rowById = new Map(loaded.map((row) => [row.id, row]));
 		rows = hybridIds.map((id) => rowById.get(id)).filter((row): row is ListMessage => !!row);
-		total = rows.length;
-		nextCursor = null;
+		total = Math.max(keywordTotal ?? 0, rows.length);
+		nextCursor = hybridPageCursor(rows);
 	} else {
 		const [[totalRow], pageRows] = await Promise.all([
 			db.select({ total: count() }).from(messages).where(where),

@@ -36,6 +36,7 @@ await build({
 	outdir: outDir,
 	outExtension: { ".js": ".mjs" },
 	bundle: true,
+	sourcemap: "inline",
 	splitting: true,
 	platform: "node",
 	format: "esm",
@@ -67,6 +68,10 @@ const { applyMigrations } = await load("migrate");
 const { FileBucket } = await load("filebucket");
 
 const DAY_MS = 86_400_000;
+/** The Drive year folder a payment with `insertPayment`'s default (2-days-ago) document date files under:
+ * derived the same way, so the assertion stays correct across the UTC year boundary (Jan 1-2) instead of
+ * assuming "today's year" always matches a date computed two days in the past. */
+const DEFAULT_RECEIPT_YEAR = new Date(Date.now() - 2 * DAY_MS).getUTCFullYear().toString();
 
 let bucketCount = 0;
 async function setup(t, { migrationsBefore } = {}) {
@@ -216,7 +221,7 @@ test("files a payment's mail into Drive (eml, html, pdf) and is idempotent on re
 	assert.ok(row.pdf_file_id);
 	assert.equal(row.attachment_file_id, null, "no attachment was given");
 
-	const year = new Date().getUTCFullYear().toString();
+	const year = DEFAULT_RECEIPT_YEAR;
 	const moneyWatch = driveFolderChildren(db, null).find((item) => item.name === "Money Watch");
 	assert.ok(moneyWatch);
 	const receiptsFolder = driveFolderChildren(db, moneyWatch.id).find((item) => item.name === "Receipts");
@@ -480,7 +485,7 @@ test("two runs racing to file the same row (a sweep tick and a backfill batch) n
 	const row = receiptRow(db, paymentId);
 	assert.equal(row.status, "done");
 
-	const year = new Date().getUTCFullYear().toString();
+	const year = DEFAULT_RECEIPT_YEAR;
 	const moneyWatch = driveFolderChildren(db, null).find((item) => item.name === "Money Watch");
 	const receiptsFolder = driveFolderChildren(db, moneyWatch.id).find((item) => item.name === "Receipts");
 	const yearFolder = driveFolderChildren(db, receiptsFolder.id).find((item) => item.name === year);
@@ -525,7 +530,7 @@ test("quota filling partway through a row leaves it pending, not done with piece
 	assert.equal(row.html_file_id, null);
 	assert.equal(row.pdf_file_id, null);
 
-	const year = new Date().getUTCFullYear().toString();
+	const year = DEFAULT_RECEIPT_YEAR;
 	const moneyWatch = driveFolderChildren(db, null).find((item) => item.name === "Money Watch");
 	const receiptsFolder = driveFolderChildren(db, moneyWatch.id).find((item) => item.name === "Receipts");
 	const yearFolder = driveFolderChildren(db, receiptsFolder.id).find((item) => item.name === year);
@@ -597,7 +602,7 @@ test("two receipts with the same vendor, day and type each keep their own files,
 	assert.notEqual(rowA.html_file_id, rowB.html_file_id, "each payment gets its own html copy");
 	assert.notEqual(rowA.pdf_file_id, rowB.pdf_file_id, "each payment gets its own pdf copy");
 
-	const year = new Date().getUTCFullYear().toString();
+	const year = DEFAULT_RECEIPT_YEAR;
 	const moneyWatch = driveFolderChildren(db, null).find((item) => item.name === "Money Watch");
 	const receiptsFolder = driveFolderChildren(db, moneyWatch.id).find((item) => item.name === "Receipts");
 	const yearFolder = driveFolderChildren(db, receiptsFolder.id).find((item) => item.name === year);
@@ -720,6 +725,58 @@ test("deleting a subscription with 150 documents stays within D1's 100 bound-par
 	assert.equal(refusedRemoval.body.code, "RECEIPTS_IN_DRIVE");
 
 	assert.equal(await receiptsDeleteGuard("finance_charges", chargeIds, true), null, "acknowledged, so it proceeds");
+});
+
+test("a transient failure reading an offloaded body leaves the claim pending, instead of permanently finishing the row with no HTML or PDF", async (t) => {
+	const { db, env } = await setup(t);
+	const messageId = await insertMessage(db, env);
+	const paymentId = insertPayment(db, { messageId });
+	const bodyKey = `bodies/${messageId}.html`;
+	db.db
+		.prepare("UPDATE messages SET html_body = NULL, html_body_key = ?, body_size = 10 WHERE id = ?")
+		.run(bodyKey, messageId);
+	await env.BUCKET.put(bodyKey, new TextEncoder().encode("<p>Offloaded body</p>"));
+
+	const realGet = env.BUCKET.get.bind(env.BUCKET);
+	let bodyReadAttempted = false;
+	env.BUCKET.get = async (...args) => {
+		if (args[0] === bodyKey) {
+			bodyReadAttempted = true;
+			throw new Error("simulated R2 read failure");
+		}
+		return realGet(...args);
+	};
+
+	assert.equal(await fileEligible("owner"), 0, "the row cannot be completed while the body read keeps failing");
+	assert.ok(bodyReadAttempted, "the offloaded body was actually attempted");
+	const row = receiptRow(db, paymentId);
+	assert.equal(row.status, "pending", "left retryable, not permanently finished without the HTML/PDF copies");
+	assert.equal(row.html_file_id, null);
+	assert.equal(row.pdf_file_id, null);
+	// The .eml does not depend on the body read and is awaited to completion before the body is even attempted
+	// (not raced against it), so it is durably written to Drive even though this attempt as a whole failed; the
+	// claim's own eml_file_id column is only filled in on a full success, so look for the file in Drive itself.
+	const year = DEFAULT_RECEIPT_YEAR;
+	const moneyWatch = driveFolderChildren(db, null).find((item) => item.name === "Money Watch");
+	const receiptsFolder = driveFolderChildren(db, moneyWatch.id).find((item) => item.name === "Receipts");
+	const yearFolder = driveFolderChildren(db, receiptsFolder.id).find((item) => item.name === year);
+	const filesBeforeRetry = driveFolderChildren(db, yearFolder.id).filter((item) => item.kind === "file");
+	assert.equal(filesBeforeRetry.length, 1, "the .eml was written despite the row as a whole staying pending");
+	const emlId = filesBeforeRetry[0].id;
+
+	env.BUCKET.get = realGet;
+	db.db.prepare("UPDATE finance_receipts SET lease_until = 0 WHERE id = ?").run(row.id);
+	assert.equal(await fileEligible("owner"), 1, "once the body can be read again, the retry completes the row");
+	const retried = receiptRow(db, paymentId);
+	assert.equal(retried.status, "done");
+	assert.equal(retried.eml_file_id, emlId, "the already-written .eml is reused, not duplicated");
+	assert.ok(retried.html_file_id);
+	assert.ok(retried.pdf_file_id);
+	assert.equal(
+		driveFolderChildren(db, yearFolder.id).filter((item) => item.kind === "file").length,
+		3,
+		"eml, html and pdf — the retry did not duplicate the .eml",
+	);
 });
 
 test("a file row left uploading by a crashed write is not reused as the finished receipt (S3)", async (t) => {

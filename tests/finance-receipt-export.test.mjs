@@ -101,6 +101,15 @@ test("noopenerLinks adds rel to a target-opened link without touching an existin
 	assert.match(out, /<a href="https:\/\/b\.example" target="_blank" rel="nofollow">b<\/a>/);
 });
 
+test("noopenerLinks adds rel even when a data-rel attribute comes first, instead of reading it as already having one", () => {
+	// Same bypass shape as the img src one above: a naive `\brel="` pattern matches inside "data-rel=" too, so
+	// a link with only a data-rel attribute (the sanitizer keeps data-* attributes) read as "already has a
+	// rel" and kept window.opener reachable through target="_blank".
+	const html = `<a href="https://evil.example" target="_blank" data-rel="nofollow">a</a>`;
+	const out = noopenerLinks(html);
+	assert.match(out, /rel="noopener noreferrer"/, `expected rel to be added, got: ${out}`);
+});
+
 test("stripRemoteContent leaves a fully local body untouched beyond link rel", () => {
 	const html = `<p>Hello <b>world</b></p><img src="data:image/png;base64,AAAA">`;
 	assert.equal(stripRemoteContent(html), html);

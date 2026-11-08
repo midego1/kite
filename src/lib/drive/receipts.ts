@@ -8,7 +8,7 @@ import { buildReceiptPdfDocument } from "@/lib/email/receipt-pdf-utils";
 import { getContactNameFromAddress } from "@/lib/contacts/utils";
 import { getAttachmentForUser } from "@/lib/email/attachments";
 import { assessStoredAttachment } from "@/lib/email/attachment-risk-store";
-import { loadMessageBody, MessageBodyUnavailableError } from "@/lib/email/bodies";
+import { loadMessageBody } from "@/lib/email/bodies";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { newId } from "@/lib/ids";
 import { buildTextPdf } from "@/lib/pdf/text-pdf-utils";
@@ -327,18 +327,15 @@ async function writeHtmlAndPdfCopies(
 	return { htmlFileId, pdfFileId };
 }
 
-/** The body for the HTML/PDF copies, or `null` while there is none to read: a read failure other than the body
- * being genuinely unreadable right now (transient; the caller leaves the row retryable for it) propagates. */
+/** The body for the HTML/PDF copies. `MessageBodyUnavailableError` (an offloaded body R2 cannot serve right now;
+ * `bodies.ts`'s own doc comment: "reading again may work") is never swallowed into `null` here — it propagates,
+ * so the caller (`fileMessageReceipts`, then `fileOneReceipt`) leaves the claim pending and retries instead of
+ * permanently finishing the row with no HTML or PDF. */
 async function readReceiptBody(
 	env: CloudflareEnv,
 	message: Parameters<typeof loadMessageBody>[1],
 ): Promise<ReceiptBody> {
-	try {
-		return await loadMessageBody(env, message, { strict: true });
-	} catch (error) {
-		if (error instanceof MessageBodyUnavailableError) return null;
-		throw error;
-	}
+	return loadMessageBody(env, message, { strict: true });
 }
 
 /**
@@ -382,13 +379,15 @@ export async function fileMessageReceipts(
 		dateText: message.createdAt.toISOString(),
 	};
 
-	// A body read failure (an offloaded object R2 cannot serve right now) is transient: left uncaught by
-	// `readReceiptBody`, it propagates past this function so the caller leaves the claim pending and retries rather
-	// than losing the eml below (already durably written, and reused rather than duplicated on that retry).
-	const [emlFileId, bodyRow] = await Promise.all([
-		writeEmlCopy(env, message, folderId, input.ownerId, input.baseName),
-		readReceiptBody(env, message),
-	]);
+	// In this order, and awaited one at a time rather than together: a body read failure (an offloaded object R2
+	// cannot serve right now) is transient, and left uncaught by `readReceiptBody` it propagates past this
+	// function so the caller leaves the claim pending and retries. Running the two together would let that
+	// rejection win the race while `writeEmlCopy`'s own write is still in flight, abandoning it mid-write (an
+	// isolate can be torn down the moment this function's promise settles) instead of letting it finish; awaiting
+	// the eml copy first means it is always either fully written (and reused, not duplicated, on the retry) or not
+	// attempted at all.
+	const emlFileId = await writeEmlCopy(env, message, folderId, input.ownerId, input.baseName);
+	const bodyRow = await readReceiptBody(env, message);
 	const { htmlFileId, pdfFileId } = await writeHtmlAndPdfCopies(
 		env,
 		header,

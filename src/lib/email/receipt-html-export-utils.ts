@@ -44,7 +44,10 @@ function isSafeDataUri(rawUrlContent: string): boolean {
 	return /^data:/i.test(unwrapUrlContent(rawUrlContent));
 }
 
-const BLANK_TARGET_LINK = /(<a\b(?=[^>]*\btarget=")(?![^>]*\brel=")[^>]*)(>)/gi;
+/** `(?<![\w-])` before `rel=`, the same reason `IMG_SRC` needs it before `src=`: `\brel="` fires inside a
+ * `data-rel="..."` attribute too, so `<a target="_blank" data-rel="nofollow">` would read as "already has a
+ * rel" and never get `rel="noopener noreferrer"` added, leaving `window.opener` reachable. */
+const BLANK_TARGET_LINK = /(<a\b(?=[^>]*\btarget=")(?![^>]*(?<![\w-])rel=")[^>]*)(>)/gi;
 
 function isRemoteOrInlineImageSrc(src: string): boolean {
 	return !src.toLowerCase().startsWith("data:");

@@ -21,6 +21,7 @@ import { DashboardNav } from "@/components/dashboard-nav";
 import { SidebarProvider } from "@/components/sidebar-state";
 import { SidebarAside, MobileMenuButton } from "@/components/sidebar-aside";
 import { MobileTabBar } from "@/components/mobile-tab-bar";
+import { MobileComposeFab } from "@/components/mobile-compose-fab";
 import { SidebarFrame } from "@/components/sidebar-frame";
 import { DashboardNotices } from "@/components/dashboard-notices";
 import { ShortcutsProvider } from "@/components/shortcuts";
@@ -187,7 +188,10 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
 							<ShortcutsProvider>
 								{assistantEnabled === true && <AssistantCommand toggle={toggleAssistant} />}
 								<RouteTitle />
-								<div className="h-dvh overflow-hidden bg-[#f6f8fc]">
+								{/* viewport-fit=cover (src/app/layout.tsx) makes env(safe-area-inset-*) resolve app-wide, not just
+							at the bottom the tab bar and the compose button already account for: a landscape phone or a
+							device with rounded corners can have a real left/right inset too. */}
+								<div className="h-dvh overflow-hidden bg-[#f6f8fc] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">
 									<SkipToContent />
 									<SidebarFrame
 										sidebar={
@@ -257,6 +261,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
 												)}
 											</div>
 											<MobileTabBar />
+											<MobileComposeFab />
 										</div>
 									</SidebarFrame>
 									{assistantLayout === "floating" && assistantEnabled === true && (

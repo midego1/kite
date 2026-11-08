@@ -27,7 +27,7 @@ import type { BulkMessageToolbarProps } from "./types";
 import { useT } from "@/lib/i18n/use-t";
 
 const menuItemClass =
-	"flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm text-neutral-700 outline-none data-[disabled]:opacity-50 data-[highlighted]:bg-neutral-100";
+	"flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm text-neutral-700 outline-none data-[disabled]:opacity-50 data-[highlighted]:bg-neutral-100 pointer-coarse:py-3";
 const menuLabelClass = "mt-1 px-3 pb-1 pt-2 text-sm font-medium text-neutral-500";
 const menuContentClass =
 	"z-[130] max-h-[min(24rem,var(--radix-dropdown-menu-content-available-height))] w-54 overflow-y-auto rounded-xl border border-neutral-200 bg-white p-2 shadow-lg";
@@ -57,7 +57,7 @@ function DraftSelectionToolbar({
 }: Pick<BulkMessageToolbarProps, "selectedCount" | "hideSelectedCount" | "onAction" | "onClearSelection" | "pending">) {
 	const t = useT();
 	return (
-		<div className="flex min-w-0 items-center gap-2 text-neutral-600 w-full">
+		<div className="flex min-w-0 items-center gap-2 text-neutral-600 w-full pointer-coarse:[&_button]:min-h-11 pointer-coarse:[&_button]:min-w-11">
 			{!hideSelectedCount && (
 				<span className="me-2 text-sm font-medium text-neutral-800">
 					{t("{count} selected", { count: selectedCount })}
@@ -143,7 +143,7 @@ function MailSelectionToolbar({
 	const manageDisabled = accessDisabled || hasPendingSendSelection;
 	const trashDisabled = manageDisabled && !canDeleteOwnDrafts({ hasDraftSelection, hasPendingSendSelection, pending });
 	return (
-		<div className="flex min-w-0 items-center gap-2 text-neutral-600 w-full">
+		<div className="flex min-w-0 items-center gap-2 text-neutral-600 w-full pointer-coarse:[&_button]:min-h-11 pointer-coarse:[&_button]:min-w-11">
 			{!hideSelectedCount && (
 				<span className="me-2 text-sm font-medium text-neutral-800">
 					{t("{count} selected", { count: selectedCount })}

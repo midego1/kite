@@ -29,7 +29,7 @@ export function DialogContent({
 				{...props}
 			>
 				{children}
-				<DialogPrimitive.Close className="absolute end-4 top-4 rounded-md p-1 text-neutral-500 outline-hidden hover:bg-neutral-100 hover:text-neutral-900 focus-visible:ring-2 focus-visible:ring-blue-500">
+				<DialogPrimitive.Close className="absolute end-4 top-4 flex items-center justify-center rounded-md p-1 text-neutral-500 outline-hidden hover:bg-neutral-100 hover:text-neutral-900 focus-visible:ring-2 focus-visible:ring-blue-500 pointer-coarse:end-2 pointer-coarse:top-2 pointer-coarse:h-11 pointer-coarse:w-11">
 					<X className="h-4 w-4" />
 					<span className="sr-only">Close</span>
 				</DialogPrimitive.Close>

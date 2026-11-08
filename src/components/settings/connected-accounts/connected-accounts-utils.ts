@@ -116,6 +116,29 @@ export async function checkAccountNow(id: string): Promise<ExternalAccountView> 
 	return (await readJson<{ account: ExternalAccountView }>(response, "Could not check the account")).account;
 }
 
+/** **Recheck authentication**: re-reads the account's recent mail for the authentication result Google added at delivery. */
+export async function recheckAccountAuth(id: string): Promise<ExternalAccountView> {
+	const response = await authFetch(`/api/external-accounts/${encodeURIComponent(id)}/auth-recheck`, { method: "POST" });
+	return (await readJson<{ account: ExternalAccountView }>(response, "Could not start the recheck")).account;
+}
+
+/** Whether the account's own topmost authentication header is ever trusted (spec §6.6.1): Gmail and Google Workspace only. */
+export function canRecheckAuth(account: Pick<ExternalAccountView, "preset">): boolean {
+	return account.preset === "gmail" || account.preset === "google_workspace";
+}
+
+/** The recheck's own status line, or null before it has ever run. */
+export function authRecheckStatusText(authRecheck: ExternalAccountView["authRecheck"]): string | null {
+	if (!authRecheck) return null;
+	if (authRecheck.status === "running")
+		return `Rechecking authentication… ${authRecheck.scanned} messages read, ${authRecheck.updated} updated.`;
+	if (authRecheck.status === "failed")
+		return `Recheck authentication failed: ${authRecheck.error ?? "Something went wrong."}`;
+	return authRecheck.updated > 0
+		? `Recheck authentication found a result for ${authRecheck.updated} of ${authRecheck.scanned} messages.`
+		: `Recheck authentication found nothing new in ${authRecheck.scanned} messages.`;
+}
+
 /** Pauses or resumes checking for new mail. */
 export async function setAccountChecking(id: string, enabled: boolean): Promise<ExternalAccountView> {
 	const response = await authFetch(`/api/external-accounts/${encodeURIComponent(id)}`, {

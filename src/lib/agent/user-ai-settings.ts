@@ -1,6 +1,8 @@
 import { eq } from "drizzle-orm";
 import type { AppDatabase } from "@/db";
 import { userAiSettings } from "@/db/schema/agent-writing";
+import { insertRow, selectRow } from "@/lib/db/pending-columns";
+import { missingColumnFromError } from "@/lib/auth/user-lookup-utils";
 import { isNoSuchTableError } from "@/lib/modules/state-utils";
 import type { InstructionSet, PersonalInstructions } from "./instruction-types";
 import { EMPTY_INSTRUCTIONS } from "./instruction-utils";
@@ -10,6 +12,8 @@ export type UserAiSettingsState = {
 	ready: boolean;
 	writingStyleEnabled: boolean;
 	instructions: InstructionSet;
+	/** Assistant by email (migration 0096); empty and off while that migration is pending. */
+	assistantEmail: { enabled: boolean; mailboxId: string | null; dailyLimit: number };
 };
 
 /** Saving before migration 0069 is applied; routes answer 409 `MIGRATION_PENDING`. */
@@ -20,10 +24,48 @@ export class UserAiSettingsPendingError extends Error {
 	}
 }
 
-/** The user's own AI settings: no row means empty instructions and the style profile off. */
+const EMPTY_ASSISTANT_EMAIL = { enabled: false, mailboxId: null, dailyLimit: 20 };
+
+/** The three columns migration 0096 adds, by their SQL names, the only ones an upsert here may miss. */
+const ASSISTANT_EMAIL_COLUMN_NAMES = [
+	userAiSettings.assistantEmailEnabled.name,
+	userAiSettings.assistantEmailMailboxId.name,
+	userAiSettings.assistantEmailDailyLimit.name,
+];
+
+/**
+ * Upserts a row without ever naming the assistant-by-email columns in its own `values`: Drizzle's `insert().values()`
+ * names every column the table declares, defaults and all, so a plain upsert fails with "no such column" before
+ * migration 0096 even though `values` never touches those three. On exactly that failure, falls back to inserting
+ * a row through `insertRow` (which already retries without a missing column) and then a plain `update().set()`,
+ * which — unlike insert — only ever names the columns it is given, so it is pending-column-safe on its own.
+ */
+async function upsertUserAiSettings(
+	db: AppDatabase,
+	userId: string,
+	values: Partial<typeof userAiSettings.$inferInsert>,
+): Promise<void> {
+	try {
+		await db
+			.insert(userAiSettings)
+			.values({ userId, ...values })
+			.onConflictDoUpdate({ target: userAiSettings.userId, set: values });
+	} catch (error) {
+		const column = missingColumnFromError(error);
+		if (!column || !ASSISTANT_EMAIL_COLUMN_NAMES.includes(column)) throw error;
+		await insertRow(db, userAiSettings, { userId, ...values }, { ignoreConflict: true });
+		await db.update(userAiSettings).set(values).where(eq(userAiSettings.userId, userId));
+	}
+}
+
+/**
+ * The user's own AI settings: no row means empty instructions and the style profile off. Reads with `selectRow`,
+ * so the assistant-by-email columns migration 0096 adds read as their defaults while it is pending, instead of
+ * failing every caller of this function (chat, drafting, the composer).
+ */
 export async function readUserAiSettings(db: AppDatabase, userId: string): Promise<UserAiSettingsState> {
 	try {
-		const [row] = await db.select().from(userAiSettings).where(eq(userAiSettings.userId, userId)).limit(1);
+		const row = await selectRow(db, userAiSettings, eq(userAiSettings.userId, userId));
 		return {
 			ready: true,
 			writingStyleEnabled: row?.writingStyleEnabled ?? false,
@@ -35,10 +77,22 @@ export async function readUserAiSettings(db: AppDatabase, userId: string): Promi
 						summary: row.summaryInstructions,
 					}
 				: { ...EMPTY_INSTRUCTIONS },
+			assistantEmail: row
+				? {
+						enabled: row.assistantEmailEnabled,
+						mailboxId: row.assistantEmailMailboxId,
+						dailyLimit: row.assistantEmailDailyLimit,
+					}
+				: { ...EMPTY_ASSISTANT_EMAIL },
 		};
 	} catch (error) {
 		if (!isNoSuchTableError(error)) throw error;
-		return { ready: false, writingStyleEnabled: false, instructions: { ...EMPTY_INSTRUCTIONS } };
+		return {
+			ready: false,
+			writingStyleEnabled: false,
+			instructions: { ...EMPTY_INSTRUCTIONS },
+			assistantEmail: { ...EMPTY_ASSISTANT_EMAIL },
+		};
 	}
 }
 
@@ -56,10 +110,7 @@ export async function savePersonalInstructions(
 		updatedAt: new Date(),
 	};
 	try {
-		await db
-			.insert(userAiSettings)
-			.values({ userId, ...values })
-			.onConflictDoUpdate({ target: userAiSettings.userId, set: values });
+		await upsertUserAiSettings(db, userId, values);
 	} catch (error) {
 		if (isNoSuchTableError(error)) throw new UserAiSettingsPendingError();
 		throw error;
@@ -80,10 +131,7 @@ export async function personalInstructionsFor(
 export async function saveWritingStyleEnabled(db: AppDatabase, userId: string, enabled: boolean): Promise<void> {
 	const values = { writingStyleEnabled: enabled, updatedAt: new Date() };
 	try {
-		await db
-			.insert(userAiSettings)
-			.values({ userId, ...values })
-			.onConflictDoUpdate({ target: userAiSettings.userId, set: values });
+		await upsertUserAiSettings(db, userId, values);
 	} catch (error) {
 		if (isNoSuchTableError(error)) throw new UserAiSettingsPendingError();
 		throw error;

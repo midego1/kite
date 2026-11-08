@@ -33,6 +33,7 @@ type CoreQueueMessageKind =
 	| "agent_triage"
 	| "agent_line_summary"
 	| "agent_style_backfill"
+	| "agent_assistant_email"
 	| "mailbox_purge"
 	| "backup"
 	| "storage_migration"
@@ -51,6 +52,7 @@ const QUEUE_MESSAGE_KINDS: Record<string, QueueMessageKind> = {
 	"agent.triage": "agent_triage",
 	"agent.line_summary": "agent_line_summary",
 	"agent.style_backfill": "agent_style_backfill",
+	"agent.assistant_email": "agent_assistant_email",
 	"mailbox.purge": "mailbox_purge",
 	"backup.run": "backup",
 	"backup.objects.copy": "backup",

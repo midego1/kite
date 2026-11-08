@@ -14,6 +14,7 @@ interface CloudflareEnv {
 		| import("./src/lib/external-accounts/sync-utils").ExternalSyncMessage
 		| import("./src/lib/external-accounts/sync-utils").ExternalWritebackMessage
 		| import("./src/lib/finance/payment-scan").PaymentScanMessage
+		| { kind: "agent.assistant_email"; requestId: string }
 		// Search by meaning (docs/specs/semantic-search.md): triggers the drain; cheap and idempotent.
 		| { kind: "search.embed" }
 	>;

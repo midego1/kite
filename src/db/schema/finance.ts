@@ -149,4 +149,13 @@ export const financePaymentScans = sqliteTable("finance_payment_scans", {
 	startedAt: integer("started_at", { mode: "timestamp" }).notNull(),
 	updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
 	finishedAt: integer("finished_at", { mode: "timestamp" }),
+	/** Why a stalled run was given up on (migration 0095); null while running or after a clean finish. */
+	error: text("error"),
+	/**
+	 * When a page last actually saved progress, or the scan was last confirmed correctly waiting for Money Watch to
+	 * come back on (migration 0095); null until the first one does. Never `updatedAt`, which a lease pickup alone
+	 * also bumps: this is what tells a scan that keeps being leased and crashing, or a stalled one restarted with
+	 * Try again, from one making real progress. The later of this and `startedAt` is a run's own clock.
+	 */
+	progressAt: integer("progress_at", { mode: "timestamp" }),
 });

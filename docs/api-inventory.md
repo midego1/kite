@@ -75,6 +75,7 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/agent/compose`                                         | GET, POST              | [source](../src/app/api/agent/compose/route.ts)                                         |
 | `/api/agent/conversations/[id]`                              | DELETE, GET            | [source](../src/app/api/agent/conversations/[id]/route.ts)                              |
 | `/api/agent/conversations`                                   | GET                    | [source](../src/app/api/agent/conversations/route.ts)                                   |
+| `/api/agent/email-requests`                                  | GET                    | [source](../src/app/api/agent/email-requests/route.ts)                                  |
 | `/api/agent/jobs/[id]/retry`                                 | POST                   | [source](../src/app/api/agent/jobs/[id]/retry/route.ts)                                 |
 | `/api/agent/jobs`                                            | GET                    | [source](../src/app/api/agent/jobs/route.ts)                                            |
 | `/api/agent/mcp-keys`                                        | DELETE, GET, POST      | [source](../src/app/api/agent/mcp-keys/route.ts)                                        |
@@ -231,6 +232,9 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/seed`                                                  | POST                   | [source](../src/app/api/seed/route.ts)                                                  |
 | `/api/send`                                                  | POST                   | [source](../src/app/api/send/route.ts)                                                  |
 | `/api/send/undo`                                             | POST                   | [source](../src/app/api/send/undo/route.ts)                                             |
+| `/api/settings/assistant/email-senders/[id]`                 | DELETE                 | [source](../src/app/api/settings/assistant/email-senders/[id]/route.ts)                 |
+| `/api/settings/assistant/email-senders/[id]/verify`          | POST                   | [source](../src/app/api/settings/assistant/email-senders/[id]/verify/route.ts)          |
+| `/api/settings/assistant/email-senders`                      | GET, POST              | [source](../src/app/api/settings/assistant/email-senders/route.ts)                      |
 | `/api/settings/assistant`                                    | GET, PATCH             | [source](../src/app/api/settings/assistant/route.ts)                                    |
 | `/api/settings/assistant/writing-style/backfill`             | POST                   | [source](../src/app/api/settings/assistant/writing-style/backfill/route.ts)             |
 | `/api/settings/assistant/writing-style`                      | DELETE, GET            | [source](../src/app/api/settings/assistant/writing-style/route.ts)                      |

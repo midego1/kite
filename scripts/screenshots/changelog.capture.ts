@@ -748,6 +748,25 @@ const SHOTS: Shot[] = [
 			return panel.getByTestId("mailbox-ai-setting");
 		},
 	},
+	{
+		// The assistant panel's settings: Assistant by email turned on, showing the mailbox picker and daily limit.
+		name: "2026-11-08-assistant-by-email-light",
+		viewport: { width: 1280, height: 900 },
+		open: async (page) => {
+			await page.goto("/inbox");
+			const toggle = page.getByRole("button", { name: /^(Open|Close) email assistant$/ });
+			await expect(toggle).toBeVisible();
+			if ((await toggle.getAttribute("aria-label")) === "Open email assistant") await toggle.click({ timeout: 45_000 });
+			const panel = page.locator("#email-assistant-panel");
+			await panel.getByRole("button", { name: "Assistant settings" }).click();
+			const emailToggle = panel.getByRole("switch", { name: "Assistant by email" });
+			await expect(emailToggle).toBeEnabled();
+			if ((await emailToggle.getAttribute("aria-checked")) !== "true") await emailToggle.click();
+			await expect(emailToggle).toBeChecked();
+			await expect(panel.getByText("Mailbox for requests from a verified extra address")).toBeVisible();
+			return panel;
+		},
+	},
 	...(["dark"] as const).map(
 		(theme): Shot => ({
 			// A file dragged over the floating composer: the drop target stays up while the drag is held.

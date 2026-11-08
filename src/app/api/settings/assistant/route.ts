@@ -1,13 +1,15 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { getDb } from "@/db";
-import { users } from "@/db/schema";
+import { domains, mailboxes, users } from "@/db/schema";
 import { requireSessionUser } from "@/lib/api/auth";
 import { hasValidSessionMutationOrigin } from "@/lib/auth/origin";
 import { getEnv } from "@/lib/cloudflare";
 import {
+	assistantEmailSettingsReady,
 	readUserAiSettings,
+	saveAssistantEmailSettings,
 	savePersonalInstructions,
 	saveWritingStyleEnabled,
 	UserAiSettingsPendingError,
@@ -16,12 +18,47 @@ import { deleteStyleProfiles, writingStyleAvailable } from "@/lib/agent/writing-
 import type { UpdateAssistantSettingsInput } from "./types";
 import { assistantSettingsResponse, parseUpdateAssistantSettingsRequest } from "./utils";
 
+async function personalMailboxOptions(env: ReturnType<typeof getEnv>, userId: string) {
+	const rows = await getDb(env)
+		.select({ id: mailboxes.id, localPart: mailboxes.localPart, hostname: domains.hostname })
+		.from(mailboxes)
+		.innerJoin(domains, eq(mailboxes.domainId, domains.id))
+		.where(and(eq(mailboxes.userId, userId), eq(mailboxes.type, "personal"), eq(mailboxes.disabled, false)));
+	return rows.map((row) => ({ id: row.id, label: `${row.localPart}@${row.hostname}` }));
+}
+
+/** Whether `mailboxId` is one of the user's own personal mailboxes (never a shared one — spec §5.3). */
+async function ownsPersonalMailbox(
+	env: ReturnType<typeof getEnv>,
+	userId: string,
+	mailboxId: string,
+): Promise<boolean> {
+	const [row] = await getDb(env)
+		.select({ id: mailboxes.id })
+		.from(mailboxes)
+		.where(
+			and(
+				eq(mailboxes.id, mailboxId),
+				eq(mailboxes.userId, userId),
+				eq(mailboxes.type, "personal"),
+				eq(mailboxes.disabled, false),
+			),
+		)
+		.limit(1);
+	return !!row;
+}
+
 export async function GET(request: Request) {
 	const env = getEnv();
 	const auth = await requireSessionUser(env, request);
 	if (auth.error) return auth.error;
 	const ai = await readUserAiSettings(getDb(env), auth.user.id);
-	return NextResponse.json(assistantSettingsResponse(auth.user.agentMaxSteps, ai, await writingStyleAvailable(env)));
+	return NextResponse.json(
+		assistantSettingsResponse(auth.user.agentMaxSteps, ai, await writingStyleAvailable(env), {
+			ready: await assistantEmailSettingsReady(env),
+			mailboxes: await personalMailboxOptions(env, auth.user.id),
+		}),
+	);
 }
 
 export async function PATCH(request: Request) {
@@ -60,12 +97,27 @@ export async function PATCH(request: Request) {
 		// Turning it off stops learning and using the profiles at once and deletes them.
 		if (!input.writingStyle.enabled) await deleteStyleProfiles(db, auth.user.id);
 	}
+	if (input.emailAssistant) {
+		if (input.emailAssistant.mailboxId !== undefined) {
+			if (!(await ownsPersonalMailbox(env, auth.user.id, input.emailAssistant.mailboxId)))
+				return NextResponse.json({ error: "Mailbox not found" }, { status: 400 });
+		}
+		try {
+			await saveAssistantEmailSettings(db, auth.user.id, input.emailAssistant);
+		} catch (error) {
+			if (!(error instanceof UserAiSettingsPendingError)) throw error;
+			return NextResponse.json({ error: error.message, code: "MIGRATION_PENDING" }, { status: 409 });
+		}
+	}
 	let maxSteps = auth.user.agentMaxSteps;
 	if (input.maxSteps !== undefined) {
 		await db.update(users).set({ agentMaxSteps: input.maxSteps }).where(eq(users.id, auth.user.id));
 		maxSteps = input.maxSteps;
 	}
 	return NextResponse.json(
-		assistantSettingsResponse(maxSteps, await readUserAiSettings(db, auth.user.id), styleAvailable),
+		assistantSettingsResponse(maxSteps, await readUserAiSettings(db, auth.user.id), styleAvailable, {
+			ready: await assistantEmailSettingsReady(env),
+			mailboxes: await personalMailboxOptions(env, auth.user.id),
+		}),
 	);
 }

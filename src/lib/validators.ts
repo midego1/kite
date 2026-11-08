@@ -361,9 +361,21 @@ export const updateAssistantSettingsSchema = z
 			.strict()
 			.optional(),
 		writingStyle: z.object({ enabled: z.boolean() }).strict().optional(),
+		emailAssistant: z
+			.object({
+				enabled: z.boolean().optional(),
+				mailboxId: z.string().min(1).optional(),
+				dailyLimit: z.number().int().min(1).max(100).optional(),
+			})
+			.strict()
+			.optional(),
 	})
 	.refine(
-		(value) => value.maxSteps !== undefined || value.instructions !== undefined || value.writingStyle !== undefined,
+		(value) =>
+			value.maxSteps !== undefined ||
+			value.instructions !== undefined ||
+			value.writingStyle !== undefined ||
+			value.emailAssistant !== undefined,
 	);
 
 export const undoSendSchema = z.object({

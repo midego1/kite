@@ -1,7 +1,9 @@
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { streamText, stepCountIs, ToolChoiceViolationError } from "ai";
 import { getDb, type AppDatabase } from "@/db";
 import { agentChatMessages, agentConversations } from "@/db/schema";
+import { assistantEmailRequests } from "@/db/schema/assistant-email";
+import { isNoSuchTableError } from "@/lib/modules/state-utils";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { newId } from "@/lib/ids";
 import { agentSystemPrompt } from "./system-prompt-utils";
@@ -41,16 +43,36 @@ export async function getAgentConversation(context: AgentToolContext, conversati
 	return conversation ?? null;
 }
 
+/** The From address of the assistant-by-email request each of `ids`, if any, ran in (spec §8.4, §14's envelope icon). */
+async function emailRequestSenderByConversation(db: AppDatabase, ids: readonly string[]): Promise<Map<string, string>> {
+	if (ids.length === 0) return new Map();
+	try {
+		const rows = await db
+			.select({ conversationId: assistantEmailRequests.conversationId, fromAddr: assistantEmailRequests.fromAddr })
+			.from(assistantEmailRequests)
+			.where(inArray(assistantEmailRequests.conversationId, ids));
+		return new Map(rows.flatMap((row) => (row.conversationId ? [[row.conversationId, row.fromAddr] as const] : [])));
+	} catch (error) {
+		if (isNoSuchTableError(error)) return new Map();
+		throw error;
+	}
+}
+
 export async function listAgentConversations(context: AgentToolContext) {
 	const db = getDb(context.env);
 	const access = await getMailboxAccessLevel(db, context.user, context.mailboxId);
 	if (!access?.canRead) throw new Error("Mailbox not found");
-	return db
+	const rows = await db
 		.select()
 		.from(agentConversations)
 		.where(and(eq(agentConversations.userId, context.user.id), eq(agentConversations.mailboxId, context.mailboxId)))
 		.orderBy(desc(agentConversations.updatedAt))
 		.limit(30);
+	const bySender = await emailRequestSenderByConversation(
+		db,
+		rows.map((row) => row.id),
+	);
+	return rows.map((row) => ({ ...row, viaEmailFrom: bySender.get(row.id) ?? null }));
 }
 
 export async function getAgentChatHistory(context: AgentToolContext, conversationId: string) {

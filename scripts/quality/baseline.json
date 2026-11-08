@@ -35,7 +35,7 @@
     "lint:src/app/book/[userId]/[eventId]/page.tsx:complexity:Function 'PublicBookingEventPage' has a complexity. Maximum allowed is 20.:occurrence=1": 39,
     "lint:src/components/agent/agent-panel.tsx:complexity:Function 'AgentPanel' has a complexity. Maximum allowed is 20.:occurrence=1": 44,
     "lint:src/components/agent/agent-panel.tsx:complexity:Async function 'send' has a complexity. Maximum allowed is 20.:occurrence=1": 23,
-    "lint:src/components/agent/agent-panel.tsx:max-lines:File has too many lines (lines). Maximum allowed is 500.:occurrence=1": 944,
+    "lint:src/components/agent/agent-panel.tsx:max-lines:File has too many lines (lines). Maximum allowed is 500.:occurrence=1": 954,
     "lint:src/components/agent/utils.ts:complexity:Function 'agentToolLabel' has a complexity. Maximum allowed is 20.:occurrence=1": 31,
     "lint:src/components/components-nav.tsx:complexity:Function 'NavItem' has a complexity. Maximum allowed is 20.:occurrence=1": 52,
     "lint:src/components/compose/compose-form.tsx:complexity:Function 'ComposeForm' has a complexity. Maximum allowed is 20.:occurrence=1": 87,

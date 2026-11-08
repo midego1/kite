@@ -12,6 +12,7 @@ export function assistantSettingsResponse(
 	maxSteps: unknown,
 	ai: UserAiSettingsState,
 	writingStyleAvailable: boolean,
+	emailAssistant: { ready: boolean; mailboxes: { id: string; label: string }[] },
 ): AssistantSettingsResponse {
 	return {
 		maxSteps: clampAgentMaxSteps(maxSteps),
@@ -21,5 +22,12 @@ export function assistantSettingsResponse(
 		instructionsReady: ai.ready,
 		instructionsMaxLength: TASK_INSTRUCTIONS_MAX_CHARS,
 		writingStyle: { enabled: writingStyleAvailable && ai.writingStyleEnabled, available: writingStyleAvailable },
+		emailAssistant: {
+			enabled: emailAssistant.ready && ai.assistantEmail.enabled,
+			mailboxId: ai.assistantEmail.mailboxId,
+			dailyLimit: ai.assistantEmail.dailyLimit,
+			ready: emailAssistant.ready,
+			mailboxes: emailAssistant.mailboxes,
+		},
 	};
 }

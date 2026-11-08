@@ -50,6 +50,7 @@ import { pruneMcpToolCallAudit, runDatabasePruning } from "./src/lib/maintenance
 import { runOperationalAlerts } from "./src/lib/alerts/run";
 import { runTelemetryHeartbeat } from "./src/lib/telemetry/heartbeat";
 import { eraseIdleExternalCredentials } from "./src/lib/external-accounts/retention";
+import { resumeAuthRechecks } from "./src/lib/external-accounts/auth-recheck";
 import { planExternalSync, processExternalAccountMessage } from "./src/lib/external-accounts/sync";
 import { dispatchModuleQueueMessage, runModuleCronTasks } from "./src/lib/modules/background";
 import { maybeAutoApplyPendingMigrations } from "./src/lib/migrations/auto-apply";
@@ -330,6 +331,12 @@ export default {
 			);
 			// Connected accounts whose check for new mail is due get one queued run each.
 			ctx.waitUntil(planExternalSync(env, now).catch((error) => logger.error("external.sync_plan_failed", { error })));
+			// An authentication recheck whose run died gets queued again, as the payment scan's own safety net does.
+			ctx.waitUntil(
+				resumeAuthRechecks(env, now).catch((error) =>
+					logger.error("external.auth_recheck_maintenance_failed", { error }),
+				),
+			);
 			// Revives a restore whose invocation died and removes uploaded backup files left behind.
 			ctx.waitUntil(
 				runRestoreMaintenance(env, now).catch((error) => logger.error("backup.restore_maintenance_failed", { error })),

@@ -2,7 +2,7 @@ import { expect, test, type APIRequestContext, type Page } from "@playwright/tes
 import { AUTO_READ_ACCOUNT_PASSWORD, createSignedInAccount } from "./support/auto-read";
 import { DOMAIN, STORAGE_STATE } from "./support/constants";
 import { contrastBetween } from "./support/contrast";
-import { apiContext, postInbound, uniqueToken, waitForMessage } from "./support/helpers";
+import { apiContext, postInbound, suppressMailboxTour, uniqueToken, waitForMessage } from "./support/helpers";
 import { chooseOption } from "./support/select";
 import { sampleMessage, startFakeImap } from "../tests/support/fake-imap.mjs";
 
@@ -104,6 +104,7 @@ test("synced mail shows a via chip in the list and the reader, and via: filters 
 			const context = await browser.newContext({ storageState: await user.api.storageState() });
 			try {
 				const page = await context.newPage();
+				await suppressMailboxTour(page);
 				await setStyle(page, variant.style, variant.theme);
 				await page.goto("/inbox");
 				await expect(page.locator("html")).toHaveAttribute("data-style", variant.style);
@@ -128,6 +129,7 @@ test("synced mail shows a via chip in the list and the reader, and via: filters 
 		const context = await browser.newContext({ storageState: await user.api.storageState() });
 		try {
 			const page = await context.newPage();
+			await suppressMailboxTour(page);
 			await page.goto("/inbox");
 			await page
 				.locator("[data-message-row]")
@@ -165,6 +167,7 @@ test("the forwarding guide renders with the Kite address and opens from the conn
 	const context = await browser.newContext({ storageState: await user.api.storageState() });
 	try {
 		const page = await context.newPage();
+		await suppressMailboxTour(page);
 		await page.goto("/settings/connected-accounts");
 		const guide = page.locator("[data-forwarding-guide]");
 		await expect(guide.getByRole("heading", { name: "Or forward mail to Kite" })).toBeVisible();
@@ -223,6 +226,7 @@ test("Also sync the Spam folder brings new Spam-folder mail into Kite's Spam, on
 	try {
 		const account = await connect(user.api, address, user.mailboxId, fake.port);
 		const page = await context.newPage();
+		await suppressMailboxTour(page);
 		await page.goto("/settings/connected-accounts");
 		const toggle = page.getByRole("switch", { name: `Also sync the Spam folder of ${address}` });
 		await expect(toggle).toHaveAttribute("aria-checked", "false");

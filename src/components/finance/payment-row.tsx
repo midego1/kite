@@ -39,7 +39,7 @@ function RowMenu({ item, onCorrect, onChanged }: Omit<RowProps, "locale">) {
 		<DropdownMenu.Root>
 			<DropdownMenu.Trigger
 				aria-label={t("Actions for {vendor}", { vendor: item.vendor })}
-				className="rounded-lg p-1.5 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+				className="flex items-center justify-center rounded-lg p-1.5 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 pointer-coarse:h-11 pointer-coarse:w-11"
 			>
 				<MoreHorizontal aria-hidden className="h-4 w-4" />
 			</DropdownMenu.Trigger>

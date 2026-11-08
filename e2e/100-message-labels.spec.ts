@@ -1,7 +1,7 @@
 import { expect, test, type APIRequestContext, type Browser, type Locator, type Page } from "@playwright/test";
 import { AUTO_READ_ACCOUNT_PASSWORD, createSignedInAccount } from "./support/auto-read";
 import { STORAGE_STATE } from "./support/constants";
-import { apiContext, deliverInbound, uniqueToken, waitForMessage } from "./support/helpers";
+import { apiContext, deliverInbound, suppressMailboxTour, uniqueToken, waitForMessage } from "./support/helpers";
 import { turnScreenerOff } from "./support/screener";
 import { chooseOption, expectSelectValue } from "./support/select";
 import { sampleMessage, startFakeImap } from "../tests/support/fake-imap.mjs";
@@ -110,7 +110,9 @@ test.afterAll(async () => {
 
 async function openPage(browser: Browser, viewport?: { width: number; height: number }): Promise<Page> {
 	const context = await browser.newContext({ storageState, ...(viewport ? { viewport, hasTouch: true } : {}) });
-	return context.newPage();
+	const page = await context.newPage();
+	await suppressMailboxTour(page);
+	return page;
 }
 
 async function showAllMailboxes(page: Page) {

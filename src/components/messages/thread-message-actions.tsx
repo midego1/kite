@@ -150,7 +150,7 @@ export function ThreadMessageActions({
 					type="button"
 					variant="ghost"
 					size="sm"
-					className="h-8 w-8 px-0"
+					className="h-8 w-8 px-0 pointer-coarse:h-11 pointer-coarse:w-11"
 					aria-label={starred ? t("Remove star") : t("Star")}
 					aria-pressed={starred}
 					disabled={pending}
@@ -166,7 +166,7 @@ export function ThreadMessageActions({
 							type="button"
 							variant="ghost"
 							size="sm"
-							className="h-8 w-8 px-0"
+							className="h-8 w-8 px-0 pointer-coarse:h-11 pointer-coarse:w-11"
 							aria-label={t("Reply")}
 							disabled={pending}
 							onClick={() => void onReply("reply")}
@@ -180,7 +180,7 @@ export function ThreadMessageActions({
 								type="button"
 								variant="ghost"
 								size="sm"
-								className="h-8 w-8 px-0"
+								className="h-8 w-8 px-0 pointer-coarse:h-11 pointer-coarse:w-11"
 								aria-label={t("More actions")}
 								aria-haspopup="menu"
 								aria-expanded={moreOpen}
@@ -191,10 +191,10 @@ export function ThreadMessageActions({
 							</Button>
 						</Tooltip>
 						{moreOpen && (
-							<div className="absolute end-0 z-30 mt-1 w-56 rounded-xl border border-neutral-200 bg-white p-2 text-neutral-700 shadow-lg">
+							<div className="absolute end-0 z-30 mt-1 max-h-[min(70vh,24rem)] w-56 overflow-y-auto rounded-xl border border-neutral-200 bg-white p-2 text-neutral-700 shadow-lg">
 								<button
 									type="button"
-									className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm hover:bg-neutral-100"
+									className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm hover:bg-neutral-100 pointer-coarse:py-3"
 									onClick={() => void onReply("reply")}
 								>
 									<Reply className="h-4 w-4 rtl:-scale-x-100" /> {t("Reply")}
@@ -202,7 +202,7 @@ export function ThreadMessageActions({
 								{canReplyAll && (
 									<button
 										type="button"
-										className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm hover:bg-neutral-100"
+										className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm hover:bg-neutral-100 pointer-coarse:py-3"
 										onClick={() => void onReply("replyAll")}
 									>
 										<ReplyAll className="h-4 w-4 rtl:-scale-x-100" /> {t("Reply all")}
@@ -210,14 +210,14 @@ export function ThreadMessageActions({
 								)}
 								<button
 									type="button"
-									className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm hover:bg-neutral-100"
+									className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm hover:bg-neutral-100 pointer-coarse:py-3"
 									onClick={() => void onForward()}
 								>
 									<Forward className="h-4 w-4 rtl:-scale-x-100" /> {t("Forward")}
 								</button>
 								<button
 									type="button"
-									className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm hover:bg-neutral-100"
+									className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm hover:bg-neutral-100 pointer-coarse:py-3"
 									onClick={() => {
 										setMoreOpen(false);
 										setSourceOpen(true);
@@ -238,7 +238,7 @@ export function ThreadMessageActions({
 								<hr className="my-1 border-neutral-100" />
 								<button
 									type="button"
-									className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm hover:bg-neutral-100"
+									className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm hover:bg-neutral-100 pointer-coarse:py-3"
 									onClick={() => void onMessageAction(message.read ? "unread" : "read")}
 								>
 									{message.read ? <Mail className="h-4 w-4" /> : <MailOpen className="h-4 w-4" />}
@@ -248,7 +248,7 @@ export function ThreadMessageActions({
 									<button
 										key={item.action}
 										type="button"
-										className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm hover:bg-neutral-100"
+										className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm hover:bg-neutral-100 pointer-coarse:py-3"
 										onClick={() => void onMessageAction(item.action)}
 									>
 										{createElement(item.icon, { size: 16 })} {item.label}
@@ -259,7 +259,7 @@ export function ThreadMessageActions({
 										<hr className="my-1 border-neutral-100" />
 										<button
 											type="button"
-											className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm hover:bg-neutral-100"
+											className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm hover:bg-neutral-100 pointer-coarse:py-3"
 											onClick={() => void onBlock()}
 										>
 											<Ban className="h-4 w-4" /> {t("Block contact")}

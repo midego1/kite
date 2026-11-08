@@ -26,7 +26,9 @@ export function AssistantNavItem({ assistant }: { assistant: AssistantToggleStat
 			size="sm"
 			className={clsx(
 				assistant.open ? "bg-blue-50 text-blue-700" : "text-neutral-600",
-				minimal ? RAIL_ITEM_CLASS : "h-9 w-full justify-start gap-3 rounded-lg px-3 text-sm font-normal",
+				minimal
+					? RAIL_ITEM_CLASS
+					: "h-9 w-full justify-start gap-3 rounded-lg px-3 text-sm font-normal pointer-coarse:h-11",
 			)}
 			onPointerEnter={() => void preloadAgentPanel().catch(() => undefined)}
 			onClick={assistant.toggle}
@@ -56,7 +58,10 @@ export function AssistantIconButton({ assistant }: { assistant: AssistantToggleS
 			type="button"
 			variant="ghost"
 			size="sm"
-			className={assistant.open ? "bg-blue-50 text-blue-700" : "text-neutral-600"}
+			className={clsx(
+				"pointer-coarse:h-11 pointer-coarse:w-11",
+				assistant.open ? "bg-blue-50 text-blue-700" : "text-neutral-600",
+			)}
 			onPointerEnter={() => void preloadAgentPanel().catch(() => undefined)}
 			onClick={assistant.toggle}
 			aria-label={assistant.open ? t("Close email assistant") : t("Open email assistant")}

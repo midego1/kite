@@ -88,7 +88,7 @@ export function SidebarAccounts() {
 							router.push("/inbox");
 						}}
 						className={cn(
-							"relative flex h-8 w-8 items-center justify-center rounded-lg",
+							"relative flex h-8 w-8 items-center justify-center rounded-lg pointer-coarse:h-11 pointer-coarse:w-11",
 							active ? "ring-1 ring-neutral-300" : "opacity-70 hover:opacity-100",
 						)}
 					>
@@ -113,7 +113,7 @@ export function SidebarAccounts() {
 					title={t("Add mailbox")}
 					aria-label={t("Add mailbox")}
 					onClick={() => router.push("/mailboxes")}
-					className="flex h-8 w-8 items-center justify-center rounded-lg bg-neutral-100 text-neutral-500 hover:bg-neutral-200 hover:text-neutral-900"
+					className="flex h-8 w-8 items-center justify-center rounded-lg bg-neutral-100 text-neutral-500 hover:bg-neutral-200 hover:text-neutral-900 pointer-coarse:h-11 pointer-coarse:w-11"
 				>
 					<Plus size={16} />
 				</button>

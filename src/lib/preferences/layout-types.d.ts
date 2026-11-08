@@ -46,6 +46,8 @@ export interface LayoutPreferences {
 	translateNever?: string[];
 	/** The admin overview and onboarding's "Get started" checklist, dismissed by this owner (`isPrimaryAdmin`). */
 	onboardingChecklistDismissed?: boolean;
+	/** The mailbox tour for users who are not the owner, finished or skipped; replaying it does not clear this. */
+	mailboxTourDismissed?: boolean;
 }
 
 /** What `GET` and `PATCH /api/settings/layout` answer. */

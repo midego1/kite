@@ -13,6 +13,7 @@ import { runStorageMigrationMaintenance } from "@/lib/storage/migration";
 import { runColdStorageSweep, runStorageColdMaintenance } from "@/lib/storage/cold";
 import { runAttachmentJobMaintenance } from "@/lib/email/attachment-storage-jobs";
 import { runTelemetryHeartbeat } from "@/lib/telemetry/heartbeat";
+import { resumeAuthRechecks } from "@/lib/external-accounts/auth-recheck";
 import { eraseIdleExternalCredentials } from "@/lib/external-accounts/retention";
 import { planExternalSync } from "@/lib/external-accounts/sync";
 
@@ -48,6 +49,9 @@ export function startScheduler(env: CloudflareEnv) {
 			pruneMcpToolCallAudit(env, now).catch((error) => logger.error("mcp.audit_pruning_failed", { error }));
 			// Connected accounts, matching worker.ts.
 			planExternalSync(env, now).catch((error) => logger.error("external.sync_plan_failed", { error }));
+			resumeAuthRechecks(env, now).catch((error) =>
+				logger.error("external.auth_recheck_maintenance_failed", { error }),
+			);
 			runRestoreMaintenance(env, now).catch((error) => logger.error("backup.restore_maintenance_failed", { error }));
 		}
 		const day = now.toISOString().slice(0, 10);

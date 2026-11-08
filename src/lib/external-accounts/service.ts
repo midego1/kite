@@ -15,11 +15,11 @@ import type { ConnectionProblem } from "./connection-utils";
 import { ExternalAccountRefusal, externalAccountTablesReady } from "./errors";
 import { assertMailServerHost } from "@/lib/net/host-guard";
 import { AccountInputError, changesSignIn, parseAccountInput, passwordFrom } from "./input-utils";
+import { accountViews } from "./account-views";
 import { addressDomain, findPreset, presetTrustsAuthResults } from "./presets-utils";
 import { appendRecentErrors } from "./recent-errors";
 import { serializeExternalAccount, type ExternalAccountRow } from "./serialize-utils";
-import { readIdentities } from "./identity-store";
-import { readSmtpVerified, writeSmtpVerified } from "./send-state";
+import { writeSmtpVerified } from "./send-state";
 import { queueSyncNow } from "./sync";
 import { accountSwitches, forgetInbox, isSwitchesOnly, restartJunkCursor } from "./switches";
 import { DEFAULT_SYNC_INTERVAL_MINUTES, parseSyncInterval } from "./sync-utils";
@@ -45,18 +45,13 @@ export async function listExternalAccounts(env: CloudflareEnv, userId: string): 
 		.from(externalAccounts)
 		.where(eq(externalAccounts.userId, userId))
 		.orderBy(asc(externalAccounts.createdAt));
-	const ids = rows.map((row) => row.id);
-	const [verified, identities] = await Promise.all([readSmtpVerified(env, ids), readIdentities(env, ids)]);
-	return rows.map((row) =>
-		serializeExternalAccount(row, verified.get(row.id) ?? null, new Date(), identities.get(row.id)),
-	);
+	return accountViews(env, rows);
 }
 
 /** The account as the API returns it, with its send-as state. */
 export async function ownView(env: CloudflareEnv, userId: string, id: string): Promise<ExternalAccountView> {
 	const row = await ownAccount(env, userId, id);
-	const [verified, identities] = await Promise.all([readSmtpVerified(env, [id]), readIdentities(env, [id])]);
-	return serializeExternalAccount(row, verified.get(id) ?? null, new Date(), identities.get(id));
+	return (await accountViews(env, [row]))[0];
 }
 
 export async function ownAccount(env: CloudflareEnv, userId: string, id: string): Promise<ExternalAccountRow> {

@@ -2,7 +2,7 @@ import { expect, test, type APIRequestContext } from "@playwright/test";
 import { AUTO_READ_ACCOUNT_PASSWORD, createSignedInAccount } from "./support/auto-read";
 import { STORAGE_STATE } from "./support/constants";
 import { cronTick } from "./support/finance";
-import { apiContext, uniqueToken, waitForMessage } from "./support/helpers";
+import { apiContext, suppressMailboxTour, uniqueToken, waitForMessage } from "./support/helpers";
 import { sampleMessage, startFakeImap } from "../tests/support/fake-imap.mjs";
 
 // Connected accounts, sync (docs/specs/external-accounts.md §6, PR 7): an account at the fake IMAP server on
@@ -43,6 +43,7 @@ test("new INBOX mail arrives once through Check now and the cron, keeps its read
 	const user = await createSignedInAccount(admin, `sy${token.slice(-8)}`);
 	const context = await browser.newContext({ storageState: await user.api.storageState() });
 	const page = await context.newPage();
+	await suppressMailboxTour(page);
 	try {
 		const connected = await user.api.post("/api/external-accounts", {
 			data: {

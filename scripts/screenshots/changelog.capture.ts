@@ -19,7 +19,7 @@ import {
 	THAI_MAIL_TRANSLATED,
 	THREAD,
 } from "./demo-data";
-import { mockForYou, mockForYouPreview } from "./demo-mocks";
+import { mockConnectedAccountAuthRecheck, mockForYou, mockForYouPreview } from "./demo-mocks";
 import { sampleMessage, startFakeImap } from "../../tests/support/fake-imap.mjs";
 
 // Screenshots for the changelog (docs/releasing.md#screenshots-in-the-changelog), taken against the isolated,
@@ -152,6 +152,21 @@ const SHOTS: Shot[] = [
 			await rows.filter({ hasText: "Offsite agenda and travel details" }).first().getByRole("link").first().click();
 			await expect(page.getByRole("button", { name: /^via Gmail: show all mail through/ })).toBeVisible();
 			return page;
+		},
+	},
+	{
+		// A connected Gmail account with Recheck authentication already finished (demo-mocks: a real Gmail sign-in
+		// needs credentials this sandbox never has).
+		name: "2026-11-08-connected-account-auth-recheck-light",
+		theme: "light",
+		viewport: { width: 1040, height: 700 },
+		open: async (page) => {
+			await mockConnectedAccountAuthRecheck(page);
+			await page.goto("/settings/connected-accounts");
+			const row = page.locator("[data-external-account]");
+			await expect(row.getByRole("button", { name: "Recheck authentication" })).toBeVisible();
+			await expect(row.locator("[data-auth-recheck-status]")).toContainText("found a result for 12 of 214 messages");
+			return row;
 		},
 	},
 	{
@@ -915,6 +930,28 @@ const SHOTS: Shot[] = [
 			},
 		}),
 	),
+	{
+		// The mailbox tour's Screener step, as a teammate (not the owner) would see it on their first login.
+		name: "2026-11-08-mailbox-tour-light",
+		theme: "light",
+		viewport: { width: 1280, height: 800 },
+		open: async (page) => {
+			// Demo data has one account, the owner: the tour is for everyone else, so the shot borrows their
+			// session and only pretends it is not the owner, the one thing the tour's own code checks.
+			await page.route("**/api/auth/me", async (route) => {
+				const response = await route.fetch();
+				const body = (await response.json()) as { user: { isPrimaryAdmin: boolean } };
+				body.user.isPrimaryAdmin = false;
+				await route.fulfill({ response, json: body });
+			});
+			await page.goto("/inbox");
+			const dialog = page.getByTestId("mailbox-tour");
+			await expect(dialog).toBeVisible();
+			await dialog.getByRole("button", { name: "Next" }).click();
+			await expect(dialog.getByText("The first time someone new writes to you")).toBeVisible();
+			return dialog;
+		},
+	},
 ];
 
 async function openPage(browser: Browser, { theme = "light", viewport }: Shot) {

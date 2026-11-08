@@ -54,7 +54,7 @@ export function MobileMenuButton({ className }: { className?: string }) {
 			aria-label={t("Open menu")}
 			aria-expanded={mobileOpen}
 			className={cn(
-				"flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-neutral-600 hover:bg-neutral-200 md:hidden",
+				"flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-neutral-600 hover:bg-neutral-200 pointer-coarse:h-11 pointer-coarse:w-11 md:hidden",
 				className,
 			)}
 		>

@@ -1,7 +1,7 @@
 import { expect, test, type APIRequestContext, type Browser, type Page } from "@playwright/test";
 import { AUTO_READ_ACCOUNT_PASSWORD, createSignedInAccount } from "./support/auto-read";
 import { STORAGE_STATE } from "./support/constants";
-import { apiContext, deliverInbound, uniqueToken, waitForMessage } from "./support/helpers";
+import { apiContext, deliverInbound, suppressMailboxTour, uniqueToken, waitForMessage } from "./support/helpers";
 import { turnScreenerOff } from "./support/screener";
 import { chooseOption, expectSelectValue, readOptions } from "./support/select";
 import { sampleMessage, startFakeImap } from "../tests/support/fake-imap.mjs";
@@ -30,7 +30,9 @@ async function mailboxManager(browser: Browser, name: string, canManageMailboxes
 	});
 	expect(response.ok()).toBe(true);
 	const context = await browser.newContext({ storageState: await user.api.storageState() });
-	return { user, context, page: await context.newPage() };
+	const page = await context.newPage();
+	await suppressMailboxTour(page);
+	return { user, context, page };
 }
 
 async function openConnectDialog(page: Page, address: string, port: number, password: string) {

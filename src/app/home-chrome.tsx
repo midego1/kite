@@ -30,7 +30,7 @@ export function HomeChrome({ appName, icon }: { appName: string; icon: string })
 					target="_blank"
 					rel="noopener noreferrer"
 					aria-label="View on GitHub"
-					className={`${ctaGhost} w-9 px-0 md:w-auto md:px-4`}
+					className={`${ctaGhost} w-9 px-0 pointer-coarse:w-11 md:w-auto md:px-4`}
 				>
 					<GitHubMark />
 					<span className="hidden md:inline">View on GitHub</span>

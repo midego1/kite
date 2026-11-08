@@ -1,7 +1,14 @@
 import { expect, test, type APIRequestContext, type Browser, type Page } from "@playwright/test";
 import { BASE_URL, DOMAIN, STORAGE_STATE, SUPPORT_ADDRESS } from "./support/constants";
 import { okJson, selectMailbox, shareMailbox } from "./support/auto-read";
-import { apiContext, apiSignIn, postInbound, uniqueToken, waitForMessage } from "./support/helpers";
+import {
+	apiContext,
+	apiSignIn,
+	postInbound,
+	suppressMailboxTour,
+	uniqueToken,
+	waitForMessage,
+} from "./support/helpers";
 import { setScreener } from "./support/screener";
 
 const PASSWORD = "screener-password-123";
@@ -74,6 +81,7 @@ async function messageStatus(api: APIRequestContext, id: string): Promise<string
 async function openAs(browser: Browser, account: { api: APIRequestContext; id: string }, mailboxId: string) {
 	const context = await browser.newContext({ baseURL: BASE_URL, storageState: await account.api.storageState() });
 	const page = await context.newPage();
+	await suppressMailboxTour(page);
 	await selectMailbox(page, mailboxId);
 	await page.addInitScript((id) => localStorage.setItem("kite-session-user", id), account.id);
 	await page.addInitScript(() => {

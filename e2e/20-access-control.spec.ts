@@ -136,6 +136,27 @@ test("an alias cannot take an address that already delivers to another mailbox",
 	await admin.dispose();
 });
 
+test("a mailbox cannot be created with an address that already delivers to another mailbox", async () => {
+	const token = uniqueToken("mb");
+	const admin = await apiContext(STORAGE_STATE);
+	const domain = await domainId(admin);
+	const shared = `team${token}`;
+	await createSharedMailbox(admin, shared, domain);
+
+	// Inbound mail ignores dots and +tags, so a second mailbox at any of these would be unreachable: whichever
+	// mailbox a query happens to list first would receive mail meant for the other, silently.
+	for (const localPart of [shared, `te.am${token}`, `${shared}+x`]) {
+		const response = await admin.post("/api/mailboxes", { data: { domainId: domain, localPart, type: "shared" } });
+		expect(response.status(), localPart).toBe(409);
+	}
+
+	const free = await admin.post("/api/mailboxes", {
+		data: { domainId: domain, localPart: `free${token}`, type: "shared" },
+	});
+	expect(free.status()).toBe(200);
+	await admin.dispose();
+});
+
 test("JMAP delegates without full access cannot change, delete or rename shared mail", async () => {
 	const token = uniqueToken("jm");
 	const admin = await apiContext(STORAGE_STATE);

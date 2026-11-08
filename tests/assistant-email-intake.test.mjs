@@ -214,6 +214,36 @@ test("an unknown sender address is dropped without a row", async (t) => {
 	assert.equal((await requests(database)).length, 0);
 });
 
+test("a +tag or dot variant of an own address does not fold onto the real mailbox", async (t) => {
+	const { env, database } = await setup(t);
+	// `owner+bot@example.com` and `o.wner@example.com` would both resolve to the "owner" mailbox on the receiving
+	// side (delivery folds +tags and dots), but spec §5.3 keeps the From address exact for sender identity: anyone
+	// who can send as a tagged or dotted variant of someone else's address (which DMARC does not distinguish from
+	// the real address) must not be treated as that person.
+	await deliver(env, { from: "Owner <owner+bot@example.com>", messageId: "<tag@example.com>" });
+	assert.equal((await requests(database)).length, 0);
+	await deliver(env, { from: "Owner <o.wner@example.com>", messageId: "<dot@example.com>" });
+	assert.equal((await requests(database)).length, 0);
+});
+
+test("a second mailbox whose address only differs by dots maps to its own owner, never the first mailbox's", async (t) => {
+	const { env, database } = await setup(t);
+	database.db.exec(
+		"INSERT INTO users (id, email, password_hash, name, created_at) VALUES ('other', 'other@example.com', 'hash', 'Other', 1)",
+	);
+	database.db.exec(
+		"INSERT INTO mailboxes (id, user_id, domain_id, local_part, created_at) VALUES ('mailbox-b', 'other', 'domain-1', 'o.wner', 1)",
+	);
+	database.db.exec(
+		"INSERT INTO user_ai_settings (user_id, assistant_email_enabled, assistant_email_daily_limit, updated_at) VALUES ('other', 1, 20, 1)",
+	);
+	await deliver(env, { from: "Other <o.wner@example.com>", messageId: "<other@example.com>" });
+	const rows = await requests(database);
+	assert.equal(rows.length, 1);
+	assert.equal(rows[0].mailbox_id, "mailbox-b");
+	assert.equal(rows[0].user_id, "other");
+});
+
 test("a shared mailbox address does not count as an own address", async (t) => {
 	const { env, database } = await setup(t);
 	database.db.exec(

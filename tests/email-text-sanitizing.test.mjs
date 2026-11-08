@@ -24,7 +24,10 @@ async function load(entry, name) {
 	return import(pathToFileURL(join(outDir, `${name}.mjs`)).href);
 }
 
-const { formatEmailAddress, parseEmailAddressParts } = await load("src/lib/email/address.ts", "address");
+const { formatEmailAddress, parseEmailAddressParts, getEmailAddress, splitEmailAddressList } = await load(
+	"src/lib/email/address.ts",
+	"address",
+);
 const { htmlToReadableText } = await load("src/lib/email/reply-content-utils.ts", "reply-content-utils");
 const { htmlToPlainText } = await load("src/components/compose/rich-text-utils.ts", "rich-text-utils");
 
@@ -55,6 +58,23 @@ test("parses a long hostile header in linear time", () => {
 	const started = performance.now();
 	parseEmailAddressParts(value);
 	assert.ok(performance.now() - started < 250);
+});
+
+test("round-trips a display name with escaped quotes and backslashes", () => {
+	const header = formatEmailAddress("maya@example.test", 'Maya "MJ" Chen');
+	assert.deepEqual(parseEmailAddressParts(header), { name: 'Maya "MJ" Chen', address: "maya@example.test" });
+	assert.equal(getEmailAddress(header), "maya@example.test");
+
+	const backslash = formatEmailAddress("a@example.test", "A\\B");
+	assert.deepEqual(parseEmailAddressParts(backslash), { name: "A\\B", address: "a@example.test" });
+});
+
+test("splits a list without cutting an escaped quote's comma", () => {
+	const header = [
+		formatEmailAddress("a@example.test", '5" Screens, Inc'),
+		formatEmailAddress("b@example.test", "Bob"),
+	].join(", ");
+	assert.deepEqual(splitEmailAddressList(header), ['"5\\" Screens, Inc" <a@example.test>', '"Bob" <b@example.test>']);
 });
 
 test("escapes backslashes and quotes in display names", () => {

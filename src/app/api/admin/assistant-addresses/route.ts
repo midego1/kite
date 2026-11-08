@@ -72,15 +72,19 @@ export async function POST(request: Request) {
 
 	const id = newId("asa");
 	await db.insert(assistantAddresses).values({ id, domainId: domain.id, localPart, createdByUserId: auth.user.id });
-	try {
-		// Without this, Cloudflare never forwards mail for the address to the Worker at all: creating the row alone
-		// would silently do nothing on a real domain, exactly like a mailbox or alias (`ensureMailboxDomainRouting`,
-		// `ensureEmailRoutingRuleToWorker` in the aliases route).
-		await ensureEmailRoutingRuleToWorker(env, domain.zoneId, `${localPart}@${domain.hostname}`);
-	} catch (err) {
-		await db.delete(assistantAddresses).where(eq(assistantAddresses.id, id));
-		const message = err instanceof Error ? err.message : "Failed to create Cloudflare routing rule";
-		return NextResponse.json({ error: message }, { status: 502 });
+	if (domain.receivingProvider === "cloudflare") {
+		try {
+			// Without this, Cloudflare never forwards mail for the address to the Worker at all: creating the row
+			// alone would silently do nothing on a real domain, exactly like a mailbox or alias
+			// (`ensureMailboxDomainRouting`, `ensureEmailRoutingRuleToWorker` in the aliases route). A Worker route
+			// only matters when Cloudflare is what receives this domain's mail — the same gate
+			// `ensureMailboxDomainRouting` applies — so an SES-receiving domain never calls the Cloudflare API.
+			await ensureEmailRoutingRuleToWorker(env, domain.zoneId, `${localPart}@${domain.hostname}`);
+		} catch (err) {
+			await db.delete(assistantAddresses).where(eq(assistantAddresses.id, id));
+			const message = err instanceof Error ? err.message : "Failed to create Cloudflare routing rule";
+			return NextResponse.json({ error: message }, { status: 502 });
+		}
 	}
 	const [row] = await db.select().from(assistantAddresses).where(eq(assistantAddresses.id, id)).limit(1);
 	return NextResponse.json({ assistantAddress: publicAssistantAddress(row!, domain.hostname) }, { status: 201 });

@@ -156,7 +156,7 @@ export async function getMessageWithBodyForUser(env: CloudflareEnv, user: Sessio
 	const access = await getMailboxAccessLevel(db, user, row.mailboxId);
 	if (!access?.canRead) return null;
 	const message = await loadMessageBody(env, row);
-	const [contactNames, attachments, unsubscribeUrl, sendStates, viaById, spoofedContact] = await Promise.all([
+	const [contactNames, attachments, unsubscribeUrl, sendStates, viaById, spoofedMatch] = await Promise.all([
 		getMessageContactNames(env, message.userId, message.fromAddr, message.toAddr),
 		listMessageAttachments(env, messageId),
 		getUnsubscribeUrlFromRawR2Key(env, message.rawR2Key),
@@ -169,6 +169,9 @@ export async function getMessageWithBodyForUser(env: CloudflareEnv, user: Sessio
 	]);
 	const sendState = sendStates.get(message.id);
 	const via = viaById.get(message.id);
+	// The matched address is the mailbox owner's own contact: a delegate without full access
+	// (who could not open Contacts and see it there either) learns only that a name matched one.
+	const spoofedContact = spoofedMatch === null ? null : access.canManage ? spoofedMatch : true;
 	return {
 		message: {
 			...message,

@@ -8,10 +8,9 @@ import { loadTrustedContacts } from "@/lib/agent/auto-read/trusted-contacts";
  * this message's From header reuses with a different address. Reads the same bounded, paginated
  * contact lookup automatic reading already uses for every triaged message (`loadTrustedContacts`,
  * `findSpoofedContact`) — not a new check, just reused for the reader. `null` when the message has
- * no display name to compare, or it matches no trusted contact. Like every other caller of
- * `parseEmailAddressParts`, a name holding a backslash-escaped quote is not parsed out (a known,
- * separately tracked gap in `parseNameAddr`, `src/lib/email/address.ts`) and is treated as having
- * no name, so such a sender is never flagged as spoofed; fixing the parser is its own change.
+ * no display name to compare, or it matches no trusted contact. The caller decides who may see the
+ * matched address: it names the mailbox owner's own contact, so only the owner or a full-access
+ * viewer gets it back (`getMessageWithBodyForUser`).
  */
 export async function findSpoofedSenderContact(
 	env: CloudflareEnv,

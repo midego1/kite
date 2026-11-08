@@ -5,14 +5,17 @@ import { useT } from "@/lib/i18n/use-t";
 import type { Translate } from "@/lib/i18n/i18n-types";
 import type { SenderAuthConcern, SenderAuthWarning } from "./sender-auth-warning-types";
 
-function concernText(t: Translate, concern: SenderAuthConcern, spoofedContact: string | null): string {
+function concernText(t: Translate, concern: SenderAuthConcern, spoofedContact: string | true | null): string {
 	switch (concern) {
 		case "dmarc_failed":
 			return t("This message failed DMARC, the check that ties it to the sender's domain.");
 		case "display_name_spoof":
-			return t("The sender's name matches a contact you know ({contact}), but this address is different.", {
-				contact: spoofedContact ?? "",
-			});
+			// A delegate without full access never sees the owner's contact address, only that it matched one.
+			return typeof spoofedContact === "string"
+				? t("The sender's name matches a contact you know ({contact}), but this address is different.", {
+						contact: spoofedContact,
+					})
+				: t("The sender's name matches a contact of this mailbox, but this address is different.");
 		case "spf_failed":
 			return t("This message failed SPF, the check that confirms the sending server for this domain.");
 		case "dkim_failed":

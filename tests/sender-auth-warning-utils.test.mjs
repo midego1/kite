@@ -69,6 +69,34 @@ test("a DKIM pass that is not aligned to the From domain is flagged; an aligned 
 	assert.equal(deriveSenderAuthWarning(aligned, null), null);
 });
 
+test("a DMARC pass outweighs a failed SPF check, as it does for the spam score", () => {
+	const forwarded = signals(
+		{ id: "spf_failed", score: 6, reason: "SPF authentication failed" },
+		{ id: "dmarc_passed", score: -8, reason: "DMARC passed" },
+	);
+	assert.equal(deriveSenderAuthWarning(forwarded, null), null);
+});
+
+test("a DMARC pass outweighs an unaligned DKIM pass, as for an ESP that aligns only on SPF", () => {
+	const esp = signals(
+		{ id: "dkim_passed", score: -4, reason: "DKIM passed", metadata: { aligned: false } },
+		{ id: "dmarc_passed", score: -8, reason: "DMARC passed" },
+	);
+	assert.equal(deriveSenderAuthWarning(esp, null), null);
+});
+
+test("a DMARC pass still leaves a Reply-To mismatch or a spoofed name standing", () => {
+	const warning = deriveSenderAuthWarning(
+		signals(
+			{ id: "spf_failed", score: 6, reason: "SPF authentication failed" },
+			{ id: "dmarc_passed", score: -8, reason: "DMARC passed" },
+			{ id: "reply_to_mismatch", score: 5, reason: "Reply-To domain differs" },
+		),
+		null,
+	);
+	assert.deepEqual(warning.concerns, ["reply_to_mismatch"]);
+});
+
 test("a cross-domain Reply-To is flagged on its own", () => {
 	const mismatch = signals({ id: "reply_to_mismatch", score: 5, reason: "Reply-To domain differs" });
 	assert.deepEqual(deriveSenderAuthWarning(mismatch, null).concerns, ["reply_to_mismatch"]);
@@ -81,6 +109,12 @@ test("a spoofed display name is flagged even over an otherwise clean message, an
 	);
 	assert.deepEqual(warning.concerns, ["display_name_spoof"]);
 	assert.equal(warning.spoofedContact, "maya@example.com");
+});
+
+test("a redacted spoof match (no address, for a viewer without full access) still flags the concern", () => {
+	const warning = deriveSenderAuthWarning(null, true);
+	assert.deepEqual(warning.concerns, ["display_name_spoof"]);
+	assert.equal(warning.spoofedContact, true);
 });
 
 test("every concern combines into one warning, ordered the same way regardless of signal order", () => {

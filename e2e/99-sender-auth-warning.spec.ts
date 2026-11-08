@@ -1,6 +1,7 @@
 import { expect, test, type APIRequestContext } from "@playwright/test";
-import { STORAGE_STATE, SUPPORT_ADDRESS } from "./support/constants";
+import { DOMAIN, STORAGE_STATE, SUPPORT_ADDRESS } from "./support/constants";
 import { apiContext, deliverInbound, openMessage, uniqueToken } from "./support/helpers";
+import { createSharedMailbox, createSignedInAccount, shareMailbox } from "./support/auto-read";
 
 // The reader's sender authentication warning and its thread badge read only signals Kite already
 // stores on messages.spam_signals (plus the display-name match the message detail route looks up
@@ -113,6 +114,58 @@ test("a display name reused from a trusted contact is named with the contact it 
 	const banner = warningBanner(page);
 	await expect(banner).toBeVisible();
 	await expect(banner).toContainText(contactAddress);
+});
+
+test("a passing DMARC check outweighs a failed SPF check, as for a forwarder or a mailing list", async ({ page }) => {
+	const token = uniqueToken("forwarded");
+	const domain = `${token}.invalid`;
+	const subject = `Weekly digest ${token}`;
+	await deliverInbound(api, {
+		from: `Digest <digest@${domain}>`,
+		to: SUPPORT_ADDRESS,
+		subject,
+		text: "This week's links.",
+		headers: {
+			"Authentication-Results": `mx.cloudflare.net; spf=fail smtp.mailfrom=bounce@${domain}; dkim=pass header.d=${domain}; dmarc=pass header.from=${domain}`,
+		},
+	});
+
+	await page.goto("/inbox");
+	await openMessage(page, subject);
+	await expect(warningBanner(page)).toHaveCount(0);
+	await expect(badge(page)).toHaveCount(0);
+});
+
+test("a delegate without full access sees that a name matched a contact, but never the address", async () => {
+	const token = uniqueToken("delegate");
+	const localPart = `shared${token}`;
+	const sharedMailboxId = await createSharedMailbox(api, localPart);
+	const delegate = await createSignedInAccount(api, `viewer${token}`);
+	await shareMailbox(api, sharedMailboxId, delegate.id, "read_only");
+
+	const contactAddress = `maya-${token}@trusted.invalid`;
+	const spoofedName = `Maya Chen ${token}`;
+	const saved = await api.patch("/api/contacts", {
+		data: { mailboxId: sharedMailboxId, address: contactAddress, displayName: spoofedName },
+	});
+	expect(saved.ok(), await saved.text()).toBe(true);
+
+	const subject = `Invoice ${token}`;
+	await deliverInbound(api, {
+		from: `${spoofedName} <billing@attacker-${token}.invalid>`,
+		to: `${localPart}@${DOMAIN}`,
+		subject,
+		text: "Please pay the attached invoice.",
+	});
+	const stored = await (await api.get(`/api/messages?${new URLSearchParams({ q: subject, limit: "1" })}`)).json();
+	const messageId: string = stored.messages[0].id;
+
+	const ownerView = await (await api.get(`/api/messages/${messageId}`)).json();
+	expect(ownerView.message.spoofedContact).toBe(contactAddress);
+
+	const delegateView = await (await delegate.api.get(`/api/messages/${messageId}`)).json();
+	expect(delegateView.message.spoofedContact).toBe(true);
+	expect(JSON.stringify(delegateView)).not.toContain(contactAddress);
 });
 
 test("the thread shows a compact badge for a message with a concern, while a clean open message stays clean", async ({

@@ -112,7 +112,12 @@ export async function moveColdDriveObject(
 	if (!head) throw new Error("The file is missing from its recorded store");
 	if (rule.target === R2_IA_TARGET) {
 		if (!source.capabilities.storageClasses.includes(COLD_STORAGE_CLASS)) return { bytes: 0, moved: false };
-		if (head.storageClass === COLD_STORAGE_CLASS) return { bytes: 0, moved: true };
+		if (head.storageClass === COLD_STORAGE_CLASS) {
+			// The rewrite already happened (maybe in an earlier sweep that crashed before this call landed);
+			// repair the row so it does not stay stuck reporting the stale, pre-rewrite storage class.
+			await callStorageHook("drive", "markCold", { ids: [item.id], storageClass: COLD_STORAGE_CLASS });
+			return { bytes: 0, moved: true };
+		}
 		const copied = await copyObject(source.bucket, head, source, item.key, item.key, {
 			storageClass: COLD_STORAGE_CLASS,
 		});
@@ -122,14 +127,25 @@ export async function moveColdDriveObject(
 	}
 	const target = storage.store(rule.target);
 	if (!target) throw new Error("The target store is missing or blocked");
-	if (item.storeId === rule.target) return { bytes: 0, moved: true };
+	if (item.storeId === rule.target) {
+		await callStorageHook("drive", "markCold", { ids: [item.id], storageClass: null, storeId: rule.target });
+		return { bytes: 0, moved: true };
+	}
 	const present = await target.bucket.head(item.key);
 	const bytes =
 		present && present.size === head.size ? present.size : await copyObject(source.bucket, head, target, item.key);
 	if (bytes === null) throw new Error("The file disappeared from its store during the copy");
 	const confirmed = await target.bucket.head(item.key);
 	if (!confirmed || confirmed.size !== head.size) throw new Error("The copy on the target store does not match");
-	await callStorageHook("drive", "markCold", { ids: [item.id], storageClass: null, storeId: rule.target });
+	const marked = await callStorageHook<{ updated: number }>("drive", "markCold", {
+		ids: [item.id],
+		storageClass: null,
+		storeId: rule.target,
+	});
+	// The row may be gone by now (the file was trashed and purged, or deleted outright, since this item was
+	// read); only delete the old copy once the row is confirmed repointed, never on the strength of the copy
+	// alone, so a vanished row can never leave nothing pointing at either copy.
+	if (!marked?.updated) throw new Error("The file's row is gone; its old copy was kept");
 	await source.bucket.delete(item.key);
 	return { bytes, moved: true };
 }

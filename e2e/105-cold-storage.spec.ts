@@ -26,6 +26,7 @@ test("a mail cold storage rule moves an old message to a second store, and it st
 	const admin = await apiContext(STORAGE_STATE);
 	const storeName = `E2E cold ${uniqueToken("")}`;
 	let storeId: string | undefined;
+	let oldId: string | undefined;
 	try {
 		const subject = uniqueToken("Cold storage candidate ");
 		const old = await deliverInbound(admin, {
@@ -35,6 +36,7 @@ test("a mail cold storage rule moves an old message to a second store, and it st
 			text: "This message is old enough to go cold.",
 			attachments: [{ filename: "note.txt", contentType: "text/plain", content: "cold attachment bytes" }],
 		});
+		oldId = old.id;
 		const fresh = await deliverInbound(admin, {
 			from: "sender@example.net",
 			to: SUPPORT_ADDRESS,
@@ -73,28 +75,21 @@ test("a mail cold storage rule moves an old message to a second store, and it st
 		await row.getByRole("button", { name: "Save" }).click();
 		await expect(row.getByRole("button", { name: "Run now" })).toBeEnabled();
 		await row.getByRole("button", { name: "Run now" }).click();
-		// Polls the admin API directly rather than the UI's own three-second refetch, the way
-		// e2e/48-storage-s3.spec.ts's waitForMigration does for a store migration. This only waits for the
-		// message to actually move (the first batch of the "messages" source), not for every other source
-		// (attachments, bodies) to also take its own empty round trip and for the job to reach "completed" —
-		// the move already happened by then, which is what the rest of this test actually checks.
-		let job: { status: string; objectsDone: number; errors: number } | undefined;
-		await expect
-			.poll(
-				async () => {
-					const data = await okJson<{
-						jobs: { objectClass: string; status: string; objectsDone: number; errors: number }[];
-					}>(await admin.get("/api/admin/storage/cold"));
-					job = data.jobs.find((entry) => entry.objectClass === "mail");
-					return job?.objectsDone ?? 0;
-				},
-				{ timeout: 120_000, intervals: [500, 1000, 2000] },
-			)
-			.toBeGreaterThan(0);
-		expect(job?.errors).toBe(0);
-
+		// Polls the fake S3 bucket directly for the moved object rather than the job's bookkeeping counter or
+		// the UI's own three-second refetch, the way e2e/48-storage-s3.spec.ts's waitForMigration polls the
+		// admin API for a store migration: this is the actual move completing (copied, verified and the
+		// source deleted), not a proxy for it, so the reads just below are never racing the move itself.
 		const objectKeys = () => [...fake.buckets.get(bucket)!.objects.keys()];
-		expect(objectKeys().some((key) => key.startsWith("inbound/"))).toBe(true);
+		await expect
+			.poll(() => objectKeys().some((key) => key.startsWith("inbound/")), {
+				timeout: 120_000,
+				intervals: [500, 1000, 2000],
+			})
+			.toBe(true);
+		const { jobs } = await okJson<{
+			jobs: { objectClass: string; status: string; objectsDone: number; errors: number }[];
+		}>(await admin.get("/api/admin/storage/cold"));
+		expect(jobs.find((entry) => entry.objectClass === "mail")?.errors).toBe(0);
 
 		// Opening the old message's original and attachment both read through the cold store transparently.
 		const original = await admin.get(`/api/messages/${old.id}/original`);
@@ -116,10 +111,12 @@ test("a mail cold storage rule moves an old message to a second store, and it st
 		await search.press("Enter");
 		await expect(page.getByRole("main").getByText(subject, { exact: true }).first()).toBeVisible();
 	} finally {
-		// Cold-moved objects and the rule referencing this store must go before the store itself can.
+		// Cold-moved objects and the rule referencing this store must go before the store itself can. Scoped
+		// to what this spec itself touched (the mail rule, the mail job, and only the message this spec
+		// delivered), so a slice's shared database keeps any other spec's cold storage state intact.
 		sql("UPDATE storage_cold_rules SET enabled = 0, target = 'r2-ia' WHERE object_class = 'mail'");
-		sql("DELETE FROM object_locations");
-		sql("DELETE FROM storage_cold_jobs");
+		if (oldId) sql(`DELETE FROM object_locations WHERE key = (SELECT raw_r2_key FROM messages WHERE id = '${oldId}')`);
+		sql("DELETE FROM storage_cold_jobs WHERE object_class = 'mail'");
 		if (storeId) await admin.delete(`/api/admin/storage/stores/${storeId}`).catch(() => undefined);
 		await admin.dispose();
 		await fake.close();

@@ -113,7 +113,20 @@ test("restore keeps the live storage config and restores it only into an empty i
 	assert.deepEqual([...lib.preservedRestoreTables({ storage_stores: 0, storage_routes: 0 })], []);
 	assert.deepEqual([...lib.preservedRestoreTables({ storage_routes: 1 })], PRESERVED);
 	assert.deepEqual([...lib.preservedRestoreTables({ storage_stores: 2, storage_routes: 0 })], PRESERVED);
-	assert.deepEqual([...lib.preservedRestoreTables({ object_locations: 3 })], PRESERVED);
+	// A cold rule or a cold location on its own (an install that only ever used the same-store r2-ia rewrite,
+	// never a custom store) keeps just the cold tables, not storage_stores/storage_routes too: a disabled
+	// rule saved once must not block restoring stores and routes from an older backup that predates it.
+	assert.deepEqual(
+		[...lib.preservedRestoreTables({ storage_cold_rules: 1 })],
+		["storage_cold_rules", "object_locations"],
+	);
+	assert.deepEqual(
+		[...lib.preservedRestoreTables({ object_locations: 3 })],
+		["storage_cold_rules", "object_locations"],
+	);
+	// A live store still carries the cold tables along with it, so a restored rule or location can never
+	// outlive the store rows it was checked against.
+	assert.deepEqual([...lib.preservedRestoreTables({ storage_stores: 1, object_locations: 3 })], PRESERVED);
 });
 
 /** Records the size of every batch it is sent. */

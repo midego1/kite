@@ -12,8 +12,9 @@ import type {
 /**
  * The storage configuration says where this install's objects live right now. A backup's copy may name
  * stores whose credentials or contents differ, so a restore keeps the live rows when there are any and
- * restores the backup's only into an install that has none. The four tables move together: routes name stores,
- * and cold storage's rules and locations (src/lib/storage/cold.ts) are only meaningful against the live stores.
+ * restores the backup's only into an install that has none. `storage_stores` and `storage_routes` move
+ * together (a route names a store), and cold storage's rules and locations (src/lib/storage/cold.ts) move
+ * with them too, so a restored rule or location can never outlive the store rows it was checked against.
  */
 export const PRESERVED_ON_RESTORE = [
 	"storage_stores",
@@ -22,10 +23,18 @@ export const PRESERVED_ON_RESTORE = [
 	"object_locations",
 ] as const;
 
+/** `storage_stores` and `storage_routes`, which a cold rule or location on its own must not drag in: an
+ * install that only ever used the same-store `r2-ia` rewrite has a cold rule and never a custom store. */
+const STORE_TABLES = ["storage_stores", "storage_routes"] as const;
+
 /** The tables a restore must leave untouched, given how many rows each preserved table has now. */
 export function preservedRestoreTables(liveRowCounts: Partial<Record<string, number>>): Set<string> {
-	const hasLiveRows = PRESERVED_ON_RESTORE.some((table) => (liveRowCounts[table] ?? 0) > 0);
-	return new Set(hasLiveRows ? PRESERVED_ON_RESTORE : []);
+	const storesLive = STORE_TABLES.some((table) => (liveRowCounts[table] ?? 0) > 0);
+	const coldLive = storesLive || PRESERVED_ON_RESTORE.some((table) => (liveRowCounts[table] ?? 0) > 0);
+	return new Set([
+		...(storesLive ? STORE_TABLES : []),
+		...(coldLive ? (["storage_cold_rules", "object_locations"] as const) : []),
+	]);
 }
 
 /** D1 rejects a statement with more bound parameters than this. */

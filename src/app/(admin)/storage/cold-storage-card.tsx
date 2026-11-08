@@ -40,9 +40,11 @@ function ColdRuleRow({
 	iaAvailable: boolean;
 	onChanged: () => void;
 }) {
-	// The row mounts only once `rule` has its real fetched value; a later refetch reflects this component's own
-	// save, so there is nothing to resync.
+	// The row mounts only once `rule` has its real fetched value; a later refetch while idle (only a running
+	// job's three-second poll refetches at all) could still be someone else's edit, so the form is never
+	// silently resynced from it — `lastSavedAt` instead refuses to overwrite a change made elsewhere since.
 	const [form, setForm] = useState<ColdRuleForm>(() => coldRuleToForm(rule));
+	const [lastSavedAt, setLastSavedAt] = useState(rule.updatedAt);
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 
@@ -50,12 +52,18 @@ function ColdRuleRow({
 	const update = (change: Partial<ColdRuleForm>) => setForm((current) => ({ ...current, ...change }));
 
 	async function save() {
+		if (rule.updatedAt !== lastSavedAt)
+			return setError("Someone else changed this rule since the page loaded; reload before saving your own edit.");
 		const built = coldRuleToBody(form);
 		if ("error" in built) return setError(built.error);
 		setBusy(true);
 		setError(null);
 		try {
-			await storageRequest(`/cold/${rule.objectClass}`, { method: "PUT", json: built.body });
+			const saved = await storageRequest<{ rule: { updatedAt: string } }>(`/cold/${rule.objectClass}`, {
+				method: "PUT",
+				json: built.body,
+			});
+			setLastSavedAt(saved.rule.updatedAt);
 			onChanged();
 		} catch (caught) {
 			setError(errorText(caught, "Could not save the rule"));
@@ -111,7 +119,7 @@ function ColdRuleRow({
 						placeholder="None"
 						value={form.minBytesMb}
 						onChange={(event) => update({ minBytesMb: event.target.value })}
-						disabled={busy || rule.objectClass === "mail"}
+						disabled={busy}
 						className="max-w-28"
 					/>
 				</div>

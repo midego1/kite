@@ -18,7 +18,11 @@ function parseMinBytesMb(value: string): { bytes: number } | { error: string } {
 }
 
 function minBytesToMb(bytes: number): string {
-	return bytes > 0 ? String(Math.round((bytes / MB) * 100) / 100) : "";
+	if (bytes <= 0) return "";
+	const rounded = Math.round((bytes / MB) * 100) / 100;
+	// A threshold small enough to round to "0.00 MB" must still show as nonzero, or saving the form again
+	// without touching this field would reparse it as 0 and silently drop the floor.
+	return String(rounded > 0 ? rounded : bytes / MB);
 }
 
 function parseAfterDays(value: string, max: number): { days: number } | { error: string } {

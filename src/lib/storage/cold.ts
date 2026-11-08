@@ -101,13 +101,13 @@ export async function coldRulesView(env: ColdEnv): Promise<ColdRuleView[]> {
 
 type SaveColdRuleInput = { afterDays: number; minBytes: number; target: string; enabled: boolean };
 
-/** Upserts one class's rule; `updateColdRule` validates `target` against the live stores first. */
+/** Upserts one class's rule, returning the moment it was saved; `updateColdRule` validates `target` first. */
 async function saveColdRule(
 	env: CloudflareEnv,
 	actorId: string,
 	objectClass: RoutableClass,
 	input: SaveColdRuleInput,
-): Promise<void> {
+): Promise<Date> {
 	const now = new Date();
 	await getDb(env)
 		.insert(storageColdRules)
@@ -121,10 +121,11 @@ async function saveColdRule(
 		action: "storage.cold_rule_saved",
 		metadata: { objectClass, ...input },
 	});
+	return now;
 }
 
 type ColdRuleFailure = { ok: false; status: number; error: string; field?: string };
-export type ColdRuleResult = ({ ok: true } & { rule: SaveColdRuleInput }) | ColdRuleFailure;
+export type ColdRuleResult = ({ ok: true } & { rule: SaveColdRuleInput & { updatedAt: string } }) | ColdRuleFailure;
 
 const MAX_AFTER_DAYS = 3650;
 
@@ -149,8 +150,8 @@ export async function updateColdRule(
 	if (!isUsableColdTarget(config, target))
 		return { ok: false, status: 404, error: "That target is not available", field: "target" };
 	const input: SaveColdRuleInput = { afterDays, minBytes, target, enabled };
-	await saveColdRule(env, actorId, objectClass, input);
-	return { ok: true, rule: input };
+	const savedAt = await saveColdRule(env, actorId, objectClass, input);
+	return { ok: true, rule: { ...input, updatedAt: savedAt.toISOString() } };
 }
 
 export async function listColdJobs(env: ColdEnv): Promise<Job[]> {
@@ -245,9 +246,9 @@ async function runColdItems(
 ): Promise<BatchResult> {
 	const result: BatchResult = { processed: 0, bytes: 0, errors: 0, lastError: null };
 	for (const item of items) {
-		result.processed += 1;
 		try {
 			result.bytes += await moveColdObject(env, storage, objectClass, rule, item);
+			result.processed += 1;
 		} catch (error) {
 			result.errors += 1;
 			result.lastError = describeError(error);
@@ -264,9 +265,9 @@ async function runDriveSource(storage: Storage, state: ColdCursor): Promise<{ ne
 	const batch = takeBatch(page.items, { objects: MAX_BATCH_OBJECTS, bytes: MAX_BATCH_BYTES });
 	const result: BatchResult = { processed: 0, bytes: 0, errors: 0, lastError: null };
 	for (const item of batch) {
-		result.processed += 1;
 		try {
 			result.bytes += (await moveColdDriveObject(storage, state.rule, item)).bytes;
+			result.processed += 1;
 		} catch (error) {
 			result.errors += 1;
 			result.lastError = describeError(error);
@@ -406,13 +407,19 @@ export async function coldIaAvailable(env: ColdEnv): Promise<boolean> {
 	return !!storage.store(DEFAULT_STORE_ID)?.capabilities.storageClasses.includes(COLD_STORAGE_CLASS);
 }
 
-/** Whether `target` is a rule an admin may save: `r2-ia`, or a store that is neither the default nor blocked. */
+/**
+ * Whether `target` is a rule an admin may save: `r2-ia` always (a rule can be saved ahead of a runtime or
+ * capability change that later makes it usable; the sweep itself quietly does nothing for an item whose store
+ * cannot hold that storage class yet), or a store that is neither the default nor blocked.
+ */
 function isUsableColdTarget(config: StorageConfig, target: string): boolean {
 	if (target === R2_IA_TARGET) return true;
 	return target !== DEFAULT_STORE_ID && isUsableStore(config, target);
 }
 
-/** Why `id` cannot be deleted: a rule still targets it, or an earlier sweep moved objects there; null otherwise. */
+/** Why `id` cannot be deleted: a rule still targets it, an earlier sweep moved objects there, or a sweep still
+ * in flight was started while it did (its cursor keeps the rule as it was when the sweep began, so a rule
+ * changed or disabled after that would not otherwise show up here); null otherwise. */
 export async function coldReferenceBlocking(env: ColdEnv, id: string): Promise<string | null> {
 	try {
 		const [rule] = await getDb(env)
@@ -427,6 +434,20 @@ export async function coldReferenceBlocking(env: ColdEnv, id: string): Promise<s
 			.where(eq(objectLocations.storeId, id))
 			.limit(1);
 		if (object) return "Objects a cold storage sweep moved here are still on this store; move them back first";
+		const activeJobs = await getDb(env)
+			.select({ objectClass: storageColdJobs.objectClass, cursor: storageColdJobs.cursor })
+			.from(storageColdJobs)
+			.where(inArray(storageColdJobs.status, ["queued", "running"]));
+		for (const job of activeJobs) {
+			let cursor: ColdCursor;
+			try {
+				cursor = parseColdCursor(job.cursor);
+			} catch {
+				continue;
+			}
+			if (cursor.rule.target === id)
+				return `A cold storage sweep for ${job.objectClass} is still moving objects here; wait for it to finish first`;
+		}
 		return null;
 	} catch (error) {
 		if (isNoSuchTableError(error)) return null;

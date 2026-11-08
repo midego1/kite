@@ -410,8 +410,12 @@ their own `store_id` and `storage_class` on `drive_items` instead, since that ro
 truth for where a file lives. Changing a rule's target after a sweep still finds an object through
 `object_locations` even when the new target is not the class's active route. A store a rule still targets, or
 that `object_locations` still names, cannot be deleted (`deleteStore` in `src/lib/storage/stores.ts`) until the
-rule points elsewhere or the objects are moved again. **Run now** (`POST /api/admin/storage/cold/[class]`) starts
-a sweep immediately; `GET /api/admin/storage/cold` reports each class's rule and its latest sweep. Logs:
+rule points elsewhere or the objects are moved again; a sweep already running when a store is deleted (it keeps
+the rule as it was when it started, so a rule changed since would not otherwise show it) blocks the delete too.
+A `backups` rule only sweeps the database export document each backup makes (`backups.r2_key`), not the mail
+file copies a [full backup](#full-backups) writes alongside it, which stay on their current store. **Run now**
+(`POST /api/admin/storage/cold/[class]`) starts a sweep immediately; `GET /api/admin/storage/cold` reports each
+class's rule and its latest sweep. Logs:
 `storage.cold_errors`, `storage.cold_batch_failed`. Backups: `storage_cold_rules` and `object_locations` are in
 the `system` group and preserved on restore like `storage_stores` and `storage_routes`; `storage_cold_jobs` is
 internal.

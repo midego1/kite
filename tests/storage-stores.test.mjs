@@ -232,6 +232,20 @@ test("deleting a store is refused while a route, a Drive file or a running migra
 	assert.equal(coldObject.status, 409);
 	assert.match(coldObject.error, /cold storage sweep/);
 	env.DB.db.prepare("DELETE FROM object_locations").run();
+	// A sweep already in flight keeps its rule as it was when it started (`cold.ts`'s cutoff snapshot), so a
+	// rule changed or disabled after that would not show up in the checks above; the job's own cursor must
+	// still be checked.
+	env.DB.db
+		.prepare(
+			`INSERT INTO storage_cold_jobs (object_class, status, cursor, created_at) VALUES ('backups', 'running', ?, 1)`,
+		)
+		.run(
+			JSON.stringify({ rule: { objectClass: "backups", afterDays: 30, minBytes: 0, target: "sto_a" }, sources: {} }),
+		);
+	const activeSweep = await stores.deleteStore(env, actor, "sto_a");
+	assert.equal(activeSweep.status, 409);
+	assert.match(activeSweep.error, /cold storage sweep/);
+	env.DB.db.prepare("DELETE FROM storage_cold_jobs").run();
 	const deleted = await stores.deleteStore(env, actor, "sto_a");
 	assert.equal(deleted.ok, true);
 	assert.equal(rows(env).length, 0);

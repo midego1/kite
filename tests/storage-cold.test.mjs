@@ -318,3 +318,57 @@ test("a drive cold move marks the row before deleting the old copy: a failed del
 		"the old copy is merely left behind, not lost",
 	);
 });
+
+test("a failing default store does not stop a cold-moved key from being read through object_locations", async (t) => {
+	const { env, queue } = await fixture(t);
+	await addStore(env, "sto_target", "kite-target");
+	await addMessage(env, "old", { createdAt: NOW - 60 * DAY });
+	await setColdRule(env, "mail", { afterDays: 30, target: "sto_target" });
+	await cold.runColdStorageSweep(env, new Date(NOW * 1000));
+	await drain(env, queue);
+	assert.equal(target().has("inbound/old.eml"), true);
+
+	// The default store (the normal chain's only member here, since mail's route was never switched) now
+	// fails every read: a transient outage must not keep the fallback to object_locations from running.
+	const realBucket = env.BUCKET;
+	env.BUCKET = new Proxy(realBucket, {
+		get(target, property) {
+			if (property === "get" || property === "head")
+				return () => {
+					throw new Error("simulated default store outage");
+				};
+			const value = Reflect.get(target, property);
+			return typeof value === "function" ? value.bind(target) : value;
+		},
+	});
+
+	const routed = routerLib.createStorageRouter(env);
+	const read = await routed.get("inbound/old.eml");
+	assert.equal(await read.text(), "raw old", "still found on the cold target despite the outage");
+	const headed = await routed.head("inbound/old.eml");
+	assert.ok(headed);
+
+	// A key that truly is not anywhere still surfaces the real error, not a silent miss.
+	await assert.rejects(routed.get("inbound/nowhere.eml"), /simulated default store outage/);
+});
+
+test("deleting a key whose store cannot be reached right now keeps the location record instead of losing track of it", async (t) => {
+	const { env, queue } = await fixture(t);
+	await addStore(env, "sto_target", "kite-target");
+	await addMessage(env, "old", { createdAt: NOW - 60 * DAY });
+	await setColdRule(env, "mail", { afterDays: 30, target: "sto_target" });
+	await cold.runColdStorageSweep(env, new Date(NOW * 1000));
+	await drain(env, queue);
+	assert.ok(location(env, "inbound/old.eml"));
+
+	// The store is now blocked (a bad endpoint, a revoked credential): built.store(storeId) finds nothing.
+	env.DB.db.prepare("UPDATE storage_stores SET endpoint = 'http://blocked.invalid' WHERE id = 'sto_target'").run();
+	clearStorageConfigCache();
+
+	const routed = routerLib.createStorageRouter(env);
+	await routed.delete("inbound/old.eml");
+	assert.ok(
+		location(env, "inbound/old.eml"),
+		"kept, since nothing actually deleted the object this store still (unreachably) holds",
+	);
+});

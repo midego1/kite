@@ -34,6 +34,31 @@ function coldStoreOf(storage: Storage, location: { storeId: string } | null): Ob
 	return location ? storage.store(location.storeId) : null;
 }
 
+/**
+ * The class's normal chain, falling back to the store `object_locations` names on a miss. A chain member
+ * failing (a transient error, a blocked store) must not keep a cold-moved object from ever being tried: the
+ * fallback runs even then, and only if it also comes up empty does the original error surface.
+ */
+async function readWithColdFallback<T>(
+	env: { DB: D1Database },
+	built: Storage,
+	objectClass: ReturnType<typeof objectClassOf>,
+	key: string,
+	read: (store: ObjectStore) => Promise<T | null>,
+): Promise<T | null> {
+	try {
+		const hit = await firstHit(built.readChain(objectClass), read);
+		if (hit) return hit;
+	} catch (error) {
+		const store = coldStoreOf(built, await lookupObjectLocation(env, key));
+		const fallback = store ? await read(store).catch(() => null) : null;
+		if (fallback) return fallback;
+		throw error;
+	}
+	const store = coldStoreOf(built, await lookupObjectLocation(env, key));
+	return store ? read(store) : null;
+}
+
 function requireMultipart(store: ObjectStore) {
 	const { createMultipartUpload, resumeMultipartUpload } = store.bucket;
 	if (!createMultipartUpload || !resumeMultipartUpload)
@@ -58,16 +83,12 @@ export function createStorageRouter(env: StoragePlatformEnv): KiteBucket {
 		async get(key: string, options?: R2GetOptions) {
 			if (objectClassOf(key) === "system") return binding.get(key, options);
 			const built = await storage();
-			const hit = await firstHit(built.readChain(objectClassOf(key)), (store) => store.bucket.get(key, options));
-			if (hit) return hit;
-			return coldStoreOf(built, await lookupObjectLocation(env, key))?.bucket.get(key, options) ?? null;
+			return readWithColdFallback(env, built, objectClassOf(key), key, (store) => store.bucket.get(key, options));
 		},
 		async head(key: string) {
 			if (objectClassOf(key) === "system") return binding.head(key);
 			const built = await storage();
-			const hit = await firstHit(built.readChain(objectClassOf(key)), (store) => store.bucket.head(key));
-			if (hit) return hit;
-			return coldStoreOf(built, await lookupObjectLocation(env, key))?.bucket.head(key) ?? null;
+			return readWithColdFallback(env, built, objectClassOf(key), key, (store) => store.bucket.head(key));
 		},
 		async put(key: string, value: Parameters<KiteBucket["put"]>[1], options?: R2PutOptions) {
 			if (objectClassOf(key) === "system") return binding.put(key, value, options);
@@ -80,13 +101,26 @@ export function createStorageRouter(env: StoragePlatformEnv): KiteBucket {
 				for (const store of built.deleteTargets(objectClass)) await store.bucket.delete(group);
 			}
 			// A cold move can park a key on a store outside the normal chain (`cold.ts`); reach it too, and
-			// drop the record once the object itself is gone, so it never blocks deleting that store later.
+			// drop the record once the object itself is actually gone, so it never blocks deleting that store
+			// later. A store that cannot be reached right now (missing, blocked) keeps its record instead of
+			// losing track of an object nothing has actually deleted.
 			const locations = await lookupObjectLocations(env, list);
 			if (locations.size) {
 				const byStore = new Map<string, string[]>();
 				for (const [key, storeId] of locations) byStore.set(storeId, [...(byStore.get(storeId) ?? []), key]);
-				for (const [storeId, storeKeys] of byStore) await built.store(storeId)?.bucket.delete(storeKeys);
-				await deleteObjectLocations(env, list);
+				const cleared: string[] = [];
+				for (const [storeId, storeKeys] of byStore) {
+					const target = built.store(storeId);
+					if (!target) continue;
+					try {
+						await target.bucket.delete(storeKeys);
+						cleared.push(...storeKeys);
+					} catch {
+						// Reaching this store failed (a network error, a bad endpoint); its keys stay recorded
+						// rather than this call failing outright and leaving every other key's record unclear.
+					}
+				}
+				if (cleared.length) await deleteObjectLocations(env, cleared);
 			}
 		},
 		async list(options?: R2ListOptions) {

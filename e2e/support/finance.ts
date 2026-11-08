@@ -2,7 +2,7 @@ import { expect, type APIRequestContext, type Browser, type Page } from "@playwr
 import { createSignedInAccount, okJson, selectMailbox } from "./auto-read";
 import { BASE_URL, DOMAIN } from "./constants";
 import type { InboundMail } from "./helpers-types";
-import { postInbound, uniqueToken, waitForMessage } from "./helpers";
+import { postInbound, suppressMailboxTour, uniqueToken, waitForMessage } from "./helpers";
 import { readSuggestions, waitForFinishedJob } from "./triage";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -151,6 +151,7 @@ export async function openRealtimePage(
 ) {
 	const context = await browser.newContext({ baseURL: BASE_URL, storageState: await account.api.storageState() });
 	const page = await context.newPage();
+	await suppressMailboxTour(page);
 	await page.addInitScript((userId) => localStorage.setItem("kite-session-user", userId), account.id);
 	await page.addInitScript(recordRealtimeFrames);
 	await selectMailbox(page, account.mailboxId);

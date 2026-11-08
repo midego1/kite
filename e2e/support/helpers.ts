@@ -20,7 +20,43 @@ export async function waitForHydration(page: Page, selector = "form"): Promise<v
 	}, selector);
 }
 
-export async function signIn(page: Page, email: string, password: string): Promise<void> {
+/**
+ * Almost every spec that signs in as a fresh account is testing something else entirely, not the mailbox
+ * tour, and the tour's first-login modal would otherwise sit in front of the very first thing each of them
+ * does. This makes this one page's own view of its layout answer as already dismissed, without writing
+ * anything to the account's stored layout: a spec that asserts the stored layout's exact shape through a
+ * separate `apiSignIn` client (not this page) is unaffected, since that request never passes through here.
+ * `e2e/104-mailbox-tour.spec.ts`, the one spec about the tour itself, never calls this for the page whose
+ * first login it checks.
+ */
+export async function suppressMailboxTour(page: Page): Promise<void> {
+	await page.route("**/api/settings/layout", async (route, request) => {
+		if (request.method() !== "GET") return route.continue();
+		try {
+			const response = await route.fetch();
+			const body = (await response.json()) as { ready: boolean; layout: Record<string, unknown> | null };
+			await route.fulfill({
+				response,
+				json: { ...body, layout: { ...(body.layout ?? {}), mailboxTourDismissed: true } },
+			});
+		} catch {
+			// The page or context closed while this was in flight: nothing left to answer.
+		}
+	});
+}
+
+/**
+ * `skipMailboxTourSuppression` is for the rare spec that already mocks `/api/settings/layout` itself (so a
+ * second route for the same URL, registered here, would only get in its way): pass `false` once that mock is
+ * already registered on `page`.
+ */
+export async function signIn(
+	page: Page,
+	email: string,
+	password: string,
+	{ skipMailboxTourSuppression = false }: { skipMailboxTourSuppression?: boolean } = {},
+): Promise<void> {
+	if (!skipMailboxTourSuppression) await suppressMailboxTour(page);
 	await page.goto("/login");
 	await waitForHydration(page);
 	await page.getByLabel("Email").fill(email);

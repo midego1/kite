@@ -165,7 +165,9 @@ test("before the database update the layout stays in the browser", async ({ brow
 	page.on("request", (request) => {
 		if (request.url().endsWith(LAYOUT_API) && request.method() === "PATCH") patches.push(request.url());
 	});
-	await signIn(page, email, PASSWORD);
+	// This page already mocks the layout endpoint itself, migration-pending included; the tour reads
+	// `ready: false` from that same mock as reason enough to stay closed on its own (no page.route needed here).
+	await signIn(page, email, PASSWORD, { skipMailboxTourSuppression: true });
 	await expect(page).toHaveURL(/\/inbox/);
 	await chooseLayout(page, "Below inbox");
 	await page.reload();

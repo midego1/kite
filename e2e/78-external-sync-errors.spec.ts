@@ -1,7 +1,7 @@
 import { expect, test, type APIRequestContext, type Locator } from "@playwright/test";
 import { AUTO_READ_ACCOUNT_PASSWORD, createSignedInAccount } from "./support/auto-read";
 import { STORAGE_STATE } from "./support/constants";
-import { apiContext, uniqueToken, waitForMessage } from "./support/helpers";
+import { apiContext, suppressMailboxTour, uniqueToken, waitForMessage } from "./support/helpers";
 import { sampleMessage, startFakeImap } from "../tests/support/fake-imap.mjs";
 
 // Connected accounts, sync errors (docs/specs/external-accounts.md §6.5, PR 7): the password changes at the fake
@@ -69,6 +69,7 @@ test("a failed sign-in stops sync, shows in the sidebar and is fixed by reconnec
 	const user = await createSignedInAccount(admin, `sf${token.slice(-8)}`);
 	const context = await browser.newContext({ storageState: await user.api.storageState() });
 	const page = await context.newPage();
+	await suppressMailboxTour(page);
 	try {
 		const connected = await user.api.post("/api/external-accounts", {
 			data: {
@@ -153,6 +154,7 @@ test("the sync notice and the account's state read in Kite, Kite light, Classic 
 			const context = await browser.newContext({ storageState: await user.api.storageState() });
 			try {
 				const page = await context.newPage();
+				await suppressMailboxTour(page);
 				await page.addInitScript(({ style, theme }) => {
 					localStorage.setItem("kite-style", style);
 					localStorage.setItem("kite-theme", theme);

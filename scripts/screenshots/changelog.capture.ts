@@ -818,6 +818,28 @@ const SHOTS: Shot[] = [
 			},
 		}),
 	),
+	{
+		// The mailbox tour's Screener step, as a teammate (not the owner) would see it on their first login.
+		name: "2026-11-08-mailbox-tour-light",
+		theme: "light",
+		viewport: { width: 1280, height: 800 },
+		open: async (page) => {
+			// Demo data has one account, the owner: the tour is for everyone else, so the shot borrows their
+			// session and only pretends it is not the owner, the one thing the tour's own code checks.
+			await page.route("**/api/auth/me", async (route) => {
+				const response = await route.fetch();
+				const body = (await response.json()) as { user: { isPrimaryAdmin: boolean } };
+				body.user.isPrimaryAdmin = false;
+				await route.fulfill({ response, json: body });
+			});
+			await page.goto("/inbox");
+			const dialog = page.getByTestId("mailbox-tour");
+			await expect(dialog).toBeVisible();
+			await dialog.getByRole("button", { name: "Next" }).click();
+			await expect(dialog.getByText("The first time someone new writes to you")).toBeVisible();
+			return dialog;
+		},
+	},
 ];
 
 async function openPage(browser: Browser, { theme = "light", viewport }: Shot) {

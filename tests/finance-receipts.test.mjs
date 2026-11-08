@@ -5,6 +5,7 @@ import test, { after } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { build } from "esbuild";
 import { makeBundleDirectory } from "./support/bundle-directory.mjs";
+import { limitBoundParameters } from "./support/jmap-database.mjs";
 import { copyMigrationsBefore } from "./support/module-database.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -66,7 +67,6 @@ const { applyMigrations } = await load("migrate");
 const { FileBucket } = await load("filebucket");
 
 const DAY_MS = 86_400_000;
-const owner = { id: "owner", role: "user", isPrimaryAdmin: false };
 
 let bucketCount = 0;
 async function setup(t, { migrationsBefore } = {}) {
@@ -197,7 +197,7 @@ function receiptRow(db, sourceId) {
 async function fileEligible(userId, limit = 100) {
 	let filed = 0;
 	for (const candidate of await receiptCandidates(limit, userId)) {
-		if (await fileOneReceipt(candidate)) filed += 1;
+		if ((await fileOneReceipt(candidate)) === "filed") filed += 1;
 	}
 	return filed;
 }
@@ -470,7 +470,11 @@ test("two runs racing to file the same row (a sweep tick and a backfill batch) n
 	assert.ok(candidate);
 
 	const [first, second] = await Promise.all([fileOneReceipt(candidate), fileOneReceipt(candidate)]);
-	assert.deepEqual([first, second].sort(), [false, true], "exactly one of the two racing attempts actually files it");
+	assert.deepEqual(
+		[first, second].sort(),
+		["filed", "pending"],
+		"exactly one of the two racing attempts actually files it, the other finds the claim already taken",
+	);
 
 	assert.equal(db.db.prepare("SELECT count(*) AS n FROM finance_receipts WHERE source_id = ?").get(paymentId).n, 1);
 	const row = receiptRow(db, paymentId);
@@ -575,4 +579,193 @@ test("a user whose rows can never be eligible right now does not crowd an owner 
 		[ownerPaymentId],
 		"the ineligible owner's older rows are excluded from the pool entirely, not merely skipped at filing time",
 	);
+});
+
+test("two receipts with the same vendor, day and type each keep their own files, instead of the second one reusing the first's (B1)", async (t) => {
+	const { db, env } = await setup(t);
+	const messageIdA = await insertMessage(db, env);
+	const messageIdB = await insertMessage(db, env);
+	const paymentA = insertPayment(db, { messageId: messageIdA });
+	const paymentB = insertPayment(db, { messageId: messageIdB });
+
+	assert.equal(await fileEligible("owner"), 2);
+	const rowA = receiptRow(db, paymentA);
+	const rowB = receiptRow(db, paymentB);
+	assert.equal(rowA.status, "done");
+	assert.equal(rowB.status, "done");
+	assert.notEqual(rowA.eml_file_id, rowB.eml_file_id, "each payment gets its own .eml, not the other's");
+	assert.notEqual(rowA.html_file_id, rowB.html_file_id, "each payment gets its own html copy");
+	assert.notEqual(rowA.pdf_file_id, rowB.pdf_file_id, "each payment gets its own pdf copy");
+
+	const year = new Date().getUTCFullYear().toString();
+	const moneyWatch = driveFolderChildren(db, null).find((item) => item.name === "Money Watch");
+	const receiptsFolder = driveFolderChildren(db, moneyWatch.id).find((item) => item.name === "Receipts");
+	const yearFolder = driveFolderChildren(db, receiptsFolder.id).find((item) => item.name === year);
+	const files = driveFolderChildren(db, yearFolder.id).filter((item) => item.kind === "file");
+	assert.equal(files.length, 6, "eml, html and pdf for each of the two payments, not one shared set of 3");
+});
+
+test("filing into a trashed Money Watch folder restores it, instead of silently filing into (and later losing) every receipt from then on (B2)", async (t) => {
+	const { db, env } = await setup(t);
+	const firstMessageId = await insertMessage(db, env);
+	const firstPayment = insertPayment(db, { messageId: firstMessageId });
+	assert.equal(await fileEligible("owner"), 1);
+
+	const moneyWatch = driveFolderChildren(db, null).find((item) => item.name === "Money Watch");
+	assert.ok(moneyWatch);
+	db.db.prepare("UPDATE drive_items SET trashed_at = 5 WHERE id = ?").run(moneyWatch.id);
+
+	const secondMessageId = await insertMessage(db, env);
+	const secondPayment = insertPayment(db, { messageId: secondMessageId });
+	assert.equal(
+		await fileEligible("owner"),
+		1,
+		"the second receipt still files, instead of being lost into the trashed folder",
+	);
+	assert.equal(receiptRow(db, secondPayment).status, "done");
+
+	const restored = db.db.prepare("SELECT trashed_at FROM drive_items WHERE id = ?").get(moneyWatch.id);
+	assert.equal(
+		restored.trashed_at,
+		null,
+		"the folder itself is restored, not left trashed for the next purge to destroy",
+	);
+
+	// The first receipt's files (filed before the trash) are reachable again too, through the same restored folder.
+	const receiptsFolder = driveFolderChildren(db, moneyWatch.id).find((item) => item.name === "Receipts");
+	assert.ok(receiptsFolder, "Receipts is visible again now its trashed ancestor is restored");
+	assert.ok(receiptRow(db, firstPayment).eml_file_id);
+});
+
+test("a transient failure grows the claim's lease exponentially, instead of retrying on the same flat interval forever (B3)", async (t) => {
+	const { db, env } = await setup(t);
+	const messageId = await insertMessage(db, env);
+	const paymentId = insertPayment(db, { messageId });
+	db.db.prepare("INSERT INTO drive_user_quotas (user_id, quota_bytes, updated_at) VALUES ('owner', 1, 1)").run();
+
+	const deltasMs = [];
+	for (let attempt = 0; attempt < 4; attempt += 1) {
+		const before = Date.now();
+		await fileEligible("owner");
+		const row = receiptRow(db, paymentId);
+		assert.equal(row.status, "pending", `attempt ${attempt}: quota never frees, so it stays retryable`);
+		assert.equal(row.attempts, attempt, `attempt ${attempt}: the claim's own attempt count`);
+		deltasMs.push(row.lease_until * 1000 - before);
+		// Simulate the lease passing (the next sweep tick or backfill batch, not necessarily five minutes away
+		// any more once this starts backing off) rather than waiting for it in real time.
+		db.db.prepare("UPDATE finance_receipts SET lease_until = 0 WHERE id = ?").run(row.id);
+	}
+	for (let i = 1; i < deltasMs.length; i += 1)
+		assert.ok(
+			deltasMs[i] > deltasMs[i - 1] * 1.8,
+			`lease ${i} (${deltasMs[i]}ms) should be roughly double lease ${i - 1} (${deltasMs[i - 1]}ms), not the same flat interval`,
+		);
+});
+
+test("a quota-stuck owner's backfill reports done with those rows still pending, not silently folded into skipped (S2)", async (t) => {
+	const { db, env } = await setup(t);
+	const messageId = await insertMessage(db, env);
+	insertPayment(db, { messageId });
+	db.db.prepare("INSERT INTO drive_user_quotas (user_id, quota_bytes, updated_at) VALUES ('owner', 1, 1)").run();
+
+	await startReceiptBackfill("owner");
+	const row = await ownerBackfill("owner");
+	assert.equal(row.status, "running");
+	await backfillReceipts({ kind: "finance.receipts_backfill", userId: "owner" }, {});
+
+	const finished = await ownerBackfill("owner");
+	assert.equal(finished.status, "done", "nothing more to try right now, so this pass is done");
+	assert.equal(finished.filed, 0);
+	assert.equal(finished.skipped, 0, "a transient failure is not a permanent skip");
+	assert.equal(finished.pending, 1, "but it is not silently lost either: it is reported as still pending");
+});
+
+test("deleting a subscription with 150 documents stays within D1's 100 bound-parameter limit (B4)", async (t) => {
+	const { db } = await setup(t);
+	const stats = limitBoundParameters(db.db);
+	const seconds = Math.floor(Date.now() / 1000);
+	db.db
+		.prepare(
+			`INSERT INTO finance_subscriptions (id, user_id, vendor, vendor_key, status, created_at, updated_at)
+			 VALUES ('sub-big', 'owner', 'Hosting Co', 'hosting-co', 'active', ?, ?)`,
+		)
+		.run(seconds, seconds);
+	const chargeIds = [];
+	for (let i = 0; i < 150; i += 1) {
+		const id = `charge-${i}`;
+		chargeIds.push(id);
+		db.db
+			.prepare(
+				`INSERT INTO finance_charges (id, subscription_id, user_id, doc_type, document_at, created_at)
+				 VALUES (?, 'sub-big', 'owner', 'invoice', ?, ?)`,
+			)
+			.run(id, seconds, seconds);
+	}
+	// One of the 150 has a filed receipt; the guard must still find it despite binding the whole list as one
+	// JSON parameter instead of one per id.
+	db.db
+		.prepare(
+			`INSERT INTO finance_receipts (id, user_id, source_table, source_id, status, created_at, updated_at)
+			 VALUES ('frcpt-big', 'owner', 'finance_charges', ?, 'done', ?, ?)`,
+		)
+		.run(chargeIds[149], seconds, seconds);
+
+	const refused = await receiptsDeleteGuard("finance_charges", chargeIds, false);
+	assert.deepEqual(refused, { status: 409, body: { error: RECEIPTS_IN_DRIVE_ERROR, code: "RECEIPTS_IN_DRIVE" } });
+	assert.ok(stats.maxBound < 100, `every statement must stay under D1's limit; saw ${stats.maxBound} bound at once`);
+
+	const financeUser = { id: "owner", email: "owner@example.com", role: "user", isPrimaryAdmin: false, timeZone: "UTC" };
+	const refusedRemoval = await removeSubscription(financeUser, "sub-big");
+	assert.equal(refusedRemoval.status, 409, JSON.stringify(refusedRemoval.body));
+	assert.equal(refusedRemoval.body.code, "RECEIPTS_IN_DRIVE");
+
+	assert.equal(await receiptsDeleteGuard("finance_charges", chargeIds, true), null, "acknowledged, so it proceeds");
+});
+
+test("a file row left uploading by a crashed write is not reused as the finished receipt (S3)", async (t) => {
+	const { db, env } = await setup(t);
+	const messageId = await insertMessage(db, env);
+	const paymentId = insertPayment(db, { messageId });
+	assert.equal(await fileEligible("owner"), 1);
+	const row = receiptRow(db, paymentId);
+	assert.ok(row.eml_file_id);
+
+	// Simulate a crash between reserving the .eml's row and writing its bytes: the row exists but was never
+	// finished, and the object it names was never actually written.
+	db.db.prepare("UPDATE drive_items SET status = 'uploading' WHERE id = ?").run(row.eml_file_id);
+	db.db
+		.prepare("UPDATE finance_receipts SET status = 'pending', eml_file_id = NULL, lease_until = 0 WHERE id = ?")
+		.run(row.id);
+
+	assert.equal(await fileEligible("owner"), 1, "the retry completes the row again");
+	const retried = receiptRow(db, paymentId);
+	assert.notEqual(retried.eml_file_id, row.eml_file_id, "a fresh file replaces the stuck one, instead of reusing it");
+	const freshItem = db.db.prepare("SELECT status FROM drive_items WHERE id = ?").get(retried.eml_file_id);
+	assert.equal(freshItem.status, "ready");
+});
+
+test("a stale user_module_access row disallowing drive or finance never excludes the primary admin's own receipts (S4)", async (t) => {
+	const { db, env } = await setup(t);
+	db.db.exec("UPDATE users SET role = 'admin', is_primary_admin = 1 WHERE id = 'owner'");
+	const messageId = await insertMessage(db, env);
+	const paymentId = insertPayment(db, { messageId });
+	db.db.exec(`
+		INSERT INTO user_module_access (id, user_id, module_id, allowed, updated_at) VALUES
+			('uma-drive', 'owner', 'drive', 0, 1),
+			('uma-finance', 'owner', 'finance', 0, 1);
+	`);
+	clearModuleStateCache();
+
+	const candidates = await receiptCandidates(10);
+	assert.deepEqual(
+		candidates.map((c) => c.sourceId),
+		[paymentId],
+		"the primary admin's row is still a candidate despite the disallowing rows",
+	);
+	assert.equal(
+		await fileEligible("owner"),
+		1,
+		"and still files, since isModuleEnabledFor always allows the primary admin",
+	);
+	assert.equal(receiptRow(db, paymentId).status, "done");
 });

@@ -191,10 +191,13 @@ export const financeReceipts = sqliteTable(
 		attachmentFileId: text("attachment_file_id"),
 		/** `pending` is a claim: a row written before Drive is called, so a concurrent sweep and backfill tick (or a
 		 * retry after a crash) cannot file the same source twice. `leaseUntil` bounds how long a claim stands before
-		 * another run may take it over (the same shape as `finance_payment_scans.lease_until`). */
+		 * another run may take it over (the same shape as `finance_payment_scans.lease_until`); `attempts` counts
+		 * prior transient failures and grows that lease, so a owner stuck failing (a full quota) backs off instead of
+		 * occupying every sweep tick's row budget forever. */
 		status: text("status", { enum: ["pending", "done", "skipped"] }).notNull(),
 		skippedReason: text("skipped_reason"),
 		leaseUntil: integer("lease_until", { mode: "timestamp" }),
+		attempts: integer("attempts").notNull().default(0),
 		filedAt: integer("filed_at", { mode: "timestamp" }),
 		createdAt: integer("created_at", { mode: "timestamp" })
 			.notNull()
@@ -234,6 +237,9 @@ export const financeReceiptBackfills = sqliteTable("finance_receipt_backfills", 
 	scanned: integer("scanned").notNull().default(0),
 	filed: integer("filed").notNull().default(0),
 	skipped: integer("skipped").notNull().default(0),
+	/** Rows left retryable by a transient failure (full quota, Drive unavailable), not a permanent skip: reported
+	 * apart from `skipped` so a `done` run with some of these left does not read as "every row was handled". */
+	pending: integer("pending").notNull().default(0),
 	leaseUntil: integer("lease_until", { mode: "timestamp" }),
 	startedAt: integer("started_at", { mode: "timestamp" }).notNull(),
 	updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),

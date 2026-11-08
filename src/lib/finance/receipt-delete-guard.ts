@@ -1,5 +1,6 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { getDb } from "@/db";
+import { inJsonArray } from "@/db/chunk-utils";
 import { financeReceipts } from "@/db/schema/finance";
 import { getEnv } from "@/lib/cloudflare";
 import { fail, type FinanceAnswer } from "./manual-context";
@@ -14,7 +15,9 @@ export const RECEIPTS_IN_DRIVE_ERROR =
  * receipts"). Refuses with 409 `RECEIPTS_IN_DRIVE` unless `acknowledge` is true, the same shape as a
  * flagged-attachment refusal; the Drive files are never touched either way. Reads with `onReceiptTablesOr`:
  * before migration 0101 nothing can possibly be filed, so every other delete (which has nothing to do with Keep
- * receipts) must not start answering 409 `MIGRATION_PENDING` because of it.
+ * receipts) must not start answering 409 `MIGRATION_PENDING` because of it. `sourceIds` is every document of a
+ * subscription that can be removed in one request (`removeSubscription`), which a long-lived one can carry past
+ * D1's 100 bound parameters; `inJsonArray` binds the whole list as one JSON parameter instead of one per id.
  */
 export async function receiptsDeleteGuard(
 	sourceTable: ReceiptSourceTable,
@@ -29,7 +32,7 @@ export async function receiptsDeleteGuard(
 			.where(
 				and(
 					eq(financeReceipts.sourceTable, sourceTable),
-					inArray(financeReceipts.sourceId, sourceIds),
+					inJsonArray(financeReceipts.sourceId, sourceIds),
 					eq(financeReceipts.status, "done"),
 				),
 			)

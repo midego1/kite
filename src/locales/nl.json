@@ -748,6 +748,7 @@
 	"{method} passed": "{method} geslaagd",
 	"{name} connected accounts": "Gekoppelde accounts van {name}",
 	"{name} profile picture": "Profielfoto van {name}",
+	"{pending} could not be saved right now (for example, Drive storage is full) and will be tried again automatically": "{pending} kon nu niet worden opgeslagen (bijvoorbeeld omdat de Drive-opslag vol is) en wordt automatisch opnieuw geprobeerd",
 	"{start} - {end} of {total}": "{start} - {end} van {total}",
 	"{title}. Show all mail through this account": "{title}. Toon alle mail via dit account",
 	"{value} {caption}": "{value} {caption}",

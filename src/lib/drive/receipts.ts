@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, isNotNull, isNull } from "drizzle-orm";
 import { getDb } from "@/db";
 import { messages } from "@/db/schema";
 import { driveItems } from "@/db/schema/drive";
@@ -36,9 +36,12 @@ export type FileMessageReceiptsResult =
  * resumes rather than duplicating what already landed. */
 class ReceiptFilingTransientError extends Error {}
 
-/** An existing, non-trashed item of this owner, parent and name, if any: the single lookup every create in this
- * module checks first, so calling the same write twice (a retry after a crash, two runs racing on an unclaimed
- * row) reuses what is already there instead of creating a duplicate. */
+/** An existing, non-trashed, fully-written item of this owner, parent and name, if any: the single lookup every
+ * create in this module checks first, so calling the same write twice (a retry after a crash, two runs racing on
+ * an unclaimed row) reuses what is already there instead of creating a duplicate. `status = "ready"` excludes a
+ * row a previous attempt left `uploading` (died between reserving it and writing its bytes): that row names no
+ * readable object, so reusing it would hand out a receipt file that does not actually open; a fresh write (with
+ * a fresh id, since this one is left for `purgeDrive` to abort) replaces it instead. */
 async function findExistingItem(
 	db: ReturnType<typeof getDb>,
 	ownerId: string,
@@ -54,6 +57,7 @@ async function findExistingItem(
 				eq(driveItems.ownerId, ownerId),
 				eq(driveItems.kind, kind),
 				eq(driveItems.name, name),
+				eq(driveItems.status, "ready"),
 				isNull(driveItems.trashedAt),
 				parentId === null ? isNull(driveItems.parentId) : eq(driveItems.parentId, parentId),
 			),
@@ -108,8 +112,16 @@ async function ensureFolder(
 		updatedAt: now,
 	};
 	// A losing insert here means a row with this exact id already exists (the primary key says so, atomically);
-	// `id` is the right answer regardless of which of the two calls' inserts actually landed.
+	// `id` is the right answer regardless of which of the two calls' inserts actually landed. That existing row
+	// can only be this exact `(ownerId, parentId, name)` (the id is a hash of them), but it can be trashed: the
+	// owner trashed "Money Watch" to tidy up, or a concurrent purge ran between `findExistingItem` above and here.
+	// Restoring it, rather than silently filing into a folder that retention will delete, is what keeps a tidy-up
+	// from quietly destroying every receipt filed afterward.
 	await db.insert(driveItems).values(row).onConflictDoNothing();
+	await db
+		.update(driveItems)
+		.set({ trashedAt: null, updatedAt: now })
+		.where(and(eq(driveItems.id, id), isNotNull(driveItems.trashedAt)));
 	return id;
 }
 

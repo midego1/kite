@@ -10,7 +10,7 @@ import { Switch } from "@/components/ui/switch";
 import { authFetch } from "@/lib/auth/client";
 import { useT } from "@/lib/i18n/use-t";
 
-type BackfillStatus = { status: "running" | "done" | "failed"; filed: number; skipped: number } | null;
+type BackfillStatus = { status: "running" | "done" | "failed"; filed: number; skipped: number; pending: number } | null;
 type ReceiptSettings = { enabled: boolean; backfill: BackfillStatus };
 
 /** How often the settings are read again while a backfill runs (matches the Payments scan poll). */
@@ -124,6 +124,16 @@ export function ReceiptSettingsDialog({
 										filed: settings.backfill.filed,
 										skipped: settings.backfill.skipped,
 									})}
+								</p>
+							)}
+							{settings.backfill?.status === "done" && settings.backfill.pending > 0 && (
+								<p className="text-sm text-neutral-600" role="status">
+									{t(
+										"{pending} could not be saved right now (for example, Drive storage is full) and will be tried again automatically",
+										{
+											pending: settings.backfill.pending,
+										},
+									)}
 								</p>
 							)}
 						</div>

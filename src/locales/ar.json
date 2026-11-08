@@ -748,6 +748,7 @@
 	"{method} passed": "نجح {method}",
 	"{name} connected accounts": "الحسابات المرتبطة بـ {name}",
 	"{name} profile picture": "صورة الملف الشخصي لـ {name}",
+	"{pending} could not be saved right now (for example, Drive storage is full) and will be tried again automatically": "تعذّر حفظ {pending} الآن (على سبيل المثال، امتلاء مساحة Drive) وستتم إعادة المحاولة تلقائيًا",
 	"{start} - {end} of {total}": "{start} - {end} من {total}",
 	"{title}. Show all mail through this account": "{title}. إظهار كل البريد عبر هذا الحساب",
 	"{value} {caption}": "{value} {caption}",

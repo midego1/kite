@@ -24,6 +24,7 @@ export type BackfillView = {
 	scanned: number;
 	filed: number;
 	skipped: number;
+	pending: number;
 	startedAt: string;
 	finishedAt: string | null;
 };
@@ -37,6 +38,7 @@ export function backfillView(row: BackfillRow | null): BackfillView | null {
 		scanned: row.scanned,
 		filed: row.filed,
 		skipped: row.skipped,
+		pending: row.pending,
 		startedAt: row.startedAt.toISOString(),
 		finishedAt: row.finishedAt ? row.finishedAt.toISOString() : null,
 	};
@@ -69,6 +71,7 @@ export async function startReceiptBackfill(userId: string, now = new Date()): Pr
 		scanned: 0,
 		filed: 0,
 		skipped: 0,
+		pending: 0,
 		leaseUntil: null,
 		startedAt: now,
 		updatedAt: now,
@@ -102,36 +105,41 @@ async function leaseBackfill(userId: string, now: Date): Promise<BackfillRow | n
 /**
  * Runs batches until none are left or the time budget runs out. `attempted` keeps a transient failure
  * (still unfiled, so it reappears in the next fetch) from being retried in a tight loop within one run;
- * it gets another try on the run after this one hands off.
+ * it gets another try, under its own backed-off lease (`claimLeaseMs`), on a later run.
  */
 async function runBatch(
 	userId: string,
 	started: number,
-): Promise<{ scanned: number; filed: number; skipped: number; done: boolean }> {
+): Promise<{ scanned: number; filed: number; skipped: number; pending: number; done: boolean }> {
 	let scanned = 0;
 	let filed = 0;
 	let skipped = 0;
+	let pending = 0;
 	const attempted = new Set<string>();
 	for (;;) {
-		if (scanned > 0 && Date.now() - started > RUN_BUDGET_MS) return { scanned, filed, skipped, done: false };
+		if (scanned > 0 && Date.now() - started > RUN_BUDGET_MS) return { scanned, filed, skipped, pending, done: false };
 		const candidates = (await receiptCandidates(BATCH_SIZE + attempted.size, userId)).filter(
 			(candidate) => !attempted.has(candidate.sourceId),
 		);
-		if (candidates.length === 0) return { scanned, filed, skipped, done: true };
+		if (candidates.length === 0) return { scanned, filed, skipped, pending, done: true };
 		for (const candidate of candidates.slice(0, BATCH_SIZE)) {
 			attempted.add(candidate.sourceId);
 			scanned += 1;
-			if (await fileOneReceipt(candidate)) filed += 1;
+			const outcome = await fileOneReceipt(candidate);
+			if (outcome === "filed") filed += 1;
+			else if (outcome === "pending") pending += 1;
 			else skipped += 1;
-			if (Date.now() - started > RUN_BUDGET_MS) return { scanned, filed, skipped, done: false };
+			if (Date.now() - started > RUN_BUDGET_MS) return { scanned, filed, skipped, pending, done: false };
 		}
 	}
 }
 
 /**
- * The `finance.receipts_backfill` queue message: one leased run of an owner's backfill. `skipped` here
- * also counts a row left for the next run after a transient failure, since a batch cannot tell the two
- * apart without re-reading `finance_receipts`; it is a progress count, not a permanent-skip count.
+ * The `finance.receipts_backfill` queue message: one leased run of an owner's backfill. `done` means this pass
+ * found nothing left to try right now, not that every row succeeded or was permanently skipped: `pending` is
+ * rows a transient failure (a full quota, Drive unavailable) left retryable, backed off under their own claim's
+ * lease rather than this run's; it only clears once those leases pass and a later run (automatic or by pressing
+ * the button again) retries them.
  */
 export const backfillReceipts: CapabilityHandler = async (raw): Promise<JsonValue> => {
 	const userId = (raw as { userId?: unknown } | null)?.userId;
@@ -139,7 +147,7 @@ export const backfillReceipts: CapabilityHandler = async (raw): Promise<JsonValu
 	const started = Date.now();
 	const row = await leaseBackfill(userId, new Date(started));
 	if (!row) return { scanned: 0 };
-	let progress: { scanned: number; filed: number; skipped: number; done: boolean };
+	let progress: { scanned: number; filed: number; skipped: number; pending: number; done: boolean };
 	try {
 		progress = await runBatch(userId, started);
 	} catch (error) {
@@ -157,6 +165,9 @@ export const backfillReceipts: CapabilityHandler = async (raw): Promise<JsonValu
 			scanned: row.scanned + progress.scanned,
 			filed: row.filed + progress.filed,
 			skipped: row.skipped + progress.skipped,
+			// A snapshot of this batch, not a running total: a row counted pending here may already have been
+			// retried (filed or permanently skipped) by the time the next batch runs, once its lease passes.
+			pending: progress.pending,
 			leaseUntil: null,
 			updatedAt: now,
 			...(progress.done ? { status: "done" as const, finishedAt: now } : {}),

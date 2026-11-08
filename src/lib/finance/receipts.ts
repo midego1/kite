@@ -41,9 +41,20 @@ export type ReceiptCandidate = {
 
 const db = () => getDb(getEnv());
 
-/** How long a claim stands before another sweep or backfill tick may take it over (the same shape as
+/** How long a fresh claim stands before another sweep or backfill tick may take it over (the same shape as
  * `finance_payment_scans.lease_until`). */
 const CLAIM_LEASE_MS = 5 * 60_000;
+
+/** The longest a claim backs off to: a owner stuck failing transiently (a full quota, Drive unavailable) is
+ * still retried, just at most this often, instead of every tick forever. */
+const MAX_CLAIM_LEASE_MS = 24 * 60 * 60_000;
+
+/** The lease after `attempts` prior transient failures: doubles each time, capped, so a row that keeps failing
+ * backs off instead of occupying every sweep tick's row budget while it cannot possibly succeed right now
+ * (round-1 #5's failure mode, reached again through a stuck owner rather than a missing SQL filter). */
+function claimLeaseMs(attempts: number): number {
+	return Math.min(MAX_CLAIM_LEASE_MS, CLAIM_LEASE_MS * 2 ** attempts);
+}
 
 /** A `finance_receipts` row for this source that is already claimed-or-filed: `done`, `skipped`, or `pending`
  * with a lease that has not yet expired. Anything else (no row, or a `pending` claim whose run died) is still
@@ -66,6 +77,38 @@ function claimedOrDone(table: ReceiptSourceTable, idColumn: SQLiteColumn, now: D
 	);
 }
 
+/** Whether this owner is the primary admin, who `isModuleEnabledFor` (`src/lib/modules/state.ts`) always treats
+ * as allowed, whatever a stale `user_module_access` row says. `ownerEligible` mirrors that here so such a row
+ * does not silently exclude the primary admin's own receipts from the candidate pool. */
+function isPrimaryAdminOwner(userIdColumn: SQLiteColumn): SQL {
+	return exists(
+		db()
+			.select({ one: sql`1` })
+			.from(users)
+			.where(and(eq(users.id, userIdColumn), eq(users.role, "admin"), eq(users.isPrimaryAdmin, true))),
+	);
+}
+
+/** Not excluded by a per-user `user_module_access` row for `moduleId`, unless the owner is the primary admin,
+ * who such a row never actually blocks. */
+function userModuleAllowed(userIdColumn: SQLiteColumn, moduleId: "drive" | "finance"): SQL {
+	return or(
+		isPrimaryAdminOwner(userIdColumn),
+		notExists(
+			db()
+				.select({ one: sql`1` })
+				.from(userModuleAccess)
+				.where(
+					and(
+						eq(userModuleAccess.userId, userIdColumn),
+						eq(userModuleAccess.moduleId, moduleId),
+						eq(userModuleAccess.allowed, false),
+					),
+				),
+		),
+	)!;
+}
+
 /** A row this feature's own setting, or the install's or the user's module state, already rules out: left out of
  * both the sweep and the backfill, so neither gets stuck offering a row that can never be filed for this owner.
  * `fileOneReceipt` checks the same things again before calling Drive (the authoritative gate); this is only what
@@ -84,36 +127,14 @@ function ownerEligible(userIdColumn: SQLiteColumn): SQL {
 				.from(moduleSettings)
 				.where(and(eq(moduleSettings.moduleId, "drive"), eq(moduleSettings.enabled, false))),
 		),
-		notExists(
-			db()
-				.select({ one: sql`1` })
-				.from(userModuleAccess)
-				.where(
-					and(
-						eq(userModuleAccess.userId, userIdColumn),
-						eq(userModuleAccess.moduleId, "drive"),
-						eq(userModuleAccess.allowed, false),
-					),
-				),
-		),
+		userModuleAllowed(userIdColumn, "drive"),
 		notExists(
 			db()
 				.select({ one: sql`1` })
 				.from(moduleSettings)
 				.where(and(eq(moduleSettings.moduleId, "finance"), eq(moduleSettings.enabled, false))),
 		),
-		notExists(
-			db()
-				.select({ one: sql`1` })
-				.from(userModuleAccess)
-				.where(
-					and(
-						eq(userModuleAccess.userId, userIdColumn),
-						eq(userModuleAccess.moduleId, "finance"),
-						eq(userModuleAccess.allowed, false),
-					),
-				),
-		),
+		userModuleAllowed(userIdColumn, "finance"),
 	)!;
 }
 
@@ -276,10 +297,19 @@ function receiptYear(candidate: ReceiptCandidate): number {
 	return candidate.documentAt.getUTCFullYear();
 }
 
+/**
+ * `candidate.sourceId` makes this unique per finance row: two different payments (or charges, or subscriptions)
+ * due the same vendor on the same day would otherwise share a base name, and Drive's own `findExistingItem`
+ * (`src/lib/drive/receipts.ts`) would then hand the second one the first's already-filed files instead of filing
+ * its own. A retry of the same row keeps using this same name, which is exactly what makes a retry resume rather
+ * than duplicate.
+ */
 function receiptBaseName(candidate: ReceiptCandidate): string {
 	const day = candidate.documentAt.toISOString().slice(0, 10);
 	const parts = [day, candidate.vendor, candidate.docType ?? "tracked"].filter(Boolean);
-	return parts.join(" ").slice(0, 150);
+	const suffix = ` (${candidate.sourceId})`;
+	const base = parts.join(" ").slice(0, Math.max(1, 150 - suffix.length));
+	return `${base}${suffix}`;
 }
 
 async function ownerCallContext(userId: string): Promise<CapabilityCallContext> {
@@ -296,11 +326,12 @@ async function ownerCallContext(userId: string): Promise<CapabilityCallContext> 
 }
 
 /** Claims a candidate for filing: a fresh `pending` row through the unique index on `(source_table, source_id)`,
- * or, failing that (a row already exists), taking over an existing `pending` row whose lease has expired. Returns
- * `null` when the row is already `done`/`skipped`, or another run currently holds a live claim on it. */
+ * or, failing that (a row already exists), taking over an existing `pending` row whose lease has expired. A
+ * take-over counts as another attempt and grows the next lease (`claimLeaseMs`), so a row that keeps failing
+ * backs off. Returns `null` when the row is already `done`/`skipped`, or another run currently holds a live
+ * claim on it. */
 async function claimReceipt(candidate: ReceiptCandidate): Promise<string | null> {
 	const now = new Date();
-	const lease = new Date(now.getTime() + CLAIM_LEASE_MS);
 	const id = newId("frcpt");
 	const inserted = await onReceiptTables(() =>
 		db()
@@ -312,16 +343,21 @@ async function claimReceipt(candidate: ReceiptCandidate): Promise<string | null>
 				sourceId: candidate.sourceId,
 				messageId: candidate.messageId,
 				status: "pending",
-				leaseUntil: lease,
+				leaseUntil: new Date(now.getTime() + claimLeaseMs(0)),
 			})
 			.onConflictDoNothing()
 			.returning({ id: financeReceipts.id }),
 	);
 	if (inserted.length > 0) return inserted[0]!.id;
-	const taken = await onReceiptTables(() =>
+
+	// Not a fresh claim: an unexpired or already-resolved row already exists. Read its attempt count so the
+	// take-over below can grow the lease from it, then take over only if it is still exactly that row's state
+	// (the `attempts` match is an optimistic lock: a second caller racing on the same take-over loses here, not
+	// by corrupting the backoff count).
+	const [current] = await onReceiptTables(() =>
 		db()
-			.update(financeReceipts)
-			.set({ leaseUntil: lease, updatedAt: now })
+			.select({ id: financeReceipts.id, attempts: financeReceipts.attempts })
+			.from(financeReceipts)
 			.where(
 				and(
 					eq(financeReceipts.sourceTable, candidate.sourceTable),
@@ -330,29 +366,50 @@ async function claimReceipt(candidate: ReceiptCandidate): Promise<string | null>
 					or(isNull(financeReceipts.leaseUntil), lt(financeReceipts.leaseUntil, now)),
 				),
 			)
+			.limit(1),
+	);
+	if (!current) return null;
+	const nextAttempts = current.attempts + 1;
+	const taken = await onReceiptTables(() =>
+		db()
+			.update(financeReceipts)
+			.set({ leaseUntil: new Date(now.getTime() + claimLeaseMs(nextAttempts)), attempts: nextAttempts, updatedAt: now })
+			.where(
+				and(
+					eq(financeReceipts.id, current.id),
+					eq(financeReceipts.status, "pending"),
+					eq(financeReceipts.attempts, current.attempts),
+					or(isNull(financeReceipts.leaseUntil), lt(financeReceipts.leaseUntil, now)),
+				),
+			)
 			.returning({ id: financeReceipts.id }),
 	);
 	return taken[0]?.id ?? null;
 }
 
+/** `"filed"` committed the claim to `done`; `"skipped"` committed it to a permanent `skipped` (or never claimed
+ * one at all: the owner's own settings refused it); `"pending"` left an existing claim exactly as it was, or
+ * backed it off after a transient failure, so it is retried later rather than right away. */
+export type FileReceiptOutcome = "filed" | "skipped" | "pending";
+
 /**
  * Files one candidate's receipts into the owner's Drive and records the outcome. Claims the row first (a
  * `pending` `finance_receipts` row, before Drive is ever called), so a concurrent sweep and backfill tick
  * racing on the same row, or a retry after a crash, can never file it twice: only the run that wins the claim
- * calls Drive at all. Returns `false` without changing the claim for a transient failure (Drive unavailable,
- * quota full, a read error) so the lease simply expires and the row is retried; a permanent outcome (the
- * message is gone, Drive or Money Watch is off, the mailbox has no AI, or there was truly nothing to file)
- * commits the claim to `done` or `skipped` so it is never retried on its own.
+ * calls Drive at all. A transient failure (Drive unavailable, quota full, a read error) backs the claim off
+ * (`claimReceipt`'s growing lease) instead of changing it further, so it is retried later rather than on every
+ * tick; a permanent outcome (the message is gone, Drive or Money Watch is off, the mailbox has no AI, or there
+ * was truly nothing to file) commits the claim to `done` or `skipped` so it is never retried on its own.
  */
-export async function fileOneReceipt(candidate: ReceiptCandidate): Promise<boolean> {
-	if (!(await receiptsEnabledFor(candidate.userId))) return false;
+export async function fileOneReceipt(candidate: ReceiptCandidate): Promise<FileReceiptOutcome> {
+	if (!(await receiptsEnabledFor(candidate.userId))) return "skipped";
 	const ctx = await ownerCallContext(candidate.userId);
-	if (!(await moduleHost.modules.isEnabledFor(ctx, candidate.userId, "finance"))) return false;
-	if (!(await moduleHost.modules.isEnabledFor(ctx, candidate.userId, "drive"))) return false;
-	if (candidate.mailboxId && (await mailboxAiOff(getEnv(), candidate.mailboxId))) return false;
+	if (!(await moduleHost.modules.isEnabledFor(ctx, candidate.userId, "finance"))) return "skipped";
+	if (!(await moduleHost.modules.isEnabledFor(ctx, candidate.userId, "drive"))) return "skipped";
+	if (candidate.mailboxId && (await mailboxAiOff(getEnv(), candidate.mailboxId))) return "skipped";
 
 	const claimId = await claimReceipt(candidate);
-	if (!claimId) return false;
+	if (!claimId) return "pending";
 
 	const result = await moduleHost.invoke(ctx, "drive", "fileReceipt", {
 		messageId: candidate.messageId,
@@ -368,16 +425,17 @@ export async function fileOneReceipt(candidate: ReceiptCandidate): Promise<boole
 					.set({ status: "skipped", skippedReason: result.error.code, leaseUntil: null, updatedAt: new Date() })
 					.where(eq(financeReceipts.id, claimId)),
 			);
-			return false;
+			return "skipped";
 		}
-		// Transient (timeout, an uncaught quota or read error): leave the claim pending, its lease expires and the
-		// row is picked up again by the next sweep tick or backfill batch.
+		// Transient (timeout, an uncaught quota or read error): the claim was already backed off by claimReceipt
+		// (a fresh claim) or the earlier take-over that won it this time; its lease expires or grows and the row
+		// is picked up again by a later sweep tick or backfill batch.
 		log.warn("finance.receipt_file_failed", {
 			sourceTable: candidate.sourceTable,
 			sourceId: candidate.sourceId,
 			code: result.error.code,
 		});
-		return false;
+		return "pending";
 	}
 	const output = result.output as {
 		filed: boolean;
@@ -399,7 +457,7 @@ export async function fileOneReceipt(candidate: ReceiptCandidate): Promise<boole
 				})
 				.where(eq(financeReceipts.id, claimId)),
 		);
-		return false;
+		return "skipped";
 	}
 
 	await onReceiptTables(() =>
@@ -417,7 +475,7 @@ export async function fileOneReceipt(candidate: ReceiptCandidate): Promise<boole
 			})
 			.where(eq(financeReceipts.id, claimId)),
 	);
-	return true;
+	return "filed";
 }
 
 /**
@@ -495,7 +553,7 @@ export async function sweepReceipts(limit = SWEEP_ROWS_PER_TICK): Promise<{ file
 	const candidates = await receiptCandidates(limit, undefined, floor);
 	let filed = 0;
 	for (const candidate of candidates) {
-		if (await fileOneReceipt(candidate)) filed += 1;
+		if ((await fileOneReceipt(candidate)) === "filed") filed += 1;
 	}
 	return { filed, scanned: candidates.length };
 }

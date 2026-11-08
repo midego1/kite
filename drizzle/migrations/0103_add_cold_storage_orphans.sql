@@ -4,7 +4,7 @@
 -- could make look like every cold copy at once). It also tracks the losing side of two deliveries that raced to
 -- different targets for the same key, and a migration's cold-moved copy left behind once the object becomes
 -- reachable the normal way again, neither of which `object_locations` alone has room for (one row per key).
-CREATE TABLE `storage_cold_orphans` (`id` text PRIMARY KEY NOT NULL, `store_id` text NOT NULL, `key` text NOT NULL, `object_class` text NOT NULL, `orphaned_at` integer NOT NULL);--> statement-breakpoint
+CREATE TABLE `storage_cold_orphans` (`id` text PRIMARY KEY NOT NULL, `store_id` text NOT NULL, `key` text NOT NULL, `object_class` text NOT NULL, `moved_at` integer NOT NULL, `orphaned_at` integer NOT NULL);--> statement-breakpoint
 CREATE UNIQUE INDEX `storage_cold_orphans_store_key_idx` ON `storage_cold_orphans` (`store_id`,`key`);--> statement-breakpoint
 CREATE INDEX `storage_cold_orphans_orphaned_at_idx` ON `storage_cold_orphans` (`orphaned_at`);--> statement-breakpoint
 CREATE INDEX `object_locations_moved_at_key_idx` ON `object_locations` (`moved_at`,`key`);--> statement-breakpoint

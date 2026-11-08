@@ -8,12 +8,13 @@ type LocationEnv = { DB: D1Database };
 
 /**
  * Records a cold-moved copy nothing in `object_locations` points at any more as a candidate for the orphan
- * sweep (`cold.ts`), which deletes it only after a grace period, re-checking its reference at that point. A
- * second mark of the same copy is a no-op (`storeId, key` is unique).
+ * sweep (`cold.ts`), which deletes it only after a grace period (and no retained backup could still need it,
+ * `movedAt`), re-checking its reference at that point. A second mark of the same copy is a no-op (`storeId, key`
+ * is unique).
  */
 export async function markOrphanCandidate(
 	env: LocationEnv,
-	input: { storeId: string; key: string; objectClass: RoutableClass },
+	input: { storeId: string; key: string; objectClass: RoutableClass; movedAt: Date },
 	now = new Date(),
 ): Promise<void> {
 	try {
@@ -24,6 +25,7 @@ export async function markOrphanCandidate(
 				storeId: input.storeId,
 				key: input.key,
 				objectClass: input.objectClass,
+				movedAt: input.movedAt,
 				orphanedAt: now,
 			})
 			.onConflictDoNothing();
@@ -41,38 +43,37 @@ export async function markOrphanCandidate(
  *
  * Two deliveries of the same cold-move work (a retried queue message, a genuinely concurrent worker) can each
  * copy the same key to a different target and both reach here: whichever lands second is what this row ends up
- * naming, and the first target's copy has nothing pointing at it any more. Marking it an orphan candidate before
- * the overwrite is how it still gets cleaned up instead of being silently leaked.
+ * naming, and the first target's copy has nothing pointing at it any more. The mark-then-overwrite below runs as
+ * one D1 batch (one transaction) instead of a separate read then a separate write, so two truly concurrent
+ * callers cannot both read "nothing previous" and both skip marking a copy the other is about to orphan.
  */
 export async function recordObjectLocation(
 	env: LocationEnv,
 	input: { key: string; objectClass: RoutableClass; storeId: string; storageClass: string | null; size: number },
 ): Promise<void> {
+	const now = Math.floor(Date.now() / 1000);
+	const markPrevious = env.DB.prepare(
+		`INSERT INTO storage_cold_orphans (id, store_id, key, object_class, moved_at, orphaned_at)
+		 SELECT ?, store_id, key, object_class, moved_at, ?
+		 FROM object_locations WHERE key = ? AND store_id <> ?
+		 ON CONFLICT (store_id, key) DO NOTHING`,
+	).bind(newId("sco"), now, input.key, input.storeId);
+	const upsert = env.DB.prepare(
+		`INSERT INTO object_locations (key, object_class, store_id, storage_class, size, moved_at) VALUES (?, ?, ?, ?, ?, ?)
+		 ON CONFLICT (key) DO UPDATE SET store_id = excluded.store_id, storage_class = excluded.storage_class,
+		 size = excluded.size, moved_at = excluded.moved_at`,
+	).bind(input.key, input.objectClass, input.storeId, input.storageClass, input.size, now);
 	try {
-		const now = new Date();
-		const previous = await env.DB.prepare("SELECT store_id FROM object_locations WHERE key = ?")
-			.bind(input.key)
-			.first<{ store_id: string }>();
-		if (previous && previous.store_id !== input.storeId)
-			await markOrphanCandidate(
-				env,
-				{ storeId: previous.store_id, key: input.key, objectClass: input.objectClass },
-				now,
-			);
-		await env.DB.prepare(
-			`INSERT INTO object_locations (key, object_class, store_id, storage_class, size, moved_at) VALUES (?, ?, ?, ?, ?, ?)
-			 ON CONFLICT (key) DO UPDATE SET store_id = excluded.store_id, storage_class = excluded.storage_class,
-			 size = excluded.size, moved_at = excluded.moved_at`,
-		)
-			.bind(
-				input.key,
-				input.objectClass,
-				input.storeId,
-				input.storageClass,
-				input.size,
-				Math.floor(now.getTime() / 1000),
-			)
-			.run();
+		await env.DB.batch([markPrevious, upsert]);
+		return;
+	} catch (error) {
+		// `object_locations` exists (migration 0097) but `storage_cold_orphans` may not yet (migration 0103):
+		// the location still needs recording on its own, just without the orphan candidate mark, rather than
+		// the whole batch (and so the location write) failing over a table nothing here strictly needs yet.
+		if (!isNoSuchTableError(error)) throw error;
+	}
+	try {
+		await upsert.run();
 	} catch (error) {
 		if (isNoSuchTableError(error)) return;
 		throw error;
@@ -80,12 +81,15 @@ export async function recordObjectLocation(
 }
 
 /** The store a key moved to, for the router's fallback; null before migration 0097 or when the key is not cold. */
-export async function lookupObjectLocation(env: LocationEnv, key: string): Promise<{ storeId: string } | null> {
+export async function lookupObjectLocation(
+	env: LocationEnv,
+	key: string,
+): Promise<{ storeId: string; movedAt: Date } | null> {
 	try {
-		const row = await env.DB.prepare("SELECT store_id FROM object_locations WHERE key = ?")
+		const row = await env.DB.prepare("SELECT store_id, moved_at FROM object_locations WHERE key = ?")
 			.bind(key)
-			.first<{ store_id: string }>();
-		return row ? { storeId: row.store_id } : null;
+			.first<{ store_id: string; moved_at: number }>();
+		return row ? { storeId: row.store_id, movedAt: new Date(row.moved_at * 1000) } : null;
 	} catch (error) {
 		if (isNoSuchTableError(error)) return null;
 		throw error;

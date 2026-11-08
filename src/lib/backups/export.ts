@@ -169,7 +169,7 @@ const INTERNAL_TABLES = [
 	// One cold storage sweep per class (migration 0097): transient batch progress over the live stores, restarted
 	// fresh by the nightly cron, so replaying it would resume a sweep against stores that may no longer match.
 	"storage_cold_jobs",
-	// Cold-moved copies the orphan sweep is deciding whether to delete (migration 0101): candidates against the
+	// Cold-moved copies the orphan sweep is deciding whether to delete (migration 0103): candidates against the
 	// live stores at the moment they were found, meaningless once restored into a database whose own sweep has
 	// not seen them, and the sweep finds any real ones again on its own.
 	"storage_cold_orphans",

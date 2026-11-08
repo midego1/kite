@@ -283,6 +283,41 @@ test("a Drive file whose source ETag is a multipart one (every Drive upload) sti
 	assert.equal(db.db.prepare("SELECT store_id FROM drive_items WHERE id = 'drv_a'").get().store_id, "sto_target");
 });
 
+test("a source object's SSE-KMS/SSE-C-shaped ETag (not a real content MD5, but no dash either) does not falsely fail the copy's verification", async (t) => {
+	const { env, db, queue } = await fixture(t);
+	await addStore(env, "sto_other", "kite-other");
+	await addStore(env, "sto_target", "kite-target");
+	const rawKey = "inbound/m2.eml";
+	const content = "bytes that came from an SSE-KMS or SSE-C encrypted source object";
+	// AWS documents SSE-KMS and SSE-C ETags as not being the object's content MD5, but they are not shaped like
+	// a multipart ETag either (no dash): the old `.includes("-")` check would have wrongly treated this as a
+	// real, comparable content hash and then failed the copy below when it does not match the fresh PUT's own
+	// real MD5 ETag.
+	fake.buckets.get("kite-other").objects.set(rawKey, {
+		bytes: Buffer.from(content),
+		meta: { custom: {} },
+		etag: "a".repeat(40),
+		lastModified: new Date(),
+	});
+	db.db
+		.prepare(
+			`INSERT INTO messages (id, user_id, mailbox_id, direction, from_addr, to_addr, subject, status, raw_r2_key, created_at)
+			 VALUES ('m2', 'owner', 'mailbox-a', 'inbound', 'sender@example.net', 'a@example.com', 'Hello', 'received', ?, 1)`,
+		)
+		.run(rawKey);
+	const id = await migration.queueStorageMigration(env, {
+		objectClass: "mail",
+		fromStoreId: "sto_other",
+		toStoreId: "sto_target",
+		createdByUserId: null,
+	});
+	await drain(env, queue);
+	const done = job(env, id);
+	assert.equal(done.errors, 0, done.last_error);
+	assert.equal(done.status, "completed");
+	assert.equal(targetText(rawKey), content, "copied despite the source's non-content-hash ETag");
+});
+
 test("a cancelled migration stops after the current batch", async (t) => {
 	const { env, queue } = await fixture(t);
 	await addStore(env, "sto_target", "kite-target");

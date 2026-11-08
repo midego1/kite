@@ -2,7 +2,7 @@ import { COLD_STORAGE_CLASS, R2_IA_TARGET, type ColdRule } from "./cold-utils";
 import { DEFAULT_STORE_ID } from "./config-utils";
 import { findSource, copyObject, locationAwareSources, matchesExisting } from "./migration";
 import { callStorageHook } from "./module-hooks";
-import { recordObjectLocation } from "./object-locations";
+import { lookupObjectLocation, recordObjectLocation } from "./object-locations";
 import type { Item } from "./cold-sources";
 import type { ObjectStore, RoutableClass, Storage } from "./types";
 
@@ -111,10 +111,28 @@ export async function moveColdDriveObject(
 	rule: ColdRule,
 	item: Item & { storeId: string },
 ): Promise<{ bytes: number; moved: boolean }> {
-	const source = storage.store(item.storeId);
+	let storeId = item.storeId;
+	let source = storage.store(storeId);
 	if (!source) throw new Error("The file's store is missing or blocked");
-	const head = await source.bucket.head(item.key);
-	if (!head) throw new Error("The file is missing from its recorded store");
+	let head = await source.bucket.head(item.key);
+	if (!head) {
+		// A restore can roll drive_items.store_id back to a store a sweep already moved the file off of;
+		// object_locations (recorded by this same cold move, below) survives that and still finds it, the same
+		// fallback streamDriveFile and presignedDownload already get on a read. Repairing the row here means
+		// the next sweep does not have to rediscover this too, instead of the move simply failing every time.
+		const recovered = await lookupObjectLocation(env, item.key);
+		const recoveredStore = recovered && storage.store(recovered.storeId);
+		const recoveredHead = recoveredStore && (await recoveredStore.bucket.head(item.key));
+		if (!recoveredStore || !recoveredHead) throw new Error("The file is missing from its recorded store");
+		await callStorageHook("drive", "markCold", {
+			ids: [item.id],
+			storageClass: recoveredHead.storageClass ?? null,
+			storeId: recoveredStore.id,
+		});
+		storeId = recoveredStore.id;
+		source = recoveredStore;
+		head = recoveredHead;
+	}
 	if (rule.target === R2_IA_TARGET) {
 		if (!source.capabilities.storageClasses.includes(COLD_STORAGE_CLASS)) return { bytes: 0, moved: false };
 		if (head.storageClass === COLD_STORAGE_CLASS) {
@@ -146,7 +164,7 @@ export async function moveColdDriveObject(
 	}
 	const target = storage.store(rule.target);
 	if (!target) throw new Error("The target store is missing or blocked");
-	if (item.storeId === rule.target) {
+	if (storeId === rule.target) {
 		await recordObjectLocation(env, {
 			key: item.key,
 			objectClass: "drive",

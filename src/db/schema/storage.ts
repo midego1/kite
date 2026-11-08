@@ -117,9 +117,11 @@ export const objectLocations = sqliteTable(
  * A cold-moved copy nothing in `object_locations` points at any more: the losing side of two deliveries that
  * raced to different targets for the same key (`object-locations.ts`), or a migration's old copy left behind
  * once the object became reachable through the normal chain again (`migration.ts`). Deleted by the orphan sweep
- * (src/lib/storage/cold.ts) only after `orphanedAt` is older than its grace period, re-checking references at
- * delete time, so a copy a restore might still need is never removed out from under it. `(storeId, key)` is
- * unique so the same copy is never queued twice.
+ * (src/lib/storage/cold.ts) only after `orphanedAt` is older than its grace period and no retained backup could
+ * still restore a reference to it (`movedAt`, below), re-checking live references at delete time too, so a copy
+ * a restore might still need is never removed out from under it. `(storeId, key)` is unique so the same copy is
+ * never queued twice; a candidate the delete pass could not resolve (an unreachable store, a backup that might
+ * still need it) has `orphanedAt` bumped to the back of the queue instead of blocking the ones behind it.
  */
 export const storageColdOrphans = sqliteTable(
 	"storage_cold_orphans",
@@ -128,6 +130,12 @@ export const storageColdOrphans = sqliteTable(
 		storeId: text("store_id").notNull(),
 		key: text("key").notNull(),
 		objectClass: text("object_class", { enum: ["mail", "drive", "backups"] }).notNull(),
+		/** When this exact copy became the recorded location (`object_locations.movedAt` at mark time): a
+		 * retained backup completed no earlier than this could have its own copy of that location row, and
+		 * restoring it (`object_locations` merges, never replaces) would expect the bytes still to be there. */
+		movedAt: integer("moved_at", { mode: "timestamp" })
+			.notNull()
+			.$defaultFn(() => new Date()),
 		orphanedAt: integer("orphaned_at", { mode: "timestamp" })
 			.notNull()
 			.$defaultFn(() => new Date()),

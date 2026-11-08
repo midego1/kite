@@ -52,6 +52,7 @@ await build({
 			export { runStorageColdMaintenance, updateColdRule, runColdStorageSweep, processStorageQueueMessage } from "./src/lib/storage/cold.ts";
 			export { clearStorageConfigCache } from "./src/lib/storage/config.ts";
 			export { sealSetting } from "./src/lib/security/secret-box.ts";
+			export { createStorageRouter } from "./src/lib/storage/router.ts";
 		`,
 		resolveDir: root,
 		sourcefile: "backup-restore-stream-test-entry.ts",
@@ -690,6 +691,164 @@ test("the orphan sweep never deletes a cold copy while a restore has its table m
 		"the message is back, so nothing is marked even now",
 	);
 	assert.ok(coldTargetObjects().has("inbound/old.eml"));
+});
+
+test("an abandoned restore (needsRecovery) keeps the sweep off until the safety recovery completes, not just for an hour", async (t) => {
+	const db = new lib.SqliteDatabase(":memory:");
+	t.after(() => db.db.close());
+	await lib.applyMigrations(db, join(root, "drizzle/migrations"));
+	db.db.exec(`
+		INSERT INTO users (id, email, password_hash, name, role, is_primary_admin, created_at) VALUES ('owner', 'owner@example.com', 'hash', 'Owner', 'admin', 1, 1);
+		INSERT INTO domains (id, user_id, hostname, zone_id, status, created_at) VALUES ('domain-1', 'owner', 'example.com', 'zone-1', 'active', 1);
+		INSERT INTO mailboxes (id, user_id, domain_id, local_part, type, created_at) VALUES ('mailbox-a', 'owner', 'domain-1', 'alex', 'personal', 1);
+		INSERT INTO messages (id, user_id, mailbox_id, direction, from_addr, to_addr, subject, status, raw_r2_key, created_at)
+			VALUES ('cold', 'owner', 'mailbox-a', 'inbound', 'sender@example.net', 'alex@example.com', 'Cold', 'received', 'inbound/cold.eml', 1),
+			       ('hot', 'owner', 'mailbox-a', 'inbound', 'sender@example.net', 'alex@example.com', 'Hot', 'received', 'inbound/hot.eml', 2);
+	`);
+	const env = jobEnv(db, bucket());
+	await addColdStore(env);
+	coldTargetObjects().clear();
+	coldTargetObjects().set("inbound/cold.eml", {
+		bytes: Buffer.from("cold bytes"),
+		meta: { custom: {} },
+		etag: "etag1",
+		lastModified: new Date(),
+	});
+	db.db
+		.prepare(
+			"INSERT INTO object_locations (key, object_class, store_id, storage_class, size, moved_at) VALUES ('inbound/cold.eml', 'mail', 'sto_target', NULL, 10, 1)",
+		)
+		.run();
+	await env.BUCKET.put("inbound/hot.eml", "hot bytes");
+	await env.BUCKET.put("backups/database/full.json", await lib.exportDatabaseRecords(db));
+	db.db.exec(
+		"INSERT INTO backups (id, status, `trigger`, r2_key, filename, size, created_at, completed_at) VALUES ('bak-full', 'completed', 'manual', 'backups/database/full.json', 'full.json', 1, 1, 2)",
+	);
+
+	// Dies after the deletes segment lands (both messages gone) and is never redelivered, like a worker that
+	// crashed or a deploy that replaced it; nothing resumes it on its own.
+	await dieDuringRestore(db, env, 1, true, {});
+	assert.equal(db.db.prepare("SELECT count(*) AS n FROM messages").get().n, 0, "the deletes segment landed");
+
+	// An hour and a minute of silence: the cron gives the job up rather than waiting forever.
+	await lib.runRestoreMaintenance(env, new Date(Date.now() + 61 * 60_000));
+	const abandoned = await restoreJob(env);
+	assert.equal(abandoned.status, "failed");
+	assert.equal(abandoned.needsRecovery, true, "the database is known to be only half restored");
+
+	// Three hours later, then well past the grace period: with only the 1-hour cooldown this round added, both
+	// of these would already be past it, which is exactly the gap `N1` is about.
+	await lib.runStorageColdMaintenance(env, new Date(Date.now() + 3 * 60 * 60_000));
+	assert.equal(
+		db.db.prepare("SELECT count(*) AS n FROM storage_cold_orphans").get().n,
+		0,
+		"needsRecovery alone keeps the sweep off, hours past the ordinary cooldown",
+	);
+	await lib.runStorageColdMaintenance(env, new Date(Date.now() + 3 * 60 * 60_000 + 8 * 24 * 60 * 60_000));
+	assert.equal(
+		db.db.prepare("SELECT count(*) AS n FROM storage_cold_orphans").get().n,
+		0,
+		"still off, even past what would otherwise be the full grace period",
+	);
+	assert.ok(coldTargetObjects().has("inbound/cold.eml"), "the cold copy itself was never touched");
+
+	// The admin runs the safety recovery: both messages come back, and needsRecovery finally clears.
+	await lib.startSafetyRecovery(env, "owner");
+	await drain(env, {});
+	const recovered = await restoreJob(env);
+	assert.equal(recovered.status, "completed");
+	assert.equal(recovered.needsRecovery, false);
+	assert.equal(db.db.prepare("SELECT count(*) AS n FROM messages").get().n, 2);
+
+	const routed = lib.createStorageRouter(env);
+	assert.equal(await (await routed.get("inbound/hot.eml")).text(), "hot bytes");
+	const cold = await routed.get("inbound/cold.eml");
+	assert.ok(cold, "the cold copy is still readable: it was never deleted while recovery was pending");
+	assert.equal(await cold.text(), "cold bytes");
+
+	// Recovery done, the sweep resumes normally; still within its own fresh cooldown right after finishing.
+	await lib.runStorageColdMaintenance(env, new Date(Date.now() + 3 * 60 * 60_000 + 8 * 24 * 60 * 60_000 + 60_000));
+	assert.equal(
+		db.db.prepare("SELECT count(*) AS n FROM storage_cold_orphans").get().n,
+		0,
+		"the message is back, so nothing is marked",
+	);
+});
+
+test("an undo more than 7 days after a restore still finds the cold mail the safety backup remembers", async (t) => {
+	const db = new lib.SqliteDatabase(":memory:");
+	t.after(() => db.db.close());
+	await lib.applyMigrations(db, join(root, "drizzle/migrations"));
+	db.db.exec(`
+		INSERT INTO users (id, email, password_hash, name, role, is_primary_admin, created_at) VALUES ('owner', 'owner@example.com', 'hash', 'Owner', 'admin', 1, 1);
+		INSERT INTO domains (id, user_id, hostname, zone_id, status, created_at) VALUES ('domain-1', 'owner', 'example.com', 'zone-1', 'active', 1);
+		INSERT INTO mailboxes (id, user_id, domain_id, local_part, type, created_at) VALUES ('mailbox-a', 'owner', 'domain-1', 'alex', 'personal', 1);
+	`);
+	const env = jobEnv(db, bucket());
+	await addColdStore(env);
+	coldTargetObjects().clear();
+
+	// An older backup, predating both messages below: restoring it is the ordinary operation that leaves the
+	// cold copy briefly unreferenced, not a mistake in itself.
+	await env.BUCKET.put("backups/database/older.json", await lib.exportDatabaseRecords(db));
+	db.db.exec(
+		"INSERT INTO backups (id, status, `trigger`, r2_key, filename, size, created_at, completed_at) VALUES ('bak-older', 'completed', 'manual', 'backups/database/older.json', 'older.json', 1, 1, 2)",
+	);
+
+	db.db.exec(`
+		INSERT INTO messages (id, user_id, mailbox_id, direction, from_addr, to_addr, subject, status, raw_r2_key, created_at)
+			VALUES ('newcold', 'owner', 'mailbox-a', 'inbound', 'sender@example.net', 'alex@example.com', 'Cold', 'received', 'inbound/newcold.eml', 10),
+			       ('newhot', 'owner', 'mailbox-a', 'inbound', 'sender@example.net', 'alex@example.com', 'Hot', 'received', 'inbound/newhot.eml', 11);
+	`);
+	coldTargetObjects().set("inbound/newcold.eml", {
+		bytes: Buffer.from("newcold bytes"),
+		meta: { custom: {} },
+		etag: "etag1",
+		lastModified: new Date(),
+	});
+	db.db
+		.prepare(
+			"INSERT INTO object_locations (key, object_class, store_id, storage_class, size, moved_at) VALUES ('inbound/newcold.eml', 'mail', 'sto_target', NULL, 13, 12)",
+		)
+		.run();
+	await env.BUCKET.put("inbound/newhot.eml", "newhot bytes");
+
+	// Restoring the older backup: the live install's own safety snapshot, taken right before, keeps a complete
+	// record of newcold and newhot exactly as they were, including the location row for newcold's cold copy.
+	await lib.startStoredRestore(env, "bak-older", "owner");
+	await drain(env, {});
+	const afterRestore = await restoreJob(env);
+	assert.equal(afterRestore.status, "completed");
+	const safetyId = afterRestore.safety.id;
+	assert.ok(db.db.prepare("SELECT 1 FROM backups WHERE id = ? AND status = 'completed'").get(safetyId));
+	assert.equal(db.db.prepare("SELECT count(*) AS n FROM messages").get().n, 0, "both messages are gone now");
+	assert.ok(
+		db.db.prepare("SELECT 1 FROM object_locations WHERE key = 'inbound/newcold.eml'").get(),
+		"the location survives as a merge table",
+	);
+
+	// Marked at +2h, then well past the ordinary grace period: without N2 this is exactly where the copy would
+	// be deleted, even though the safety backup taken minutes ago still has a complete record of it.
+	await lib.runStorageColdMaintenance(env, new Date(Date.now() + 2 * 60 * 60_000));
+	assert.ok(db.db.prepare("SELECT 1 FROM storage_cold_orphans WHERE key = 'inbound/newcold.eml'").get());
+	await lib.runStorageColdMaintenance(env, new Date(Date.now() + 2 * 60 * 60_000 + 8 * 24 * 60 * 60_000));
+	assert.ok(
+		coldTargetObjects().has("inbound/newcold.eml"),
+		"kept: the safety backup was completed after this copy's own moved_at",
+	);
+	assert.ok(db.db.prepare("SELECT 1 FROM storage_cold_orphans WHERE key = 'inbound/newcold.eml'").get());
+
+	// The documented undo: restoring that same safety backup brings both messages back.
+	await lib.startStoredRestore(env, safetyId, "owner");
+	await drain(env, {});
+	assert.equal((await restoreJob(env)).status, "completed");
+	assert.equal(db.db.prepare("SELECT count(*) AS n FROM messages").get().n, 2);
+
+	const routed = lib.createStorageRouter(env);
+	assert.equal(await (await routed.get("inbound/newhot.eml")).text(), "newhot bytes");
+	const cold = await routed.get("inbound/newcold.eml");
+	assert.ok(cold, "newcold is still readable after the undo, more than 7 days on");
+	assert.equal(await cold.text(), "newcold bytes");
 });
 
 test("restoring an earlier backup to undo a later restore still leaves a cold-moved message readable, with an orphan sweep in between both", async (t) => {

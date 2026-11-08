@@ -7,6 +7,7 @@ import { backupIdFromR2Key } from "@/lib/backups/utils";
 import { readRestoreJob } from "@/lib/backups/restore-job-store";
 import { isActiveRestore } from "@/lib/backups/restore-job-utils";
 import { createLogger } from "@/lib/logger.mjs";
+import { missingColumnFromError } from "@/lib/auth/user-lookup-utils";
 import { isNoSuchTableError } from "@/lib/modules/state-utils";
 import { beforeBodyColumn } from "./migration";
 import { isRoutableClass } from "./config-utils";
@@ -81,11 +82,17 @@ const ORPHAN_GRACE_PERIOD_MS = 7 * 24 * 60 * 60 * 1000;
  * candidates from state the restore has not finished settling. */
 const RESTORE_COOLDOWN_MS = 60 * 60 * 1000;
 
-/** Whether a restore is running, or finished recently enough that the sweep should stay out of its way. */
+/**
+ * Whether a restore is running, needs recovery, or finished recently enough that the sweep should stay out of
+ * its way. `needsRecovery` means the database is known to still be partially restored (an abandoned restore
+ * whose rollback never ran, or one whose rollback itself failed): the admin is meant to run the safety recovery,
+ * and until that completes (clearing the flag) a row this sweep would see as unreferenced may simply not be
+ * written back yet, the same risk the active-restore and cooldown checks below exist for.
+ */
 async function restoreRanRecently(env: ColdEnv, now: number): Promise<boolean> {
 	const stored = await readRestoreJob(env.BUCKET);
 	if (!stored) return false;
-	if (isActiveRestore(stored.job)) return true;
+	if (isActiveRestore(stored.job) || stored.job.needsRecovery) return true;
 	if (!stored.job.finishedAt) return false;
 	return now - Date.parse(stored.job.finishedAt) < RESTORE_COOLDOWN_MS;
 }
@@ -104,6 +111,11 @@ function parseScanCursor(value: string | null | undefined): ScanCursor | null {
 	}
 }
 
+const COLD_ORPHAN_CURSOR_COLUMN = "cold_orphan_cursor";
+
+/** `storage_state` (migration 0085) can exist without its `cold_orphan_cursor` column (migration 0103) applied
+ * yet, between an install's 0097 and 0103: reads then stand in as "no cursor", the same as the column's own
+ * default, rather than failing the whole sweep every five minutes over a column nothing here strictly needs yet. */
 async function readScanCursor(env: ColdEnv): Promise<ScanCursor | null> {
 	try {
 		const [row] = await getDb(env)
@@ -113,7 +125,7 @@ async function readScanCursor(env: ColdEnv): Promise<ScanCursor | null> {
 			.limit(1);
 		return parseScanCursor(row?.cursor);
 	} catch (error) {
-		if (isNoSuchTableError(error)) return null;
+		if (isNoSuchTableError(error) || missingColumnFromError(error) === COLD_ORPHAN_CURSOR_COLUMN) return null;
 		throw error;
 	}
 }
@@ -126,7 +138,7 @@ async function writeScanCursor(env: ColdEnv, cursor: ScanCursor | null): Promise
 			.values({ id: "default", coldOrphanCursor: value, updatedAt: new Date() })
 			.onConflictDoUpdate({ target: storageState.id, set: { coldOrphanCursor: value, updatedAt: new Date() } });
 	} catch (error) {
-		if (isNoSuchTableError(error)) return;
+		if (isNoSuchTableError(error) || missingColumnFromError(error) === COLD_ORPHAN_CURSOR_COLUMN) return;
 		throw error;
 	}
 }
@@ -168,7 +180,11 @@ async function scanForOrphanCandidates(env: ColdEnv, now: Date): Promise<{ check
 		if (!isRoutableClass(row.objectClass)) continue;
 		try {
 			if (await stillReferenced(env, row.objectClass, row.key)) continue;
-			await markOrphanCandidate(env, { storeId: row.storeId, key: row.key, objectClass: row.objectClass }, now);
+			await markOrphanCandidate(
+				env,
+				{ storeId: row.storeId, key: row.key, objectClass: row.objectClass, movedAt: row.movedAt },
+				now,
+			);
 		} catch {
 			continue;
 		}
@@ -181,13 +197,37 @@ async function scanForOrphanCandidates(env: ColdEnv, now: Date): Promise<{ check
 }
 
 /**
+ * Whether a retained backup could still bring back a reference to a candidate that became a location no earlier
+ * than `movedAt`: a restore merges `object_locations` rather than replacing it, so a `completed` backup taken
+ * since then may hold that exact row and expect the bytes still to be there (`N2`). Deliberately not narrowed
+ * to backups that still have this specific key (reading each one's export would cost far more than the sweep
+ * is worth); keeping a candidate a little longer than strictly necessary is cheap, losing it permanently is not.
+ */
+async function retainedBackupMightNeedIt(env: ColdEnv, movedAt: Date): Promise<boolean> {
+	const row = await env.DB.prepare("SELECT 1 AS found FROM backups WHERE status = 'completed' AND completed_at >= ?")
+		.bind(Math.floor(movedAt.getTime() / 1000))
+		.first<{ found: number }>();
+	return !!row;
+}
+
+/** Pushes a candidate this run could not resolve to the back of the delete queue (a fresh `orphanedAt`), so it
+ * stops absorbing every run ahead of candidates that might actually be deletable (`L3`): an unreachable store,
+ * or a retained backup that might still need it, is not reason enough to hold up anything else. */
+async function deferOrphanCandidate(env: ColdEnv, id: string, now: number): Promise<void> {
+	await getDb(env)
+		.update(storageColdOrphans)
+		.set({ orphanedAt: new Date(now) })
+		.where(eq(storageColdOrphans.id, id));
+}
+
+/**
  * Deletes recorded orphan candidates whose grace period has passed, from the store that holds each, re-checking
  * its reference first: a restore that lands during the grace period and brings a key's row back (or a message,
  * Drive or backup row that references it again) takes it off the list instead of the delete happening anyway.
  * Nothing is ever deleted here that was not already a recorded candidate.
  */
 async function deleteGracePeriodOrphans(env: ColdEnv, now: number): Promise<{ pruned: number }> {
-	let candidates: { id: string; key: string; objectClass: string; storeId: string }[];
+	let candidates: { id: string; key: string; objectClass: string; storeId: string; movedAt: Date }[];
 	try {
 		candidates = await getDb(env)
 			.select({
@@ -195,6 +235,7 @@ async function deleteGracePeriodOrphans(env: ColdEnv, now: number): Promise<{ pr
 				key: storageColdOrphans.key,
 				objectClass: storageColdOrphans.objectClass,
 				storeId: storageColdOrphans.storeId,
+				movedAt: storageColdOrphans.movedAt,
 			})
 			.from(storageColdOrphans)
 			.where(lte(storageColdOrphans.orphanedAt, new Date(now - ORPHAN_GRACE_PERIOD_MS)))
@@ -216,21 +257,46 @@ async function deleteGracePeriodOrphans(env: ColdEnv, now: number): Promise<{ pr
 			// and `runItems` in migration.ts, is exactly a second copy of a key something else still needs).
 			// Only a candidate that is still the recorded location is kept on that question; any other
 			// candidate's copy is never the one anything reads through the normal chain, whatever the key's
-			// liveness says, so it is always safe to delete.
+			// liveness says, so it is always safe to delete (subject to the checks below).
 			const current = await lookupObjectLocation(env, candidate.key);
-			if (
-				current &&
-				current.storeId === candidate.storeId &&
-				(await stillReferenced(env, candidate.objectClass, candidate.key))
-			) {
+			const isCurrent = !!current && current.storeId === candidate.storeId;
+			if (isCurrent && (await stillReferenced(env, candidate.objectClass, candidate.key))) {
 				await getDb(env).delete(storageColdOrphans).where(eq(storageColdOrphans.id, candidate.id));
 				continue;
 			}
+			if (await retainedBackupMightNeedIt(env, candidate.movedAt)) {
+				await deferOrphanCandidate(env, candidate.id, now);
+				continue;
+			}
+			if (!isCurrent && current) {
+				// The race `L2` is about: a new mover already confirmed this exact key belongs on `candidate`'s
+				// store again, between its own HEAD and its `recordObjectLocation`. The key is referenced and
+				// `object_locations` names a different store than this candidate's, so before deleting this
+				// copy, confirm that other store actually still has a readable one; if it does not (yet, or any
+				// more), this may be the only copy left and the delete waits instead of risking it.
+				if (await stillReferenced(env, candidate.objectClass, candidate.key)) {
+					const other = storage.store(current.storeId);
+					const readable = other && (await other.bucket.head(candidate.key).catch(() => null));
+					if (!readable) {
+						await deferOrphanCandidate(env, candidate.id, now);
+						continue;
+					}
+				}
+			}
 			const store = storage.store(candidate.storeId);
-			if (!store) continue;
-			// A store that cannot be reached right now (a bad endpoint, a revoked credential) throws here;
-			// the candidate is left for the next run to try again, the same as router.ts's own delete.
-			await store.bucket.delete(candidate.key);
+			if (!store) {
+				// Blocked or missing right now (a bad endpoint, a revoked credential): try again later, but not
+				// at the head of the next 200, so a store that stays down does not stall every other candidate.
+				await deferOrphanCandidate(env, candidate.id, now);
+				continue;
+			}
+			try {
+				await store.bucket.delete(candidate.key);
+			} catch {
+				// Unreachable right now rather than durably missing; the same reasoning as above.
+				await deferOrphanCandidate(env, candidate.id, now);
+				continue;
+			}
 			await getDb(env).delete(storageColdOrphans).where(eq(storageColdOrphans.id, candidate.id));
 			// Only this exact copy's own row, never a different store's current one sharing the same key.
 			await getDb(env)

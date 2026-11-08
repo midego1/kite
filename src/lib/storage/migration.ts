@@ -164,6 +164,17 @@ function lengthOption(target: ObjectStore, length: number) {
 }
 
 /**
+ * Whether `etag` is shaped like a real single-part content MD5 (32 hex characters) rather than something that
+ * only looks like an ETag: a multipart one (`<hash>-<parts>`, which also encodes the part boundaries used to
+ * make it, not just the bytes) or one from SSE-KMS or SSE-C server-side encryption, which AWS documents as not
+ * being a hash of the object data at all. An MD5 is always exactly this shape, so this can only under-trust an
+ * ETag, never wrongly treat a non-comparable one as comparable.
+ */
+function looksLikeContentMd5Etag(etag: string): boolean {
+	return /^[0-9a-f]{32}$/i.test(etag);
+}
+
+/**
  * Whether `existing` can stand in for `head` without copying: same size, and, when both stores are real
  * S3-compatible ones (not the self-hosted file bucket, whose ETag is a random UUID rather than a content hash,
  * `sized` above), the same ETag too. A multipart object's ETag is not a simple content hash (it also encodes the
@@ -178,7 +189,8 @@ export function matchesExisting(
 ): boolean {
 	if (!existing || existing.size !== head.size) return false;
 	if (sourceId === DEFAULT_STORE_ID || targetId === DEFAULT_STORE_ID) return true;
-	if (!head.etag || !existing.etag || head.etag.includes("-") || existing.etag.includes("-")) return true;
+	if (!head.etag || !existing.etag || !looksLikeContentMd5Etag(head.etag) || !looksLikeContentMd5Etag(existing.etag))
+		return true;
 	return head.etag === existing.etag;
 }
 
@@ -226,14 +238,14 @@ export async function copyObject(
 	// A single-part PUT's ETag is the MD5 of the bytes on both R2 and plain S3-compatible stores, so it is
 	// comparable across them; the self-hosted Node runtime's file bucket makes up a random one on every write
 	// instead (never a content hash), so this only compares when neither side is that store. `head.etag` can
-	// still be a multipart one (`<hash>-<parts>`) when the source object was itself uploaded in parts, which is
-	// not a content hash and not comparable to this copy's own single-part ETag even for identical bytes (Drive
-	// uploads are always multipart, so every Drive file on a custom store has one of these).
+	// still fail to look like a real content MD5 (a multipart one from the source object itself having been
+	// uploaded in parts, which Drive always does, or SSE-KMS/SSE-C on AWS), in which case it is not comparable
+	// to this copy's own single-part ETag even for identical bytes.
 	if (
 		source.id !== DEFAULT_STORE_ID &&
 		target.id !== DEFAULT_STORE_ID &&
 		head.etag &&
-		!head.etag.includes("-") &&
+		looksLikeContentMd5Etag(head.etag) &&
 		written?.etag &&
 		head.etag !== written.etag
 	) {
@@ -328,8 +340,14 @@ async function runItems(
 			// rather than just forgotten: the orphan sweep (`cold.ts`) deletes it after its own grace period,
 			// re-checking first, instead of it being a permanently untracked copy nothing points at any more.
 			if (source && source.store.id !== from.id && source.store.id !== to.id) {
+				const stale = await lookupObjectLocation(env, item.key);
 				await deleteObjectLocations(env, [item.key]);
-				await markOrphanCandidate(env, { storeId: source.store.id, key: item.key, objectClass: job.objectClass });
+				await markOrphanCandidate(env, {
+					storeId: source.store.id,
+					key: item.key,
+					objectClass: job.objectClass,
+					movedAt: stale?.movedAt ?? new Date(),
+				});
 			}
 			result.moved.push(item.id);
 		} catch (error) {

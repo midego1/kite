@@ -23,6 +23,7 @@ const { recordObjectLocation } = lib.objectLocations;
 const schemaScratch = makeBundleDirectory("kite-storage-cold-schema-");
 after(() => rmSync(schemaScratch, { recursive: true, force: true }));
 const beforeColdStorage = copyMigrationsBefore(schemaScratch, 97);
+const beforeOrphanTracking = copyMigrationsBefore(schemaScratch, 103);
 
 const DAY = 24 * 60 * 60;
 const NOW = 1_700_000_000;
@@ -429,6 +430,36 @@ test("a Drive row a restore rewound to its old store still finds the file throug
 	assert.equal(env.DB.db.prepare("SELECT store_id FROM drive_items WHERE id = 'drv_old'").get().store_id, "sto_target");
 });
 
+test("a Drive cold sweep that lands on a row a restore rewound repairs it through object_locations instead of failing", async (t) => {
+	const { env, queue } = await fixture(t);
+	await addStore(env, "sto_target", "kite-target");
+	await addDriveFile(env, "drv_old", "alpha", { createdAt: NOW - 60 * DAY });
+	await setColdRule(env, "drive", { afterDays: 30, target: "sto_target" });
+	await cold.runColdStorageSweep(env, new Date(NOW * 1000));
+	await drain(env, queue);
+	assert.equal(env.DB.db.prepare("SELECT store_id FROM drive_items WHERE id = 'drv_old'").get().store_id, "sto_target");
+	assert.equal(target().has("drive/drv_old"), true);
+
+	// What restoring an older backup does: the row is rewound to a store that no longer has the file (the sweep
+	// already moved it away), the same starting point as `streamDriveFile`'s own fallback above, but this time
+	// hit by a later cold sweep re-considering the row, not a read.
+	env.DB.db.prepare("UPDATE drive_items SET store_id = 'default' WHERE id = 'drv_old'").run();
+
+	// Restarts the (already completed) sweep from scratch, so it reconsiders every file again, including one
+	// whose row now looks like it was never moved.
+	await cold.runColdStorageSweep(env, new Date(NOW * 1000));
+	await drain(env, queue);
+
+	assert.equal(job(env, "drive").errors, 0, job(env, "drive").last_error);
+	assert.equal(
+		env.DB.db.prepare("SELECT store_id FROM drive_items WHERE id = 'drv_old'").get().store_id,
+		"sto_target",
+		"repaired instead of left pointing at a store that does not have the file",
+	);
+	assert.equal(target().has("drive/drv_old"), true, "the file itself was never touched, only the row");
+	assert.equal(Buffer.from(target().get("drive/drv_old").bytes).toString("utf8"), "alpha", "and still reads back fine");
+});
+
 test("a batch's progress write only lands while its claim is still the job's current cursor", async (t) => {
 	const { env, queue } = await fixture(t);
 	await addStore(env, "sto_target", "kite-target");
@@ -510,6 +541,59 @@ test("a candidate that became referenced again before its grace period is un-mar
 	assert.equal(orphan(env, "inbound/old.eml", "sto_target"), undefined, "no longer a candidate");
 });
 
+test("a candidate that is not the current location waits for the current store to actually have a readable copy before it is deleted", async (t) => {
+	const { env } = await fixture(t);
+	await addStore(env, "sto_old", "kite-target");
+	await addStore(env, "sto_new", "kite-target-2");
+	const key = "inbound/old.eml";
+	await addMessage(env, "old", { createdAt: NOW - 60 * DAY });
+
+	// The candidate's own copy (from an earlier cold move) still physically exists on sto_old...
+	fake.buckets.get("kite-target").objects.set(key, {
+		bytes: Buffer.from("the candidate's copy"),
+		meta: { custom: {} },
+		etag: "e1",
+		lastModified: new Date(),
+	});
+	env.DB.db
+		.prepare(
+			"INSERT INTO storage_cold_orphans (id, store_id, key, object_class, moved_at, orphaned_at) VALUES ('sco_test', 'sto_old', ?, 'mail', ?, ?)",
+		)
+		.run(key, NOW - 60 * DAY, NOW - GRACE_PERIOD_DAY * DAY);
+	// ...while a new mover already recorded the key as belonging to sto_new (between its own HEAD and the
+	// write actually landing there, the race `L2` is about), so `object_locations` already points elsewhere,
+	// the key is still referenced (the message row), but sto_new does not actually have a readable copy yet.
+	env.DB.db
+		.prepare(
+			"INSERT INTO object_locations (key, object_class, store_id, storage_class, size, moved_at) VALUES (?, 'mail', 'sto_new', NULL, 10, ?)",
+		)
+		.run(key, NOW);
+
+	await cold.runStorageColdMaintenance(env, new Date(NOW * 1000));
+	assert.equal(target().has(key), true, "not deleted: sto_new cannot actually be read yet");
+	assert.ok(orphan(env, key, "sto_old"), "the candidate is deferred, not forgotten");
+	assert.equal(location(env, key).store_id, "sto_new", "untouched either way");
+
+	// The new mover's write lands for real.
+	fake.buckets.get("kite-target-2").objects.set(key, {
+		bytes: Buffer.from("the new mover's copy"),
+		meta: { custom: {} },
+		etag: "e2",
+		lastModified: new Date(),
+	});
+
+	// The deferral above reset this candidate's own grace-period clock, so it needs a full grace period again.
+	await cold.runStorageColdMaintenance(env, new Date((NOW + GRACE_PERIOD_DAY * DAY) * 1000));
+	assert.equal(target().has(key), false, "now safe to delete: another readable copy was confirmed first");
+	assert.equal(orphan(env, key, "sto_old"), undefined);
+	assert.equal(location(env, key).store_id, "sto_new", "the current location is never touched");
+	assert.equal(
+		fake.buckets.get("kite-target-2").objects.has(key),
+		true,
+		"the new mover's copy is never the one touched",
+	);
+});
+
 test("the maintenance leaves an orphan's record alone while its store cannot be reached, for a later retry", async (t) => {
 	const { env, queue } = await fixture(t);
 	await addStore(env, "sto_target", "kite-target");
@@ -528,6 +612,59 @@ test("the maintenance leaves an orphan's record alone while its store cannot be 
 	await cold.runStorageColdMaintenance(env, new Date((NOW + GRACE_PERIOD_DAY * DAY) * 1000));
 	assert.ok(location(env, "inbound/old.eml"), "kept for a retry once the store is reachable again");
 	assert.ok(orphan(env, "inbound/old.eml", "sto_target"), "the candidate stays recorded too");
+});
+
+test("candidates stuck on a blocked store, filling a whole delete batch, do not permanently hold up a healthy one behind them", async (t) => {
+	const { env } = await fixture(t);
+	await addStore(env, "sto_healthy", "kite-target");
+	await addStore(env, "sto_blocked", "kite-target-2");
+	const orphanRow = env.DB.db.prepare(
+		"INSERT INTO storage_cold_orphans (id, store_id, key, object_class, moved_at, orphaned_at) VALUES (?, ?, ?, 'mail', ?, ?)",
+	);
+	const pastGrace = NOW - GRACE_PERIOD_DAY * DAY;
+	const healthyKey = "inbound/healthy.eml";
+	fake.buckets.get("kite-target").objects.set(healthyKey, {
+		bytes: Buffer.from("a perfectly healthy copy"),
+		meta: { custom: {} },
+		etag: "eh",
+		lastModified: new Date(),
+	});
+	// Just barely past its own grace period: the newest (least overdue) candidate of all of them.
+	orphanRow.run("sco_healthy", "sto_healthy", healthyKey, pastGrace, pastGrace);
+	// A full delete batch's worth of candidates on a blocked store, every one of them older than the healthy
+	// one, so without something pushing a deferred candidate out of the front of the queue, the healthy one
+	// behind them would never even be selected by `ORDER BY orphaned_at LIMIT 200`, no matter how many runs.
+	for (let index = 0; index < 200; index++) {
+		const key = `inbound/blocked-${String(index).padStart(3, "0")}.eml`;
+		fake.buckets.get("kite-target-2").objects.set(key, {
+			bytes: Buffer.from(`stuck behind a blocked store ${index}`),
+			meta: { custom: {} },
+			etag: `eb${index}`,
+			lastModified: new Date(),
+		});
+		orphanRow.run(`sco_blocked_${index}`, "sto_blocked", key, pastGrace - 100_000 - index, pastGrace - 100_000 - index);
+	}
+	env.DB.db.prepare("UPDATE storage_stores SET endpoint = 'http://blocked.invalid' WHERE id = 'sto_blocked'").run();
+	clearStorageConfigCache();
+
+	// First run: the batch is entirely the 200 blocked candidates (all older than the healthy one), every one
+	// deferred. A second run at the very same moment proves they were pushed to the back of the queue rather
+	// than left exactly where they were: if they had not moved, this query would pick the same 200 again, for
+	// as many runs as it is tried, and the healthy one would never come up.
+	await cold.runStorageColdMaintenance(env, new Date(NOW * 1000));
+	await cold.runStorageColdMaintenance(env, new Date(NOW * 1000));
+
+	assert.equal(fake.buckets.get("kite-target").objects.has(healthyKey), false, "the healthy copy got its turn");
+	assert.equal(orphan(env, healthyKey, "sto_healthy"), undefined);
+	assert.equal(
+		fake.buckets.get("kite-target-2").objects.size,
+		200,
+		"every blocked copy is kept, not lost, just deferred",
+	);
+	assert.equal(
+		env.DB.db.prepare("SELECT COUNT(*) AS n FROM storage_cold_orphans WHERE store_id = 'sto_blocked'").get().n,
+		200,
+	);
 });
 
 test("the maintenance never touches a cold copy a live message still names", async (t) => {
@@ -687,6 +824,33 @@ test("a losing mover's copy, when two deliveries raced to different targets for 
 	);
 });
 
+test("recording a cold move marks the previous location as an orphan candidate in the same atomic batch, not a separate read then write", async (t) => {
+	const { env } = await fixture(t);
+	await addStore(env, "sto_a", "kite-target");
+	await addStore(env, "sto_b", "kite-target-2");
+	const key = "inbound/race.eml";
+	await recordObjectLocation(env, { key, objectClass: "mail", storeId: "sto_a", storageClass: null, size: 10 });
+
+	const batches = [];
+	const originalBatch = env.DB.batch.bind(env.DB);
+	env.DB.batch = (statements) => {
+		batches.push(statements.length);
+		return originalBatch(statements);
+	};
+	try {
+		await recordObjectLocation(env, { key, objectClass: "mail", storeId: "sto_b", storageClass: null, size: 10 });
+	} finally {
+		env.DB.batch = originalBatch;
+	}
+
+	// Both the mark of sto_a's now-superseded row and the overwrite to sto_b happened as one `DB.batch` call
+	// (one SQLite transaction): there was never a window where a concurrent caller could see "nothing to mark
+	// yet" (the old separate read-then-write) in between them.
+	assert.deepEqual(batches, [2], "the mark and the overwrite ran together, in exactly one batch of 2 statements");
+	assert.equal(location(env, key).store_id, "sto_b");
+	assert.ok(orphan(env, key, "sto_a"), "the superseded row was still marked, from inside that one batch");
+});
+
 test("the orphan scan advances a stored cursor across runs instead of only ever rechecking the same oldest batch", async (t) => {
 	const { env } = await fixture(t);
 	// 201 unreferenced locations: one more than a single scan batch, none backed by a live message, so every
@@ -733,4 +897,49 @@ test("saving a cold rule on a database that has 0065's storage tables but not 00
 	assert.equal(result.ok, false);
 	assert.equal(result.status, 409);
 	assert.equal(result.code, "MIGRATION_PENDING");
+});
+
+test("the five-minute maintenance does not crash on a database that has 0097's cold storage tables but not 0103's orphan tracking", async (t) => {
+	lib.config.clearStorageConfigCache();
+	lib.state.clearModuleStateCache();
+	const db = new lib.sqlite.SqliteDatabase(":memory:");
+	t.after(() => db.db.close());
+	await lib.migrate.applyMigrations(db, beforeOrphanTracking);
+	assert.equal(
+		db.db.prepare("SELECT count(*) AS n FROM sqlite_master WHERE name = 'object_locations'").get().n,
+		1,
+		"0097 is applied",
+	);
+	assert.equal(
+		db.db.prepare("SELECT count(*) AS n FROM sqlite_master WHERE name = 'storage_cold_orphans'").get().n,
+		0,
+		"0103 is not",
+	);
+	assert.equal(
+		db.db
+			.prepare("SELECT COUNT(*) AS n FROM pragma_table_info('storage_state') WHERE name = 'cold_orphan_cursor'")
+			.get().n,
+		0,
+		"storage_state exists (0085) without 0103's extra column either",
+	);
+	const scratchDir = makeBundleDirectory("kite-storage-cold-before0103-");
+	t.after(() => rmSync(scratchDir, { recursive: true, force: true }));
+	const env = {
+		DB: db,
+		BUCKET: lib.files.openFileBucket(scratchDir),
+		APP_ENCRYPTION_KEY: "invented-encryption-key-for-storage-tests",
+		KITE_RUNTIME: "node",
+		STORAGE_ALLOW_INSECURE_ENDPOINT: "1",
+		STORAGE_ALLOW_PRIVATE_ENDPOINTS: "1",
+		OUTBOUND_QUEUE: { send: async () => undefined },
+	};
+	globalThis.__kiteNodeEnv = env;
+	t.after(() => {
+		delete globalThis.__kiteNodeEnv;
+		lib.config.clearStorageConfigCache();
+	});
+	// Previously this raised a raw "no such column: cold_orphan_cursor" error straight out of the five-minute
+	// cron, on any install that has not yet run migration 0103; it must instead read and write that column's
+	// absence the same way the rest of the codebase treats a pending migration (`missingColumnFromError`).
+	await assert.doesNotReject(() => cold.runStorageColdMaintenance(env, new Date()));
 });

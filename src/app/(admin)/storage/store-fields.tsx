@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Check, Copy, ExternalLink, Eye, EyeOff } from "lucide-react";
 import toast from "react-hot-toast";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
@@ -348,9 +349,7 @@ export function WhereSection(props: FieldsProps & { binding: boolean }) {
 			)}
 			{canCustomize && (
 				<label className="flex items-center gap-2 text-sm text-neutral-700 sm:col-span-2">
-					<input
-						type="checkbox"
-						className="h-4 w-4 accent-blue-600"
+					<Checkbox
 						checked={form.customEndpoint}
 						onChange={(event) =>
 							setForm((current) => ({

@@ -5,6 +5,7 @@ import { CalendarDays, ChevronDown, Clock3, MapPin, MoreHorizontal, Plus, Trash2
 import clsx from "clsx";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { FOLDER_COLOR_OPTIONS } from "@/lib/folders/colors";
 import { slugifyBookingName } from "@/lib/booking/utils";
@@ -12,6 +13,8 @@ import { useKeyChanged } from "@/hooks/use-synced-state";
 import type { BookingEditorProps } from "./editor-types";
 import type { BookingEditorSection } from "./types";
 import {
+	EDITOR_HEADING_CLASS,
+	EDITOR_SECTION_CLASS,
 	bookingFormWithName,
 	durationLabel,
 	formAvailabilityLabel,
@@ -49,9 +52,6 @@ export function BookingEditor({
 		setHostQuery("");
 		setHostError("");
 	}
-	const sectionClass = "border-b border-neutral-200 px-5 py-5";
-	const headingClass =
-		"flex w-full items-center justify-between gap-3 text-start text-base font-semibold text-neutral-900";
 	const fieldClass = "h-10 w-full rounded-xl border border-neutral-200 bg-white px-3 text-sm";
 	const toggle = (section: BookingEditorSection) =>
 		setActiveSection((current) => (current === section ? null : section));
@@ -76,7 +76,7 @@ export function BookingEditor({
 				)}
 			>
 				<div className="min-h-0 flex-1 overflow-y-auto overscroll-contain scrollbar-gutter-stable">
-					<section className={sectionClass}>
+					<section className={EDITOR_SECTION_CLASS}>
 						<div className="flex items-center gap-3">
 							<button
 								type="button"
@@ -179,12 +179,12 @@ export function BookingEditor({
 							</div>
 						)}
 					</section>
-					<section className={sectionClass}>
+					<section className={EDITOR_SECTION_CLASS}>
 						<button
 							type="button"
 							onClick={() => toggle("duration")}
 							aria-expanded={activeSection === "duration"}
-							className={headingClass}
+							className={EDITOR_HEADING_CLASS}
 						>
 							<span>Duration</span>
 							<ChevronDown
@@ -196,7 +196,7 @@ export function BookingEditor({
 						</button>
 						{activeSection === "duration" ? (
 							<div className="mt-4">
-								<select
+								<Select
 									aria-label="Meeting length"
 									value={[15, 30, 45, 60].includes(form.durationMinutes) ? form.durationMinutes : "custom"}
 									onChange={(event) =>
@@ -205,14 +205,14 @@ export function BookingEditor({
 											durationMinutes: event.target.value === "custom" ? 90 : Number(event.target.value),
 										})
 									}
-									className={fieldClass}
+									containerClassName={fieldClass}
 								>
 									<option value={15}>15 minutes</option>
 									<option value={30}>30 minutes</option>
 									<option value={45}>45 minutes</option>
 									<option value={60}>1 hour</option>
 									<option value="custom">Custom</option>
-								</select>
+								</Select>
 								{![15, 30, 45, 60].includes(form.durationMinutes) && (
 									<Input
 										aria-label="Custom minutes"
@@ -237,12 +237,12 @@ export function BookingEditor({
 							</button>
 						)}
 					</section>
-					<section className={sectionClass}>
+					<section className={EDITOR_SECTION_CLASS}>
 						<button
 							type="button"
 							onClick={() => toggle("location")}
 							aria-expanded={activeSection === "location"}
-							className={headingClass}
+							className={EDITOR_HEADING_CLASS}
 						>
 							<span>Location</span>
 							<ChevronDown
@@ -272,12 +272,12 @@ export function BookingEditor({
 							</button>
 						)}
 					</section>
-					<section className={sectionClass}>
+					<section className={EDITOR_SECTION_CLASS}>
 						<button
 							type="button"
 							onClick={() => toggle("availability")}
 							aria-expanded={activeSection === "availability"}
-							className={headingClass}
+							className={EDITOR_HEADING_CLASS}
 						>
 							<span>Availability</span>
 							<ChevronDown
@@ -403,12 +403,12 @@ export function BookingEditor({
 							</button>
 						)}
 					</section>
-					<section className={sectionClass}>
+					<section className={EDITOR_SECTION_CLASS}>
 						<button
 							type="button"
 							onClick={() => toggle("host")}
 							aria-expanded={activeSection === "host"}
-							className={headingClass}
+							className={EDITOR_HEADING_CLASS}
 						>
 							<span>Host</span>
 							<ChevronDown

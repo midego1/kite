@@ -24,6 +24,7 @@ import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { useStaleCommandCenterCards } from "@/components/command-center/use-card-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { RouteLoadingBarPortal } from "@/components/route-loading-bar-portal";
 import { authFetch } from "@/lib/auth/client";
@@ -947,22 +948,19 @@ export default function CalendarPage() {
 								<Repeat2 aria-hidden="true" className="mt-2 h-5 w-5 text-neutral-600" />
 								<div className="min-w-0">
 									<div className="relative">
-										<select
+										<Select
 											value={repeat}
 											onChange={(event) => setRepeat(event.target.value as CalendarRepeat)}
 											aria-label="Repeat"
-											className="h-9 w-full appearance-none rounded-md border border-transparent bg-transparent ps-2 pe-8 text-sm text-neutral-700 outline-none hover:bg-neutral-50 focus:border-blue-600 focus:bg-white"
+											containerClassName="h-9 w-full border-transparent hover:bg-neutral-50"
+											className="text-sm text-neutral-700"
 										>
 											<option value="none">Does not repeat</option>
 											<option value="daily">Daily</option>
 											<option value="weekly">Weekly</option>
 											<option value="monthly">Monthly</option>
 											<option value="weekdays">Weekdays</option>
-										</select>
-										<ChevronDown
-											aria-hidden="true"
-											className="pointer-events-none absolute end-2 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-500"
-										/>
+										</Select>
 									</div>
 									{repeat === "weekdays" && (
 										<div role="group" aria-label="Repeat on weekdays" className="flex flex-wrap gap-1.5 px-2 pt-1">

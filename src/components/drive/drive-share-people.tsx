@@ -4,14 +4,14 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import type { DriveRole, DriveShareDto, DriveShareRole } from "@/lib/drive/types";
 import { driveRequest } from "./drive-api";
 
 type Candidate = { id: string; name: string; email: string };
 type SharesAnswer = { shares: DriveShareDto[]; candidates?: Candidate[]; role?: DriveRole };
 
-const selectClass =
-	"h-9 rounded-lg border border-neutral-200 bg-white px-2 text-sm text-neutral-800 focus:outline-none focus:ring-2 focus:ring-blue-500";
+const selectClass = "h-9 bg-white";
 
 function ShareRow({
 	share,
@@ -108,15 +108,16 @@ export function DriveSharePeople({ itemId, onChanged }: { itemId: string; onChan
 						</option>
 					))}
 				</datalist>
-				<select
+				<Select
 					aria-label="Access"
 					value={role}
 					onChange={(event) => setRole(event.target.value as DriveShareRole)}
-					className={selectClass}
+					containerClassName={selectClass}
+					className="text-sm text-neutral-800"
 				>
 					<option value="view">Can view</option>
 					{owner && <option value="edit">Can edit</option>}
-				</select>
+				</Select>
 				<Button type="submit" size="sm" className="h-9" disabled={busy || !email.trim()}>
 					Share
 				</Button>

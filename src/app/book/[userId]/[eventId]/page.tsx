@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import { ArrowLeft, CalendarDays, Check, ChevronLeft, ChevronRight, Clock3, Globe2, MapPin, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useBranding } from "@/components/branding-provider";
 import { RouteLoadingBar } from "@/components/route-loading-bar";
@@ -391,7 +392,7 @@ export default function PublicBookingEventPage() {
 										<label htmlFor="booking-time-zone" className="shrink-0 whitespace-nowrap">
 											Time zone
 										</label>
-										<select
+										<Select
 											id="booking-time-zone"
 											value={timeZone}
 											onChange={(input) => {
@@ -404,14 +405,15 @@ export default function PublicBookingEventPage() {
 												setMonth(nextToday.slice(0, 7));
 												writeBookingPageSelection(nextToday, null, input.target.value);
 											}}
-											className="ms-auto h-9 min-w-0 max-w-full flex-1 truncate border-0 bg-transparent px-1 text-sm text-neutral-700 shadow-none outline-none text-end"
+											containerClassName="ms-auto h-9 min-w-0 max-w-full flex-1"
+											className="text-sm text-neutral-700"
 										>
 											{timeZones.map((zone) => (
 												<option key={zone} value={zone}>
 													{zone.replaceAll("_", " ")}
 												</option>
 											))}
-										</select>
+										</Select>
 									</div>
 									{slots.length === 0 && (
 										<p className="mt-6 text-sm text-neutral-500">No times are available in the next 60 days.</p>

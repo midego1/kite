@@ -236,7 +236,11 @@ export function RegisterClient() {
 					<p className="text-sm leading-6 text-neutral-600">
 						This installation already has an account for {primaryDomain ?? "this workspace"}.
 					</p>
-					<Button type="button" className="h-10 w-full" onClick={() => router.push("/login")}>
+					<Button
+						type="button"
+						className="h-10 w-full [@media(pointer:coarse)]:h-11"
+						onClick={() => router.push("/login")}
+					>
 						Go to login
 					</Button>
 				</div>
@@ -326,7 +330,7 @@ export function RegisterClient() {
 								The SETUP_TOKEN secret configured for this installation. The self-hosted server prints one in its log
 								when none is set.
 							</p>
-							<Button type="submit" className="h-10 w-full" disabled={loading}>
+							<Button type="submit" className="h-10 w-full [@media(pointer:coarse)]:h-11" disabled={loading}>
 								{loading ? "Checking..." : "Use setup token"}
 							</Button>
 						</form>
@@ -340,14 +344,18 @@ export function RegisterClient() {
 						</p>
 					)}
 					{preparationComplete ? (
-						<Button type="button" className="h-10 w-full" onClick={() => setStep(hasPrimaryDomain ? 3 : 2)}>
+						<Button
+							type="button"
+							className="h-10 w-full [@media(pointer:coarse)]:h-11"
+							onClick={() => setStep(hasPrimaryDomain ? 3 : 2)}
+						>
 							Continue
 						</Button>
 					) : setupTokenNeeded ? null : (
 						<Button
 							type="button"
 							variant="outline"
-							className="h-10 w-full"
+							className="h-10 w-full [@media(pointer:coarse)]:h-11"
 							disabled={loading}
 							onClick={() => void runPreparation()}
 						>
@@ -426,7 +434,11 @@ export function RegisterClient() {
 							{error}
 						</p>
 					)}
-					<Button type="submit" className="h-10 w-full" disabled={loading || domainChecking}>
+					<Button
+						type="submit"
+						className="h-10 w-full [@media(pointer:coarse)]:h-11"
+						disabled={loading || domainChecking}
+					>
 						{loading ? "Adding domain..." : "Continue"}
 					</Button>
 				</form>

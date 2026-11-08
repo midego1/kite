@@ -1,4 +1,4 @@
-import { and, inArray, sql, type SQL } from "drizzle-orm";
+import { and, eq, inArray, sql, type SQL } from "drizzle-orm";
 import { getDb, type AppDatabase } from "@/db";
 import { messages } from "@/db/schema";
 import { messageEmbeddings } from "@/db/schema/semantic";
@@ -20,6 +20,37 @@ const VECTOR_TOP_K = 100;
 const MIN_SIMILARITY = 0.45;
 /** At most this many messages are returned, in fused order; "Show more" continues with keyword results by date. */
 const RESULT_LIMIT = 50;
+/**
+ * The meaning half (the query embedding plus the vector store query together) gets this long before a search
+ * answers with keyword matches alone: a search request is interactive, so it gets a much shorter budget than a
+ * drain batch's (`embedding.ts`'s `EMBEDDING_CALL_TIMEOUT_MS`). The abandoned call may still finish after this
+ * function has moved on (a Workers isolate does not cancel it, only the caller stops waiting); it settles its own
+ * spend reservation when it does, so nothing is double-charged or left reserved for long.
+ */
+const MEANING_SEARCH_TIMEOUT_MS = 2_500;
+
+export class MeaningSearchTimeoutError extends Error {
+	constructor() {
+		super(`Meaning search timed out after ${MEANING_SEARCH_TIMEOUT_MS}ms`);
+		this.name = "MeaningSearchTimeoutError";
+	}
+}
+
+function withSearchDeadline<T>(promise: Promise<T>, ms: number): Promise<T> {
+	return new Promise<T>((resolve, reject) => {
+		const timer = setTimeout(() => reject(new MeaningSearchTimeoutError()), ms);
+		promise.then(
+			(value) => {
+				clearTimeout(timer);
+				resolve(value);
+			},
+			(error) => {
+				clearTimeout(timer);
+				reject(error);
+			},
+		);
+	});
+}
 
 export type SemanticSearchInput = {
 	env: CloudflareEnv;
@@ -53,9 +84,31 @@ async function keywordRankedIds(db: AppDatabase, scopeWhere: SQL, ftsMatch: stri
 }
 
 /**
- * Meaning hits (section 4.6 step 3): embeds the query, asks the vector store scoped to `mailboxIds`, drops anything
- * under `MIN_SIMILARITY`, and maps each surviving chunk back to its message id through `message_embeddings.vector_key`,
- * keeping each message's best-scoring chunk. Returns `[]` (never throws) when the provider or spend cap refuses.
+ * Mailboxes of `mailboxIds` whose own switches still allow meaning search (no row means allowed, the same default
+ * every other semantic read/write uses). Checked again here, not just at index time, because `clearMailboxSemanticIndex`
+ * marks rows skipped and deletes vectors in two separate statements (`admin-actions.ts`): a vector a concurrent
+ * drain write landed in the narrow window between them must never surface through search for an excluded mailbox.
+ */
+async function allowedSemanticMailboxIds(env: CloudflareEnv, mailboxIds: readonly string[]): Promise<string[]> {
+	if (mailboxIds.length === 0) return [];
+	const placeholders = mailboxIds.map(() => "?").join(", ");
+	const { results } = await env.DB.prepare(
+		`SELECT mailbox_id AS mailboxId FROM mailbox_agent_settings
+		WHERE mailbox_id IN (${placeholders}) AND (ai_disabled = 1 OR semantic_index = 0)`,
+	)
+		.bind(...mailboxIds)
+		.all<{ mailboxId: string }>();
+	const excluded = new Set(results.map((row) => row.mailboxId));
+	return mailboxIds.filter((id) => !excluded.has(id));
+}
+
+/**
+ * Meaning hits (section 4.6 step 3): embeds the query, asks the vector store scoped to the mailboxes still allowed
+ * (B3's defence in depth), drops anything under `MIN_SIMILARITY`, and maps each surviving chunk back to its message
+ * id through `message_embeddings.vector_key`, requiring the row to still be `indexed` (the same defence: a row a
+ * concurrent clear marked `skipped` must never resolve), keeping each message's best-scoring chunk. The whole call
+ * (the embedding plus the store query) shares one `MEANING_SEARCH_TIMEOUT_MS` deadline. Returns `[]` (never throws)
+ * when the provider, the spend cap, or every mailbox being excluded, refuses meaning search outright.
  */
 async function meaningRankedIds(
 	env: CloudflareEnv,
@@ -64,21 +117,28 @@ async function meaningRankedIds(
 	mailboxIds: readonly string[],
 	spendMailboxId: string | null,
 ): Promise<string[]> {
-	if (mailboxIds.length === 0) return [];
+	const allowedMailboxIds = await allowedSemanticMailboxIds(env, mailboxIds);
+	if (allowedMailboxIds.length === 0) return [];
 	const provider = await getEmbeddingProvider(env);
 	const reservation = await reserveEmbeddingQuerySpend(env, provider.kind, spendMailboxId, queryText.length);
 	if (!reservation) return [];
+	const deadline = Date.now() + MEANING_SEARCH_TIMEOUT_MS;
 	let vector: Float32Array;
 	try {
-		const embedded = await provider.embedTexts([queryText]);
+		const embedded = await withSearchDeadline(provider.embedTexts([queryText]), MEANING_SEARCH_TIMEOUT_MS);
 		await settleEmbeddingSpend(env, reservation, { inputTokens: embedded.inputTokens });
 		vector = embedded.vectors[0];
 	} catch (error) {
-		await settleEmbeddingSpend(env, reservation, { failed: embeddingErrorCode(error) });
+		await settleEmbeddingSpend(env, reservation, {
+			failed: error instanceof MeaningSearchTimeoutError ? "timeout" : embeddingErrorCode(error),
+		});
 		throw error;
 	}
 	const store = getVectorStore(env);
-	const hits = await store.query(vector, { mailboxIds: [...mailboxIds], topK: VECTOR_TOP_K });
+	const hits = await withSearchDeadline(
+		store.query(vector, { mailboxIds: allowedMailboxIds, topK: VECTOR_TOP_K }),
+		Math.max(0, deadline - Date.now()),
+	);
 	const bestScorePerKey = new Map<string, number>();
 	for (const hit of hits) {
 		if (hit.score < MIN_SIMILARITY) continue;
@@ -93,7 +153,7 @@ async function meaningRankedIds(
 		db
 			.select({ messageId: messageEmbeddings.messageId, vectorKey: messageEmbeddings.vectorKey })
 			.from(messageEmbeddings)
-			.where(inArray(messageEmbeddings.vectorKey, chunk)),
+			.where(and(inArray(messageEmbeddings.vectorKey, chunk), eq(messageEmbeddings.status, "indexed"))),
 	);
 	return rows
 		.map((row) => ({ id: row.messageId, score: bestScorePerKey.get(row.vectorKey!) ?? 0 }))
@@ -122,15 +182,26 @@ export async function semanticSearch(input: SemanticSearchInput): Promise<Semant
 	} else {
 		const availability = await embeddingAvailability(input.env);
 		if (!availability.ok) {
-			semantic = "unavailable";
-			semanticReason = availability.reason;
+			// "off" and "assistant_disabled" are not runtime failures: every default-install search would otherwise
+			// report "unavailable" and show the note, and the chip itself is already hidden on the client while the
+			// feature has nothing to do (`GET /api/mailboxes`'s semanticSearchAvailable) — nothing here to tell the
+			// searcher about this request in particular. Treated exactly like a too-short query: keyword-only, quietly.
+			if (availability.reason !== "off" && availability.reason !== "assistant_disabled") {
+				semantic = "unavailable";
+				semanticReason = availability.reason;
+			}
 		} else {
 			try {
 				const spendMailboxId = input.mailboxIds.length === 1 ? input.mailboxIds[0] : null;
 				meaningIds = await meaningRankedIds(input.env, db, input.queryText, input.mailboxIds, spendMailboxId);
 			} catch (error) {
 				semantic = "unavailable";
-				semanticReason = error instanceof VectorStoreUnavailableError ? "no_vector_store" : embeddingErrorCode(error);
+				semanticReason =
+					error instanceof VectorStoreUnavailableError
+						? "no_vector_store"
+						: error instanceof MeaningSearchTimeoutError
+							? "timeout"
+							: embeddingErrorCode(error);
 			}
 		}
 	}

@@ -3,7 +3,7 @@ import { eq, desc, and, or, count, isNull, isNotNull, inArray, lte, gt, ne, notI
 import type { SQL } from "drizzle-orm";
 import { getEnv } from "@/lib/cloudflare";
 import { getCurrentUser } from "@/lib/auth/cookies";
-import { getDb } from "@/db";
+import { getDb, type AppDatabase } from "@/db";
 import { messages } from "@/db/schema";
 import { getContactDisplayNameMap } from "@/lib/contacts/service";
 import { getSenderDisplayName } from "@/lib/contacts/utils";
@@ -42,9 +42,10 @@ type ListQueryResolution = {
 };
 
 /**
- * `q`/`title` into `conditions` (pushed in place) and, when `tryHybrid` (not conversation view, no cursor, the
- * By meaning chip is not turned off for this request) and there is free text, a fused and D1-rechecked id order
- * from `semanticSearch` instead of the plain keyword condition (`docs/specs/semantic-search.md` section 4.6).
+ * `q`/`title` into `conditions` (pushed in place) and, when `tryHybrid` (no cursor, the By meaning chip is not
+ * turned off for this request) and there is free text, a fused and D1-rechecked id order from `semanticSearch`
+ * instead of the plain keyword condition (`docs/specs/semantic-search.md` section 4.6). Conversation view groups
+ * these same ids by thread afterwards (below); the grouping itself needs no change here.
  */
 async function resolveListQuery(input: {
 	env: CloudflareEnv;
@@ -84,6 +85,44 @@ async function resolveListQuery(input: {
 	}
 	conditions.push(...operatorConditions);
 	return { hybridIds: result.ids, matchByMessageId: result.matches, semanticStatus: result.semantic };
+}
+
+/**
+ * One row per thread from a fused, relevance-ordered id list: the first (best-ranked) message of each conversation
+ * becomes its representative, a deliberate difference from conversation view's usual newest-message representative,
+ * since relevance order is the point of a meaning search. `loaded` need not be in `ids` order; `ids` decides it.
+ */
+function representativeRowsByThread(ids: readonly string[], loaded: readonly ListMessage[]): ListMessage[] {
+	const rowById = new Map(loaded.map((row) => [row.id, row]));
+	const seenKeys = new Set<string>();
+	const rows: ListMessage[] = [];
+	for (const id of ids) {
+		const row = rowById.get(id);
+		if (!row) continue;
+		const key = rowConversationKey(row);
+		if (seenKeys.has(key)) continue;
+		seenKeys.add(key);
+		rows.push(row);
+	}
+	return rows;
+}
+
+/** Every message of each row's conversation (not just the ones a search matched), for `groupThreadMembers`. */
+async function loadScopedThreads(
+	db: AppDatabase,
+	where: SQL | undefined,
+	threadKey: SQL<string>,
+	rows: readonly ListMessage[],
+): Promise<ScopedThreads> {
+	const keys = rows.map(rowConversationKey);
+	if (keys.length === 0) return { ids: new Map(), unread: new Map(), inbound: new Map() };
+	const members = await queryInChunks(keys, (chunk) =>
+		db
+			.select({ id: messages.id, key: threadKey, read: messages.read, direction: messages.direction })
+			.from(messages)
+			.where(and(where, inArray(threadKey, chunk))),
+	);
+	return groupThreadMembers(members);
 }
 
 export async function GET(request: Request) {
@@ -172,7 +211,7 @@ export async function GET(request: Request) {
 		title,
 		timeZone: getRequestTimeZone(request, user.timeZone),
 		mailboxIds: mailboxScope.ids,
-		tryHybrid: url.searchParams.get("semantic") !== "0" && !groupByThread && !cursor,
+		tryHybrid: url.searchParams.get("semantic") !== "0" && !cursor,
 	});
 	const where = and(...conditions);
 	// Messages that were never threaded (older rows, drafts) stand alone, and a conversation
@@ -188,7 +227,17 @@ export async function GET(request: Request) {
 	// Which stored messages each visible row stands for, so acting on a
 	// conversation row acts on the whole conversation within this folder.
 	let scopedThreads: ScopedThreads = { ids: new Map(), unread: new Map(), inbound: new Map() };
-	if (groupByThread) {
+	if (groupByThread && hybridIds) {
+		// Hybrid results have no cursor, in conversation view too: "Show more" continues with keyword results by
+		// date (tryHybrid above turns off once a cursor is sent). The D1 re-check already applied `where`.
+		const loaded = await queryInChunks(hybridIds, (ids) =>
+			db.select(messageListColumns).from(messages).where(inArray(messages.id, ids)),
+		);
+		rows = representativeRowsByThread(hybridIds, loaded);
+		total = rows.length;
+		nextCursor = null;
+		scopedThreads = await loadScopedThreads(db, where, threadKey, rows);
+	} else if (groupByThread) {
 		const page = await loadConversationPage({ db, where, offset, limit, cursor });
 		total = page.total;
 		// The ids already satisfy `where`; repeating it would only add bound parameters.
@@ -198,16 +247,7 @@ export async function GET(request: Request) {
 		const rowById = new Map(rows.map((row) => [row.id, row]));
 		rows = page.ids.map((id) => rowById.get(id)).filter((row): row is ListMessage => !!row);
 		nextCursor = getNextMessageCursor(rows, limit);
-		const keys = rows.map(rowConversationKey);
-		if (keys.length > 0) {
-			const members = await queryInChunks(keys, (chunk) =>
-				db
-					.select({ id: messages.id, key: threadKey, read: messages.read, direction: messages.direction })
-					.from(messages)
-					.where(and(where, inArray(threadKey, chunk))),
-			);
-			scopedThreads = groupThreadMembers(members);
-		}
+		scopedThreads = await loadScopedThreads(db, where, threadKey, rows);
 	} else if (hybridIds) {
 		// The D1 re-check already applied `where`; repeating it would only add bound parameters. Hybrid results have
 		// no cursor: "Show more" continues with keyword results by date (`tryHybrid` above then stays off).

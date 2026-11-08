@@ -7,6 +7,14 @@ let mailboxesCacheSessionToken: string | null = null;
 let mailboxesRequest: Promise<MailboxOption[]> | null = null;
 let mailboxesRequestSessionToken: string | null = null;
 let cacheGeneration = 0;
+// Piggybacks on the same /api/mailboxes response fetchMailboxOptions already makes, rather than a request of its
+// own: whether the By meaning search chip has anything to do (install switch and assistant kill switch). Shown
+// optimistically (true) until the first response names it off, matching the chip's own "on by default" starting state.
+let semanticSearchAvailableCache = true;
+
+export function getCachedSemanticSearchAvailable(): boolean {
+	return semanticSearchAvailableCache;
+}
 export const SELECTED_MAILBOX_STORAGE_KEY = "selected-mailbox-id";
 /** Browser preferences of the All mailboxes view (see appearance-preferences.ts): on, the hidden mailboxes, the last From. */
 export const ALL_MAILBOXES_STORAGE_KEY = "kite-all-mailboxes";
@@ -51,6 +59,7 @@ export async function fetchMailboxOptions(force = false): Promise<MailboxOption[
 	mailboxesRequest = authFetch("/api/mailboxes")
 		.then((res) => res.json())
 		.then((data) => {
+			semanticSearchAvailableCache = (data as { semanticSearchAvailable?: boolean }).semanticSearchAvailable !== false;
 			const items = ((data as { mailboxes?: MailboxOption[] }).mailboxes ?? []).map((m) => ({
 				id: m.id,
 				domainId: m.domainId,

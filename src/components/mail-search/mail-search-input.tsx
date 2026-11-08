@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import clsx from "clsx";
 import { Search, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { useSelectedMailbox } from "@/components/mailbox-provider";
 import { useMailSearch } from "./mail-search-context";
 import { panelSearchClass, searchPillClass, searchPillInputClass } from "./search-pill";
 import { useShortcuts } from "@/components/shortcuts";
@@ -37,6 +38,7 @@ export function MailSearchInput({ variant = "header" }: { variant?: "header" | "
 	const items = flattenSections(sections);
 	const open = focused && items.length > 0 && closedFor !== query;
 	const [semanticOn, setSemanticOn] = useSemanticSearchChip();
+	const { semanticSearchAvailable } = useSelectedMailbox();
 
 	function pick(item: ModuleSearchItem) {
 		setClosedFor(query);
@@ -109,21 +111,23 @@ export function MailSearchInput({ variant = "header" }: { variant?: "header" | "
 				/>
 				{query ? (
 					<>
-						<button
-							type="button"
-							onMouseDown={(event) => event.preventDefault()}
-							onClick={() => setSemanticOn(!semanticOn)}
-							aria-pressed={semanticOn}
-							className={clsx(
-								"hidden shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium transition-colors sm:flex",
-								semanticOn
-									? "bg-blue-100 text-blue-700 hover:bg-blue-200"
-									: "bg-neutral-100 text-neutral-500 hover:bg-neutral-200 hover:text-neutral-900",
-							)}
-							title={t("Find mail by what it means, not only its exact words")}
-						>
-							{t("By meaning")}
-						</button>
+						{semanticSearchAvailable && (
+							<button
+								type="button"
+								onMouseDown={(event) => event.preventDefault()}
+								onClick={() => setSemanticOn(!semanticOn)}
+								aria-pressed={semanticOn}
+								className={clsx(
+									"flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium transition-colors",
+									semanticOn
+										? "bg-blue-100 text-blue-700 hover:bg-blue-200"
+										: "bg-neutral-100 text-neutral-500 hover:bg-neutral-200 hover:text-neutral-900",
+								)}
+								title={t("Find mail by what it means, not only its exact words")}
+							>
+								{t("By meaning")}
+							</button>
+						)}
 						<button
 							type="button"
 							onMouseDown={(event) => event.preventDefault()}

@@ -116,6 +116,65 @@ test("the D1 re-check drops hits from another mailbox, another user's draft and 
 	assert.equal(result.semantic, "on");
 });
 
+test("a No-AI or excluded mailbox's vector never surfaces, even when the store still returns it (defence in depth)", async (t) => {
+	const { db, env } = await setup(t);
+	// No word in common with the query: only the meaning path could ever find this one, which is the point —
+	// a keyword match would pass regardless of the mailbox's AI switches, since keyword search needs no AI.
+	insertMessage(db, "excluded-1", { subject: "Offerte dakwerk", text: "Bijgevoegd de offerte voor het dakwerk." });
+	db.db.exec(
+		"INSERT INTO mailbox_agent_settings (mailbox_id, ai_disabled, updated_at) VALUES ('mailbox-a', 1, 1) ON CONFLICT(mailbox_id) DO UPDATE SET ai_disabled = 1",
+	);
+	// A vector left behind by a drain write that raced clearMailboxSemanticIndex's two-statement window: still
+	// indexed, still in the store, but the mailbox itself is now excluded.
+	vectorKeyRow(db, "excluded-1", KEY_1);
+	env.VECTORS = misbehavingVectorStore([`${KEY_1}:0`]);
+	env.AI = { run: async () => ({ data: [Array(1024).fill(0.01)] }) };
+
+	const result = await semanticSearch({
+		env,
+		scopeWhere: buildScope("mailbox-a"),
+		queryText: "the quote for the roof repair",
+		mailboxIds: ["mailbox-a"],
+	});
+	assert.deepEqual(result.ids, []);
+});
+
+test("a skipped row's vector key never resolves, even when the store still returns a hit for it (defence in depth)", async (t) => {
+	const { db, env } = await setup(t);
+	insertMessage(db, "skipped-1", { subject: "Offerte dakwerk", text: "Bijgevoegd de offerte voor het dakwerk." });
+	vectorKeyRow(db, "skipped-1", KEY_2);
+	// The mailbox switch flips off after the vector was written: the row is skipped but the vector (and its key)
+	// linger until the delete step of clearMailboxSemanticIndex catches up.
+	db.db.exec("UPDATE message_embeddings SET status = 'skipped' WHERE message_id = 'skipped-1'");
+	env.VECTORS = misbehavingVectorStore([`${KEY_2}:0`]);
+	env.AI = { run: async () => ({ data: [Array(1024).fill(0.01)] }) };
+
+	const result = await semanticSearch({
+		env,
+		scopeWhere: buildScope("mailbox-a"),
+		queryText: "the quote for the roof repair",
+		mailboxIds: ["mailbox-a"],
+	});
+	assert.deepEqual(result.ids, []);
+});
+
+test("meaning search gives up after its own deadline and answers with keyword matches, reporting a timeout", async (t) => {
+	const { db, env } = await setup(t);
+	insertMessage(db, "keyword-timeout", { subject: "Roof repair quote" });
+	env.VECTORS = { upsert: async () => {}, deleteByIds: async () => {}, query: async () => [] };
+	env.AI = { run: () => new Promise(() => {}) }; // never resolves
+
+	const result = await semanticSearch({
+		env,
+		scopeWhere: buildScope("mailbox-a"),
+		queryText: "roof repair",
+		mailboxIds: ["mailbox-a"],
+	});
+	assert.deepEqual(result.ids, ["keyword-timeout"]);
+	assert.equal(result.semantic, "unavailable");
+	assert.equal(result.semanticReason, "timeout");
+});
+
 test("a meaning-only hit (no shared words) is found through the vector key reverse lookup, kept by the D1 re-check, and labelled meaning", async (t) => {
 	const { db, env } = await setup(t);
 	// Dutch "roof repair quote" with no words in common with the English query: only the meaning path can find it.
@@ -185,7 +244,7 @@ test("a message found by both the keyword and the meaning search is labelled bot
 	assert.equal(result.matches.get("both-1"), "both");
 });
 
-test("when the feature is off, the meaning half is skipped and the keyword half still answers", async (t) => {
+test("when the feature is off, the meaning half is skipped and the keyword half still answers, quietly (not reported as unavailable)", async (t) => {
 	const { db, env } = await setup(t);
 	db.db.exec("UPDATE app_settings SET semantic_search_enabled = 0 WHERE id = 'default'");
 	insertMessage(db, "keyword-only", { subject: "Roof repair quote" });
@@ -204,9 +263,35 @@ test("when the feature is off, the meaning half is skipped and the keyword half 
 		mailboxIds: ["mailbox-a"],
 	});
 	assert.deepEqual(result.ids, ["keyword-only"]);
-	assert.equal(result.semantic, "unavailable");
-	assert.equal(result.semanticReason, "off");
+	// "off" is not a runtime failure (every default install would otherwise show the note on every search); the
+	// chip itself is hidden on the client instead, through GET /api/mailboxes's semanticSearchAvailable.
+	assert.equal(result.semantic, "on");
+	assert.equal(result.semanticReason, undefined);
 	assert.equal(called, false, "no embedding call is made while the feature is off");
+});
+
+test("when the assistant is disabled, the meaning half is skipped and the keyword half still answers, quietly", async (t) => {
+	const { db, env } = await setup(t);
+	db.db.exec("UPDATE app_settings SET agent_enabled = 0 WHERE id = 'default'");
+	insertMessage(db, "keyword-only-2", { subject: "Dentist appointment" });
+	let called = false;
+	env.AI = {
+		run: async () => {
+			called = true;
+			return { data: [Array(1024).fill(0.01)] };
+		},
+	};
+
+	const result = await semanticSearch({
+		env,
+		scopeWhere: buildScope("mailbox-a"),
+		queryText: "dentist appointment",
+		mailboxIds: ["mailbox-a"],
+	});
+	assert.deepEqual(result.ids, ["keyword-only-2"]);
+	assert.equal(result.semantic, "on");
+	assert.equal(result.semanticReason, undefined);
+	assert.equal(called, false, "no embedding call is made while the assistant is disabled");
 });
 
 test("a query shorter than 3 characters is keyword-only, and not reported as unavailable", async (t) => {

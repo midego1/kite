@@ -767,6 +767,42 @@ const SHOTS: Shot[] = [
 			return panel;
 		},
 	},
+	{
+		// The assistant panel when no AI provider is configured at all: a notice instead of a silent, broken chat.
+		name: "2026-11-08-no-provider-notice-light",
+		viewport: { width: 1280, height: 900 },
+		open: async (page) => {
+			await page.route("**/api/agent/settings?*", (route) =>
+				route.fulfill({
+					json: {
+						settings: {
+							mailboxId: "demo",
+							enabled: true,
+							modelId: "demo",
+							autoDraftEnabled: false,
+							reviewerUserId: null,
+							instructions: "",
+							dailyLimit: 5,
+						},
+						models: ["demo"],
+						canManage: true,
+						providerConfigured: false,
+						externalProviderBlocked: false,
+						providerLabel: "",
+						autoReplyEnabled: false,
+						reviewers: [],
+					},
+				}),
+			);
+			await page.goto("/inbox");
+			const toggle = page.getByRole("button", { name: /^(Open|Close) email assistant$/ });
+			await expect(toggle).toBeVisible();
+			if ((await toggle.getAttribute("aria-label")) === "Open email assistant") await toggle.click({ timeout: 45_000 });
+			const panel = page.locator("#email-assistant-panel");
+			await expect(panel.getByTestId("no-provider-notice")).toBeVisible();
+			return panel;
+		},
+	},
 	...(["dark"] as const).map(
 		(theme): Shot => ({
 			// A file dragged over the floating composer: the drop target stays up while the drag is held.

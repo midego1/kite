@@ -296,6 +296,24 @@ test("malformed and oversized mailboxIds never widen the scope", async (t) => {
 	}
 });
 
+test("Newer and Older stay inside an open account view", async (t) => {
+	const { get, database } = await fixture(t);
+	database.db.exec(`
+		INSERT INTO external_accounts (id, user_id, mailbox_id, label, address, preset, imap_host, imap_port, imap_security, username, created_at, updated_at)
+			VALUES ('acct', 'owner', 'work', 'Demo Gmail', 'me@gmail.com', 'gmail', 'imap.gmail.com', 993, 'tls', 'me@gmail.com', 1, 1);
+		UPDATE messages SET external_account_id = 'acct' WHERE id = 'work-2';
+	`);
+	const navigation = async (query) =>
+		(await get(m.navigateMessages, `/api/messages/navigation?folder=inbox${query}`)).body.messages.map(
+			(entry) => entry.id,
+		);
+	assert.deepEqual(await navigation("&mailboxId=work"), ["work-2", "work-1"]);
+	assert.deepEqual(await navigation("&mailboxId=work&via=me%40gmail.com"), ["work-2"]);
+	assert.deepEqual(await navigation("&via=%20Me%40Gmail.com%20"), ["work-2"], "trimmed, in any case");
+	assert.deepEqual(await navigation("&via=other%40gmail.com"), [], "another account's view has none of it");
+	assert.deepEqual(await navigation("&mailboxId=work&via="), ["work-2", "work-1"], "an empty value is no view");
+});
+
 test("held mail stays out of the counts and navigation outside the Screener", async (t) => {
 	const { get } = await fixture(t);
 	const { counts } = (await get(m.countMessages, "/api/messages/counts?mailboxIds=home,work")).body;

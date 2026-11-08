@@ -36,7 +36,7 @@ function messageRow(page: Page, subject: string) {
  * Delete and Mark as read always stay inline).
  */
 async function clickBulkAction(page: Page, action: string) {
-	const toolbar = page.getByText(/^\d+ selected$/).locator("..");
+	const toolbar = page.getByTestId("bulk-toolbar");
 	const inline = toolbar.getByRole("button", { name: action, exact: true });
 	if (await inline.isVisible()) {
 		await inline.click();

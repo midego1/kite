@@ -25,6 +25,7 @@ import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
 import { useBulkSelectionAccess } from "./use-bulk-selection-access";
+import { useBulkToolbarOverflow } from "./use-bulk-toolbar-overflow";
 import { supportsPermanentDelete } from "@/lib/messages/permanent-delete-utils";
 import type { BulkMessageAction } from "@/app/api/messages/bulk/types";
 import type { BulkMessageToolbarProps } from "./types";
@@ -36,11 +37,8 @@ const menuLabelClass = "mt-1 px-3 pb-1 pt-2 text-sm font-medium text-neutral-500
 const menuContentClass =
 	"z-[130] max-h-[min(24rem,var(--radix-dropdown-menu-content-available-height))] w-54 overflow-y-auto rounded-xl border border-neutral-200 bg-white p-2 shadow-lg";
 
-/**
- * An action button of the toolbar: icon always, the label too once the header has room for it (the list beside
- * a reading pane rarely does, a full-width list or a phone usually does), so the action is never just an icon
- * with a tooltip only a pointer can reach.
- */
+/** An action button of the toolbar: icon and label together, since whether it is shown inline at all (rather
+ * than folded into "More actions") already accounts for the room its label needs. */
 function ToolbarButton({
 	label,
 	icon: Icon,
@@ -65,9 +63,27 @@ function ToolbarButton({
 				className={clsx("gap-1.5", destructive && "text-red-600 hover:text-red-700")}
 			>
 				<Icon className="h-4 w-4" />
-				<span className="hidden text-xs font-medium @lg:inline">{label}</span>
+				<span className="text-xs font-medium">{label}</span>
 			</Button>
 		</Tooltip>
+	);
+}
+
+/** The "Move to" dropdown's own trigger button, shared between the real inline trigger and its hidden
+ * measurement clone so the two are always exactly the same width. */
+function MoveToTriggerButton({ disabled }: { disabled?: boolean }) {
+	const t = useT();
+	return (
+		<Button
+			variant="ghost"
+			size="sm"
+			className="gap-1.5 bg-white text-xs font-medium text-neutral-700"
+			disabled={disabled}
+		>
+			<FolderInput className="h-4 w-4" />
+			{t("Move to")}
+			<ChevronDown className="h-3.5 w-3.5 text-neutral-500" />
+		</Button>
 	);
 }
 
@@ -87,8 +103,8 @@ type MoveTarget = { value: string; label: string; Icon: LucideIcon };
 type MoveMenuFolder = { id: string; name: string; color: string };
 
 /**
- * The folder destinations of "Move to", shared between its own dropdown (container wide enough for an inline
- * button) and the "Move to" entry of "More actions" (a container too narrow for one): the choices themselves
+ * The folder destinations of "Move to", shared between its own dropdown (shown inline when there is room)
+ * and the "Move to" entry of "More actions" (a submenu, reached when there is not): the choices themselves
  * never depend on how they are reached.
  */
 function MoveMenuItems({
@@ -144,7 +160,10 @@ function DraftSelectionToolbar({
 }: Pick<BulkMessageToolbarProps, "selectedCount" | "hideSelectedCount" | "onAction" | "onClearSelection" | "pending">) {
 	const t = useT();
 	return (
-		<div className="flex min-w-0 items-center gap-2 text-neutral-600 w-full pointer-coarse:[&_button]:min-h-11 pointer-coarse:[&_button]:min-w-11">
+		<div
+			data-testid="bulk-toolbar"
+			className="flex min-w-0 items-center gap-2 text-neutral-600 w-full pointer-coarse:[&_button]:min-h-11 pointer-coarse:[&_button]:min-w-11"
+		>
 			{!hideSelectedCount && (
 				<span className="me-2 text-sm font-medium text-neutral-800">
 					{t("{count} selected", { count: selectedCount })}
@@ -178,6 +197,17 @@ function canDeleteOwnDrafts(
 ) {
 	return !!selection.hasDraftSelection && !selection.hasPendingSendSelection && !selection.pending;
 }
+
+type ActionItem = {
+	id: string;
+	label: string;
+	Icon: LucideIcon;
+	action: BulkMessageAction;
+	disabled?: boolean;
+	destructive?: boolean;
+};
+
+const MOVE_TO_ID = "moveTo";
 
 function MailSelectionToolbar({
 	selectedCount,
@@ -225,161 +255,210 @@ function MailSelectionToolbar({
 	// A message waiting to be sent goes out wherever it is filed, so nothing that moves it is offered.
 	const manageDisabled = accessDisabled || hasPendingSendSelection;
 	const trashDisabled = manageDisabled && !canDeleteOwnDrafts({ hasDraftSelection, hasPendingSendSelection, pending });
+
+	// Priority order, highest first: the single most useful action (get rid of the mail) leads, the rest
+	// follow roughly by how often they are reached for; "Move to" is last since it is also the widest.
+	const items: ActionItem[] = [
+		{
+			id: "trash",
+			label: trash.label,
+			Icon: trash.Icon,
+			action: trash.action as BulkMessageAction,
+			disabled: trashDisabled,
+		},
+		{
+			id: "archive",
+			label: archive.label,
+			Icon: archive.Icon,
+			action: archive.action as BulkMessageAction,
+			disabled: manageDisabled,
+		},
+		{
+			id: "markRead",
+			label: hasUnreadSelection ? t("Mark as read") : t("Mark as unread"),
+			Icon: hasUnreadSelection ? MailOpen : Mail,
+			action: (hasUnreadSelection ? "read" : "unread") as BulkMessageAction,
+			disabled: pending,
+		},
+		...(canDeleteForever
+			? [
+					{
+						id: "deleteForever",
+						label: t("Delete forever"),
+						Icon: Trash2,
+						action: "delete" as BulkMessageAction,
+						disabled: manageDisabled,
+						destructive: true,
+					},
+				]
+			: []),
+		{
+			id: "spam",
+			label: spam.label,
+			Icon: spam.Icon,
+			action: spam.action as BulkMessageAction,
+			disabled: manageDisabled,
+		},
+	];
+	const priorityIds = [...items.map((item) => item.id), MOVE_TO_ID];
+	// Recomputed whenever any of these can change an item's natural width, not just on resize.
+	const measureKey = [
+		selectedCount,
+		folder,
+		hasUnreadSelection,
+		canDeleteForever,
+		manageDisabled,
+		trashDisabled,
+		pending,
+	].join("|");
+	const { containerRef, headRef, tailRef, measureRef, visibleIds } = useBulkToolbarOverflow(priorityIds, measureKey);
+	const overflowIds = priorityIds.filter((id) => !visibleIds.has(id));
+	const hasOverflow = overflowIds.length > 0;
+	const overflowItems = items.filter((item) => overflowIds.includes(item.id));
+	const moveToOverflowed = overflowIds.includes(MOVE_TO_ID);
+
 	return (
-		<div className="flex min-w-0 items-center gap-2 text-neutral-600 w-full pointer-coarse:[&_button]:min-h-11 pointer-coarse:[&_button]:min-w-11">
-			{!hideSelectedCount && (
-				<span className="me-2 text-sm font-medium text-neutral-800">
-					{t("{count} selected", { count: selectedCount })}
-				</span>
-			)}
-			<span className="flex-1 @xl:hidden" />
-			{/* Below @xl the header's own container (not the viewport: a narrow split-pane list on an otherwise
-			    wide screen is just as tight as a phone) has no room for these inline, so they move into "More
-			    actions" instead, never dropped. */}
-			<span className="@max-xl:hidden">
-				<ToolbarButton
-					label={archive.label}
-					icon={archive.Icon}
-					onClick={() => onAction(archive.action as BulkMessageAction)}
-					disabled={manageDisabled}
-				/>
-			</span>
-			<span className="@max-xl:hidden">
-				<ToolbarButton
-					label={spam.label}
-					icon={spam.Icon}
-					onClick={() => onAction(spam.action as BulkMessageAction)}
-					disabled={manageDisabled}
-				/>
-			</span>
-			<ToolbarButton
-				label={trash.label}
-				icon={trash.Icon}
-				onClick={() => onAction(trash.action as BulkMessageAction)}
-				disabled={trashDisabled}
-			/>
-			{canDeleteForever && (
-				<span className="@max-xl:hidden">
+		<div
+			ref={containerRef}
+			data-testid="bulk-toolbar"
+			className="relative flex min-w-0 items-center gap-2 overflow-hidden text-neutral-600 w-full pointer-coarse:[&_button]:min-h-11 pointer-coarse:[&_button]:min-w-11"
+		>
+			<div ref={headRef} className="flex shrink-0 items-center">
+				{!hideSelectedCount && (
+					<span className="me-2 max-w-36 truncate text-sm font-medium text-neutral-800">
+						{t("{count} selected", { count: selectedCount })}
+					</span>
+				)}
+			</div>
+			{items
+				.filter((item) => visibleIds.has(item.id))
+				.map((item) => (
 					<ToolbarButton
-						label={t("Delete forever")}
-						icon={Trash2}
-						onClick={() => onAction("delete")}
-						disabled={manageDisabled}
-						destructive
+						key={item.id}
+						label={item.label}
+						icon={item.Icon}
+						onClick={() => onAction(item.action)}
+						disabled={item.disabled}
+						destructive={item.destructive}
 					/>
-				</span>
+				))}
+			{visibleIds.has(MOVE_TO_ID) && (
+				<DropdownMenu.Root>
+					<Tooltip label={t("Move selected messages")}>
+						<DropdownMenu.Trigger asChild>
+							<MoveToTriggerButton disabled={manageDisabled} />
+						</DropdownMenu.Trigger>
+					</Tooltip>
+					<DropdownMenu.Portal>
+						<DropdownMenu.Content align="end" sideOffset={4} className={menuContentClass}>
+							<MoveMenuItems
+								moveOptions={moveOptions}
+								phishingItem={phishingItem}
+								spansMailboxes={spansMailboxes}
+								folders={folders}
+								onAction={onAction}
+							/>
+						</DropdownMenu.Content>
+					</DropdownMenu.Portal>
+				</DropdownMenu.Root>
 			)}
-			<ToolbarButton
-				label={hasUnreadSelection ? t("Mark as read") : t("Mark as unread")}
-				icon={hasUnreadSelection ? MailOpen : Mail}
-				onClick={() => onAction(hasUnreadSelection ? "read" : "unread")}
-				disabled={pending}
-			/>
-			<span className="flex-1 @max-xl:hidden" />
-			<DropdownMenu.Root>
-				<Tooltip label={t("Move selected messages")} className="@max-xl:hidden">
+			<span className="flex-1" />
+			<div ref={tailRef} className="flex shrink-0 items-center gap-2">
+				{/* Small enough that it always has room: dismissing the toolbar is too common a thing to do to
+				    hide behind "More actions" just because the row is narrow. The overflow menu still repeats
+				    it for the touch target it gives a coarse pointer. */}
+				<Tooltip label={t("Clear selection")}>
+					<Button
+						variant="ghost"
+						size="sm"
+						onClick={onClearSelection}
+						disabled={pending}
+						aria-label={t("Clear selection")}
+					>
+						<X className="h-4 w-4" />
+					</Button>
+				</Tooltip>
+			</div>
+			{hasOverflow && (
+				<DropdownMenu.Root>
 					<DropdownMenu.Trigger asChild>
-						<Button
-							variant="ghost"
-							size="sm"
-							className="@max-xl:hidden gap-1.5 bg-white text-xs font-medium text-neutral-700"
-							disabled={manageDisabled}
-						>
-							<FolderInput className="h-4 w-4" />
-							{t("Move to")}
-							<ChevronDown className="h-3.5 w-3.5 text-neutral-500" />
+						<Button variant="ghost" size="sm" disabled={pending} aria-label={t("More actions")}>
+							<MoreVertical className="h-4 w-4" />
 						</Button>
 					</DropdownMenu.Trigger>
-				</Tooltip>
-				<DropdownMenu.Portal>
-					<DropdownMenu.Content align="end" sideOffset={4} className={menuContentClass}>
-						<MoveMenuItems
-							moveOptions={moveOptions}
-							phishingItem={phishingItem}
-							spansMailboxes={spansMailboxes}
-							folders={folders}
-							onAction={onAction}
-						/>
-					</DropdownMenu.Content>
-				</DropdownMenu.Portal>
-			</DropdownMenu.Root>
-			{/* Small enough that, unlike Archive/Spam/Move to, it always has room: dismissing the toolbar is too
-			    common a thing to do to hide behind "More actions" just because the list beside a reading pane
-			    is narrow. The overflow menu still repeats it for the touch target it gives a coarse pointer. */}
-			<Tooltip label={t("Clear selection")}>
-				<Button
-					variant="ghost"
-					size="sm"
-					onClick={onClearSelection}
-					disabled={pending}
-					aria-label={t("Clear selection")}
-				>
-					<X className="h-4 w-4" />
-				</Button>
-			</Tooltip>
-			<DropdownMenu.Root>
-				<DropdownMenu.Trigger asChild>
-					<Button variant="ghost" size="sm" className="@xl:hidden" disabled={pending} aria-label={t("More actions")}>
+					<DropdownMenu.Portal>
+						<DropdownMenu.Content
+							align="end"
+							sideOffset={4}
+							className="z-[130] min-w-44 rounded-xl border border-neutral-200 bg-white p-1 shadow-xl"
+						>
+							{overflowItems.map((item) => (
+								<DropdownMenu.Item
+									key={item.id}
+									className={clsx(menuItemClass, item.destructive && "text-red-600")}
+									disabled={item.disabled}
+									onSelect={() => onAction(item.action)}
+								>
+									<item.Icon className="h-4 w-4" />
+									{item.label}
+								</DropdownMenu.Item>
+							))}
+							{moveToOverflowed && (
+								<DropdownMenu.Sub>
+									<DropdownMenu.SubTrigger className={clsx(menuItemClass, "justify-between")} disabled={manageDisabled}>
+										<span className="flex items-center gap-2">
+											<FolderInput className="h-4 w-4" />
+											{t("Move to")}
+										</span>
+										<ChevronRight aria-hidden className="h-4 w-4 text-neutral-400 rtl:-scale-x-100" />
+									</DropdownMenu.SubTrigger>
+									<DropdownMenu.Portal>
+										<DropdownMenu.SubContent sideOffset={4} className={menuContentClass}>
+											<MoveMenuItems
+												moveOptions={moveOptions}
+												phishingItem={false}
+												spansMailboxes={spansMailboxes}
+												folders={folders}
+												onAction={onAction}
+											/>
+										</DropdownMenu.SubContent>
+									</DropdownMenu.Portal>
+								</DropdownMenu.Sub>
+							)}
+							{!moveToOverflowed && phishingItem}
+							<DropdownMenu.Separator className="my-1 h-px bg-neutral-100" />
+							<DropdownMenu.Item className={menuItemClass} onSelect={onClearSelection}>
+								<X className="h-4 w-4" />
+								{t("Clear selection")}
+							</DropdownMenu.Item>
+						</DropdownMenu.Content>
+					</DropdownMenu.Portal>
+				</DropdownMenu.Root>
+			)}
+			{/* Hidden measurement clone: every action at its real, unclipped width (an absolutely positioned,
+			    max-content row no layout ever sees), so the hook can tell what actually fits before anything
+			    renders into the visible row above. "__more__" stands in for the overflow trigger so its width
+			    is always reserved, whether or not it ends up shown. */}
+			<div
+				aria-hidden="true"
+				ref={measureRef}
+				className="pointer-events-none absolute left-0 top-0 flex w-max items-center gap-2 opacity-0"
+				style={{ visibility: "hidden" }}
+			>
+				{items.map((item) => (
+					<span key={item.id} data-overflow-id={item.id}>
+						<ToolbarButton label={item.label} icon={item.Icon} onClick={() => {}} />
+					</span>
+				))}
+				<span data-overflow-id={MOVE_TO_ID}>
+					<MoveToTriggerButton />
+				</span>
+				<span data-overflow-id="__more__">
+					<Button variant="ghost" size="sm" aria-hidden="true">
 						<MoreVertical className="h-4 w-4" />
 					</Button>
-				</DropdownMenu.Trigger>
-				<DropdownMenu.Portal>
-					<DropdownMenu.Content
-						align="end"
-						sideOffset={4}
-						className="z-[130] min-w-44 rounded-xl border border-neutral-200 bg-white p-1 shadow-xl @xl:hidden"
-					>
-						<DropdownMenu.Item
-							className={menuItemClass}
-							disabled={manageDisabled}
-							onSelect={() => onAction(archive.action as BulkMessageAction)}
-						>
-							<archive.Icon className="h-4 w-4" />
-							{archive.label}
-						</DropdownMenu.Item>
-						<DropdownMenu.Item
-							className={menuItemClass}
-							disabled={manageDisabled}
-							onSelect={() => onAction(spam.action as BulkMessageAction)}
-						>
-							<spam.Icon className="h-4 w-4" />
-							{spam.label}
-						</DropdownMenu.Item>
-						<DropdownMenu.Sub>
-							<DropdownMenu.SubTrigger className={clsx(menuItemClass, "justify-between")} disabled={manageDisabled}>
-								<span className="flex items-center gap-2">
-									<FolderInput className="h-4 w-4" />
-									{t("Move to")}
-								</span>
-								<ChevronRight aria-hidden className="h-4 w-4 text-neutral-400 rtl:-scale-x-100" />
-							</DropdownMenu.SubTrigger>
-							<DropdownMenu.Portal>
-								<DropdownMenu.SubContent sideOffset={4} className={menuContentClass}>
-									<MoveMenuItems
-										moveOptions={moveOptions}
-										phishingItem={false}
-										spansMailboxes={spansMailboxes}
-										folders={folders}
-										onAction={onAction}
-									/>
-								</DropdownMenu.SubContent>
-							</DropdownMenu.Portal>
-						</DropdownMenu.Sub>
-						{phishingItem}
-						{canDeleteForever && (
-							<DropdownMenu.Item className={`${menuItemClass} text-red-600`} onSelect={() => onAction("delete")}>
-								<Trash2 className="h-4 w-4" />
-								{t("Delete forever")}
-							</DropdownMenu.Item>
-						)}
-						<DropdownMenu.Separator className="my-1 h-px bg-neutral-100" />
-						<DropdownMenu.Item className={menuItemClass} onSelect={onClearSelection}>
-							<X className="h-4 w-4" />
-							{t("Clear selection")}
-						</DropdownMenu.Item>
-					</DropdownMenu.Content>
-				</DropdownMenu.Portal>
-			</DropdownMenu.Root>
+				</span>
+			</div>
 		</div>
 	);
 }

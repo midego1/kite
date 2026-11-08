@@ -268,13 +268,14 @@ test("deleting a page of messages forever shows progress and removes them", asyn
 
 /** The bulk toolbar in the list header: its action buttons sit beside the "N selected" count. */
 function selectionPane(page: Page) {
-	return page.getByText(/^\d+ selected$/).locator("..");
+	return page.getByTestId("bulk-toolbar");
 }
 
 /**
  * Runs a bulk toolbar action by its label, whether the list beside the open message has room to show it
- * inline or, at the default split-pane width, it only reaches through "More actions" (Delete and Mark as
- * read always stay inline; Archive, Report spam/Not spam, Delete forever and Move to fold away there first).
+ * inline or, at the default split-pane width, it only reaches through "More actions": what fits there is
+ * measured against the panel's actual width, not a fixed set, so any action (not just the lower-priority
+ * ones) can fold away depending on how many are competing for the room.
  */
 async function clickBulkAction(page: Page, action: string) {
 	const inline = selectionPane(page).getByRole("button", { name: action, exact: true });
@@ -385,7 +386,7 @@ test("deleting a selection that includes the open message never shows it again",
 	await expect(page.getByText("2 selected")).toBeVisible();
 	const watch = await watchOldMessage(page, open.subject, [open.message.id]);
 
-	await selectionPane(page).getByRole("button", { name: "Delete", exact: true }).click();
+	await clickBulkAction(page, "Delete");
 
 	await expectEmptyPane(page, "/inbox");
 	await watch.assertNone();
@@ -427,7 +428,7 @@ test("a row action on a selected row drops it from the selection", async ({ page
 	const bulk = page.waitForRequest(
 		(request) => request.url().endsWith("/api/messages/bulk") && request.method() === "POST",
 	);
-	await selectionPane(page).getByRole("button", { name: "Delete", exact: true }).click();
+	await clickBulkAction(page, "Delete");
 	expect((await bulk).postDataJSON().messageIds).toEqual([b.message.id]);
 });
 
@@ -566,7 +567,7 @@ test("bulk Delete never remounts the open message while the list refresh and nav
 	const watch = await watchOldMessage(page, open.subject, [open.message.id]);
 	const slow = await slowListAndNavigation(page);
 
-	await selectionPane(page).getByRole("button", { name: "Delete", exact: true }).click();
+	await clickBulkAction(page, "Delete");
 	await expectEmptyPane(page, "/inbox");
 	await expect.poll(() => messageStatusCode(open.message.id)).toBe(200);
 	await slow.settled();

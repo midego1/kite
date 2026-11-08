@@ -38,7 +38,7 @@ const toastFor = (page: Page, text: string | RegExp) => page.getByRole("status")
 
 /** The bulk toolbar in the list header: its action buttons sit beside the "N selected" count. */
 function selectionToolbar(page: Page) {
-	return page.getByText(/^\d+ selected$/).locator("..");
+	return page.getByTestId("bulk-toolbar");
 }
 
 /**

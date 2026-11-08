@@ -101,11 +101,7 @@ async function openMoveToMenu(page: Page) {
 		await inline.click();
 		return;
 	}
-	await page
-		.getByText(/^\d+ selected$/)
-		.locator("..")
-		.getByRole("button", { name: "More actions" })
-		.click();
+	await page.getByTestId("bulk-toolbar").getByRole("button", { name: "More actions" }).click();
 	await page.getByRole("menu").getByRole("menuitem", { name: "Move to", exact: true }).press("ArrowRight");
 }
 

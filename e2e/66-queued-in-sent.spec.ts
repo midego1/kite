@@ -68,17 +68,9 @@ function rowFor(page: Page, subject: string) {
  * actually checkable for its disabled state.
  */
 async function bulkActionControl(page: Page, action: string) {
-	const inline = page
-		.getByText(/^\d+ selected$/)
-		.locator("..")
-		.getByRole("button", { name: action })
-		.first();
+	const inline = page.getByTestId("bulk-toolbar").getByRole("button", { name: action }).first();
 	if (await inline.isVisible()) return inline;
-	await page
-		.getByText(/^\d+ selected$/)
-		.locator("..")
-		.getByRole("button", { name: "More actions" })
-		.click();
+	await page.getByTestId("bulk-toolbar").getByRole("button", { name: "More actions" }).click();
 	return page.getByRole("menu").getByRole("menuitem", { name: action }).first();
 }
 
@@ -180,7 +172,7 @@ test("a scheduled send shows its time, cannot be archived or trashed, and Edit o
 		await page.keyboard.press("Escape");
 		await expect(await bulkActionControl(page, "Report spam")).toBeDisabled();
 		await page.keyboard.press("Escape");
-		await expect(page.getByRole("button", { name: "Delete", exact: true }).first()).toBeDisabled();
+		await expect(await bulkActionControl(page, "Delete")).toBeDisabled();
 		await rowFor(page, subject).getByRole("checkbox").uncheck();
 	});
 

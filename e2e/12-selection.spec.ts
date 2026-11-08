@@ -282,7 +282,7 @@ test("Select all N in the folder extends a selection past the loaded page", asyn
 	await expect(page.getByText("26 selected")).toBeVisible();
 
 	// The default split-pane list has no room for Archive inline, so it is reached through "More actions".
-	const toolbar = page.getByText(/^\d+ selected$/).locator("..");
+	const toolbar = page.getByTestId("bulk-toolbar");
 	await toolbar.getByRole("button", { name: "More actions" }).click();
 	await page.getByRole("menu").getByRole("menuitem", { name: "Archive", exact: true }).click();
 	await expect(page.getByText(newest, { exact: true })).toHaveCount(0);

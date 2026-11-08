@@ -64,7 +64,7 @@ function row(page: Page, subject: string) {
 
 /** The bulk toolbar in the list header: scopes an action button away from any row's own, same-named one. */
 function toolbar(page: Page) {
-	return page.getByText(/^\d+ selected$/).locator("..");
+	return page.getByTestId("bulk-toolbar");
 }
 
 /**
@@ -325,10 +325,18 @@ test("read-only shared mail cannot be archived or deleted from the combined view
 	await showAllMailboxes(page);
 
 	await row(page, subject).getByRole("checkbox").click();
-	await expect(toolbar(page).getByRole("button", { name: "Delete", exact: true })).toBeDisabled();
+	// Neither Delete nor Archive has guaranteed room inline at the default split-pane width (what fits is
+	// measured, not a fixed set), so their disabled state is checked through whichever of the toolbar or
+	// "More actions" actually offers them.
 	await expect(toolbar(page).getByRole("button", { name: "Mark as read" })).toBeEnabled();
-	// Archive has no room inline at the default split-pane width, so its disabled state is checked through
-	// "More actions" instead, where it is still offered (and still refused) the same way.
+	const inlineDelete = toolbar(page).getByRole("button", { name: "Delete", exact: true });
+	if (await inlineDelete.isVisible()) {
+		await expect(inlineDelete).toBeDisabled();
+	} else {
+		await toolbar(page).getByRole("button", { name: "More actions" }).click();
+		await expect(page.getByRole("menu").getByRole("menuitem", { name: "Delete", exact: true })).toBeDisabled();
+		await page.keyboard.press("Escape");
+	}
 	await toolbar(page).getByRole("button", { name: "More actions" }).click();
 	await expect(page.getByRole("menu").getByRole("menuitem", { name: "Archive", exact: true })).toBeDisabled();
 	await page.keyboard.press("Escape");

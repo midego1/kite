@@ -54,11 +54,7 @@ async function moveSelectionToInbox(page: Page, subject: string) {
 		await page.getByRole("menuitem", { name: "Inbox", exact: true }).click();
 		return;
 	}
-	await page
-		.getByText(/^\d+ selected$/)
-		.locator("..")
-		.getByRole("button", { name: "More actions" })
-		.click();
+	await page.getByTestId("bulk-toolbar").getByRole("button", { name: "More actions" }).click();
 	const menu = page.getByRole("menu");
 	await menu.getByRole("menuitem", { name: "Move to", exact: true }).press("ArrowRight");
 	await menu.getByRole("menuitem", { name: "Inbox", exact: true }).click();

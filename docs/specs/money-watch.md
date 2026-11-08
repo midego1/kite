@@ -1031,6 +1031,8 @@ None.
 
 ## 24. Drive filing (follow-up, after Drive ships)
 
+**Superseded by §26.** Drive shipped, and the owner-requested follow-up shipped as **Keep receipts** (§26): a broader, differently-shaped feature than this section sketched (its own `finance_receipts` ledger covering subscriptions, documents and payments alike, rather than `finance_charges.filed_ref`; a `Money Watch/Receipts/<year>/` folder rather than `Finance/<vendor>/<year>/`; the raw mail, a sanitized HTML copy and a PDF alongside the attachment). `finance_charges.filed_ref` stays unused: §26 does not read or write it. This section is kept for its historical record of the original plan.
+
 **Not in this mission.** Nothing in this mission calls Drive, imports Drive code, declares a Drive dependency or reads or writes `finance_charges.filed_ref`. [Drive](drive-storage.md) is not built yet and comes after [storing attachments once](attachments-once.md). This section records the agreed behaviour so that the follow-up needs no migration on the ledger and so that the Drive mission knows what to provide.
 
 ### 24.1 Behaviour once Drive ships
@@ -1155,3 +1157,45 @@ Declined in review 1: a "paused" scan state while Money Watch is off for the own
 ### 25.8 Tests
 
 Unit: detection on receipts, invoices, refunds and credit notes in the five languages, and no match for marketing mail with prices, a price list, a spoofed receipt, phishing, spam, muted senders and failed payments; the processor merchant (a synthetic receipt of the owner's shape, sent through Stripe for an invented merchant, gives that merchant, paid, USD 500.00, the date paid); month totals per currency with pairing and refunds; dedupe per message and the tombstone; no double count with the ledger. e2e: a delivered receipt lands in Payments with demo data, a No-AI mailbox and a phishing-flagged receipt record nothing, correct and remove with Undo, and Scan last 90 days finds mail delivered before the switch was on.
+
+## 26. Keep receipts (shipped)
+
+Status: Approved 2026-11-08 (owner request). Written against `main` at `1144639`. Claims migration 0098 (journal `idx` 98; 0095-0097 are reserved by work in flight elsewhere). Supersedes the original Drive-filing sketch in §24 (see its note).
+
+Today a finance row's only link to its mail is `message_id`/`attachment_id`: a reference, never a copy (§6, §25.1). When a message is deleted forever, or trash retention purges it, that link (and any PDF attachment) is gone, and the row stops explaining itself. **Keep receipts** copies that evidence into the owner's own Drive while the mail still exists, so the row keeps working after the mail is gone.
+
+### 26.1 What is filed, and where
+
+For every `finance_subscriptions` row with `source_message_id` set, every `finance_charges` row with `message_id` set, and every `finance_payments` row with `message_id` set (not a removed tombstone): once Money Watch records it, or a user accepts tracking it, Keep receipts (when on for the owner, and Drive on for the owner) files, into the owner's Drive under `Money Watch/Receipts/<year>/` (`<year>` is the UTC year of the row's document date; the subscription's own copy uses when it started being tracked):
+
+1. **The original mail as `.eml`**, read from the stored raw MIME (`messages.raw_r2_key`), attachments-once aware (the stored raw IS the message, whether its attachments are `raw:` ranges or objects; nothing is re-encoded). Skipped when the row's message has no raw MIME (an older install, or a row recorded a way that never stored one).
+2. **A readable copy that opens anywhere without Kite**: a self-contained, sanitized HTML file with the sender, date and subject in a plain header and the body exactly as Kite shows it, with every `http(s)`/`//` image and style `url()` blanked (the stored HTML sanitizer, `stored-html-utils.ts`, already keeps remote references for on-screen display and already has no scripts, event handlers, frames or forms; this file additionally strips what that sanitizer intentionally leaves — see `src/lib/email/receipt-html-export-utils.ts`). `cid:` inline images are blanked too, not embedded, so the file is strictly self-contained rather than half-resolved. **And a PDF**, built with the existing dependency-free text PDF writer already shipped for the reader's Print/Download PDF (`src/lib/pdf/text-pdf-utils.ts`): a header and the message's readable text (the same extraction search and triage already use). It runs on Workers and Node alike because, unlike the reader's own PDF path, it never needs a browser `DOMParser` (`src/lib/email/receipt-pdf-utils.ts`) — the reason a receipt PDF can be built reliably on both runtimes, so both the HTML and the PDF are always attempted together; neither is ever skipped for the other.
+3. **The receipt/PDF attachment itself**, when the row names one, copied as an independent file (not a shared reference) after the same risk check Save to Drive uses; a flagged attachment is not copied.
+
+A row with none of these available (no raw MIME, no body, and no attachment) is recorded as a permanent skip rather than retried forever.
+
+### 26.2 Settings, idempotency and the backfill
+
+- **Per-user setting, default on** (`finance_receipt_settings`, a missing row reads as on). A toggle in the Money Watch page (the gear button next to either tab) turns it off or on; off stops new filing but never touches files already saved.
+- **Counts toward Drive quota.** Filing goes through Drive's own `reserveDriveFile`/quota check, the same path any upload uses; a full quota is a transient skip (retried later), never recorded as permanent.
+- **Drive module off means no copies.** With Drive off for the install or the owner, nothing is filed, and the setting says so instead of offering the switch (§15-style: off is absent, not broken).
+- **No-AI mailboxes follow the same rules as Money Watch itself**: a row whose mailbox has AI off is never filed (checked again at filing time, since a mailbox can change after the row was recorded).
+- **Idempotent.** `finance_receipts` holds one row per filed `(sourceTable, sourceId)` (a unique index enforces it); that row's existence is the whole idempotency claim, so a rescan or a repeated backfill tick never refiles or duplicates a row, and reuses the same `Money Watch/Receipts/<year>/` folder tree instead of creating a second one.
+- **"Save receipts for existing payments"** (`POST /api/finance/receipts/backfill`) starts a per-owner resumable job (`finance_receipt_backfills`, leased one run at a time, the same lease/compare-and-set shape as `finance_payment_scans` and the attachment storage jobs) that runs through the owner's unfiled rows while their mail still exists, a bounded batch at a time on the agent queue, with a five-minute cron safety net (`resumeReceiptBackfills`) that resumes a run whose worker died. Starting it again while one is already running is a no-op that leaves the running one alone.
+- **An automatic sweep** (`fileReceipts`, a `*/5` cron task, 50 rows a tick) files unfiled rows shortly after Money Watch records them, so a user does not have to run the backfill for new mail; the backfill is for rows recorded before Keep receipts existed, or while it was off.
+
+### 26.3 Deleting a filed row
+
+**Deleting a finance row does not delete the Drive copy silently: it asks first.** `DELETE /api/finance/subscriptions/[id]`, `/api/finance/documents/[id]` and `/api/finance/payments/[id]` refuse with 409 `RECEIPTS_IN_DRIVE` when the row (or, for a subscription, any of its documents) has a filed receipt, unless the request carries `{ acknowledge: true }`. The client shows a confirm dialog with that explanation before retrying with `acknowledge`; once acknowledged, the row is removed as before and the Drive files are left exactly where they are, because they are the owner's data now, independent of the ledger.
+
+### 26.4 Data model and migration 0098
+
+`src/db/schema/finance.ts`: `finance_receipts` (`sourceTable` enum `finance_subscriptions`/`finance_charges`/`finance_payments`, `sourceId`, `messageId`, the four nullable Drive file ids `emlFileId`/`htmlFileId`/`pdfFileId`/`attachmentFileId`, `status` `done`/`skipped`, `skippedReason`, unique on `(sourceTable, sourceId)`), `finance_receipt_settings` (`userId` PK, `enabled`) and `finance_receipt_backfills` (`userId` PK, `status`, `scanned`/`filed`/`skipped` counts, `leaseUntil`). All three go in the backup lists; `finance_receipt_backfills` is internal (a cursor meaningless in another database), like `finance_payment_scans`.
+
+### 26.5 Reaching Drive, and the module boundary
+
+Money Watch never imports Drive code. `src/lib/drive/receipts.ts` (the filing logic, owned by the Drive module) is reached only through a new `service` capability, `drive.fileReceipt` (`surfaces: ["service"]`, grant `drive.write`, input `{ messageId, attachmentId, folderPath, baseName }`, output the four file ids or a skip reason), called with `moduleHost.invoke(ctx, "drive", "fileReceipt", …)` from `src/lib/finance/receipts.ts`. `moduleHost.invoke`'s existing `serviceContext` wrapper grants the caller `drive.write` for the one call regardless of the caller's own grants, exactly as every other cross-module `service` capability does; Money Watch passes only ids, names and folder segments, never bytes.
+
+### 26.6 Tests
+
+Unit: the HTML export strips every remote image and style `url()` while keeping `data:` URIs untouched and adds `rel="noopener noreferrer"` to target-blank links (`tests/finance-receipt-export.test.mjs`); the PDF export's readable-text and quote-depth parsing. Integration (`tests/finance-receipts.test.mjs`, a real SQLite database and a file-backed R2 bucket): filing produces the `.eml`/HTML/PDF files under the right folder path and is a no-op on a second sweep; the per-user setting and Drive-off both skip filing without recording a permanent skip; a No-AI mailbox's row is never filed; the delete guard refuses without `acknowledge` and allows with it; the backfill runs a multi-row owner to completion through the real queue-shaped handler, and the five-minute safety net resumes a backfill whose lease expired. e2e (`e2e/104-finance-keep-receipts.spec.ts`): a delivered receipt is filed by the backfill, the files exist in Drive under `Money Watch/Receipts/<year>/`, removing the row asks first and leaves the files behind, and Drive off shows the setting's explanation instead of the switch.

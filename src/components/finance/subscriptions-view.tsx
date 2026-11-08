@@ -2,7 +2,7 @@
 
 import { useState, type ComponentProps, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ChevronDown, Plus, Receipt, WalletCards } from "lucide-react";
+import { ChevronDown, Plus, Receipt, Settings, WalletCards } from "lucide-react";
 import { useStaleCommandCenterCards } from "@/components/command-center/use-card-query";
 import { mobilePrimaryActionClass } from "@/components/page-header-utils";
 import { Button } from "@/components/ui/button";
@@ -20,6 +20,7 @@ import { groupSubscriptions, visibleSections } from "./subscriptions-utils";
 import { useSubscriptionDetail, useSubscriptionList, viewerLocale, viewerToday } from "./use-subscriptions";
 import { EmptyState, PanelHeader } from "@/components/ui/page";
 import { CARD_CLASS } from "@/components/ui/page-utils";
+import { ReceiptSettingsDialog } from "./receipt-settings-dialog";
 
 const FILTERS: { value: StatusFilter; label: string }[] = [
 	{ value: "current", label: "Active and trials" },
@@ -145,6 +146,7 @@ export function SubscriptionsView() {
 	const [editing, setEditing] = useState<SubscriptionItem | null | undefined>(undefined);
 	const [today] = useState(viewerToday);
 	const [locale] = useState(viewerLocale);
+	const [receiptSettingsOpen, setReceiptSettingsOpen] = useState(false);
 
 	const items = list?.subscriptions ?? [];
 	const groups = groupSubscriptions(items, today);
@@ -163,29 +165,42 @@ export function SubscriptionsView() {
 				icon={tab === "payments" ? Receipt : WalletCards}
 				title={tab === "payments" ? t("Payments") : "Subscriptions"}
 				actions={
-					tab === "subscriptions" && (
-						<>
-							<Select
-								aria-label="Show"
-								containerClassName="flex h-8 text-sm"
-								value={filter}
-								onChange={(event) => setFilter(event.target.value as StatusFilter)}
-							>
-								{FILTERS.map((option) => (
-									<option key={option.value} value={option.value}>
-										{option.label}
-									</option>
-								))}
-							</Select>
-							<Button type="button" size="sm" className="h-8 text-sm max-md:hidden" onClick={() => setEditing(null)}>
-								<Plus aria-hidden className="h-4 w-4" />
-								Add subscription
-							</Button>
-						</>
-					)
+					<>
+						{tab === "subscriptions" && (
+							<>
+								<Select
+									aria-label="Show"
+									containerClassName="flex h-8 text-sm"
+									value={filter}
+									onChange={(event) => setFilter(event.target.value as StatusFilter)}
+								>
+									{FILTERS.map((option) => (
+										<option key={option.value} value={option.value}>
+											{option.label}
+										</option>
+									))}
+								</Select>
+								<Button type="button" size="sm" className="h-8 text-sm max-md:hidden" onClick={() => setEditing(null)}>
+									<Plus aria-hidden className="h-4 w-4" />
+									Add subscription
+								</Button>
+							</>
+						)}
+						<Button
+							type="button"
+							variant="outline"
+							size="sm"
+							className="h-8 w-8 p-0"
+							aria-label={t("Keep receipts")}
+							onClick={() => setReceiptSettingsOpen(true)}
+						>
+							<Settings aria-hidden className="h-4 w-4" />
+						</Button>
+					</>
 				}
 			/>
 			<FinanceTabs active={tab} />
+			<ReceiptSettingsDialog open={receiptSettingsOpen} onOpenChange={setReceiptSettingsOpen} />
 			{/* On phones the button floats over the page, outside the sticky title bar so no layer covers it. */}
 			{tab === "subscriptions" && (
 				<Button type="button" className={cn("md:hidden", mobilePrimaryActionClass)} onClick={() => setEditing(null)}>

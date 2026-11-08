@@ -7,7 +7,7 @@ import { useT } from "@/lib/i18n/use-t";
 import { cn } from "@/lib/utils";
 import type { PaymentItem, PaymentListStatus } from "./payments-types";
 import { amountText, dayLabel, editable, mailHref, STATUS_LABELS, TYPE_LABELS } from "./payments-utils";
-import { writeWithUndo } from "./subscription-writes";
+import { removeWithReceiptsCheck, writeWithUndo } from "./subscription-writes";
 
 const ITEM_CLASS =
 	"flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm text-neutral-700 outline-none data-[disabled]:opacity-50 data-[highlighted]:bg-neutral-100";
@@ -80,8 +80,9 @@ function RowMenu({ item, onCorrect, onChanged }: Omit<RowProps, "locale">) {
 							<DropdownMenu.Item
 								className={cn(ITEM_CLASS, "text-red-700")}
 								onSelect={() =>
-									void writeWithUndo(
-										{ path: paymentPath(item.id), method: "DELETE" },
+									void removeWithReceiptsCheck(
+										paymentPath(item.id),
+										item.hasReceipts,
 										t("Removed {vendor}", { vendor: item.vendor }),
 										onChanged,
 									)

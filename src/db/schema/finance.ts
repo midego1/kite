@@ -150,3 +150,77 @@ export const financePaymentScans = sqliteTable("finance_payment_scans", {
 	updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
 	finishedAt: integer("finished_at", { mode: "timestamp" }),
 });
+
+/**
+ * "Keep receipts" (docs/specs/money-watch.md "Keep receipts"): one row per `finance_subscriptions`,
+ * `finance_charges` or `finance_payments` row whose mail was copied into the owner's Drive under
+ * `Money Watch/Receipts/<year>/`, so the finance row keeps working after the mail is purged or deleted
+ * forever. `source_table` and `source_id` point at that row without a foreign key, since the three
+ * source tables differ. A row's presence is the idempotency claim: filing is skipped once it exists,
+ * so a rescan or the backfill never files the same row twice. `status = "skipped"` is a permanent skip
+ * (the message or attachment is already gone); a transient failure (Drive unavailable, quota full)
+ * writes no row at all, so the next sweep retries it.
+ */
+export const financeReceipts = sqliteTable(
+	"finance_receipts",
+	{
+		id: text("id").primaryKey(),
+		userId: text("user_id")
+			.notNull()
+			.references(() => users.id, { onDelete: "cascade" }),
+		sourceTable: text("source_table", {
+			enum: ["finance_subscriptions", "finance_charges", "finance_payments"],
+		}).notNull(),
+		sourceId: text("source_id").notNull(),
+		messageId: text("message_id").references(() => messages.id, { onDelete: "set null" }),
+		/** The raw mail as `.eml`, the self-contained readable HTML and PDF copies, and the receipt attachment; each a Drive file id. */
+		emlFileId: text("eml_file_id"),
+		htmlFileId: text("html_file_id"),
+		pdfFileId: text("pdf_file_id"),
+		attachmentFileId: text("attachment_file_id"),
+		status: text("status", { enum: ["done", "skipped"] }).notNull(),
+		skippedReason: text("skipped_reason"),
+		filedAt: integer("filed_at", { mode: "timestamp" }),
+		createdAt: integer("created_at", { mode: "timestamp" })
+			.notNull()
+			.$defaultFn(() => new Date()),
+		updatedAt: integer("updated_at", { mode: "timestamp" })
+			.notNull()
+			.$defaultFn(() => new Date()),
+	},
+	(t) => [
+		uniqueIndex("finance_receipts_source_idx").on(t.sourceTable, t.sourceId),
+		index("finance_receipts_user_idx").on(t.userId, t.createdAt),
+	],
+);
+
+/** Per-user "Keep receipts" switch (spec default: on). A missing row means on. */
+export const financeReceiptSettings = sqliteTable("finance_receipt_settings", {
+	userId: text("user_id")
+		.primaryKey()
+		.references(() => users.id, { onDelete: "cascade" }),
+	enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+	updatedAt: integer("updated_at", { mode: "timestamp" })
+		.notNull()
+		.$defaultFn(() => new Date()),
+});
+
+/**
+ * "Save receipts for existing payments": one resumable backfill per owner, leased by one run at a time
+ * like `finance_payment_scans`. It needs no cursor of its own: each run asks `receiptCandidates` for the
+ * owner's next unfiled rows, and filing one is what moves it out of that set, so the backfill is simply
+ * "keep running batches until none are left".
+ */
+export const financeReceiptBackfills = sqliteTable("finance_receipt_backfills", {
+	userId: text("user_id")
+		.primaryKey()
+		.references(() => users.id, { onDelete: "cascade" }),
+	status: text("status", { enum: ["running", "done", "failed"] }).notNull(),
+	scanned: integer("scanned").notNull().default(0),
+	filed: integer("filed").notNull().default(0),
+	skipped: integer("skipped").notNull().default(0),
+	leaseUntil: integer("lease_until", { mode: "timestamp" }),
+	startedAt: integer("started_at", { mode: "timestamp" }).notNull(),
+	updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
+	finishedAt: integer("finished_at", { mode: "timestamp" }),
+});

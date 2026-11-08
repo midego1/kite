@@ -155,7 +155,7 @@ Files next to mail, on storage the operator chooses. Today every object (raw MIM
    - Works out of the box on the storage every install already has (R2, or the file folder on Node). It is the module `drive`: the owner can turn it off under Admin → Modules or restrict it per user under Accounts → Permissions, and a per-user quota decides how much each person stores. When off, it is hidden and its API answers 404.
    - New tables go into the backup lists (see `AGENTS.md`); file contents stay in storage.
    - Test: e2e for upload, folders, sharing and the off switch, in Kite, Classic and dark mode.
-   - Follow-up once Drive ships: Money Watch files every ledger document that has an attachment (including earlier ones) into the owner's Drive under `Finance/<vendor>/<year>/`, through a Drive filing service. The agreed behaviour and what Drive must provide are in [§24 of the Money Watch spec](docs/specs/money-watch.md#24-drive-filing-follow-up-after-drive-ships).
+   - Follow-up once Drive ships (shipped as **Keep receipts**, milestone 18): Money Watch files a tracked subscription's, a document's or a payment's mail (including earlier rows, through a backfill) into the owner's Drive under `Money Watch/Receipts/<year>/`, through a `drive.fileReceipt` service capability. See [§26 of the Money Watch spec](docs/specs/money-watch.md#26-keep-receipts-shipped) (the original sketch is in §24, superseded).
 3. **Cold storage**
    - Raw mail, attachments and Drive files older than a chosen age move automatically to cheaper storage: R2's Infrequent Access class (through R2 lifecycle rules) or a second S3-compatible store (moved by a scheduled job that records where each object lives).
    - Opening a cold message or file fetches it from there with no extra step. The settings show what reading cold data costs: Infrequent Access bills every read and keeps objects for at least 30 days, and some archive classes (such as S3 Glacier Flexible Retrieval and Deep Archive) need a restore before an object can be read.
@@ -196,9 +196,9 @@ Shipped in [#50](https://github.com/midego1/kite/pull/50), specified in [docs/sp
    - A document ledger: one entry per invoice, payment, credit note, refund or failed payment, linked to its message and attachment (a reference, never a copy), with a "paid in the last 12 months" total per currency.
    - Renewal and trial reminders from a module cron task: a realtime notice, the Subscriptions sidebar count and, through a new Calendar service, a calendar event.
    - The `list_subscriptions` tool, a search section, the `finance:subscription` record kind and the webhook events `finance.subscription.detected` and `finance.subscription.renewal_due`. Migration 0063; both tables are in the backup lists.
+   - **Keep receipts**: a per-user setting (on by default) files a tracked subscription's, a document's or a payment's mail into the owner's Drive under `Money Watch/Receipts/<year>/` as it is recorded, so the row keeps working after the mail is gone; a "Save receipts for existing payments" backfill covers rows recorded earlier. See [§26 of the Money Watch spec](docs/specs/money-watch.md#26-keep-receipts-shipped). Migration 0098.
 2. **Later**
    - One-off purchases and general expense tracking (a receipt with no subscription records nothing today).
-   - Filing ledger documents into Drive automatically, once Drive ships (see milestone 7, item 2).
    - More events (`finance.subscription.updated`, `finance.document.recorded`), assistant write tools, `mailto:` cancel links and automatic updates from renewal invoices once an Act level exists.
 
 ## Milestone 19: Module platform (builtin modules first, sandboxed apps later)

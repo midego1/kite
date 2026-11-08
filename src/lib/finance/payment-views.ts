@@ -13,6 +13,7 @@ import {
 } from "./payment-list-utils";
 import { ownerScan, scanView } from "./payment-scan";
 import { ledgerMessageIds, ownerPayments, type PaymentRow } from "./payments";
+import { filedSourceIds } from "./receipts";
 import { dateToDay, type ChargeRow } from "./record-utils";
 import { ownerDocuments, ownerRows } from "./subscriptions";
 import type { ViewUser } from "./views";
@@ -102,12 +103,14 @@ async function messageRefs(user: ViewUser, entries: readonly PaymentListEntry[])
  */
 export async function listPaymentsView(user: ViewUser) {
 	try {
-		const [payments, documents, subscriptions, inLedger, scan] = await Promise.all([
+		const [payments, documents, subscriptions, inLedger, scan, filedPayments, filedDocuments] = await Promise.all([
 			ownerPayments(user.userId),
 			ownerDocuments(user.userId),
 			ownerRows(user.userId),
 			ledgerMessageIds(user.userId),
 			ownerScan(user.userId),
+			filedSourceIds(user.userId, "finance_payments"),
+			filedSourceIds(user.userId, "finance_charges"),
 		]);
 		const vendors = new Map(subscriptions.map((row) => [row.id, row.vendor]));
 		const byId = new Map(payments.map((row) => [row.id, row]));
@@ -139,6 +142,7 @@ export async function listPaymentsView(user: ViewUser) {
 				modelFields: modelFieldsOf(byId.get(entry.id)),
 				sender: byId.has(entry.id) ? senderOf(byId.get(entry.id)!.vendorKey) : null,
 				origin: byId.get(entry.id)?.source ?? null,
+				hasReceipts: entry.source === "payment" ? filedPayments.has(entry.id) : filedDocuments.has(entry.id),
 			})),
 			months: monthTotals(entries, paired),
 			scan: scanView(scan),

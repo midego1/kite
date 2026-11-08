@@ -54,6 +54,8 @@ const BACKUP_TABLES: DatabaseBackupTable[] = [
 	"finance_subscriptions",
 	"finance_charges",
 	"finance_payments",
+	"finance_receipts",
+	"finance_receipt_settings",
 	"drive_items",
 	"drive_shares",
 	"drive_links",
@@ -153,6 +155,9 @@ const INTERNAL_TABLES = [
 	// The bookkeeping of a Money Watch "Scan last 90 days" (migration 0094): a cursor over the mail it was started on,
 	// meaningless in another database.
 	"finance_payment_scans",
+	// The bookkeeping of "Save receipts for existing payments" (migration 0098): a cursor over this
+	// database's own finance rows, meaningless in another database.
+	"finance_receipt_backfills",
 	// The direct-uploads setup note and the dismissed reminder (migration 0085): the outcome of this deployment's own
 	// R2 setup, not user data, so a restore into another install must not carry it over.
 	"storage_state",

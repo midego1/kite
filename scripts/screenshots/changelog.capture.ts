@@ -728,6 +728,22 @@ const SHOTS: Shot[] = [
 		},
 	},
 	{
+		// "Keep receipts": the per-user setting and the "Save receipts for existing payments" backfill, open over the
+		// same invented Payments demo data.
+		name: "2026-11-08-money-watch-keep-receipts",
+		theme: "light",
+		viewport: { width: 1280, height: 900 },
+		open: async (page) => {
+			await seedPaymentsDemo();
+			await page.goto("/finance?tab=payments");
+			await expect(page.locator("[data-payment-row]").first()).toBeVisible();
+			await page.getByRole("button", { name: "Keep receipts" }).click();
+			const dialog = page.getByRole("dialog", { name: "Keep receipts" });
+			await expect(dialog.getByRole("switch", { name: "Keep receipts" })).toBeVisible();
+			return dialog;
+		},
+	},
+	{
 		// The assistant panel's settings: No AI for this mailbox, turned on (it stays on in the e2e state afterwards).
 		name: "2026-11-05-mailbox-no-ai",
 		viewport: { width: 1280, height: 900 },

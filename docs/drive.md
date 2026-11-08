@@ -48,6 +48,10 @@ The owner can create public links in the share dialog under **Public links**. An
 
 The full link is shown when you create it. Afterwards the dialog shows it again only when `APP_ENCRYPTION_KEY` is set, because the database otherwise keeps just a hash of it. Links stop working when the owner's account is disabled or Drive is off for the owner, and come back when it is on again.
 
+## Money Watch's receipts
+
+When [Money Watch](specs/money-watch.md)'s **Keep receipts** setting is on (the default), tracking a subscription, recording its documents or recording a payment found in mail files a copy into your own Drive under `Money Watch/Receipts/<year>/`: the mail as `.eml`, a self-contained sanitized HTML copy with no remote content or scripts, a PDF where one can be built reliably, and the receipt attachment itself. These are ordinary files you own: they count toward your Drive storage, show up in **My Drive** and **Recent**, and can be moved, renamed, shared or trashed like anything else. Money Watch never deletes them, including when the tracked row itself is removed; its own delete confirmation says so first. Turning Money Watch's Keep receipts setting off, or turning Drive off, stops new copies from being made but never removes the ones already there.
+
 ## Storage
 
 The sidebar shows how much you use, and with a limit, a bar and "used of limit". An upload that does not fit is refused with "Not enough Drive storage left for this file". Files in the trash and uploads in progress count until they are deleted.

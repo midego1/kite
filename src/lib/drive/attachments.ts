@@ -113,7 +113,7 @@ export async function readableAttachment(env: CloudflareEnv, user: SessionUser, 
 }
 
 /** R2 needs a known length to store a stream; the file bucket takes any stream. */
-function sizedBody(body: ReadableStream, size: number): ReadableStream {
+export function sizedBody(body: ReadableStream, size: number): ReadableStream {
 	const Fixed = (globalThis as { FixedLengthStream?: new (length: number) => TransformStream }).FixedLengthStream;
 	if (!Fixed) return body;
 	const { readable, writable } = new Fixed(size);

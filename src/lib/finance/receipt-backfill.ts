@@ -1,0 +1,187 @@
+import { and, eq, isNull, lt, or } from "drizzle-orm";
+import { getDb } from "@/db";
+import { financeReceiptBackfills } from "@/db/schema/finance";
+import { getEnv } from "@/lib/cloudflare";
+import { createLogger } from "@/lib/logger.mjs";
+import type { CapabilityHandler, JsonValue } from "@/lib/modules/module-types";
+import { fileOneReceipt, receiptCandidates } from "./receipts";
+import { onReceiptTables, receiptTablesReady } from "./receipt-tables";
+
+const log = createLogger("finance");
+
+/** Rows a batch files before handing off to the next run; keeps one run well inside the queue timeout. */
+const BATCH_SIZE = 50;
+const RUN_BUDGET_MS = 20_000;
+const LEASE_MS = 120_000;
+const BACKFILL_KIND = "finance.receipts_backfill" as const;
+
+export type BackfillMessage = { kind: typeof BACKFILL_KIND; userId: string };
+
+export type BackfillRow = typeof financeReceiptBackfills.$inferSelect;
+
+export type BackfillView = {
+	status: "running" | "done" | "failed";
+	scanned: number;
+	filed: number;
+	skipped: number;
+	startedAt: string;
+	finishedAt: string | null;
+};
+
+const db = () => getDb(getEnv());
+
+export function backfillView(row: BackfillRow | null): BackfillView | null {
+	if (!row) return null;
+	return {
+		status: row.status,
+		scanned: row.scanned,
+		filed: row.filed,
+		skipped: row.skipped,
+		startedAt: row.startedAt.toISOString(),
+		finishedAt: row.finishedAt ? row.finishedAt.toISOString() : null,
+	};
+}
+
+export async function ownerBackfill(userId: string): Promise<BackfillRow | null> {
+	const [row] = await onReceiptTables(() =>
+		db().select().from(financeReceiptBackfills).where(eq(financeReceiptBackfills.userId, userId)).limit(1),
+	);
+	return row ?? null;
+}
+
+async function enqueueBackfill(userId: string, delaySeconds?: number): Promise<boolean> {
+	const queue = getEnv().AGENT_QUEUE;
+	if (!queue) return false;
+	const message: BackfillMessage = { kind: BACKFILL_KIND, userId };
+	await queue.send(message, delaySeconds ? { delaySeconds } : undefined);
+	return true;
+}
+
+/** Starts "Save receipts for existing payments", or leaves a running one alone. */
+export async function startReceiptBackfill(userId: string, now = new Date()): Promise<BackfillRow> {
+	const existing = await ownerBackfill(userId);
+	if (existing?.status === "running") {
+		if (!existing.leaseUntil || existing.leaseUntil < now) await enqueueBackfill(userId);
+		return existing;
+	}
+	const values = {
+		status: "running" as const,
+		scanned: 0,
+		filed: 0,
+		skipped: 0,
+		leaseUntil: null,
+		startedAt: now,
+		updatedAt: now,
+		finishedAt: null,
+	};
+	await onReceiptTables(() =>
+		db()
+			.insert(financeReceiptBackfills)
+			.values({ userId, ...values })
+			.onConflictDoUpdate({ target: financeReceiptBackfills.userId, set: values }),
+	);
+	await enqueueBackfill(userId);
+	return (await ownerBackfill(userId))!;
+}
+
+async function leaseBackfill(userId: string, now: Date): Promise<BackfillRow | null> {
+	const [row] = await db()
+		.update(financeReceiptBackfills)
+		.set({ leaseUntil: new Date(now.getTime() + LEASE_MS), updatedAt: now })
+		.where(
+			and(
+				eq(financeReceiptBackfills.userId, userId),
+				eq(financeReceiptBackfills.status, "running"),
+				or(isNull(financeReceiptBackfills.leaseUntil), lt(financeReceiptBackfills.leaseUntil, now)),
+			),
+		)
+		.returning();
+	return row ?? null;
+}
+
+/**
+ * Runs batches until none are left or the time budget runs out. `attempted` keeps a transient failure
+ * (still unfiled, so it reappears in the next fetch) from being retried in a tight loop within one run;
+ * it gets another try on the run after this one hands off.
+ */
+async function runBatch(
+	userId: string,
+	started: number,
+): Promise<{ scanned: number; filed: number; skipped: number; done: boolean }> {
+	let scanned = 0;
+	let filed = 0;
+	let skipped = 0;
+	const attempted = new Set<string>();
+	for (;;) {
+		if (scanned > 0 && Date.now() - started > RUN_BUDGET_MS) return { scanned, filed, skipped, done: false };
+		const candidates = (await receiptCandidates(BATCH_SIZE + attempted.size, userId)).filter(
+			(candidate) => !attempted.has(candidate.sourceId),
+		);
+		if (candidates.length === 0) return { scanned, filed, skipped, done: true };
+		for (const candidate of candidates.slice(0, BATCH_SIZE)) {
+			attempted.add(candidate.sourceId);
+			scanned += 1;
+			if (await fileOneReceipt(candidate)) filed += 1;
+			else skipped += 1;
+			if (Date.now() - started > RUN_BUDGET_MS) return { scanned, filed, skipped, done: false };
+		}
+	}
+}
+
+/**
+ * The `finance.receipts_backfill` queue message: one leased run of an owner's backfill. `skipped` here
+ * also counts a row left for the next run after a transient failure, since a batch cannot tell the two
+ * apart without re-reading `finance_receipts`; it is a progress count, not a permanent-skip count.
+ */
+export const backfillReceipts: CapabilityHandler = async (raw): Promise<JsonValue> => {
+	const userId = (raw as { userId?: unknown } | null)?.userId;
+	if (typeof userId !== "string" || !(await receiptTablesReady())) return { scanned: 0 };
+	const started = Date.now();
+	const row = await leaseBackfill(userId, new Date(started));
+	if (!row) return { scanned: 0 };
+	let progress: { scanned: number; filed: number; skipped: number; done: boolean };
+	try {
+		progress = await runBatch(userId, started);
+	} catch (error) {
+		await db()
+			.update(financeReceiptBackfills)
+			.set({ leaseUntil: null })
+			.where(eq(financeReceiptBackfills.userId, userId));
+		log.warn("finance.receipt_backfill_failed", { userId, error });
+		throw error;
+	}
+	const now = new Date();
+	await db()
+		.update(financeReceiptBackfills)
+		.set({
+			scanned: row.scanned + progress.scanned,
+			filed: row.filed + progress.filed,
+			skipped: row.skipped + progress.skipped,
+			leaseUntil: null,
+			updatedAt: now,
+			...(progress.done ? { status: "done" as const, finishedAt: now } : {}),
+		})
+		.where(eq(financeReceiptBackfills.userId, userId));
+	if (!progress.done) await enqueueBackfill(userId);
+	return { scanned: progress.scanned };
+};
+
+/** The five-minute safety net: a running backfill whose run died is queued again. */
+export const resumeReceiptBackfills: CapabilityHandler = async (_input, ctx): Promise<JsonValue> => {
+	if (!(await receiptTablesReady())) return { resumed: 0 };
+	const now = new Date();
+	const stalled = await db()
+		.select({ userId: financeReceiptBackfills.userId })
+		.from(financeReceiptBackfills)
+		.where(
+			and(
+				eq(financeReceiptBackfills.status, "running"),
+				or(isNull(financeReceiptBackfills.leaseUntil), lt(financeReceiptBackfills.leaseUntil, now)),
+				lt(financeReceiptBackfills.updatedAt, new Date(now.getTime() - 60_000)),
+			),
+		)
+		.limit(20);
+	for (const { userId } of stalled)
+		if (!(await enqueueBackfill(userId))) await backfillReceipts({ kind: BACKFILL_KIND, userId }, ctx);
+	return { resumed: stalled.length };
+};

@@ -287,6 +287,15 @@
     "knip:src/lib/dns-status.ts:types:DnsAuthSummary": 1,
     "knip:src/lib/domains/dns-audit.ts:types:DnsAuthCheck": 1,
     "knip:src/components/shortcuts/types.ts:types:ModifierKey": 1,
+    "knip:src/lib/finance/receipt-delete-guard.ts:exports:RECEIPTS_IN_DRIVE_ERROR": 1,
+    "knip:src/lib/drive/receipts.ts:exports:ensureFolderPath": 1,
+    "knip:src/lib/drive/receipts.ts:types:ReceiptSkipReason": 1,
+    "knip:src/lib/email/receipt-html-export-utils.ts:exports:blankRemoteImages": 1,
+    "knip:src/lib/email/receipt-html-export-utils.ts:exports:blankRemoteStyleUrls": 1,
+    "knip:src/lib/email/receipt-html-export-utils.ts:exports:noopenerLinks": 1,
+    "knip:src/lib/email/receipt-html-export-utils.ts:exports:stripRemoteContent": 1,
+    "knip:src/lib/email/receipt-pdf-utils.ts:exports:paragraphsFromReadableText": 1,
+    "knip:src/lib/finance/receipt-backfill.ts:types:BackfillMessage": 1,
     "boundary:client:src/app/(booking)/booking/booking-editor.tsx:src/lib/booking/hosts.ts->src/db/schema/index.ts": 1,
     "boundary:client:src/app/(booking)/booking/page.tsx:src/lib/booking/hosts.ts->src/db/schema/index.ts": 1
   }

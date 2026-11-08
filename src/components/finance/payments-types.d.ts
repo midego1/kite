@@ -28,6 +28,8 @@ export type PaymentItem = {
 	modelFields: string[];
 	/** How a payment row was found; null for a subscription document. */
 	origin: "auto" | "scan" | null;
+	/** Whether "Keep receipts" already filed a copy of this row's mail into Drive. */
+	hasReceipts: boolean;
 };
 
 export type ScanState = {

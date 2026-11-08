@@ -34,6 +34,8 @@ export type DatabaseBackupTable =
 	| "finance_subscriptions"
 	| "finance_charges"
 	| "finance_payments"
+	| "finance_receipts"
+	| "finance_receipt_settings"
 	| "drive_items"
 	| "drive_shares"
 	| "drive_links"

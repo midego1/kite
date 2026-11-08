@@ -6,6 +6,7 @@ import { badgeCount } from "./badge-utils";
 import { dayInTimeZone } from "./date-utils";
 import { MIGRATION_PENDING_ERROR, refusalOf } from "./errors";
 import { documentView, ledgerEntry, statusesOf, subscriptionView } from "./record-utils";
+import { filedSourceIds } from "./receipts";
 import { ownerDocuments, ownerRow, ownerRows } from "./subscriptions";
 import { currencyTotals, pairedDocumentIds, paidLast12Months } from "./totals-utils";
 
@@ -37,9 +38,19 @@ export async function listSubscriptionsView(user: ViewUser, status: string | nul
 	return orPending(
 		async () => {
 			const statuses = statusesOf(status);
-			const [rows, documents] = await Promise.all([ownerRows(user.userId), ownerDocuments(user.userId)]);
+			const [rows, documents, filedSubscriptions, filedDocuments] = await Promise.all([
+				ownerRows(user.userId),
+				ownerDocuments(user.userId),
+				filedSourceIds(user.userId, "finance_subscriptions"),
+				filedSourceIds(user.userId, "finance_charges"),
+			]);
+			const hasReceipts = (subscriptionId: string) =>
+				filedSubscriptions.has(subscriptionId) ||
+				documents.some((document) => document.subscriptionId === subscriptionId && filedDocuments.has(document.id));
 			return {
-				subscriptions: rows.filter((row) => statuses.includes(row.status)).map(subscriptionView),
+				subscriptions: rows
+					.filter((row) => statuses.includes(row.status))
+					.map((row) => ({ ...subscriptionView(row), hasReceipts: hasReceipts(row.id) })),
 				totals: currencyTotals(rows, documents.map(ledgerEntry), todayFor(user)),
 			};
 		},
@@ -64,7 +75,10 @@ export async function subscriptionDetailView(user: ViewUser, id: string) {
 		async () => {
 			const row = await ownerRow(user.userId, id);
 			if (!row) return null;
-			const documents = await ownerDocuments(user.userId, row.id);
+			const [documents, filedDocuments] = await Promise.all([
+				ownerDocuments(user.userId, row.id),
+				filedSourceIds(user.userId, "finance_charges"),
+			]);
 			const entries = documents.map(ledgerEntry);
 			const paired = pairedDocumentIds(entries);
 			const paid = paidLast12Months(entries, todayFor(user));
@@ -82,6 +96,7 @@ export async function subscriptionDetailView(user: ViewUser, id: string) {
 				documents: documents.map((document) => ({
 					...documentView(document, paired.has(document.id)),
 					message: document.messageId ? (byId.get(document.messageId) ?? null) : null,
+					hasReceipts: filedDocuments.has(document.id),
 				})),
 			};
 		},

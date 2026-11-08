@@ -2,8 +2,10 @@
 
 import toast from "react-hot-toast";
 import { undoAction } from "@/components/agent/suggestion-card-actions";
+import { requestConfirmation } from "@/components/ui/confirm-dialog-utils";
 import { showUndoToast } from "@/components/ui/undo-toast";
 import { authFetch } from "@/lib/auth/client";
+import { t } from "@/lib/i18n/translator";
 
 async function errorOf(response: Response, fallback: string): Promise<string> {
 	const data = (await response.json().catch(() => null)) as { error?: string } | null;
@@ -59,3 +61,27 @@ export async function writeWithUndo(
 }
 
 export const subscriptionPath = (id: string) => `/api/finance/subscriptions/${encodeURIComponent(id)}`;
+
+/**
+ * A delete that may have "Keep receipts" copies in Drive: asks first, since removing the finance row never
+ * removes those files. `hasReceipts` comes from the row the list already fetched, so no extra request is needed
+ * to decide whether to ask.
+ */
+export async function removeWithReceiptsCheck(
+	path: string,
+	hasReceipts: boolean,
+	message: string,
+	onChanged: () => void,
+): Promise<boolean> {
+	if (hasReceipts) {
+		const confirmed = await requestConfirmation({
+			title: t("Remove this, even though it has saved copies in Drive?"),
+			description: t(
+				"“Keep receipts” already saved a copy of this mail to Drive, under Money Watch/Receipts. Removing this entry does not remove those files.",
+			),
+			confirmLabel: t("Remove"),
+		});
+		if (!confirmed) return false;
+	}
+	return writeWithUndo({ path, method: "DELETE", body: { acknowledge: true } }, message, onChanged);
+}

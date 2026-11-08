@@ -2,7 +2,7 @@
 
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { Check, ChevronRight, MoreHorizontal } from "lucide-react";
-import { subscriptionPath, writeWithUndo } from "./subscription-writes";
+import { removeWithReceiptsCheck, subscriptionPath, writeWithUndo } from "./subscription-writes";
 import type { SubscriptionItem } from "./subscriptions-types";
 import {
 	cancelBeforeText,
@@ -116,8 +116,9 @@ export function SubscriptionRowMenu({ item, onEdit, onCancelLink, onChanged }: M
 					<DropdownMenu.Item
 						className={`${ITEM_CLASS} text-red-600`}
 						onSelect={() =>
-							void writeWithUndo(
-								{ path: subscriptionPath(item.id), method: "DELETE" },
+							void removeWithReceiptsCheck(
+								subscriptionPath(item.id),
+								item.hasReceipts,
 								`Removed ${item.vendor}`,
 								onChanged,
 							)

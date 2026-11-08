@@ -94,6 +94,7 @@ export function MessageListHeader({
 	screenerVisible,
 	listVisible,
 	semanticUnavailable,
+	showAllKeywordMatches,
 }: MessageListHeaderProps) {
 	const t = useT();
 	// Only a selection pane beside the list replaces the toolbar; compact styling alone (a phone) must not.
@@ -177,6 +178,17 @@ export function MessageListHeader({
 				{semanticUnavailable && (
 					<p className="text-xs text-neutral-500">
 						{t("Showing keyword matches only — search by meaning is unavailable right now.")}
+					</p>
+				)}
+				{showAllKeywordMatches && (
+					<p className="text-xs text-neutral-500">
+						<button
+							type="button"
+							onClick={showAllKeywordMatches.run}
+							className="font-medium text-blue-700 underline-offset-2 hover:underline"
+						>
+							{t("Show all {count} keyword matches", { count: showAllKeywordMatches.count })}
+						</button>
 					</p>
 				)}
 				<MessageListChips config={config} filter={filter} screenerVisible={screenerVisible} />

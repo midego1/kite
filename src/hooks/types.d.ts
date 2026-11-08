@@ -110,6 +110,9 @@ export type MessageListResponse = {
 	/** Set only when a query asked for search by meaning: whether it ran, or why it did not. */
 	semantic?: "on" | "unavailable";
 	semanticReason?: string;
+	/** Set only on a hybrid page that left keyword matches out of its cap: "Show all N keyword matches" turns the
+	 * By meaning chip off to reach them, through the plain, complete, date-ordered keyword path. */
+	keywordTotal?: number;
 };
 
 export type FolderCount = {

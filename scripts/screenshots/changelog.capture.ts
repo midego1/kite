@@ -387,10 +387,12 @@ const SHOTS: Shot[] = [
 		// `semanticSearchAvailable` is patched true here rather than flipping the real, shared admin setting (which
 		// would leak into every other shot run after this one in the same, sequential, single-worker suite); the
 		// chip is then clicked on rather than assuming its stored per-browser default, since an earlier capture in
-		// the same browser session could otherwise leave it off.
+		// the same browser session could otherwise leave it off. The viewport is desktop width (C-4 of review round
+		// 4: at 760px, below Tailwind's md breakpoint, the mobile compose FAB floats over the search box's end and
+		// hides the clear button).
 		name: "2026-11-08-search-by-meaning-light",
 		theme: "light",
-		viewport: { width: 760, height: 160 },
+		viewport: { width: 900, height: 160 },
 		open: async (page) => {
 			await page.route("**/api/mailboxes", async (route) => {
 				const response = await route.fetch();

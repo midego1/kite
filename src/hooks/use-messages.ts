@@ -26,6 +26,7 @@ export function useMessages(
 	const [nextCursor, setNextCursor] = useState<string | null>(null);
 	const [semantic, setSemantic] = useState<MessageListResponse["semantic"]>(undefined);
 	const [semanticReason, setSemanticReason] = useState<string | undefined>(undefined);
+	const [keywordTotal, setKeywordTotal] = useState<number | undefined>(undefined);
 	// Rows of another mailbox scope (switching to or from All mailboxes) are dropped, not shown while loading.
 	const loadedScope = useRef(mailboxId);
 
@@ -47,6 +48,7 @@ export function useMessages(
 			setNextCursor(data.nextCursor ?? null);
 			setSemantic(data.semantic);
 			setSemanticReason(data.semanticReason);
+			setKeywordTotal(data.keywordTotal);
 		}
 
 		async function loadMessages(force = false, showLoading = false) {
@@ -125,6 +127,7 @@ export function useMessages(
 		nextCursor,
 		semantic,
 		semanticReason,
+		keywordTotal,
 		updateMessages: setMessages,
 	};
 }

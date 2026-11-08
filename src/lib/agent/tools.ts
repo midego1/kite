@@ -273,7 +273,7 @@ async function resolveSearchEmailsQuery(
 				hybridIds: null,
 				note: result.semanticReason
 					? `Search by meaning is unavailable right now (${result.semanticReason}); these are keyword results instead.`
-					: "Search by meaning is off for this install; these are keyword results instead.",
+					: "Search by meaning did not run for this search; these are keyword results instead.",
 			};
 	}
 	conditions.push(...(await searchConditions(context, query)));

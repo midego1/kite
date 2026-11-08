@@ -744,5 +744,6 @@
 	"By meaning": "حسب المعنى",
 	"Find mail by what it means, not only its exact words": "اعثر على البريد حسب معناه، لا حسب كلماته الحرفية فقط",
 	"Found by meaning, not exact words": "عُثر عليه حسب المعنى، لا حسب الكلمات الحرفية",
+	"Show all {count} keyword matches": "إظهار كل التطابقات حسب الكلمات المفتاحية ({count})",
 	"Showing keyword matches only — search by meaning is unavailable right now.": "يتم عرض التطابقات حسب الكلمات المفتاحية فقط — البحث حسب المعنى غير متوفر حاليًا."
 }

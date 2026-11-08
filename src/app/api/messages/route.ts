@@ -32,7 +32,7 @@ import { getRequestTimeZone } from "@/lib/time/utils";
 import { semanticSearch } from "@/lib/semantic/search";
 import type { SemanticMatch } from "@/lib/semantic/fusion-utils";
 import { queryInChunks } from "@/db/chunk-utils";
-import { decodeMessageCursor, encodeMessageCursor, getNextMessageCursor } from "@/lib/messages/cursor-utils";
+import { decodeMessageCursor, getNextMessageCursor } from "@/lib/messages/cursor-utils";
 import { ownedStatusCondition } from "@/lib/modules/message-status";
 import { loadRowSuggestions } from "@/lib/agent/auto-read/message-suggestions";
 import { loadRowLines } from "@/lib/agent/summaries/lines";
@@ -55,9 +55,10 @@ type ListQueryResolution = {
 	matchByMessageId: Map<string, SemanticMatch> | null;
 	semanticStatus?: "on" | "unavailable";
 	semanticReason?: string;
-	/** How many messages the plain keyword text alone matches, for a hybrid page's `total` and its "Show more"
-	 * (C-3 of review round 3): the fused list is capped well below this whenever there are more keyword matches
-	 * than the cap, and the cursor only ever continues by keyword order, so this is the number that number means. */
+	/** How many messages the plain keyword text alone matches, for a hybrid page's "Show all N keyword matches"
+	 * (N-1 of review round 4): the fused, capped list a hybrid page returns is not a prefix of this list (it is
+	 * ranked by relevance, not date), so there is no cursor that reaches the rest without skipping or repeating
+	 * rows — only turning meaning off and running the plain, complete, date-ordered keyword path does. */
 	keywordTotal?: number;
 };
 
@@ -151,21 +152,6 @@ function representativeRowsByThread(ids: readonly string[], loaded: readonly Lis
 		}
 	}
 	return order.map((key) => newestByKey.get(key)!);
-}
-
-/**
- * "Show more" after a hybrid page (`docs/specs/semantic-search.md` 4.6 step 6): a cursor keyed on the oldest row
- * actually shown, not the array's last entry (these rows are in relevance order, not date order). `tryHybrid`
- * turns itself off once a cursor is sent (C-3 of review round 3: hybrid used to answer `nextCursor: null`
- * unconditionally, so a search with more keyword matches than the fused cap could never reach the rest while the
- * chip stayed on), so the next page is the plain keyword path, by date, from here on — some of the dates between
- * this cursor and the newest row shown may repeat (a keyword match the relevance order did not surface on this
- * page), which the client already dedupes by id, same as any other "Show more".
- */
-function hybridPageCursor(rows: readonly ListMessage[]): string | null {
-	if (rows.length === 0) return null;
-	const oldest = rows.reduce((a, b) => (b.createdAt < a.createdAt ? b : a));
-	return encodeMessageCursor({ createdAt: oldest.createdAt, id: oldest.id });
 }
 
 /** Every message of each row's conversation (not just the ones a search matched), for `groupThreadMembers`. */
@@ -290,15 +276,17 @@ export async function GET(request: Request) {
 	// conversation row acts on the whole conversation within this folder.
 	let scopedThreads: ScopedThreads = { ids: new Map(), unread: new Map(), inbound: new Map() };
 	if (groupByThread && hybridIds) {
-		// "Show more" continues with keyword results by date (C-3 of review round 3): `tryHybrid` turns itself off
-		// once a cursor is sent, so the next request takes the plain grouped path below. The D1 re-check already
-		// applied `where`.
+		// Hybrid results have no cursor, in conversation view too (N-1 of review round 4: a date cursor keyed on
+		// the oldest of these relevance-ordered rows skipped most keyword matches newer than it, and the UI pager
+		// then looped back to page one once that cursor ran out — an honest cap is correct, not a broken "more").
+		// "Show all N keyword matches" (below) is the only way past it, by turning the chip off outright. The D1
+		// re-check already applied `where`.
 		const loaded = await queryInChunks(hybridIds, (ids) =>
 			db.select(messageListColumns).from(messages).where(inArray(messages.id, ids)),
 		);
 		rows = representativeRowsByThread(hybridIds, loaded);
-		total = Math.max(keywordTotal ?? 0, rows.length);
-		nextCursor = hybridPageCursor(rows);
+		total = rows.length;
+		nextCursor = null;
 		scopedThreads = await loadScopedThreads(db, where, threadKey, rows);
 	} else if (groupByThread) {
 		const page = await loadConversationPage({ db, where, offset, limit, cursor });
@@ -312,16 +300,17 @@ export async function GET(request: Request) {
 		nextCursor = getNextMessageCursor(rows, limit);
 		scopedThreads = await loadScopedThreads(db, where, threadKey, rows);
 	} else if (hybridIds) {
-		// The D1 re-check already applied `where`; repeating it would only add bound parameters. "Show more"
-		// continues with keyword results by date (C-3 of review round 3): `tryHybrid` turns itself off once a
-		// cursor is sent, so the next request takes the plain path below, by date, from `nextCursor`.
+		// The D1 re-check already applied `where`; repeating it would only add bound parameters. Hybrid results
+		// have no cursor (N-1 of review round 4): an honest cap, not a cursor that silently skips most keyword
+		// matches newer than whatever relevance put last on this page. "Show all N keyword matches" (below) is the
+		// only way past it, by turning the chip off outright, which runs the ordinary date-ordered keyword path.
 		const loaded = await queryInChunks(hybridIds, (ids) =>
 			db.select(messageListColumns).from(messages).where(inArray(messages.id, ids)),
 		);
 		const rowById = new Map(loaded.map((row) => [row.id, row]));
 		rows = hybridIds.map((id) => rowById.get(id)).filter((row): row is ListMessage => !!row);
-		total = Math.max(keywordTotal ?? 0, rows.length);
-		nextCursor = hybridPageCursor(rows);
+		total = rows.length;
+		nextCursor = null;
 	} else {
 		const [[totalRow], pageRows] = await Promise.all([
 			db.select({ total: count() }).from(messages).where(where),
@@ -459,5 +448,9 @@ export async function GET(request: Request) {
 		nextCursor,
 		grouped: groupByThread,
 		...(semanticStatus ? { semantic: semanticStatus, ...(semanticReason ? { semanticReason } : {}) } : {}),
+		// "Show all N keyword matches" (N-1 of review round 4): only while the honest cap above actually left some
+		// out, so the client knows both that there is more and how many, without a cursor that would have to skip
+		// or repeat rows to get there.
+		...(keywordTotal !== undefined && keywordTotal > total ? { keywordTotal } : {}),
 	});
 }

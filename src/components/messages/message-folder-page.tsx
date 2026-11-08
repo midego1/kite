@@ -95,7 +95,7 @@ export function MessageFolderPage({
 	} = useSelectedMailbox();
 	const access = useMessageAccess();
 	const { query, view } = useMailSearch();
-	const [semanticOn] = useSemanticSearchChip();
+	const [semanticOn, setSemanticOn] = useSemanticSearchChip();
 	const isMobile = useIsMobile();
 	const [offset, setOffset] = useState(0);
 	// Cursor that starts the page at each offset, filled in as the user pages forward.
@@ -109,7 +109,7 @@ export function MessageFolderPage({
 	const [density] = useMessageListDensity();
 	const [labels] = useMessageListLabels();
 	const grouped = conversationView && config.folder !== "drafts";
-	const { messages, isLoading, total, limit, nextCursor, updateMessages, semantic } = useMessages(
+	const { messages, isLoading, total, limit, nextCursor, updateMessages, semantic, keywordTotal } = useMessages(
 		config.folder,
 		mailboxScope,
 		{
@@ -445,6 +445,7 @@ export function MessageFolderPage({
 				}}
 				screenerVisible={screenerVisible}
 				semanticUnavailable={semanticUnavailable}
+				showAllKeywordMatches={keywordTotal ? { count: keywordTotal, run: () => setSemanticOn(false) } : null}
 				nested={!!selectedMessageId}
 				selection={{
 					count: selectedIds.length,

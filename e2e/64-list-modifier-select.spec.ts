@@ -117,7 +117,7 @@ test("a Shift-click range in conversation view carries every message of each con
 
 	// Archiving the three rows archives all four messages. The default split-pane list, narrower with a
 	// message open, has no room for Archive inline, so it is reached through "More actions" instead.
-	const toolbar = page.getByText("3 selected").first().locator("..");
+	const toolbar = page.getByTestId("bulk-toolbar");
 	await toolbar.getByRole("button", { name: "More actions" }).click();
 	await page.getByRole("menu").getByRole("menuitem", { name: "Archive", exact: true }).click();
 	await expect(rowFor(page, replySubject)).toHaveCount(0);

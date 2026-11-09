@@ -44,6 +44,22 @@ async function saveDraft(api: APIRequestContext, from: string, mailboxId: string
 	).draft.id;
 }
 
+/**
+ * Runs a bulk toolbar action by its label, whether the default split-pane list has room to show it inline or,
+ * too narrow for that, it only reaches through "More actions": what fits there is measured against the
+ * panel's actual width, not a fixed set.
+ */
+async function clickBulkAction(page: Page, action: string) {
+	const toolbar = page.getByTestId("bulk-toolbar");
+	const inline = toolbar.getByRole("button", { name: action, exact: true });
+	if (await inline.isVisible()) {
+		await inline.click();
+		return;
+	}
+	await toolbar.getByRole("button", { name: "More actions" }).click();
+	await page.getByRole("menu").getByRole("menuitem", { name: action, exact: true }).click();
+}
+
 test("a teammate on a shared mailbox cannot read another user's draft; its author still can", async ({ browser }) => {
 	const token = uniqueToken("dp");
 	const admin = await apiContext(STORAGE_STATE);
@@ -179,7 +195,7 @@ test("a teammate on a shared mailbox cannot read another user's draft; its autho
 			await expect(row).toBeVisible();
 			await row.getByRole("checkbox").check();
 		}
-		await page.getByRole("button", { name: "Delete", exact: true }).click();
+		await clickBulkAction(page, "Delete");
 		const confirm = page.getByRole("alertdialog", { name: "Delete a draft permanently?" });
 		await expect(confirm).toContainText("can't be restored");
 		await confirm.getByRole("button", { name: "Delete" }).click();

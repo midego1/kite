@@ -165,7 +165,7 @@ export function ReceiptSettingsDialog({
 							{settings.backfill?.status === "done" && settings.backfill.pending > 0 && (
 								<p className="text-sm text-neutral-600" role="status">
 									{t(
-										"{pending} could not be saved right now (for example, Drive storage is full) and will be tried again automatically",
+										"{pending} could not be saved right now (for example, Drive storage is full). Choose “Save receipts for existing payments” again to retry them.",
 										{
 											pending: settings.backfill.pending,
 										},

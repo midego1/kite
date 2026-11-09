@@ -60,19 +60,11 @@ async function enqueueBackfill(userId: string, delaySeconds?: number): Promise<b
 }
 
 /**
- * Starts "Save receipts for existing payments", or leaves a running one alone. Releasing the owner's pending
- * claims first is what makes this an actual retry rather than a report that a batch will find nothing new: a
- * row a transient failure left pending still holds its lease (now up to 24 hours long, after backing off), so
- * without this, pressing the button again right after fixing whatever was wrong (freeing quota, say) would run
- * a batch that cannot even see that row yet.
+ * Inserts the owner's backfill row as `running`, or starts a finished one over. A row that is already running is
+ * left exactly as it is (`setWhere`): a second press racing the first one's insert must not reset the run that just
+ * started, or any run still going.
  */
-export async function startReceiptBackfill(userId: string, now = new Date()): Promise<BackfillRow> {
-	const existing = await ownerBackfill(userId);
-	if (existing?.status === "running") {
-		if (!existing.leaseUntil || existing.leaseUntil < now) await enqueueBackfill(userId);
-		return existing;
-	}
-	await releaseOwnerPendingClaims(userId);
+export async function beginBackfillRow(userId: string, now: Date): Promise<void> {
 	const values = {
 		status: "running" as const,
 		scanned: 0,
@@ -91,11 +83,26 @@ export async function startReceiptBackfill(userId: string, now = new Date()): Pr
 			.onConflictDoUpdate({
 				target: financeReceiptBackfills.userId,
 				set: values,
-				// A second press racing the first one's insert must not reset the run that just started (or any run
-				// still going): only a finished backfill is started over.
 				setWhere: sql`${financeReceiptBackfills.status} != 'running'`,
 			}),
 	);
+}
+
+/**
+ * Starts "Save receipts for existing payments", or leaves a running one alone. Releasing the owner's pending
+ * claims first is what makes this an actual retry rather than a report that a batch will find nothing new: a
+ * row a transient failure left pending still holds its lease (now up to 24 hours long, after backing off), so
+ * without this, pressing the button again right after fixing whatever was wrong (freeing quota, say) would run
+ * a batch that cannot even see that row yet.
+ */
+export async function startReceiptBackfill(userId: string, now = new Date()): Promise<BackfillRow> {
+	const existing = await ownerBackfill(userId);
+	if (existing?.status === "running") {
+		if (!existing.leaseUntil || existing.leaseUntil < now) await enqueueBackfill(userId);
+		return existing;
+	}
+	await releaseOwnerPendingClaims(userId);
+	await beginBackfillRow(userId, now);
 	await enqueueBackfill(userId);
 	return (await ownerBackfill(userId))!;
 }

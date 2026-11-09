@@ -9,7 +9,7 @@ import { onReceiptTablesOr } from "./receipt-tables";
 import type { ReceiptSourceTable } from "./receipts";
 
 export const RECEIPTS_IN_DRIVE_ERROR =
-	"This also has saved copies in Drive under Money Watch/Receipts. Removing it keeps them in Drive.";
+	"This may also have saved copies in Drive under Money Watch/Receipts. Removing it keeps them in Drive.";
 
 /**
  * "Deleting a finance row does not delete the Drive copy silently: ask" (docs/specs/money-watch.md "Keep

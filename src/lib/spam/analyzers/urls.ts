@@ -16,7 +16,11 @@ function punycodeSignal(domains: readonly string[]): SpamSignal | null {
 	return { id: "punycode_url", score: 5, reason: "A link uses an internationalized domain encoding" };
 }
 
-export function analyzeUrls(message: ParsedEmail, prepared: PreparedSpamContent): SpamSignal[] {
+export function analyzeUrls(
+	message: ParsedEmail,
+	prepared: PreparedSpamContent,
+	senderDomain: string | null = null,
+): SpamSignal[] {
 	const domains = [...new Set([...prepared.urlDomains, ...prepared.attachmentUrlDomains])];
 	const signals: SpamSignal[] = [];
 	if (domains.some(isIpHost))
@@ -37,7 +41,7 @@ export function analyzeUrls(message: ParsedEmail, prepared: PreparedSpamContent)
 			metadata: { count: domains.length },
 		});
 	for (const html of [message.html ?? "", ...prepared.webPageAttachments.map((page) => page.text)]) {
-		if (hasDisplayedLinkMismatch(html)) {
+		if (hasDisplayedLinkMismatch(html, senderDomain)) {
 			signals.push({
 				id: "displayed_link_mismatch",
 				score: 10,

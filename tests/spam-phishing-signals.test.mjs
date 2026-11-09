@@ -188,6 +188,31 @@ test("displayed addresses are compared inside attached pages, counting a mismatc
 	}
 });
 
+test("authenticated mail with its own tracked links is not a displayed link mismatch", async (t) => {
+	const { sqlite } = await setup(t);
+	const db = createDb(sqlite);
+	const authenticated =
+		"mx.cloudflare.net; dkim=pass header.d=notify.cloudflare.com; dmarc=pass header.from=notify.cloudflare.com";
+	const run = (html, fromAddr, authenticationResults) =>
+		analyzeSpam(db, {
+			mailboxId: "mailbox-a",
+			userId: "owner",
+			envelopeFrom: "bounce@notify.cloudflare.com",
+			message: email({ html, fromAddr }),
+			authenticationResults,
+			intelligenceProvider: { check: async () => [] },
+		});
+	const cloudflare = "Cloudflare <noreply@notify.cloudflare.com>";
+	const tracked =
+		'<a href="https://u123.ct.sendgrid.net/ls/click?upn=u001.opaque">https://dash.cloudflare.com/restore</a>';
+	assert.equal(ids(await run(tracked, cloudflare, authenticated)).includes("displayed_link_mismatch"), false);
+	assert.ok(ids(await run(tracked, cloudflare, null)).includes("displayed_link_mismatch"), "unauthenticated");
+	const phish = '<a href="https://evil.test/login">https://dash.cloudflare.com/restore</a>';
+	assert.ok(ids(await run(phish, cloudflare, authenticated)).includes("displayed_link_mismatch"));
+	const impersonated = '<a href="https://u123.ct.sendgrid.net/ls/click?upn=x">https://paypal.com/login</a>';
+	assert.ok(ids(await run(impersonated, cloudflare, authenticated)).includes("displayed_link_mismatch"));
+});
+
 test("displayed link comparisons decode HTML attributes and text once", async (t) => {
 	const { analyze } = await setup(t);
 	for (const html of [

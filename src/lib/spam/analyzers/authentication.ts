@@ -71,3 +71,15 @@ export function analyzeAuthentication(trusted: string | null | undefined, fromDo
 	}
 	return signals;
 }
+
+/**
+ * The From domain when the sender authenticated as it (DMARC passed, or an aligned DKIM pass with no
+ * failed check), else null. Same rule as `authPassed` in the automatic-reading facts.
+ */
+export function authenticatedSenderDomain(signals: readonly SpamSignal[], fromDomain: string): string | null {
+	if (!fromDomain) return null;
+	const ids = new Set(signals.map((signal) => signal.id));
+	const failed = ids.has("dmarc_failed") || ids.has("dkim_failed") || ids.has("spf_failed");
+	const dkimAligned = signals.some((signal) => signal.id === "dkim_passed" && signal.metadata?.aligned === true);
+	return ids.has("dmarc_passed") || (!failed && dkimAligned) ? fromDomain.toLowerCase() : null;
+}

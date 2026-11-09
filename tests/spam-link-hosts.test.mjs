@@ -179,6 +179,19 @@ test("a click tracker counts as the destination it carries, not as a different s
 	);
 });
 
+test("an authenticated sender's own tracked links are not mismatches, an impersonator's are", () => {
+	const tracked = "https://u123.ct.sendgrid.net/ls/click?upn=u001.opaqueToken";
+	assert.equal(linkTextMismatch(tracked, "https://dash.cloudflare.com/login"), true, "sender not authenticated");
+	assert.equal(linkTextMismatch(tracked, "https://dash.cloudflare.com/login", "cloudflare.com"), false);
+	assert.equal(linkTextMismatch(tracked, "dash.cloudflare.com", "notify.cloudflare.com"), false, "same organisation");
+	assert.equal(linkTextMismatch(tracked, "paypal.com", "cloudflare.com"), true, "shows another site");
+	assert.equal(linkTextMismatch("https://evil.test/login", "dash.cloudflare.com", "cloudflare.com"), true);
+	assert.equal(linkTextMismatch("https://attacker.github.io/", "github.io", "github.io"), true, "a shared suffix");
+	const carried = "https://abc.r.us-east-1.awstrack.me/L0/https:%2F%2Fevil.test%2F/1/0100abc";
+	assert.equal(linkTextMismatch(carried, "paypal.com", "paypal.com"), false, "the sender's own address via a tracker");
+	assert.equal(linkTextMismatch("https://evil.test/", "cloudflare.com", "evil.test"), true);
+});
+
 test("link hosts are distinct, without www, in order and capped", () => {
 	assert.deepEqual(
 		linkHostsOf("See https://www.Example.com/a and http://example.com/b, then https://cdn.example.net/x"),

@@ -3,9 +3,10 @@ import { linkTextMismatch } from "./link-host-utils";
 
 /**
  * Whether an anchor's visible address (a URL or a bare hostname) names a different site than its
- * destination, without parsing more than the URL scan limit.
+ * destination, without parsing more than the URL scan limit. `senderDomain` is the authenticated From
+ * domain, if any (see `linkTextMismatch`).
  */
-export function hasDisplayedLinkMismatch(html: string): boolean {
+export function hasDisplayedLinkMismatch(html: string, senderDomain?: string | null): boolean {
 	let href: string | undefined;
 	let text = "";
 	let mismatch = false;
@@ -22,7 +23,7 @@ export function hasDisplayedLinkMismatch(html: string): boolean {
 			},
 			onclosetag(name) {
 				if (name !== "a") return;
-				if (href && linkTextMismatch(href, text)) mismatch = true;
+				if (href && linkTextMismatch(href, text, senderDomain)) mismatch = true;
 				href = undefined;
 				text = "";
 			},

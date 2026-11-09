@@ -65,6 +65,25 @@ const URL_SHORTENERS = new Set([
  */
 const CLICK_TRACKERS = new Set(["awstrack.me", "list-manage.com", "mandrillapp.com", "sparkpostmail.com"]);
 
+/**
+ * Click-tracking redirectors that keep the destination in an opaque token, so it cannot be read from the
+ * link. A link through one only stops counting as a mismatch when the sender authenticated and the
+ * address the text shows is the sender's own.
+ */
+const OPAQUE_CLICK_TRACKERS = new Set([
+	"customeriomail.com",
+	"hubspotlinks.com",
+	"klclick.com",
+	"mailgun.org",
+	"mlsend.com",
+	"postmarkapp.com",
+	"pstmrk.it",
+	"rs6.net",
+	"sendgrid.net",
+	"sendibt3.com",
+	"sparkpostmail1.com",
+]);
+
 const IPV4 = /^\d{1,3}(?:\.\d{1,3}){3}$/;
 const IPV6 = /^\[[0-9a-f:.]+\]$/i;
 
@@ -120,6 +139,10 @@ export function isUrlShortener(host: string): boolean {
 
 export function isClickTracker(host: string): boolean {
 	return CLICK_TRACKERS.has(registrableDomain(host));
+}
+
+function isOpaqueClickTracker(host: string): boolean {
+	return OPAQUE_CLICK_TRACKERS.has(registrableDomain(host));
 }
 
 const BASE = 36;
@@ -285,12 +308,21 @@ function embeddedHosts(href: string): string[] {
 /**
  * Whether a link whose text shows one address leads somewhere else: the destination's registrable
  * domain differs from the one shown, unless a known click tracker carries the shown address inside it.
+ * `senderDomain` is the From domain when the sender authenticated (DMARC, or DKIM aligned with it): a
+ * link that shows an address of that domain and goes through a click tracker is then the sender's own
+ * tracked link, even where the tracker hides the destination.
  */
-export function linkTextMismatch(href: string, text: string): boolean {
+export function linkTextMismatch(href: string, text: string, senderDomain?: string | null): boolean {
 	if (!/^https?:\/\//i.test(href.trim())) return false;
 	const shown = displayedHost(text);
 	const target = hostOf(href.trim());
 	if (!shown || !target || sameRegistrableDomain(shown, target)) return false;
+	if (
+		senderDomain &&
+		sameRegistrableDomain(shown, senderDomain) &&
+		(isOpaqueClickTracker(target) || isClickTracker(target))
+	)
+		return false;
 	if (isClickTracker(target)) return !embeddedHosts(href).some((host) => sameRegistrableDomain(host, shown));
 	return true;
 }

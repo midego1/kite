@@ -14,7 +14,9 @@ import {
 	seedPagedMail,
 	seedPaymentsDemo,
 	seedRtlMail,
+	seedSenderAuthDemo,
 	seedThaiMail,
+	SENDER_AUTH_MAIL,
 	THAI_MAIL,
 	THAI_MAIL_TRANSLATED,
 	THREAD,
@@ -165,6 +167,13 @@ async function openThaiMail(page: Page) {
 	await expect(page.getByTestId("translation-bar")).toContainText("This message is in Thai.");
 }
 
+async function openSenderAuthMail(page: Page) {
+	await seedSenderAuthDemo();
+	await page.goto("/inbox");
+	await page.getByRole("main").getByText(SENDER_AUTH_MAIL.subject, { exact: true }).first().click();
+	await expect(page.locator("[data-sender-auth-warning]")).toBeVisible();
+}
+
 const SHOTS: Shot[] = [
 	{
 		// All mailboxes with compact labels: a square per mailbox, a link icon for mail through a connected account, and
@@ -265,6 +274,16 @@ const SHOTS: Shot[] = [
 			await page.getByRole("button", { name: "Translate to English" }).click();
 			await expect(page.getByTestId("translation-bar")).toContainText("Translated from Thai");
 			await expect(page.frameLocator('iframe[title="Message body"]').last().getByText("Bangkok")).toBeVisible();
+			return page.locator("[data-reader-scroll]");
+		},
+	},
+	{
+		// The reader's calm warning for a sender that failed SPF, DKIM and DMARC, with its thread badge.
+		name: "2026-11-08-sender-auth-warning-light",
+		theme: "light",
+		viewport: { width: 1280, height: 700 },
+		open: async (page) => {
+			await openSenderAuthMail(page);
 			return page.locator("[data-reader-scroll]");
 		},
 	},

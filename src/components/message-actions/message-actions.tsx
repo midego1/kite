@@ -1,6 +1,5 @@
 "use client";
 
-import clsx from "clsx";
 import { createElement, useState, useCallback, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import * as Popover from "@radix-ui/react-popover";
@@ -10,7 +9,6 @@ import {
 	BellOff,
 	FileCode2,
 	Sparkles,
-	Forward,
 	Mail,
 	MailOpen,
 	MoreVertical,
@@ -35,7 +33,9 @@ import { messageShortcuts, reachableMessageShortcuts } from "./message-shortcuts
 import { useMessageReply } from "./use-message-reply";
 import { useReadOnlyMail } from "./use-read-only-mail";
 import { MoveToolbarMenu, SnoozeToolbarButton, ToolbarFolderButtons } from "./message-toolbar-menus";
-import { OVERFLOW_FIXED_ATTR, OVERFLOW_ID_ATTR, useReaderToolbarOverflow } from "./use-reader-toolbar-overflow";
+import { readerInlineActionIds } from "./reader-toolbar-overflow-utils";
+import { useReaderToolbarOverflow } from "./use-reader-toolbar-overflow";
+import { MORE_ITEM_CLASS, ReaderMoreLeadItems, ToolbarSlot } from "./reader-toolbar-parts";
 import { useIsMobile } from "@/components/sidebar-mobile-utils";
 import { useHotkeys, useShortcuts } from "@/components/shortcuts";
 import { Button } from "@/components/ui/button";
@@ -235,30 +235,18 @@ export function MessageActions({
 	const snoozable = direction === "inbound" && status === "received";
 	const replyAllLabel = t("Reply all");
 	// Priority order: what is dropped first is last. Whatever does not fit moves into "More actions".
-	const inlineIds = isMobile
-		? ["reply", "spam"]
-		: [...(canReplyAll ? ["replyAll"] : []), "archive", ...(snoozable ? ["snooze"] : []), "move", "spam", "mark"];
+	const inlineIds = readerInlineActionIds({ isMobile, canReplyAll, snoozable });
 	const { rootRef, visibleIds } = useReaderToolbarOverflow(
 		inlineIds,
 		[isMobile, inlineIds.join(), replyAllLabel, read, shownError ?? ""].join("|"),
 	);
-	// An action that has overflowed stays rendered (but invisible and out of flow) so its width can be measured.
-	const slot = (id: string, node: ReactNode) => (
-		<span
-			{...{ [OVERFLOW_ID_ATTR]: id }}
-			className={clsx("inline-flex shrink-0", !visibleIds.has(id) && "pointer-events-none invisible absolute")}
-		>
-			{node}
-		</span>
-	);
-	const fixedSlot = (node: ReactNode) => (
-		<span {...{ [OVERFLOW_FIXED_ATTR]: "" }} className="inline-flex shrink-0">
-			{node}
-		</span>
-	);
 	const overflowed = (id: string) => inlineIds.includes(id) && !visibleIds.has(id);
-	const moreItemClass =
-		"flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm text-neutral-700 hover:bg-neutral-100 pointer-coarse:py-3 disabled:text-neutral-400";
+	const slot = (id: string, node: ReactNode) => (
+		<ToolbarSlot id={id} visible={visibleIds.has(id)}>
+			{node}
+		</ToolbarSlot>
+	);
+	const fixedSlot = (node: ReactNode) => <ToolbarSlot fixed>{node}</ToolbarSlot>;
 
 	return (
 		<div
@@ -422,76 +410,25 @@ export function MessageActions({
 						aria-label={t("More actions")}
 						className="z-50 max-h-(--radix-popover-content-available-height) w-54 overflow-y-auto rounded-xl border border-neutral-200 bg-white p-2 shadow-lg has-[[data-snooze-expanded=true]]:w-72"
 					>
-						{/* On a phone these live here, and on desktop whichever of them did not fit in the toolbar row. */}
-						{overflowed("reply") && (
-							<button
-								type="button"
-								className={moreItemClass}
-								disabled={disabled}
-								onClick={() => {
-									setMoreOpen(false);
-									void handleReply("reply");
-								}}
-							>
-								<Reply className="h-4 w-4 rtl:-scale-x-100" />
-								{t("Reply")}
-							</button>
-						)}
-						{(isMobile || overflowed("archive")) && (
-							<button
-								type="button"
-								className={moreItemClass}
-								disabled={archiveDisabled}
-								onClick={() => void runAction("archive")}
-							>
-								<Archive className="h-4 w-4" />
-								{t("Archive")}
-							</button>
-						)}
-						{canReplyAll && (isMobile || overflowed("replyAll")) && (
-							<button
-								type="button"
-								className={moreItemClass}
-								onClick={() => {
-									setMoreOpen(false);
-									void handleReply("replyAll");
-								}}
-							>
-								<ReplyAll className="h-4 w-4 rtl:-scale-x-100" />
-								{replyAllLabel}
-							</button>
-						)}
-						{isMobile && canForward && (
-							<button
-								type="button"
-								className={moreItemClass}
-								onClick={() => {
-									setMoreOpen(false);
-									void handleForward();
-								}}
-							>
-								<Forward className="h-4 w-4 rtl:-scale-x-100" />
-								{t("Forward")}
-							</button>
-						)}
-						{(isMobile || overflowed("mark")) && (
-							<button type="button" className={moreItemClass} onClick={() => void runAction(markAction)}>
-								{read ? <Mail className="h-4 w-4" /> : <MailOpen className="h-4 w-4" />}
-								{read ? t("Mark as unread") : t("Mark as read")}
-							</button>
-						)}
-						{overflowed("spam") && (
-							<button
-								type="button"
-								className={moreItemClass}
-								disabled={manageDisabled || status === "spam" || direction !== "inbound"}
-								onClick={() => void runAction("spam")}
-							>
-								<ShieldAlert className="h-4 w-4" />
-								{t("Report spam")}
-							</button>
-						)}
-						{(isMobile || inlineIds.some(overflowed)) && <hr className="my-1 border-neutral-100" />}
+						<ReaderMoreLeadItems
+							isMobile={isMobile}
+							overflowed={overflowed}
+							canReplyAll={canReplyAll}
+							canForward={canForward}
+							read={read}
+							disabled={disabled}
+							archiveDisabled={archiveDisabled}
+							spamDisabled={manageDisabled || status === "spam" || direction !== "inbound"}
+							onReply={(mode) => {
+								setMoreOpen(false);
+								void handleReply(mode);
+							}}
+							onForward={() => {
+								setMoreOpen(false);
+								void handleForward();
+							}}
+							onAction={(action) => void runAction(action)}
+						/>
 						{direction === "inbound" && status === "received" && (
 							<SnoozeMenuItem
 								messageId={messageId}
@@ -567,7 +504,7 @@ export function MessageActions({
 							<ToolbarFolderButtons
 								mailboxId={mailboxId}
 								onMove={(folderId) => void runAction("folder", folderId)}
-								className={moreItemClass}
+								className={MORE_ITEM_CLASS}
 							/>
 						)}
 					</Popover.Content>

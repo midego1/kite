@@ -156,10 +156,11 @@ export type MessageSelectionControl = {
 	selectedMessages: SelectedMessage[];
 	setSelectedMessages: Dispatch<SetStateAction<SelectedMessage[]>>;
 	/**
-	 * Which list and page `selectedMessages` was made on. The list clears the selection when this changes, but not
-	 * when it only remounts on the same list (a direction switch rebuilds the panel group), which keeps what is checked.
+	 * Records which list and page `selectedMessages` was made on and says whether that changed. The list clears the
+	 * selection when it did, but not when it only remounts on the same list (a direction switch rebuilds the panel
+	 * group), which keeps what is checked.
 	 */
-	listIdentity?: { current: string | null };
+	claimList?: (identity: string) => boolean;
 	/**
 	 * Empties the reading pane at once and navigates to the list, so the open message's detail is
 	 * unmounted (no refetch, no 404 once deleted) until the list route has committed.

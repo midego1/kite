@@ -4,6 +4,7 @@ import { FOLDER_COLOR_VALUES } from "@/lib/folders/colors";
 import { isUndoSendSeconds } from "@/lib/email/undo-send-utils";
 import { AGENT_MAX_STEPS_MAX, AGENT_MAX_STEPS_MIN } from "@/lib/agent/step-limit-utils";
 import { TASK_INSTRUCTIONS_MAX_CHARS } from "@/lib/agent/instruction-utils";
+import { ASSISTANT_EMAIL_DAILY_LIMIT_MAX, ASSISTANT_EMAIL_DAILY_LIMIT_MIN } from "@/lib/agent/email/daily-limit-utils";
 import { instructionText } from "@/lib/agent/instruction-schema";
 import { isPublicHttpUrl } from "@/lib/security/outbound-url";
 import { WEBHOOK_EVENT_VALUES } from "@/lib/modules/webhook-events-utils";
@@ -361,9 +362,26 @@ export const updateAssistantSettingsSchema = z
 			.strict()
 			.optional(),
 		writingStyle: z.object({ enabled: z.boolean() }).strict().optional(),
+		emailAssistant: z
+			.object({
+				enabled: z.boolean().optional(),
+				mailboxId: z.string().min(1).optional(),
+				dailyLimit: z
+					.number()
+					.int()
+					.min(ASSISTANT_EMAIL_DAILY_LIMIT_MIN)
+					.max(ASSISTANT_EMAIL_DAILY_LIMIT_MAX)
+					.optional(),
+			})
+			.strict()
+			.optional(),
 	})
 	.refine(
-		(value) => value.maxSteps !== undefined || value.instructions !== undefined || value.writingStyle !== undefined,
+		(value) =>
+			value.maxSteps !== undefined ||
+			value.instructions !== undefined ||
+			value.writingStyle !== undefined ||
+			value.emailAssistant !== undefined,
 	);
 
 export const undoSendSchema = z.object({

@@ -128,7 +128,7 @@ export type QueuedAgentMessagesProps = {
 };
 
 export type AgentPanelView = "chat" | "settings";
-export type AgentConversation = { id: string; title: string };
+export type AgentConversation = { id: string; title: string; viaEmailFrom?: string | null };
 export type AgentJob = {
 	id: string;
 	kind: "draft" | "triage" | "line_summary";

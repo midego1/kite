@@ -1,4 +1,4 @@
-import { and, asc, count, eq, gte, isNotNull } from "drizzle-orm";
+import { and, asc, count, eq, gte, isNotNull, sql } from "drizzle-orm";
 import { getDb, type AppDatabase } from "@/db";
 import { domains, mailboxes, users } from "@/db/schema";
 import { assistantEmailRequests, assistantSenderAddresses } from "@/db/schema/assistant-email";
@@ -10,7 +10,7 @@ import { wasForwardedByKite } from "@/lib/email/account-forwarding";
 import type { InboundQueueMessage } from "@/lib/email/inbound";
 import { MimeLimitError, parseRawMime } from "@/lib/email/parse";
 import { parseRecipientAddress } from "@/lib/email/recipient-address";
-import { findSenderMailbox, isAssistantAddressTaken } from "@/lib/email/routing";
+import { findSenderMailbox, isAssistantAddressTaken, isInstallDomain } from "@/lib/email/routing";
 import { newId } from "@/lib/ids";
 import { analyzeAuthentication } from "@/lib/spam/analyzers/authentication";
 import {
@@ -60,21 +60,24 @@ async function mapSenderToUser(
 	fromAddress: string,
 ): Promise<{ userId: string; mailboxId: string | null } | null> {
 	const at = fromAddress.lastIndexOf("@");
-	if (at > 0) {
-		const hostname = fromAddress.slice(at + 1);
+	if (at <= 0) return null;
+	const hostname = fromAddress.slice(at + 1);
+	// A domain of this install, whatever its status: only an own mailbox or alias counts on it, never a verified
+	// extra address (addSenderAddress already refuses to verify one there) — a defence against a stale or
+	// otherwise-created row, on top of refusing it at the source (security review). Case-insensitive, like
+	// `isInstallDomain` itself, so a restored or hand-inserted mixed-case domain is still recognised.
+	if (await isInstallDomain(db, hostname)) {
 		const [domain] = await db
 			.select({ id: domains.id })
 			.from(domains)
-			.where(and(eq(domains.hostname, hostname), eq(domains.status, "active")))
+			.where(and(sql`lower(${domains.hostname}) = ${hostname.toLowerCase()}`, eq(domains.status, "active")))
 			.limit(1);
-		if (domain) {
-			const mailbox = await findSenderMailbox(db, domain.id, hostname, fromAddress);
-			if (mailbox) return { userId: mailbox.userId, mailboxId: mailbox.mailboxId };
-		}
+		if (!domain) return null;
+		const mailbox = await findSenderMailbox(db, domain.id, hostname, fromAddress);
+		return mailbox ? { userId: mailbox.userId, mailboxId: mailbox.mailboxId } : null;
 	}
-	// A verified extra address (added and confirmed through Settings → Assistant, a later Mission); unverified or
-	// expired rows never map, so a user who only started verifying one does not get the mailbox of a request they
-	// never sent.
+	// A verified extra address; unverified or expired rows never map, so a user who only started verifying one
+	// does not get the mailbox of a request they never sent.
 	const [verified] = await db
 		.select({ userId: assistantSenderAddresses.userId })
 		.from(assistantSenderAddresses)
@@ -91,7 +94,7 @@ async function defaultContextMailboxId(db: AppDatabase, userId: string): Promise
 		.select({ id: mailboxes.id })
 		.from(mailboxes)
 		.where(and(eq(mailboxes.userId, userId), eq(mailboxes.type, "personal"), eq(mailboxes.disabled, false)))
-		.orderBy(asc(mailboxes.createdAt))
+		.orderBy(asc(mailboxes.createdAt), asc(mailboxes.id))
 		.limit(1);
 	return mailbox?.id ?? null;
 }
@@ -180,7 +183,7 @@ async function isFromAnAssistantAddress(
 	const [fromDomain] = await db
 		.select({ id: domains.id })
 		.from(domains)
-		.where(eq(domains.hostname, address.domain))
+		.where(sql`lower(${domains.hostname}) = ${address.domain.toLowerCase()}`)
 		.limit(1);
 	return !!fromDomain && (await isAssistantAddressTaken(db, fromDomain.id, address.localPart));
 }

@@ -76,6 +76,14 @@ test("an SES DKIM pass alone never passes: SES names no signing domain, so it ca
 	assert.equal(authPassedFromSignals(signals), false);
 });
 
+test("an SES DMARC pass counts, even with no DKIM signing domain to align (spec §5.2, Feature D)", () => {
+	const signals = analyzeAuthentication(
+		"amazonses.com; spf=pass smtp.mailfrom=x@bank.test; dkim=pass; dmarc=pass",
+		"bank.test",
+	);
+	assert.equal(authPassedFromSignals(signals), true);
+});
+
 test("a payload without authenticationResults never passes (the SMTP listener, Resend)", () => {
 	assert.deepEqual(analyzeAuthentication(null, "bank.test"), []);
 	assert.deepEqual(analyzeAuthentication(undefined, "bank.test"), []);

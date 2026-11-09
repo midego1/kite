@@ -1,7 +1,9 @@
 {
 	"gated": [
+		"src/lib/agent/email/daily-limit-utils.ts",
 		"src/lib/agent/email/guards-utils.ts",
 		"src/lib/agent/email/reply-utils.ts",
+		"src/lib/agent/email/request-reasons-utils.ts",
 		"src/lib/agent/translation/detect-language-utils.ts",
 		"src/lib/agent/translation/segment-utils.ts",
 		"src/lib/agent/translation/prompt-utils.ts",

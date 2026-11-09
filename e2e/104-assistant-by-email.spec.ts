@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
 
 const domain = {
 	id: "dom-assistant",
@@ -102,3 +103,102 @@ test("a domain that cannot host an assistant address explains why, and creation 
 	await expect(page.getByText("Needs an active domain receiving through")).toBeVisible();
 	await expect(section.getByRole("button", { name: "Create" })).toBeDisabled();
 });
+
+/**
+ * Settings → Assistant → Assistant by email (spec §14), scenario 7's add/verify/remove flow and scenario 8's
+ * three-style/dark-mode sweep. Add/verify/remove themselves are covered at the Node level in
+ * `tests/assistant-email-senders.test.mjs`, since without a dev-only capture of the code `sendSystemEmail`
+ * sends, a browser test cannot read the code it would need to enter.
+ */
+async function mockAssistantEmailSettings(page: Page) {
+	await page.route("**/api/agent/availability", (route) => route.fulfill({ json: { enabled: true } }));
+	await page.route("**/api/agent/jobs?*", (route) => route.fulfill({ json: { jobs: [] } }));
+	await page.route("**/api/agent/conversations?*", (route) => route.fulfill({ json: { conversations: [] } }));
+	await page.route("**/api/agent/settings?*", (route) =>
+		route.fulfill({
+			json: {
+				settings: {
+					mailboxId: "demo",
+					enabled: true,
+					modelId: "demo",
+					autoDraftEnabled: false,
+					reviewerUserId: null,
+					instructions: "",
+					dailyLimit: 5,
+				},
+				models: ["demo"],
+				canManage: true,
+				providerConfigured: true,
+				autoReplyEnabled: false,
+				reviewers: [],
+			},
+		}),
+	);
+	await page.route("**/api/settings/assistant", (route) =>
+		route.fulfill({
+			json: {
+				maxSteps: 6,
+				minSteps: 1,
+				maxAllowedSteps: 20,
+				instructions: { general: "", chat: "", draft: "", summary: "" },
+				instructionsReady: true,
+				instructionsMaxLength: 2000,
+				writingStyle: { enabled: false, available: true },
+				emailAssistant: {
+					enabled: true,
+					mailboxId: "demo",
+					dailyLimit: 20,
+					ready: true,
+					mailboxes: [{ id: "demo", label: "demo@example.com" }],
+				},
+			},
+		}),
+	);
+	await page.route("**/api/settings/assistant/email-senders", (route) =>
+		route.fulfill({ json: { addresses: [{ id: "ases-1", address: "me@phone.test", verified: true }] } }),
+	);
+	await page.route("**/api/agent/email-requests", (route) =>
+		route.fulfill({
+			json: {
+				requests: [
+					{
+						id: "aer-1",
+						subject: "What did Jan say about the roof quote?",
+						status: "answered",
+						reason: null,
+						createdAt: new Date().toISOString(),
+						conversationPath: "/inbox?assistant=conv-1",
+					},
+				],
+			},
+		}),
+	);
+}
+
+for (const variant of [
+	{ name: "kite", style: "kite", theme: "light" },
+	{ name: "classic", style: "classic", theme: "light" },
+	{ name: "dark", style: "kite", theme: "dark" },
+]) {
+	test(`the assistant-by-email settings stay usable in ${variant.name}`, async ({ page }) => {
+		await page.setViewportSize({ width: 1280, height: 900 });
+		await mockAssistantEmailSettings(page);
+		await page.addInitScript(({ style, theme }) => {
+			localStorage.setItem("kite-assistant-layout", "floating");
+			localStorage.setItem("kite-style", style);
+			localStorage.setItem("kite-theme", theme);
+		}, variant);
+		await page.goto("/inbox");
+		const toggle = page.getByRole("button", { name: /^(Open|Close) email assistant$/ });
+		await expect(toggle).toBeVisible();
+		if ((await toggle.getAttribute("aria-expanded")) !== "true") await toggle.click();
+		const panel = page.getByRole("region", { name: "Email assistant" });
+		await panel.getByRole("button", { name: "Assistant settings" }).click();
+		await expect(panel.getByText("Assistant by email")).toBeVisible();
+		await expect(panel.getByText("Verified extra addresses")).toBeVisible();
+		await expect(panel.getByText("me@phone.test")).toBeVisible();
+		await expect(panel.getByText("Recent requests by email")).toBeVisible();
+		await expect(panel.getByText("What did Jan say about the roof quote?")).toBeVisible();
+		await expect(panel.getByRole("link", { name: "Open" })).toBeVisible();
+	});
+}

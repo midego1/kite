@@ -332,7 +332,10 @@ test.describe("chat spend", () => {
 			await autoRead.fill("2000000");
 			await chat.fill("1000");
 			await page.getByRole("button", { name: "Save token allowances" }).click();
-			await expect(page.getByRole("status")).toHaveText("Automatic reading settings saved.");
+			// Not a bare status role: an earlier spec's failed connected account shows its own status banner on every page.
+			await expect(page.getByRole("status").filter({ hasText: "Automatic reading settings saved." })).toHaveText(
+				"Automatic reading settings saved.",
+			);
 			const saved = await okJson<{ autoReadTokenCap: number; chatTokenCap: number }>(await api.get("/api/admin/agent"));
 			expect([saved.autoReadTokenCap, saved.chatTokenCap]).toEqual([2_000_000, 1_000]);
 

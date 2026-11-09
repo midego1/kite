@@ -471,6 +471,18 @@ body:has(.home-page) {
 	background-color: rgb(239 68 68 / 0.22);
 	color: #ef4444;
 }
+/* A coarse (touch) pointer never hovers, so Reply, Archive, Snooze, Spam, Trash and More here need a real tap
+   target: this is what actually sizes them (the `roundedSM` Button size's own `pointer-coarse:` padding loses
+   to this rule's higher specificity, so the fix belongs here instead). */
+@media (pointer: coarse) {
+	.reader-toolbar button {
+		height: 2.75rem;
+		min-width: 2.75rem;
+	}
+	.reader-toolbar button:not([data-labelled]) {
+		width: 2.75rem;
+	}
+}
 
 @keyframes dialog-overlay-show {
 	from {

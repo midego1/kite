@@ -13,7 +13,7 @@ import { FAKE_ABUSE_CH_KEYS, startFakeAbuseCh } from "./support/fake-abuse-ch";
 import { startFakeModel } from "./support/fake-model";
 import type { FakeModel } from "./support/fake-model-types";
 import type { InboundAttachment } from "./support/helpers-types";
-import { apiContext, postInbound, uniqueToken, waitForMessage } from "./support/helpers";
+import { apiContext, postInbound, suppressMailboxTour, uniqueToken, waitForMessage } from "./support/helpers";
 import { restoreModules, setModuleState } from "./support/modules";
 import { readSuggestions, waitForFinishedJob } from "./support/triage";
 
@@ -51,6 +51,7 @@ async function newAccount(prefix: string): Promise<Account> {
 async function openAs(browser: Browser, account: Account): Promise<Page> {
 	const context = await browser.newContext({ baseURL: BASE_URL, storageState: await account.api.storageState() });
 	const page = await context.newPage();
+	await suppressMailboxTour(page);
 	await selectMailbox(page, account.mailboxId);
 	await page.addInitScript((id) => localStorage.setItem("kite-session-user", id), account.id);
 	await page.addInitScript(() => {
@@ -88,6 +89,21 @@ const rowFor = (page: Page, subject: string) =>
 		.last();
 
 const confirmDialog = (page: Page, name: string | RegExp) => page.getByRole("alertdialog", { name });
+
+/**
+ * Opens the bulk toolbar's "Move to" menu, whether the default split-pane list has room to show it inline or,
+ * too narrow for that, it only reaches through "More actions"; the keyboard opens its submenu there without a
+ * pointer path across the other items first, which would close the whole menu instead.
+ */
+async function openMoveToMenu(page: Page) {
+	const inline = page.getByRole("button", { name: "Move to", exact: true });
+	if (await inline.isVisible()) {
+		await inline.click();
+		return;
+	}
+	await page.getByTestId("bulk-toolbar").getByRole("button", { name: "More actions" }).click();
+	await page.getByRole("menu").getByRole("menuitem", { name: "Move to", exact: true }).press("ArrowRight");
+}
 
 const loginPage: InboundAttachment = {
 	filename: "statement.html",
@@ -337,7 +353,7 @@ test("Report phishing on a selection reports every message and blocks each sende
 		const page = await openAs(browser, account);
 		await page.goto("/inbox");
 		for (const subject of subjects) await rowFor(page, subject).getByRole("checkbox").check();
-		await page.getByRole("button", { name: "Move to", exact: true }).click();
+		await openMoveToMenu(page);
 		await page.getByRole("menuitem", { name: "Report phishing" }).click();
 		const confirm = confirmDialog(page, "Report 3 messages as phishing?");
 		await expect(confirm).toContainText("blocks the senders");
@@ -357,6 +373,7 @@ test("Admin General shows that URLhaus and ThreatFox lookups are off without a k
 }) => {
 	const context = await browser.newContext({ baseURL: BASE_URL, storageState: STORAGE_STATE });
 	const page = await context.newPage();
+	await suppressMailboxTour(page);
 	const errors = collectConsoleErrors(page);
 	await page.goto("/general");
 	const card = page.locator("[data-threat-lookups]");
@@ -391,6 +408,7 @@ test("the owner saves an abuse.ch key in Admin General, inbound mail uses it, an
 	const abuseCh = await startFakeAbuseCh();
 	const context = await browser.newContext({ baseURL: BASE_URL, storageState: STORAGE_STATE });
 	const page = await context.newPage();
+	await suppressMailboxTour(page);
 	const errors = collectConsoleErrors(page);
 	const bodies: Promise<string>[] = [];
 	page.on("response", (response) => {

@@ -6,3 +6,7 @@ export const mobilePrimaryActionClass =
 // Same, lifted above the settings section pill (whose top is 7rem up, plus the bar's safe-area inset).
 export const mobilePrimaryActionAboveNavClass =
 	"max-md:fixed max-md:inset-x-4 max-md:bottom-[calc(8rem+env(safe-area-inset-bottom))] max-md:z-40 max-md:h-12 max-md:rounded-full max-md:shadow-lg";
+
+// A scrollable list or form's own bottom padding, so its last row is never trapped under a floating primary
+// action button or section pill (both float at the same `bottom-[calc(4.5rem+...)]`, about 8rem of clearance).
+export const mobileScrollClearsFloatingActionClass = "max-md:pb-[calc(8rem+env(safe-area-inset-bottom))]";

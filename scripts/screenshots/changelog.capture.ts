@@ -2,11 +2,11 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test, type Browser, type Locator, type Page } from "@playwright/test";
 import sharp from "sharp";
-import { ADMIN, STORAGE_STATE } from "../../e2e/support/constants";
+import { ADMIN, STORAGE_STATE, SUPPORT_ADDRESS } from "../../e2e/support/constants";
 import { useFakeProvider as connectFakeProvider } from "../../e2e/support/agent";
 import { startFakeModel } from "../../e2e/support/fake-model";
 import type { FakeModel } from "../../e2e/support/fake-model-types";
-import { apiContext, postInbound, waitForMessage } from "../../e2e/support/helpers";
+import { apiContext, deliverInbound, postInbound, waitForMessage } from "../../e2e/support/helpers";
 import { turnScreenerOff } from "../../e2e/support/screener";
 import {
 	RTL_MAIL,
@@ -21,7 +21,7 @@ import {
 	THAI_MAIL_TRANSLATED,
 	THREAD,
 } from "./demo-data";
-import { mockForYou, mockForYouPreview } from "./demo-mocks";
+import { mockConnectedAccountAuthRecheck, mockForYou, mockForYouPreview } from "./demo-mocks";
 import { sampleMessage, startFakeImap } from "../../tests/support/fake-imap.mjs";
 
 // Screenshots for the changelog (docs/releasing.md#screenshots-in-the-changelog), taken against the isolated,
@@ -121,6 +121,37 @@ async function seedCompactLabelsDemo(): Promise<void> {
 	await api.dispose();
 }
 
+/** Three invented senders, reported as spam once, for the easier-selection shot's bulk toolbar. */
+const SPAM_SELECTION_MAIL = [
+	["Prize Center", "prize@sweepstakes-reward.test", "You've won! Claim your prize now"],
+	["Account Alerts", "security@account-verify-centre.test", "Account verification needed"],
+	["Crypto Bonus", "offers@crypto-bonus-deals.test", "Double your crypto in 24 hours"],
+] as const;
+
+async function seedSpamSelectionDemo(): Promise<void> {
+	const api = await apiContext(STORAGE_STATE);
+	await turnScreenerOff(api);
+	// Each fixture is checked on its own: a run against a reused server that was interrupted after reporting
+	// only some of them (or after delivering one but not yet reporting it) must still seed the rest, not skip
+	// the whole set because the first one alone already exists, or redeliver one that is already there but not
+	// yet reported.
+	for (const [name, address, subject] of SPAM_SELECTION_MAIL) {
+		const spamProbe = await api.get(`/api/messages?${new URLSearchParams({ q: subject, status: "spam", limit: "1" })}`);
+		const { messages: inSpam } = (await spamProbe.json()) as { messages: unknown[] };
+		if (inSpam.length > 0) continue;
+		const anyProbe = await api.get(`/api/messages?${new URLSearchParams({ q: subject, limit: "1" })}`);
+		const { messages: existing } = (await anyProbe.json()) as { messages: { id: string }[] };
+		const id =
+			existing[0]?.id ??
+			(
+				await deliverInbound(api, { from: `"${name}" <${address}>`, to: SUPPORT_ADDRESS, subject, text: subject })
+			).id;
+		const response = await api.post("/api/messages/bulk", { data: { messageIds: [id], action: "spam" } });
+		expect(response.ok(), await response.text()).toBe(true);
+	}
+	await api.dispose();
+}
+
 /** A model for the shots that need the assistant: nothing it answers appears in them. */
 let demoModel: { fake: FakeModel; restore: () => Promise<void> } | null = null;
 
@@ -161,6 +192,21 @@ const SHOTS: Shot[] = [
 			await rows.filter({ hasText: "Offsite agenda and travel details" }).first().getByRole("link").first().click();
 			await expect(page.getByRole("button", { name: /^via Gmail: show all mail through/ })).toBeVisible();
 			return page;
+		},
+	},
+	{
+		// A connected Gmail account with Recheck authentication already finished (demo-mocks: a real Gmail sign-in
+		// needs credentials this sandbox never has).
+		name: "2026-11-08-connected-account-auth-recheck-light",
+		theme: "light",
+		viewport: { width: 1040, height: 700 },
+		open: async (page) => {
+			await mockConnectedAccountAuthRecheck(page);
+			await page.goto("/settings/connected-accounts");
+			const row = page.locator("[data-external-account]");
+			await expect(row.getByRole("button", { name: "Recheck authentication" })).toBeVisible();
+			await expect(row.locator("[data-auth-recheck-status]")).toContainText("found a result for 12 of 214 messages");
+			return row;
 		},
 	},
 	{
@@ -701,6 +747,59 @@ const SHOTS: Shot[] = [
 			return page;
 		},
 	},
+	{
+		// The Spam list header once three invented reports are checked: the bulk toolbar's text labels next to
+		// its icons, where only unlabelled icons far from the list used to show. A list resized wide enough
+		// (what fits is measured against the panel's actual width, not a fixed breakpoint) gives every action
+		// room, as a full-width list or a phone also can.
+		name: "2026-11-08-easier-selection-light",
+		theme: "light",
+		// Wider than the other shots: the split layout only grants the list panel the width it asks for once
+		// the reading pane beside it still gets its own reserved minimum out of what is left.
+		viewport: { width: 1650, height: 420 },
+		open: async (page) => {
+			await seedSpamSelectionDemo();
+			await page.addInitScript(() => localStorage.setItem("kite-column-width:message-list", "1000"));
+			await page.goto("/spam");
+			const rows = page.locator("[data-message-row]");
+			// The seeded admin account already holds one spam example of its own; only check the three delivered here.
+			for (const [, , subject] of SPAM_SELECTION_MAIL) {
+				const row = rows.filter({ has: page.getByText(subject, { exact: true }) });
+				await expect(row).toBeVisible();
+				await row.getByRole("checkbox").check();
+			}
+			const toolbar = page.getByTestId("bulk-toolbar");
+			await expect(toolbar.getByRole("button", { name: "Delete", exact: true })).toBeVisible();
+			await expect(toolbar.getByRole("button", { name: "Archive", exact: true })).toBeVisible();
+			await expect(toolbar.getByRole("button", { name: "Mark as read" })).toBeVisible();
+			await expect(toolbar.getByRole("button", { name: "Delete forever" })).toBeVisible();
+			await expect(toolbar.getByRole("button", { name: "Not spam" })).toBeVisible();
+			await expect(toolbar.getByRole("button", { name: "Move to", exact: true })).toBeVisible();
+			await expect(toolbar.getByRole("button", { name: "More actions" })).toHaveCount(0);
+			return page.locator("#kite-message-list-panel");
+		},
+	},
+	{
+		// The same Spam list at its default, unresized width: none of the individual actions has room next to
+		// the selected count, so they all fold into "More actions" instead of clipping off the edge the way
+		// they used to; Clear selection and More actions itself always stay reachable.
+		name: "2026-11-08-easier-selection-narrow-light",
+		theme: "light",
+		viewport: { width: 1280, height: 420 },
+		open: async (page) => {
+			await seedSpamSelectionDemo();
+			await page.goto("/spam");
+			const rows = page.locator("[data-message-row]");
+			for (const [, , subject] of SPAM_SELECTION_MAIL) {
+				const row = rows.filter({ has: page.getByText(subject, { exact: true }) });
+				await expect(row).toBeVisible();
+				await row.getByRole("checkbox").check();
+			}
+			await expect(page.getByText(`${SPAM_SELECTION_MAIL.length} selected`)).toBeVisible();
+			await expect(page.getByRole("button", { name: "More actions" })).toBeVisible();
+			return page.locator("#kite-message-list-panel");
+		},
+	},
 	...(
 		[
 			["2026-11-06-interface-dutch", "nl", "Accountmenu openen"],
@@ -858,6 +957,28 @@ const SHOTS: Shot[] = [
 			},
 		}),
 	),
+	{
+		// The mailbox tour's Screener step, as a teammate (not the owner) would see it on their first login.
+		name: "2026-11-08-mailbox-tour-light",
+		theme: "light",
+		viewport: { width: 1280, height: 800 },
+		open: async (page) => {
+			// Demo data has one account, the owner: the tour is for everyone else, so the shot borrows their
+			// session and only pretends it is not the owner, the one thing the tour's own code checks.
+			await page.route("**/api/auth/me", async (route) => {
+				const response = await route.fetch();
+				const body = (await response.json()) as { user: { isPrimaryAdmin: boolean } };
+				body.user.isPrimaryAdmin = false;
+				await route.fulfill({ response, json: body });
+			});
+			await page.goto("/inbox");
+			const dialog = page.getByTestId("mailbox-tour");
+			await expect(dialog).toBeVisible();
+			await dialog.getByRole("button", { name: "Next" }).click();
+			await expect(dialog.getByText("The first time someone new writes to you")).toBeVisible();
+			return dialog;
+		},
+	},
 ];
 
 async function openPage(browser: Browser, { theme = "light", viewport }: Shot) {

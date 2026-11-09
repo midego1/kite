@@ -25,8 +25,8 @@ While **All mailboxes** is on, the mailbox selector shows a **Show** list with a
 
 - **Reply, reply all and forward** go out from the mailbox the email arrived in, whichever mailbox you were in before.
 - **A new email** (Compose) asks for the From address and starts from the one you used last.
-- **Search, the keyboard shortcuts** (`j`/`k`, `e`, `#`, `x`, Shift+↑/↓, Shift-click and Cmd/Ctrl-click on rows, and `r`/`a`/`f` in an open email) and the command palette work as in a single mailbox.
-- **Bulk actions** (mark read, archive, spam, delete, move) work on a selection across mailboxes, and each email stays within its own mailbox. **Move to** a folder lists folders when the selection is from one mailbox; with mail from several, it says to select mail from one mailbox.
+- **Search, the keyboard shortcuts** (`j`/`k`, `e`, `#`, `x`, Shift+↑/↓, Shift-click and Cmd/Ctrl-click on rows, Cmd/Ctrl+A to select every loaded row, Escape to clear, and `r`/`a`/`f` in an open email) and the command palette work as in a single mailbox.
+- **Bulk actions** (mark read, archive, spam, delete, move) work on a selection across mailboxes, and each email stays within its own mailbox. **Move to** a folder lists folders when the selection is from one mailbox; with mail from several, it says to select mail from one mailbox. Once every loaded row is checked and the folder (or the combined view) holds more, "Select all N in …" resolves the rest from the server across every mailbox in view, skipping a read-only one the same way a manual selection would, up to 1,000 messages; past that the selection stops there and says so, and a conversation view row still carries every message of its thread regardless of the cap.
 
 ## Drafts in shared mailboxes
 

@@ -22,6 +22,7 @@ import { MessageTranslateItem } from "@/components/messages/message-translate-it
 import { MessageSourceDialog } from "@/components/messages/message-source-dialog";
 import { useMessageListHref } from "@/components/messages/message-detail-navigation";
 import { useRowMessageIds } from "@/components/messages/open-row-context";
+import { useListSelectionCount } from "@/components/messages/list-selection-context";
 import { SnoozeMenuItem } from "@/components/messages/snooze-picker";
 import { printShortcutAction } from "@/components/messages/print/print-actions";
 import { PrintMenuItems } from "@/components/messages/print/print-menu-items";
@@ -29,7 +30,7 @@ import { useMessageMenuSlots } from "./message-menu-slots";
 import { ReportPhishingItem } from "./report-phishing-item";
 import { confirmReportPhishing } from "@/components/messages/phishing-report";
 import { confirmReportSpam } from "@/components/messages/spam-report";
-import { messageShortcuts } from "./message-shortcuts";
+import { messageShortcuts, reachableMessageShortcuts } from "./message-shortcuts";
 import { useMessageReply } from "./use-message-reply";
 import { useReadOnlyMail } from "./use-read-only-mail";
 import { MoveToolbarMenu, SnoozeToolbarButton } from "./message-toolbar-menus";
@@ -198,7 +199,8 @@ export function MessageActions({
 		back: () => router.back(),
 		print: printShortcutAction(print),
 	});
-	useHotkeys(shortcuts, { enabled: shortcutsEnabled });
+	const listSelectionCount = useListSelectionCount();
+	useHotkeys(reachableMessageShortcuts(shortcuts, listSelectionCount), { enabled: shortcutsEnabled });
 
 	async function onBlockContact() {
 		setMoreOpen(false);
@@ -229,109 +231,117 @@ export function MessageActions({
 	const moveActions = getMoveMessageActions(status, direction);
 
 	return (
-		<div className="reader-toolbar flex min-w-0 items-center gap-1 text-neutral-600 md:gap-1.5">
-			{shownError && (
-				<span role="alert" className="text-xs text-red-600">
-					{shownError}
-				</span>
-			)}
+		<div className="reader-toolbar flex min-w-0 items-center gap-1 text-neutral-600 max-md:flex-1 md:gap-1.5">
+			{/* A narrow reader (a small phone, or a pinched split/stacked reading pane) can hold more buttons than
+			it is wide: this wraps onto a second line (the sticky header is `min-h-14`, so it grows to fit)
+			instead of overflowing and pushing the More and Delete buttons after it off screen
+			(docs/upstream/mailflare-review-2026-11-08.md #14). Not `overflow-x-auto`: that makes this div a
+			clipping boundary Radix's Popper measures itself against, which puts the Move-to/Snooze menus in
+			the wrong place the moment it has less room than its content needs. */}
+			<div className="flex min-w-0 flex-1 flex-wrap items-center gap-1 *:shrink-0 md:gap-1.5">
+				{shownError && (
+					<span role="alert" className="shrink-0 text-xs text-red-600">
+						{shownError}
+					</span>
+				)}
 
-			{isMobile && (
-				<>
-					<Button
-						type="button"
-						variant="ghost"
-						size="roundedSM"
-						aria-label={t("Reply")}
-						disabled={disabled}
-						onClick={() => handleReply("reply")}
-					>
-						<Reply size={iconSize} className="rtl:-scale-x-100" />
-					</Button>
-					<Button
-						variant="ghost"
-						size="roundedSM"
-						aria-label={trashLabel}
-						disabled={manageDisabled}
-						onClick={onTrashClick}
-					>
-						<Trash2 size={iconSize} />
-					</Button>
-					<Button
-						variant="ghost"
-						size="roundedSM"
-						aria-label={t("Report spam")}
-						disabled={manageDisabled || status === "spam" || direction !== "inbound"}
-						onClick={() => runAction("spam")}
-					>
-						<ShieldAlert size={iconSize} />
-					</Button>
-				</>
-			)}
-			{!isMobile && (
-				<>
-					{/* Zero's labelled "Reply all"; Reply and Forward sit under the message itself. */}
-					{canReplyAll && (
+				{isMobile && (
+					<>
 						<Button
 							type="button"
 							variant="ghost"
 							size="roundedSM"
-							data-labelled
+							aria-label={t("Reply")}
 							disabled={disabled}
-							onClick={() => handleReply("replyAll")}
+							onClick={() => handleReply("reply")}
 						>
-							<ReplyAll size={iconSize} className="rtl:-scale-x-100" />
-							{t("Reply all")}
+							<Reply size={iconSize} className="rtl:-scale-x-100" />
 						</Button>
-					)}
-					<Tooltip label={shortcutsEnabled ? t("Archive (e)") : t("Archive")}>
 						<Button
 							variant="ghost"
 							size="roundedSM"
-							aria-label={shortcutsEnabled ? t("Archive (e)") : t("Archive")}
-							disabled={manageDisabled || status === "archived"}
-							onClick={() => runAction("archive")}
+							aria-label={trashLabel}
+							disabled={manageDisabled}
+							onClick={onTrashClick}
 						>
-							<Archive size={iconSize} />
+							<Trash2 size={iconSize} />
 						</Button>
-					</Tooltip>
-					<SnoozeToolbarButton
-						messageId={messageId}
-						snoozable={direction === "inbound" && status === "received"}
-						disabled={manageDisabled}
-						iconSize={iconSize}
-					/>
-					<MoveToolbarMenu
-						actions={moveActions}
-						mailboxId={mailboxId}
-						disabled={manageDisabled}
-						iconSize={iconSize}
-						onAction={(action, folderId) => void runAction(action, folderId)}
-					/>
-					<Tooltip label={shortcutsEnabled ? t("Report spam (!)") : t("Report spam")}>
 						<Button
 							variant="ghost"
 							size="roundedSM"
-							aria-label={shortcutsEnabled ? t("Report spam (!)") : t("Report spam")}
+							aria-label={t("Report spam")}
 							disabled={manageDisabled || status === "spam" || direction !== "inbound"}
 							onClick={() => runAction("spam")}
 						>
 							<ShieldAlert size={iconSize} />
 						</Button>
-					</Tooltip>
-					<Tooltip label={read ? t("Mark as unread") : t("Mark as read")}>
-						<Button
-							variant="ghost"
-							size="roundedSM"
-							aria-label={read ? t("Mark as unread") : t("Mark as read")}
-							disabled={disabled}
-							onClick={() => runAction(markAction)}
-						>
-							{read ? <Mail size={iconSize} /> : <MailOpen size={iconSize} />}
-						</Button>
-					</Tooltip>
-				</>
-			)}
+					</>
+				)}
+				{!isMobile && (
+					<>
+						{/* Zero's labelled "Reply all"; Reply and Forward sit under the message itself. */}
+						{canReplyAll && (
+							<Button
+								type="button"
+								variant="ghost"
+								size="roundedSM"
+								data-labelled
+								disabled={disabled}
+								onClick={() => handleReply("replyAll")}
+							>
+								<ReplyAll size={iconSize} className="rtl:-scale-x-100" />
+								{t("Reply all")}
+							</Button>
+						)}
+						<Tooltip label={shortcutsEnabled ? t("Archive (e)") : t("Archive")}>
+							<Button
+								variant="ghost"
+								size="roundedSM"
+								aria-label={shortcutsEnabled ? t("Archive (e)") : t("Archive")}
+								disabled={manageDisabled || status === "archived"}
+								onClick={() => runAction("archive")}
+							>
+								<Archive size={iconSize} />
+							</Button>
+						</Tooltip>
+						<SnoozeToolbarButton
+							messageId={messageId}
+							snoozable={direction === "inbound" && status === "received"}
+							disabled={manageDisabled}
+							iconSize={iconSize}
+						/>
+						<MoveToolbarMenu
+							actions={moveActions}
+							mailboxId={mailboxId}
+							disabled={manageDisabled}
+							iconSize={iconSize}
+							onAction={(action, folderId) => void runAction(action, folderId)}
+						/>
+						<Tooltip label={shortcutsEnabled ? t("Report spam (!)") : t("Report spam")}>
+							<Button
+								variant="ghost"
+								size="roundedSM"
+								aria-label={shortcutsEnabled ? t("Report spam (!)") : t("Report spam")}
+								disabled={manageDisabled || status === "spam" || direction !== "inbound"}
+								onClick={() => runAction("spam")}
+							>
+								<ShieldAlert size={iconSize} />
+							</Button>
+						</Tooltip>
+						<Tooltip label={read ? t("Mark as unread") : t("Mark as read")}>
+							<Button
+								variant="ghost"
+								size="roundedSM"
+								aria-label={read ? t("Mark as unread") : t("Mark as read")}
+								disabled={disabled}
+								onClick={() => runAction(markAction)}
+							>
+								{read ? <Mail size={iconSize} /> : <MailOpen size={iconSize} />}
+							</Button>
+						</Tooltip>
+					</>
+				)}
+			</div>
 			<Popover.Root
 				open={moreOpen}
 				onOpenChange={(open) => {
@@ -358,7 +368,7 @@ export function MessageActions({
 							<>
 								<button
 									type="button"
-									className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm text-neutral-700 hover:bg-neutral-100 disabled:text-neutral-400"
+									className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm text-neutral-700 hover:bg-neutral-100 pointer-coarse:py-3 disabled:text-neutral-400"
 									disabled={archiveDisabled}
 									onClick={() => void runAction("archive")}
 								>
@@ -368,7 +378,7 @@ export function MessageActions({
 								{canReplyAll && (
 									<button
 										type="button"
-										className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm text-neutral-700 hover:bg-neutral-100 disabled:text-neutral-400"
+										className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm text-neutral-700 hover:bg-neutral-100 pointer-coarse:py-3 disabled:text-neutral-400"
 										onClick={() => {
 											setMoreOpen(false);
 											void handleReply("replyAll");
@@ -381,7 +391,7 @@ export function MessageActions({
 								{canForward && (
 									<button
 										type="button"
-										className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm text-neutral-700 hover:bg-neutral-100 disabled:text-neutral-400"
+										className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm text-neutral-700 hover:bg-neutral-100 pointer-coarse:py-3 disabled:text-neutral-400"
 										onClick={() => {
 											setMoreOpen(false);
 											void handleForward();
@@ -393,7 +403,7 @@ export function MessageActions({
 								)}
 								<button
 									type="button"
-									className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm text-neutral-700 hover:bg-neutral-100 disabled:text-neutral-400"
+									className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm text-neutral-700 hover:bg-neutral-100 pointer-coarse:py-3 disabled:text-neutral-400"
 									onClick={() => void runAction(markAction)}
 								>
 									{read ? <Mail className="h-4 w-4" /> : <MailOpen className="h-4 w-4" />}
@@ -414,7 +424,7 @@ export function MessageActions({
 							<>
 								<button
 									type="button"
-									className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm text-neutral-700 hover:bg-neutral-100 disabled:cursor-not-allowed disabled:text-neutral-400"
+									className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm text-neutral-700 hover:bg-neutral-100 pointer-coarse:py-3 disabled:cursor-not-allowed disabled:text-neutral-400"
 									disabled={!unsubscribeUrl && status === "trash"}
 									onClick={() => void onUnsubscribe()}
 								>
@@ -423,7 +433,7 @@ export function MessageActions({
 								</button>
 								<button
 									type="button"
-									className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm text-neutral-700 hover:bg-neutral-100"
+									className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm text-neutral-700 hover:bg-neutral-100 pointer-coarse:py-3"
 									onClick={() => void onBlockContact()}
 								>
 									<Ban className="h-4 w-4" />
@@ -436,7 +446,7 @@ export function MessageActions({
 						{onSummarizeMessage && (
 							<button
 								type="button"
-								className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm text-neutral-700 hover:bg-neutral-100"
+								className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm text-neutral-700 hover:bg-neutral-100 pointer-coarse:py-3"
 								onClick={() => {
 									setMoreOpen(false);
 									onSummarizeMessage();
@@ -449,7 +459,7 @@ export function MessageActions({
 						{translate && <MessageTranslateItem menu={translate} onClose={() => setMoreOpen(false)} />}
 						<button
 							type="button"
-							className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm text-neutral-700 hover:bg-neutral-100"
+							className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm text-neutral-700 hover:bg-neutral-100 pointer-coarse:py-3"
 							onClick={() => {
 								setMoreOpen(false);
 								setSourceOpen(true);
@@ -466,7 +476,7 @@ export function MessageActions({
 							<button
 								key={item.action}
 								type="button"
-								className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm text-neutral-700 hover:bg-neutral-100"
+								className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm text-neutral-700 hover:bg-neutral-100 pointer-coarse:py-3"
 								onClick={() => void runAction(item.action)}
 							>
 								{createElement(item.icon, { size: 16 })}

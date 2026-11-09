@@ -13,6 +13,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { getEmptyFolderLabel } from "@/lib/messages/permanent-delete-utils";
 import { BulkMessageToolbar } from "./bulk-message-toolbar";
 import { useOpenAccountView } from "@/components/use-account-views";
+import { useIsTouchDevice } from "./use-is-touch-device";
 import { AccountViewTitle } from "./account-view-title";
 import { FolderHeading } from "./folder-heading";
 import type { MessageListHeaderProps } from "./message-list-header-types";
@@ -20,13 +21,7 @@ import { MessageListChips } from "./message-list-chips";
 import { folderTitle, getSelectionToolbarFolder } from "./utils";
 import { useT } from "@/lib/i18n/use-t";
 
-function EmptyFolderButton({
-	emptyFolder,
-	compact,
-}: {
-	emptyFolder: NonNullable<MessageListHeaderProps["emptyFolder"]>;
-	compact: boolean;
-}) {
+function EmptyFolderButton({ emptyFolder }: { emptyFolder: NonNullable<MessageListHeaderProps["emptyFolder"]> }) {
 	const t = useT();
 	const label = getEmptyFolderLabel(emptyFolder.folder);
 	return (
@@ -38,10 +33,12 @@ function EmptyFolderButton({
 				aria-label={label}
 				disabled={emptyFolder.disabled}
 				onClick={emptyFolder.run}
-				className="gap-1.5 text-xs font-medium text-red-600 hover:text-red-700"
+				className="gap-1.5 text-xs font-medium text-red-600 hover:text-red-700 pointer-coarse:h-11"
 			>
 				<Trash2 className="h-4 w-4" />
-				{!compact && <span className="max-md:hidden">{emptyFolder.emptying ? t("Emptying…") : label}</span>}
+				{/* The label stays visible (it used to show only in the rare non-compact header), narrowing out only
+				when the header itself is too tight for it. */}
+				<span className="@max-[20rem]:hidden">{emptyFolder.emptying ? t("Emptying…") : label}</span>
 			</Button>
 		</Tooltip>
 	);
@@ -78,14 +75,16 @@ function SidebarToggleButton({ listVisible }: { listVisible: boolean }) {
 }
 
 /**
- * The top of a folder list, after Zero's: the panel icon (while the sidebar is expanded), the title, "Select" and the list settings, then the
- * search field and the category chips. Checkboxes show while selecting; the bulk toolbar replaces the title
- * once something is selected. Below 20rem of list width "Select" shows only its icon, so the title keeps the room.
+ * The top of a folder list, after Zero's: the panel icon (while the sidebar is expanded), a select-all checkbox
+ * that is always there, the title and the list settings, then the search field and the category chips. The bulk
+ * toolbar, with text labels next to its icons, replaces the title once something is selected; "Select" (which
+ * reveals every row's own checkbox, for a finger that gets no hover) only shows on a touch device, since a mouse
+ * or a trackpad already reveals a row's checkbox on hover or focus. Below 20rem of list width "Select" shows only
+ * its icon, so the title keeps the room.
  */
 export function MessageListHeader({
 	config,
 	compact,
-	selectionInPane,
 	nested,
 	selection,
 	selecting,
@@ -95,8 +94,8 @@ export function MessageListHeader({
 	listVisible,
 }: MessageListHeaderProps) {
 	const t = useT();
-	// Only a selection pane beside the list replaces the toolbar; compact styling alone (a phone) must not.
-	const bulk = selection.count > 0 && !selectionInPane;
+	const bulk = selection.count > 0;
+	const touch = useIsTouchDevice();
 	const headerIcons = config.headerIcons ?? [];
 	const view = useOpenAccountView();
 	return (
@@ -104,16 +103,17 @@ export function MessageListHeader({
 			<div className="flex h-14 items-center gap-2 border-b border-neutral-200 px-3">
 				<FolderHeading title={view ? `${view.label}, ${folderTitle(config)}` : folderTitle(config)} nested={nested} />
 				<SidebarToggleButton listVisible={listVisible} />
-				{(selecting.value || selection.count > 0) && (
-					<Tooltip label={t("Select all visible messages")}>
-						<Checkbox
-							checked={selection.allVisible}
-							disabled={selection.disabled}
-							onChange={(event) => selection.toggleAll(event.target.checked)}
-							aria-label={t("Select all visible messages")}
-						/>
-					</Tooltip>
-				)}
+				<Tooltip label={t("Select all visible messages")}>
+					<Checkbox
+						checked={selection.allVisible}
+						disabled={selection.disabled}
+						onChange={(event) => selection.toggleAll(event.target.checked)}
+						// A fingertip needs a bigger target than a mouse pointer does; the header's own gap
+						// around it has the room for it without crowding its neighbors.
+						className="pointer-coarse:h-6 pointer-coarse:w-6"
+						aria-label={t("Select all visible messages")}
+					/>
+				</Tooltip>
 				{bulk ? (
 					<BulkMessageToolbar
 						selectedCount={selection.count}
@@ -139,31 +139,33 @@ export function MessageListHeader({
 				)}
 				{!bulk && (
 					<div className="ms-auto flex shrink-0 items-center gap-1">
-						{emptyFolder && <EmptyFolderButton emptyFolder={emptyFolder} compact={compact} />}
+						{emptyFolder && <EmptyFolderButton emptyFolder={emptyFolder} />}
 						{!compact && headerIcons.map((Icon, index) => <Icon key={index} className="h-4 w-4 text-neutral-500" />)}
-						<Tooltip label={t("Select messages")}>
-							<Button
-								type="button"
-								variant="ghost"
-								size="sm"
-								aria-label={t("Select")}
-								aria-pressed={selecting.value}
-								onClick={() => selecting.onChange(!selecting.value)}
-								className={clsx(
-									"h-8 gap-1.5 px-2 text-sm font-normal",
-									selecting.value ? "bg-neutral-100 text-neutral-900" : "text-neutral-500 hover:text-neutral-900",
-								)}
-							>
-								<Check className="h-4 w-4" />
-								<span className="@max-[20rem]:hidden">{t("Select")}</span>
-							</Button>
-						</Tooltip>
+						{touch && (
+							<Tooltip label={t("Select messages")}>
+								<Button
+									type="button"
+									variant="ghost"
+									size="sm"
+									aria-label={t("Select")}
+									aria-pressed={selecting.value}
+									onClick={() => selecting.onChange(!selecting.value)}
+									className={clsx(
+										"h-8 gap-1.5 px-2 text-sm font-normal pointer-coarse:h-11",
+										selecting.value ? "bg-neutral-100 text-neutral-900" : "text-neutral-500 hover:text-neutral-900",
+									)}
+								>
+									<Check className="h-4 w-4" />
+									<span className="@max-[20rem]:hidden">{t("Select")}</span>
+								</Button>
+							</Tooltip>
+						)}
 						<Separator orientation="vertical" className="mx-1 h-4" />
 						<Tooltip label={t("List settings")}>
 							<Link
 								href="/settings/inbox"
 								aria-label={t("List settings")}
-								className="flex h-8 w-8 items-center justify-center rounded-lg text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
+								className="flex h-8 w-8 items-center justify-center rounded-lg text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 pointer-coarse:h-11 pointer-coarse:w-11"
 							>
 								<SlidersHorizontal className="h-4 w-4" />
 							</Link>

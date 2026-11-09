@@ -44,10 +44,36 @@ async function snooze(id: string) {
 	expect(response.ok(), await response.text()).toBe(true);
 }
 
+/**
+ * Runs a bulk toolbar action by its label, whether the default split-pane list has room to show it inline or,
+ * too narrow for that, it only reaches through "More actions": what fits there is measured against the
+ * panel's actual width, not a fixed set.
+ */
+async function clickBulkAction(page: Page, action: string) {
+	const toolbar = page.getByTestId("bulk-toolbar");
+	const inline = toolbar.getByRole("button", { name: action, exact: true });
+	if (await inline.isVisible()) {
+		await inline.click();
+		return;
+	}
+	await toolbar.getByRole("button", { name: "More actions" }).click();
+	await page.getByRole("menu").getByRole("menuitem", { name: action, exact: true }).click();
+}
+
 async function moveSelectionToInbox(page: Page, subject: string) {
 	await messageRow(page, subject).getByRole("checkbox").check();
-	await page.getByRole("button", { name: "Move to", exact: true }).first().click();
-	await page.getByRole("menuitem", { name: "Inbox", exact: true }).click();
+	// The default split-pane list has no room for "Move to" inline, so it is reached through "More actions"
+	// instead; the keyboard opens its submenu without a pointer path across the other items first.
+	const inline = page.getByRole("button", { name: "Move to", exact: true }).first();
+	if (await inline.isVisible()) {
+		await inline.click();
+		await page.getByRole("menuitem", { name: "Inbox", exact: true }).click();
+		return;
+	}
+	await page.getByTestId("bulk-toolbar").getByRole("button", { name: "More actions" }).click();
+	const menu = page.getByRole("menu");
+	await menu.getByRole("menuitem", { name: "Move to", exact: true }).press("ArrowRight");
+	await menu.getByRole("menuitem", { name: "Inbox", exact: true }).click();
 }
 
 test("replying to mail sent from the mailbox's own address addresses that sender", async ({ page }) => {
@@ -122,7 +148,7 @@ test("a failed list action tells the user instead of failing silently", async ({
 	await expect(row).toBeVisible();
 
 	await row.getByRole("checkbox").check();
-	await page.getByRole("button", { name: "Archive", exact: true }).first().click();
+	await clickBulkAction(page, "Archive");
 	await expect(page.getByText(LIST_ACTION_ERROR)).toBeVisible();
 
 	await page.unroute("**/api/messages/bulk");

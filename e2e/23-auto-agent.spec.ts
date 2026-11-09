@@ -20,7 +20,15 @@ import { startFakeModel } from "./support/fake-model";
 import { QUESTION_DRAFT_BODY } from "./support/fake-model-scenarios";
 import type { FakeModel } from "./support/fake-model-types";
 import type { InboundMail } from "./support/helpers-types";
-import { apiContext, deliverInbound, postInbound, signIn, uniqueToken, waitForMessage } from "./support/helpers";
+import {
+	apiContext,
+	deliverInbound,
+	postInbound,
+	signIn,
+	suppressMailboxTour,
+	uniqueToken,
+	waitForMessage,
+} from "./support/helpers";
 import { futureAt, inviteAttachment } from "./support/invites";
 import { restoreModules, setModuleState } from "./support/modules";
 import { chooseOption, expectSelectValue, readOptions } from "./support/select";
@@ -837,6 +845,7 @@ test.describe("automatic reading settings UI", () => {
 		try {
 			expect((await readMailboxSettings(reader.api, sharedId)).canManage).toBe(false);
 			const page = await context.newPage();
+			await suppressMailboxTour(page);
 			const errors = collectConsoleErrors(page);
 			await selectMailbox(page, sharedId);
 			const section = await openAutoReadSection(page);
@@ -874,6 +883,7 @@ test.describe("automatic reading settings UI", () => {
 			);
 		try {
 			const page = await context.newPage();
+			await suppressMailboxTour(page);
 			const errors = collectConsoleErrors(page);
 			await selectMailbox(page, account.mailboxId);
 			let section = await openAutoReadSection(page);
@@ -2040,6 +2050,7 @@ test.describe("reply suggestions", () => {
 			await okJson(await api.put("/api/agent/settings", { data: { mailboxId: sharedId, autonomy: "suggest" } }));
 			const [managerPage, readerPage] = await Promise.all(contexts.map((context) => context.newPage()));
 			for (const page of [managerPage, readerPage]) {
+				await suppressMailboxTour(page);
 				await page.goto("/api/agent/suggestions");
 				await page.evaluate(
 					() =>
@@ -2159,6 +2170,7 @@ test.describe("reply suggestions", () => {
 			expect(grouped.some((row) => row.id === phishing.id)).toBe(false);
 
 			const page = await context.newPage();
+			await suppressMailboxTour(page);
 			await selectMailbox(page, account.mailboxId);
 			await page.addInitScript(() => localStorage.setItem("kite-conversation-view", "off"));
 			await page.goto("/inbox");
@@ -2172,6 +2184,7 @@ test.describe("reply suggestions", () => {
 
 			await page.evaluate(() => localStorage.setItem("kite-conversation-view", "on"));
 			const conversation = await context.newPage();
+			await suppressMailboxTour(conversation);
 			await conversation.goto("/inbox");
 			const threadBadge = rowBadge(conversation, followUp.message.subject!);
 			await expect(threadBadge).toHaveAttribute("data-suggestion-badge", "phishing");
@@ -2259,6 +2272,7 @@ test.describe("reply suggestions", () => {
 		const context = await browser.newContext({ baseURL: BASE_URL, storageState: await account.api.storageState() });
 		try {
 			const page = await context.newPage();
+			await suppressMailboxTour(page);
 			const errors = collectConsoleErrors(page);
 			// The reader asks for the sender's avatar, which is a 404 for senders without one.
 			const failed: string[] = [];
@@ -2418,6 +2432,7 @@ test.describe("reply suggestions", () => {
 				const context = await browser.newContext({ baseURL: BASE_URL, storageState: await sharer.api.storageState() });
 				contexts.push(context);
 				const page = await context.newPage();
+				await suppressMailboxTour(page);
 				const errors = collectConsoleErrors(page);
 				await selectMailbox(page, sharedId);
 				await page.addInitScript(() => localStorage.setItem("kite-conversation-view", "off"));
@@ -2496,6 +2511,7 @@ test.describe("reply suggestions", () => {
 			expect(await suggestionsFor(account.api, account.mailboxId, fyi.id)).toEqual([]);
 
 			const page = await context.newPage();
+			await suppressMailboxTour(page);
 			const errors = collectConsoleErrors(page);
 			await selectMailbox(page, account.mailboxId);
 			await page.addInitScript((id) => localStorage.setItem("kite-session-user", id), account.id);
@@ -2601,6 +2617,7 @@ test.describe("reply suggestions", () => {
 			expect(firstReply?.status).toBe("open");
 
 			const page = await context.newPage();
+			await suppressMailboxTour(page);
 			const errors = collectConsoleErrors(page);
 			await selectMailbox(page, account.mailboxId);
 			await page.addInitScript((id) => localStorage.setItem("kite-session-user", id), account.id);
@@ -2842,6 +2859,7 @@ test.describe("reply suggestions", () => {
 			expect(blockedRow).toMatchObject({ initiator: "agent", status: "blocked", reason: "draft_guard" });
 
 			const page = await context.newPage();
+			await suppressMailboxTour(page);
 			const errors = collectConsoleErrors(page);
 			await selectMailbox(page, account.mailboxId);
 			await page.addInitScript((id) => localStorage.setItem("kite-session-user", id), account.id);
@@ -2984,6 +3002,7 @@ test.describe("reply suggestions", () => {
 			});
 			contexts.push(managerContext);
 			const page = await managerContext.newPage();
+			await suppressMailboxTour(page);
 			await selectMailbox(page, sharedId);
 			await page.goto("/kite-activity");
 			await expect(activityRow(page, actions[0].id)).toBeVisible();
@@ -2999,6 +3018,7 @@ test.describe("reply suggestions", () => {
 			});
 			contexts.push(readerContext);
 			const readerPage = await readerContext.newPage();
+			await suppressMailboxTour(readerPage);
 			await selectMailbox(readerPage, sharedId);
 			await readerPage.goto("/kite-activity");
 			await expect(readerPage.locator(`[data-agent-activity="${reader.mailboxId}"]`)).toBeVisible();
@@ -3055,6 +3075,7 @@ test.describe("reply suggestions", () => {
 			});
 			contexts.push(managerContext);
 			const page = await managerContext.newPage();
+			await suppressMailboxTour(page);
 			const errors = collectConsoleErrors(page);
 			await selectMailbox(page, sharedId);
 			await page.addInitScript((id) => localStorage.setItem("kite-session-user", id), manager.id);
@@ -3087,6 +3108,7 @@ test.describe("reply suggestions", () => {
 			const ownerContext = await browser.newContext({ baseURL: BASE_URL, storageState: STORAGE_STATE });
 			contexts.push(ownerContext);
 			const ownerPage = await ownerContext.newPage();
+			await suppressMailboxTour(ownerPage);
 			await selectMailbox(ownerPage, sharedId);
 			await ownerPage.addInitScript(() => localStorage.setItem("kite-conversation-view", "off"));
 			await ownerPage.goto("/kite-activity");
@@ -3184,6 +3206,7 @@ test.describe("reply suggestions", () => {
 			expect(await draftIds(account.api)).toEqual([]);
 
 			const page = await context.newPage();
+			await suppressMailboxTour(page);
 			const errors = collectConsoleErrors(page);
 			await selectMailbox(page, account.mailboxId);
 			await page.addInitScript((id) => localStorage.setItem("kite-session-user", id), account.id);
@@ -3334,6 +3357,7 @@ test.describe("reply suggestions", () => {
 			expect(warning.payload.reasons).toEqual(["url_shortener", "credential_request", "urgency_pressure"]);
 
 			const page = await context.newPage();
+			await suppressMailboxTour(page);
 			const errors = collectConsoleErrors(page);
 			await selectMailbox(page, account.mailboxId);
 			await page.addInitScript((id) => localStorage.setItem("kite-session-user", id), account.id);
@@ -3434,6 +3458,7 @@ test.describe("reply suggestions", () => {
 			expect((await dismissRows(daveReply.id)).map((row) => row.status)).toEqual(["applied"]);
 
 			const page = await context.newPage();
+			await suppressMailboxTour(page);
 			const errors = collectConsoleErrors(page);
 			await selectMailbox(page, account.mailboxId);
 			await page.addInitScript((id) => localStorage.setItem("kite-session-user", id), account.id);
@@ -3612,6 +3637,7 @@ test.describe("reply suggestions", () => {
 		const context = await browser.newContext({ baseURL: BASE_URL, storageState: { cookies: [], origins: [] } });
 		try {
 			const page = await context.newPage();
+			await suppressMailboxTour(page);
 			const errors = collectConsoleErrors(page);
 			const serverErrors = collectServerErrors(page);
 			await selectMailbox(page, account.mailboxId);
@@ -3805,6 +3831,7 @@ test.describe("reply suggestions", () => {
 				"completed",
 			);
 			const page = await context.newPage();
+			await suppressMailboxTour(page);
 			const errors = collectConsoleErrors(page);
 			const serverErrors = collectServerErrors(page);
 			await selectMailbox(page, account.mailboxId);
@@ -4461,6 +4488,7 @@ test.describe("calendar invite card", () => {
 			});
 			expect(suggestion.payload.organizer).toBeNull();
 			const page = await context.newPage();
+			await suppressMailboxTour(page);
 			await openInvite(page, message);
 			await expect(inviteBlock(page)).toBeVisible();
 			for (const name of ["Accept", "Decline", "Propose new time"])
@@ -4508,6 +4536,7 @@ test.describe("calendar invite card", () => {
 			expect(clash.suggestion.payload).toMatchObject({ conflicts: [expect.objectContaining({ title: busyTitle })] });
 
 			const page = await context.newPage();
+			await suppressMailboxTour(page);
 			const errors = collectConsoleErrors(page);
 			await selectMailbox(page, account.mailboxId);
 			await page.addInitScript((id) => localStorage.setItem("kite-session-user", id), account.id);
@@ -4574,6 +4603,7 @@ test.describe("calendar invite card", () => {
 				},
 			);
 			const page = await context.newPage();
+			await suppressMailboxTour(page);
 			await selectMailbox(page, account.mailboxId);
 			await openInvite(page, invite.message);
 			await inviteBlock(page).getByRole("button", { name: "Propose new time" }).click();
@@ -4612,6 +4642,7 @@ test.describe("calendar invite card", () => {
 				summary: title,
 			});
 			const page = await context.newPage();
+			await suppressMailboxTour(page);
 			await selectMailbox(page, account.mailboxId);
 			await page.addInitScript((id) => localStorage.setItem("kite-session-user", id), account.id);
 			await openInvite(page, message);
@@ -4703,6 +4734,7 @@ test.describe("calendar invite card", () => {
 				summary: uniqueToken("Undo me"),
 			});
 			const page = await context.newPage();
+			await suppressMailboxTour(page);
 			await selectMailbox(page, account.mailboxId);
 			await page.addInitScript((id) => localStorage.setItem("kite-session-user", id), account.id);
 			await openInvite(page, message);
@@ -4744,6 +4776,7 @@ test.describe("calendar invite card", () => {
 				summary,
 			});
 			const page = await context.newPage();
+			await suppressMailboxTour(page);
 			await selectMailbox(page, account.mailboxId);
 			await page.addInitScript((id) => localStorage.setItem("kite-session-user", id), account.id);
 			await openInvite(page, message);
@@ -4781,6 +4814,7 @@ test.describe("calendar invite card", () => {
 		const context = await browser.newContext({ baseURL: BASE_URL, storageState: await account.api.storageState() });
 		try {
 			const page = await context.newPage();
+			await suppressMailboxTour(page);
 			const errors = collectConsoleErrors(page);
 			await selectMailbox(page, account.mailboxId);
 			await page.addInitScript((id) => localStorage.setItem("kite-session-user", id), account.id);

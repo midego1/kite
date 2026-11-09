@@ -47,7 +47,7 @@ export function useMessageListRow({
 		setThreadUnread(unread);
 	}
 
-	async function runRowAction(action: RowMessageAction) {
+	async function runRowAction(action: RowMessageAction, folderId?: string) {
 		const previous = { read, threadUnread };
 		const readValue = action === "read" ? true : action === "unread" ? false : null;
 		const unreadDelta = getInboxUnreadDelta([rowMessage], readValue, affectsInboxCount);
@@ -58,7 +58,7 @@ export function useMessageListRow({
 		}
 		if (unreadDelta) dispatchMessageCountsDelta({ inboxUnreadDelta: unreadDelta });
 		try {
-			await onMessageAction(message.id, action);
+			await onMessageAction(message.id, action, folderId);
 		} catch (error) {
 			if (readValue !== null) {
 				setReadState(previous.read, previous.threadUnread);

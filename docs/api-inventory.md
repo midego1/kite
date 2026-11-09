@@ -154,6 +154,7 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/drive/uploads/[id]`                                    | DELETE                 | [source](../src/app/api/drive/uploads/[id]/route.ts)                                    |
 | `/api/drive/uploads`                                         | POST                   | [source](../src/app/api/drive/uploads/route.ts)                                         |
 | `/api/export/messages`                                       | GET                    | [source](../src/app/api/export/messages/route.ts)                                       |
+| `/api/external-accounts/[id]/auth-recheck`                   | POST                   | [source](../src/app/api/external-accounts/[id]/auth-recheck/route.ts)                   |
 | `/api/external-accounts/[id]/identities/[identityId]/code`   | POST                   | [source](../src/app/api/external-accounts/[id]/identities/[identityId]/code/route.ts)   |
 | `/api/external-accounts/[id]/identities/[identityId]`        | DELETE                 | [source](../src/app/api/external-accounts/[id]/identities/[identityId]/route.ts)        |
 | `/api/external-accounts/[id]/identities/[identityId]/verify` | POST                   | [source](../src/app/api/external-accounts/[id]/identities/[identityId]/verify/route.ts) |

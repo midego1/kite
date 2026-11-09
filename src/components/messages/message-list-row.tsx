@@ -2,6 +2,7 @@
 
 import clsx from "clsx";
 import Link from "next/link";
+import { useRef } from "react";
 import { Archive, Mail, MailOpen } from "lucide-react";
 import { ContactAvatar } from "@/components/contacts/contact-avatar";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -10,6 +11,7 @@ import { splitEmailAddressList } from "@/lib/email/address";
 import { setMessageDragData } from "@/lib/messages/drag-utils";
 import { MessageListRowActions } from "./message-list-row-actions";
 import { MessageNavigationProgress } from "./message-navigation";
+import { RowActionsMenu } from "./row-actions-menu";
 import { rowCheckboxHandlers } from "./message-range-selection-utils";
 import { SendStateBadge } from "./send-state-badge";
 import { ViaAccountChip } from "./via-account-chip";
@@ -22,9 +24,10 @@ import {
 	UnreadDot,
 } from "./message-row-parts";
 import { getStackedRowDensity, getWideRowDensity } from "./reading-layout-utils";
-import { SwipeableRow } from "./swipeable-row";
+import { SwipeableRow, type SwipeableRowHandle } from "./swipeable-row";
 import type { MessageListRowProps } from "./types";
 import { useMessageListRow } from "./use-message-list-row";
+import { useRowLongPress } from "./use-row-long-press";
 import { formatMessageListTimestamp, getMessagePartyClassName } from "./utils";
 import { useT } from "@/lib/i18n/use-t";
 import { t } from "@/lib/i18n/translator";
@@ -52,7 +55,10 @@ function rowAvatarAddress(message: RowViewProps["message"], folder: string) {
 	return folder === "sent" ? (splitEmailAddressList(message.toAddr)[0] ?? message.toAddr) : message.fromAddr;
 }
 
-/** The avatar with its unread dot, which the selection checkbox replaces while selecting. */
+/**
+ * The avatar with its unread dot, which the selection checkbox replaces while selecting, selected, hovered or
+ * focused (a finger gets neither, so it relies on "Select" or a long press instead).
+ */
 function RowAvatar({ showCheckbox, ...props }: RowViewProps & { showCheckbox: boolean }) {
 	const { message, config, selected, row } = props;
 	return (
@@ -62,24 +68,31 @@ function RowAvatar({ showCheckbox, ...props }: RowViewProps & { showCheckbox: bo
 				address={rowAvatarAddress(row.rowMessage, config.folder)}
 				name={row.party}
 				hasManagedAvatar={config.folder !== "sent" && message.fromContactHasAvatar}
-				className={clsx("h-9 w-9 text-sm", showCheckbox && "opacity-0", "group-has-[:focus-visible]:opacity-0")}
+				className={clsx(
+					"h-9 w-9 text-sm",
+					showCheckbox && "opacity-0",
+					"group-hover:opacity-0 group-has-[:focus-visible]:opacity-0",
+				)}
 			/>
 			{row.unread && !showCheckbox && (
 				<span
 					aria-hidden="true"
-					className="absolute bottom-0 end-0 h-2.5 w-2.5 rounded-full bg-blue-500 ring-2 ring-[var(--color-white)]"
+					className="absolute bottom-0 end-0 h-2.5 w-2.5 rounded-full bg-blue-500 ring-2 ring-[var(--color-white)] group-hover:opacity-0 group-has-[:focus-visible]:opacity-0"
 				/>
 			)}
 			<span
 				className={clsx(
 					"absolute inset-0 flex items-center justify-center",
 					!showCheckbox && "opacity-0",
-					"group-has-[:focus-visible]:opacity-100",
+					"group-hover:opacity-100 group-has-[:focus-visible]:opacity-100",
 				)}
 			>
 				<Checkbox
 					checked={selected}
 					{...rowCheckboxHandlers(message.id, props.onSelectedChange)}
+					// A fingertip needs a bigger target than a mouse pointer does; the 36px avatar slot this
+					// replaces has the room for it.
+					className="pointer-coarse:h-6 pointer-coarse:w-6"
 					aria-label={rowCheckboxLabel(props)}
 				/>
 			</span>
@@ -99,18 +112,32 @@ function RowCornerStar({
 }) {
 	if (!row.starToggle) return null;
 	const Icon = icon;
-	// With hover actions the toggle lives in their pill; the corner then only marks a starred row at rest.
+	// With a mouse, hover actions carry the toggle in their pill; the corner then only marks a starred row at
+	// rest, hidden once the pill shows. A coarse pointer never hovers the pill (RowActionsMenu's ⋯ covers it
+	// instead), so it gets the same always-visible, toggleable corner star phones use below, at end-0, 44px —
+	// `hoverActions` only decides which fine-pointer treatment applies, never whether touch gets a star at all.
 	if (hoverActions)
-		return row.starred ? (
-			<span aria-hidden="true" className="absolute bottom-1 end-1 group-hover:hidden group-has-[:focus-visible]:hidden">
-				<Icon className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
-			</span>
-		) : null;
+		return (
+			<>
+				{row.starred && (
+					<span
+						aria-hidden="true"
+						className="absolute bottom-1 end-1 group-hover:hidden group-has-[:focus-visible]:hidden pointer-coarse:hidden"
+					>
+						<Icon className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
+					</span>
+				)}
+				<span className="absolute bottom-0 end-0 hidden pointer-coarse:block">
+					<MessageRowStar starred={row.starred} compact icon={icon} onToggle={row.toggleStar} />
+				</span>
+			</>
+		);
 	return (
 		<span
 			className={clsx(
 				"absolute bottom-0 end-0",
-				!row.starred && "opacity-0 group-hover:opacity-100 group-has-[:focus-visible]:opacity-100",
+				!row.starred &&
+					"opacity-0 group-hover:opacity-100 group-has-[:focus-visible]:opacity-100 pointer-coarse:opacity-100",
 			)}
 		>
 			<MessageRowStar starred={row.starred} compact icon={icon} onToggle={row.toggleStar} />
@@ -159,8 +186,8 @@ function StackedSubjectLine({ inlineStar, ...props }: RowViewProps & { inlineSta
  * as small icons. The checkbox takes the avatar's place while selecting; it stays in the tab order and shows
  * when focused.
  */
-function StackedMessageRow(props: RowViewProps) {
-	const { message, config, selected, active = false, density = "default", hoverActions = true, row } = props;
+function StackedMessageRow(props: RowViewProps & { longPress: ReturnType<typeof useRowLongPress> }) {
+	const { message, config, selected, active = false, density = "default", hoverActions = true, row, longPress } = props;
 	const stackedDensity = getStackedRowDensity(density);
 	const showHoverActions = row.hasRowActions && hoverActions;
 	const showCheckbox = props.selecting || selected;
@@ -180,6 +207,7 @@ function StackedMessageRow(props: RowViewProps) {
 				row.draggable && "cursor-grab active:cursor-grabbing",
 			)}
 			{...dragHandlers(row, props.dragMessageIds)}
+			{...longPress.handlers}
 		>
 			<MessageNavigationProgress progress={row.navigation.progress} />
 			<RowAvatar {...props} showCheckbox={showCheckbox} />
@@ -189,7 +217,15 @@ function StackedMessageRow(props: RowViewProps) {
 					onClick={row.onNavigate}
 					onMouseDown={row.onMouseDown}
 					aria-current={active ? "true" : undefined}
-					className="block min-w-0 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+					// A long press selects the row; iOS's own link callout (copy, open in new tab) would otherwise show first.
+					className={clsx(
+						"block min-w-0 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 [-webkit-touch-callout:none]",
+						// Reserved on every line, not overlaid on just one: RowActionsMenu's ⋯ (and the star beside
+						// it, when the row has one) sit at the bottom-end corner on a coarse pointer, floating over
+						// whichever line ends up last (the preview, usually). Reserving only the top line, where
+						// the corner's old hover pill sat, left the bottom lines to run underneath them.
+						row.hasRowActions && (row.starToggle ? "pointer-coarse:pe-24" : "pointer-coarse:pe-11"),
+					)}
 				>
 					<span
 						className={clsx(
@@ -227,16 +263,45 @@ function StackedMessageRow(props: RowViewProps) {
 				</Link>
 				{!inlineStar && <RowCornerStar row={row} icon={Icon} hoverActions={showHoverActions} />}
 				<ScreenerRowControls message={row.rowMessage} compact />
-				{showHoverActions && (
-					<MessageListRowActions
-						message={row.rowMessage}
-						onAction={row.runRowAction}
-						compact
-						star={row.starToggle ? { starred: row.starred, icon: Icon, onToggle: row.toggleStar } : undefined}
-					/>
-				)}
+				{row.hasRowActions && <StackedRowActionControls row={row} icon={Icon} showHoverActions={showHoverActions} />}
 			</div>
 		</div>
+	);
+}
+
+/** A mouse gets the hover pill; a coarse pointer gets the always-on ⋯ button and its sheet instead (both below). */
+function StackedRowActionControls({
+	row,
+	icon: Icon,
+	showHoverActions,
+}: {
+	row: RowState;
+	icon: MessageListRowProps["config"]["icon"];
+	showHoverActions: boolean;
+}) {
+	return (
+		<>
+			<MessageListRowActions
+				message={row.rowMessage}
+				onAction={row.runRowAction}
+				compact
+				star={
+					showHoverActions && row.starToggle
+						? { starred: row.starred, icon: Icon, onToggle: row.toggleStar }
+						: undefined
+				}
+				hoverReveal={showHoverActions}
+			/>
+			{/* A coarse pointer never hovers: the ⋯ button and its sheet cover every action instead
+			(docs/foldable-layout.md#touch-reachability). Always on, regardless of hoverReveal above. */}
+			<RowActionsMenu
+				message={row.rowMessage}
+				party={row.party}
+				onAction={row.runRowAction}
+				star={row.starToggle ? { starred: row.starred, icon: Icon, onToggle: row.toggleStar } : undefined}
+				compact
+			/>
+		</>
 	);
 }
 
@@ -275,8 +340,8 @@ function RowMarkers({ placement, ...props }: RowViewProps & { placement: "leadin
 }
 
 /** The single-line row of a full-width list. */
-function WideMessageRow(props: RowViewProps) {
-	const { message, config, selected, active = false, density = "default", row } = props;
+function WideMessageRow(props: RowViewProps & { longPress: ReturnType<typeof useRowLongPress> }) {
+	const { message, config, selected, active = false, density = "default", row, longPress } = props;
 	const Icon = config.icon;
 	return (
 		<div
@@ -289,14 +354,16 @@ function WideMessageRow(props: RowViewProps) {
 				row.draggable && "cursor-grab active:cursor-grabbing",
 			)}
 			{...dragHandlers(row, props.dragMessageIds)}
+			{...longPress.handlers}
 		>
 			<MessageNavigationProgress progress={row.navigation.progress} />
 			<Checkbox
 				checked={selected}
 				{...rowCheckboxHandlers(message.id, props.onSelectedChange)}
-				// As in the stacked rows, checkboxes show while selecting, on hover and with keyboard focus.
+				// As in the stacked rows, checkboxes show while selecting, on hover and with keyboard focus; the
+				// bigger pointer-coarse size still fits this column, which is sized for it.
 				className={clsx(
-					"relative z-10",
+					"relative z-10 pointer-coarse:h-6 pointer-coarse:w-6",
 					!props.selecting && !selected && "opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
 				)}
 				aria-label={rowCheckboxLabel(props)}
@@ -337,7 +404,8 @@ function WideMessageRow(props: RowViewProps) {
 						onClick={config.folder === "drafts" ? row.onSelectClick : row.onNavigate}
 						onMouseDown={row.onMouseDown}
 						aria-current={active ? "true" : undefined}
-						className="after:absolute after:inset-0 focus-visible:outline-none"
+						// A long press selects the row; iOS's own link callout (copy, open in new tab) would otherwise show first.
+						className="after:absolute after:inset-0 focus-visible:outline-none [-webkit-touch-callout:none]"
 					>
 						<span dir="auto" className={clsx("reading-font", row.unread && "font-medium text-neutral-900")}>
 							{row.rowMessage.subject ?? "(no subject)"}
@@ -357,7 +425,17 @@ function WideMessageRow(props: RowViewProps) {
 				<SendStateBadge message={row.rowMessage} />
 				<RowMarkers {...props} row={row} placement="trailing" />
 			</span>
-			<span className="flex min-w-[96px] items-baseline justify-end gap-1.5 group-hover:opacity-0">
+			<span
+				className={clsx(
+					"flex min-w-[96px] items-baseline justify-end gap-1.5",
+					// Reserved, not overlaid, and only for a mouse: the hover pill floats here, so the date steps
+					// aside on hover. A coarse pointer never hovers and the date always stays (its ⋯ button is a
+					// reserved corner of its own, see pe-11 below), which is also the fix for it having been
+					// permanently hidden here before.
+					row.hasRowActions && "group-hover:opacity-0",
+					row.hasRowActions && "pointer-coarse:pe-11",
+				)}
+			>
 				<AttachmentIndicator message={message} />
 				<time
 					dateTime={message.createdAt}
@@ -369,7 +447,14 @@ function WideMessageRow(props: RowViewProps) {
 					{formatMessageListTimestamp(message.createdAt)}
 				</time>
 			</span>
-			{row.hasRowActions && <MessageListRowActions message={row.rowMessage} onAction={row.runRowAction} />}
+			{row.hasRowActions && (
+				<>
+					<MessageListRowActions message={row.rowMessage} onAction={row.runRowAction} />
+					{/* No star prop: the wide row already has its own always-tappable star column (MessageRowStar
+					above), on every pointer type, so the sheet does not need to repeat it. */}
+					<RowActionsMenu message={row.rowMessage} party={row.party} onAction={row.runRowAction} />
+				</>
+			)}
 		</div>
 	);
 }
@@ -378,13 +463,25 @@ function WideMessageRow(props: RowViewProps) {
 export function MessageListRow(props: MessageListRowProps) {
 	const t = useT();
 	const row = useMessageListRow(props);
+	// A swipe that captures the pointer cancels a pending long press (onDragStart below); the long press firing
+	// first must just as surely disarm the swipe, since the same still-touching finger moving on from there
+	// would otherwise read as the start of one and can trigger it on release.
+	const swipeRef = useRef<SwipeableRowHandle>(null);
+	// Lifted above the stacked/wide split so a swipe that captures the pointer (SwipeableRow, below) can cancel
+	// the same long-press instance the row renders with, not one it could never reach from outside.
+	const longPress = useRowLongPress(() => {
+		swipeRef.current?.cancel();
+		props.onLongPressSelect?.(props.message.id);
+	});
 	const { compact = false, config } = props;
-	if (!compact || config.folder === "drafts") return <WideMessageRow {...props} row={row} />;
-	const stacked = <StackedMessageRow {...props} row={row} />;
+	if (!compact || config.folder === "drafts") return <WideMessageRow {...props} row={row} longPress={longPress} />;
+	const stacked = <StackedMessageRow {...props} row={row} longPress={longPress} />;
 	if (!row.hasRowActions) return stacked;
 	return (
 		<SwipeableRow
+			ref={swipeRef}
 			role="listitem"
+			onDragStart={longPress.cancel}
 			startAction={{
 				label: row.read ? t("Mark unread") : t("Mark read"),
 				icon: row.read ? Mail : MailOpen,

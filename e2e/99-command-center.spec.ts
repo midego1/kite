@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { createSignedInAccount, okJson } from "./support/auto-read";
 import { ADMIN, BASE_URL, DOMAIN, STORAGE_STATE } from "./support/constants";
 import { contrastBetween } from "./support/contrast";
-import { apiContext, deliverInbound, uniqueToken } from "./support/helpers";
+import { apiContext, deliverInbound, suppressMailboxTour, uniqueToken } from "./support/helpers";
 import { restoreModules, setModuleState } from "./support/modules";
 
 // The empty reading pane's command center (src/components/command-center/): a greeting with the date, the
@@ -32,6 +32,9 @@ async function asMember(page: Page) {
 		body.user = { ...body.user, role: "user", isPrimaryAdmin: false };
 		await route.fulfill({ response, json: body });
 	});
+	// The real account behind this session is the owner, who has never dismissed the mailbox tour (it never
+	// shows for them); answering as a member makes it eligible, so it would otherwise open here too.
+	await suppressMailboxTour(page);
 }
 
 test("the pane greets the account, counts the mail and still says what to do", async ({ page }) => {
@@ -311,6 +314,7 @@ test("Calendar and Money Watch add their cards, which leave when the module is o
 		});
 
 		const page = await context.newPage();
+		await suppressMailboxTour(page);
 		const cardRequests: string[] = [];
 		page.on("request", (request) => {
 			const url = new URL(request.url());

@@ -1,9 +1,19 @@
 import type { MouseEvent } from "react";
 import type { CheckboxChangeEvent } from "@/components/ui/checkbox-types";
-import type { Message } from "@/hooks/types";
+import type { Message, MessageDirection } from "@/hooks/types";
 import { isSendPending } from "@/lib/messages/send-state-utils";
 
-type SelectedMessage = { id: string; read: boolean; mailboxId?: string | null };
+type SelectedMessage = {
+	id: string;
+	read: boolean;
+	direction: MessageDirection;
+	mailboxId?: string | null;
+	status?: string;
+	threadMessageIds?: string[];
+	threadUnread?: number;
+	threadInboundCount?: number;
+	offPage?: boolean;
+};
 
 /**
  * The ids from the anchor row to the target row, inclusive and in list order, for
@@ -102,12 +112,81 @@ export function replaceSelection(current: SelectedMessage[], messages: Message[]
 	);
 }
 
-/** Drops selected ids that no longer have a row; returns the same array when nothing changed. */
-export function pruneSelection<T extends { id: string }>(selected: T[], rows: Array<{ id: string }>): T[] {
+/**
+ * Drops selected ids that no longer have a row; returns the same array when nothing changed. Every entry
+ * "Select all in folder" selected is marked `offPage` and never dropped here, whether or not it happened to be
+ * on the loaded page at the time: new mail or a move can push a row that was on it out of it afterward, and a
+ * refresh of the loaded page (new mail arriving, a row action, Undo) must not silently cut a folder-wide
+ * selection back down to whatever the page holds at that later moment.
+ */
+export function pruneSelection<T extends { id: string; offPage?: boolean }>(
+	selected: T[],
+	rows: Array<{ id: string }>,
+): T[] {
 	if (selected.length === 0) return selected;
 	const present = new Set(rows.map((row) => row.id));
-	const kept = selected.filter((item) => present.has(item.id));
+	const kept = selected.filter((item) => item.offPage || present.has(item.id));
 	return kept.length === selected.length ? selected : kept;
+}
+
+/**
+ * Expands checked ids to every message their conversation row stands for, acting on each id in `ids`. A row
+ * still on the loaded page wins over the selection's own snapshot: its thread can have grown since the
+ * checkbox was ticked (a reply arriving, a filter widening what the thread's scope includes), and acting on
+ * the snapshot would then miss what the row has since picked up. The snapshot is only a fallback for a row
+ * "Select all in folder" reached past the loaded page, which this page never had to look up in the first place.
+ */
+export function expandSelectedThreadIds(
+	ids: string[],
+	messages: Array<{ id: string; threadMessageIds?: string[] }>,
+	selected: SelectedMessage[],
+): string[] {
+	return ids.flatMap((id) => {
+		const loaded = messages.find((message) => message.id === id);
+		if (loaded) return loaded.threadMessageIds ?? [loaded.id];
+		return selected.find((message) => message.id === id)?.threadMessageIds ?? [id];
+	});
+}
+
+/**
+ * The rows `ids` stand for, each a loaded row when there is one, else the selection's own snapshot: a row
+ * "Select all in folder" reached past the loaded page has only the snapshot to fall back on. Marking `ids`
+ * read or unread needs these to work out the effect on the sidebar Inbox count, which a selection entry
+ * carries (`toSelectedMessage`) for exactly this reason. An id neither has is left out, not invented.
+ */
+export function resolveSelectedRows<T extends { id: string }>(
+	ids: string[],
+	messages: T[],
+	selected: SelectedMessage[],
+): Array<T | SelectedMessage> {
+	return ids
+		.map((id) => messages.find((message) => message.id === id) ?? selected.find((message) => message.id === id))
+		.filter((row): row is T | SelectedMessage => !!row);
+}
+
+/**
+ * A loaded row as a selected entry. `threadMessageIds` is kept too (conversation view) so a selection that
+ * reaches beyond the loaded page, as "Select all in folder" builds, can still expand each row to its thread
+ * without looking the row up in a page that may no longer hold it.
+ */
+export function toSelectedMessage(message: Message): SelectedMessage {
+	return {
+		id: message.id,
+		read: message.read && !(message.threadUnread ?? 0),
+		direction: message.direction,
+		...(message.mailboxId ? { mailboxId: message.mailboxId } : {}),
+		// Drafts and sends waiting to go out are told apart, since the toolbar treats them differently.
+		...(message.status === "draft" || isSendPending(message.status) ? { status: message.status } : {}),
+		// Carried so a row "Select all" reached past the loaded page can still work out its effect on the
+		// sidebar Inbox count when marked read or unread, with no row on this page to read these from.
+		...(message.threadMessageIds
+			? {
+					threadMessageIds: message.threadMessageIds,
+					threadUnread: message.threadUnread ?? 0,
+					threadInboundCount: message.threadInboundCount ?? 0,
+				}
+			: {}),
+	};
 }
 
 /** Selects or clears `ids` among the loaded messages, keeping the rest of the selection. */
@@ -120,15 +199,7 @@ export function applySelection(
 	if (!selected) return current.filter((item) => !ids.includes(item.id));
 	const next = new Map(current.map((item) => [item.id, item]));
 	for (const message of messages) {
-		if (ids.includes(message.id) && !next.has(message.id)) {
-			next.set(message.id, {
-				id: message.id,
-				read: message.read && !(message.threadUnread ?? 0),
-				...(message.mailboxId ? { mailboxId: message.mailboxId } : {}),
-				// Drafts and sends waiting to go out are told apart, since the toolbar treats them differently.
-				...(message.status === "draft" || isSendPending(message.status) ? { status: message.status } : {}),
-			});
-		}
+		if (ids.includes(message.id) && !next.has(message.id)) next.set(message.id, toSelectedMessage(message));
 	}
 	return Array.from(next.values());
 }

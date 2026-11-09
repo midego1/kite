@@ -7,6 +7,7 @@ import {
 	deliverInbound,
 	openMessage,
 	setSendingSettings,
+	suppressMailboxTour,
 	uniqueToken,
 	waitForMessage,
 } from "./support/helpers";
@@ -419,6 +420,7 @@ test.describe("right-to-left composer", () => {
 			const shared = `${sharedId}|${sharedName}@${DOMAIN}`;
 			const context = await browser.newContext({ storageState: await account.api.storageState() });
 			const page = await context.newPage();
+			await suppressMailboxTour(page);
 			try {
 				await selectMailbox(page, account.mailboxId);
 				const signatures = () => editor(page).locator("[data-kite-signature]");
@@ -473,6 +475,7 @@ test.describe("right-to-left composer", () => {
 		);
 		const context = await browser.newContext({ storageState: await account.api.storageState() });
 		const page = await context.newPage();
+		await suppressMailboxTour(page);
 		try {
 			await selectMailbox(page, account.mailboxId);
 			await page.goto("/inbox");

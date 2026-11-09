@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { expect, type APIRequestContext, type Browser } from "@playwright/test";
 import { AUTO_READ_ACCOUNT_PASSWORD, createSignedInAccount, okJson } from "./auto-read";
 import { BASE_URL, DOMAIN, E2E_PERSIST_DIR } from "./constants";
-import { uniqueToken } from "./helpers";
+import { suppressMailboxTour, uniqueToken } from "./helpers";
 
 export type DriveItem = {
 	id: string;
@@ -29,7 +29,9 @@ export type DriveAccount = Awaited<ReturnType<typeof driveAccount>>;
 /** A browser context signed in as `account` with its API session, so the test spends no extra login. */
 export async function signedInPage(browser: Browser, account: DriveAccount) {
 	const context = await browser.newContext({ baseURL: BASE_URL, storageState: await account.api.storageState() });
-	return { context, page: await context.newPage() };
+	const page = await context.newPage();
+	await suppressMailboxTour(page);
+	return { context, page };
 }
 
 export async function createFolder(api: APIRequestContext, name: string, parentId: string | null = null) {

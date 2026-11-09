@@ -3,7 +3,7 @@ import { mockAssistant } from "./support/assistant-mock";
 import { createSignedInAccount, okJson } from "./support/auto-read";
 import { ADMIN, DOMAIN, STORAGE_STATE } from "./support/constants";
 import { sql } from "./support/drive";
-import { apiContext, uniqueToken } from "./support/helpers";
+import { apiContext, suppressMailboxTour, uniqueToken } from "./support/helpers";
 
 // Why? next to "N AI requests failed" (src/components/agent/ai-failures-why.tsx): the last day's `ai.error` rows
 // grouped by code with a cause, a fix and a settings link, worked out without a model, and Ask AI, which hands a
@@ -186,6 +186,7 @@ test("the report is the primary admin's: other admins and members get 403 and no
 		expect((await otherAdmin.api.get("/api/admin/agent/errors/report")).status()).toBe(403);
 		const context = await browser.newContext({ storageState: await member.api.storageState() });
 		const page = await context.newPage();
+		await suppressMailboxTour(page);
 		await page.goto("/inbox");
 		await expect(page.getByTestId("reading-pane-empty")).toBeVisible();
 		await expect(page.getByTestId("command-center-attention")).toHaveCount(0);

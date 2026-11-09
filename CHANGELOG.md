@@ -6,6 +6,41 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.11.09.3] - 2026-11-09
+
+### Added
+
+- A message that failed SPF, DKIM or DMARC, carries a signature not issued for its own domain, replies to a different domain than it was sent from, or whose sender's name reuses one of your contacts at a different address, now shows a calm warning in the reader and a small badge next to its sender in the conversation. A message with nothing to flag, known contact or not, still shows neither.
+  ![The reader's "This sender couldn't be fully verified" warning, listing a failed DMARC, SPF and DKIM check](/changelog/2026-11-08-sender-auth-warning-light.webp)
+
+## [2026.11.09.2] - 2026-11-09
+
+### Added
+
+- You can now email your assistant once an admin sets up an address on a domain and you opt in from the assistant panel's Settings tab. It answers by email with a link back to the full answer in Kite, plus a review link for anything it would change or send: nothing is sent or changed without your confirmation.
+  ![The "Assistant by email" settings, turned on, with the mailbox and daily limit choices](/changelog/2026-11-08-assistant-by-email-light.webp)
+- You can add and verify another address of your own, such as your phone's mail account, to send the assistant requests from. The same settings tab lists your recent requests and their status.
+
+## [2026.11.09.1] - 2026-11-09
+
+### Added
+
+- Money Watch now keeps a copy of a tracked subscription's, document's or payment's mail in your Drive, so it keeps working after the mail is gone. Turn it off, or save receipts for earlier payments, from the gear button on the Subscriptions or Payments page. This needs a database update applied from the [Admin overview](/admin).
+  ![The "Keep receipts" setting with its switch and backfill button](/changelog/2026-11-08-money-watch-keep-receipts.webp)
+
+## [2026.11.09.0] - 2026-11-09
+
+### Changed
+
+- Selecting mail is quicker and clearer: a checkbox in the list header picks everything on the page (or press Cmd/Ctrl+A), row checkboxes show on hover or with the "Select" button on touch, and once the page is fully checked you can select every message in the folder. The bulk actions now show their names next to their icons where there is room, and "Empty Spam"/"Empty Trash" always shows its label.
+
+  ![The Spam list header with Archive, Not spam, Delete, Delete forever and Mark as read shown as labelled buttons above three checked messages](/changelog/2026-11-08-easier-selection-light.webp)
+
+  ![The same list at its default width: Clear selection and More actions stay reachable, with every other action a tap away in More actions](/changelog/2026-11-08-easier-selection-narrow-light.webp)
+
+- Opening a message to read it no longer clears a checkbox selection already made elsewhere in the list.
+- Selecting everything in a folder stops at 1,000 messages at a time; past that, select and act again for the rest.
+
 ## [2026.11.08.3] - 2026-11-08
 
 ### Added

@@ -7,6 +7,17 @@ import { isNoSuchTableError } from "@/lib/modules/state-utils";
 import type { InstructionSet, PersonalInstructions } from "./instruction-types";
 import { EMPTY_INSTRUCTIONS } from "./instruction-utils";
 
+/**
+ * Whether migration 0096's columns exist, for the settings page's own "ready" flag (`readUserAiSettings`'s
+ * `selectRow` already reads safely around their absence, so it cannot tell the difference itself).
+ */
+export async function assistantEmailSettingsReady(env: CloudflareEnv): Promise<boolean> {
+	const { results } = await env.DB.prepare("SELECT name FROM pragma_table_info('user_ai_settings')").all<{
+		name: string;
+	}>();
+	return results.some((row) => row.name === "assistant_email_enabled");
+}
+
 export type UserAiSettingsState = {
 	/** False until migration 0069 created `user_ai_settings`; everything then reads as empty and off. */
 	ready: boolean;
@@ -134,6 +145,33 @@ export async function saveWritingStyleEnabled(db: AppDatabase, userId: string, e
 		await upsertUserAiSettings(db, userId, values);
 	} catch (error) {
 		if (isNoSuchTableError(error)) throw new UserAiSettingsPendingError();
+		throw error;
+	}
+}
+
+/**
+ * Saves the assistant-by-email opt-in, the mailbox a verified extra address's requests run in, and the daily
+ * limit (spec §7, §13); throws `UserAiSettingsPendingError` before migration 0096. The caller validates
+ * `mailboxId` belongs to the user before calling this (a plain write, like the two settings above).
+ */
+export async function saveAssistantEmailSettings(
+	db: AppDatabase,
+	userId: string,
+	update: { enabled?: boolean; mailboxId?: string | null; dailyLimit?: number },
+): Promise<void> {
+	const values: Partial<typeof userAiSettings.$inferInsert> = { updatedAt: new Date() };
+	if (update.enabled !== undefined) values.assistantEmailEnabled = update.enabled;
+	if (update.mailboxId !== undefined) values.assistantEmailMailboxId = update.mailboxId;
+	if (update.dailyLimit !== undefined) values.assistantEmailDailyLimit = update.dailyLimit;
+	try {
+		await db
+			.insert(userAiSettings)
+			.values({ userId, ...values })
+			.onConflictDoUpdate({ target: userAiSettings.userId, set: values });
+	} catch (error) {
+		const column = missingColumnFromError(error);
+		if (isNoSuchTableError(error) || (column && ASSISTANT_EMAIL_COLUMN_NAMES.includes(column)))
+			throw new UserAiSettingsPendingError();
 		throw error;
 	}
 }

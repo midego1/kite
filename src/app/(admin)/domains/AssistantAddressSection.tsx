@@ -105,8 +105,9 @@ export default function AssistantAddressSection({ domain }: { domain: Domain }) 
 			<h2 className="text-base font-semibold text-neutral-900">Assistant address</h2>
 			<p className="mt-0.5 text-sm text-neutral-500">
 				An address on this domain, such as <span className="font-mono">assistant@{domain.hostname}</span>, that users
-				who opt in under Settings → Assistant can email requests to. The assistant never sends or changes anything
-				without a confirmation in Kite; replies carry only a link, never the answer itself.
+				who opt in (the assistant panel&apos;s Settings tab, once this address exists) can email requests to. The
+				assistant never sends or changes anything without a confirmation in Kite; replies carry only a link, never the
+				answer itself.
 			</p>
 			{!canHost && <p className="mt-2 text-xs text-[#8a4b0a] dark:text-[#d4a35a]">{NOT_READY}</p>}
 			{address ? (

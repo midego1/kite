@@ -150,9 +150,12 @@ test("manifests carry what the spec lists for each module", () => {
 	assert.deepEqual(finance.cronTasks, [
 		{ name: "remindRenewals", schedule: "*/5 * * * *", capability: "remindRenewals" },
 		{ name: "resumePaymentScans", schedule: "*/5 * * * *", capability: "resumePaymentScans" },
+		{ name: "fileReceipts", schedule: "*/5 * * * *", capability: "fileReceipts" },
+		{ name: "resumeReceiptBackfills", schedule: "*/5 * * * *", capability: "resumeReceiptBackfills" },
 	]);
 	assert.deepEqual(finance.queueMessageTypes, [
 		{ kind: "finance.scan", queue: "agent", capability: "scanPayments", metricClass: "finance" },
+		{ kind: "finance.receipts_backfill", queue: "agent", capability: "backfillReceipts", metricClass: "finance" },
 	]);
 	for (const manifest of MODULE_MANIFESTS) assert.deepEqual(manifest.jmapCapabilities, []);
 	const accountMenu = MODULE_MANIFESTS.flatMap((manifest) => manifest.nav).filter(
@@ -629,7 +632,14 @@ test("listCapabilities returns the enabled modules' descriptors for a surface in
 	assert.deepEqual(names("webhook_event", ["booking"]), ["appointmentCreated"]);
 	assert.deepEqual(names("jmap_method", IDS), []);
 	assert.deepEqual(names("cron", ["import"]), ["resumeStalledImports"]);
-	assert.deepEqual(names("cron", IDS), ["resumeStalledImports", "remindRenewals", "resumePaymentScans", "purgeDrive"]);
+	assert.deepEqual(names("cron", IDS), [
+		"resumeStalledImports",
+		"remindRenewals",
+		"resumePaymentScans",
+		"fileReceipts",
+		"resumeReceiptBackfills",
+		"purgeDrive",
+	]);
 	assert.deepEqual(names("resolve_refs", ["drive"]), ["resolveRefs"]);
 	assert.deepEqual(names("webhook_event", ["finance"]), ["subscriptionDetected", "renewalDue"]);
 });

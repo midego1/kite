@@ -42,6 +42,10 @@ import { SendReview } from "./send-review";
 import { AgentStepLimitSetting } from "./step-limit-setting";
 import { MailboxInstructionsSetting } from "./mailbox-instructions-setting";
 import { PersonalInstructionsSetting } from "./personal-instructions-setting";
+import { AssistantEmailSetting } from "./assistant-email-setting";
+import { AssistantEmailSenders } from "./assistant-email-senders";
+import { AssistantEmailRequests } from "./assistant-email-requests";
+import { EmailConversationBadge } from "./email-conversation-badge";
 import { AutoReadSettings } from "./auto-read-settings";
 import { AssistantSettingsTabs } from "./assistant-settings-tabs";
 import { reasonText } from "./agent-activity-utils";
@@ -638,10 +642,11 @@ export function AgentPanel({ open, fullSize, docked, onClose, onToggleFullSize }
 											>
 												<button
 													type="button"
-													className="min-w-0 flex-1 truncate py-2 ps-4 pe-2 text-start"
+													className="flex min-w-0 flex-1 items-center gap-1.5 truncate py-2 ps-4 pe-2 text-start"
 													onClick={() => void selectConversation(item.id)}
 												>
-													{item.title}
+													{item.viaEmailFrom && <EmailConversationBadge from={item.viaEmailFrom} />}
+													<span className="truncate">{item.title}</span>
 												</button>
 												<button
 													type="button"
@@ -858,6 +863,9 @@ export function AgentPanel({ open, fullSize, docked, onClose, onToggleFullSize }
 				<AssistantSettingsTabs settings={settings} mailboxId={mailboxId} onAiChange={refresh}>
 					<AgentStepLimitSetting />
 					<PersonalInstructionsSetting />
+					<AssistantEmailSetting />
+					<AssistantEmailSenders />
+					<AssistantEmailRequests />
 					<p className="font-medium text-neutral-800">Mailbox settings</p>
 					{!canManage && <p>Mailbox management permission is required to change these settings.</p>}
 					{settings && (

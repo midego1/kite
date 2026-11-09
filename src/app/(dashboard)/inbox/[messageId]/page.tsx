@@ -62,6 +62,9 @@ import { SummarizeButton, ThreadSummaryCard } from "@/components/messages/thread
 import { useThreadSummary } from "@/components/messages/use-thread-summary";
 import { showsCurrentSummary } from "@/components/messages/thread-summary-utils";
 import { useT } from "@/lib/i18n/use-t";
+import { SenderAuthWarningNotice } from "@/components/messages/sender-auth-warning";
+import { SenderAuthBadge } from "@/components/messages/sender-auth-badge";
+import { deriveSenderAuthWarning } from "@/components/messages/sender-auth-warning-utils";
 
 export default function MessageDetailPage() {
 	const t = useT();
@@ -161,6 +164,8 @@ export default function MessageDetailPage() {
 	};
 	const currentAccountName = messageMailbox?.displayName ?? messageMailbox?.localPart;
 	const { fromName, fromAddress } = getMessageHeaderParties(message, currentAccountName);
+	// spamSignals and spoofedContact are only ever set on inbound mail, so a sent or draft message derives no warning.
+	const senderAuthWarning = deriveSenderAuthWarning(message.spamSignals, message.spoofedContact);
 	const toEntries = splitEmailAddressList(message.toAddr);
 	const ccEntries = splitEmailAddressList(message.ccAddr);
 	const bccEntries = splitEmailAddressList(message.bccAddr);
@@ -245,16 +250,7 @@ export default function MessageDetailPage() {
 				<ScreenerBanner message={message} mailbox={messageMailbox} alignWide={!isAnyPanelVisible} />
 				<SendStateBanner message={message} alignWide={!isAnyPanelVisible} />
 				<ThreadSummaryCard key={message.id} controller={summary} />
-				{/* <div className="px-6">
-        <div className="mx-auto w-full max-w-[640px]">
-          <SpamScoreDetails
-            score={message.spamScore}
-            verdict={message.spamVerdict}
-            signals={message.spamSignals}
-            analysisError={message.spamAnalysisError}
-          />
-        </div>
-      </div> */}
+				<SenderAuthWarningNotice warning={senderAuthWarning} alignWide={!isAnyPanelVisible} />
 				<ConversationThread
 					currentMessageId={message.id}
 					threadId={message.threadId}
@@ -308,6 +304,7 @@ export default function MessageDetailPage() {
 										<span dir="ltr" className="text-neutral-500 text-xs flex-1 overflow-hidden text-ellipsis min-w-0">
 											&lt;{fromAddress}&gt;
 										</span>
+										<SenderAuthBadge warning={senderAuthWarning} className="shrink-0" />
 									</p>
 									<p className="text-xs text-neutral-500">
 										{t("to")}{" "}

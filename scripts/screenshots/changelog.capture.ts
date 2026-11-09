@@ -14,7 +14,9 @@ import {
 	seedPagedMail,
 	seedPaymentsDemo,
 	seedRtlMail,
+	seedSenderAuthDemo,
 	seedThaiMail,
+	SENDER_AUTH_MAIL,
 	THAI_MAIL,
 	THAI_MAIL_TRANSLATED,
 	THREAD,
@@ -165,6 +167,13 @@ async function openThaiMail(page: Page) {
 	await expect(page.getByTestId("translation-bar")).toContainText("This message is in Thai.");
 }
 
+async function openSenderAuthMail(page: Page) {
+	await seedSenderAuthDemo();
+	await page.goto("/inbox");
+	await page.getByRole("main").getByText(SENDER_AUTH_MAIL.subject, { exact: true }).first().click();
+	await expect(page.locator("[data-sender-auth-warning]")).toBeVisible();
+}
+
 const SHOTS: Shot[] = [
 	{
 		// All mailboxes with compact labels: a square per mailbox, a link icon for mail through a connected account, and
@@ -265,6 +274,16 @@ const SHOTS: Shot[] = [
 			await page.getByRole("button", { name: "Translate to English" }).click();
 			await expect(page.getByTestId("translation-bar")).toContainText("Translated from Thai");
 			await expect(page.frameLocator('iframe[title="Message body"]').last().getByText("Bangkok")).toBeVisible();
+			return page.locator("[data-reader-scroll]");
+		},
+	},
+	{
+		// The reader's calm warning for a sender that failed SPF, DKIM and DMARC, with its thread badge.
+		name: "2026-11-08-sender-auth-warning-light",
+		theme: "light",
+		viewport: { width: 1280, height: 700 },
+		open: async (page) => {
+			await openSenderAuthMail(page);
 			return page.locator("[data-reader-scroll]");
 		},
 	},
@@ -827,6 +846,22 @@ const SHOTS: Shot[] = [
 		},
 	},
 	{
+		// "Keep receipts": the per-user setting and the "Save receipts for existing payments" backfill, open over the
+		// same invented Payments demo data.
+		name: "2026-11-08-money-watch-keep-receipts",
+		theme: "light",
+		viewport: { width: 1280, height: 900 },
+		open: async (page) => {
+			await seedPaymentsDemo();
+			await page.goto("/finance?tab=payments");
+			await expect(page.locator("[data-payment-row]").first()).toBeVisible();
+			await page.getByRole("button", { name: "Keep receipts" }).click();
+			const dialog = page.getByRole("dialog", { name: "Keep receipts" });
+			await expect(dialog.getByRole("switch", { name: "Keep receipts" })).toBeVisible();
+			return dialog;
+		},
+	},
+	{
 		// Scan last 90 days partway through: the status line's own progress, over the real seeded rows (the scan status
 		// itself is faked, since a real scan of this little demo mail finishes before a screenshot could catch it running).
 		name: "2026-11-08-money-watch-scan-progress-light",
@@ -866,6 +901,25 @@ const SHOTS: Shot[] = [
 			}
 			await expect(toggleAi).toBeChecked();
 			return panel.getByTestId("mailbox-ai-setting");
+		},
+	},
+	{
+		// The assistant panel's settings: Assistant by email turned on, showing the mailbox picker and daily limit.
+		name: "2026-11-08-assistant-by-email-light",
+		viewport: { width: 1280, height: 900 },
+		open: async (page) => {
+			await page.goto("/inbox");
+			const toggle = page.getByRole("button", { name: /^(Open|Close) email assistant$/ });
+			await expect(toggle).toBeVisible();
+			if ((await toggle.getAttribute("aria-label")) === "Open email assistant") await toggle.click({ timeout: 45_000 });
+			const panel = page.locator("#email-assistant-panel");
+			await panel.getByRole("button", { name: "Assistant settings" }).click();
+			const emailToggle = panel.getByRole("switch", { name: "Assistant by email" });
+			await expect(emailToggle).toBeEnabled();
+			if ((await emailToggle.getAttribute("aria-checked")) !== "true") await emailToggle.click();
+			await expect(emailToggle).toBeChecked();
+			await expect(panel.getByText("Mailbox for requests from a verified extra address")).toBeVisible();
+			return panel;
 		},
 	},
 	{

@@ -20,5 +20,6 @@ export const DELETE = withModule<PaymentRouteContext>("finance", async (request,
 	const denied = await checkUser(user);
 	if (denied) return denied;
 	const { id } = await params;
-	return respond(await removePayment(user, id));
+	const body = (await readJson(request)) as { acknowledge?: unknown } | null;
+	return respond(await removePayment(user, id, body?.acknowledge === true));
 });

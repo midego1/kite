@@ -14,6 +14,7 @@ import {
 	type FinanceUser,
 } from "./manual-context";
 import { documentView, rowJson } from "./record-utils";
+import { receiptsDeleteGuard } from "./receipt-delete-guard";
 import { documentRemovalSnapshot } from "./removal-snapshot";
 import { documentRow, hasDocument } from "./subscriptions";
 
@@ -53,10 +54,12 @@ export function addDocument(user: FinanceUser, subscriptionId: string, raw: unkn
 }
 
 /** `DELETE /api/finance/documents/[id]`: removes one document, as `delete_document`; undo puts it back. */
-export function removeDocument(user: FinanceUser, documentId: string): Promise<FinanceAnswer> {
+export function removeDocument(user: FinanceUser, documentId: string, acknowledge = false): Promise<FinanceAnswer> {
 	return answering(async () => {
 		const document = await documentRow(user.id, documentId);
 		if (!document) return notFound();
+		const guarded = await receiptsDeleteGuard("finance_charges", [documentId], acknowledge);
+		if (guarded) return guarded;
 		const target = await rowForChange(user, document.subscriptionId);
 		if ("answer" in target) return target.answer;
 		const executed = await executeFinanceAction(user, {

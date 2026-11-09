@@ -190,7 +190,7 @@ export default function MessageDetailPage() {
 	};
 	return (
 		<InlineComposerHost messageId={message.id}>
-			<div className="sticky top-0 z-40 flex min-h-14 items-center gap-1 border-b border-neutral-200 bg-white px-3">
+			<div className="@container sticky top-0 z-40 flex min-h-14 items-center gap-1 border-b border-neutral-200 bg-white px-3">
 				<MessageReadingHeaderButton />
 				<MessageDetailNavigation messageId={message.id} unread={message.direction === "inbound" && !message.read} />
 				{/* On a phone this space goes to the reader toolbar instead (message-actions.tsx is `max-md:flex-1`

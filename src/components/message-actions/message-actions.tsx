@@ -261,7 +261,10 @@ export function MessageActions({
 		"flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm text-neutral-700 hover:bg-neutral-100 pointer-coarse:py-3 disabled:text-neutral-400";
 
 	return (
-		<div className="reader-toolbar relative flex min-w-0 items-center gap-1 text-neutral-600 max-md:flex-1 md:gap-1.5">
+		<div
+			ref={rootRef}
+			className="reader-toolbar relative flex min-w-0 items-center gap-1 text-neutral-600 max-md:flex-1 md:gap-1.5"
+		>
 			{/* One row at every width: the actions that do not fit move into "More actions" (use-reader-toolbar-
 			overflow.ts) instead of wrapping onto a second line, which is what growing the header did when this
 			row's flex-basis let it shrink below its content. No `overflow` here either: that makes this div a

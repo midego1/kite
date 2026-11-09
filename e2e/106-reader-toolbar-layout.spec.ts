@@ -177,13 +177,9 @@ test.describe("desktop", () => {
 async function expectListFits(page: Page, context: string) {
 	const panel = page.locator("#kite-message-list-panel");
 	const container = (await panel.count()) > 0 ? panel : page.getByRole("main");
-	await expect(container.getByRole("button", { name: "Select" })).toBeVisible();
-	await expect(
-		container
-			.getByRole("searchbox")
-			.or(container.locator('input[type="search"], input[placeholder*="Search"]'))
-			.first(),
-	).toBeVisible();
+	await expect(container.getByRole("checkbox", { name: "Select all visible messages" })).toBeVisible();
+	await expect(container.getByRole("link", { name: "List settings" })).toBeVisible();
+	await expect(container.locator('input[placeholder*="Search"]').first()).toBeVisible();
 	const report = await container.evaluate((el) => {
 		const box = el.getBoundingClientRect();
 		const candidates = [

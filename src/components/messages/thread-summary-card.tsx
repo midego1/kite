@@ -29,7 +29,7 @@ export function SummarizeButton({ controller }: { controller: ThreadSummaryContr
 					className="cursor-not-allowed gap-1.5 pointer-coarse:h-11 text-neutral-400 hover:bg-transparent"
 				>
 					<Sparkles aria-hidden className="h-4 w-4" />
-					<span className="hidden sm:inline">{t("Summarize")}</span>
+					<span className="hidden sm:inline @max-[26rem]:hidden">{t("Summarize")}</span>
 				</Button>
 			</Tooltip>
 		);
@@ -62,7 +62,7 @@ function EnabledSummarizeButton({ controller }: { controller: ThreadSummaryContr
 					)}
 				>
 					<Sparkles aria-hidden className="h-4 w-4" />
-					<span className="hidden sm:inline">
+					<span className="hidden sm:inline @max-[26rem]:hidden">
 						{controller.busy === "summarize" ? t("Summarizing…") : t("Summarize")}
 					</span>
 				</Button>

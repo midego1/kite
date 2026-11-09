@@ -22,6 +22,7 @@ import { MessageTranslateItem } from "@/components/messages/message-translate-it
 import { MessageSourceDialog } from "@/components/messages/message-source-dialog";
 import { useMessageListHref } from "@/components/messages/message-detail-navigation";
 import { useRowMessageIds } from "@/components/messages/open-row-context";
+import { useListSelectionCount } from "@/components/messages/list-selection-context";
 import { SnoozeMenuItem } from "@/components/messages/snooze-picker";
 import { printShortcutAction } from "@/components/messages/print/print-actions";
 import { PrintMenuItems } from "@/components/messages/print/print-menu-items";
@@ -29,7 +30,7 @@ import { useMessageMenuSlots } from "./message-menu-slots";
 import { ReportPhishingItem } from "./report-phishing-item";
 import { confirmReportPhishing } from "@/components/messages/phishing-report";
 import { confirmReportSpam } from "@/components/messages/spam-report";
-import { messageShortcuts } from "./message-shortcuts";
+import { messageShortcuts, reachableMessageShortcuts } from "./message-shortcuts";
 import { useMessageReply } from "./use-message-reply";
 import { useReadOnlyMail } from "./use-read-only-mail";
 import { MoveToolbarMenu, SnoozeToolbarButton } from "./message-toolbar-menus";
@@ -198,7 +199,8 @@ export function MessageActions({
 		back: () => router.back(),
 		print: printShortcutAction(print),
 	});
-	useHotkeys(shortcuts, { enabled: shortcutsEnabled });
+	const listSelectionCount = useListSelectionCount();
+	useHotkeys(reachableMessageShortcuts(shortcuts, listSelectionCount), { enabled: shortcutsEnabled });
 
 	async function onBlockContact() {
 		setMoreOpen(false);

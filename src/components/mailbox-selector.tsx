@@ -36,6 +36,7 @@ import type { MailboxAvatarChangedDetail } from "@/lib/mailboxes/avatar-client-t
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip } from "@/components/ui/tooltip";
 import { ReadingLayoutMenu } from "@/components/reading-layout-menu";
+import { MailboxTourMenuAction } from "@/components/mailbox-tour-dialog";
 import type {
 	AccountAvatarProps,
 	MailboxAccountRowProps,
@@ -439,6 +440,7 @@ export function MailboxSelector({ initialUser, placement }: MailboxSelectorProps
 							<Settings size={18} className="text-neutral-600" />
 							{t("Settings")}
 						</Link>
+						<MailboxTourMenuAction onNavigate={() => setOpen(false)} />
 						{otherMailboxes.length > 0 && (
 							<div className="mt-3 border-t border-neutral-100 pt-2">
 								<button

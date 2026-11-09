@@ -30,6 +30,25 @@ function messageRow(page: Page, subject: string) {
 		.last();
 }
 
+/**
+ * Runs a bulk toolbar action by its label, whether the default split-pane list has room to show it inline
+ * or, too narrow for that, it only reaches through "More actions": what fits there is measured against the
+ * panel's actual width, not a fixed set, so any action can fold away depending on what else is competing
+ * for the room.
+ */
+async function clickBulkAction(page: Page, action: string) {
+	await (await bulkActionControl(page, action)).click();
+}
+
+/** The toolbar's own control for `action`, whichever of the inline row or "More actions" menu offers it. */
+async function bulkActionControl(page: Page, action: string) {
+	const toolbar = page.getByTestId("bulk-toolbar");
+	const inline = toolbar.getByRole("button", { name: action, exact: true });
+	if (await inline.isVisible()) return inline;
+	await toolbar.getByRole("button", { name: "More actions" }).click();
+	return page.getByRole("menu").getByRole("menuitem", { name: action, exact: true });
+}
+
 async function bulk(messageIds: string[], action: string) {
 	const response = await api.post("/api/messages/bulk", { data: { messageIds, action } });
 	expect(response.ok(), await response.text()).toBe(true);
@@ -155,8 +174,9 @@ test.describe("conversation unread state and skipped deletes (upstream #135)", (
 			await route.continue();
 		});
 		try {
+			const control = await bulkActionControl(page, "Mark as unread");
 			const request = page.waitForRequest("**/api/messages/bulk");
-			await page.getByRole("button", { name: "Mark as unread", exact: true }).first().click();
+			await control.click();
 			await request;
 			await expect(row.locator(".font-bold")).toHaveCount(0);
 			const response = page.waitForResponse("**/api/messages/bulk");
@@ -207,7 +227,7 @@ test.describe("conversation unread state and skipped deletes (upstream #135)", (
 		await messageRow(page, gone.subject!).getByRole("checkbox").check();
 		await bulk([kept.id], "archive");
 
-		await page.getByRole("button", { name: "Delete forever" }).first().click();
+		await clickBulkAction(page, "Delete forever");
 		await page
 			.getByRole("alertdialog", { name: "Delete forever?" })
 			.getByRole("button", { name: "Delete forever" })

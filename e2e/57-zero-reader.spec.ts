@@ -144,8 +144,7 @@ test("Kite starts dark, with the sidebar's sections and the list's search and ch
 	const main = page.getByRole("main");
 	await expect(main.getByRole("textbox", { name: /Search mail/ })).toBeVisible();
 	await expect(main.getByRole("button", { name: "Primary", exact: true })).toHaveAttribute("aria-pressed", "true");
-	// Checkboxes show once Select is on.
-	await main.getByRole("button", { name: "Select", exact: true }).click();
+	// The select-all checkbox is always in the list header.
 	await expect(main.getByRole("checkbox", { name: "Select all visible messages" })).toBeVisible();
 });
 

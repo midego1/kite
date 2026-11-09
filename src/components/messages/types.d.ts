@@ -43,6 +43,8 @@ export type MessageListRowProps = {
 	canManage?: boolean;
 	/** `extendRange` is set for Shift-click and selects every row since the last one clicked. */
 	onSelectedChange: (messageId: string, selected: boolean, extendRange?: boolean) => void;
+	/** A touch long press: selects the row and turns "Select" on, so every other row's checkbox shows too. */
+	onLongPressSelect?: (messageId: string) => void;
 	/**
 	 * Every primary click on the row; `modifiers` is set for Shift-, Cmd- and Ctrl-click, which select the row
 	 * instead of opening it.
@@ -129,8 +131,24 @@ export type BulkMessageToolbarProps = {
 	hasPendingSendSelection?: boolean;
 };
 
-/** A selected row; `status` lets a member without full access still delete their own drafts. */
-export type SelectedMessage = Pick<Message, "id" | "read"> & { mailboxId?: string | null; status?: string };
+/**
+ * A selected row; `status` lets a member without full access still delete their own drafts.
+ * `threadMessageIds` (conversation view) travels with the row itself, so a selection built from
+ * a page beyond the one loaded in the list, as "Select all in folder" does, can still expand to
+ * every message of its thread. `offPage` is set on every row "Select all" selected, whether or not it
+ * happened to be on the loaded page at the time, since new mail or a move can push it out afterward; a
+ * refresh of that page must never prune it away. `direction`,
+ * `threadUnread` and `threadInboundCount` travel the same way, so marking such a row read or unread
+ * can still work out its effect on the sidebar Inbox count without a row on the loaded page to read it from.
+ */
+export type SelectedMessage = Pick<Message, "id" | "read" | "direction"> & {
+	mailboxId?: string | null;
+	status?: string;
+	threadMessageIds?: string[];
+	threadUnread?: number;
+	threadInboundCount?: number;
+	offPage?: boolean;
+};
 
 export type BulkSelectionAction = (action: BulkMessageAction, folderId?: string) => Promise<void>;
 
@@ -138,24 +156,12 @@ export type MessageSelectionControl = {
 	selectedMessages: SelectedMessage[];
 	setSelectedMessages: Dispatch<SetStateAction<SelectedMessage[]>>;
 	/**
-	 * Filled in by the list with its own bulk action runner, so a selection pane
-	 * elsewhere gets the same thread expansion, confirmation and optimistic updates.
-	 */
-	registerAction?: (run: BulkSelectionAction | null) => void;
-	/**
 	 * Empties the reading pane at once and navigates to the list, so the open message's detail is
 	 * unmounted (no refetch, no 404 once deleted) until the list route has committed.
 	 */
 	leaveOpenMessage?: () => void;
 	/** Filled in by the list with a lookup of the ids each row stands for, which the reader's moves act on. */
 	registerRowLookup?: (lookup: RowMessageIdsLookup | null) => void;
-};
-
-export type BulkMessageSelectionPaneProps = {
-	folder?: MessageFolder;
-	selectedMessages: SelectedMessage[];
-	onAction: BulkSelectionAction;
-	onClearSelection: () => void;
 };
 
 export type PageRange = {

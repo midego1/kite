@@ -6,7 +6,14 @@ import { startFakeModel } from "./support/fake-model";
 import { COMPOSE_SHORTER_BODY, COMPOSE_TRANSLATE_BODY, COMPOSE_WRITE_BODY } from "./support/fake-model-scenarios";
 import type { FakeModel, FakeRecordedRequest } from "./support/fake-model-types";
 import { contrastBetween, luminancesBetween } from "./support/contrast";
-import { apiContext, openMessage, postInbound, uniqueToken, waitForMessage } from "./support/helpers";
+import {
+	apiContext,
+	openMessage,
+	postInbound,
+	suppressMailboxTour,
+	uniqueToken,
+	waitForMessage,
+} from "./support/helpers";
 
 let api: APIRequestContext;
 let fake: FakeModel;
@@ -43,6 +50,7 @@ async function newAccount(prefix: string): Promise<Account> {
 async function signedInPage(browser: Browser, account: Account) {
 	const context = await browser.newContext({ storageState: await account.api.storageState() });
 	const page = await context.newPage();
+	await suppressMailboxTour(page);
 	await selectMailbox(page, account.mailboxId);
 	return { context, page };
 }
@@ -164,6 +172,7 @@ test.describe("Write with Kite", () => {
 					{ style, theme },
 				);
 				const page = await context.newPage();
+				await suppressMailboxTour(page);
 				try {
 					await selectMailbox(page, account.mailboxId);
 					await openComposer(page);

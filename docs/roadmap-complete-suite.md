@@ -374,8 +374,8 @@ Position note: today's first run (`/setup`, then `/onboarding`) gets a domain an
 2. **Explain as you go** (shipped in [#425](https://github.com/midego1/kite/pull/425))
    - Short plain-language explanations on each step: how mail flows (Cloudflare Email Routing or a provider, the queue, spam filtering, the Screener), what each module does and that turning one off deletes nothing, what leaves the install (AI provider, URLhaus and ThreatFox lookups) and what does not. Link to the matching guide in `docs/`.
    - Keys are entered on the page that owns them (Admin → General for abuse.ch, the AI settings for the model provider), stored encrypted, and checked with a test button before they count as done. Never ask for a key in a generic wizard field.
-3. **Mailbox owner onboarding**
-   - For users who are not the owner: a first-login tour of the mailbox layout, Screener (approve or deny new senders), For you suggestions, Not phishing and the trusted senders list, conversation view, shortcuts and appearance (Kite, Classic, dark). Skippable, replayable from Settings, remembered per user.
+3. **Mailbox owner onboarding** (shipped in [#433](https://github.com/midego1/kite/pull/433))
+   - For users who are not the owner: a first-login tour of the mailbox layout, the Screener (approve or deny new senders), For you suggestions, Not phishing and trusted senders, and conversation view. Skippable, replayable from the account menu, remembered per user in the existing layout preferences.
    - Test: e2e for a second user's first login, skip and replay; checked in Kite, Classic and dark mode.
 4. **No dead ends**
    - Every optional feature that is off or unconfigured says so where it would appear and links to the checklist item, instead of failing silently (for example threat lookups without a key, the assistant without a provider, modules turned off).

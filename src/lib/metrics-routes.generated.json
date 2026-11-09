@@ -45,7 +45,6 @@
 	"/api/admin/storage/routes/[class]",
 	"/api/admin/storage/stores/[id]/cors",
 	"/api/admin/storage/stores/[id]/lifecycle",
-	"/api/admin/storage/stores/[id]/orphans",
 	"/api/admin/storage/stores/[id]",
 	"/api/admin/storage/stores/[id]/test",
 	"/api/admin/storage/stores",

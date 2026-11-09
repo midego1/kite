@@ -4,7 +4,7 @@ import { objectLocations, storageColdJobs, storageColdOrphans, storageColdRules 
 import { createAuditLog } from "@/lib/mailboxes/audit";
 import { createLogger } from "@/lib/logger.mjs";
 import { isNoSuchTableError } from "@/lib/modules/state-utils";
-import { countOrphanCandidates, pruneOrphanedColdLocations, purgeOrphanCandidates } from "./cold-orphans";
+import { countOrphanCandidates, pruneOrphanedColdLocations } from "./cold-orphans";
 import {
 	COLD_STORAGE_CLASS,
 	initialColdCursor,
@@ -462,7 +462,7 @@ export async function coldReferenceBlocking(env: ColdEnv, id: string): Promise<s
 			.where(eq(storageColdOrphans.storeId, id))
 			.limit(1);
 		if (orphan)
-			return "A copy a cold storage sweep left behind is still on this store; use Delete leftovers to remove it first";
+			return "A copy a cold storage sweep left behind is still on this store; cleanup for it arrives in a later release";
 		const activeJobs = await getDb(env)
 			.select({ objectClass: storageColdJobs.objectClass, cursor: storageColdJobs.cursor })
 			.from(storageColdJobs)
@@ -484,15 +484,10 @@ export async function coldReferenceBlocking(env: ColdEnv, id: string): Promise<s
 	}
 }
 
-/** How many orphan candidates are currently tracked for `id`, for the "Delete leftovers (N)" button in Admin → Storage. */
+/** How many orphan candidates are currently tracked for `id`, for the read-only leftover count Admin → Storage
+ * shows next to a store: this PR offers no action to delete any of them (round-9 review, `B6`). */
 export async function coldOrphanCount(env: ColdEnv, id: string): Promise<number> {
 	return await countOrphanCandidates(env, id);
-}
-
-/** Runs the manual "Delete leftovers" action for store `id`: the same lease-fenced, grace-period and
- * backup-window checks the automatic sweep used to run on its own, now only ever on demand. */
-export async function purgeColdOrphans(env: ColdEnv, id: string, now = new Date()): Promise<{ pruned: number }> {
-	return await purgeOrphanCandidates(env, id, now);
 }
 
 /**

@@ -106,8 +106,8 @@ export const objectLocations = sqliteTable(
 			.$defaultFn(() => new Date()),
 		/** A fencing token (round-6 review, `B3`): whoever currently holds it is the only one allowed to change
 		 * this key's location or delete a copy of it, checked and cleared in the same statement that commits a
-		 * cold move's new location, so a lease that lapsed mid-move can never let that move and the orphan
-		 * delete pass (`cold-orphans.ts`) both act on stale information. `null` outside an in-flight claim. */
+		 * cold move's new location, so a lease that lapsed mid-move can never let that move and a second
+		 * concurrent mover both act on stale information. `null` outside an in-flight claim. */
 		leaseToken: text("lease_token"),
 		/** When the token above stops protecting anything on its own (a crashed holder's claim is simply
 		 * reclaimed once this passes); renewed by a long-running move between steps, never trusted alone
@@ -125,12 +125,12 @@ export const objectLocations = sqliteTable(
 /**
  * A cold-moved copy nothing in `object_locations` points at any more: the losing side of two deliveries that
  * raced to different targets for the same key (`object-locations.ts`), or a migration's old copy left behind
- * once the object became reachable through the normal chain again (`migration.ts`). Deleted by the orphan sweep
- * (src/lib/storage/cold.ts) only after `orphanedAt` is older than its grace period and no retained backup could
- * still restore a reference to it (`movedAt`, below), re-checking live references at delete time too, so a copy
- * a restore might still need is never removed out from under it. `(storeId, key)` is unique so the same copy is
- * never queued twice; a candidate the delete pass could not resolve (an unreachable store, a backup that might
- * still need it) has `orphanedAt` bumped to the back of the queue instead of blocking the ones behind it.
+ * once the object became reachable through the normal chain again (`migration.ts`). Tracked by the orphan
+ * sweep (`src/lib/storage/cold-orphans.ts`) for visibility only: nothing in this PR deletes one, automatically
+ * or manually (round-9 review, `B6`); cleanup of a tracked candidate is a follow-up for a later release.
+ * `(storeId, key)` is unique so the same copy is never marked twice. `orphanedAt` and `movedAt` are kept (not
+ * read by anything today) so a future cleanup pass has the same grace-period and backup-window data to work
+ * from without a second migration.
  */
 export const storageColdOrphans = sqliteTable(
 	"storage_cold_orphans",

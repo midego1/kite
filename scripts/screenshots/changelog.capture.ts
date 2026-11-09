@@ -530,8 +530,8 @@ const SHOTS: Shot[] = [
 		},
 	},
 	{
-		// Admin → Storage → Stores: the "Delete leftovers" action on a store still holding tracked candidates.
-		name: "2026-11-08-delete-leftovers-light",
+		// Admin → Storage → Stores: the read-only leftover count on a store still holding tracked candidates.
+		name: "2026-11-09-leftover-count-light",
 		theme: "light",
 		viewport: { width: 1100, height: 500 },
 		open: async (page) => {
@@ -579,7 +579,7 @@ const SHOTS: Shot[] = [
 			);
 			await page.goto("/storage");
 			const section = page.locator("section", { has: page.getByRole("heading", { name: "Stores" }) });
-			await expect(section.getByRole("button", { name: "Delete leftovers (37)" })).toBeVisible();
+			await expect(section.getByText("37 leftover copies from cold storage moves")).toBeVisible();
 			await section.scrollIntoViewIfNeeded();
 			return section;
 		},

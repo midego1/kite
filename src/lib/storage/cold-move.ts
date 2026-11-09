@@ -61,9 +61,10 @@ async function markRedundantChainCopy(
  * (`B4`): the refusal means someone else has held the lease since, and on this exact key and target that may
  * already be a second mover's own correctly recorded copy with its source already deleted; deleting it here
  * would leave nothing. Under a fresh claim, mark the target a candidate only while the live location does not
- * actually name it, so the normal grace period, backup window and lease-fenced delete pass settle its fate
- * later instead of this mover destroying the only copy right now. Best effort: if the fresh claim itself loses
- * the race, this mover leaves the target alone and lets whoever does hold it, or a later scan, sort it out.
+ * actually name it, so it is tracked rather than this mover destroying the only copy right now (nothing in
+ * this PR deletes a tracked candidate; see `cold-orphans.ts`, round-9 review). Best effort: if the fresh claim
+ * itself loses the race, this mover leaves the target alone and lets whoever does hold it, or a later scan,
+ * sort it out.
  */
 async function deferUnrecordedCopy(
 	env: LocationEnv,
@@ -98,28 +99,57 @@ export async function moveColdObject(
 	if (!source) throw new Error("Missing from every store in the read chain");
 	if (rule.target === R2_IA_TARGET) {
 		if (!source.store.capabilities.storageClasses.includes(COLD_STORAGE_CLASS)) return 0;
-		if (source.head.storageClass === COLD_STORAGE_CLASS) {
-			await recordObjectLocation(env, {
-				key: item.key,
+		// Fenced too (`m5`, round-9 review): a same-store rewrite still only ever records object_locations, and
+		// an unfenced write here could overwrite a concurrent mover's own fenced record for a retargeted key the
+		// same way the cross-store shortcut could before `m1`.
+		return withLocationLease(
+			env,
+			item.key,
+			{
 				objectClass,
 				storeId: source.store.id,
-				storageClass: COLD_STORAGE_CLASS,
+				storageClass: source.head.storageClass ?? null,
 				size: source.head.size,
-			});
-			return 0;
-		}
-		const copied = await copyObject(source.store, source.head, source.store, item.key, item.key, {
-			storageClass: COLD_STORAGE_CLASS,
-		});
-		if (copied === null) throw new Error("The object disappeared from the store during the rewrite");
-		await recordObjectLocation(env, {
-			key: item.key,
-			objectClass,
-			storeId: source.store.id,
-			storageClass: COLD_STORAGE_CLASS,
-			size: copied,
-		});
-		return copied;
+			},
+			async (lease) => {
+				if (source.head.storageClass === COLD_STORAGE_CLASS) {
+					const recorded = await recordObjectLocation(
+						env,
+						{
+							key: item.key,
+							objectClass,
+							storeId: source.store.id,
+							storageClass: COLD_STORAGE_CLASS,
+							size: source.head.size,
+						},
+						lease,
+					);
+					if (!recorded)
+						throw new Error("Lost the location lease before the record could be attempted; it will be retried");
+					return 0;
+				}
+				const copied = await copyObject(source.store, source.head, source.store, item.key, item.key, {
+					storageClass: COLD_STORAGE_CLASS,
+					onPart: lease
+						? async () => {
+								if (!(await renewLocationLease(env, item.key, lease.token)))
+									throw new Error("Lost the location lease during the rewrite");
+							}
+						: undefined,
+				});
+				if (copied === null) throw new Error("The object disappeared from the store during the rewrite");
+				if (lease && !(await renewLocationLease(env, item.key, lease.token)))
+					throw new Error("Lost the location lease before the record could be attempted; it will be retried");
+				const recorded = await recordObjectLocation(
+					env,
+					{ key: item.key, objectClass, storeId: source.store.id, storageClass: COLD_STORAGE_CLASS, size: copied },
+					lease,
+				);
+				if (!recorded)
+					throw new Error("Lost the location lease before the record could be attempted; it will be retried");
+				return copied;
+			},
+		);
 	}
 	const target = storage.store(rule.target);
 	if (!target) throw new Error("The target store is missing or blocked");
@@ -149,10 +179,10 @@ export async function moveColdObject(
 		);
 	}
 	// The lease (held through the verify, the record and the delete below, renewed as needed for a long copy)
-	// is the one thing stopping the orphan delete pass from removing the only copy of this key while it is
-	// being moved back onto the very store a stale candidate names: the delete pass needs this same lease
-	// before it may delete anything either (`B2`). A lapsed lease aborts instead of silently losing the race
-	// that leaves (`B3`): the record below only lands while it is still held, fenced in the same statement.
+	// fences this against a second concurrent mover of the exact same key (`B2`); nothing in this PR deletes a
+	// tracked candidate (round-9 review), but a reintroduced cleanup pass would need this same lease too. A
+	// lapsed lease aborts instead of silently losing the race that leaves (`B3`): the record below only lands
+	// while it is still held, fenced in the same statement.
 	// `initial` names the source, not the target (`B5`): nothing has been copied yet, so claiming by creating
 	// a row (a never-before-cold key) must describe where the bytes truly are right now, or an aborted first
 	// move leaves `object_locations` naming a store that never actually got anything.
@@ -268,32 +298,55 @@ export async function moveColdDriveObject(
 	}
 	if (rule.target === R2_IA_TARGET) {
 		if (!source.capabilities.storageClasses.includes(COLD_STORAGE_CLASS)) return { bytes: 0, moved: false };
-		if (head.storageClass === COLD_STORAGE_CLASS) {
-			// The rewrite already happened (maybe in an earlier sweep that crashed before this call landed);
-			// repair the row and the location so neither stays stuck reporting the stale, pre-rewrite state.
-			await recordObjectLocation(env, {
-				key: item.key,
-				objectClass: "drive",
-				storeId: source.id,
-				storageClass: COLD_STORAGE_CLASS,
-				size: head.size,
-			});
-			await callStorageHook("drive", "markCold", { ids: [item.id], storageClass: COLD_STORAGE_CLASS });
-			return { bytes: 0, moved: true };
-		}
-		const copied = await copyObject(source, head, source, item.key, item.key, {
-			storageClass: COLD_STORAGE_CLASS,
-		});
-		if (copied === null) throw new Error("The file disappeared from the store during the rewrite");
-		await recordObjectLocation(env, {
-			key: item.key,
-			objectClass: "drive",
-			storeId: source.id,
-			storageClass: COLD_STORAGE_CLASS,
-			size: copied,
-		});
-		await callStorageHook("drive", "markCold", { ids: [item.id], storageClass: COLD_STORAGE_CLASS });
-		return { bytes: copied, moved: true };
+		// Fenced too (`m5`, round-9 review): same reasoning as moveColdObject's own rewrite path.
+		return withLocationLease(
+			env,
+			item.key,
+			{ objectClass: "drive", storeId: source.id, storageClass: head.storageClass ?? null, size: head.size },
+			async (lease) => {
+				if (head.storageClass === COLD_STORAGE_CLASS) {
+					// The rewrite already happened (maybe in an earlier sweep that crashed before this call
+					// landed); repair the row and the location so neither stays stuck reporting the stale,
+					// pre-rewrite state.
+					const recorded = await recordObjectLocation(
+						env,
+						{
+							key: item.key,
+							objectClass: "drive",
+							storeId: source.id,
+							storageClass: COLD_STORAGE_CLASS,
+							size: head.size,
+						},
+						lease,
+					);
+					if (!recorded)
+						throw new Error("Lost the location lease before the record could be attempted; it will be retried");
+					await callStorageHook("drive", "markCold", { ids: [item.id], storageClass: COLD_STORAGE_CLASS });
+					return { bytes: 0, moved: true };
+				}
+				const copied = await copyObject(source, head, source, item.key, item.key, {
+					storageClass: COLD_STORAGE_CLASS,
+					onPart: lease
+						? async () => {
+								if (!(await renewLocationLease(env, item.key, lease.token)))
+									throw new Error("Lost the location lease during the rewrite");
+							}
+						: undefined,
+				});
+				if (copied === null) throw new Error("The file disappeared from the store during the rewrite");
+				if (lease && !(await renewLocationLease(env, item.key, lease.token)))
+					throw new Error("Lost the location lease before the record could be attempted; it will be retried");
+				const recorded = await recordObjectLocation(
+					env,
+					{ key: item.key, objectClass: "drive", storeId: source.id, storageClass: COLD_STORAGE_CLASS, size: copied },
+					lease,
+				);
+				if (!recorded)
+					throw new Error("Lost the location lease before the record could be attempted; it will be retried");
+				await callStorageHook("drive", "markCold", { ids: [item.id], storageClass: COLD_STORAGE_CLASS });
+				return { bytes: copied, moved: true };
+			},
+		);
 	}
 	const target = storage.store(rule.target);
 	if (!target) throw new Error("The target store is missing or blocked");
@@ -317,9 +370,8 @@ export async function moveColdDriveObject(
 		);
 	}
 	// Held through the verify, the record and the delete below, renewed as needed for a long copy, same
-	// reasoning as moveColdObject (`B2`, `B3`): the orphan delete pass needs this same lease before it may
-	// delete any copy of this key either, and a lapsed lease aborts here instead of losing the race that leaves.
-	// `initial` names the source, not the target, same reasoning as moveColdObject (`B5`).
+	// reasoning as moveColdObject (`B2`, `B3`): a lapsed lease aborts here instead of losing the race that
+	// leaves. `initial` names the source, not the target, same reasoning as moveColdObject (`B5`).
 	return withLocationLease(
 		env,
 		item.key,

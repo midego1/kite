@@ -89,10 +89,10 @@ async function tryClaimExistingRow(
  * location (`recordObjectLocation`) rather than a time limit alone, which round 5's design relied on and round
  * 6 found could still let a lease-holder's write land after the lease had already been handed to someone else
  * (`B3`). Returns the claim on success, `"none"` when the key has no row yet (nothing exists for anything else
- * to race over, so there is nothing to protect — the delete pass, the only caller left using this instead of
- * `claimOrCreateLocationLease`, never writes a new location anyway), or `null` when someone else already holds
- * a still-valid claim on an existing row. Before migration 0103 there is no column to claim through; acquiring
- * then answers `"none"` rather than refusing every cleanup run over columns that cannot exist yet.
+ * to race over, so there is nothing to protect — `deferUnrecordedCopy`, the only caller left using this instead
+ * of `claimOrCreateLocationLease`, never writes a new location anyway), or `null` when someone else already
+ * holds a still-valid claim on an existing row. Before migration 0103 there is no column to claim through;
+ * acquiring then answers `"none"` rather than refusing every check over columns that cannot exist yet.
  */
 export async function claimLocationLease(
 	env: LocationEnv,
@@ -200,18 +200,17 @@ export async function releaseLocationLease(env: LocationEnv, key: string, token:
 	}
 }
 
-/** Thrown by `withLocationLease` when another cold move or the delete pass already holds `key`'s claim; caught
- * the same way any other per-item failure is, so the item is simply retried on a later batch or sweep. */
+/** Thrown by `withLocationLease` when another cold move already holds `key`'s claim; caught the same way any
+ * other per-item failure is, so the item is simply retried on a later batch or sweep. */
 class LocationLeaseError extends Error {}
 
 /**
  * Runs `fn` only while holding the claim on `key`, creating its `object_locations` row under that claim when
  * it does not exist yet (`claimOrCreateLocationLease`; round-7 review), or while there is nothing to claim
  * through at all before migration 0103 (`"none"`), releasing however `fn` ends. A cold move wraps its own
- * verify-copy-record-delete sequence in this (`B2`, `B3`), so the delete pass can never remove the only copy
- * while a move is putting the key back onto that very store, and vice versa, for as long as the move keeps its
- * claim renewed; `initial` is the row the move is working towards, passed straight to
- * `claimOrCreateLocationLease`.
+ * verify-copy-record-delete sequence in this (`B2`, `B3`), fencing it against a second concurrent mover of the
+ * exact same key for as long as it keeps its claim renewed; `initial` is the row the move is working towards,
+ * passed straight to `claimOrCreateLocationLease`.
  */
 export async function withLocationLease<T>(
 	env: LocationEnv,

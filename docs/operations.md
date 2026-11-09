@@ -429,28 +429,34 @@ as a permanent record, so a store a rule simply stopped targeting is never kept 
 never actually left over.
 
 Every copy a move could not clean up itself is recorded in `storage_cold_jobs`'s sibling table
-`storage_cold_orphans` as a candidate rather than deleted on the spot, and a candidate is only actually deleted
-once `orphanedAt` is at least `ORPHAN_GRACE_PERIOD_MS` old (seven days), no `completed` backup finished in
-`[movedAt, firstOrphanedAt)` (restoring one merges `object_locations` rather than replacing it, so a backup
-retained from that exact window can still expect these bytes to be there; `firstOrphanedAt`, unlike `orphanedAt`,
-is never bumped by a deferral, so it stays the fixed moment this copy was actually superseded — a backup
-completed after that has the newer location instead, and once every backup in the window is itself pruned by
-retention the candidate stops being held back by backups at all, round-5 review's `B1`; this is still
-deliberately conservative within the window: never narrowed further to backups that provably still name this
-exact key, since reading each one's export to check would cost far more than the sweep saves), and, for a
-candidate that is not `object_locations`'s current row for its key, another copy of the key answers a HEAD at
-that current location first. A move that records a key onto a store that still carries a stale candidate for
-it clears that candidate in the same statement (round-6 review, `M1`): a copy that is the recorded location is
-by definition not a leftover, so a later reference loss is judged fresh instead of against that stale row's own
-old window and old grace clock.
+`storage_cold_orphans` as a candidate, for visibility only: **this PR deletes no orphan candidate's copy at
+all, automatically or manually** (round-9 review, foreman decision). An earlier round added a manual, per-store
+"Delete leftovers" admin action running the same grace-period, backup-window and lease-fenced deletion the
+automatic cron once ran on its own, but the round-9 review found it unfenced for a key with no
+`object_locations` row yet and reproduced the loss of every copy of a live message through it (`B6`): a store
+migration's own cleanup routinely drops a row and marks the old store's copy a candidate with none (`migration.ts`
+below), which is exactly the state a nightly sweep re-populates for the same key moments later, and the manual
+action's claim then proceeded with no fence and no check for another readable copy. Rather than extend the
+fencing further, the whole deletion path — the action, its route and its admin button — was removed. A move
+that records a key onto a store that still carries a stale candidate for it clears that candidate in the same
+statement regardless (round-6 review, `M1`): a copy that is the recorded location is by definition not a
+leftover. Cleanup of a tracked candidate is a follow-up for a later release, alongside reintroducing the
+automatic deleter the foreman's round-8 decision split out in the first place; both need the fencing this round
+found missing before either can act on a key with no row.
 
-That HEAD check alone does not close the window against a concurrent move: a cold move and this delete pass
-both need the fencing token on the key's own `object_locations` row (`leaseToken`/`claimedUntil`) before either
-may change where the key points or delete a copy of it; a key with no row yet (a store migration can leave
-exactly that, having just dropped one) is claimed by creating one under the claim rather than going unprotected
+Admin → Storage → Stores shows a store's tracked candidate count next to it, read-only, with a line explaining
+that cleanup arrives in a later release (`coldOrphanCount`/`countOrphanCandidates`); it carries no action.
+`deleteStore` is refused while a store a rule still targets, that `object_locations` still names, or that still
+has any tracked orphan candidate (`coldReferenceBlocking`), with a message naming which; a candidate's store
+stays undeletable until a later release can resolve it.
+
+The fencing token on the key's own `object_locations` row (`leaseToken`/`claimedUntil`) still matters: it is
+what stops two cold moves of the exact same key from racing each other, whichever direction either is headed
+(round-6/7 review, `B2`–`B4`). A key with no row yet (a store migration can leave exactly that, having just
+dropped one) is claimed by creating one under the claim rather than going unprotected
 (`claimOrCreateLocationLease`, round-7 review). A plain time-boxed lease (round 5's first attempt, with its own
-`storage_key_leases` table) is not enough by itself, because nothing re-checked it once handed out: a move that
-ran long enough for it to expire could still land its delete after the sweep had already taken over the key
+`storage_key_leases` table) was not enough by itself, because nothing re-checked it once handed out: a move that
+ran long enough for it to expire could still land its write after a second mover had already taken over the key
 (round-6 review, `B3`). The token closes that instead of the timer: `recordObjectLocation` only commits while
 the exact token it was given is still the one on the row and `claimedUntil` has not passed, checked and cleared
 in the same statement, the same way `import_jobs.lease_until` fences a sync run's writes (above). A move renews
@@ -461,39 +467,27 @@ anyway has its commit refused rather than trusted, and on a refused commit it de
 already be a second mover (a resent batch, a redelivered queue message) that has already recorded the target
 and deleted the source itself, so the target copy a refused move finds there can be the only copy left. It only
 marks the target a fresh orphan candidate, under one more claim and only while the live location does not
-already name it, so the normal grace period, backup window and lease-fenced delete pass settle its fate safely
-later. The delete pass renews under its own token once more immediately before its own destructive delete, for
-the same reason, though that renew-then-delete is not itself atomic: a stall of more than five minutes between
-the two, with a move taking the key back onto that exact store in between, could in theory still lose it. A
-store an unresolved candidate still names cannot be deleted either.
+already name it, leaving its fate to a later release's cleanup rather than deciding it here. The same-store
+rewrite to R2 Infrequent Access, and its "already at target" shortcut counterpart on a cross-store rule, record
+under this same fenced claim too (round-8/9 review, `m1`/`m5`): an unfenced write there could otherwise overwrite
+a concurrent mover's own fenced record for a retargeted key.
 
-The five-minute maintenance runs only the marking half, `scanForOrphanCandidates`, in a batch of up to 200 rows:
-it keyset-paginates through `object_locations` from a cursor saved in `storage_state` (round-robin, so a
-backlog larger than one batch is still fully covered over many runs instead of the same oldest rows absorbing
-every run forever) and marks what looks unreferenced as a candidate, never deleting anything itself. Actually
-deleting a candidate once its grace period passes (`deleteGracePeriodOrphans`, the checks above) is never
-automatic (round-8 review: the reviewer's foreman decision split it out of the cron entirely, so nothing ever
-deletes a copy nobody asked for in that moment): it only runs from the **Delete leftovers** button next to a
-store in **Admin → Storage → Stores**, shown once that store has any tracked candidates (`leftoverCount`, the
-count the button's label carries), through `DELETE /api/admin/storage/stores/[id]/orphans`
-(`purgeStoreOrphans`/`purgeOrphanCandidates`, primary admin, origin-checked). It narrows the same batch to that
-one store and runs it repeatedly until the store's backlog is drained or 25 batches have run, whichever comes
-first, pushing an unresolved candidate (an unreachable store, a retained backup, the HEAD check above, the
-token already held by a move in progress) to the back of its own queue exactly as the old automatic pass did,
-and writes a `storage.orphans_purged` audit row with the number actually deleted. Reintroducing an automatic
-deleter, scoped and paced more conservatively than the original, is tracked as a follow-up. Both the marking
-pass and the manual delete skip entirely while a restore is active, needs recovery (an abandoned restore, or
-one whose own rollback failed, both left for the admin to resolve from the safety backup; the database is
-known to still be partially restored until that runs), or finished less than an hour ago: a restore's "deletes"
-segment empties `messages`, `message_attachments`, `drive_items` and `backups` before writing them back,
-possibly over several queue invocations (the rollback path does the same), and since `object_locations`
-survives a restore as a merge table, a sweep mid-restore would otherwise see every cold key as briefly
-unreferenced. A `backups` rule only sweeps the database export document each backup makes (`backups.r2_key`),
-not the mail file copies a [full backup](#full-backups) writes alongside it, which stay on their current
-store. **Run now** (`POST /api/admin/storage/cold/[class]`) starts a sweep immediately; saving a rule or
-running it now answers 409 `MIGRATION_PENDING` before migration `0097` is applied, even once `0065` has been
-(`coldStorageTablesReady`). `GET /api/admin/storage/cold` reports each class's rule and its latest sweep.
-Logs: `storage.cold_errors`, `storage.cold_batch_failed`, `storage.cold_orphans_pruned`. Backups:
+The five-minute maintenance runs `scanForOrphanCandidates` in a batch of up to 200 rows: it keyset-paginates
+through `object_locations` from a cursor saved in `storage_state` (round-robin, so a backlog larger than one
+batch is still fully covered over many runs instead of the same oldest rows absorbing every run forever) and
+marks what looks unreferenced as a candidate. It never deletes anything, and nothing else in this PR does
+either. It skips entirely while a restore is active, needs recovery (an abandoned restore, or one whose own
+rollback failed, both left for the admin to resolve from the safety backup; the database is known to still be
+partially restored until that runs), or finished less than an hour ago: a restore's "deletes" segment empties
+`messages`, `message_attachments`, `drive_items` and `backups` before writing them back, possibly over several
+queue invocations (the rollback path does the same), and since `object_locations` survives a restore as a merge
+table, a sweep mid-restore would otherwise see every cold key as briefly unreferenced. A `backups` rule only
+sweeps the database export document each backup makes (`backups.r2_key`), not the mail file copies a
+[full backup](#full-backups) writes alongside it, which stay on their current store. **Run now**
+(`POST /api/admin/storage/cold/[class]`) starts a sweep immediately; saving a rule or running it now answers 409
+`MIGRATION_PENDING` before migration `0097` is applied, even once `0065` has been (`coldStorageTablesReady`).
+`GET /api/admin/storage/cold` reports each class's rule and its latest sweep.
+Logs: `storage.cold_errors`, `storage.cold_batch_failed`. Backups:
 `storage_cold_rules` and `object_locations` are in the `system` group; unlike `storage_stores` and
 `storage_routes`, a restore merges their rows into the target's current ones (`INSERT OR IGNORE`: a live row
 wins, and a row only the backup has is added back) rather than keeping or replacing them wholesale, since they
@@ -504,10 +498,10 @@ an expired one always is). `storage_cold_jobs` and `storage_cold_orphans` are in
 progress nor a pending candidate is itself restored; a restored `object_locations` row is simply re-evaluated by
 the next scan.
 
-A cold copy can still be lost if an admin disables scheduled backups (or their retention) entirely and then
-restores, or undoes a restore, more than seven days after a copy became unreferenced with no completed backup
-covering that whole window: keep at least one scheduled backup retained longer than seven days if cold storage
-and restoring older data are both in use.
+Since nothing in this PR deletes a cold copy, a tracked orphan candidate cannot currently be lost to a restore
+or a disabled backup schedule either. That changes with whichever follow-up reintroduces cleanup: it will need
+its own grace period measured against backup retention, the same way the removed manual action's did, so a
+scheduled backup retained for at least that long stays part of the guidance once cleanup exists again.
 
 ### Attachment storage
 

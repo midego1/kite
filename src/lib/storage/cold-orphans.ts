@@ -1,4 +1,4 @@
-import { and, eq, gt, lte, or, sql } from "drizzle-orm";
+import { and, eq, gt, or, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { objectLocations, storageColdOrphans, storageState } from "@/db/schema/storage";
 import { ATTACHMENT_OBJECT_ROWS_SQL } from "@/lib/email/attachment-storage-utils";
@@ -6,23 +6,14 @@ import { messageIdFromHtmlBodyObjectKey } from "@/lib/email/bodies-utils";
 import { backupIdFromR2Key } from "@/lib/backups/utils";
 import { readRestoreJob } from "@/lib/backups/restore-job-store";
 import { isActiveRestore } from "@/lib/backups/restore-job-utils";
-import { createLogger } from "@/lib/logger.mjs";
 import { missingColumnFromError } from "@/lib/auth/user-lookup-utils";
 import { isNoSuchTableError } from "@/lib/modules/state-utils";
 import { beforeBodyColumn } from "./migration";
 import { isRoutableClass } from "./config-utils";
-import { getStorage, type StoragePlatformEnv } from "./index";
-import {
-	claimLocationLease,
-	lookupObjectLocation,
-	markOrphanCandidate,
-	releaseLocationLease,
-	renewLocationLease,
-} from "./object-locations";
+import type { StoragePlatformEnv } from "./index";
+import { markOrphanCandidate } from "./object-locations";
 import { driveItemIdFromObjectKey } from "./object-classes-utils";
-import type { RoutableClass, Storage } from "./types";
-
-const log = createLogger("storage");
+import type { RoutableClass } from "./types";
 
 type ColdEnv = StoragePlatformEnv & Pick<CloudflareEnv, "OUTBOUND_QUEUE">;
 
@@ -77,15 +68,10 @@ async function stillReferenced(env: ColdEnv, objectClass: RoutableClass, key: st
 }
 
 const PRUNE_BATCH = 200;
-/** A candidate waits this long as a recorded orphan before it is actually deleted, re-checking its reference
- * at that point: long enough that a backup restore in progress always finishes well within it. A restore's
+/** How long after a restore finishes (or while one is active) the sweep skips a run entirely: a restore's
  * "deletes" segment empties `messages`, `message_attachments`, `drive_items` and `backups` before writing them
  * back, possibly over several queue invocations, and the rollback path does the same; `object_locations` is a
- * merge table, so a sweep mid-restore would otherwise see every cold key as unreferenced. */
-const ORPHAN_GRACE_PERIOD_MS = 7 * 24 * 60 * 60 * 1000;
-/** How long after a restore finishes (or while one is active) the sweep skips a run entirely, on top of the
- * grace period above: belt and suspenders, so a run landing in the middle of that window records no new
- * candidates from state the restore has not finished settling. */
+ * merge table, so a sweep mid-restore would otherwise see every cold key as briefly unreferenced. */
 const RESTORE_COOLDOWN_MS = 60 * 60 * 1000;
 
 /**
@@ -154,7 +140,7 @@ async function writeScanCursor(env: ColdEnv, cursor: ScanCursor | null): Promise
  * rather than always rechecking the same oldest rows: a backlog larger than one batch is still fully covered,
  * a batch at a time, over many five-minute runs, instead of the same `PRUNE_BATCH` rows absorbing every run
  * forever while anything behind them in the order is never reached (`N3`). A row found unreferenced becomes a
- * candidate (`markOrphanCandidate`) rather than being deleted here; actually deleting it is `deleteGracePeriodOrphans`.
+ * candidate (`markOrphanCandidate`) rather than being deleted here, or anywhere in this PR (round-9 review, `B6`).
  */
 async function scanForOrphanCandidates(env: ColdEnv, now: Date): Promise<{ checked: number }> {
 	const cursor = await readScanCursor(env);
@@ -203,220 +189,25 @@ async function scanForOrphanCandidates(env: ColdEnv, now: Date): Promise<{ check
 }
 
 /**
- * Whether a retained backup could still bring back a reference to this exact copy: a restore merges
- * `object_locations` rather than replacing it, so a `completed` backup finished while this copy was still the
- * recorded location may hold that exact row and expect the bytes still to be there (`N2`). Narrowed to backups
- * completed in `[movedAt, firstOrphanedAt)` (`B1`): once this copy was superseded, a later backup has the newer
- * location instead, so it can never be a reason to keep this one. Once every backup in that window is pruned by
- * retention, this stops finding one and the candidate becomes deletable, instead of every future nightly backup
- * (`completed_at` only ever grows) pinning it forever. Deliberately not narrowed further to backups that still
- * have this specific key (reading each one's export would cost far more than the sweep is worth); keeping a
- * candidate a little longer than strictly necessary is cheap, losing it permanently is not.
- */
-async function retainedBackupMightNeedIt(env: ColdEnv, movedAt: Date, firstOrphanedAt: Date): Promise<boolean> {
-	const row = await env.DB.prepare(
-		"SELECT 1 AS found FROM backups WHERE status = 'completed' AND completed_at >= ? AND completed_at < ?",
-	)
-		.bind(Math.floor(movedAt.getTime() / 1000), Math.floor(firstOrphanedAt.getTime() / 1000))
-		.first<{ found: number }>();
-	return !!row;
-}
-
-/** Pushes a candidate this run could not resolve to the back of the delete queue (a fresh `orphanedAt`), so it
- * stops absorbing every run ahead of candidates that might actually be deletable (`L3`): an unreachable store,
- * a retained backup that might still need it, or another caller holding the key's lease right now, is not
- * reason enough to hold up anything else. */
-async function deferOrphanCandidate(env: ColdEnv, id: string, now: number): Promise<void> {
-	await getDb(env)
-		.update(storageColdOrphans)
-		.set({ orphanedAt: new Date(now) })
-		.where(eq(storageColdOrphans.id, id));
-}
-
-type OrphanCandidate = { id: string; key: string; objectClass: RoutableClass; storeId: string };
-
-/**
- * Decides and, if safe, carries out the actual delete of one candidate's copy, holding the key's lease for the
- * whole decision: nothing else that deletes a copy of this key (a cold move putting it back onto this very
- * store) can run while this is held, which is what makes the re-read below authoritative instead of a snapshot
- * a concurrent mover can invalidate a moment later (`B2`). Deferred when the lease is already held, an
- * unreachable store answers, or the only other claimed copy does not actually exist yet (or any more). Right
- * before the destructive delete, the lease is renewed under its own token one more time (`B3`): if that fails,
- * someone else (most likely a cold move putting the key back onto this very store) has taken it since the
- * checks above ran, and the delete must not happen after all.
- */
-async function finalizeOrphanCandidate(
-	env: ColdEnv,
-	storage: Storage,
-	candidate: OrphanCandidate,
-): Promise<"deleted" | "kept" | "deferred"> {
-	const claimed = await claimLocationLease(env, candidate.key);
-	if (claimed === null) return "deferred";
-	const token = claimed === "none" ? null : claimed.token;
-	try {
-		// A key names the same bytes on whichever store holds it, so a live row's reference to the key cannot
-		// by itself tell this candidate's copy apart from the one `object_locations` currently points at for
-		// the same key (a losing mover's or a migration's leftover copy is exactly a second copy of a key
-		// something else still needs). Only a candidate that is still the recorded location is kept on that
-		// question; any other candidate's copy is never the one anything reads through the normal chain,
-		// whatever the key's liveness says, so it is always safe to delete (subject to the checks below).
-		const current = await lookupObjectLocation(env, candidate.key);
-		const isCurrent = !!current && current.storeId === candidate.storeId;
-		const referenced = isCurrent && (await stillReferenced(env, candidate.objectClass, candidate.key));
-		if (referenced) return "kept"; // the lease's fresh read found this copy is the live one again
-		if (!isCurrent && current && (await stillReferenced(env, candidate.objectClass, candidate.key))) {
-			// A new mover already confirmed this exact key belongs on `current`'s store, between its own HEAD
-			// and its `recordObjectLocation`, before this call ever took the lease it would also need to do
-			// that. Confirm that other store actually still has a readable copy before deleting this one; if
-			// it does not (yet, or any more), this may be the only copy left and the delete waits instead.
-			const other = storage.store(current.storeId);
-			const readable = other && (await other.bucket.head(candidate.key).catch(() => null));
-			if (!readable) return "deferred";
-		}
-		const store = storage.store(candidate.storeId);
-		if (!store) return "deferred"; // blocked or missing right now (a bad endpoint, a revoked credential)
-		if (token && !(await renewLocationLease(env, candidate.key, token))) return "deferred";
-		try {
-			await store.bucket.delete(candidate.key);
-		} catch {
-			return "deferred"; // unreachable right now rather than durably missing
-		}
-		return "deleted";
-	} finally {
-		if (token) await releaseLocationLease(env, candidate.key, token);
-	}
-}
-
-/**
- * Deletes recorded orphan candidates whose grace period has passed, from the store that holds each, re-checking
- * its reference first: a restore that lands during the grace period and brings a key's row back (or a message,
- * Drive or backup row that references it again) takes it off the list instead of the delete happening anyway.
- * Nothing is ever deleted here that was not already a recorded candidate. Narrowed to `storeId` (round-8 review):
- * this is now only ever run by the manual "Delete leftovers" admin action for one store, never the automatic
- * cron, so a candidate on a different store must never be touched by a run meant for this one.
- */
-async function deleteGracePeriodOrphans(
-	env: ColdEnv,
-	now: number,
-	storeId: string,
-): Promise<{ pruned: number; checked: number }> {
-	let candidates: {
-		id: string;
-		key: string;
-		objectClass: string;
-		storeId: string;
-		movedAt: Date;
-		firstOrphanedAt: Date;
-	}[];
-	try {
-		candidates = await getDb(env)
-			.select({
-				id: storageColdOrphans.id,
-				key: storageColdOrphans.key,
-				objectClass: storageColdOrphans.objectClass,
-				storeId: storageColdOrphans.storeId,
-				movedAt: storageColdOrphans.movedAt,
-				firstOrphanedAt: storageColdOrphans.firstOrphanedAt,
-			})
-			.from(storageColdOrphans)
-			.where(
-				and(
-					eq(storageColdOrphans.storeId, storeId),
-					lte(storageColdOrphans.orphanedAt, new Date(now - ORPHAN_GRACE_PERIOD_MS)),
-				),
-			)
-			.orderBy(storageColdOrphans.orphanedAt)
-			.limit(PRUNE_BATCH);
-	} catch (error) {
-		if (isNoSuchTableError(error)) return { pruned: 0, checked: 0 };
-		throw error;
-	}
-	if (!candidates.length) return { pruned: 0, checked: 0 };
-	const storage = await getStorage(env);
-	let pruned = 0;
-	for (const candidate of candidates) {
-		if (!isRoutableClass(candidate.objectClass)) continue;
-		try {
-			// Cheap pre-filters that need no lease, since neither can ever cause an incorrect delete: at worst
-			// they defer a candidate that was actually fine, never the other way around.
-			const current = await lookupObjectLocation(env, candidate.key);
-			const isCurrent = !!current && current.storeId === candidate.storeId;
-			if (isCurrent && (await stillReferenced(env, candidate.objectClass, candidate.key))) {
-				await getDb(env).delete(storageColdOrphans).where(eq(storageColdOrphans.id, candidate.id));
-				continue;
-			}
-			if (await retainedBackupMightNeedIt(env, candidate.movedAt, candidate.firstOrphanedAt)) {
-				await deferOrphanCandidate(env, candidate.id, now);
-				continue;
-			}
-			const result = await finalizeOrphanCandidate(env, storage, {
-				id: candidate.id,
-				key: candidate.key,
-				objectClass: candidate.objectClass,
-				storeId: candidate.storeId,
-			});
-			if (result === "deferred") {
-				await deferOrphanCandidate(env, candidate.id, now);
-				continue;
-			}
-			await getDb(env).delete(storageColdOrphans).where(eq(storageColdOrphans.id, candidate.id));
-			if (result === "kept") continue; // the live location again; only the stale tracking row needed to go
-			// Only this exact copy's own row, never a different store's current one sharing the same key.
-			await getDb(env)
-				.delete(objectLocations)
-				.where(and(eq(objectLocations.key, candidate.key), eq(objectLocations.storeId, candidate.storeId)));
-			pruned += 1;
-		} catch {
-			continue;
-		}
-	}
-	if (pruned) log.warn("storage.cold_orphans_pruned", { checked: candidates.length, pruned });
-	return { pruned, checked: candidates.length };
-}
-
-/**
  * Marks cold-moved copies nothing live references any more as orphan candidates (`N1`: never deletes anything
  * on first sighting). Skips the run entirely around a restore, active or recently finished, which could
  * otherwise make every cold key look briefly unreferenced. Called from the five-minute cron.
  *
- * Deleting a candidate once its grace period passes used to happen automatically from here too; the reviewer's
- * round-8 decision (foreman: split automatic orphan deletion out of this PR) replaced that with the manual,
- * per-store `purgeOrphanCandidates` below, triggered from Admin → Storage, so nothing ever deletes a copy nobody
- * asked for in the moment. See the PR body for the deferred automatic-deletion follow-up.
+ * This PR deletes no leftover copy at all, automatically or manually (round-9 review, foreman decision): an
+ * earlier round added a manual, per-store "Delete leftovers" admin action running the grace-period, backup-
+ * window and lease-fenced deletion the automatic cron used to run on its own, but the round-9 review found it
+ * unfenced for a key with no `object_locations` row yet and reproduced the loss of every copy of a live
+ * message through it (`B6`). Rather than extend the fencing further, that whole deletion path — the action,
+ * its route and its button — was removed; only marking remains, and `countOrphanCandidates` below is read-only.
+ * Cleanup of a tracked candidate is a follow-up for a later release. See the PR body.
  */
 export async function pruneOrphanedColdLocations(env: ColdEnv, now = new Date()): Promise<{ checked: number }> {
 	if (await restoreRanRecently(env, now.getTime())) return { checked: 0 };
 	return await scanForOrphanCandidates(env, now);
 }
 
-/** Caps how many grace-period batches one manual "Delete leftovers" call works through, so a very large
- * backlog is handled over a few clicks instead of one request running indefinitely. */
-const PURGE_MAX_BATCHES = 25;
-
-/**
- * The manual, lease-checked "Delete leftovers" admin action (round-8 review: split out of the automatic cron):
- * runs the exact same grace-period, backup-window and lease-fenced deletion as the old automatic pass, narrowed
- * to one store, for as many batches as it takes to drain that store's backlog (or `PURGE_MAX_BATCHES`, whichever
- * comes first). Skips entirely around a restore, same as the automatic marking pass.
- */
-export async function purgeOrphanCandidates(
-	env: ColdEnv,
-	storeId: string,
-	now = new Date(),
-): Promise<{ pruned: number }> {
-	if (await restoreRanRecently(env, now.getTime())) return { pruned: 0 };
-	let pruned = 0;
-	for (let batch = 0; batch < PURGE_MAX_BATCHES; batch++) {
-		const result = await deleteGracePeriodOrphans(env, now.getTime(), storeId);
-		pruned += result.pruned;
-		if (result.checked < PRUNE_BATCH) break;
-	}
-	return { pruned };
-}
-
-/** The count the "Delete leftovers" button shows: every orphan candidate currently tracked for one store,
- * whether or not its grace period has passed yet, so the admin sees the backlog building even before any of it
- * is actually eligible to delete. */
+/** The read-only leftover count Admin → Storage shows next to a store: every orphan candidate currently
+ * tracked for it, so an admin can see the backlog without anything in this PR offering to delete it. */
 export async function countOrphanCandidates(env: ColdEnv, storeId: string): Promise<number> {
 	try {
 		const [row] = await getDb(env)

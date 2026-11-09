@@ -200,7 +200,7 @@ export async function storageOverview(env: StoresEnv) {
 	};
 }
 
-export async function loadStore(env: StoresEnv, id: string) {
+async function loadStore(env: StoresEnv, id: string) {
 	const config = await readStorageConfig(env);
 	return { config, store: config.stores.get(id) ?? null };
 }

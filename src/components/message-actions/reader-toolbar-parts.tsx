@@ -83,7 +83,12 @@ export function ReaderMoreLeadItems(props: LeadItemsProps) {
 				</button>
 			)}
 			{showReplyAll && (
-				<button type="button" className={MORE_ITEM_CLASS} onClick={() => props.onReply("replyAll")}>
+				<button
+					type="button"
+					className={MORE_ITEM_CLASS}
+					disabled={props.disabled}
+					onClick={() => props.onReply("replyAll")}
+				>
 					<ReplyAll className="h-4 w-4 rtl:-scale-x-100" />
 					{t("Reply all")}
 				</button>
@@ -95,7 +100,12 @@ export function ReaderMoreLeadItems(props: LeadItemsProps) {
 				</button>
 			)}
 			{showMark && (
-				<button type="button" className={MORE_ITEM_CLASS} onClick={() => props.onAction(read ? "unread" : "read")}>
+				<button
+					type="button"
+					className={MORE_ITEM_CLASS}
+					disabled={props.disabled}
+					onClick={() => props.onAction(read ? "unread" : "read")}
+				>
 					{read ? <Mail className="h-4 w-4" /> : <MailOpen className="h-4 w-4" />}
 					{read ? t("Mark as unread") : t("Mark as read")}
 				</button>

@@ -263,7 +263,7 @@ export function MessageActions({
 					role="alert"
 					data-overflow-lead
 					title={shownError}
-					className="max-w-40 shrink-0 truncate text-xs text-red-600"
+					className="min-w-0 max-w-40 truncate text-xs text-red-600"
 				>
 					{shownError}
 				</span>
@@ -502,6 +502,7 @@ export function MessageActions({
 						))}
 						{overflowed("move") && (
 							<ToolbarFolderButtons
+								disabled={manageDisabled}
 								mailboxId={mailboxId}
 								onMove={(folderId) => void runAction("folder", folderId)}
 								className={MORE_ITEM_CLASS}

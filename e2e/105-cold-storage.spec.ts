@@ -115,7 +115,13 @@ test("a mail cold storage rule moves an old message to a second store, and it st
 		// to what this spec itself touched (the mail rule, the mail job, and only the message this spec
 		// delivered), so a slice's shared database keeps any other spec's cold storage state intact.
 		sql("UPDATE storage_cold_rules SET enabled = 0, target = 'r2-ia' WHERE object_class = 'mail'");
-		if (oldId) sql(`DELETE FROM object_locations WHERE key = (SELECT raw_r2_key FROM messages WHERE id = '${oldId}')`);
+		// Every location naming this spec's own store (the raw message and its attachment both moved), or the
+		// store delete below is refused and a later spec in the slice meets a store whose fake is gone. The
+		// moved message goes too: its bytes only ever lived on that fake, so a later spec reading every stored
+		// message (a migration, materializing attachments) would otherwise find them missing.
+		if (storeId) sql(`DELETE FROM object_locations WHERE store_id = '${storeId}'`);
+		if (oldId)
+			sql(`DELETE FROM message_attachments WHERE message_id = '${oldId}'; DELETE FROM messages WHERE id = '${oldId}';`);
 		sql("DELETE FROM storage_cold_jobs WHERE object_class = 'mail'");
 		if (storeId) await admin.delete(`/api/admin/storage/stores/${storeId}`).catch(() => undefined);
 		await admin.dispose();

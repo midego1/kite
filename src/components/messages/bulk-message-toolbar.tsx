@@ -30,6 +30,7 @@ import { supportsPermanentDelete } from "@/lib/messages/permanent-delete-utils";
 import type { BulkMessageAction } from "@/app/api/messages/bulk/types";
 import type { BulkMessageToolbarProps } from "./types";
 import { useT } from "@/lib/i18n/use-t";
+import { COUNT_MARKER, splitCountMessage } from "./count-label-utils";
 
 const menuItemClass =
 	"flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm text-neutral-700 outline-none data-[disabled]:opacity-50 data-[highlighted]:bg-neutral-100 pointer-coarse:py-3";
@@ -39,6 +40,27 @@ const menuContentClass =
 
 /** An action button of the toolbar: icon and label together, since whether it is shown inline at all (rather
  * than folded into "More actions") already accounts for the room its label needs. */
+/**
+ * "N selected" for the narrow toolbar head. Only the words truncate, never the number: "975 selected" at the
+ * narrowest widths reads "975 sel…", not "97…", next to a destructive action. The message is split around its
+ * number (which comes first in English and Dutch, last in Arabic) so the word order stays the catalog's.
+ */
+function SelectedCount({ count }: { count: number }) {
+	const t = useT();
+	const full = t("{count} selected", { count });
+	const { before, number, after } = splitCountMessage(full, t("{count} selected", { count: COUNT_MARKER }));
+	const wordsClass = "min-w-0 overflow-hidden text-ellipsis whitespace-pre";
+	return (
+		<span title={full} className="me-2 flex min-w-0 items-baseline text-sm font-medium text-neutral-800">
+			{before && <span className={wordsClass}>{before}</span>}
+			<span className="shrink-0" data-selected-count-number>
+				{number}
+			</span>
+			{after && <span className={wordsClass}>{after}</span>}
+		</span>
+	);
+}
+
 function ToolbarButton({
 	label,
 	icon: Icon,
@@ -331,14 +353,7 @@ function MailSelectionToolbar({
 			{/* The one part of the row that may shrink: at the narrowest list widths the count truncates so that
 			    Clear selection and More actions always stay inside the toolbar's own overflow-hidden box. */}
 			<div ref={headRef} className="flex max-w-36 min-w-0 shrink items-center">
-				{!hideSelectedCount && (
-					<span
-						title={t("{count} selected", { count: selectedCount })}
-						className="me-2 min-w-0 truncate text-sm font-medium text-neutral-800"
-					>
-						{t("{count} selected", { count: selectedCount })}
-					</span>
-				)}
+				{!hideSelectedCount && <SelectedCount count={selectedCount} />}
 			</div>
 			{items
 				.filter((item) => visibleIds.has(item.id))

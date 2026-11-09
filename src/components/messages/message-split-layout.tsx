@@ -84,6 +84,7 @@ export function MessageSplitLayout({ children, config }: MessageSplitLayoutProps
 	const t = useT();
 	const pathname = usePathname();
 	const [selectedMessages, setSelectedMessages] = useState<SelectedMessage[]>([]);
+	const selectionListIdentity = useRef<string | null>(null);
 	const [listWidth, setListWidth] = useState(LIST_WIDTH.fallback);
 	const [listHeight, setListHeight] = useState(LIST_HEIGHT.fallback);
 	const [manualListVisible, setManualListVisible] = useState(true);
@@ -308,6 +309,7 @@ export function MessageSplitLayout({ children, config }: MessageSplitLayoutProps
 							selection={{
 								selectedMessages,
 								setSelectedMessages,
+								listIdentity: selectionListIdentity,
 								leaveOpenMessage,
 								registerRowLookup: rowLookup.register,
 							}}

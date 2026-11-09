@@ -181,6 +181,13 @@ export function MessageFolderPage({
 		if (openMessageId) selectionAnchor.current = openMessageId;
 	}, [openMessageId]);
 	useEffect(() => {
+		// A remount on the same list and page (a language switch to Arabic rebuilds the panel group) keeps the
+		// selection its parent holds; only a different list or page starts from nothing.
+		const identity = `${listKey}\u0001${offset}`;
+		if (selection?.listIdentity) {
+			if (selection.listIdentity.current === identity) return;
+			selection.listIdentity.current = identity;
+		}
 		selectionAnchor.current = null;
 		setSelectedMessages([]);
 		selectAllGeneration.current += 1;

@@ -11,6 +11,16 @@ export const OVERFLOW_ID_ATTR = "data-overflow-id";
 export const OVERFLOW_FIXED_ATTR = "data-overflow-fixed";
 
 /**
+ * The error text's width at its natural size, capped at its own max-width. Its current box is the wrong figure: when
+ * the row is full the error is the one shrinkable child and absorbs the overflow, so measuring it squeezed would
+ * reserve a sliver, leave every action inline and collapse the message to an ellipsis.
+ */
+function naturalLeadWidth(lead: HTMLElement) {
+	const maxWidth = parseFloat(getComputedStyle(lead).maxWidth);
+	return Number.isFinite(maxWidth) ? Math.min(lead.scrollWidth, maxWidth) : lead.scrollWidth;
+}
+
+/**
  * Which of `ids`, in priority order, the reader toolbar has room to show inline, measured against the header it
  * sits in rather than a breakpoint: a 360px phone and a window with a wide list beside the reader are both
  * "narrow" here when the row would not fit. The rest move into "More actions", so the row never wraps and never
@@ -42,12 +52,13 @@ export function useReaderToolbarOverflow(ids: string[], measureKey: string) {
 			// A gap sits between the last action and the first fixed item, and between the fixed items.
 			const reserved =
 				fixed.reduce((sum, el) => sum + el.getBoundingClientRect().width + gap, 0) +
-				(lead ? lead.getBoundingClientRect().width + gap : 0);
+				(lead ? naturalLeadWidth(lead) + gap : 0);
 			const items: OverflowItem[] = ids.map((id) => {
 				const el = row.querySelector<HTMLElement>(`[${OVERFLOW_ID_ATTR}="${id}"]`);
 				return { id, width: el ? el.getBoundingClientRect().width : 0 };
 			});
-			const next = packToolbarActions(available, reserved, gap, items);
+			// An action too wide for what is left (Reply all, with its label) must not hide the icon-only ones after it.
+			const next = packToolbarActions(available, reserved, gap, items, { skipOversized: true });
 			setVisibleIds((current) =>
 				current.size === next.size && [...next].every((id) => current.has(id)) ? current : next,
 			);

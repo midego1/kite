@@ -1,7 +1,8 @@
 import { mkdirSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
-import { STORAGE_STATE, SUPPORT_ADDRESS } from "./support/constants";
+import { BASE_URL, DOMAIN, STORAGE_STATE, SUPPORT_ADDRESS } from "./support/constants";
 import { apiContext, deliverInbound, openMessage, uniqueToken } from "./support/helpers";
+import { createSharedMailbox, createSignedInAccount, selectMailbox, shareMailbox } from "./support/auto-read";
 
 // The reader toolbar is one row at every width (what does not fit moves into More actions), and every control of
 // the message list lies inside the list panel, whatever width the list was dragged to.
@@ -154,6 +155,22 @@ test.describe("desktop", () => {
 		});
 	}
 
+	test("1440x900, list 700px: a wide Reply all does not leave the icon actions unused", async ({ page }) => {
+		await page.setViewportSize({ width: 1440, height: 900 });
+		await page.goto("/inbox");
+		await applyListWidth(page, 700);
+		await openMessage(page, subject);
+		await expect(page.getByRole("heading", { level: 1, name: subject })).toBeVisible();
+		const report = await expectSingleRow(page, "1440x900 list 700");
+		// More and Delete are always there; room for at least one icon action beyond them is used.
+		expect(report.labels.length, report.labels.join(", ")).toBeGreaterThan(2);
+		await expectReachable(page, report, [
+			{ inline: "Archive", menu: "Archive" },
+			{ inline: "Report spam", menu: "Report spam" },
+			{ inline: "Mark as", menu: "Mark as unread" },
+		]);
+	});
+
 	test("a narrow reader keeps one row and More actions holds what moved", async ({ page }) => {
 		await page.setViewportSize({ width: 1280, height: 800 });
 		await page.goto("/inbox");
@@ -167,6 +184,71 @@ test.describe("desktop", () => {
 		const menu = page.getByRole("dialog", { name: "More actions" });
 		await expect(menu.getByRole("button", { name: "Archive", exact: true })).toBeVisible();
 		await page.keyboard.press("Escape");
+	});
+});
+
+/** Right to left: the same one row, nothing outside the header and every list control inside the list. */
+test.describe("right to left", () => {
+	for (const [width, height, listWidth] of [
+		[1280, 800, 360],
+		[1440, 900, 700],
+	] as const) {
+		test(`${width}x${height}, list ${listWidth}px in Arabic layout`, async ({ page }) => {
+			await page.addInitScript(() => {
+				localStorage.setItem("kite-layout-sync", "off");
+				localStorage.setItem("kite-interface-direction", "rtl");
+			});
+			await page.setViewportSize({ width, height });
+			await page.goto("/inbox");
+			await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
+			await applyListWidth(page, listWidth);
+			await openMessage(page, subject);
+			await expect(page.getByRole("heading", { level: 1, name: subject })).toBeVisible();
+			const context = `rtl ${width}x${height} list ${listWidth}`;
+			const report = await expectSingleRow(page, context);
+			expect(report.labels.some((label) => label.startsWith("Move to trash"))).toBe(true);
+			expect(report.labels).toContain("More actions");
+			await expectReachable(page, report, [
+				{ inline: "Archive", menu: "Archive" },
+				{ inline: "Report spam", menu: "Report spam" },
+			]);
+			await expectListFits(page, context);
+		});
+	}
+});
+
+/** Shared mail the user can only read: the toolbar's Move controls are disabled, inline and inside More actions. */
+test.describe("read-only shared mail", () => {
+	test("the Move to items in More actions are disabled like the inline Move button", async ({ browser }) => {
+		const admin = await apiContext(STORAGE_STATE);
+		const token = uniqueToken("ro");
+		const sharedId = await createSharedMailbox(admin, `shared${token}`);
+		const viewer = await createSignedInAccount(admin, `viewer${token}`);
+		await shareMailbox(admin, sharedId, viewer.id, "read_only");
+		const readOnlySubject = `Read only ${token}`;
+		const message = await deliverInbound(admin, {
+			from: `"Layout Sender" <layout@outside.test>`,
+			to: `shared${token}@${DOMAIN}`,
+			subject: readOnlySubject,
+			text: "Read only body.",
+		});
+
+		const context = await browser.newContext({ baseURL: BASE_URL, storageState: await viewer.api.storageState() });
+		const readerPage = await context.newPage();
+		await readerPage.addInitScript(() => localStorage.setItem("kite-theme", "light"));
+		await selectMailbox(readerPage, sharedId);
+		await readerPage.setViewportSize({ width: 1280, height: 800 });
+		await readerPage.goto(`/inbox/${message.id}`);
+		await expect(readerPage.getByRole("heading", { level: 1, name: readOnlySubject })).toBeVisible();
+
+		await expect(header(readerPage).getByRole("button", { name: "More actions" })).toBeVisible();
+		await header(readerPage).getByRole("button", { name: "More actions" }).click();
+		const menu = readerPage.getByRole("dialog", { name: "More actions" });
+		for (const name of ["Archived", "Spam", "Trash"]) {
+			await expect(menu.getByRole("button", { name, exact: true }), `${name} in Move to`).toBeDisabled();
+		}
+		await context.close();
+		await admin.dispose();
 	});
 });
 

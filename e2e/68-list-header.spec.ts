@@ -74,10 +74,8 @@ test.describe("message list header", () => {
 				] as const) {
 					const { page, context } = await openList(browser, path, width, style, theme);
 					const header = headerOf(page);
-					const select = header.getByRole("button", { name: "Select" });
-					await expect(select).toBeVisible();
-					// Below 20rem "Select" is icon-only, so the title keeps the room.
-					await expect(select.getByText("Select", { exact: true })).toBeVisible({ visible: width > MIN_WIDTH });
+					// The select-all checkbox is always in the header; a pointer never sees "Select" at all.
+					await expect(header.getByRole("checkbox", { name: "Select all visible messages" })).toBeVisible();
 					const clipped = await header.locator("p.truncate").evaluate((node) => node.scrollWidth > node.clientWidth);
 					// A folder name longer than the list is wide ends in an ellipsis, with the full name on hover.
 					if (name !== "Long folder") expect.soft(clipped, `${name} at ${width}px in ${style} ${theme}`).toBe(false);

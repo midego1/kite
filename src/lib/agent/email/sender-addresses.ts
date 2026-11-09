@@ -57,7 +57,7 @@ export class SenderAddressesPendingError extends Error {
 }
 
 export type AddSenderAddressResult =
-	{ ok: true } | { ok: false; error: string; code: "INSTALL_DOMAIN" | "RATE_LIMITED" };
+	{ ok: true } | { ok: false; error: string; code: "INSTALL_DOMAIN" | "RATE_LIMITED" | "LIMIT_REACHED" };
 
 function toRow(row: typeof assistantSenderAddresses.$inferSelect): SenderAddressRow {
 	return { id: row.id, address: row.address, verified: !!row.verifiedAt, createdAt: row.createdAt };
@@ -283,7 +283,15 @@ export async function addSenderAddress(
 	const codeExpiresAt = new Date(now.getTime() + CODE_MINUTES * 60 * 1000);
 	const id = newId("ases");
 	try {
-		if (!(await insertSenderAddressRow(db, id, userId, normalized, codeHash, codeExpiresAt, now))) return { ok: true }; // this user's own MAX_SENDER_ADDRESSES cap; the reservation above still counted
+		if (!(await insertSenderAddressRow(db, id, userId, normalized, codeHash, codeExpiresAt, now)))
+			// This user's own MAX_SENDER_ADDRESSES cap (the reservation above still counted): said out loud, since
+			// "a code was sent" for an address that was never added would leave them waiting for a mail. It reveals
+			// nothing about the address itself, only how many of their own they hold.
+			return {
+				ok: false,
+				code: "LIMIT_REACHED",
+				error: `You can have at most ${MAX_SENDER_ADDRESSES} extra addresses. Remove one to add another.`,
+			};
 	} catch (error) {
 		if (!isUniqueViolation(error)) throw error;
 		// Someone already holds this exact address (this user's own still-pending row, or another user's,

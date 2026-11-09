@@ -87,6 +87,8 @@ async function setup(t) {
 	return database;
 }
 
+const INSTRUCTIONS = { general: "Always be brief.", chat: "", draft: "", summary: "" };
+
 const patch = (body) =>
 	PATCH(
 		new Request("http://localhost/api/settings/assistant", {
@@ -99,7 +101,7 @@ const patch = (body) =>
 test("a mailbox that is not the user's own personal one saves nothing, not even the instructions beside it", async (t) => {
 	const database = await setup(t);
 	const response = await patch({
-		instructions: { general: "Always be brief." },
+		instructions: INSTRUCTIONS,
 		emailAssistant: { enabled: true, mailboxId: "mb-foreign" },
 	});
 	assert.equal(response.status, 400);
@@ -115,4 +117,37 @@ test("the mailbox picker lists personal mailboxes oldest first", async (t) => {
 		data.emailAssistant.mailboxes.map((mailbox) => mailbox.id),
 		["mb-older", "mb-newer"],
 	);
+});
+
+test("a request that needs the assistant-by-email migration saves nothing while it is pending, not even the instructions beside it", async (t) => {
+	const database = await setup(t);
+	database.db.exec(`
+		ALTER TABLE user_ai_settings DROP COLUMN assistant_email_enabled;
+		ALTER TABLE user_ai_settings DROP COLUMN assistant_email_mailbox_id;
+		ALTER TABLE user_ai_settings DROP COLUMN assistant_email_daily_limit;
+	`);
+	const stepsBefore = database.db.prepare("SELECT agent_max_steps FROM users WHERE id = 'user-1'").get();
+	const response = await patch({
+		instructions: INSTRUCTIONS,
+		emailAssistant: { enabled: true },
+		maxSteps: 7,
+	});
+	assert.equal(response.status, 409);
+	assert.equal((await response.json()).code, "MIGRATION_PENDING");
+	assert.equal(database.db.prepare("SELECT * FROM user_ai_settings WHERE user_id = 'user-1'").get(), undefined);
+	assert.deepEqual(database.db.prepare("SELECT agent_max_steps FROM users WHERE id = 'user-1'").get(), stepsBefore);
+
+	// What the pending migration does not touch still saves.
+	const instructionsOnly = await patch({ instructions: INSTRUCTIONS });
+	assert.equal(instructionsOnly.status, 200);
+});
+
+test("a request that needs the settings table saves nothing while that migration is pending", async (t) => {
+	const database = await setup(t);
+	database.db.exec("DROP TABLE user_ai_settings");
+	const stepsBefore = database.db.prepare("SELECT agent_max_steps FROM users WHERE id = 'user-1'").get();
+	const response = await patch({ instructions: INSTRUCTIONS, maxSteps: 7 });
+	assert.equal(response.status, 409);
+	assert.equal((await response.json()).code, "MIGRATION_PENDING");
+	assert.deepEqual(database.db.prepare("SELECT agent_max_steps FROM users WHERE id = 'user-1'").get(), stepsBefore);
 });

@@ -12,10 +12,20 @@ import { EMPTY_INSTRUCTIONS } from "./instruction-utils";
  * `selectRow` already reads safely around their absence, so it cannot tell the difference itself).
  */
 export async function assistantEmailSettingsReady(env: CloudflareEnv): Promise<boolean> {
+	return (await userAiSettingsColumns(env)).includes("assistant_email_enabled");
+}
+
+/** Whether migration 0069 created `user_ai_settings`, which every save in this file needs. */
+export async function userAiSettingsReady(env: CloudflareEnv): Promise<boolean> {
+	return (await userAiSettingsColumns(env)).length > 0;
+}
+
+/** The SQL names of `user_ai_settings`' columns; empty while the table does not exist. */
+async function userAiSettingsColumns(env: CloudflareEnv): Promise<string[]> {
 	const { results } = await env.DB.prepare("SELECT name FROM pragma_table_info('user_ai_settings')").all<{
 		name: string;
 	}>();
-	return results.some((row) => row.name === "assistant_email_enabled");
+	return results.map((row) => row.name);
 }
 
 export type UserAiSettingsState = {

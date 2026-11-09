@@ -13,6 +13,7 @@ import {
 	savePersonalInstructions,
 	saveWritingStyleEnabled,
 	UserAiSettingsPendingError,
+	userAiSettingsReady,
 } from "@/lib/agent/user-ai-settings";
 import { deleteStyleProfiles, writingStyleAvailable } from "@/lib/agent/writing-style";
 import type { UpdateAssistantSettingsInput } from "./types";
@@ -48,6 +49,13 @@ async function ownsPersonalMailbox(
 		)
 		.limit(1);
 	return !!row;
+}
+
+function pendingMigration() {
+	return NextResponse.json(
+		{ error: new UserAiSettingsPendingError().message, code: "MIGRATION_PENDING" },
+		{ status: 409 },
+	);
 }
 
 export async function GET(request: Request) {
@@ -92,6 +100,11 @@ export async function PATCH(request: Request) {
 			{ error: "Apply the pending database update to use the writing style profile", code: "MIGRATION_PENDING" },
 			{ status: 409 },
 		);
+	// Which migrations the request needs are checked up front too: a deploy ahead of them answers 409 having saved
+	// nothing, never after the instructions or the writing style were already written.
+	if ((input.instructions || input.writingStyle || input.emailAssistant) && !(await userAiSettingsReady(env)))
+		return pendingMigration();
+	if (input.emailAssistant && !(await assistantEmailSettingsReady(env))) return pendingMigration();
 	if (input.instructions) {
 		try {
 			await savePersonalInstructions(db, auth.user.id, input.instructions);

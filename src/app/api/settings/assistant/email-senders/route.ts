@@ -17,8 +17,8 @@ export async function GET(request: Request) {
  * Adds a pending address and emails it a verification code (spec §5.3). For every outcome that could reveal
  * whether the address was new, already pending, already verified, or belongs to someone else, the response is
  * the same "code sent" state, so this route cannot be used to find out who uses Kite's assistant or who owns an
- * address. An address on a domain of this install, or the hourly limit, are refused visibly instead (security
- * review): neither leaks anything about the address itself.
+ * address. An address on a domain of this install, the hourly limit and the user's own five-address limit are
+ * refused visibly instead (security review): none of them leaks anything about the address itself.
  */
 export async function POST(request: Request) {
 	const env = getEnv();

@@ -11,6 +11,7 @@ import { newId } from "@/lib/ids";
 import { buildCallContext } from "@/lib/modules/capability-utils";
 import { moduleHost } from "@/lib/modules/host";
 import type { CapabilityCallContext } from "@/lib/modules/module-types";
+import { receiptCopyExists } from "./receipt-copies";
 import { onReceiptTables, onReceiptTablesOr, receiptTablesReady } from "./receipt-tables";
 import { receiptsEnabledFor } from "./receipt-settings";
 import { receiptCandidates, type ReceiptCandidate, type ReceiptSourceTable } from "./receipt-candidates";
@@ -171,7 +172,13 @@ export async function fileOneReceipt(candidate: ReceiptCandidate): Promise<FileR
 		baseName: await receiptBaseName(candidate),
 	});
 	if (!result.ok) {
-		if (result.error.code === "module_disabled" || result.error.code === "forbidden") {
+		// Drive going off between the gates above and the call is not a verdict on this row: leave the claim as it is
+		// (a pending claim whose lease runs out), so the row is filed once the module is back on, as the docs say.
+		if (result.error.code === "module_disabled") {
+			log.warn("finance.receipt_module_disabled", { sourceTable: candidate.sourceTable, sourceId: candidate.sourceId });
+			return "pending";
+		}
+		if (result.error.code === "forbidden") {
 			await onReceiptTables(() =>
 				db()
 					.update(financeReceipts)
@@ -250,7 +257,7 @@ export async function releaseOwnerPendingClaims(userId: string): Promise<void> {
 }
 
 /**
- * The ids of one owner's rows in a table that already have a filed receipt, for "this also has a Drive copy" UI
+ * The ids of one owner's rows in a table that have a Drive copy or a claim on one (`receiptCopyExists`), for "this also has a Drive copy" UI
  * checks. Reads with `onReceiptTablesOr`: before migration 0102, nothing is filed yet, which is simply the true
  * answer, not a reason for the Subscriptions or Payments view itself to read as migration-pending.
  */
@@ -259,13 +266,7 @@ export async function filedSourceIds(userId: string, table: ReceiptSourceTable):
 		db()
 			.select({ sourceId: financeReceipts.sourceId })
 			.from(financeReceipts)
-			.where(
-				and(
-					eq(financeReceipts.userId, userId),
-					eq(financeReceipts.sourceTable, table),
-					eq(financeReceipts.status, "done"),
-				),
-			),
+			.where(and(eq(financeReceipts.userId, userId), eq(financeReceipts.sourceTable, table), receiptCopyExists())),
 	);
 	return new Set(rows.map((row) => row.sourceId));
 }

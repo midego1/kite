@@ -20,6 +20,7 @@ await build({
 		invoke: join(root, "src/lib/modules/invoke.ts"),
 		capability: join(root, "src/lib/modules/capability-utils.ts"),
 		state: join(root, "src/lib/modules/state.ts"),
+		host: join(root, "src/lib/modules/host.ts"),
 		receipts: join(root, "src/lib/finance/receipts.ts"),
 		settings: join(root, "src/lib/finance/receipt-settings.ts"),
 		guard: join(root, "src/lib/finance/receipt-delete-guard.ts"),
@@ -55,6 +56,7 @@ await build({
 const load = (name) => import(pathToFileURL(join(outDir, `${name}.mjs`)).href);
 await load("invoke"); // binds moduleHost.invoke to the real registry as a side effect
 const { clearModuleStateCache } = await load("state");
+const { moduleHost } = await load("host");
 const { fileOneReceipt, receiptCandidates, filedSourceIds, sweepReceipts } = await load("receipts");
 const { receiptsEnabledFor, setReceiptsEnabled } = await load("settings");
 const { receiptsDeleteGuard, RECEIPTS_IN_DRIVE_ERROR } = await load("guard");
@@ -848,8 +850,13 @@ test("deleting a subscription with 150 documents stays within D1's 100 bound-par
 	// JSON parameter instead of one per id.
 	db.db
 		.prepare(
-			`INSERT INTO finance_receipts (id, user_id, source_table, source_id, status, created_at, updated_at)
-			 VALUES ('frcpt-big', 'owner', 'finance_charges', ?, 'done', ?, ?)`,
+			`INSERT INTO drive_items (id, owner_id, kind, name, created_at, updated_at) VALUES ('file-big', 'owner', 'file', 'receipt.eml', ?, ?)`,
+		)
+		.run(seconds, seconds);
+	db.db
+		.prepare(
+			`INSERT INTO finance_receipts (id, user_id, source_table, source_id, eml_file_id, status, created_at, updated_at)
+			 VALUES ('frcpt-big', 'owner', 'finance_charges', ?, 'file-big', 'done', ?, ?)`,
 		)
 		.run(chargeIds[149], seconds, seconds);
 
@@ -963,4 +970,117 @@ test("a stale user_module_access row disallowing drive or finance never excludes
 		"and still files, since isModuleEnabledFor always allows the primary admin",
 	);
 	assert.equal(receiptRow(db, paymentId).status, "done");
+});
+
+test("the delete guard and the list flag count a pending claim, and a done row only while one of its files is still in Drive", async (t) => {
+	const { db, env } = await setup(t);
+	const messageId = await insertMessage(db, env);
+	const filedId = insertPayment(db, { messageId });
+	const pendingId = insertPayment(db, { messageId: null });
+	const seconds = Math.floor(Date.now() / 1000);
+	db.db
+		.prepare(
+			`INSERT INTO finance_receipts (id, user_id, source_table, source_id, status, lease_until, created_at, updated_at)
+			 VALUES ('claim-1', 'owner', 'finance_payments', ?, 'pending', ?, ?, ?)`,
+		)
+		.run(pendingId, seconds + 300, seconds, seconds);
+	assert.equal(await fileEligible("owner"), 1, "only the unclaimed row with a message is filed");
+	const row = receiptRow(db, filedId);
+	assert.equal(row.status, "done");
+
+	assert.deepEqual(await filedSourceIds("owner", "finance_payments"), new Set([filedId, pendingId]));
+	assert.equal((await receiptsDeleteGuard("finance_payments", [pendingId], false))?.status, 409);
+
+	// One file gone (purged) is still a copy; every recorded file gone is not, though the claim row stays.
+	const files = [row.eml_file_id, row.html_file_id, row.pdf_file_id];
+	db.db.prepare("DELETE FROM drive_items WHERE id = ?").run(files[0]);
+	assert.equal((await receiptsDeleteGuard("finance_payments", [filedId], false))?.status, 409);
+	db.db.prepare("DELETE FROM drive_items WHERE id IN (?, ?)").run(files[1], files[2]);
+	assert.equal(await receiptsDeleteGuard("finance_payments", [filedId], false), null);
+	assert.deepEqual(await filedSourceIds("owner", "finance_payments"), new Set([pendingId]));
+	assert.equal(receiptRow(db, filedId).status, "done", "the claim is kept, so the row is not filed a second time");
+	assert.equal(await fileEligible("owner"), 0);
+});
+
+test("removing another user's payment answers 404 whether or not it has saved copies, never the receipts prompt", async (t) => {
+	const { db, env } = await setup(t);
+	const messageId = await insertMessage(db, env);
+	const paymentId = insertPayment(db, { messageId });
+	await fileEligible("owner");
+	assert.equal(receiptRow(db, paymentId).status, "done");
+	db.db.exec(
+		"INSERT INTO users (id, email, password_hash, name, created_at) VALUES ('other', 'other@example.com', 'hash', 'Other', 1)",
+	);
+	const other = { id: "other", email: "other@example.com", role: "user", isPrimaryAdmin: false, timeZone: "UTC" };
+	const answer = await removePayment(other, paymentId);
+	assert.equal(answer.status, 404, JSON.stringify(answer.body));
+	assert.notEqual(answer.body?.code, "RECEIPTS_IN_DRIVE");
+});
+
+test("a row created exactly at the sweep floor is swept", async (t) => {
+	const { db, env } = await setup(t);
+	assert.equal((await sweepReceipts()).filed, 0, "the first tick only sets the floor");
+	const floor = db.db
+		.prepare("SELECT finance_receipts_sweep_since AS since FROM app_settings WHERE id = 'default'")
+		.get().since;
+	const messageId = await insertMessage(db, env);
+	const paymentId = insertPayment(db, { messageId, createdAtSeconds: floor });
+	assert.equal((await sweepReceipts()).filed, 1);
+	assert.equal(receiptRow(db, paymentId).status, "done");
+});
+
+test("a payment whose mail sits in a No-AI mailbox is not filed, whatever mailbox the finance row names", async (t) => {
+	const { db, env } = await setup(t);
+	const messageId = await insertMessage(db, env, { mailboxId: "mailbox-noai" });
+	const paymentId = insertPayment(db, { mailboxId: "mailbox-a", messageId });
+	assert.equal(await fileEligible("owner"), 0);
+	assert.equal(receiptRow(db, paymentId), undefined);
+	const candidate = (await receiptCandidates(10, "owner"))[0];
+	assert.equal(candidate, undefined, "not even offered as a candidate");
+	assert.equal(
+		await fileOneReceipt({
+			sourceTable: "finance_payments",
+			sourceId: paymentId,
+			userId: "owner",
+			mailboxId: "mailbox-noai",
+			messageId,
+			attachmentId: null,
+			vendor: "Hosting Co",
+			docType: "invoice",
+			documentAt: new Date(),
+			createdAt: new Date(),
+		}),
+		"skipped",
+	);
+});
+
+test("Drive reporting module_disabled mid-filing leaves the claim pending instead of skipping the row for good", async (t) => {
+	const { db, env } = await setup(t);
+	const messageId = await insertMessage(db, env);
+	const paymentId = insertPayment(db, { messageId });
+	const invoke = moduleHost.invoke;
+	moduleHost.invoke = async (ctx, moduleId, name, input) =>
+		moduleId === "drive" && name === "fileReceipt"
+			? { ok: false, error: { code: "module_disabled" } }
+			: invoke(ctx, moduleId, name, input);
+	t.after(() => {
+		moduleHost.invoke = invoke;
+	});
+	const [candidate] = await receiptCandidates(10, "owner");
+	assert.equal(await fileOneReceipt(candidate), "pending");
+	assert.equal(receiptRow(db, paymentId).status, "pending");
+
+	moduleHost.invoke = invoke;
+	db.db.prepare("UPDATE finance_receipts SET lease_until = 1 WHERE source_id = ?").run(paymentId);
+	assert.equal(await fileEligible("owner"), 1, "filed once Drive is back");
+});
+
+test("two simultaneous presses of the backfill button leave one running backfill", async (t) => {
+	const { db, env } = await setup(t);
+	const messageId = await insertMessage(db, env);
+	insertPayment(db, { messageId });
+	await Promise.all([startReceiptBackfill("owner"), startReceiptBackfill("owner")]);
+	const rows = db.db.prepare("SELECT status FROM finance_receipt_backfills WHERE user_id = 'owner'").all();
+	assert.equal(rows.length, 1);
+	assert.equal(rows[0].status, "running");
 });

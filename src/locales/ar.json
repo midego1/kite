@@ -129,6 +129,7 @@
 	"Could not delete message": "تعذّر حذف الرسالة",
 	"Could not delete the messages. Please try again.": "تعذّر حذف الرسائل. حاول مرة أخرى.",
 	"Could not load every matching message. Please try again.": "تعذّر تحميل كل الرسائل المطابقة. يُرجى المحاولة مرة أخرى.",
+	"Could not load the Keep receipts setting.": "تعذّر تحميل إعداد الاحتفاظ بالإيصالات.",
 	"Could not load your payments.": "تعذّر تحميل مدفوعاتك.",
 	"Could not reach the server. Please try again.": "تعذّر الوصول إلى الخادم. حاول مرة أخرى.",
 	"Could not remove attachment": "تعذّرت إزالة المرفق",

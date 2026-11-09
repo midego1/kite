@@ -4,6 +4,7 @@ import { inJsonArray } from "@/db/chunk-utils";
 import { financeReceipts } from "@/db/schema/finance";
 import { getEnv } from "@/lib/cloudflare";
 import { fail, type FinanceAnswer } from "./manual-context";
+import { receiptCopyExists } from "./receipt-copies";
 import { onReceiptTablesOr } from "./receipt-tables";
 import type { ReceiptSourceTable } from "./receipts";
 
@@ -13,7 +14,8 @@ export const RECEIPTS_IN_DRIVE_ERROR =
 /**
  * "Deleting a finance row does not delete the Drive copy silently: ask" (docs/specs/money-watch.md "Keep
  * receipts"). Refuses with 409 `RECEIPTS_IN_DRIVE` unless `acknowledge` is true, the same shape as a
- * flagged-attachment refusal; the Drive files are never touched either way. Reads with `onReceiptTablesOr`:
+ * flagged-attachment refusal; the Drive files are never touched either way. A row counts when its copy may exist
+ * (`receiptCopyExists`: a pending claim, or a done row with a file still in Drive). Reads with `onReceiptTablesOr`:
  * before migration 0102 nothing can possibly be filed, so every other delete (which has nothing to do with Keep
  * receipts) must not start answering 409 `MIGRATION_PENDING` because of it. `sourceIds` is every document of a
  * subscription that can be removed in one request (`removeSubscription`), which a long-lived one can carry past
@@ -33,7 +35,7 @@ export async function receiptsDeleteGuard(
 				and(
 					eq(financeReceipts.sourceTable, sourceTable),
 					inJsonArray(financeReceipts.sourceId, sourceIds),
-					eq(financeReceipts.status, "done"),
+					receiptCopyExists(),
 				),
 			)
 			.limit(1),

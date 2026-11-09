@@ -19,6 +19,7 @@
  */
 
 import { Parser } from "htmlparser2";
+import { DROP_CONTENT_TAGS } from "./stored-html-utils";
 
 const BLANK_PIXEL = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
 
@@ -93,6 +94,17 @@ const VOID_TAGS = new Set([
 	"wbr",
 ]);
 
+/** A link's `rel` for a standalone file: the tokens it already has, minus `opener`, plus `noopener noreferrer`, so
+ * a link that opens a new tab never gets `window.opener` whatever `rel` the mail named. */
+function noopenerRel(existing: string | undefined): string {
+	const tokens = (existing ?? "")
+		.toLowerCase()
+		.split(/\s+/)
+		.filter((token) => token && token !== "opener");
+	for (const required of ["noopener", "noreferrer"]) if (!tokens.includes(required)) tokens.push(required);
+	return tokens.join(" ");
+}
+
 type StripOptions = { images?: boolean; styles?: boolean; links?: boolean };
 
 /**
@@ -104,16 +116,21 @@ type StripOptions = { images?: boolean; styles?: boolean; links?: boolean };
  */
 function rewriteHtml(html: string, options: StripOptions): string {
 	const out: string[] = [];
+	let dropped = 0;
 	const parser = new Parser(
 		{
 			onopentag(name, attributes) {
+				// The stored sanitizer already dropped these with everything inside; the same rule here keeps a raw-text
+				// element (`<style>`, `<textarea>`, ...) from coming out as visible text if one ever reaches the export.
+				if (dropped > 0 || DROP_CONTENT_TAGS.has(name)) {
+					dropped += 1;
+					return;
+				}
 				const attrs: Record<string, string> = { ...attributes };
 				if (options.images && name === "img" && typeof attrs.src === "string" && isRemoteOrInlineImageSrc(attrs.src)) {
 					attrs.src = BLANK_PIXEL;
 				}
-				if (options.links && name === "a" && "target" in attrs && !("rel" in attrs)) {
-					attrs.rel = "noopener noreferrer";
-				}
+				if (options.links && name === "a" && "target" in attrs) attrs.rel = noopenerRel(attrs.rel);
 				if (options.styles && typeof attrs.style === "string") {
 					attrs.style = sanitizedStyleValue(attrs.style) ?? "";
 				}
@@ -122,9 +139,14 @@ function rewriteHtml(html: string, options: StripOptions): string {
 				out.push(">");
 			},
 			onclosetag(name) {
+				if (dropped > 0) {
+					dropped -= 1;
+					return;
+				}
 				if (!VOID_TAGS.has(name)) out.push(`</${name}>`);
 			},
 			ontext(text) {
+				if (dropped > 0) return;
 				out.push(escapeText(text));
 			},
 		},
@@ -148,7 +170,7 @@ export function blankRemoteStyleUrls(html: string): string {
 	return rewriteHtml(html, { styles: true });
 }
 
-/** Adds `rel="noopener noreferrer"` to a link opened in a new tab, so a standalone file never gets `window.opener`. */
+/** Adds `noopener noreferrer` to the `rel` of a link opened in a new tab (dropping `opener`), so a standalone file never gets `window.opener`. */
 export function noopenerLinks(html: string): string {
 	return rewriteHtml(html, { links: true });
 }

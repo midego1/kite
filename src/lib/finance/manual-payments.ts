@@ -81,10 +81,10 @@ export function patchPayment(user: FinanceUser, id: string, raw: unknown): Promi
 /** `DELETE /api/finance/payments/[id]`: removes a payment as `remove_payment`; undo shows it again. */
 export function removePayment(user: FinanceUser, id: string, acknowledge = false): Promise<FinanceAnswer> {
 	return answering(async () => {
-		const guarded = await receiptsDeleteGuard("finance_payments", [id], acknowledge);
-		if (guarded) return guarded;
 		const target = await paymentForChange(user, id);
 		if (target.answer) return target.answer;
+		const guarded = await receiptsDeleteGuard("finance_payments", [id], acknowledge);
+		if (guarded) return guarded;
 		const executed = await executeFinanceAction(user, {
 			capability: "removePayment",
 			mailboxId: target.mailboxId,

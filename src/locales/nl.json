@@ -129,6 +129,7 @@
 	"Could not delete message": "Bericht kon niet worden verwijderd",
 	"Could not delete the messages. Please try again.": "De berichten konden niet worden verwijderd. Probeer het opnieuw.",
 	"Could not load every matching message. Please try again.": "Kon niet elk overeenkomend bericht laden. Probeer het opnieuw.",
+	"Could not load the Keep receipts setting.": "Kon de instelling Bonnen bewaren niet laden.",
 	"Could not load your payments.": "Kon je betalingen niet laden.",
 	"Could not reach the server. Please try again.": "Kon de server niet bereiken. Probeer het opnieuw.",
 	"Could not remove attachment": "Bijlage kon niet worden verwijderd",

@@ -111,11 +111,37 @@ test("blankRemoteStyleUrls leaves an ordinary style value with no url-like conte
 	assert.equal(blankRemoteStyleUrls(html), html);
 });
 
-test("noopenerLinks adds rel to a target-opened link without touching an existing rel", () => {
+test("noopenerLinks adds noopener noreferrer to a target-opened link and keeps the other rel tokens", () => {
 	const html = `<a href="https://a.example" target="_blank">a</a><a href="https://b.example" target="_blank" rel="nofollow">b</a>`;
 	const out = noopenerLinks(html);
 	assert.match(out, /<a href="https:\/\/a\.example" target="_blank" rel="noopener noreferrer">a<\/a>/);
-	assert.match(out, /<a href="https:\/\/b\.example" target="_blank" rel="nofollow">b<\/a>/);
+	assert.match(out, /<a href="https:\/\/b\.example" target="_blank" rel="nofollow noopener noreferrer">b<\/a>/);
+});
+
+test("noopenerLinks completes a partial rel and drops opener, which would keep window.opener reachable", () => {
+	const html = [
+		`<a href="https://a.example" target="_blank" rel="noopener">a</a>`,
+		`<a href="https://b.example" target="_blank" rel="opener nofollow">b</a>`,
+		`<a href="https://c.example" target="_blank" rel="NoReferrer">c</a>`,
+		`<a href="https://d.example" target="_blank" rel="noopener noreferrer">d</a>`,
+	].join("");
+	const out = noopenerLinks(html);
+	assert.match(out, /href="https:\/\/a\.example" target="_blank" rel="noopener noreferrer"/);
+	assert.match(out, /href="https:\/\/b\.example" target="_blank" rel="nofollow noopener noreferrer"/);
+	assert.match(out, /href="https:\/\/c\.example" target="_blank" rel="noreferrer noopener"/);
+	assert.match(out, /href="https:\/\/d\.example" target="_blank" rel="noopener noreferrer"/);
+	assert.ok(!/\bopener(?!\w)/.test(out.replace(/noopener/g, "")), out);
+});
+
+test("noopenerLinks leaves a link with no target alone", () => {
+	const html = `<a href="https://a.example" rel="opener">a</a>`;
+	assert.equal(noopenerLinks(html), html);
+});
+
+test("stripRemoteContent drops raw-text elements with their content instead of printing it as text", () => {
+	const html = `<p>Hello</p><style>body { background: url(https://evil.example/p.gif) }</style><textarea>secret <b>x</b></textarea><p>World</p>`;
+	const out = stripRemoteContent(html);
+	assert.equal(out, "<p>Hello</p><p>World</p>");
 });
 
 test("noopenerLinks adds rel even when a data-rel attribute comes first, instead of reading it as already having one", () => {

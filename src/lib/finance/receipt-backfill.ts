@@ -1,4 +1,4 @@
-import { and, eq, isNull, lt, or } from "drizzle-orm";
+import { and, eq, isNull, lt, or, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { financeReceiptBackfills } from "@/db/schema/finance";
 import { getEnv } from "@/lib/cloudflare";
@@ -88,7 +88,13 @@ export async function startReceiptBackfill(userId: string, now = new Date()): Pr
 		db()
 			.insert(financeReceiptBackfills)
 			.values({ userId, ...values })
-			.onConflictDoUpdate({ target: financeReceiptBackfills.userId, set: values }),
+			.onConflictDoUpdate({
+				target: financeReceiptBackfills.userId,
+				set: values,
+				// A second press racing the first one's insert must not reset the run that just started (or any run
+				// still going): only a finished backfill is started over.
+				setWhere: sql`${financeReceiptBackfills.status} != 'running'`,
+			}),
 	);
 	await enqueueBackfill(userId);
 	return (await ownerBackfill(userId))!;

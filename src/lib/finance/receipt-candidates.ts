@@ -1,4 +1,4 @@
-import { and, asc, eq, exists, gt, isNotNull, isNull, not, notExists, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, eq, exists, gt, gte, isNotNull, isNull, not, notExists, or, sql, type SQL } from "drizzle-orm";
 import type { SQLiteColumn } from "drizzle-orm/sqlite-core";
 import { getDb } from "@/db";
 import { mailboxAgentSettings, messages, users } from "@/db/schema";
@@ -112,7 +112,8 @@ function ownerEligible(userIdColumn: SQLiteColumn): SQL {
 	)!;
 }
 
-/** A mailbox with "No AI for this mailbox" on: Money Watch's own rule is that such a mailbox is never sent to an
+/** The source message's mailbox with "No AI for this mailbox" on (not the finance row's own `mailbox_id`, which can differ
+ * from where the mail actually sits): Money Watch's own rule is that such a mailbox is never sent to an
  * AI provider or copied out by an automatic feature, so it is left out of the candidate pool entirely rather than
  * claimed and immediately skipped on every tick. */
 function mailboxAiOn(mailboxIdColumn: SQLiteColumn): SQL {
@@ -147,7 +148,7 @@ async function chargeCandidates(limit: number, userId?: string, createdAfter?: D
 				and(
 					isNotNull(financeCharges.messageId),
 					userId ? eq(financeCharges.userId, userId) : undefined,
-					createdAfter ? gt(financeCharges.createdAt, createdAfter) : undefined,
+					createdAfter ? gte(financeCharges.createdAt, createdAfter) : undefined,
 					ownerEligible(financeCharges.userId),
 					mailboxAiOn(messages.mailboxId),
 					not(claimedOrDone("finance_charges", financeCharges.id, now)),
@@ -177,16 +178,17 @@ async function paymentCandidates(limit: number, userId?: string, createdAfter?: 
 	const now = new Date();
 	const rows = await onReceiptTables(() =>
 		db()
-			.select()
+			.select({ row: financePayments, messageMailboxId: messages.mailboxId })
 			.from(financePayments)
+			.leftJoin(messages, eq(messages.id, financePayments.messageId))
 			.where(
 				and(
 					isNull(financePayments.removedAt),
 					isNotNull(financePayments.messageId),
 					userId ? eq(financePayments.userId, userId) : undefined,
-					createdAfter ? gt(financePayments.createdAt, createdAfter) : undefined,
+					createdAfter ? gte(financePayments.createdAt, createdAfter) : undefined,
 					ownerEligible(financePayments.userId),
-					mailboxAiOn(financePayments.mailboxId),
+					mailboxAiOn(messages.mailboxId),
 					not(claimedOrDone("finance_payments", financePayments.id, now)),
 				),
 			)
@@ -194,12 +196,12 @@ async function paymentCandidates(limit: number, userId?: string, createdAfter?: 
 			.limit(limit),
 	);
 	return rows
-		.filter((row) => row.messageId)
-		.map((row) => ({
+		.filter(({ row }) => row.messageId)
+		.map(({ row, messageMailboxId }) => ({
 			sourceTable: "finance_payments" as const,
 			sourceId: row.id,
 			userId: row.userId,
-			mailboxId: row.mailboxId,
+			mailboxId: messageMailboxId ?? row.mailboxId,
 			messageId: row.messageId!,
 			attachmentId: row.attachmentId,
 			vendor: row.vendor,
@@ -218,15 +220,16 @@ async function subscriptionCandidates(
 	const now = new Date();
 	const rows = await onReceiptTables(() =>
 		db()
-			.select()
+			.select({ row: financeSubscriptions, messageMailboxId: messages.mailboxId })
 			.from(financeSubscriptions)
+			.leftJoin(messages, eq(messages.id, financeSubscriptions.sourceMessageId))
 			.where(
 				and(
 					isNotNull(financeSubscriptions.sourceMessageId),
 					userId ? eq(financeSubscriptions.userId, userId) : undefined,
-					createdAfter ? gt(financeSubscriptions.createdAt, createdAfter) : undefined,
+					createdAfter ? gte(financeSubscriptions.createdAt, createdAfter) : undefined,
 					ownerEligible(financeSubscriptions.userId),
-					mailboxAiOn(financeSubscriptions.mailboxId),
+					mailboxAiOn(messages.mailboxId),
 					not(claimedOrDone("finance_subscriptions", financeSubscriptions.id, now)),
 				),
 			)
@@ -234,12 +237,12 @@ async function subscriptionCandidates(
 			.limit(limit),
 	);
 	return rows
-		.filter((row) => row.sourceMessageId)
-		.map((row) => ({
+		.filter(({ row }) => row.sourceMessageId)
+		.map(({ row, messageMailboxId }) => ({
 			sourceTable: "finance_subscriptions" as const,
 			sourceId: row.id,
 			userId: row.userId,
-			mailboxId: row.mailboxId,
+			mailboxId: messageMailboxId ?? row.mailboxId,
 			messageId: row.sourceMessageId!,
 			attachmentId: null,
 			vendor: row.vendor,
@@ -290,7 +293,7 @@ async function eligibleOwnerIds(limit: number, createdAfter?: Date): Promise<str
 				.where(
 					and(
 						isNotNull(financeCharges.messageId),
-						createdAfter ? gt(financeCharges.createdAt, createdAfter) : undefined,
+						createdAfter ? gte(financeCharges.createdAt, createdAfter) : undefined,
 						ownerEligible(financeCharges.userId),
 						mailboxAiOn(messages.mailboxId),
 						not(claimedOrDone("finance_charges", financeCharges.id, now)),
@@ -302,13 +305,14 @@ async function eligibleOwnerIds(limit: number, createdAfter?: Date): Promise<str
 			db()
 				.selectDistinct({ userId: financePayments.userId })
 				.from(financePayments)
+				.leftJoin(messages, eq(messages.id, financePayments.messageId))
 				.where(
 					and(
 						isNull(financePayments.removedAt),
 						isNotNull(financePayments.messageId),
-						createdAfter ? gt(financePayments.createdAt, createdAfter) : undefined,
+						createdAfter ? gte(financePayments.createdAt, createdAfter) : undefined,
 						ownerEligible(financePayments.userId),
-						mailboxAiOn(financePayments.mailboxId),
+						mailboxAiOn(messages.mailboxId),
 						not(claimedOrDone("finance_payments", financePayments.id, now)),
 					),
 				)
@@ -318,12 +322,13 @@ async function eligibleOwnerIds(limit: number, createdAfter?: Date): Promise<str
 			db()
 				.selectDistinct({ userId: financeSubscriptions.userId })
 				.from(financeSubscriptions)
+				.leftJoin(messages, eq(messages.id, financeSubscriptions.sourceMessageId))
 				.where(
 					and(
 						isNotNull(financeSubscriptions.sourceMessageId),
-						createdAfter ? gt(financeSubscriptions.createdAt, createdAfter) : undefined,
+						createdAfter ? gte(financeSubscriptions.createdAt, createdAfter) : undefined,
 						ownerEligible(financeSubscriptions.userId),
-						mailboxAiOn(financeSubscriptions.mailboxId),
+						mailboxAiOn(messages.mailboxId),
 						not(claimedOrDone("finance_subscriptions", financeSubscriptions.id, now)),
 					),
 				)
@@ -339,8 +344,7 @@ async function eligibleOwnerIds(limit: number, createdAfter?: Date): Promise<str
 /** Unfiled rows across all three tables, oldest first, for the automatic sweep (every owner, each capped so
  * none of them can crowd the others out of this tick) or one owner's backfill (uncapped: there is nobody else
  * to protect in that owner's own run). `createdAfter`, used only by the automatic sweep (never the explicit
- * backfill, which must still reach a user's whole history), excludes a row created at or before the sweep
- * floor. */
+ * backfill, which must still reach a user's whole history), excludes a row created before the sweep floor. */
 export async function receiptCandidates(
 	limit: number,
 	userId?: string,

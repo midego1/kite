@@ -446,9 +446,11 @@ found missing before either can act on a key with no row.
 
 Admin → Storage → Stores shows a store's tracked candidate count next to it, read-only, with a line explaining
 that cleanup arrives in a later release (`coldOrphanCount`/`countOrphanCandidates`); it carries no action.
-`deleteStore` is refused while a store a rule still targets, that `object_locations` still names, or that still
-has any tracked orphan candidate (`coldReferenceBlocking`), with a message naming which; a candidate's store
-stays undeletable until a later release can resolve it.
+`deleteStore` is refused while a store a rule still targets, that `object_locations` still names, that a sweep
+still in flight targets, or that still has any tracked orphan candidate (`coldReferenceBlocking`), with a message
+naming which; a candidate's store stays undeletable until a later release can resolve it. Each of those checks
+answers "nothing" on its own before its table exists, so the in-flight sweep check still runs on a database
+that has `0097` but not yet `0104` (round-10 review, `n3`).
 
 The fencing token on the key's own `object_locations` row (`leaseToken`/`claimedUntil`) still matters: it is
 what stops two cold moves of the exact same key from racing each other, whichever direction either is headed
@@ -471,6 +473,21 @@ already name it, leaving its fate to a later release's cleanup rather than decid
 rewrite to R2 Infrequent Access, and its "already at target" shortcut counterpart on a cross-store rule, record
 under this same fenced claim too (round-8/9 review, `m1`/`m5`): an unfenced write there could otherwise overwrite
 a concurrent mover's own fenced record for a retargeted key.
+
+**Storage-migration purge versus cold moves (round-10 review, `B7`).** A cold rule may archive into the store a
+completed migration moved a class away from, and that migration's purge deletes each key's old copy there after a
+size match. Unfenced, a purge racing a mover that was copying the key back into that store could delete the copy
+the mover had just recorded while the mover deleted its own source, leaving no copy. Two fences close this. The
+purge takes the key's location lease for its check and its delete (`withPurgeLease` in
+`src/lib/storage/object-locations.ts`, from `purgeOldCopy` in `migration.ts`): a live claim makes it keep the key
+and count an error ("A cold storage move is working on this object"); a key whose `object_locations` row names
+the old store is its live cold copy, never a leftover, and is skipped; it renews its own token right before the
+delete. A key with no row gets one created under the claim, naming the new store, and removed again afterwards.
+The mover's fenced record names its target in the same statement that releases its lease, so there is no gap in
+which neither fence applies. The configuration refuses the overlap too: `updateColdRule` answers 409
+`STORE_MIGRATING` for an enabled rule targeting a store a migration is still moving away from or has not purged
+(`unpurgedMigrationFrom`; cancelled jobs aside), and the `purge-source` migration action answers 409 while an
+enabled rule or a queued or running sweep targets the old store (`coldUseBlockingPurge`).
 
 The five-minute maintenance runs `scanForOrphanCandidates` in a batch of up to 200 rows: it keyset-paginates
 through `object_locations` from a cursor saved in `storage_state` (round-robin, so a backlog larger than one

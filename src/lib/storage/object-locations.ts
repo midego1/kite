@@ -228,6 +228,65 @@ export async function withLocationLease<T>(
 	}
 }
 
+/** What a storage-migration purge holds while deciding about one key (`withPurgeLease`): its claim, if the
+ * schema has the lease columns, and the store `object_locations` named when the claim was taken (null when the
+ * key had no row). */
+export type PurgeClaim = { lease: LocationLease | undefined; storeId: string | null };
+
+/**
+ * Runs a storage-migration purge's check-and-delete for `key` under the same location lease a cold move holds
+ * from its copy through its own source delete (round-10 review, `B7`), so the purge can never delete a copy a
+ * mover is in the middle of recording: an existing row's claim is taken the usual way, and a key with no row
+ * yet gets one created under the claim, naming `initial.storeId` (the migration's new store, where the bytes
+ * the purge keeps are), then removed again afterwards, so a purge leaves no rows behind for keys that were
+ * never cold. Answers `"busy"` without running `fn` while someone else holds a live claim. Before migration
+ * 0104 there is nothing to claim through; `fn` then runs with no lease and the recorded store read directly.
+ */
+export async function withPurgeLease<T>(
+	env: LocationEnv,
+	key: string,
+	initial: { objectClass: RoutableClass; storeId: string; size: number },
+	fn: (claim: PurgeClaim) => Promise<T>,
+	now = new Date(),
+): Promise<T | "busy"> {
+	const nowSeconds = Math.floor(now.getTime() / 1000);
+	const token = newId("lease");
+	const until = nowSeconds + LEASE_SECONDS;
+	let claim: PurgeClaim;
+	let created = false;
+	try {
+		const claimed = await tryClaimExistingRow(env, key, token, until, nowSeconds);
+		if (claimed) {
+			const row = await env.DB.prepare("SELECT store_id FROM object_locations WHERE key = ? AND lease_token = ?")
+				.bind(key, token)
+				.first<{ store_id: string }>();
+			claim = { lease: claimed, storeId: row?.store_id ?? null };
+		} else {
+			const inserted = await env.DB.prepare(
+				`INSERT INTO object_locations (key, object_class, store_id, storage_class, size, moved_at, lease_token, claimed_until)
+				 VALUES (?, ?, ?, NULL, ?, ?, ?, ?)
+				 ON CONFLICT (key) DO NOTHING`,
+			)
+				.bind(key, initial.objectClass, initial.storeId, initial.size, nowSeconds, token, until)
+				.run();
+			if (!(inserted.meta?.changes ?? 0)) return "busy";
+			created = true;
+			claim = { lease: { token }, storeId: null };
+		}
+	} catch (error) {
+		if (!isNoSuchTableError(error) && !isMissingLeaseColumn(error)) throw error;
+		claim = { lease: undefined, storeId: (await lookupObjectLocation(env, key))?.storeId ?? null };
+	}
+	try {
+		return await fn(claim);
+	} finally {
+		if (created) {
+			// Only the row this purge itself created, and only while its token is still on it.
+			await env.DB.prepare("DELETE FROM object_locations WHERE key = ? AND lease_token = ?").bind(key, token).run();
+		} else if (claim.lease) await releaseLocationLease(env, key, claim.lease.token);
+	}
+}
+
 /**
  * Records where an object now lives after a cold move (`cold.ts`). Mail and backups are read through this on
  * a chain miss (`router.ts`); Drive files are normally read by their row's own `store_id`/`storage_class`

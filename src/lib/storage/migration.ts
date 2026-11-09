@@ -32,6 +32,7 @@ import {
 import { callStorageHook } from "./module-hooks";
 import { objectClassOf } from "./object-classes-utils";
 import { deleteObjectLocations, lookupObjectLocation, markOrphanCandidate } from "./object-locations";
+import { purgeOldCopy } from "./migration-purge";
 import { ATTACHMENT_OBJECT_ROWS_SQL } from "@/lib/email/attachment-storage-utils";
 import type { ObjectStore, RoutableClass, Storage } from "./types";
 
@@ -325,15 +326,11 @@ async function runItems(
 		result.processed += 1;
 		if (objectClassOf(item.key) !== job.objectClass) continue;
 		try {
-			const present = await to.bucket.head(item.key);
 			if (cursor.phase === "purge") {
-				const old = await from.bucket.head(item.key);
-				if (!old) continue;
-				if (!present || present.size !== old.size)
-					throw new Error("Not complete on the new store; kept on the old one");
-				await from.bucket.delete(item.key);
+				await purgeOldCopy(env, from, to, job.objectClass as RoutableClass, item);
 				continue;
 			}
+			const present = await to.bucket.head(item.key);
 			// A cold move (`cold.ts`) may have already parked this key on a store outside this migration's
 			// own old/default chain; without this it reads back as missing from both stores.
 			const sources = await locationAwareSources(env, storage, baseChain, item.key);

@@ -77,7 +77,8 @@ export type StoreView = {
 	source: "database" | "environment";
 	blocked: string | null;
 	usedBy: RoutableClass[];
-	/** Cold-moved copies tracked as orphan candidates on this store right now; "Delete leftovers" removes them. */
+	/** Cold-moved copies tracked as orphan candidates on this store right now; shown read-only, since nothing in
+	 * this release deletes them (round-9 review, `B6`). */
 	leftoverCount: number;
 };
 

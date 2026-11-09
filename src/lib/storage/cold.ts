@@ -1,4 +1,4 @@
-import { desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { getDb } from "@/db";
 import { objectLocations, storageColdJobs, storageColdOrphans, storageColdRules } from "@/db/schema/storage";
 import { createAuditLog } from "@/lib/mailboxes/audit";
@@ -23,6 +23,7 @@ import { coldPage, driveColdPage, type Item } from "./cold-sources";
 import { moveColdObject, moveColdDriveObject } from "./cold-move";
 import { DEFAULT_STORE_ID, isRoutableClass, isUsableStore, ROUTABLE_CLASSES, type StorageConfig } from "./config-utils";
 import { processStorageMigration } from "./migration";
+import { unpurgedMigrationFrom } from "./migration-purge";
 import {
 	isLeased,
 	isStalled,
@@ -157,6 +158,17 @@ export async function updateColdRule(
 	const config = await readStorageConfig(env);
 	if (!isUsableColdTarget(config, target))
 		return { ok: false, status: 404, error: "That target is not available", field: "target" };
+	// A store a migration is still emptying (or may yet purge) is no place to archive into: the purge would
+	// delete what the sweep puts there (round-10 review, `B7`). A rule saved off moves nothing, so it may wait.
+	const migrating = enabled && target !== R2_IA_TARGET ? await unpurgedMigrationFrom(env, target) : null;
+	if (migrating)
+		return {
+			ok: false,
+			status: 409,
+			error: `${classLabel(migrating.objectClass)} is still being moved off this store, or its old copies there have not been deleted yet; finish that migration (delete the old copies) or choose another target`,
+			field: "target",
+			code: "STORE_MIGRATING",
+		};
 	const input: SaveColdRuleInput = { afterDays, minBytes, target, enabled };
 	const savedAt = await saveColdRule(env, actorId, objectClass, input);
 	return { ok: true, rule: { ...input, updatedAt: savedAt.toISOString() } };
@@ -439,49 +451,97 @@ function isUsableColdTarget(config: StorageConfig, target: string): boolean {
 	return target !== DEFAULT_STORE_ID && isUsableStore(config, target);
 }
 
+const CLASS_LABELS: Record<string, string> = { mail: "Mail", drive: "Drive", backups: "Backups" };
+
+function classLabel(objectClass: string): string {
+	return CLASS_LABELS[objectClass] ?? objectClass;
+}
+
+/** Rows of a query on a cold storage table, or none before the migration that creates it. */
+async function rowsOrNone<T>(query: () => Promise<T[]>): Promise<T[]> {
+	try {
+		return await query();
+	} catch (error) {
+		if (isNoSuchTableError(error)) return [];
+		throw error;
+	}
+}
+
+/** The class of an in-flight (queued or running) sweep whose cursor targets `id`: the cursor keeps the rule as
+ * it was when the sweep began, so a rule changed or disabled since would not show up any other way. */
+async function activeSweepTargeting(env: ColdEnv, id: string): Promise<string | null> {
+	const activeJobs = await rowsOrNone(() =>
+		getDb(env)
+			.select({ objectClass: storageColdJobs.objectClass, cursor: storageColdJobs.cursor })
+			.from(storageColdJobs)
+			.where(inArray(storageColdJobs.status, ["queued", "running"])),
+	);
+	for (const job of activeJobs) {
+		try {
+			if (parseColdCursor(job.cursor).rule.target === id) return job.objectClass;
+		} catch {
+			continue;
+		}
+	}
+	return null;
+}
+
+/**
+ * Why a storage migration's old copies on `storeId` may not be deleted yet: an enabled cold rule archives into
+ * that store, or a sweep still in flight does, and the purge would delete what it puts there (round-10 review,
+ * `B7`); null otherwise. The purge also takes each key's location lease, so this is the first of two fences.
+ */
+export async function coldUseBlockingPurge(env: ColdEnv, storeId: string): Promise<string | null> {
+	const [rule] = await rowsOrNone(() =>
+		getDb(env)
+			.select({ objectClass: storageColdRules.objectClass })
+			.from(storageColdRules)
+			.where(and(eq(storageColdRules.target, storeId), eq(storageColdRules.enabled, true)))
+			.limit(1),
+	);
+	if (rule)
+		return `The cold storage rule for ${classLabel(rule.objectClass)} archives into this store; point it elsewhere or turn it off before deleting the old copies`;
+	const sweeping = await activeSweepTargeting(env, storeId);
+	if (sweeping)
+		return `A cold storage sweep for ${classLabel(sweeping)} is still moving objects into this store; wait for it to finish before deleting the old copies`;
+	return null;
+}
+
 /** Why `id` cannot be deleted: a rule still targets it, an earlier sweep moved objects there, or a sweep still
  * in flight was started while it did (its cursor keeps the rule as it was when the sweep began, so a rule
  * changed or disabled after that would not otherwise show up here); null otherwise. */
 export async function coldReferenceBlocking(env: ColdEnv, id: string): Promise<string | null> {
-	try {
-		const [rule] = await getDb(env)
+	// Each query answers "nothing" on its own before its table exists, rather than one shared catch skipping
+	// every later check (round-10 review, `n3`): between 0097 and 0104 the orphans table is missing while an
+	// in-flight sweep can already be moving objects here.
+	const [rule] = await rowsOrNone(() =>
+		getDb(env)
 			.select({ objectClass: storageColdRules.objectClass })
 			.from(storageColdRules)
 			.where(eq(storageColdRules.target, id))
-			.limit(1);
-		if (rule) return `A cold storage rule for ${rule.objectClass} still targets this store; change it first`;
-		const [object] = await getDb(env)
+			.limit(1),
+	);
+	if (rule) return `A cold storage rule for ${rule.objectClass} still targets this store; change it first`;
+	const [object] = await rowsOrNone(() =>
+		getDb(env)
 			.select({ key: objectLocations.key })
 			.from(objectLocations)
 			.where(eq(objectLocations.storeId, id))
-			.limit(1);
-		if (object) return "Objects a cold storage sweep moved here are still on this store; move them back first";
-		const [orphan] = await getDb(env)
+			.limit(1),
+	);
+	if (object) return "Objects a cold storage sweep moved here are still on this store; move them back first";
+	const sweeping = await activeSweepTargeting(env, id);
+	if (sweeping) return `A cold storage sweep for ${sweeping} is still moving objects here; wait for it to finish first`;
+	const [orphan] = await rowsOrNone(() =>
+		getDb(env)
 			.select({ key: storageColdOrphans.key })
 			.from(storageColdOrphans)
 			.where(eq(storageColdOrphans.storeId, id))
-			.limit(1);
-		if (orphan)
-			return "A copy a cold storage sweep left behind is still on this store; cleanup for it arrives in a later release";
-		const activeJobs = await getDb(env)
-			.select({ objectClass: storageColdJobs.objectClass, cursor: storageColdJobs.cursor })
-			.from(storageColdJobs)
-			.where(inArray(storageColdJobs.status, ["queued", "running"]));
-		for (const job of activeJobs) {
-			let cursor: ColdCursor;
-			try {
-				cursor = parseColdCursor(job.cursor);
-			} catch {
-				continue;
-			}
-			if (cursor.rule.target === id)
-				return `A cold storage sweep for ${job.objectClass} is still moving objects here; wait for it to finish first`;
-		}
-		return null;
-	} catch (error) {
-		if (isNoSuchTableError(error)) return null;
-		throw error;
-	}
+			.limit(1),
+	);
+	if (orphan)
+		return "A copy a cold storage sweep left behind is still on this store; cleanup for it arrives in a later release";
+	return null;
 }
 
 /** How many orphan candidates are currently tracked for `id`, for the read-only leftover count Admin → Storage

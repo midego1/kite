@@ -1438,3 +1438,282 @@ test("B6: no code path in this PR ever deletes an orphan candidate's copy, howev
 		assert.equal(name in cold, false, `cold.${name} must not exist`);
 	}
 });
+
+const MIGRATE_KIND = "storage.migrate";
+
+/** A completed storage migration of `objectClass` from `fromStoreId` to the default store, its old copies not
+ * yet deleted: the state in which an admin can start the purge. */
+async function completedMigrationFrom(env, queue, objectClass, fromStoreId) {
+	const id = await lib.migration.queueStorageMigration(env, {
+		objectClass,
+		fromStoreId,
+		toStoreId: "default",
+		createdByUserId: "owner",
+	});
+	await drain(env, queue);
+	const job = await lib.migration.getStorageMigration(env, id);
+	assert.equal(job.status, "completed");
+	return job;
+}
+
+/** Runs every queued storage-migration batch now, leaving any other message (a cold sweep's) in the queue. */
+async function drainMigrations(env, queue, pending = []) {
+	const work = [...pending.splice(0)];
+	for (let batches = 0; batches < 200; batches += 1) {
+		const index = queue.findIndex(({ message }) => message.kind === MIGRATE_KIND);
+		if (index >= 0) work.push(...queue.splice(index, 1));
+		const next = work.shift();
+		if (!next) return;
+		await cold.processStorageQueueMessage(env, next.message);
+	}
+}
+
+/** Runs `during` once, the first time the default store's `method` (`get` for the cold mover's copy read,
+ * `delete` for its source delete) is called for `key`. */
+function onDefault(env, method, key, during) {
+	const original = env.BUCKET[method].bind(env.BUCKET);
+	let fired = false;
+	env.BUCKET[method] = async (keys, ...rest) => {
+		if (!fired && (keys === key || (Array.isArray(keys) && keys.includes(key)))) {
+			fired = true;
+			await during();
+		}
+		return original(keys, ...rest);
+	};
+	return () => fired;
+}
+
+const migrationRow = (env, id) => env.DB.db.prepare("SELECT * FROM storage_migrations WHERE id = ?").get(id);
+
+test("B7: a migration purge drained inside the cold mover's source delete keeps the copy the mover just recorded (mail)", async (t) => {
+	const { env, queue } = await fixture(t);
+	await addStore(env, "sto_x", "kite-target");
+	// The rule predates the migration, so the save-time guard has nothing to refuse; the purge is started
+	// directly, below the route's own guard, so only the purge's location lease stands between the two.
+	await setColdRule(env, "mail", { afterDays: 1, target: "sto_x" });
+	const migration = await completedMigrationFrom(env, queue, "mail", "sto_x");
+	const key = await addMessage(env, "late", { createdAt: NOW - 60 * DAY });
+	const started = await lib.migration.startStorageMigrationPurge(env, migration);
+	assert.equal(started.ok, true, started.ok ? undefined : started.error);
+	const purge = queue.splice(0);
+
+	const fired = onDefault(env, "delete", key, () => drainMigrations(env, queue, purge));
+	await cold.runColdStorageSweep(env, new Date(NOW * 1000));
+	await drain(env, queue);
+	assert.equal(fired(), true, "the purge ran inside the mover's source delete");
+
+	assert.equal(job(env, "mail").errors, 0, job(env, "mail").last_error);
+	assert.equal(location(env, key).store_id, "sto_x");
+	assert.equal(Buffer.from(target().get(key).bytes).toString("utf8"), "raw late", "the recorded copy survives");
+	assert.equal(await env.BUCKET.get(key), null, "the mover deleted its own source");
+	const routed = routerLib.createStorageRouter(env);
+	assert.equal(await (await routed.get(key)).text(), "raw late");
+	// The mover's fenced record names the old store in the same statement that releases its lease, so the
+	// purge, taking that lease next, finds the key's live cold copy there and skips it.
+	const purged = migrationRow(env, migration.id);
+	assert.equal(purged.errors, 0, purged.last_error);
+	assert.equal(JSON.parse(purged.cursor).phase, "purged");
+
+	// A later purge skips the key outright: the old store holds its live cold copy, not a leftover.
+	env.DB.db.prepare("UPDATE storage_migrations SET errors = 0, last_error = NULL WHERE id = ?").run(migration.id);
+	const again = await lib.migration.startStorageMigrationPurge(
+		env,
+		await lib.migration.getStorageMigration(env, migration.id),
+	);
+	assert.equal(again.ok, true, again.ok ? undefined : again.error);
+	await drainMigrations(env, queue);
+	assert.equal(migrationRow(env, migration.id).errors, 0, migrationRow(env, migration.id).last_error);
+	assert.equal(target().has(key), true, "still on the cold store");
+	assert.equal(await (await routed.get(key)).text(), "raw late");
+});
+
+test("B7: a migration purge that listed a Drive file before the cold mover repointed it keeps the mover's copy (Drive)", async (t) => {
+	const { env, queue } = await fixture(t);
+	await addStore(env, "sto_x", "kite-target");
+	await setColdRule(env, "drive", { afterDays: 1, target: "sto_x" });
+	const migration = await completedMigrationFrom(env, queue, "drive", "sto_x");
+	await addDriveFile(env, "drv_late", "late bytes", { createdAt: NOW - 60 * DAY });
+	const key = "drive/drv_late";
+	const started = await lib.migration.startStorageMigrationPurge(env, migration);
+	assert.equal(started.ok, true, started.ok ? undefined : started.error);
+	const purge = queue.splice(0);
+
+	// The purge lists Drive files by the row's store; the mover repoints the row just before deleting its
+	// source, so a purge that read its page a moment earlier still holds this file as "on the new store".
+	// Rewinding the row for the purge's listing reproduces exactly that stale page.
+	const fired = onDefault(env, "delete", key, async () => {
+		env.DB.db.prepare("UPDATE drive_items SET store_id = 'default' WHERE id = 'drv_late'").run();
+		await drainMigrations(env, queue, purge);
+		env.DB.db.prepare("UPDATE drive_items SET store_id = 'sto_x' WHERE id = 'drv_late'").run();
+	});
+	await cold.runColdStorageSweep(env, new Date(NOW * 1000));
+	await drain(env, queue);
+	assert.equal(fired(), true, "the purge ran inside the mover's source delete");
+
+	assert.equal(job(env, "drive").errors, 0, job(env, "drive").last_error);
+	assert.equal(location(env, key).store_id, "sto_x");
+	assert.equal(Buffer.from(target().get(key).bytes).toString("utf8"), "late bytes", "the recorded copy survives");
+	assert.equal(await env.BUCKET.get(key), null, "the mover deleted its own source");
+	assert.equal(migrationRow(env, migration.id).errors, 0, migrationRow(env, migration.id).last_error);
+});
+
+for (const kind of ["mail", "drive"]) {
+	test(`B7: a purge skips a key whose location lease someone else holds, and deletes its leftover once released (${kind})`, async (t) => {
+		const { env, queue } = await fixture(t);
+		await addStore(env, "sto_x", "kite-target");
+		const migration = await completedMigrationFrom(env, queue, kind, "sto_x");
+		let key;
+		if (kind === "mail") key = await addMessage(env, "held", { createdAt: NOW - 60 * DAY });
+		else {
+			await addDriveFile(env, "drv_held", "raw held", { createdAt: NOW - 60 * DAY });
+			key = "drive/drv_held";
+		}
+		// An identical leftover on the old store, which the purge deletes on a size match once it may.
+		fake.buckets.get("kite-target").objects.set(key, {
+			bytes: Buffer.from("raw held"),
+			meta: { custom: {} },
+			etag: "e1",
+			lastModified: new Date(),
+		});
+		// A cold mover mid-move holds the key's lease (its row still names where the bytes are, the default store).
+		const until = Math.floor(Date.now() / 1000) + 300;
+		env.DB.db
+			.prepare(
+				`INSERT INTO object_locations (key, object_class, store_id, storage_class, size, moved_at, lease_token, claimed_until)
+				 VALUES (?, ?, 'default', NULL, 8, ?, 'lease_mover', ?)`,
+			)
+			.run(key, kind, NOW, until);
+		const started = await lib.migration.startStorageMigrationPurge(env, migration);
+		assert.equal(started.ok, true, started.ok ? undefined : started.error);
+		await drainMigrations(env, queue);
+		const held = migrationRow(env, migration.id);
+		assert.equal(held.errors, 1);
+		assert.match(held.last_error, /cold storage move is working on this object/);
+		assert.equal(target().has(key), true, "kept while the lease is held");
+		assert.equal(location(env, key).lease_token, "lease_mover", "the mover's claim is untouched");
+
+		env.DB.db.prepare("UPDATE object_locations SET lease_token = NULL, claimed_until = NULL WHERE key = ?").run(key);
+		env.DB.db.prepare("UPDATE storage_migrations SET errors = 0, last_error = NULL WHERE id = ?").run(migration.id);
+		const again = await lib.migration.startStorageMigrationPurge(
+			env,
+			await lib.migration.getStorageMigration(env, migration.id),
+		);
+		assert.equal(again.ok, true, again.ok ? undefined : again.error);
+		await drainMigrations(env, queue);
+		assert.equal(migrationRow(env, migration.id).errors, 0, migrationRow(env, migration.id).last_error);
+		assert.equal(target().has(key), false, "the leftover goes once nobody holds the key");
+		assert.equal(location(env, key).store_id, "default", "a row the purge did not create stays");
+		assert.equal(location(env, key).lease_token, null, "and the purge released its own claim");
+	});
+}
+
+test("B7: a purge deletes a never-cold key's old copy under a lease of its own and leaves no location row behind", async (t) => {
+	const { env, queue } = await fixture(t);
+	await addStore(env, "sto_x", "kite-target");
+	const key = await addMessage(env, "hot", { createdAt: NOW - 60 * DAY });
+	const migration = await completedMigrationFrom(env, queue, "mail", "sto_x");
+	fake.buckets.get("kite-target").objects.set(key, {
+		bytes: Buffer.from("raw hot"),
+		meta: { custom: {} },
+		etag: "e1",
+		lastModified: new Date(),
+	});
+	const started = await lib.migration.startStorageMigrationPurge(env, migration);
+	assert.equal(started.ok, true, started.ok ? undefined : started.error);
+	await drainMigrations(env, queue);
+	assert.equal(migrationRow(env, migration.id).errors, 0, migrationRow(env, migration.id).last_error);
+	assert.equal(target().has(key), false, "the leftover on the old store is deleted");
+	assert.equal(await (await env.BUCKET.get(key)).text(), "raw hot");
+	assert.equal(location(env, key), undefined, "the purge's own claim row is gone again");
+});
+
+test("B7: a cold rule cannot archive into a store a migration has not finished emptying, and a purge cannot start while one does", async (t) => {
+	const { env, queue } = await fixture(t);
+	const actor = { id: "owner" };
+	await addStore(env, "sto_x", "kite-target", "Old archive");
+	const migration = await completedMigrationFrom(env, queue, "mail", "sto_x");
+
+	const refused = await cold.updateColdRule(env, "owner", "backups", {
+		afterDays: 30,
+		minBytes: 0,
+		target: "sto_x",
+		enabled: true,
+	});
+	assert.equal(refused.ok, false);
+	assert.equal(refused.status, 409);
+	assert.equal(refused.code, "STORE_MIGRATING");
+	assert.match(refused.error, /Mail is still being moved off this store/);
+	const off = await cold.updateColdRule(env, "owner", "backups", {
+		afterDays: 30,
+		minBytes: 0,
+		target: "sto_x",
+		enabled: false,
+	});
+	assert.equal(off.ok, true, "a rule saved off moves nothing, so it may wait");
+
+	// The reverse order: a rule archiving into the old store already exists (saved before the migration).
+	env.DB.db.prepare("UPDATE storage_cold_rules SET enabled = 1 WHERE object_class = 'backups'").run();
+	const blocked = await lib.routeSwitch.runMigrationAction(env, actor, migration.id, {
+		action: "purge-source",
+		confirm: "Old archive",
+	});
+	assert.equal(blocked.ok, false);
+	assert.equal(blocked.status, 409);
+	assert.match(blocked.error, /cold storage rule for Backups archives into this store/);
+
+	// Turning the rule off is not enough while a sweep it started is still in flight.
+	await cold.runColdStorageSweep(env, new Date(NOW * 1000));
+	env.DB.db.prepare("UPDATE storage_cold_rules SET enabled = 0 WHERE object_class = 'backups'").run();
+	const sweeping = await lib.routeSwitch.runMigrationAction(env, actor, migration.id, {
+		action: "purge-source",
+		confirm: "Old archive",
+	});
+	assert.equal(sweeping.ok, false);
+	assert.match(sweeping.error, /sweep for Backups is still moving objects into this store/);
+	await drain(env, queue);
+
+	const allowed = await lib.routeSwitch.runMigrationAction(env, actor, migration.id, {
+		action: "purge-source",
+		confirm: "Old archive",
+	});
+	assert.equal(allowed.ok, true, allowed.ok ? undefined : allowed.error);
+	await drainMigrations(env, queue);
+	assert.equal(JSON.parse(migrationRow(env, migration.id).cursor).phase, "purged");
+	const saved = await cold.updateColdRule(env, "owner", "backups", {
+		afterDays: 30,
+		minBytes: 0,
+		target: "sto_x",
+		enabled: true,
+	});
+	assert.equal(saved.ok, true, "once the old copies are deleted the store is an ordinary target again");
+});
+
+test("n3: before migration 0104, store deletion still refuses while an in-flight sweep targets the store", async (t) => {
+	const { env } = await fixture(t);
+	await addStore(env, "sto_c", "kite-target");
+	await setColdRule(env, "mail", { afterDays: 30, target: "sto_c" });
+	await cold.runColdStorageSweep(env, new Date(NOW * 1000));
+	env.DB.db.prepare("DELETE FROM storage_cold_rules").run();
+	env.DB.db.exec("DROP TABLE storage_cold_orphans");
+	assert.match(await cold.coldReferenceBlocking(env, "sto_c"), /sweep for mail is still moving objects here/);
+});
+
+test("n2: object deletes in the cold storage code stay limited to the mover's own source delete", async () => {
+	const { readFileSync } = await import("node:fs");
+	const { join } = await import("node:path");
+	const root = new URL("..", import.meta.url).pathname;
+	// Every `.delete(` call in these files (an object bucket's or anything else's), by file and count: a new
+	// one (a cleanup pass for tracked leftovers, say) must be added here deliberately, with its fencing reviewed.
+	const allowed = {
+		"src/lib/storage/cold.ts": 0,
+		"src/lib/storage/cold-orphans.ts": 0,
+		"src/lib/storage/cold-sources.ts": 0,
+		"src/lib/storage/cold-utils.ts": 0,
+		"src/lib/storage/cold-move.ts": 2,
+	};
+	for (const [file, count] of Object.entries(allowed)) {
+		const source = readFileSync(join(root, file), "utf8");
+		const deletes = source.match(/\.delete\s*\(/g) ?? [];
+		assert.equal(deletes.length, count, `${file} has ${deletes.length} delete calls, expected ${count}`);
+	}
+});

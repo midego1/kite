@@ -182,7 +182,9 @@ least 30 days, so it rarely pays off for mail that is read again soon; a second 
 copy and its own read cost. **Run now** starts a sweep immediately instead of waiting for the daily job; a sweep
 already running is shown instead of a second one starting. A store a rule still targets, or that still holds
 objects an earlier sweep moved there, cannot be deleted until the rule points elsewhere or the objects are moved
-again.
+again. A rule cannot archive into a store a migration is still moving a class away from, or whose old copies a
+migration has not deleted yet (**Delete from** the old store first, or pick another target), and **Delete from** is
+refused while a turned-on rule, or a sweep still running, archives into that store.
 
 ## Email assistant and MCP
 

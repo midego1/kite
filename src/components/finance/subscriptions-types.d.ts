@@ -24,6 +24,8 @@ export type SubscriptionItem = {
 	lastMessageId: string | null;
 	sourceMessageId: string | null;
 	mailboxId: string | null;
+	/** Whether "Keep receipts" already filed a copy of this row's mail, or one of its documents', into Drive. */
+	hasReceipts: boolean;
 };
 
 export type SubscriptionList = {
@@ -44,6 +46,8 @@ export type DocumentItem = {
 	attachmentId: string | null;
 	paired: boolean;
 	message: ResolvedRecordRef | null;
+	/** Whether "Keep receipts" already filed a copy of this document's mail into Drive. */
+	hasReceipts: boolean;
 };
 
 export type SubscriptionDetail = {

@@ -827,6 +827,22 @@ const SHOTS: Shot[] = [
 		},
 	},
 	{
+		// "Keep receipts": the per-user setting and the "Save receipts for existing payments" backfill, open over the
+		// same invented Payments demo data.
+		name: "2026-11-08-money-watch-keep-receipts",
+		theme: "light",
+		viewport: { width: 1280, height: 900 },
+		open: async (page) => {
+			await seedPaymentsDemo();
+			await page.goto("/finance?tab=payments");
+			await expect(page.locator("[data-payment-row]").first()).toBeVisible();
+			await page.getByRole("button", { name: "Keep receipts" }).click();
+			const dialog = page.getByRole("dialog", { name: "Keep receipts" });
+			await expect(dialog.getByRole("switch", { name: "Keep receipts" })).toBeVisible();
+			return dialog;
+		},
+	},
+	{
 		// Scan last 90 days partway through: the status line's own progress, over the real seeded rows (the scan status
 		// itself is faked, since a real scan of this little demo mail finishes before a screenshot could catch it running).
 		name: "2026-11-08-money-watch-scan-progress-light",

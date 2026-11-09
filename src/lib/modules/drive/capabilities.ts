@@ -3,6 +3,7 @@ import { describeCapability, type DescriptorMeta } from "../schema-utils";
 import { driveSchemas } from "./schemas";
 
 const PURGE_TIMEOUT_MS = 60_000;
+const FILE_RECEIPT_TIMEOUT_MS = 20_000;
 
 const describe = (name: string, meta: DescriptorMeta) => describeCapability(driveSchemas, name, meta);
 
@@ -48,6 +49,14 @@ export const driveCapabilities: ModuleCapabilities = {
 			description: "Count the Drive files and bytes stored.",
 			effect: "read",
 			storage: { objectClass: "drive", hook: "usage" },
+		}),
+		describe("fileReceipt", {
+			surfaces: ["service"],
+			description:
+				"File a message's mail (.eml), a self-contained readable HTML and PDF copy, and its receipt attachment into a Drive folder for the caller's viewer. Ids only: bytes never cross this call.",
+			scopes: ["drive.write"],
+			effect: "create",
+			timeoutMs: FILE_RECEIPT_TIMEOUT_MS,
 		}),
 	],
 };

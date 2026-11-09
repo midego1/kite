@@ -159,6 +159,8 @@
 	"/api/finance/payments/[id]",
 	"/api/finance/payments",
 	"/api/finance/payments/scan",
+	"/api/finance/receipts/backfill",
+	"/api/finance/receipts",
 	"/api/finance/subscriptions/[id]/documents",
 	"/api/finance/subscriptions/[id]",
 	"/api/finance/subscriptions",

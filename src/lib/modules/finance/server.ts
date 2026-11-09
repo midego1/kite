@@ -6,11 +6,15 @@ import { deleteDocument, recordDocument } from "@/lib/finance/document-actions";
 import { removePaymentAction, updatePaymentAction } from "@/lib/finance/payment-actions";
 import { resumePaymentScans, scanPayments } from "@/lib/finance/payment-scan";
 import { recordPaymentStep } from "@/lib/finance/payment-step";
+import { backfillReceipts, resumeReceiptBackfills } from "@/lib/finance/receipt-backfill";
+import { sweepReceipts } from "@/lib/finance/receipts";
 import { resolveFinanceRefs } from "@/lib/finance/refs";
 import { remindRenewals } from "@/lib/finance/reminders";
 import { searchSubscriptions } from "@/lib/finance/search";
 import { listSubscriptionsTool } from "@/lib/finance/tools";
-import type { CapabilityHandler } from "../module-types";
+import type { CapabilityHandler, JsonValue } from "../module-types";
+
+const fileReceipts: CapabilityHandler = async (): Promise<JsonValue> => await sweepReceipts();
 
 export const financeHandlers: Record<string, CapabilityHandler> = {
 	detect: detectSubscriptionStep,
@@ -33,4 +37,7 @@ export const financeHandlers: Record<string, CapabilityHandler> = {
 	track_subscription: trackSubscriptionTool,
 	previewTrackSubscription,
 	remindRenewals,
+	fileReceipts,
+	backfillReceipts,
+	resumeReceiptBackfills,
 };

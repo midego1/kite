@@ -313,6 +313,8 @@ function MailSelectionToolbar({
 		manageDisabled,
 		trashDisabled,
 		pending,
+		// Any translated label stands in for a language switch, which changes every label's width.
+		t("More actions"),
 	].join("|");
 	const { containerRef, headRef, tailRef, measureRef, visibleIds } = useBulkToolbarOverflow(priorityIds, measureKey);
 	const overflowIds = priorityIds.filter((id) => !visibleIds.has(id));
@@ -326,9 +328,14 @@ function MailSelectionToolbar({
 			data-testid="bulk-toolbar"
 			className="relative flex min-w-0 items-center gap-2 overflow-hidden text-neutral-600 w-full pointer-coarse:[&_button]:min-h-11 pointer-coarse:[&_button]:min-w-11"
 		>
-			<div ref={headRef} className="flex shrink-0 items-center">
+			{/* The one part of the row that may shrink: at the narrowest list widths the count truncates so that
+			    Clear selection and More actions always stay inside the toolbar's own overflow-hidden box. */}
+			<div ref={headRef} className="flex max-w-36 min-w-0 shrink items-center">
 				{!hideSelectedCount && (
-					<span className="me-2 max-w-36 truncate text-sm font-medium text-neutral-800">
+					<span
+						title={t("{count} selected", { count: selectedCount })}
+						className="me-2 min-w-0 truncate text-sm font-medium text-neutral-800"
+					>
 						{t("{count} selected", { count: selectedCount })}
 					</span>
 				)}
@@ -385,7 +392,7 @@ function MailSelectionToolbar({
 			{hasOverflow && (
 				<DropdownMenu.Root>
 					<DropdownMenu.Trigger asChild>
-						<Button variant="ghost" size="sm" disabled={pending} aria-label={t("More actions")}>
+						<Button variant="ghost" size="sm" className="shrink-0" disabled={pending} aria-label={t("More actions")}>
 							<MoreVertical className="h-4 w-4" />
 						</Button>
 					</DropdownMenu.Trigger>

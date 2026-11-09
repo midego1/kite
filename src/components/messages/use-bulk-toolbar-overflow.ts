@@ -8,6 +8,21 @@ import { packToolbarActions, TOOLBAR_GAP_PX, type OverflowItem } from "./bulk-to
 const SAFETY_GAP_PX = TOOLBAR_GAP_PX * 3;
 
 /**
+ * The head's width as if it were not shrunk: the head may truncate its "N selected" text at the narrowest widths,
+ * but how many actions fit must be judged against the full text (capped at the head's own max-width), or a
+ * shrunken head would make room for actions that then push the count out again.
+ */
+function naturalHeadWidth(head: HTMLElement | null) {
+	if (!head) return 0;
+	const label = head.firstElementChild as HTMLElement | null;
+	if (!label) return head.getBoundingClientRect().width;
+	const margin = parseFloat(getComputedStyle(label).marginInlineEnd) || 0;
+	const maxWidth = parseFloat(getComputedStyle(head).maxWidth);
+	const natural = label.scrollWidth + margin;
+	return Number.isFinite(maxWidth) ? Math.min(natural, maxWidth) : natural;
+}
+
+/**
  * Which of `ids`, in priority order, the bulk toolbar has room to show inline, measured against the list
  * header's own current width rather than a fixed breakpoint: a 360px split-pane list and a 700px window are
  * both "narrow" here if the fully labelled row would not fit, and a wide one is not, whatever the browser
@@ -38,7 +53,7 @@ export function useBulkToolbarOverflow(ids: string[], measureKey: string) {
 
 		function recompute() {
 			const availableWidth = container!.clientWidth;
-			const headWidth = headRef.current?.getBoundingClientRect().width ?? 0;
+			const headWidth = naturalHeadWidth(headRef.current);
 			const tailWidth = tailRef.current?.getBoundingClientRect().width ?? 0;
 			const moreEl = measure!.querySelector<HTMLElement>('[data-overflow-id="__more__"]');
 			// Reserved whether or not "More actions" ends up rendered: showing it only when something has
@@ -55,7 +70,15 @@ export function useBulkToolbarOverflow(ids: string[], measureKey: string) {
 		recompute();
 		const observer = new ResizeObserver(recompute);
 		observer.observe(container);
-		return () => observer.disconnect();
+		// A web font that finishes loading after mount changes every label's width without resizing anything.
+		let cancelled = false;
+		void document.fonts?.ready.then(() => {
+			if (!cancelled) recompute();
+		});
+		return () => {
+			cancelled = true;
+			observer.disconnect();
+		};
 		// eslint-disable-next-line react-hooks/exhaustive-deps -- `measureKey` stands in for `ids` and every label.
 	}, [measureKey]);
 

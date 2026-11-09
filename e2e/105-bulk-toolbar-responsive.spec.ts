@@ -10,7 +10,7 @@ const FOLDERS: Folder[] = ["inbox", "spam", "trash"];
 
 /** The list widths the default split-pane list resizes between: its minimum, default, and common wider ones
  * a user or a saved preference can leave it at. */
-const LIST_WIDTHS = [250, 360, 600, 700, 900];
+const LIST_WIDTHS = [250, 260, 270, 280, 360, 600, 700, 900];
 /** Browser window sizes from a small phone up through a wide desktop. */
 const WINDOW_WIDTHS = [320, 375, 700, 900, 1400];
 
@@ -77,11 +77,30 @@ async function deliverTo(folder: Folder, subject: string): Promise<StoredMessage
 }
 
 /**
- * Every button the bulk toolbar currently renders (whatever folded into "More actions" and whatever stayed
- * inline) has its whole box inside `container`: the count and Clear selection are checked by name directly,
- * since they must never be the ones that move.
+ * Saves a list width and reloads to apply it. The preference is read once on mount, and the account's own copy
+ * of it (written under a per-user key, and the one a later load prefers) has to change with the device's, or a
+ * width from an earlier test would silently win and the narrow case would never be exercised.
  */
-async function assertNoClipping(page: Page, container: Locator, context: string) {
+async function applyListWidth(page: Page, width: number) {
+	await page.evaluate((value) => {
+		for (const key of Object.keys(localStorage)) {
+			if (key === "kite-column-width:message-list" || key.startsWith("kite-column-width:message-list:")) {
+				localStorage.setItem(key, String(value));
+			}
+		}
+		localStorage.setItem("kite-column-width:message-list", String(value));
+	}, width);
+	await page.reload();
+}
+
+/**
+ * Every button the bulk toolbar currently renders (whatever folded into "More actions" and whatever stayed
+ * inline) has its whole box inside both `container` and the toolbar's own box (which clips its overflow, so a
+ * button past its edge is cut off even while still inside the panel): the count and Clear selection are
+ * checked by name directly, since they must never be the ones that move. `minButtonHeight` is the touch
+ * target size to expect when the page emulates a coarse pointer.
+ */
+async function assertNoClipping(page: Page, container: Locator, context: string, minButtonHeight = 0) {
 	const bar = toolbar(page);
 	await expect(bar, context).toBeVisible();
 	await expect(page.getByText(/^\d+ selected$/), context).toBeVisible();
@@ -97,6 +116,12 @@ async function assertNoClipping(page: Page, container: Locator, context: string)
 	const result = await page.evaluate(
 		([outerEl, barEl]) => {
 			const outer = (outerEl as HTMLElement).getBoundingClientRect();
+			const own = (barEl as HTMLElement).getBoundingClientRect();
+			const fits = (box: DOMRect, area: DOMRect) =>
+				box.x >= area.x - 0.5 &&
+				box.y >= area.y - 0.5 &&
+				box.x + box.width <= area.x + area.width + 0.5 &&
+				box.y + box.height <= area.y + area.height + 0.5;
 			// Excludes the toolbar's own hidden measurement clone (aria-hidden): querySelectorAll, unlike
 			// Playwright's role-based locators, does not know to leave it out on its own.
 			const buttons = Array.from((barEl as HTMLElement).querySelectorAll("button")).filter(
@@ -107,22 +132,54 @@ async function assertNoClipping(page: Page, container: Locator, context: string)
 				clipped: buttons
 					.map((button) => {
 						const box = button.getBoundingClientRect();
-						const within =
-							box.x >= outer.x &&
-							box.y >= outer.y &&
-							box.x + box.width <= outer.x + outer.width &&
-							box.y + box.height <= outer.y + outer.height;
+						const within = fits(box, outer) && fits(box, own);
 						return { name: button.getAttribute("aria-label") ?? button.textContent ?? "", within };
 					})
 					.filter((entry) => !entry.within)
 					.map((entry) => entry.name),
+				shortest: Math.min(...buttons.map((button) => button.getBoundingClientRect().height)),
 			};
 		},
 		[containerHandle, barHandle],
 	);
 	expect(result.count, `${context}: at least Delete and Clear selection should be reachable`).toBeGreaterThan(1);
 	expect(result.clipped, `${context}: clipped actions`).toEqual([]);
+	expect(result.shortest, `${context}: smallest button height`).toBeGreaterThanOrEqual(minButtonHeight);
+	// More actions is the only way to reach most actions at the narrowest widths: it must be fully on screen.
+	const more = bar.getByRole("button", { name: "More actions" });
+	if ((await more.count()) > 0) await expect(more, context).toBeInViewport({ ratio: 1 });
 }
+
+/** The widest the list panel gets, whatever width was saved. */
+const LIST_MAX_WIDTH = 832;
+
+/** The list panel really is `width` wide: a stale saved width would make the narrow cases pass vacuously. */
+async function expectListWidth(page: Page, width: number) {
+	const panel = await page.locator("#kite-message-list-panel").boundingBox();
+	expect(Math.round(panel?.width ?? 0), `list panel width after saving ${width}`).toBe(Math.min(width, LIST_MAX_WIDTH));
+}
+
+test.describe("with a touch screen", () => {
+	test.use({ hasTouch: true });
+
+	test("Clear and More actions stay inside the toolbar at the narrowest list widths, with a message open", async ({
+		page,
+	}) => {
+		const subject = `Toolbar touch ${uniqueToken()}`;
+		const message = await deliverTo("inbox", subject);
+		await page.setViewportSize({ width: 1400, height: 900 });
+		await page.goto(`/inbox/${message.id}`);
+		await expect(page.getByRole("heading", { level: 1, name: subject })).toBeVisible();
+
+		for (const width of [250, 260, 270, 280, 290, 360]) {
+			await applyListWidth(page, width);
+			await expect(page.getByRole("heading", { level: 1, name: subject })).toBeVisible();
+			await expect(async () => expectListWidth(page, width)).toPass({ timeout: 10_000 });
+			await rowFor(page, subject).getByRole("checkbox").check();
+			await assertNoClipping(page, page.locator("#kite-message-list-panel"), `touch at list width ${width}`, 44);
+		}
+	});
+});
 
 for (const folder of FOLDERS) {
 	test(`${folder}: no bulk action is clipped at any list width, with a message open`, async ({ page }) => {
@@ -133,11 +190,11 @@ for (const folder of FOLDERS) {
 		await expect(page.getByRole("heading", { level: 1, name: subject })).toBeVisible();
 
 		for (const width of LIST_WIDTHS) {
-			// The preference is read once on mount, so a reload is what picks up a new value; the message stays
-			// open across it since it is also in the URL, but the checkbox (plain React state) is not.
-			await page.evaluate((value) => localStorage.setItem("kite-column-width:message-list", String(value)), width);
-			await page.reload();
+			// A reload is what picks up a new value; the message stays open across it since it is also in the
+			// URL, but the checkbox (plain React state) is not.
+			await applyListWidth(page, width);
 			await expect(page.getByRole("heading", { level: 1, name: subject })).toBeVisible();
+			await expect(async () => expectListWidth(page, width)).toPass({ timeout: 10_000 });
 			await rowFor(page, subject).getByRole("checkbox").check();
 			await assertNoClipping(page, page.locator("#kite-message-list-panel"), `${folder} at list width ${width}`);
 		}

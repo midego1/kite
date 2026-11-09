@@ -93,6 +93,62 @@ test("a cross-domain Reply-To is named without any authentication having failed"
 	await expect(banner).toContainText("Replies to this message would go to a different domain");
 });
 
+test("a Reply-To on a subdomain of the sender's own domain is not a different domain", async ({ page }) => {
+	const token = uniqueToken("replysub");
+	const domain = `${token}.invalid`;
+	const subject = `Updates ${token}`;
+	await deliverInbound(api, {
+		from: `News <news@${domain}>`,
+		to: SUPPORT_ADDRESS,
+		subject,
+		text: "This week's updates.",
+		headers: { "Reply-To": `replies@reply.${domain}` },
+	});
+
+	await page.goto("/inbox");
+	await openMessage(page, subject);
+	await expect(warningBanner(page)).toHaveCount(0);
+	await expect(badge(page)).toHaveCount(0);
+});
+
+test("the open message's badge is a labelled image and a focus stop; a long sender name does not clip it at 375px", async ({
+	page,
+}) => {
+	const token = uniqueToken("longname");
+	const domain = `${token}.invalid`;
+	const subject = `Account notice ${token}`;
+	const longName = `Customer Service Team at the Example Corporation Billing and Account Security Department ${token}`;
+	await deliverInbound(api, {
+		from: `${longName} <service@${domain}>`,
+		to: SUPPORT_ADDRESS,
+		subject,
+		text: "Please review your account.",
+		headers: {
+			"Authentication-Results": `mx.cloudflare.net; spf=fail smtp.mailfrom=bounce@${domain}; dkim=fail header.d=${domain}; dmarc=fail header.from=${domain} policy.dmarc=none`,
+		},
+	});
+	const stored = await (await api.get(`/api/messages?${new URLSearchParams({ q: subject, limit: "1" })}`)).json();
+	const messageId: string = stored.messages[0].id;
+
+	await page.setViewportSize({ width: 375, height: 812 });
+	await page.goto(`/inbox/${messageId}`);
+	const pill = badge(page);
+	await expect(pill).toBeVisible();
+	await expect(pill).toHaveAttribute("role", "img");
+	await expect(pill).toHaveAttribute("tabindex", "0");
+	await expect(pill).toHaveAttribute("aria-label", /sender authentication/);
+	const box = await pill.boundingBox();
+	expect(box, "badge has a box").not.toBeNull();
+	expect(box!.x).toBeGreaterThanOrEqual(0);
+	expect(box!.x + box!.width).toBeLessThanOrEqual(375);
+	// The pill keeps its full width; the name gives way, not the badge.
+	const text = await pill.locator("span").last().boundingBox();
+	expect(text!.width).toBeGreaterThan(40);
+	expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(
+		true,
+	);
+});
+
 test("a display name reused from a trusted contact is named with the contact it matches", async ({ page }) => {
 	const token = uniqueToken("spoof");
 	const contactAddress = `maya-${token}@trusted.invalid`;
@@ -198,4 +254,10 @@ test("the thread shows a compact badge for a message with a concern, while a cle
 	await expect(warningBanner(page)).toHaveCount(0);
 	// The collapsed first message in the thread still carries its own badge.
 	await expect(badge(page)).toHaveCount(1);
+	// It sits inside the card's expand button, so it is a labelled image and not a nested focus stop.
+	const threadBadge = badge(page).first();
+	await expect(threadBadge).toHaveAttribute("role", "img");
+	await expect(threadBadge).toHaveAttribute("aria-label", /sender authentication/);
+	await expect(threadBadge).not.toHaveAttribute("tabindex", /.*/);
+	await expect(page.locator("button [data-sender-auth-badge][tabindex]")).toHaveCount(0);
 });

@@ -6,6 +6,7 @@ import { acceptAssistantRequest } from "@/lib/agent/email/intake";
 import { resolveInboundAddress } from "@/lib/email/routing";
 import { getMessageContactNames } from "@/lib/contacts/service";
 import { findSpoofedSenderContact } from "@/lib/contacts/spoofed-sender";
+import { SPOOFED_SENDER_LOOKUP_TIMEOUT_MS, settleWithin } from "@/lib/contacts/spoofed-sender-utils";
 import { getEmailAddress } from "@/lib/email/address";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { listMessageAttachments } from "@/lib/email/attachments";
@@ -174,7 +175,11 @@ export async function getMessageWithBodyForUser(env: CloudflareEnv, user: Sessio
 		loadMessageVia(env, [message]),
 		// A failed or slow contact scan must never keep the message itself from opening.
 		message.direction === "inbound"
-			? findSpoofedSenderContact(env, message.userId, message.fromAddr).catch(() => null)
+			? settleWithin(
+					findSpoofedSenderContact(env, message.userId, message.fromAddr),
+					SPOOFED_SENDER_LOOKUP_TIMEOUT_MS,
+					null,
+				)
 			: Promise.resolve(null),
 	]);
 	const sendState = sendStates.get(message.id);

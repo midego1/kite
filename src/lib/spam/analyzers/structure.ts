@@ -1,6 +1,7 @@
 import type { ParsedEmail } from "@/lib/email/parse";
 import type { PreparedSpamContent, SpamSignal } from "../types";
 import { getDomain } from "../tokenizer";
+import { sameRegistrableDomain } from "./link-host-utils";
 import { findHeader } from "./utils";
 
 export function analyzeStructure(
@@ -21,7 +22,8 @@ export function analyzeStructure(
 		signals.push({ id: "zero_width_text", score: 7, reason: "Message contains hidden zero-width characters" });
 	if (letters > 40 && upperLetters / letters > 0.65)
 		signals.push({ id: "excessive_capitals", score: 4, reason: "Message uses excessive capitalization" });
-	if (replyDomain && fromDomain && replyDomain !== fromDomain)
+	// A Reply-To on a subdomain of the sender's own domain (`reply.example.com` for `example.com`) is the same owner.
+	if (replyDomain && fromDomain && !sameRegistrableDomain(replyDomain, fromDomain))
 		signals.push({ id: "reply_to_mismatch", score: 5, reason: "Reply-To domain differs from the sender domain" });
 	const credentialLure =
 		/\b(verify|confirm|unlock|restore|validate|sign[ -]?in|log[ -]?in)\b.{0,60}\b(account|password|mailbox|identity|access)\b/i.test(

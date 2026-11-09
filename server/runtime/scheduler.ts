@@ -10,6 +10,7 @@ import { pruneMcpToolCallAudit, runDatabasePruning } from "@/lib/maintenance/pru
 import { runOperationalAlerts } from "@/lib/alerts/run";
 import { runModuleCronTasks } from "@/lib/modules/background";
 import { runStorageMigrationMaintenance } from "@/lib/storage/migration";
+import { runColdStorageSweep, runStorageColdMaintenance } from "@/lib/storage/cold";
 import { runAttachmentJobMaintenance } from "@/lib/email/attachment-storage-jobs";
 import { runTelemetryHeartbeat } from "@/lib/telemetry/heartbeat";
 import { resumeAuthRechecks } from "@/lib/external-accounts/auth-recheck";
@@ -40,6 +41,7 @@ export function startScheduler(env: CloudflareEnv) {
 			runStorageMigrationMaintenance(env, now).catch((error) =>
 				logger.error("storage.migration_maintenance_failed", { error }),
 			);
+			runStorageColdMaintenance(env, now).catch((error) => logger.error("storage.cold_maintenance_failed", { error }));
 			runAttachmentJobMaintenance(env, now).catch((error) =>
 				logger.error("attachment.storage_job_maintenance_failed", { error }),
 			);
@@ -68,6 +70,8 @@ export function startScheduler(env: CloudflareEnv) {
 		);
 		// Orphaned raw MIME, matching worker.ts.
 		sweepOrphanedRawMail(env, now).catch((error) => logger.error("email.raw_sweep_failed", { error }));
+		// Cold storage, matching worker.ts.
+		runColdStorageSweep(env, now).catch((error) => logger.error("storage.cold_sweep_failed", { error }));
 	}, 60_000);
 	return () => clearInterval(timer);
 }

@@ -504,6 +504,137 @@ const SHOTS: Shot[] = [
 		},
 	},
 	{
+		// Admin → Storage → Cold storage: a mail rule moved to a demo store, Drive's rule on but not run yet.
+		name: "2026-11-08-cold-storage-light",
+		theme: "light",
+		viewport: { width: 1100, height: 1200 },
+		open: async (page) => {
+			await page.route("**/api/admin/storage/cold", (route) =>
+				route.fulfill({
+					json: {
+						rules: [
+							{ objectClass: "mail", afterDays: 180, minBytes: 0, target: "sto_demo", enabled: true, updatedAt: "2026-11-08T00:00:00.000Z" },
+							{ objectClass: "drive", afterDays: 365, minBytes: 10_485_760, target: "r2-ia", enabled: true, updatedAt: "2026-11-08T00:00:00.000Z" },
+							{ objectClass: "backups", afterDays: 90, minBytes: 0, target: "r2-ia", enabled: false, updatedAt: null },
+						],
+						jobs: [
+							{
+								objectClass: "mail",
+								status: "completed",
+								objectsDone: 482,
+								bytesDone: 212_000_000,
+								errors: 0,
+								lastError: null,
+								startedAt: "2026-11-08T02:00:00.000Z",
+								finishedAt: "2026-11-08T02:04:00.000Z",
+							},
+						],
+						iaAvailable: true,
+					},
+				}),
+			);
+			await page.route("**/api/admin/storage", (route) =>
+				route.fulfill({
+					json: {
+						directUploadsReminder: { show: false, setup: null },
+						defaultStore: { id: "default", name: "Cloudflare R2", kind: "r2", directUploads: true },
+						stores: [
+							{
+								id: "sto_demo",
+								name: "Backblaze archive",
+								provider: "b2",
+								endpoint: "s3.us-west-002.backblazeb2.com",
+								region: "us-west-002",
+								bucket: "kite-archive",
+								addressing: "path",
+								keyHint: "9f2c",
+								sameAsBinding: false,
+								status: "ok",
+								lastCheckedAt: "2026-11-08T00:00:00.000Z",
+								lastError: null,
+								source: "database",
+								blocked: null,
+								usedBy: [],
+							},
+						],
+						routes: [],
+						migrations: [],
+						usage: {
+							mail: { objects: 12_400, bytes: 4_900_000_000 },
+							drive: { objects: 860, bytes: 1_800_000_000 },
+							backups: { objects: 14, bytes: 2_100_000_000 },
+						},
+						encryptionReady: true,
+						migrationPending: false,
+						endpointPolicy: { allowInsecure: false, allowPrivate: false },
+						runtime: "workers",
+					},
+				}),
+			);
+			await page.goto("/storage");
+			const section = page.locator("section", { has: page.getByRole("heading", { name: "Cold storage" }) });
+			await expect(section).toBeVisible();
+			await expect(section.locator('[data-cold-rule="mail"]').getByRole("status")).toHaveText("Up to date");
+			await section.scrollIntoViewIfNeeded();
+			return section;
+		},
+	},
+	{
+		// Admin → Storage → Stores: the read-only leftover count on a store still holding tracked candidates.
+		name: "2026-11-09-leftover-count-light",
+		theme: "light",
+		viewport: { width: 1100, height: 500 },
+		open: async (page) => {
+			await page.route("**/api/admin/storage/cold", (route) =>
+				route.fulfill({ json: { rules: [], jobs: [], iaAvailable: true } }),
+			);
+			await page.route("**/api/admin/storage", (route) =>
+				route.fulfill({
+					json: {
+						directUploadsReminder: { show: false, setup: null },
+						defaultStore: { id: "default", name: "Cloudflare R2", kind: "r2", directUploads: true },
+						stores: [
+							{
+								id: "sto_demo",
+								name: "Backblaze archive",
+								provider: "b2",
+								endpoint: "s3.us-west-002.backblazeb2.com",
+								region: "us-west-002",
+								bucket: "kite-archive",
+								addressing: "path",
+								keyHint: "9f2c",
+								sameAsBinding: false,
+								status: "ok",
+								lastCheckedAt: "2026-11-08T00:00:00.000Z",
+								lastError: null,
+								source: "database",
+								blocked: null,
+								usedBy: ["mail"],
+								leftoverCount: 37,
+							},
+						],
+						routes: [],
+						migrations: [],
+						usage: {
+							mail: { objects: 12_400, bytes: 4_900_000_000 },
+							drive: { objects: 860, bytes: 1_800_000_000 },
+							backups: { objects: 14, bytes: 2_100_000_000 },
+						},
+						encryptionReady: true,
+						migrationPending: false,
+						endpointPolicy: { allowInsecure: false, allowPrivate: false },
+						runtime: "workers",
+					},
+				}),
+			);
+			await page.goto("/storage");
+			const section = page.locator("section", { has: page.getByRole("heading", { name: "Stores" }) });
+			await expect(section.getByText("37 leftover copies from cold storage moves")).toBeVisible();
+			await section.scrollIntoViewIfNeeded();
+			return section;
+		},
+	},
+	{
 		// Settings → Connected accounts → Connect account: Mail goes to → New mailbox for this account.
 		name: "2026-11-05-new-mailbox-light",
 		theme: "light",

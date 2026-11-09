@@ -121,6 +121,62 @@ test("a restore keeps the live storage config and never replays migration jobs",
 	assert.equal(all(live, "SELECT id FROM messages").length, 2, "the rest of the backup is restored");
 });
 
+test("a restore merges cold storage rules and locations instead of keeping or replacing them wholesale", async (t) => {
+	const source = await database(t);
+	seedAccountData(source);
+	seedStorage(source, "From the backup");
+	source.db.exec(`
+		INSERT INTO storage_cold_rules (object_class, after_days, min_bytes, target, enabled, updated_at)
+			VALUES ('mail', 30, 0, 'sto_backup', 1, 1);
+		INSERT INTO storage_cold_rules (object_class, after_days, min_bytes, target, enabled, updated_at)
+			VALUES ('backups', 60, 0, 'sto_backup', 0, 1);
+		INSERT INTO object_locations (key, object_class, store_id, storage_class, size, moved_at)
+			VALUES ('inbound/from-backup.eml', 'mail', 'sto_backup', NULL, 10, 1);
+	`);
+	const document = await exportDocument(source);
+
+	const live = await database(t);
+	seedAccountData(live);
+	seedStorage(live, "Live store", "sto_live");
+	live.db.exec(`
+		INSERT INTO storage_cold_rules (object_class, after_days, min_bytes, target, enabled, updated_at)
+			VALUES ('drive', 14, 1024, 'sto_live', 1, 1);
+		INSERT INTO storage_cold_rules (object_class, after_days, min_bytes, target, enabled, updated_at)
+			VALUES ('backups', 90, 0, 'sto_live', 1, 1);
+		INSERT INTO object_locations (key, object_class, store_id, storage_class, size, moved_at)
+			VALUES ('drive/live-item', 'drive', 'sto_live', NULL, 20, 1);
+	`);
+	await restoreDatabaseRecords(live, encode(document));
+
+	// storage_stores and storage_routes still keep only the live config outright (sealed credentials are not
+	// something to merge silently); the cold storage tables below are the only ones that merge.
+	assert.deepEqual(all(live, "SELECT id, name FROM storage_stores"), [{ id: "sto_live", name: "Live store" }]);
+
+	// mail and drive have no live-vs-backup conflict: both the backup's mail rule and the live drive rule end
+	// up present, so an object a sweep already moved before the backup is still found by the rule that moved
+	// it, and the live drive rule the admin configured since is not lost either.
+	assert.deepEqual(
+		all(live, "SELECT object_class, after_days, target, enabled FROM storage_cold_rules ORDER BY object_class").map(
+			(row) => ({ ...row, enabled: Boolean(row.enabled) }),
+		),
+		[
+			{ object_class: "backups", after_days: 90, target: "sto_live", enabled: true },
+			{ object_class: "drive", after_days: 14, target: "sto_live", enabled: true },
+			{ object_class: "mail", after_days: 30, target: "sto_backup", enabled: true },
+		],
+	);
+	// backups is the conflict case (both sides have one): the live row wins, exactly as storage_stores does.
+	assert.equal(all(live, "SELECT target FROM storage_cold_rules WHERE object_class = 'backups'")[0].target, "sto_live");
+
+	// Both the backup's and the live object's locations are present: a cold-moved object nothing but the
+	// backup remembers the location of is not silently forgotten just because this install has its own.
+	assert.deepEqual(all(live, "SELECT key, store_id FROM object_locations ORDER BY key"), [
+		{ key: "drive/live-item", store_id: "sto_live" },
+		{ key: "inbound/from-backup.eml", store_id: "sto_backup" },
+	]);
+	assert.equal(all(live, "SELECT id FROM messages").length, 2, "the rest of the backup is restored");
+});
+
 test("an install without storage config takes the backup's", async (t) => {
 	const source = await database(t);
 	seedAccountData(source);

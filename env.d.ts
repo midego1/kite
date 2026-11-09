@@ -22,7 +22,7 @@ interface CloudflareEnv {
 	AI_MODEL?: string;
 	AI_BASE_URL?: string;
 	AI_API_KEY?: string;
-	// The outbound queue also carries webhook retries, manual backup exports, full-backup object copies and storage migration batches and attachment storage job batches, so that neither needs an extra binding.
+	// The outbound queue also carries webhook retries, manual backup exports, full-backup object copies, storage migration batches, cold storage batches and attachment storage job batches, so that neither needs an extra binding.
 	OUTBOUND_QUEUE: Queue<
 		| import("./src/lib/email/send").OutboundQueueMessage
 		| import("./src/lib/email/webhooks").WebhookRetryMessage
@@ -31,6 +31,7 @@ interface CloudflareEnv {
 		| import("./src/lib/backups/objects-types").BackupObjectsMessage
 		| import("./src/lib/backups/restore-job-types").RestoreJobMessage
 		| import("./src/lib/storage/migration-utils").StorageMigrateMessage
+		| import("./src/lib/storage/cold-utils").StorageColdMessage
 		| import("./src/lib/email/attachment-storage-jobs-types").AttachmentStorageJobMessage
 		| import("./src/lib/external-accounts/submit-utils").AppendSentMessage
 	>;

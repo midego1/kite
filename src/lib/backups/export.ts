@@ -9,7 +9,13 @@ import {
 	parseJsonBytes,
 	readSourcePages,
 } from "./backup-reader-utils";
-import { legacyBodyError, PRESERVED_ON_RESTORE, preservedRestoreTables, restoreRowError } from "./restore-utils";
+import {
+	legacyBodyError,
+	MERGED_ON_RESTORE,
+	PRESERVED_ON_RESTORE,
+	preservedRestoreTables,
+	restoreRowError,
+} from "./restore-utils";
 import { executeDatabaseRestore, restoredRow } from "./restore-engine";
 import type { BackupSource, BackupTableRange, PreparedRestore, PreparedRestoreTable } from "./restore-types";
 
@@ -49,6 +55,10 @@ const BACKUP_TABLES: DatabaseBackupTable[] = [
 	"backups",
 	"storage_stores",
 	"storage_routes",
+	// One rule and object_locations row per cold-moved key (migration 0097): a restore merges these with the
+	// live rows instead of keeping or replacing them wholesale (MERGED_ON_RESTORE in restore-utils.ts).
+	"storage_cold_rules",
+	"object_locations",
 	"app_settings",
 	"agent_providers",
 	"module_settings",
@@ -158,6 +168,13 @@ const INTERNAL_TABLES = [
 	// Storage migration jobs: transient work that points at the live stores, so replaying one into a
 	// restored database would restart a copy between stores that may no longer match.
 	"storage_migrations",
+	// One cold storage sweep per class (migration 0097): transient batch progress over the live stores, restarted
+	// fresh by the nightly cron, so replaying it would resume a sweep against stores that may no longer match.
+	"storage_cold_jobs",
+	// Cold-moved copies the orphan sweep is deciding whether to delete (migration 0104): candidates against the
+	// live stores at the moment they were found, meaningless once restored into a database whose own sweep has
+	// not seen them, and the sweep finds any real ones again on its own.
+	"storage_cold_orphans",
 	// The bookkeeping of a Money Watch "Scan last 90 days" (migration 0094): a cursor over the mail it was started on,
 	// meaningless in another database.
 	"finance_payment_scans",
@@ -375,6 +392,7 @@ async function restoreTargets(
 	db: D1Database,
 	databaseTables: Set<string>,
 	preserved: Set<string>,
+	merge: Set<string>,
 ): Promise<Map<string, Omit<PreparedRestoreTable, "range">>> {
 	const targets = new Map<string, Omit<PreparedRestoreTable, "range">>();
 	for (const table of BACKUP_TABLES) {
@@ -387,6 +405,7 @@ async function restoreTargets(
 				.filter((column) => column.pk > 0)
 				.sort((left, right) => left.pk - right.pk)
 				.map((column) => column.name),
+			merge: merge.has(table),
 		});
 	}
 	return targets;
@@ -413,17 +432,20 @@ function rowChecker(targets: Map<string, Omit<PreparedRestoreTable, "range">>) {
  * is recorded so executeDatabaseRestore can read the rows again table by table.
  *
  * `preserved` overrides which tables the restore leaves alone; a rollback passes the set the restore it undoes
- * decided on, because the half-restored database would no longer tell.
+ * decided on, because the half-restored database would no longer tell. `merge` overrides which tables are
+ * merged instead of emptied and replaced (`MERGED_ON_RESTORE` normally; a rollback passes none, so undoing a
+ * failed restore always replaces them outright instead of leaving a partial merge in place).
  */
 export async function prepareDatabaseRestore(
 	db: D1Database,
 	content: BackupSource | ArrayBuffer | Uint8Array,
-	options: { preserved?: string[] } = {},
+	options: { preserved?: string[]; merge?: readonly string[] } = {},
 ): Promise<PreparedRestore> {
 	const source = "read" in content ? content : memoryBackupSource(content);
 	const databaseTables = await listApplicationTables(db);
 	const preserved = options.preserved ? new Set(options.preserved) : await livePreservedTables(db, databaseTables);
-	const targets = await restoreTargets(db, databaseTables, preserved);
+	const merge = new Set(options.merge ?? MERGED_ON_RESTORE);
+	const targets = await restoreTargets(db, databaseTables, preserved, merge);
 	// Pass one also notes the connected accounts the backup restores, so a message naming another one is restored
 	// without it instead of failing the foreign key.
 	const externalAccountIds = new Set<string>();
@@ -442,7 +464,9 @@ export async function prepareDatabaseRestore(
 		const range = ranges.get(table) ?? null;
 		const target = targets.get(table);
 		if (target) tables.push({ ...target, range });
-		else if (!preserved.has(table) && range?.rows)
+		// A merge table missing from the schema (restoring into an install from before migration 0097) is
+		// quietly left out rather than failing the whole restore over rows nothing here can use yet.
+		else if (!preserved.has(table) && !merge.has(table) && range?.rows)
 			throw new Error(`Apply pending database migrations before restoring ${table.replaceAll("_", " ")}.`);
 	}
 	return {

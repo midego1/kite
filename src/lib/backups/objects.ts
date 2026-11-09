@@ -5,7 +5,7 @@ import { missingColumnFromError } from "@/lib/auth/user-lookup-utils";
 import { selectRow } from "@/lib/db/pending-columns";
 import { createLogger } from "@/lib/logger.mjs";
 import { getStorage } from "@/lib/storage";
-import { copyObject, findSource } from "@/lib/storage/migration";
+import { copyObject, findSource, locationAwareSources, matchesExisting } from "@/lib/storage/migration";
 import type { Storage } from "@/lib/storage/types";
 import { ATTACHMENT_OBJECT_ROWS_SQL } from "@/lib/email/attachment-storage-utils";
 import type {
@@ -259,8 +259,13 @@ async function putJson(env: CloudflareEnv, key: string, value: unknown): Promise
  * a key named twice is copied once, and an object that cannot be read or written is recorded as failed while the
  * rest of the batch goes on.
  */
-async function copyBatch(storage: Storage, prefix: string, items: { id: string; key: string }[]) {
-	const sources = storage.readChain("mail");
+async function copyBatch(
+	env: { DB: D1Database },
+	storage: Storage,
+	prefix: string,
+	items: { id: string; key: string }[],
+) {
+	const chain = storage.readChain("mail");
 	const part: BackupObjectsManifestPart = { objects: [], missing: [], failed: [] };
 	const seen = new Set<string>();
 	let bytes = 0;
@@ -271,15 +276,18 @@ async function copyBatch(storage: Storage, prefix: string, items: { id: string; 
 		if (seen.has(item.key)) continue;
 		seen.add(item.key);
 		try {
+			// A cold move (`cold.ts`) may have already parked this mail object on a store outside the mail
+			// class's normal chain; without this a full backup silently skips it as "missing".
+			const sources = await locationAwareSources(env, storage, chain, item.key);
 			const source = await findSource(sources, item.key);
 			const copyKey = backupObjectCopyKey(prefix, item.key);
 			const target = storage.storeForKey(copyKey);
 			const existing = source ? await target.bucket.head(copyKey) : null;
 			const size = !source
 				? null
-				: existing && existing.size === source.head.size
-					? existing.size
-					: await copyObject(source.store.bucket, source.head, target, item.key, copyKey);
+				: matchesExisting(source.head, existing, source.store.id, target.id)
+					? existing!.size
+					: await copyObject(source.store, source.head, target, item.key, copyKey);
 			if (size === null) part.missing.push(item.key);
 			else {
 				part.objects.push({ key: item.key, size });
@@ -301,7 +309,7 @@ async function processCopy(env: CloudflareEnv, message: BackupObjectsCopyMessage
 	if (!run) return;
 	const prefix = backup.objectsPrefix;
 	const page = await readPage(env, run);
-	const { part, bytes, lastId } = await copyBatch(await getStorage(env), prefix, page.items);
+	const { part, bytes, lastId } = await copyBatch(env, await getStorage(env), prefix, page.items);
 	const handled = part.objects.length + part.missing.length + part.failed.length;
 	if (handled) await putJson(env, backupObjectsManifestPartKey(prefix, run.part), part);
 	const { next, done } = advanceCopyRun(run, {
@@ -437,9 +445,12 @@ async function restoreObject(
 ): Promise<"restored" | "present" | "failed"> {
 	if (await env.BUCKET.head(key)) return "present";
 	const copyKey = backupObjectCopyKey(prefix, key);
-	const source = await findSource(storage.readChain("backups"), copyKey);
+	// The backup's own copy is a "backups"-class object and may itself have been cold-moved outside this
+	// chain by a backups cold rule.
+	const sources = await locationAwareSources(env, storage, storage.readChain("backups"), copyKey);
+	const source = await findSource(sources, copyKey);
 	if (!source) return "failed";
-	const copied = await copyObject(source.store.bucket, source.head, storage.storeForKey(key), copyKey, key);
+	const copied = await copyObject(source.store, source.head, storage.storeForKey(key), copyKey, key);
 	return copied === null ? "failed" : "restored";
 }
 

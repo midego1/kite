@@ -91,6 +91,8 @@ export const BACKUP_TABLE_GROUPS: { id: BackupTableGroupId; label: string; table
 			"backups",
 			"storage_stores",
 			"storage_routes",
+			"storage_cold_rules",
+			"object_locations",
 			"app_settings",
 			"agent_providers",
 			"module_settings",

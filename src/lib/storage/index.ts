@@ -1,4 +1,5 @@
 import { createLogger } from "@/lib/logger.mjs";
+import { COLD_STORAGE_CLASS } from "./cold-utils";
 import {
 	activeStoreId,
 	DEFAULT_STORE_ID,
@@ -31,12 +32,13 @@ export function rawEnvOf<T extends object>(env: T): T {
 
 export type StoragePlatformEnv = StorageEnv & Pick<CloudflareEnv, "BUCKET">;
 
-function bindingCapabilities(bucket: KiteBucket): StoreCapabilities {
+/** `isR2` is false on Node, whose file bucket has no storage classes; R2 natively supports Infrequent Access. */
+function bindingCapabilities(bucket: KiteBucket, isR2: boolean): StoreCapabilities {
 	return {
 		multipart: typeof bucket.createMultipartUpload === "function" && typeof bucket.resumeMultipartUpload === "function",
 		presign: false,
 		list: typeof bucket.list === "function",
-		storageClasses: [],
+		storageClasses: isR2 ? ["Standard", COLD_STORAGE_CLASS] : [],
 	};
 }
 
@@ -59,7 +61,12 @@ function s3Store(env: StorageEnv, record: StoreRecord): ObjectStore {
 
 /** The default store; with R2 S3 API keys saved for the binding it can also sign browser URLs. */
 function defaultStore(env: StorageEnv, binding: KiteBucket, config: StorageConfig): ObjectStore {
-	const store: ObjectStore = { id: DEFAULT_STORE_ID, bucket: binding, capabilities: bindingCapabilities(binding) };
+	const isR2 = env.KITE_RUNTIME !== "node";
+	const store: ObjectStore = {
+		id: DEFAULT_STORE_ID,
+		bucket: binding,
+		capabilities: bindingCapabilities(binding, isR2),
+	};
 	const keys = [...config.stores.values()].find((record) => record.sameAsBinding && !record.blocked);
 	if (!keys || env.KITE_RUNTIME === "node") return store;
 	return {

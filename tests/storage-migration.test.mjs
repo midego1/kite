@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import test from "node:test";
 import { APP_ORIGIN as ORIGIN, loadStorageServices } from "./support/storage-services.mjs";
 
-const { lib, fake, fixture, addStore } = await loadStorageServices("kite-storage-migration-", [
-	"kite-target",
-	"kite-other",
-]);
+const { lib, fake, fixture, addStore } = await loadStorageServices(
+	"kite-storage-migration-",
+	["kite-target", "kite-other"],
+	{ router: "src/lib/storage/router.ts" },
+);
 const { migration, stores, routeSwitch } = lib;
 const { clearStorageConfigCache } = lib.config;
 
@@ -193,6 +195,139 @@ test("an object missing from both stores is counted as an error and the job stil
 	assert.equal(done.status, "completed");
 	assert.equal(done.errors, 2, "once in the copy pass and once in verify");
 	assert.match(done.last_error, /missing from both stores/);
+});
+
+const md5 = (data) => createHash("md5").update(data).digest("hex");
+
+test("a same-size but corrupted copy already on the target store is not mistaken for a match, between two real stores", async (t) => {
+	const { env, db, queue } = await fixture(t);
+	await addStore(env, "sto_other", "kite-other");
+	await addStore(env, "sto_target", "kite-target");
+	// The object starts on a genuine S3-compatible store (not the default file bucket, whose ETag is a random
+	// UUID rather than a content hash), so its ETag is real and comparable with the target's.
+	db.db
+		.prepare(
+			"INSERT INTO storage_routes (object_class, store_id, previous_store_id, updated_at) VALUES ('mail', 'sto_other', 'default', 1)",
+		)
+		.run();
+	clearStorageConfigCache();
+	const routed = lib.router.withStorage(env);
+	const rawKey = "inbound/m1.eml";
+	const content = "the real bytes of this message";
+	await routed.BUCKET.put(rawKey, content);
+	db.db
+		.prepare(
+			`INSERT INTO messages (id, user_id, mailbox_id, direction, from_addr, to_addr, subject, status, raw_r2_key, created_at)
+			 VALUES ('m1', 'owner', 'mailbox-a', 'inbound', 'sender@example.net', 'a@example.com', 'Hello', 'received', ?, 1)`,
+		)
+		.run(rawKey);
+	// The target already has an object of the exact same size at that key, but with different bytes: the kind
+	// of silent corruption or stale leftover a size-only check would wave through as "already copied".
+	const corrupted = Buffer.from("the real bytes of this corrupt", "utf8");
+	assert.equal(corrupted.length, Buffer.byteLength(content), "same size as the real object");
+	fake.buckets.get("kite-target").objects.set(rawKey, {
+		bytes: corrupted,
+		meta: { custom: {} },
+		etag: md5(corrupted),
+		lastModified: new Date(),
+	});
+	const id = await migration.queueStorageMigration(env, {
+		objectClass: "mail",
+		fromStoreId: "sto_other",
+		toStoreId: "sto_target",
+		createdByUserId: null,
+	});
+	await drain(env, queue);
+	const done = job(env, id);
+	assert.equal(done.status, "completed");
+	assert.equal(done.errors, 0);
+	assert.equal(targetText("inbound/m1.eml"), content, "the ETag mismatch forced a real copy over the corrupt one");
+});
+
+test("a Drive file whose source ETag is a multipart one (every Drive upload) still copies S3-to-S3 under the single-part threshold", async (t) => {
+	const { env, db, queue } = await fixture(t);
+	await addStore(env, "sto_other", "kite-other");
+	await addStore(env, "sto_target", "kite-target");
+	const key = "drive/drv_a";
+	const content = Buffer.from("a Drive file uploaded in parts, copied with one PUT");
+	// Drive uploads are always multipart (proxied or direct), so a real custom-store ETag looks like this even
+	// for a file well under the single-part copy threshold: it is not a content hash and is never comparable to
+	// a fresh single-part PUT's own ETag, even when the bytes are byte-for-byte identical.
+	fake.buckets.get("kite-other").objects.set(key, {
+		bytes: content,
+		meta: { custom: {} },
+		etag: `${md5(content)}-2`,
+		lastModified: new Date(),
+	});
+	db.db
+		.prepare(
+			`INSERT INTO drive_items (id, owner_id, kind, name, size, store_id, object_key, status, created_at, updated_at)
+			 VALUES ('drv_a', 'owner', 'file', 'file.bin', ?, 'sto_other', ?, 'ready', 1, 1)`,
+		)
+		.run(content.length, key);
+	const id = await migration.queueStorageMigration(env, {
+		objectClass: "drive",
+		fromStoreId: "sto_other",
+		toStoreId: "sto_target",
+		createdByUserId: null,
+	});
+	await drain(env, queue);
+	const done = job(env, id);
+	assert.equal(done.errors, 0, done.last_error);
+	assert.equal(done.status, "completed");
+	assert.equal(
+		Buffer.from(fake.buckets.get("kite-target").objects.get(key).bytes).toString("utf8"),
+		content.toString("utf8"),
+		"copied despite the source's multipart-shaped ETag",
+	);
+	assert.equal(db.db.prepare("SELECT store_id FROM drive_items WHERE id = 'drv_a'").get().store_id, "sto_target");
+});
+
+test("a source object's SSE-KMS/SSE-C ETag (a real, non-multipart 32-hex value that is not the content MD5) fails the copy's verification safely instead of corrupting anything", async (t) => {
+	const { env, db, queue } = await fixture(t);
+	await addStore(env, "sto_other", "kite-other");
+	await addStore(env, "sto_target", "kite-target");
+	const rawKey = "inbound/m2.eml";
+	const content = "bytes that came from an SSE-KMS or SSE-C encrypted source object";
+	// AWS documents SSE-KMS and SSE-C ETags as not being the object's content MD5, but on real AWS they are
+	// still exactly 32 hex characters, the same shape a real content MD5 has (round-5 review, L3b): there is no
+	// way to tell them apart from the shape alone, so `looksLikeContentMd5Etag` still treats this one as
+	// comparable. It still fails safe: the mismatch it finds below rejects the copy instead of trusting it, so
+	// nothing is ever corrupted, at the cost of retrying (and logging an error) every sweep without succeeding.
+	const sseEtag = "0123456789abcdef0123456789abcdef";
+	assert.notEqual(sseEtag, createHash("md5").update(content).digest("hex"), "must not coincide with the real MD5");
+	fake.buckets.get("kite-other").objects.set(rawKey, {
+		bytes: Buffer.from(content),
+		meta: { custom: {} },
+		etag: sseEtag,
+		lastModified: new Date(),
+	});
+	db.db
+		.prepare(
+			`INSERT INTO messages (id, user_id, mailbox_id, direction, from_addr, to_addr, subject, status, raw_r2_key, created_at)
+			 VALUES ('m2', 'owner', 'mailbox-a', 'inbound', 'sender@example.net', 'a@example.com', 'Hello', 'received', ?, 1)`,
+		)
+		.run(rawKey);
+	const id = await migration.queueStorageMigration(env, {
+		objectClass: "mail",
+		fromStoreId: "sto_other",
+		toStoreId: "sto_target",
+		createdByUserId: null,
+	});
+	await drain(env, queue);
+	const done = job(env, id);
+	assert.equal(done.status, "completed");
+	assert.equal(done.errors, 2, "rejected once in the copy pass and once in verify, never silently trusted");
+	assert.match(done.last_error, /ETag does not match/);
+	// Left in place rather than deleted (round-8 review, `m2`): a second mover could already have found this
+	// exact same-size copy, recorded it and deleted its own source by the time this call gets here, which
+	// would make deleting it here the one and only copy gone.
+	assert.equal(fake.buckets.get("kite-target").objects.has(rawKey), true, "the rejected copy is left for cleanup");
+	assert.equal(
+		Buffer.from(fake.buckets.get("kite-other").objects.get(rawKey).bytes).toString("utf8"),
+		content,
+		"the source is never touched by a failed copy",
+	);
 });
 
 test("a cancelled migration stops after the current batch", async (t) => {

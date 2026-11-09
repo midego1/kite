@@ -37,6 +37,8 @@
 	"/api/admin/storage/cloudflare/buckets",
 	"/api/admin/storage/cloudflare/direct-uploads",
 	"/api/admin/storage/cloudflare",
+	"/api/admin/storage/cold/[class]",
+	"/api/admin/storage/cold",
 	"/api/admin/storage/migrations/[id]",
 	"/api/admin/storage/reminder",
 	"/api/admin/storage",

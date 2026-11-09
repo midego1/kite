@@ -25,6 +25,28 @@ export type MigrationView = {
 
 export type RouteView = { objectClass: RoutableClass; storeId: string; previousStoreId: string | null };
 
+export type ColdRuleView = {
+	objectClass: RoutableClass;
+	afterDays: number;
+	minBytes: number;
+	target: string;
+	enabled: boolean;
+	updatedAt: string | null;
+};
+
+export type ColdJobView = {
+	objectClass: RoutableClass;
+	status: "queued" | "running" | "completed" | "failed";
+	objectsDone: number;
+	bytesDone: number;
+	errors: number;
+	lastError: string | null;
+	startedAt: string | null;
+	finishedAt: string | null;
+};
+
+export type ColdStorageOverview = { rules: ColdRuleView[]; jobs: ColdJobView[]; iaAvailable: boolean };
+
 export type StorageOverview = {
 	directUploadsReminder: { show: boolean; setup: DirectUploadsSetupRecord | null };
 	defaultStore: { id: string; name: string; kind: "r2" | "files"; directUploads: boolean };

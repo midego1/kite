@@ -18,6 +18,17 @@ export function isHtmlBodyObjectKey(messageId: string, key: string | null | unde
 	return !!key && key === htmlBodyObjectKey(messageId);
 }
 
+/**
+ * The message id a body key names, or null for anything else. `html_body_key` carries no index (it is a narrow
+ * view, `message-bodies.ts`, kept off the whole-row schema), so a liveness check that only has the key reads
+ * the live row by its indexed primary key instead of scanning the column (`cold.ts`'s `stillReferenced`).
+ */
+export function messageIdFromHtmlBodyObjectKey(key: string): string | null {
+	if (!key.startsWith(BODY_KEY_PREFIX) || !key.endsWith(".html")) return null;
+	const id = key.slice(BODY_KEY_PREFIX.length, -".html".length);
+	return id || null;
+}
+
 /** Whether an HTML body is over `BODY_OFFLOAD_BYTES`, without encoding it when its length already decides. */
 export function exceedsBodyOffloadBytes(html: string | null | undefined, limit = BODY_OFFLOAD_BYTES): boolean {
 	if (!html) return false;

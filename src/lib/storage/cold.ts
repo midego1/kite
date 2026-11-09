@@ -1,10 +1,10 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { getDb } from "@/db";
-import { objectLocations, storageColdJobs, storageColdOrphans, storageColdRules } from "@/db/schema/storage";
-import { createAuditLog } from "@/lib/mailboxes/audit";
+import { storageColdJobs, storageColdOrphans, storageColdRules } from "@/db/schema/storage";
 import { createLogger } from "@/lib/logger.mjs";
 import { isNoSuchTableError } from "@/lib/modules/state-utils";
 import { countOrphanCandidates, pruneOrphanedColdLocations } from "./cold-orphans";
+import { dropStrandedPurgeRows, storeHoldsLocatedObjects } from "./object-locations";
 import {
 	COLD_STORAGE_CLASS,
 	initialColdCursor,
@@ -21,9 +21,8 @@ import {
 } from "./cold-utils";
 import { coldPage, driveColdPage, type Item } from "./cold-sources";
 import { moveColdObject, moveColdDriveObject } from "./cold-move";
-import { DEFAULT_STORE_ID, isRoutableClass, isUsableStore, ROUTABLE_CLASSES, type StorageConfig } from "./config-utils";
+import { DEFAULT_STORE_ID, isRoutableClass, ROUTABLE_CLASSES } from "./config-utils";
 import { processStorageMigration } from "./migration";
-import { unpurgedMigrationFrom } from "./migration-purge";
 import {
 	isLeased,
 	isStalled,
@@ -34,7 +33,7 @@ import {
 	takeBatch,
 	type MigrationSource,
 } from "./migration-utils";
-import { coldStorageTablesReady, readStorageConfig } from "./config";
+import { classLabel } from "./cold-rules";
 import { getStorage, type StoragePlatformEnv } from "./index";
 import type { RoutableClass, Storage } from "./types";
 
@@ -101,78 +100,7 @@ export async function coldRulesView(env: ColdEnv): Promise<ColdRuleView[]> {
 	});
 }
 
-type SaveColdRuleInput = { afterDays: number; minBytes: number; target: string; enabled: boolean };
-
-/** Upserts one class's rule, returning the moment it was saved; `updateColdRule` validates `target` first. */
-async function saveColdRule(
-	env: CloudflareEnv,
-	actorId: string,
-	objectClass: RoutableClass,
-	input: SaveColdRuleInput,
-): Promise<Date> {
-	const now = new Date();
-	await getDb(env)
-		.insert(storageColdRules)
-		.values({ objectClass, ...input, updatedAt: now, updatedBy: actorId })
-		.onConflictDoUpdate({
-			target: storageColdRules.objectClass,
-			set: { ...input, updatedAt: now, updatedBy: actorId },
-		});
-	await createAuditLog(env, {
-		actorUserId: actorId,
-		action: "storage.cold_rule_saved",
-		metadata: { objectClass, ...input },
-	});
-	return now;
-}
-
-type ColdRuleFailure = { ok: false; status: number; error: string; field?: string; code?: string };
-export type ColdRuleResult = ({ ok: true } & { rule: SaveColdRuleInput & { updatedAt: string } }) | ColdRuleFailure;
-
-const MAX_AFTER_DAYS = 3650;
-
-/** Validates a rule body (the age, the size floor, and `target` against the live stores) before saving it. */
-export async function updateColdRule(
-	env: CloudflareEnv,
-	actorId: string,
-	objectClass: string,
-	body: unknown,
-): Promise<ColdRuleResult> {
-	if (!isRoutableClass(objectClass)) return { ok: false, status: 404, error: "Unknown object class" };
-	if (!(await coldStorageTablesReady(env)))
-		return {
-			ok: false,
-			status: 409,
-			error: "Apply the pending database update first",
-			code: "MIGRATION_PENDING",
-		};
-	if (!body || typeof body !== "object") return { ok: false, status: 400, error: "Choose the age, size and target" };
-	const { afterDays, minBytes, target, enabled } = body as Record<string, unknown>;
-	if (typeof afterDays !== "number" || !Number.isInteger(afterDays) || afterDays < 1 || afterDays > MAX_AFTER_DAYS)
-		return { ok: false, status: 400, error: `Enter an age from 1 to ${MAX_AFTER_DAYS} days`, field: "afterDays" };
-	if (typeof minBytes !== "number" || !Number.isInteger(minBytes) || minBytes < 0)
-		return { ok: false, status: 400, error: "Enter a minimum size of 0 or more bytes", field: "minBytes" };
-	if (typeof target !== "string" || !target)
-		return { ok: false, status: 400, error: "Choose a target", field: "target" };
-	if (typeof enabled !== "boolean") return { ok: false, status: 400, error: "Choose whether the rule is on" };
-	const config = await readStorageConfig(env);
-	if (!isUsableColdTarget(config, target))
-		return { ok: false, status: 404, error: "That target is not available", field: "target" };
-	// A store a migration is still emptying (or may yet purge) is no place to archive into: the purge would
-	// delete what the sweep puts there (round-10 review, `B7`). A rule saved off moves nothing, so it may wait.
-	const migrating = enabled && target !== R2_IA_TARGET ? await unpurgedMigrationFrom(env, target) : null;
-	if (migrating)
-		return {
-			ok: false,
-			status: 409,
-			error: `${classLabel(migrating.objectClass)} is still being moved off this store, or its old copies there have not been deleted yet; finish that migration (delete the old copies) or choose another target`,
-			field: "target",
-			code: "STORE_MIGRATING",
-		};
-	const input: SaveColdRuleInput = { afterDays, minBytes, target, enabled };
-	const savedAt = await saveColdRule(env, actorId, objectClass, input);
-	return { ok: true, rule: { ...input, updatedAt: savedAt.toISOString() } };
-}
+export { updateColdRule } from "./cold-rules";
 
 export async function listColdJobs(env: ColdEnv): Promise<Job[]> {
 	try {
@@ -432,6 +360,8 @@ export async function runStorageColdMaintenance(env: ColdEnv, now = new Date()):
 		if (isStalled(state, now.getTime(), job.startedAt?.getTime() ?? job.createdAt.getTime()))
 			await enqueue(env, job.objectClass);
 	}
+	// Before the scan, so a purge's stranded claim row (`m2`) is never mistaken for a cold location.
+	await dropStrandedPurgeRows(env, now);
 	await pruneOrphanedColdLocations(env, now);
 }
 
@@ -439,22 +369,6 @@ export async function runStorageColdMaintenance(env: ColdEnv, now = new Date()):
 export async function coldIaAvailable(env: ColdEnv): Promise<boolean> {
 	const storage = await getStorage(env);
 	return !!storage.store(DEFAULT_STORE_ID)?.capabilities.storageClasses.includes(COLD_STORAGE_CLASS);
-}
-
-/**
- * Whether `target` is a rule an admin may save: `r2-ia` always (a rule can be saved ahead of a runtime or
- * capability change that later makes it usable; the sweep itself quietly does nothing for an item whose store
- * cannot hold that storage class yet), or a store that is neither the default nor blocked.
- */
-function isUsableColdTarget(config: StorageConfig, target: string): boolean {
-	if (target === R2_IA_TARGET) return true;
-	return target !== DEFAULT_STORE_ID && isUsableStore(config, target);
-}
-
-const CLASS_LABELS: Record<string, string> = { mail: "Mail", drive: "Drive", backups: "Backups" };
-
-function classLabel(objectClass: string): string {
-	return CLASS_LABELS[objectClass] ?? objectClass;
 }
 
 /** Rows of a query on a cold storage table, or none before the migration that creates it. */
@@ -522,14 +436,8 @@ export async function coldReferenceBlocking(env: ColdEnv, id: string): Promise<s
 			.limit(1),
 	);
 	if (rule) return `A cold storage rule for ${rule.objectClass} still targets this store; change it first`;
-	const [object] = await rowsOrNone(() =>
-		getDb(env)
-			.select({ key: objectLocations.key })
-			.from(objectLocations)
-			.where(eq(objectLocations.storeId, id))
-			.limit(1),
-	);
-	if (object) return "Objects a cold storage sweep moved here are still on this store; move them back first";
+	if (await storeHoldsLocatedObjects(env, id))
+		return "Objects a cold storage sweep moved here are still on this store; move them back first";
 	const sweeping = await activeSweepTargeting(env, id);
 	if (sweeping) return `A cold storage sweep for ${sweeping} is still moving objects here; wait for it to finish first`;
 	const [orphan] = await rowsOrNone(() =>

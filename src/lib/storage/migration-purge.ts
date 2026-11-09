@@ -4,7 +4,7 @@ import { storageMigrations } from "@/db/schema/storage";
 import { isNoSuchTableError } from "@/lib/modules/state-utils";
 import { isRoutableClass } from "./config-utils";
 import { parseCursor } from "./migration-utils";
-import { renewLocationLease, withPurgeLease } from "./object-locations";
+import { confirmPurgeLease, withPurgeLease } from "./object-locations";
 import type { ObjectStore, RoutableClass } from "./types";
 
 type Job = typeof storageMigrations.$inferSelect;
@@ -34,7 +34,9 @@ export async function purgeOldCopy(
 			const old = await from.bucket.head(item.key);
 			if (!old) return;
 			if (!present || present.size !== old.size) throw new Error("Not complete on the new store; kept on the old one");
-			if (lease && !(await renewLocationLease(env, item.key, lease.token)))
+			// The last statement before the delete: the purge's own claim must still be the row's and unexpired
+			// (`m1`), or someone may have taken the key over since the checks above.
+			if (lease && !(await confirmPurgeLease(env, item.key, lease.token)))
 				throw new Error("Lost the location lease before the delete; kept on the old store");
 			await from.bucket.delete(item.key);
 		},

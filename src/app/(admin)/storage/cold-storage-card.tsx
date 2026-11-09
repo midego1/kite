@@ -42,7 +42,8 @@ function ColdRuleRow({
 }) {
 	// The row mounts only once `rule` has its real fetched value; a later refetch while idle (only a running
 	// job's three-second poll refetches at all) could still be someone else's edit, so the form is never
-	// silently resynced from it — `lastSavedAt` instead refuses to overwrite a change made elsewhere since.
+	// silently resynced from it. Each save sends `lastSavedAt` as `expectedUpdatedAt`, and the server refuses it
+	// (409) when the stored rule changed since, whether or not this tab has refetched.
 	const [form, setForm] = useState<ColdRuleForm>(() => coldRuleToForm(rule));
 	const [lastSavedAt, setLastSavedAt] = useState(rule.updatedAt);
 	const [busy, setBusy] = useState(false);
@@ -52,8 +53,6 @@ function ColdRuleRow({
 	const update = (change: Partial<ColdRuleForm>) => setForm((current) => ({ ...current, ...change }));
 
 	async function save() {
-		if (rule.updatedAt !== lastSavedAt)
-			return setError("Someone else changed this rule since the page loaded; reload before saving your own edit.");
 		const built = coldRuleToBody(form);
 		if ("error" in built) return setError(built.error);
 		setBusy(true);
@@ -61,7 +60,7 @@ function ColdRuleRow({
 		try {
 			const saved = await storageRequest<{ rule: { updatedAt: string } }>(`/cold/${rule.objectClass}`, {
 				method: "PUT",
-				json: built.body,
+				json: { ...built.body, expectedUpdatedAt: lastSavedAt },
 			});
 			setLastSavedAt(saved.rule.updatedAt);
 			onChanged();

@@ -138,6 +138,9 @@ async function claimOrCreateLocationLease(
 	const token = newId("lease");
 	const until = nowSeconds + LEASE_SECONDS;
 	try {
+		// A purge's stranded claim row (`m2`) names no real location; the move creates its own row instead,
+		// naming where the bytes truly are.
+		await dropStrandedPurgeRows(env, now, key);
 		const claimed = await tryClaimExistingRow(env, key, token, until, nowSeconds);
 		if (claimed) return claimed;
 		const created = await env.DB.prepare(
@@ -233,14 +236,86 @@ export async function withLocationLease<T>(
  * key had no row). */
 export type PurgeClaim = { lease: LocationLease | undefined; storeId: string | null };
 
+/** The token prefix of a row a purge created only to hold its claim (`withPurgeLease`), never a real location.
+ * Such a row whose claim has expired was stranded by a purge that stopped mid-key (round-11 review, `m2`): it
+ * is dropped at the next claim of that key and by the five-minute maintenance (`dropStrandedPurgeRows`), and
+ * never counts as an object a store still holds (`storeHoldsLocatedObjects`). */
+const PURGE_ROW_PREFIX = "ptmp";
+const PURGE_ROW_SQL = `lease_token LIKE '${PURGE_ROW_PREFIX}\\_%' ESCAPE '\\'`;
+
+/** Drops every stranded purge row (above), or only `key`'s; a no-op before migration 0104. */
+export async function dropStrandedPurgeRows(env: LocationEnv, now = new Date(), key?: string): Promise<void> {
+	const nowSeconds = Math.floor(now.getTime() / 1000);
+	try {
+		await (
+			key
+				? env.DB.prepare(`DELETE FROM object_locations WHERE key = ? AND ${PURGE_ROW_SQL} AND claimed_until < ?`).bind(
+						key,
+						nowSeconds,
+					)
+				: env.DB.prepare(`DELETE FROM object_locations WHERE ${PURGE_ROW_SQL} AND claimed_until < ?`).bind(nowSeconds)
+		).run();
+	} catch (error) {
+		if (isNoSuchTableError(error) || isMissingLeaseColumn(error)) return;
+		throw error;
+	}
+}
+
+/** Whether `object_locations` names `storeId` for any key, leaving out a purge's own claim rows (live or
+ * stranded), which never stand for an object a cold move put there. */
+export async function storeHoldsLocatedObjects(env: LocationEnv, storeId: string): Promise<boolean> {
+	try {
+		const row = await env.DB.prepare(
+			`SELECT 1 AS found FROM object_locations WHERE store_id = ? AND NOT coalesce(${PURGE_ROW_SQL}, 0) LIMIT 1`,
+		)
+			.bind(storeId)
+			.first<{ found: number }>();
+		return !!row;
+	} catch (error) {
+		if (isNoSuchTableError(error)) return false;
+		if (!isMissingLeaseColumn(error)) throw error;
+	}
+	const row = await env.DB.prepare("SELECT 1 AS found FROM object_locations WHERE store_id = ? LIMIT 1")
+		.bind(storeId)
+		.first<{ found: number }>();
+	return !!row;
+}
+
+/**
+ * Re-checks, in one conditional statement right before a purge deletes an object, that its own claim on `key`
+ * is still the row's and has not expired, extending it (round-11 review, `m1`); `false` means the purge must not
+ * delete. Stricter than `renewLocationLease`, which a mover uses to keep a claim it is cutting close: a purge
+ * whose claim lapsed may already have been overtaken, so it skips the key instead.
+ */
+export async function confirmPurgeLease(
+	env: LocationEnv,
+	key: string,
+	token: string,
+	now = new Date(),
+): Promise<boolean> {
+	const nowSeconds = Math.floor(now.getTime() / 1000);
+	try {
+		const result = await env.DB.prepare(
+			"UPDATE object_locations SET claimed_until = ? WHERE key = ? AND lease_token = ? AND claimed_until >= ?",
+		)
+			.bind(nowSeconds + LEASE_SECONDS, key, token, nowSeconds)
+			.run();
+		return (result.meta?.changes ?? 0) > 0;
+	} catch (error) {
+		if (isNoSuchTableError(error) || isMissingLeaseColumn(error)) return true;
+		throw error;
+	}
+}
+
 /**
  * Runs a storage-migration purge's check-and-delete for `key` under the same location lease a cold move holds
- * from its copy through its own source delete (round-10 review, `B7`), so the purge can never delete a copy a
- * mover is in the middle of recording: an existing row's claim is taken the usual way, and a key with no row
- * yet gets one created under the claim, naming `initial.storeId` (the migration's new store, where the bytes
- * the purge keeps are), then removed again afterwards, so a purge leaves no rows behind for keys that were
- * never cold. Answers `"busy"` without running `fn` while someone else holds a live claim. Before migration
- * 0104 there is nothing to claim through; `fn` then runs with no lease and the recorded store read directly.
+ * from its copy through its fenced record (round-10 review, `B7`), so the purge never deletes a copy a mover is
+ * in the middle of recording: an existing row's claim is taken the usual way, and a key with no row yet gets one
+ * created under the claim, naming `initial.storeId` (the migration's new store, where the bytes the purge keeps
+ * are), with a `ptmp_` token, then removed again afterwards, so a purge leaves no rows behind for keys that were
+ * never cold. A stranded row of an earlier purge is dropped first. Answers `"busy"` without running `fn` while
+ * someone else holds a live claim. Before migration 0104 there is nothing to claim through; `fn` then runs with
+ * no lease and the recorded store read directly.
  */
 export async function withPurgeLease<T>(
 	env: LocationEnv,
@@ -250,11 +325,12 @@ export async function withPurgeLease<T>(
 	now = new Date(),
 ): Promise<T | "busy"> {
 	const nowSeconds = Math.floor(now.getTime() / 1000);
-	const token = newId("lease");
 	const until = nowSeconds + LEASE_SECONDS;
 	let claim: PurgeClaim;
-	let created = false;
+	let createdToken: string | null = null;
 	try {
+		await dropStrandedPurgeRows(env, now, key);
+		const token = newId("lease");
 		const claimed = await tryClaimExistingRow(env, key, token, until, nowSeconds);
 		if (claimed) {
 			const row = await env.DB.prepare("SELECT store_id FROM object_locations WHERE key = ? AND lease_token = ?")
@@ -262,16 +338,17 @@ export async function withPurgeLease<T>(
 				.first<{ store_id: string }>();
 			claim = { lease: claimed, storeId: row?.store_id ?? null };
 		} else {
+			const purgeToken = newId(PURGE_ROW_PREFIX);
 			const inserted = await env.DB.prepare(
 				`INSERT INTO object_locations (key, object_class, store_id, storage_class, size, moved_at, lease_token, claimed_until)
 				 VALUES (?, ?, ?, NULL, ?, ?, ?, ?)
 				 ON CONFLICT (key) DO NOTHING`,
 			)
-				.bind(key, initial.objectClass, initial.storeId, initial.size, nowSeconds, token, until)
+				.bind(key, initial.objectClass, initial.storeId, initial.size, nowSeconds, purgeToken, until)
 				.run();
 			if (!(inserted.meta?.changes ?? 0)) return "busy";
-			created = true;
-			claim = { lease: { token }, storeId: null };
+			createdToken = purgeToken;
+			claim = { lease: { token: purgeToken }, storeId: null };
 		}
 	} catch (error) {
 		if (!isNoSuchTableError(error) && !isMissingLeaseColumn(error)) throw error;
@@ -280,9 +357,11 @@ export async function withPurgeLease<T>(
 	try {
 		return await fn(claim);
 	} finally {
-		if (created) {
+		if (createdToken) {
 			// Only the row this purge itself created, and only while its token is still on it.
-			await env.DB.prepare("DELETE FROM object_locations WHERE key = ? AND lease_token = ?").bind(key, token).run();
+			await env.DB.prepare("DELETE FROM object_locations WHERE key = ? AND lease_token = ?")
+				.bind(key, createdToken)
+				.run();
 		} else if (claim.lease) await releaseLocationLease(env, key, claim.lease.token);
 	}
 }

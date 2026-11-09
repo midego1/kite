@@ -14,6 +14,7 @@ const { lib, fake, fixture, addStore } = await loadStorageServices(
 		storageIndex: "src/lib/storage/index.ts",
 		objectLocations: "src/lib/storage/object-locations.ts",
 		coldMove: "src/lib/storage/cold-move.ts",
+		migrationPurge: "src/lib/storage/migration-purge.ts",
 	},
 );
 const { cold, router: routerLib, stores } = lib;
@@ -1709,6 +1710,7 @@ test("n2: object deletes in the cold storage code stay limited to the mover's ow
 		"src/lib/storage/cold-orphans.ts": 0,
 		"src/lib/storage/cold-sources.ts": 0,
 		"src/lib/storage/cold-utils.ts": 0,
+		"src/lib/storage/cold-rules.ts": 0,
 		"src/lib/storage/cold-move.ts": 2,
 	};
 	for (const [file, count] of Object.entries(allowed)) {
@@ -1716,4 +1718,159 @@ test("n2: object deletes in the cold storage code stay limited to the mover's ow
 		const deletes = source.match(/\.delete\s*\(/g) ?? [];
 		assert.equal(deletes.length, count, `${file} has ${deletes.length} delete calls, expected ${count}`);
 	}
+});
+
+/** A stand-in store for calling `purgeOldCopy` directly: `onHead` runs on each HEAD, before it answers. */
+function stubStore(id, { present = true, onHead = async () => undefined } = {}) {
+	const deleted = [];
+	return {
+		id,
+		deleted,
+		bucket: {
+			head: async (key) => {
+				await onHead(key);
+				return present ? { size: 8 } : null;
+			},
+			delete: async (key) => void deleted.push(key),
+		},
+	};
+}
+
+for (const [label, tamper] of [
+	[
+		"another claim replaced the purge's token",
+		(env, key) => env.DB.db.prepare("UPDATE object_locations SET lease_token = 'lease_mover' WHERE key = ?").run(key),
+	],
+	[
+		"the purge's own claim expired",
+		(env, key) => env.DB.db.prepare("UPDATE object_locations SET claimed_until = 1 WHERE key = ?").run(key),
+	],
+]) {
+	for (const existing of [false, true]) {
+		test(`m1: a purge does not delete when, right before its delete, ${label} (${existing ? "existing row" : "no row before"})`, async (t) => {
+			const { env } = await fixture(t);
+			const key = "inbound/stall.eml";
+			if (existing)
+				env.DB.db
+					.prepare(
+						"INSERT INTO object_locations (key, object_class, store_id, size, moved_at) VALUES (?, 'mail', 'default', 8, ?)",
+					)
+					.run(key, NOW);
+			let heads = 0;
+			const to = stubStore("default");
+			// The purge's second HEAD (of the old store) is its last step before the delete.
+			const from = stubStore("sto_x", {
+				onHead: async () => {
+					heads += 1;
+					tamper(env, key);
+				},
+			});
+			await assert.rejects(
+				() => lib.migrationPurge.purgeOldCopy(env, from, to, "mail", { key, size: 8 }),
+				/Lost the location lease before the delete/,
+			);
+			assert.equal(heads, 1);
+			assert.deepEqual(from.deleted, [], "nothing deleted");
+		});
+	}
+}
+
+test("m1: with its claim intact the purge deletes the old copy and releases or removes its row", async (t) => {
+	const { env } = await fixture(t);
+	const to = stubStore("default");
+	const fresh = stubStore("sto_x");
+	await lib.migrationPurge.purgeOldCopy(env, fresh, to, "mail", { key: "inbound/a.eml", size: 8 });
+	assert.deepEqual(fresh.deleted, ["inbound/a.eml"]);
+	assert.equal(location(env, "inbound/a.eml"), undefined, "the purge's own claim row is gone");
+	env.DB.db
+		.prepare(
+			"INSERT INTO object_locations (key, object_class, store_id, size, moved_at) VALUES (?, 'mail', 'sto_y', 8, ?)",
+		)
+		.run("inbound/b.eml", NOW);
+	const again = stubStore("sto_x");
+	await lib.migrationPurge.purgeOldCopy(env, again, to, "mail", { key: "inbound/b.eml", size: 8 });
+	assert.deepEqual(again.deleted, ["inbound/b.eml"]);
+	assert.equal(location(env, "inbound/b.eml").store_id, "sto_y");
+	assert.equal(location(env, "inbound/b.eml").lease_token, null, "released");
+});
+
+test("m2: a row stranded by a purge that stopped mid-key neither makes a later purge skip the key nor blocks deleting the store", async (t) => {
+	const { env } = await fixture(t);
+	await addStore(env, "sto_y", "kite-target");
+	const key = "inbound/stranded.eml";
+	const strand = (token, claimedUntil) =>
+		env.DB.db
+			.prepare(
+				`INSERT INTO object_locations (key, object_class, store_id, size, moved_at, lease_token, claimed_until)
+				 VALUES (?, 'mail', 'sto_y', 8, ?, ?, ?)`,
+			)
+			.run(key, NOW, token, claimedUntil);
+	// A Y→default purge crashed after creating its claim row for this key (the row names Y, its new store).
+	strand("ptmp_dead", 1);
+	assert.equal(await cold.coldReferenceBlocking(env, "sto_y"), null, "no misleading 'objects moved here'");
+
+	// A later migration away from Y purges the key instead of reading the stranded row as Y's live cold copy.
+	const from = stubStore("sto_y");
+	await lib.migrationPurge.purgeOldCopy(env, from, stubStore("default"), "mail", { key, size: 8 });
+	assert.deepEqual(from.deleted, [key]);
+	assert.equal(location(env, key), undefined, "the stranded row is gone");
+
+	// The five-minute maintenance drops stranded purge rows too, but never a live purge's claim or a real
+	// location (a mover's expired claim on a real row included).
+	strand("ptmp_dead", 1);
+	env.DB.db
+		.prepare(
+			`INSERT INTO object_locations (key, object_class, store_id, size, moved_at, lease_token, claimed_until) VALUES
+			 ('inbound/live.eml', 'mail', 'sto_y', 8, ?, 'ptmp_live', ?),
+			 ('inbound/real.eml', 'mail', 'sto_y', 8, ?, 'lease_old', 1)`,
+		)
+		.run(NOW, Math.floor(Date.now() / 1000) + 300, NOW);
+	await cold.runStorageColdMaintenance(env, new Date());
+	assert.equal(location(env, key), undefined);
+	assert.ok(location(env, "inbound/live.eml"), "a live purge claim stays");
+	assert.ok(location(env, "inbound/real.eml"), "a real location stays");
+	assert.match(await cold.coldReferenceBlocking(env, "sto_y"), /moved here are still on this store/);
+});
+
+test("CodeRabbit: a saved rule answers with the stored whole-second time, so the next save from the same form is accepted", async (t) => {
+	const { env } = await fixture(t);
+	await addStore(env, "sto_c", "kite-target");
+	const body = { afterDays: 30, minBytes: 0, target: "sto_c", enabled: true };
+	const first = await cold.updateColdRule(env, "owner", "mail", { ...body, expectedUpdatedAt: null });
+	assert.equal(first.ok, true, first.ok ? undefined : first.error);
+	assert.equal(new Date(first.rule.updatedAt).getMilliseconds(), 0, "whole seconds, as stored");
+	const view = (await cold.coldRulesView(env)).find((rule) => rule.objectClass === "mail");
+	assert.equal(view.updatedAt, first.rule.updatedAt, "the refetch reads back exactly what the save answered");
+	const second = await cold.updateColdRule(env, "owner", "mail", {
+		...body,
+		afterDays: 40,
+		expectedUpdatedAt: first.rule.updatedAt,
+	});
+	assert.equal(second.ok, true, second.ok ? undefined : second.error);
+});
+
+test("CodeRabbit: the server refuses a rule save made from a stale form (409 RULE_CHANGED)", async (t) => {
+	const { env } = await fixture(t);
+	await addStore(env, "sto_c", "kite-target");
+	const body = { afterDays: 30, minBytes: 0, target: "sto_c", enabled: true };
+	const tabA = await cold.updateColdRule(env, "owner", "mail", { ...body, expectedUpdatedAt: null });
+	assert.equal(tabA.ok, true);
+	// A second tab loaded before the first save still believes no rule exists.
+	const tabB = await cold.updateColdRule(env, "owner", "mail", { ...body, afterDays: 90, expectedUpdatedAt: null });
+	assert.equal(tabB.ok, false);
+	assert.equal(tabB.status, 409);
+	assert.equal(tabB.code, "RULE_CHANGED");
+	// Or a stale time: a save after a newer one from elsewhere.
+	const stale = new Date(new Date(tabA.rule.updatedAt).getTime() - 5000).toISOString();
+	const tabC = await cold.updateColdRule(env, "owner", "mail", { ...body, afterDays: 60, expectedUpdatedAt: stale });
+	assert.equal(tabC.code, "RULE_CHANGED");
+	assert.equal(
+		env.DB.db.prepare("SELECT after_days FROM storage_cold_rules WHERE object_class = 'mail'").get().after_days,
+		30,
+	);
+	const bad = await cold.updateColdRule(env, "owner", "mail", { ...body, expectedUpdatedAt: "yesterday" });
+	assert.equal(bad.status, 400);
+	// Without expectedUpdatedAt (an API client that never sends it) the save is unconditional, as before.
+	const blind = await cold.updateColdRule(env, "owner", "mail", { ...body, afterDays: 45 });
+	assert.equal(blind.ok, true);
 });

@@ -477,17 +477,28 @@ a concurrent mover's own fenced record for a retargeted key.
 **Storage-migration purge versus cold moves (round-10 review, `B7`).** A cold rule may archive into the store a
 completed migration moved a class away from, and that migration's purge deletes each key's old copy there after a
 size match. Unfenced, a purge racing a mover that was copying the key back into that store could delete the copy
-the mover had just recorded while the mover deleted its own source, leaving no copy. Two fences close this. The
-purge takes the key's location lease for its check and its delete (`withPurgeLease` in
-`src/lib/storage/object-locations.ts`, from `purgeOldCopy` in `migration.ts`): a live claim makes it keep the key
-and count an error ("A cold storage move is working on this object"); a key whose `object_locations` row names
-the old store is its live cold copy, never a leftover, and is skipped; it renews its own token right before the
-delete. A key with no row gets one created under the claim, naming the new store, and removed again afterwards.
-The mover's fenced record names its target in the same statement that releases its lease, so there is no gap in
-which neither fence applies. The configuration refuses the overlap too: `updateColdRule` answers 409
-`STORE_MIGRATING` for an enabled rule targeting a store a migration is still moving away from or has not purged
-(`unpurgedMigrationFrom`; cancelled jobs aside), and the `purge-source` migration action answers 409 while an
-enabled rule or a queued or running sweep targets the old store (`coldUseBlockingPurge`).
+the mover had just recorded while the mover deleted its own source, leaving no copy. Two fences close this.
+
+- **The lease.** The purge takes the key's location lease for its check and its delete (`purgeOldCopy` in
+  `src/lib/storage/migration-purge.ts`, through `withPurgeLease` in `src/lib/storage/object-locations.ts`). A live
+  claim makes it keep the key and count an error ("A cold storage move is working on this object"); a key whose
+  `object_locations` row names the old store is its live cold copy, never a leftover, and is skipped. A key with
+  no row gets one created under the claim (token prefix `ptmp_`), naming the new store, and removed again
+  afterwards. Its last statement before the object delete is `confirmPurgeLease`, which only passes while its own
+  token is still the row's and unexpired, and extends it (round-11 review, `m1`); otherwise the key is kept. On
+  the mover's side, its fenced record names its target in the same statement that releases its lease, so a purge
+  claiming next sees the old store named and skips the key.
+- **The residual.** An object store cannot delete conditionally on a D1 row, so a purge that stalls for longer
+  than the lease (five minutes) between `confirmPurgeLease` and the delete call itself could still be overtaken
+  by a mover in that window. The lease does not close that; the configuration does.
+- **The configuration.** `updateColdRule` answers 409 `STORE_MIGRATING` for an enabled rule targeting a store a
+  migration is still moving away from or has not purged (`unpurgedMigrationFrom`; cancelled jobs aside), and the
+  `purge-source` migration action answers 409 while an enabled rule or a queued or running sweep targets the old
+  store (`coldUseBlockingPurge`). So no sweep moves anything into a store while its purge runs.
+- **Stranded claim rows (round-11 review, `m2`).** A purge that stops mid-key (a crash, a deploy) can leave its
+  `ptmp_` row behind. Once its claim has expired it is dropped at the next claim of that key (by a purge or a
+  cold move) and by the five-minute maintenance (`dropStrandedPurgeRows`), and `coldReferenceBlocking` never
+  counts a `ptmp_` row as an object a sweep moved onto the store (`storeHoldsLocatedObjects`).
 
 The five-minute maintenance runs `scanForOrphanCandidates` in a batch of up to 200 rows: it keyset-paginates
 through `object_locations` from a cursor saved in `storage_state` (round-robin, so a backlog larger than one
@@ -502,7 +513,10 @@ table, a sweep mid-restore would otherwise see every cold key as briefly unrefer
 sweeps the database export document each backup makes (`backups.r2_key`), not the mail file copies a
 [full backup](#full-backups) writes alongside it, which stay on their current store. **Run now**
 (`POST /api/admin/storage/cold/[class]`) starts a sweep immediately; saving a rule or running it now answers 409
-`MIGRATION_PENDING` before migration `0097` is applied, even once `0065` has been (`coldStorageTablesReady`).
+`MIGRATION_PENDING` before migration `0097` is applied, even once `0065` has been (`coldStorageTablesReady`). Saving a rule
+(`PUT`) takes an optional `expectedUpdatedAt`, the `updatedAt` the form was loaded with (null for a class never
+saved): the write is conditional on it and answers 409 `RULE_CHANGED` when the stored rule changed since, and the
+answer's `updatedAt` is the stored whole-second value the next save should send.
 `GET /api/admin/storage/cold` reports each class's rule and its latest sweep.
 Logs: `storage.cold_errors`, `storage.cold_batch_failed`. Backups:
 `storage_cold_rules` and `object_locations` are in the `system` group; unlike `storage_stores` and

@@ -4,7 +4,8 @@ import { runColdStorageSweep, updateColdRule } from "@/lib/storage/cold";
 
 type Params = { params: Promise<{ class: string }> };
 
-/** `{ afterDays, minBytes, target, enabled }`: validates and saves one class's cold storage rule. */
+/** `{ afterDays, minBytes, target, enabled, expectedUpdatedAt? }`: validates and saves one class's cold storage
+ * rule; 409 `RULE_CHANGED` when `expectedUpdatedAt` (null for a class never saved) no longer matches. */
 export async function PUT(request: Request, { params }: Params) {
 	const access = await authorizeStorage(request, true);
 	if (access.error) return access.error;

@@ -76,6 +76,28 @@ function FolderItems({ mailboxId, onMove }: { mailboxId: string | null; onMove: 
 	);
 }
 
+/**
+ * The mailbox's own folders as plain buttons for "More actions", where "Move to" lives once the toolbar's own
+ * Move dropdown (which lists them after the standard folders) has no room.
+ */
+export function ToolbarFolderButtons({
+	mailboxId,
+	onMove,
+	className,
+}: {
+	mailboxId: string | null;
+	onMove: (folderId: string) => void;
+	className: string;
+}) {
+	const folders = useMailboxFolders(mailboxId ?? undefined);
+	return folders.map((folder) => (
+		<button key={folder.id} type="button" className={className} onClick={() => onMove(folder.id)}>
+			<Folder className="h-4 w-4 shrink-0" style={{ color: folder.color }} />
+			<span className="truncate">{folder.name}</span>
+		</button>
+	));
+}
+
 /** The reader toolbar's Move menu: the standard folders the message can go to, then the mailbox's own. */
 export function MoveToolbarMenu({
 	actions,

@@ -10,6 +10,7 @@ import { useSelectedMailbox } from "@/components/mailbox-provider";
 import { ContactCard } from "@/components/contacts/contact-card";
 import { ContactAvatar } from "@/components/contacts/contact-avatar";
 import { MessageActions } from "@/components/message-actions/message-actions";
+import { READER_TOOLBAR_SPACER_ATTR } from "@/components/message-actions/use-reader-toolbar-overflow";
 import { MessageAttachmentViewer } from "@/components/message-attachment-viewer";
 import { MessageAttachmentCard } from "@/components/message-attachment-card";
 import { MessageDetailSkeleton } from "@/components/page-skeletons";
@@ -184,14 +185,12 @@ export default function MessageDetailPage() {
 	};
 	return (
 		<InlineComposerHost messageId={message.id}>
-			{/* min-h, not h: the reader toolbar's buttons wrap onto a second line rather than overflow when the
-			header is too narrow to hold them (message-actions.tsx), and this lets the header grow to fit. */}
 			<div className="sticky top-0 z-40 flex min-h-14 items-center gap-1 border-b border-neutral-200 bg-white px-3">
 				<MessageReadingHeaderButton />
 				<MessageDetailNavigation messageId={message.id} unread={message.direction === "inbound" && !message.read} />
 				{/* On a phone this space goes to the reader toolbar instead (message-actions.tsx is `max-md:flex-1`
-				there): Reply, Trash and Report spam need the room this spacer would otherwise keep empty. */}
-				<span className="min-w-0 flex-1 max-md:hidden" />
+				there). On desktop its width is the room the toolbar may still use (use-reader-toolbar-overflow.ts). */}
+				<span {...{ [READER_TOOLBAR_SPACER_ATTR]: "" }} className="min-w-0 flex-1 max-md:hidden" />
 				<SummarizeButton controller={summary} />
 				<MessageActions
 					messageId={message.id}

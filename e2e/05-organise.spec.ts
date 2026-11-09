@@ -674,11 +674,29 @@ test("deleting a selection of drafts and mail spanning more than a batch asks on
 	await star(secondBatchDraft);
 	const firstBatchDraft = await saveDraft(`First batch draft ${token}`);
 	await star(firstBatchDraft);
-	const mail = await deliverMany(`Batch mail ${token}`, 49);
-	for (const { message } of mail) await star(message.id);
+	async function findMessages(subject: string): Promise<StoredMessage[]> {
+		const response = await api.get(`/api/messages?${new URLSearchParams({ q: subject, limit: "100" })}`, {
+			timeout: 60_000,
+		});
+		return ((await response.json()) as { messages: StoredMessage[] }).messages;
+	}
 
+	// Delivered one request at a time, then fetched in a single query instead of waitForMessage per message:
+	// 49 of those in parallel is well past what a busy dev server answers inside the default timeout.
+	const mailSubject = `Batch mail ${token}`;
+	for (let index = 0; index < 49; index += 1) {
+		await postInbound(api, { from: "sender@outside.test", to: SUPPORT_ADDRESS, subject: `${mailSubject} ${index}` });
+	}
+	await expect
+		.poll(() => findMessages(mailSubject), { timeout: 90_000, intervals: [500, 1000, 2000] })
+		.toHaveLength(49);
+	const mail = await findMessages(mailSubject);
+	for (const message of mail) await star(message.id);
+
+	// The drafts are the two oldest starred items, so a page of 25 (newest first) need not show them: the
+	// banner below reaches the whole folder regardless of what the first page happens to display.
 	await page.goto("/starred");
-	await expect(page.getByText(`First batch draft ${token}`, { exact: true })).toBeVisible();
+	await expect(page.getByText(new RegExp(`^Batch mail ${token} \\d+$`)).first()).toBeVisible();
 	await page.getByRole("checkbox", { name: "Select all visible messages" }).check();
 	const banner = page.getByRole("button", { name: /^Select all 51 in Starred$/ });
 	await expect(banner).toBeVisible();
@@ -692,8 +710,8 @@ test("deleting a selection of drafts and mail spanning more than a batch asks on
 
 	await expect.poll(() => messageStatusCode(secondBatchDraft)).toBe(404);
 	await expect.poll(() => messageStatusCode(firstBatchDraft)).toBe(404);
-	for (const { message } of mail) expect((await api.get(`/api/messages/${message.id}`)).status()).toBe(200);
+	for (const message of mail) expect((await api.get(`/api/messages/${message.id}`)).status()).toBe(200);
 	await expect
-		.poll(async () => (await (await api.get(`/api/messages/${mail[0].message.id}`)).json()).message.status)
+		.poll(async () => (await (await api.get(`/api/messages/${mail[0].id}`)).json()).message.status)
 		.toBe("trash");
 });

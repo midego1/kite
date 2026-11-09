@@ -339,6 +339,46 @@ export function MessageFolderPage({
 			: runBulkMessageAction(ids, action, true, folderId);
 	}
 
+	/** Delete forever, confirmed up front: a separate path from the rest since nothing here is undoable or
+	 * optimistic, only a progress toast moving as batches complete. */
+	async function runDeleteForever(actionIds: string[]) {
+		const ids = expandSelectedIds(actionIds);
+		if (
+			!(await requestConfirmation({
+				title: t("Delete forever?"),
+				description: getPermanentDeleteConfirmText(ids.length),
+				confirmLabel: t("Delete forever"),
+			}))
+		)
+			return;
+		setPendingBulkAction(true);
+		clearSelection();
+		const progress = showProgressToast("Deleting forever", ids.length);
+		let completed = 0;
+		try {
+			const { deleted, skipped } = await deleteMessagesForever(ids, (done, _total, batch) => {
+				completed = done;
+				progress.update(done);
+				const gone = new Set(batch);
+				updateMessages((current) => current.filter((message) => !gone.has(message.id)));
+			});
+			const outcome = describePermanentDeleteResult(deleted, skipped);
+			progress[outcome.ok ? "succeed" : "fail"](outcome.message);
+		} catch (error) {
+			console.error(error);
+			progress.fail(
+				completed > 0
+					? t("Deleted {completed} of {length}. The rest could not be deleted; please try again.", {
+							completed,
+							length: ids.length,
+						})
+					: t("Could not delete the messages. Please try again."),
+			);
+		} finally {
+			setPendingBulkAction(false);
+		}
+	}
+
 	async function runSelectedAction(action: BulkMessageAction, folderId?: string) {
 		if (selectedIds.length === 0) return;
 		// The server skips read-only mail too; leaving it out here keeps the list and the toasts honest.
@@ -346,41 +386,7 @@ export function MessageFolderPage({
 		reportReadOnlySkipped(skipped, actionIds.length === 0);
 		if (actionIds.length === 0) return;
 		if (action === "delete") {
-			const ids = expandSelectedIds(actionIds);
-			if (
-				!(await requestConfirmation({
-					title: t("Delete forever?"),
-					description: getPermanentDeleteConfirmText(ids.length),
-					confirmLabel: t("Delete forever"),
-				}))
-			)
-				return;
-			setPendingBulkAction(true);
-			clearSelection();
-			const progress = showProgressToast("Deleting forever", ids.length);
-			let completed = 0;
-			try {
-				const { deleted, skipped } = await deleteMessagesForever(ids, (done, _total, batch) => {
-					completed = done;
-					progress.update(done);
-					const gone = new Set(batch);
-					updateMessages((current) => current.filter((message) => !gone.has(message.id)));
-				});
-				const outcome = describePermanentDeleteResult(deleted, skipped);
-				progress[outcome.ok ? "succeed" : "fail"](outcome.message);
-			} catch (error) {
-				console.error(error);
-				progress.fail(
-					completed > 0
-						? t("Deleted {completed} of {length}. The rest could not be deleted; please try again.", {
-								completed,
-								length: ids.length,
-							})
-						: t("Could not delete the messages. Please try again."),
-				);
-			} finally {
-				setPendingBulkAction(false);
-			}
+			await runDeleteForever(actionIds);
 			return;
 		}
 
@@ -400,33 +406,37 @@ export function MessageFolderPage({
 			setSelectedMessages((current) => current.map((message) => ({ ...message, read: readValue })));
 			if (inboxUnreadDelta) dispatchMessageCountsDelta({ inboxUnreadDelta });
 		}
+		/**
+		 * Only the rows a later batch did not reach are rolled back and kept selected: a row whose action
+		 * already went through must not be flipped back only to be corrected again, and a retry (running the
+		 * action again on what is still selected) must never re-send an id that is done.
+		 */
+		function rollBackUnfinishedRows(error: PartialBulkActionError) {
+			const completed = new Set(error.completedIds);
+			const isRowDone = (rowId: string) => expandSelectedIds([rowId]).every((id) => completed.has(id));
+			const notDoneIds = new Set(actionIds.filter((id) => !isRowDone(id)));
+			if (readValue !== null && notDoneIds.size > 0) {
+				const previousById = new Map(previousMessages.map((message) => [message.id, message]));
+				updateMessages((current) =>
+					current.map((message) => (notDoneIds.has(message.id) ? (previousById.get(message.id) ?? message) : message)),
+				);
+				const revertedDelta = getInboxUnreadDelta(
+					selectedRows.filter((row) => notDoneIds.has(row.id)),
+					readValue,
+					affectsInboxUnreadCount(config),
+				);
+				if (revertedDelta) dispatchMessageCountsDelta({ inboxUnreadDelta: -revertedDelta });
+			}
+			setSelectedMessages((current) => current.filter((message) => notDoneIds.has(message.id)));
+		}
+
 		try {
 			// A declined confirmation did nothing, so the selection stays.
 			if ((await runListAction(expandSelectedIds(actionIds), action, folderId)) === LIST_ACTION_CANCELLED) return;
 			clearSelection();
 		} catch (error) {
 			if (error instanceof PartialBulkActionError) {
-				// Only the rows an earlier batch did not reach are rolled back and kept selected: a row whose
-				// action already went through must not be flipped back only to be corrected again, and a retry
-				// (running the action again on what is still selected) must never re-send an id that is done.
-				const completed = new Set(error.completedIds);
-				const isRowDone = (rowId: string) => expandSelectedIds([rowId]).every((id) => completed.has(id));
-				const notDoneIds = new Set(actionIds.filter((id) => !isRowDone(id)));
-				if (readValue !== null && notDoneIds.size > 0) {
-					const previousById = new Map(previousMessages.map((message) => [message.id, message]));
-					updateMessages((current) =>
-						current.map((message) =>
-							notDoneIds.has(message.id) ? (previousById.get(message.id) ?? message) : message,
-						),
-					);
-					const revertedDelta = getInboxUnreadDelta(
-						selectedRows.filter((row) => notDoneIds.has(row.id)),
-						readValue,
-						affectsInboxUnreadCount(config),
-					);
-					if (revertedDelta) dispatchMessageCountsDelta({ inboxUnreadDelta: -revertedDelta });
-				}
-				setSelectedMessages((current) => current.filter((message) => notDoneIds.has(message.id)));
+				rollBackUnfinishedRows(error);
 			} else if (readValue !== null) {
 				updateMessages(previousMessages);
 				if (inboxUnreadDelta) dispatchMessageCountsDelta({ inboxUnreadDelta: -inboxUnreadDelta });

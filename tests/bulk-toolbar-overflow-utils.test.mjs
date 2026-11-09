@@ -35,7 +35,10 @@ const items = [
 
 test("everything fits in a wide enough row", () => {
 	const visible = packToolbarActions(2000, 200, TOOLBAR_GAP_PX, items);
-	assert.deepEqual([...visible], items.map((item) => item.id));
+	assert.deepEqual(
+		[...visible],
+		items.map((item) => item.id),
+	);
 });
 
 test("nothing fits once the reserved cluster alone exceeds the available width", () => {

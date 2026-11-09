@@ -730,14 +730,17 @@ const SHOTS: Shot[] = [
 	},
 	{
 		// The Spam list header once three invented reports are checked: the bulk toolbar's text labels next to
-		// its icons, where only unlabelled icons far from the list used to show. A list resized wider than the
-		// default 360px gives the labels room, as they also get in a full-width list or on a phone.
+		// its icons, where only unlabelled icons far from the list used to show. A list resized wide enough
+		// (what fits is measured against the panel's actual width, not a fixed breakpoint) gives every action
+		// room, as a full-width list or a phone also can.
 		name: "2026-11-08-easier-selection-light",
 		theme: "light",
-		viewport: { width: 1280, height: 420 },
+		// Wider than the other shots: the split layout only grants the list panel the width it asks for once
+		// the reading pane beside it still gets its own reserved minimum out of what is left.
+		viewport: { width: 1650, height: 420 },
 		open: async (page) => {
 			await seedSpamSelectionDemo();
-			await page.addInitScript(() => localStorage.setItem("kite-column-width:message-list", "760"));
+			await page.addInitScript(() => localStorage.setItem("kite-column-width:message-list", "1000"));
 			await page.goto("/spam");
 			const rows = page.locator("[data-message-row]");
 			// The seeded admin account already holds one spam example of its own; only check the three delivered here.
@@ -746,14 +749,21 @@ const SHOTS: Shot[] = [
 				await expect(row).toBeVisible();
 				await row.getByRole("checkbox").check();
 			}
-			await expect(page.getByText(`${SPAM_SELECTION_MAIL.length} selected`)).toBeVisible();
+			const toolbar = page.getByTestId("bulk-toolbar");
+			await expect(toolbar.getByRole("button", { name: "Delete", exact: true })).toBeVisible();
+			await expect(toolbar.getByRole("button", { name: "Archive", exact: true })).toBeVisible();
+			await expect(toolbar.getByRole("button", { name: "Mark as read" })).toBeVisible();
+			await expect(toolbar.getByRole("button", { name: "Delete forever" })).toBeVisible();
+			await expect(toolbar.getByRole("button", { name: "Not spam" })).toBeVisible();
+			await expect(toolbar.getByRole("button", { name: "Move to", exact: true })).toBeVisible();
+			await expect(toolbar.getByRole("button", { name: "More actions" })).toHaveCount(0);
 			return page.locator("#kite-message-list-panel");
 		},
 	},
 	{
-		// The same Spam list at its default, unresized width: Archive, Not spam and Move to have no room next
-		// to Delete, Delete forever and Mark as read, so they fold into "More actions" instead of clipping off
-		// the edge the way they used to.
+		// The same Spam list at its default, unresized width: none of the individual actions has room next to
+		// the selected count, so they all fold into "More actions" instead of clipping off the edge the way
+		// they used to; Clear selection and More actions itself always stay reachable.
 		name: "2026-11-08-easier-selection-narrow-light",
 		theme: "light",
 		viewport: { width: 1280, height: 420 },

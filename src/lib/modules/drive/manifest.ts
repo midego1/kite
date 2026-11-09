@@ -17,7 +17,10 @@ export const driveManifest: ModuleManifest = {
 	composerSlots: [],
 	recordKinds: [{ kind: "drive:file", label: "File", unavailableLabel: "File" }],
 	webhookEvents: [],
-	grants: [{ grant: "drive.read", label: "Read files" }],
+	grants: [
+		{ grant: "drive.read", label: "Read files" },
+		{ grant: "drive.write", label: "Add and change files" },
+	],
 	mcpScopes: [],
 	apiKeyScopes: [],
 	jmapCapabilities: [],

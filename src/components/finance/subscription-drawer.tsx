@@ -6,7 +6,7 @@ import { linkHost } from "./dialog-utils";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { shortDay } from "@/lib/finance/text-utils";
-import { writeWithUndo } from "./subscription-writes";
+import { removeWithReceiptsCheck } from "./subscription-writes";
 import type { DocumentItem, DrawerState, SubscriptionDetail, SubscriptionItem } from "./subscriptions-types";
 import {
 	documentAmount,
@@ -77,8 +77,9 @@ function DocumentEntry({
 						aria-label={`Remove ${documentLabel(document.docType).toLowerCase()}`}
 						className="rounded p-1 text-neutral-500 hover:bg-neutral-100 hover:text-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
 						onClick={() =>
-							void writeWithUndo(
-								{ path: `/api/finance/documents/${encodeURIComponent(document.id)}`, method: "DELETE" },
+							void removeWithReceiptsCheck(
+								`/api/finance/documents/${encodeURIComponent(document.id)}`,
+								document.hasReceipts,
 								"Document removed",
 								onChanged,
 							)

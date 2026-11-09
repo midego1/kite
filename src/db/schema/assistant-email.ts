@@ -29,7 +29,7 @@ export const assistantAddresses = sqliteTable(
  * confirming the single-use code sent to it; at most 5 per user (enforced where rows are inserted), and an address
  * belongs to at most one user in the install (the unique index). Never a domain of this install itself (checked
  * where rows are inserted, and again by sender mapping): a shared mailbox there would let anyone with send-as
- * access verify its address as their own and command another user's assistant. `attempts` (migration 0101) counts
+ * access verify its address as their own and command another user's assistant. `attempts` (migration 0103) counts
  * wrong guesses against the current code only, reset to 0 whenever a new one is mailed.
  */
 export const assistantSenderAddresses = sqliteTable(

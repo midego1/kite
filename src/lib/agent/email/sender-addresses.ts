@@ -38,7 +38,7 @@ const VERIFIED_ACTION = "assistant_email.sender_verified";
 const VERIFY_FAILED_ACTION = "assistant_email.sender_verify_failed";
 const REMOVED_ACTION = "assistant_email.sender_removed";
 
-/** The column migration 0101 adds; an insert, update or whole-row read of this table may miss it. */
+/** The column migration 0103 adds; an insert, update or whole-row read of this table may miss it. */
 const ATTEMPTS_COLUMN = assistantSenderAddresses.attempts.name;
 
 export type SenderAddressRow = {
@@ -71,7 +71,7 @@ function isUniqueViolation(error: unknown): boolean {
 }
 
 /**
- * Whether migration 0096 (the table) and 0101 (`attempts`) have both run, read straight from the schema rather
+ * Whether migration 0096 (the table) and 0103 (`attempts`) have both run, read straight from the schema rather
  * than through a failed query (security review should-fix): `addSenderAddress` checks this before writing
  * anything, so a deploy ahead of either migration never mails a code nobody could ever verify.
  */

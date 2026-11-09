@@ -713,7 +713,14 @@
       "idx": 101,
       "version": "6",
       "when": 1794355200000,
-      "tag": "0101_add_assistant_sender_attempts",
+      "tag": "0102_add_finance_receipts",
+      "breakpoints": true
+    },
+    {
+      "idx": 102,
+      "version": "6",
+      "when": 1794441600000,
+      "tag": "0103_add_assistant_sender_attempts",
       "breakpoints": true
     }
   ]

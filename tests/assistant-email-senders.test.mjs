@@ -414,7 +414,7 @@ test("addSenderAddress can replace a user's own expired address even while alrea
 	assert.notEqual(replaced.id, "row-expired");
 });
 
-test("no code is sent, and nothing is audited, before migration 0101 is applied", async (t) => {
+test("no code is sent, and nothing is audited, before migration 0103 is applied", async (t) => {
 	const { database, env, db } = await setup(t);
 	database.db.exec("ALTER TABLE assistant_sender_addresses DROP COLUMN attempts");
 	await assert.rejects(() => addSenderAddress(env, db, "alice", "alice@phone.test"), SenderAddressesPendingError);
@@ -443,7 +443,7 @@ test("before migration 0096, every operation reads or fails as pending, never th
 	await assert.rejects(() => removeSenderAddress(env, db, "alice", "row-1"), SenderAddressesPendingError);
 });
 
-test("before migration 0101, the table exists but attempts does not: the same pending behaviour applies", async (t) => {
+test("before migration 0103, the table exists but attempts does not: the same pending behaviour applies", async (t) => {
 	const { database, env, db } = await setup(t);
 	await insertPending(database, { id: "row-1", userId: "alice", address: "alice@phone.test", code: "123456" });
 	database.db.exec("ALTER TABLE assistant_sender_addresses DROP COLUMN attempts");

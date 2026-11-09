@@ -14,6 +14,7 @@ import { auditMailbox } from "./manual-utils";
 import { paymentFieldsSchema } from "./payment-actions";
 import { scanView, startScan } from "./payment-scan";
 import { ownerPayment, type PaymentRow } from "./payments";
+import { receiptsDeleteGuard } from "./receipt-delete-guard";
 import { dateToDay } from "./record-utils";
 
 const patchSchema = z.object({ fields: paymentFieldsSchema.refine((fields) => Object.keys(fields).length > 0) });
@@ -78,10 +79,12 @@ export function patchPayment(user: FinanceUser, id: string, raw: unknown): Promi
 }
 
 /** `DELETE /api/finance/payments/[id]`: removes a payment as `remove_payment`; undo shows it again. */
-export function removePayment(user: FinanceUser, id: string): Promise<FinanceAnswer> {
+export function removePayment(user: FinanceUser, id: string, acknowledge = false): Promise<FinanceAnswer> {
 	return answering(async () => {
 		const target = await paymentForChange(user, id);
 		if (target.answer) return target.answer;
+		const guarded = await receiptsDeleteGuard("finance_payments", [id], acknowledge);
+		if (guarded) return guarded;
 		const executed = await executeFinanceAction(user, {
 			capability: "removePayment",
 			mailboxId: target.mailboxId,

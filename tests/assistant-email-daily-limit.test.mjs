@@ -19,6 +19,7 @@ await build({
 	outExtension: { ".js": ".mjs" },
 	bundle: true,
 	splitting: true,
+	sourcemap: "inline",
 	packages: "external",
 	platform: "node",
 	format: "esm",

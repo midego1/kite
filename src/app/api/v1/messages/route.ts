@@ -12,7 +12,7 @@ import { buildSearchConditions } from "@/lib/search/conditions";
 import { viaSearchAvailable } from "@/lib/external-accounts/via";
 import { getRequestTimeZone } from "@/lib/time/utils";
 import { decodeMessageCursor, getNextMessageCursor } from "@/lib/messages/cursor-utils";
-import { afterCursor } from "@/app/api/messages/utils";
+import { afterCursor } from "@/lib/messages/cursor-sql";
 import { SCREENING_STATUS } from "@/lib/screener/screener-utils";
 import { mailboxRowsCondition, visibleDraftsCondition } from "@/lib/messages/mailbox-scope";
 

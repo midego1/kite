@@ -441,3 +441,53 @@ test("list_emails answers an invented or inaccessible cursor with retry guidance
 		/Mailbox not found or permission denied/,
 	);
 });
+
+function addSameSecondMail(context) {
+	context.env.DB.db.exec(`
+		INSERT INTO messages (id, user_id, mailbox_id, direction, from_addr, to_addr, subject, text_body, status, created_at) VALUES
+			('tie-a', 'user-1', 'mailbox-1', 'inbound', 'sender@example.net', 'owner@example.com', 'Tied A', 'Tied email A', 'received', 4),
+			('tie-b', 'user-1', 'mailbox-1', 'inbound', 'sender@example.net', 'owner@example.com', 'Tied B', 'Tied email B', 'received', 4),
+			('tie-c', 'user-1', 'mailbox-1', 'inbound', 'sender@example.net', 'owner@example.com', 'Tied C', 'Tied email C', 'received', 4);
+	`);
+}
+
+async function pageThrough(context, tool, input, pageSize) {
+	const seen = [];
+	let cursor = null;
+	for (let guard = 0; guard < 10; guard++) {
+		const page = await runEmailTool(context, tool, { ...input, limit: pageSize, cursor });
+		seen.push(...page.emails.map((email) => email.id));
+		if (!page.nextCursor) return seen;
+		cursor = page.nextCursor;
+	}
+	throw new Error("pagination did not end");
+}
+
+test("list_emails and search_emails page on (created_at, id), so mail stored in the same second is neither skipped nor repeated", async (t) => {
+	const context = await paginationContext(t);
+	addSameSecondMail(context);
+	const expected = ["tie-c", "tie-b", "tie-a", "email-3", "email-2", "email-1"];
+	for (const pageSize of [1, 2, 3, 4]) {
+		assert.deepEqual(
+			await pageThrough(context, "list_emails", { folder: "inbox" }, pageSize),
+			expected,
+			`list ${pageSize}`,
+		);
+		assert.deepEqual(
+			await pageThrough(context, "search_emails", { query: "email", folder: "inbox" }, pageSize),
+			expected,
+			`search ${pageSize}`,
+		);
+	}
+});
+
+test("an invalid cursor names the tool it was sent to", async (t) => {
+	const context = await paginationContext(t);
+	for (const tool of ["list_emails", "search_emails"]) {
+		const input = tool === "search_emails" ? { query: "email", cursor: "missing-email" } : { cursor: "missing-email" };
+		await assert.rejects(runEmailTool(context, tool, input), (error) => {
+			assert.match(error.message, new RegExp(`returned by ${tool} for this mailbox`));
+			return true;
+		});
+	}
+});

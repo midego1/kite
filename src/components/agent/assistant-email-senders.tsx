@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
 	addSenderAddress,
@@ -23,15 +23,29 @@ export function AssistantEmailSenders() {
 	const [busy, setBusy] = useState(false);
 	const [message, setMessage] = useState<{ tone: "error" | "ok"; text: string } | null>(null);
 
+	// Only the latest request may update the list: an older response arriving late would bring back a removed address.
+	const latestRequest = useRef(0);
+
 	function refresh() {
+		const request = ++latestRequest.current;
 		loadSenderAddresses()
-			.then(setAddresses)
-			.catch((error: unknown) =>
-				setMessage({ tone: "error", text: error instanceof Error ? error.message : "Failed to load" }),
-			);
+			.then((loaded) => {
+				if (request === latestRequest.current) setAddresses(loaded);
+			})
+			.catch((error: unknown) => {
+				if (request === latestRequest.current)
+					setMessage({ tone: "error", text: error instanceof Error ? error.message : "Failed to load" });
+			});
 	}
 
-	useEffect(refresh, []);
+	useEffect(() => {
+		const requests = latestRequest;
+		refresh();
+		return () => {
+			// Unmounted: nothing in flight may touch state.
+			requests.current++;
+		};
+	}, []);
 
 	async function add() {
 		if (!newAddress.trim()) return;
@@ -67,9 +81,17 @@ export function AssistantEmailSenders() {
 
 	async function remove(id: string) {
 		setBusy(true);
+		setMessage(null);
 		try {
 			await removeSenderAddress(id);
+			// The code form belongs to the address it was opened for.
+			if (pendingId === id) {
+				setPendingId(null);
+				setCode("");
+			}
 			refresh();
+		} catch (error) {
+			setMessage({ tone: "error", text: error instanceof Error ? error.message : "Failed to remove that address" });
 		} finally {
 			setBusy(false);
 		}

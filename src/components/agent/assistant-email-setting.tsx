@@ -4,6 +4,11 @@ import { useEffect, useState } from "react";
 import { Switch } from "@/components/ui/switch";
 import { Select } from "@/components/ui/select";
 import {
+	ASSISTANT_EMAIL_DAILY_LIMIT_MAX,
+	ASSISTANT_EMAIL_DAILY_LIMIT_MIN,
+	parseDailyLimit,
+} from "@/lib/agent/email/daily-limit-utils";
+import {
 	loadAssistantEmailSettings,
 	saveAssistantEmailSettings,
 	type AssistantEmailSettingsState,
@@ -16,13 +21,18 @@ import {
  */
 export function AssistantEmailSetting() {
 	const [state, setState] = useState<AssistantEmailSettingsState | null>(null);
+	const [limitText, setLimitText] = useState("");
 	const [saving, setSaving] = useState(false);
 	const [message, setMessage] = useState<{ tone: "error" | "ok"; text: string } | null>(null);
 
 	useEffect(() => {
 		let active = true;
 		loadAssistantEmailSettings()
-			.then((loaded) => active && setState(loaded))
+			.then((loaded) => {
+				if (!active) return;
+				setState(loaded);
+				setLimitText(String(loaded.dailyLimit));
+			})
 			.catch((error: unknown) => {
 				if (active) setMessage({ tone: "error", text: error instanceof Error ? error.message : "Failed to load" });
 			});
@@ -35,12 +45,28 @@ export function AssistantEmailSetting() {
 		setSaving(true);
 		setMessage(null);
 		try {
-			setState(await saveAssistantEmailSettings(change));
+			const saved = await saveAssistantEmailSettings(change);
+			setState(saved);
+			setLimitText(String(saved.dailyLimit));
 		} catch (error) {
+			// A failed save leaves the saved value on screen, never the rejected draft.
+			if (state) setLimitText(String(state.dailyLimit));
 			setMessage({ tone: "error", text: error instanceof Error ? error.message : "Failed to save" });
 		} finally {
 			setSaving(false);
 		}
+	}
+
+	function commitDailyLimit() {
+		if (!state) return;
+		const parsed = parseDailyLimit(limitText);
+		if (!parsed.ok) {
+			setLimitText(String(state.dailyLimit));
+			setMessage({ tone: "error", text: parsed.error });
+			return;
+		}
+		if (parsed.value !== state.dailyLimit) void update({ dailyLimit: parsed.value });
+		else setLimitText(String(parsed.value));
 	}
 
 	if (state && !state.ready)
@@ -70,7 +96,8 @@ export function AssistantEmailSetting() {
 						<Select
 							containerClassName="mt-2 w-full rounded-xl bg-white"
 							className="p-2"
-							value={state.mailboxId ?? ""}
+							// Nothing chosen yet means intake uses the oldest personal mailbox, which the list puts first.
+							value={state.mailboxId ?? state.mailboxes[0]?.id ?? ""}
 							disabled={saving}
 							onChange={(event) => void update({ mailboxId: event.target.value })}
 						>
@@ -81,7 +108,8 @@ export function AssistantEmailSetting() {
 							))}
 						</Select>
 						<span className="mt-1 block text-xs text-neutral-500">
-							A request from your own mailbox address always runs there instead.
+							Until you choose one, requests run in your oldest personal mailbox. A request from your own mailbox
+							address always runs there instead.
 						</span>
 					</label>
 					<label className="block">
@@ -89,12 +117,12 @@ export function AssistantEmailSetting() {
 						<input
 							className="mt-2 w-full rounded-xl border border-neutral-200 p-2 outline-none focus:border-blue-400"
 							type="number"
-							min={1}
-							max={100}
-							value={state.dailyLimit}
+							min={ASSISTANT_EMAIL_DAILY_LIMIT_MIN}
+							max={ASSISTANT_EMAIL_DAILY_LIMIT_MAX}
+							value={limitText}
 							disabled={saving}
-							onChange={(event) => setState({ ...state, dailyLimit: Number(event.target.value) })}
-							onBlur={() => void update({ dailyLimit: state.dailyLimit })}
+							onChange={(event) => setLimitText(event.target.value)}
+							onBlur={commitDailyLimit}
 						/>
 					</label>
 				</>

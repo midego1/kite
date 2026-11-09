@@ -59,3 +59,17 @@ test("an unknown code still reads as something, never the raw string", () => {
 test("no reason is null", () => {
 	assert.equal(requestReasonText(null), null);
 });
+
+test("a plain send_failed reads as its own sentence, not the generic fallback", () => {
+	const text = requestReasonText("send_failed");
+	assert.notEqual(text, "Kite could not finish this request.");
+	assert.match(text, /reply could not be sent/);
+});
+
+test("a :no_sending_provider suffix says the reply could not be sent, like :send_failed does", () => {
+	const base = requestReasonText("spend_cap");
+	const suffixed = requestReasonText("spend_cap:no_sending_provider");
+	assert.ok(suffixed.startsWith(base));
+	assert.match(suffixed, /reply could not be sent/);
+	assert.match(requestReasonText("model_error:no_sending_provider"), /reply could not be sent/);
+});

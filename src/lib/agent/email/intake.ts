@@ -94,7 +94,7 @@ async function defaultContextMailboxId(db: AppDatabase, userId: string): Promise
 		.select({ id: mailboxes.id })
 		.from(mailboxes)
 		.where(and(eq(mailboxes.userId, userId), eq(mailboxes.type, "personal"), eq(mailboxes.disabled, false)))
-		.orderBy(asc(mailboxes.createdAt))
+		.orderBy(asc(mailboxes.createdAt), asc(mailboxes.id))
 		.limit(1);
 	return mailbox?.id ?? null;
 }

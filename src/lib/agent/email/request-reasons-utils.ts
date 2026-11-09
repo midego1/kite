@@ -1,7 +1,7 @@
 /**
  * Plain words for the reason codes `src/lib/agent/email/intake.ts` and `process.ts` record on an
  * `assistant_email_requests` row, for the Settings → Assistant requests list (spec §13, §14). A code the map does
- * not know (a future reason, or one with a `:send_failed` suffix added when the reply itself could not be sent)
+ * not know (a future reason, or one with a `:send_failed` / `:no_sending_provider` suffix added when the reply itself could not be sent)
  * still reads as something, never a raw internal string.
  */
 const REASON_TEXT: Record<string, string> = {
@@ -16,7 +16,11 @@ const REASON_TEXT: Record<string, string> = {
 	spend_cap: "The spending limit for AI requests was reached.",
 	model_error: "The AI provider could not answer.",
 	no_sending_provider: "The assistant address's domain cannot send mail, so no reply could be sent.",
+	send_failed: "The request ran, but the reply could not be sent.",
 };
+
+/** Suffixes `process.ts` appends to another reason when the reply explaining it could not be sent either. */
+const REPLY_FAILED_SUFFIXES = [":send_failed", ":no_sending_provider"];
 
 /** The reason in plain words, or a generic fallback for a code the map does not list. */
 export function requestReasonText(reason: string | null): string | null {
@@ -24,5 +28,7 @@ export function requestReasonText(reason: string | null): string | null {
 	const [base] = reason.split(":");
 	const text = REASON_TEXT[base] ?? REASON_TEXT[reason];
 	if (!text) return "Kite could not finish this request.";
-	return reason.endsWith(":send_failed") ? `${text} The reply could not be sent either.` : text;
+	return REPLY_FAILED_SUFFIXES.some((suffix) => reason.endsWith(suffix))
+		? `${text} The reply could not be sent either.`
+		: text;
 }

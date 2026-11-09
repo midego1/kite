@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { getDb } from "@/db";
@@ -23,7 +23,9 @@ async function personalMailboxOptions(env: ReturnType<typeof getEnv>, userId: st
 		.select({ id: mailboxes.id, localPart: mailboxes.localPart, hostname: domains.hostname })
 		.from(mailboxes)
 		.innerJoin(domains, eq(mailboxes.domainId, domains.id))
-		.where(and(eq(mailboxes.userId, userId), eq(mailboxes.type, "personal"), eq(mailboxes.disabled, false)));
+		.where(and(eq(mailboxes.userId, userId), eq(mailboxes.type, "personal"), eq(mailboxes.disabled, false)))
+		// Oldest first, with the same tiebreak intake uses, so the first option is the mailbox it falls back to.
+		.orderBy(asc(mailboxes.createdAt), asc(mailboxes.id));
 	return rows.map((row) => ({ id: row.id, label: `${row.localPart}@${row.hostname}` }));
 }
 
@@ -78,6 +80,18 @@ export async function PATCH(request: Request) {
 	}
 
 	const db = getDb(env);
+	// Everything that can be refused is checked before anything is saved, so a rejected request changes nothing.
+	if (
+		input.emailAssistant?.mailboxId !== undefined &&
+		!(await ownsPersonalMailbox(env, auth.user.id, input.emailAssistant.mailboxId))
+	)
+		return NextResponse.json({ error: "Mailbox not found" }, { status: 400 });
+	const styleAvailable = await writingStyleAvailable(env);
+	if (input.writingStyle && !styleAvailable)
+		return NextResponse.json(
+			{ error: "Apply the pending database update to use the writing style profile", code: "MIGRATION_PENDING" },
+			{ status: 409 },
+		);
 	if (input.instructions) {
 		try {
 			await savePersonalInstructions(db, auth.user.id, input.instructions);
@@ -86,22 +100,12 @@ export async function PATCH(request: Request) {
 			return NextResponse.json({ error: error.message, code: "MIGRATION_PENDING" }, { status: 409 });
 		}
 	}
-	const styleAvailable = await writingStyleAvailable(env);
 	if (input.writingStyle) {
-		if (!styleAvailable)
-			return NextResponse.json(
-				{ error: "Apply the pending database update to use the writing style profile", code: "MIGRATION_PENDING" },
-				{ status: 409 },
-			);
 		await saveWritingStyleEnabled(db, auth.user.id, input.writingStyle.enabled);
 		// Turning it off stops learning and using the profiles at once and deletes them.
 		if (!input.writingStyle.enabled) await deleteStyleProfiles(db, auth.user.id);
 	}
 	if (input.emailAssistant) {
-		if (input.emailAssistant.mailboxId !== undefined) {
-			if (!(await ownsPersonalMailbox(env, auth.user.id, input.emailAssistant.mailboxId)))
-				return NextResponse.json({ error: "Mailbox not found" }, { status: 400 });
-		}
 		try {
 			await saveAssistantEmailSettings(db, auth.user.id, input.emailAssistant);
 		} catch (error) {

@@ -50,8 +50,13 @@ async function emailRequestSenderByConversation(db: AppDatabase, ids: readonly s
 		const rows = await db
 			.select({ conversationId: assistantEmailRequests.conversationId, fromAddr: assistantEmailRequests.fromAddr })
 			.from(assistantEmailRequests)
-			.where(inArray(assistantEmailRequests.conversationId, ids));
-		return new Map(rows.flatMap((row) => (row.conversationId ? [[row.conversationId, row.fromAddr] as const] : [])));
+			.where(inArray(assistantEmailRequests.conversationId, ids))
+			// Oldest first, so the conversation's original sender wins when later requests share it.
+			.orderBy(asc(assistantEmailRequests.createdAt), asc(assistantEmailRequests.id));
+		const bySender = new Map<string, string>();
+		for (const row of rows)
+			if (row.conversationId && !bySender.has(row.conversationId)) bySender.set(row.conversationId, row.fromAddr);
+		return bySender;
 	} catch (error) {
 		if (isNoSuchTableError(error)) return new Map();
 		throw error;

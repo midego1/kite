@@ -7,8 +7,6 @@ export type MessageListHeaderProps = {
 	config: MessageFolderConfig;
 	/** The list beside a reading pane: the title row. */
 	compact: boolean;
-	/** A selection pane next to the list offers the bulk actions, so the header skips them. */
-	selectionInPane: boolean;
 	showTitle: boolean;
 	/** False while the list panel is hidden: the header is still mounted but unseen, so it keeps the sidebar toggle out. */
 	listVisible: boolean;

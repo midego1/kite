@@ -218,7 +218,7 @@ test("deleting forever from Trash asks for confirmation first", async ({ page })
 	const row = messageRow(page, subject);
 	await expect(row).toBeVisible();
 	await row.getByRole("checkbox").check();
-	await page.getByRole("button", { name: "Delete forever" }).click();
+	await clickBulkAction(page, "Delete forever");
 
 	const confirm = page.getByRole("alertdialog", { name: "Delete forever?" });
 	await expect(confirm).toBeVisible();
@@ -227,7 +227,7 @@ test("deleting forever from Trash asks for confirmation first", async ({ page })
 	await expect(row).toBeVisible();
 	expect(await messageStatusCode(message.id)).toBe(200);
 
-	await page.getByRole("button", { name: "Delete forever" }).click();
+	await clickBulkAction(page, "Delete forever");
 	await expect(confirm).toBeVisible();
 	await confirm.getByRole("button", { name: "Delete forever" }).click();
 	await expect(confirm).toBeHidden();
@@ -247,10 +247,9 @@ test("deleting a page of messages forever shows progress and removes them", asyn
 	await expect(mine.first()).toBeVisible();
 	// Messages arriving in the same instant have no fixed order, so read which ones the page shows.
 	const shown = await mine.allTextContents();
-	// Checkboxes show once Select is on.
-	await page.getByRole("button", { name: "Select", exact: true }).click();
+	// The select-all checkbox is always in the list header; no separate "Select" mode is needed for a pointer.
 	await page.getByRole("checkbox", { name: "Select all visible messages" }).check();
-	await page.getByRole("button", { name: "Delete forever" }).click();
+	await clickBulkAction(page, "Delete forever");
 	await page
 		.getByRole("alertdialog", { name: "Delete forever?" })
 		.getByRole("button", { name: "Delete forever" })
@@ -267,8 +266,25 @@ test("deleting a page of messages forever shows progress and removes them", asyn
 	expect(statuses.every((status) => status === 404)).toBe(true);
 });
 
+/** The bulk toolbar in the list header: its action buttons sit beside the "N selected" count. */
 function selectionPane(page: Page) {
-	return page.getByRole("heading", { level: 2, name: / selected$/ }).locator("..");
+	return page.getByTestId("bulk-toolbar");
+}
+
+/**
+ * Runs a bulk toolbar action by its label, whether the list beside the open message has room to show it
+ * inline or, at the default split-pane width, it only reaches through "More actions": what fits there is
+ * measured against the panel's actual width, not a fixed set, so any action (not just the lower-priority
+ * ones) can fold away depending on how many are competing for the room.
+ */
+async function clickBulkAction(page: Page, action: string) {
+	const inline = selectionPane(page).getByRole("button", { name: action, exact: true });
+	if (await inline.isVisible()) {
+		await inline.click();
+		return;
+	}
+	await selectionPane(page).getByRole("button", { name: "More actions" }).click();
+	await page.getByRole("menu").getByRole("menuitem", { name: action, exact: true }).click();
 }
 
 async function openWithSelection(page: Page, open: string, others: string[]) {
@@ -276,13 +292,13 @@ async function openWithSelection(page: Page, open: string, others: string[]) {
 	await openMessage(page, open);
 	await expect(page).toHaveURL(/\/inbox\/[^/]+$/);
 	for (const subject of others) await messageRow(page, subject).getByRole("checkbox").check();
-	await expect(page.getByRole("heading", { level: 2, name: `${others.length} selected` })).toBeVisible();
+	await expect(page.getByText(`${others.length} selected`)).toBeVisible();
 }
 
 async function expectEmptyPane(page: Page, route: string) {
 	await expect(page).toHaveURL(new RegExp(`${route}$`));
 	await expect(page.getByTestId("reading-pane-empty")).toBeVisible();
-	await expect(page.getByRole("heading", { level: 2, name: / selected$/ })).toHaveCount(0);
+	await expect(page.getByText(/^\d+ selected$/)).toHaveCount(0);
 }
 
 type OldMessageTimings = { inserted: number[]; mutated: number | null };
@@ -352,7 +368,7 @@ for (const action of ["Delete", "Archive"]) {
 		const c = await deliver(`Pick C ${token}`);
 		await openWithSelection(page, open.subject, [b.subject, c.subject]);
 
-		await selectionPane(page).getByRole("button", { name: action, exact: true }).click();
+		await clickBulkAction(page, action);
 
 		await expectEmptyPane(page, "/inbox");
 		await expect(page.getByRole("main").getByText(b.subject, { exact: true })).toHaveCount(0);
@@ -367,10 +383,10 @@ test("deleting a selection that includes the open message never shows it again",
 	const b = await deliver(`Pick B ${token}`);
 	await openWithSelection(page, open.subject, [b.subject]);
 	await messageRow(page, open.subject).getByRole("checkbox").check();
-	await expect(page.getByRole("heading", { level: 2, name: "2 selected" })).toBeVisible();
+	await expect(page.getByText("2 selected")).toBeVisible();
 	const watch = await watchOldMessage(page, open.subject, [open.message.id]);
 
-	await selectionPane(page).getByRole("button", { name: "Delete", exact: true }).click();
+	await clickBulkAction(page, "Delete");
 
 	await expectEmptyPane(page, "/inbox");
 	await watch.assertNone();
@@ -401,22 +417,22 @@ test("a row action on a selected row drops it from the selection", async ({ page
 	await page.goto("/inbox");
 	await messageRow(page, a.subject).getByRole("checkbox").check();
 	await messageRow(page, b.subject).getByRole("checkbox").check();
-	await expect(page.getByRole("heading", { level: 2, name: "2 selected" })).toBeVisible();
+	await expect(page.getByText("2 selected")).toBeVisible();
 
 	const row = messageRow(page, a.subject);
 	await row.hover();
 	await row.getByRole("button", { name: "Archive" }).click();
 
 	await expect(messageRow(page, a.subject)).toHaveCount(0);
-	await expect(page.getByRole("heading", { level: 2, name: "1 selected" })).toBeVisible();
+	await expect(page.getByText("1 selected")).toBeVisible();
 	const bulk = page.waitForRequest(
 		(request) => request.url().endsWith("/api/messages/bulk") && request.method() === "POST",
 	);
-	await selectionPane(page).getByRole("button", { name: "Delete", exact: true }).click();
+	await clickBulkAction(page, "Delete");
 	expect((await bulk).postDataJSON().messageIds).toEqual([b.message.id]);
 });
 
-test("Empty Trash clears the selection and an open trashed message", async ({ page }) => {
+test("Empty Trash clears an open trashed message, and hides behind an active selection", async ({ page }) => {
 	const token = uniqueToken();
 	const a = await deliver(`Trash A ${token}`);
 	const b = await deliver(`Trash B ${token}`);
@@ -427,23 +443,55 @@ test("Empty Trash clears the selection and an open trashed message", async ({ pa
 
 	await page.goto("/trash");
 	await openMessage(page, a.subject);
-	await messageRow(page, b.subject).getByRole("checkbox").check();
-	await expect(page.getByRole("heading", { level: 2, name: "1 selected" })).toBeVisible();
+	const emptyTrash = page.getByRole("button", { name: "Empty Trash" });
+	await expect(emptyTrash).toBeVisible();
+	// A visible label next to the icon, not just the accessible name an aria-label alone would give it.
+	await expect(emptyTrash.getByText("Empty Trash")).toBeVisible();
 
-	await page.getByRole("button", { name: "Empty Trash" }).click();
-	const confirm = page.getByRole("alertdialog", { name: "Empty Trash?" });
-	await confirm.getByRole("button", { name: "Cancel" }).click();
-	await expect(page.getByRole("heading", { level: 2, name: "1 selected" })).toBeVisible();
-	expect(await messageStatusCode(b.message.id)).toBe(200);
+	// The bulk toolbar replaces the header's own actions while something is checked, the "Select" button and the
+	// list settings icon among them: Empty Trash (which would wipe the whole folder, not just the selection) too.
+	await messageRow(page, b.subject).getByRole("checkbox").check();
+	await expect(page.getByText("1 selected")).toBeVisible();
+	await expect(emptyTrash).toHaveCount(0);
+	await selectionPane(page).getByRole("button", { name: "Clear selection" }).click();
+	await expect(page.getByText("1 selected")).toHaveCount(0);
 
 	const watch = await watchOldMessage(page, a.subject, [a.message.id]);
-	await page.getByRole("button", { name: "Empty Trash" }).click();
+	await emptyTrash.click();
+	const confirm = page.getByRole("alertdialog", { name: "Empty Trash?" });
+	// The confirmation names how many messages are at stake (the seeded demo account may already hold more).
+	await expect(confirm.getByText(/Permanently delete all \d+ messages in Trash/)).toBeVisible();
+	await confirm.getByRole("button", { name: "Cancel" }).click();
+	expect(await messageStatusCode(b.message.id)).toBe(200);
+
+	await emptyTrash.click();
 	await confirm.getByRole("button", { name: "Delete forever" }).click();
 
 	await expectEmptyPane(page, "/trash");
 	await expect(page.getByText("No emails in trash")).toBeVisible();
 	await expect.poll(() => messageStatusCode(a.message.id)).toBe(404);
 	await watch.assertNone();
+});
+
+test("Empty Spam shows its label and confirms with the count", async ({ page }) => {
+	const token = uniqueToken();
+	const a = await deliver(`Spam A ${token}`);
+	const spammed = await api.post("/api/messages/bulk", { data: { messageIds: [a.message.id], action: "spam" } });
+	expect(spammed.ok(), await spammed.text()).toBe(true);
+
+	await page.goto("/spam");
+	const emptySpam = page.getByRole("button", { name: "Empty Spam" });
+	await expect(emptySpam).toBeVisible();
+	// A visible label next to the icon, not just the accessible name an aria-label alone would give it.
+	await expect(emptySpam.getByText("Empty Spam")).toBeVisible();
+
+	await emptySpam.click();
+	const confirm = page.getByRole("alertdialog", { name: "Empty Spam?" });
+	await expect(confirm.getByText(/Permanently delete (the 1 message|all \d+ messages) in Spam/)).toBeVisible();
+	await confirm.getByRole("button", { name: "Delete forever" }).click();
+
+	await expect(page).toHaveURL(/\/spam$/);
+	await expect.poll(() => messageStatusCode(a.message.id)).toBe(404);
 });
 
 test("Empty Trash with an open threaded message never reloads the deleted thread", async ({ page }) => {
@@ -515,11 +563,11 @@ test("bulk Delete never remounts the open message while the list refresh and nav
 	const c = await deliver(`Pick C ${token}`);
 	await openWithSelection(page, open.subject, [b.subject, c.subject]);
 	await messageRow(page, open.subject).getByRole("checkbox").check();
-	await expect(page.getByRole("heading", { level: 2, name: "3 selected" })).toBeVisible();
+	await expect(page.getByText("3 selected")).toBeVisible();
 	const watch = await watchOldMessage(page, open.subject, [open.message.id]);
 	const slow = await slowListAndNavigation(page);
 
-	await selectionPane(page).getByRole("button", { name: "Delete", exact: true }).click();
+	await clickBulkAction(page, "Delete");
 	await expectEmptyPane(page, "/inbox");
 	await expect.poll(() => messageStatusCode(open.message.id)).toBe(200);
 	await slow.settled();
@@ -598,4 +646,72 @@ test("Empty Trash from a later page with a message open stays on the empty pane"
 	await expect.poll(() => messageStatusCode(openId)).toBe(404);
 	await slow.settled();
 	await watch.assertNone();
+});
+
+test("deleting a selection of drafts and mail spanning more than a batch asks once, for the true total", async ({
+	page,
+}) => {
+	// Batches are BULK_ACTION_BATCH_SIZE (50) ids each: one draft lands in the first batch and, as the sole
+	// oldest item, one lands alone in the second. Each batch's own 409 would say just "1 draft" on its own;
+	// asking once for the true total across both is exactly what this guards.
+	test.setTimeout(240_000);
+	const token = uniqueToken();
+	const { mailboxes } = (await (await api.get("/api/mailboxes")).json()) as { mailboxes: { id: string }[] };
+	const mailboxId = mailboxes[0].id;
+	async function saveDraft(subject: string): Promise<string> {
+		const response = await api.post("/api/drafts", {
+			data: { mailboxId, from: SUPPORT_ADDRESS, to: "customer@outside.test", subject, text: subject },
+		});
+		expect(response.ok(), await response.text()).toBe(true);
+		return ((await response.json()) as { draft: { id: string } }).draft.id;
+	}
+	async function star(id: string) {
+		expect((await api.post(`/api/messages/${id}/star`)).ok()).toBe(true);
+	}
+
+	// Oldest first, so it alone ranks last (the second batch) once every item below is also starred.
+	const secondBatchDraft = await saveDraft(`Second batch draft ${token}`);
+	await star(secondBatchDraft);
+	const firstBatchDraft = await saveDraft(`First batch draft ${token}`);
+	await star(firstBatchDraft);
+	async function findMessages(subject: string): Promise<StoredMessage[]> {
+		const response = await api.get(`/api/messages?${new URLSearchParams({ q: subject, limit: "100" })}`, {
+			timeout: 60_000,
+		});
+		return ((await response.json()) as { messages: StoredMessage[] }).messages;
+	}
+
+	// Delivered one request at a time, then fetched in a single query instead of waitForMessage per message:
+	// 49 of those in parallel is well past what a busy dev server answers inside the default timeout.
+	const mailSubject = `Batch mail ${token}`;
+	for (let index = 0; index < 49; index += 1) {
+		await postInbound(api, { from: "sender@outside.test", to: SUPPORT_ADDRESS, subject: `${mailSubject} ${index}` });
+	}
+	await expect
+		.poll(() => findMessages(mailSubject), { timeout: 90_000, intervals: [500, 1000, 2000] })
+		.toHaveLength(49);
+	const mail = await findMessages(mailSubject);
+	for (const message of mail) await star(message.id);
+
+	// The drafts are the two oldest starred items, so a page of 25 (newest first) need not show them: the
+	// banner below reaches the whole folder regardless of what the first page happens to display.
+	await page.goto("/starred");
+	await expect(page.getByText(new RegExp(`^Batch mail ${token} \\d+$`)).first()).toBeVisible();
+	await page.getByRole("checkbox", { name: "Select all visible messages" }).check();
+	const banner = page.getByRole("button", { name: /^Select all 51 in Starred$/ });
+	await expect(banner).toBeVisible();
+	await banner.click();
+	await expect(page.getByText("51 selected")).toBeVisible();
+
+	await clickBulkAction(page, "Delete");
+	const confirm = page.getByRole("alertdialog", { name: "Delete 2 drafts permanently?" });
+	await expect(confirm).toBeVisible();
+	await confirm.getByRole("button", { name: "Delete" }).click();
+
+	await expect.poll(() => messageStatusCode(secondBatchDraft)).toBe(404);
+	await expect.poll(() => messageStatusCode(firstBatchDraft)).toBe(404);
+	for (const message of mail) expect((await api.get(`/api/messages/${message.id}`)).status()).toBe(200);
+	await expect
+		.poll(async () => (await (await api.get(`/api/messages/${mail[0].id}`)).json()).message.status)
+		.toBe("trash");
 });

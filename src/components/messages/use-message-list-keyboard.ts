@@ -19,6 +19,10 @@ type ListKeyboardOptions = {
 	selectionCount: number;
 	/** Escape empties the selection and nothing else: an open message stays open. */
 	clearSelection: () => void;
+	/** Cmd/Ctrl+A: selects every loaded row, the same as the list header's checkbox. */
+	selectAllVisible: () => void;
+	/** False while the list panel is hidden (the mobile reader): Cmd/Ctrl+A then belongs to whatever is on screen. */
+	listVisible: boolean;
 };
 
 /**
@@ -36,16 +40,38 @@ function focusIsInList(list: HTMLElement | null): boolean {
 }
 
 /**
- * Escape clears the selection when the focus is on the page or in the selection's own area (the folder page, with
- * its list and header, and the bulk-selection pane carry `data-selection-scope`), and no popup is open. Another
- * handler may already have taken the key by the time it bubbles, which is why this listens in the capture phase.
+ * Whether a key belongs to the list's selection: no popup is open, the focus is not on text being typed, and
+ * the target is the page itself (`body`/`documentElement`, nothing has taken the focus) or inside the folder
+ * page's own area (its list and header carry `data-selection-scope`). Used only by Escape: with nothing
+ * focused, Escape clearing a selection is the better default, and it is not a key the browser or page text
+ * does anything else with.
  */
-function escapeClearsSelection(event: KeyboardEvent): boolean {
-	if (event.key !== "Escape" || isTypingInInput(event.target)) return false;
+function isWithinSelectionScope(event: KeyboardEvent): boolean {
+	if (isTypingInInput(event.target)) return false;
 	if (document.querySelector(OPEN_POPUPS)) return false;
 	const target = event.target;
 	if (!(target instanceof HTMLElement) || target === document.body || target === document.documentElement) return true;
 	return !!target.closest("[data-selection-scope]");
+}
+
+function escapeClearsSelection(event: KeyboardEvent): boolean {
+	return event.key === "Escape" && isWithinSelectionScope(event);
+}
+
+/**
+ * Whether Cmd/Ctrl+A belongs to the list: unlike Escape, a bare `body`/`documentElement` target does not count
+ * here, since clicking plain text in the open message (which takes no focus of its own) would otherwise steal
+ * the browser's own "select all page text" there. The target must be inside the folder page's own area.
+ */
+function isWithinListSelectionScope(event: KeyboardEvent): boolean {
+	if (isTypingInInput(event.target)) return false;
+	if (document.querySelector(OPEN_POPUPS)) return false;
+	return event.target instanceof HTMLElement && !!event.target.closest("[data-selection-scope]");
+}
+
+/** Cmd (Apple) or Ctrl+A, unmodified otherwise so Shift/Alt combinations are left to the browser. */
+function isSelectAllChord(event: KeyboardEvent): boolean {
+	return (event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() === "a";
 }
 
 function rows(list: HTMLElement | null): HTMLElement[] {
@@ -77,10 +103,12 @@ export function useMessageListKeyboard({
 	extendSelection,
 	selectionCount,
 	clearSelection,
+	selectAllVisible,
+	listVisible,
 }: ListKeyboardOptions) {
 	const { shortcutsEnabled } = useShortcuts();
 
-	const shortcuts = useMemo<Array<ShortcutDefinition & { extend: boolean }>>(() => {
+	const shortcuts = useMemo<Array<ShortcutDefinition & { extend: boolean; acts: boolean }>>(() => {
 		const move = (step: 1 | -1) => {
 			const all = rows(listRef.current);
 			const current = focusedRow(listRef.current);
@@ -120,27 +148,45 @@ export function useMessageListKeyboard({
 				if (folder !== "trash") runOnRows("trash", focusedId());
 			},
 		};
-		return LIST_KEYS.map(({ id, ...meta }) => ({ ...meta, action: handlers[id], extend: id.startsWith("extend") }));
+		return LIST_KEYS.map(({ id, ...meta }) => ({
+			...meta,
+			action: handlers[id],
+			extend: id.startsWith("extend"),
+			acts: id === "archive" || id === "trash",
+		}));
 	}, [folder, listRef, runOnRows, toggleRowSelection, extendSelection]);
 
-	// While the selection pane covers the open message the list is what the user works with, so Shift+Arrow stays on.
+	// Navigation and x (select) need the list focused, which an open message's own reading pane has taken, so
+	// they stay off while one is open.
 	useHotkeys(
-		shortcuts.filter((shortcut) => !shortcut.extend),
+		shortcuts.filter((shortcut) => !shortcut.extend && !shortcut.acts),
 		{ enabled: shortcutsEnabled && !messageOpen },
 	);
+	// With a selection the list is still what the user works with even while a message is open, so Shift+Arrow
+	// and e/# (acting on the checked rows, not the open message) stay on.
 	useHotkeys(
-		shortcuts.filter((shortcut) => shortcut.extend),
+		shortcuts.filter((shortcut) => shortcut.extend || shortcut.acts),
 		{ enabled: shortcutsEnabled && (!messageOpen || selectionCount > 0) },
 	);
 
-	// Escape also works with a message open, where a selection replaces the reading pane. Another handler has
-	// already claimed the key by the time it bubbles (the global "dismiss" shortcut always does), so listen first.
+	// Escape also works with a message open, where a selection takes the list over from the reader. Another
+	// handler has already claimed the key by the time it bubbles (the global "dismiss" shortcut always does),
+	// which is why this listens in the capture phase; Cmd/Ctrl+A needs the same priority over the browser's own
+	// "select all page text".
 	useEffect(() => {
-		if (selectionCount === 0) return;
 		const onKeyDown = (event: KeyboardEvent) => {
-			if (escapeClearsSelection(event)) clearSelection();
+			if (selectionCount > 0 && escapeClearsSelection(event)) {
+				clearSelection();
+				return;
+			}
+			// Unlike Escape, Cmd/Ctrl+A is a shortcut like j/k/x/e/#, so it stays off with the rest of them, and with
+			// the list itself: hidden (the mobile reader), it belongs to whatever is on screen instead.
+			if (shortcutsEnabled && listVisible && isSelectAllChord(event) && isWithinListSelectionScope(event)) {
+				event.preventDefault();
+				selectAllVisible();
+			}
 		};
 		window.addEventListener("keydown", onKeyDown, true);
 		return () => window.removeEventListener("keydown", onKeyDown, true);
-	}, [selectionCount, clearSelection]);
+	}, [selectionCount, clearSelection, selectAllVisible, shortcutsEnabled, listVisible]);
 }

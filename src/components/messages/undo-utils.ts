@@ -1,7 +1,8 @@
 import type { BulkMessageResponse, MessageRestoreState } from "@/app/api/messages/bulk/types";
 import toast from "react-hot-toast";
-import { showUndoToast } from "@/components/ui/undo-toast";
+import { showRetryToast, showUndoToast } from "@/components/ui/undo-toast";
 import { authFetch } from "@/lib/auth/client";
+import { BULK_ACTION_BATCH_SIZE, chunkArray } from "./bulk-action-batch-utils";
 import { describeDraftsDeleted, describeSendPendingRefused } from "./bulk-request-utils";
 import { t } from "@/lib/i18n/translator";
 
@@ -13,16 +14,50 @@ export function describeUndoableMove(action: string, count: number): string | nu
 	return null;
 }
 
+/**
+ * A restore applies each state in one sequential server-side loop (undoing a report's training needs its own
+ * receipt lookup), so a large Undo is sent in bounded batches too, the same reasoning as `runBulkMessageAction`.
+ * When a later batch fails, the ones before it have already restored their messages; instead of losing that and
+ * reporting a plain failure, this offers to retry exactly the states that never ran.
+ */
 export async function restoreMessages(states: MessageRestoreState[]): Promise<void> {
-	const response = await authFetch("/api/messages/bulk", {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({ action: "restore", restore: states }),
-	});
-	if (!response.ok) throw new Error("Unable to undo");
-	window.dispatchEvent(new Event("kite:messages-changed"));
-	const data = (await response.json().catch(() => null)) as BulkMessageResponse | null;
-	if (data?.superseded) toast(SUPERSEDED_NOTICE);
+	let superseded = 0;
+	let done = 0;
+	try {
+		for (const batch of chunkArray(states, BULK_ACTION_BATCH_SIZE)) {
+			let response: Response;
+			try {
+				response = await authFetch("/api/messages/bulk", {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({ action: "restore", restore: batch }),
+				});
+			} catch {
+				offerRestoreRetry(states.slice(done), done, states.length);
+				return;
+			}
+			if (!response.ok) {
+				offerRestoreRetry(states.slice(done), done, states.length);
+				return;
+			}
+			const data = (await response.json().catch(() => null)) as BulkMessageResponse | null;
+			superseded += data?.superseded ?? 0;
+			done += batch.length;
+		}
+	} finally {
+		window.dispatchEvent(new Event("kite:messages-changed"));
+	}
+	if (superseded) toast(SUPERSEDED_NOTICE);
+}
+
+/** The states a failed restore batch never reached, offered as a Retry instead of a silent, incomplete Undo. */
+function offerRestoreRetry(remaining: MessageRestoreState[], done: number, total: number) {
+	showRetryToast(
+		t("Undid {done} of {total}. The rest could not be undone.", { done, total }),
+		t("Retry"),
+		() => restoreMessages(remaining),
+		t("Could not undo the rest. Please try again."),
+	);
 }
 
 /** Offers to undo an archive or trash the bulk endpoint reported previous states for. */

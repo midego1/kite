@@ -1,6 +1,6 @@
 "use client";
 
-import { createElement, useState, useCallback } from "react";
+import { createElement, useState, useCallback, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import * as Popover from "@radix-ui/react-popover";
 import {
@@ -9,7 +9,6 @@ import {
 	BellOff,
 	FileCode2,
 	Sparkles,
-	Forward,
 	Mail,
 	MailOpen,
 	MoreVertical,
@@ -33,7 +32,10 @@ import { confirmReportSpam } from "@/components/messages/spam-report";
 import { messageShortcuts, reachableMessageShortcuts } from "./message-shortcuts";
 import { useMessageReply } from "./use-message-reply";
 import { useReadOnlyMail } from "./use-read-only-mail";
-import { MoveToolbarMenu, SnoozeToolbarButton } from "./message-toolbar-menus";
+import { MoveToolbarMenu, SnoozeToolbarButton, ToolbarFolderButtons } from "./message-toolbar-menus";
+import { readerInlineActionIds } from "./reader-toolbar-overflow-utils";
+import { useReaderToolbarOverflow } from "./use-reader-toolbar-overflow";
+import { MORE_ITEM_CLASS, ReaderMoreLeadItems, ToolbarSlot } from "./reader-toolbar-parts";
 import { useIsMobile } from "@/components/sidebar-mobile-utils";
 import { useHotkeys, useShortcuts } from "@/components/shortcuts";
 import { Button } from "@/components/ui/button";
@@ -230,23 +232,47 @@ export function MessageActions({
 	const markAction: BulkMessageAction = read ? "unread" : "read";
 	const moveActions = getMoveMessageActions(status, direction);
 
-	return (
-		<div className="reader-toolbar flex min-w-0 items-center gap-1 text-neutral-600 max-md:flex-1 md:gap-1.5">
-			{/* A narrow reader (a small phone, or a pinched split/stacked reading pane) can hold more buttons than
-			it is wide: this wraps onto a second line (the sticky header is `min-h-14`, so it grows to fit)
-			instead of overflowing and pushing the More and Delete buttons after it off screen
-			(docs/upstream/mailflare-review-2026-11-08.md #14). Not `overflow-x-auto`: that makes this div a
-			clipping boundary Radix's Popper measures itself against, which puts the Move-to/Snooze menus in
-			the wrong place the moment it has less room than its content needs. */}
-			<div className="flex min-w-0 flex-1 flex-wrap items-center gap-1 *:shrink-0 md:gap-1.5">
-				{shownError && (
-					<span role="alert" className="shrink-0 text-xs text-red-600">
-						{shownError}
-					</span>
-				)}
+	const snoozable = direction === "inbound" && status === "received";
+	const replyAllLabel = t("Reply all");
+	// Priority order: what is dropped first is last. Whatever does not fit moves into "More actions".
+	const inlineIds = readerInlineActionIds({ isMobile, canReplyAll, snoozable });
+	const { rootRef, visibleIds } = useReaderToolbarOverflow(
+		inlineIds,
+		[isMobile, inlineIds.join(), replyAllLabel, read, shownError ?? ""].join("|"),
+	);
+	const overflowed = (id: string) => inlineIds.includes(id) && !visibleIds.has(id);
+	const slot = (id: string, node: ReactNode) => (
+		<ToolbarSlot id={id} visible={visibleIds.has(id)}>
+			{node}
+		</ToolbarSlot>
+	);
+	const fixedSlot = (node: ReactNode) => <ToolbarSlot fixed>{node}</ToolbarSlot>;
 
-				{isMobile && (
-					<>
+	return (
+		<div
+			ref={rootRef}
+			className="reader-toolbar relative flex min-w-0 items-center gap-1 text-neutral-600 max-md:flex-1 md:gap-1.5"
+		>
+			{/* One row at every width: the actions that do not fit move into "More actions" (use-reader-toolbar-
+			overflow.ts) instead of wrapping onto a second line, which is what growing the header did when this
+			row's flex-basis let it shrink below its content. No `overflow` here either: that makes this div a
+			clipping boundary Radix's Popper measures itself against, which puts the Move-to/Snooze menus in
+			the wrong place. */}
+			{shownError && (
+				<span
+					role="alert"
+					data-overflow-lead
+					title={shownError}
+					className="min-w-0 max-w-40 truncate text-xs text-red-600"
+				>
+					{shownError}
+				</span>
+			)}
+
+			{isMobile && (
+				<>
+					{slot(
+						"reply",
 						<Button
 							type="button"
 							variant="ghost"
@@ -256,7 +282,9 @@ export function MessageActions({
 							onClick={() => handleReply("reply")}
 						>
 							<Reply size={iconSize} className="rtl:-scale-x-100" />
-						</Button>
+						</Button>,
+					)}
+					{fixedSlot(
 						<Button
 							variant="ghost"
 							size="roundedSM"
@@ -265,7 +293,10 @@ export function MessageActions({
 							onClick={onTrashClick}
 						>
 							<Trash2 size={iconSize} />
-						</Button>
+						</Button>,
+					)}
+					{slot(
+						"spam",
 						<Button
 							variant="ghost"
 							size="roundedSM"
@@ -274,13 +305,16 @@ export function MessageActions({
 							onClick={() => runAction("spam")}
 						>
 							<ShieldAlert size={iconSize} />
-						</Button>
-					</>
-				)}
-				{!isMobile && (
-					<>
-						{/* Zero's labelled "Reply all"; Reply and Forward sit under the message itself. */}
-						{canReplyAll && (
+						</Button>,
+					)}
+				</>
+			)}
+			{!isMobile && (
+				<>
+					{/* Zero's labelled "Reply all"; Reply and Forward sit under the message itself. */}
+					{canReplyAll &&
+						slot(
+							"replyAll",
 							<Button
 								type="button"
 								variant="ghost"
@@ -290,9 +324,11 @@ export function MessageActions({
 								onClick={() => handleReply("replyAll")}
 							>
 								<ReplyAll size={iconSize} className="rtl:-scale-x-100" />
-								{t("Reply all")}
-							</Button>
+								{replyAllLabel}
+							</Button>,
 						)}
+					{slot(
+						"archive",
 						<Tooltip label={shortcutsEnabled ? t("Archive (e)") : t("Archive")}>
 							<Button
 								variant="ghost"
@@ -303,20 +339,25 @@ export function MessageActions({
 							>
 								<Archive size={iconSize} />
 							</Button>
-						</Tooltip>
-						<SnoozeToolbarButton
-							messageId={messageId}
-							snoozable={direction === "inbound" && status === "received"}
-							disabled={manageDisabled}
-							iconSize={iconSize}
-						/>
+						</Tooltip>,
+					)}
+					{snoozable &&
+						slot(
+							"snooze",
+							<SnoozeToolbarButton messageId={messageId} snoozable disabled={manageDisabled} iconSize={iconSize} />,
+						)}
+					{slot(
+						"move",
 						<MoveToolbarMenu
 							actions={moveActions}
 							mailboxId={mailboxId}
 							disabled={manageDisabled}
 							iconSize={iconSize}
 							onAction={(action, folderId) => void runAction(action, folderId)}
-						/>
+						/>,
+					)}
+					{slot(
+						"spam",
 						<Tooltip label={shortcutsEnabled ? t("Report spam (!)") : t("Report spam")}>
 							<Button
 								variant="ghost"
@@ -327,7 +368,10 @@ export function MessageActions({
 							>
 								<ShieldAlert size={iconSize} />
 							</Button>
-						</Tooltip>
+						</Tooltip>,
+					)}
+					{slot(
+						"mark",
 						<Tooltip label={read ? t("Mark as unread") : t("Mark as read")}>
 							<Button
 								variant="ghost"
@@ -338,10 +382,10 @@ export function MessageActions({
 							>
 								{read ? <Mail size={iconSize} /> : <MailOpen size={iconSize} />}
 							</Button>
-						</Tooltip>
-					</>
-				)}
-			</div>
+						</Tooltip>,
+					)}
+				</>
+			)}
 			<Popover.Root
 				open={moreOpen}
 				onOpenChange={(open) => {
@@ -349,13 +393,15 @@ export function MessageActions({
 					setMoreOpen(open);
 				}}
 			>
-				<Tooltip label={moreOpen ? null : t("More actions")}>
-					<Popover.Trigger asChild>
-						<Button type="button" variant="ghost" size="roundedSM" aria-label={t("More actions")} disabled={disabled}>
-							<MoreVertical size={iconSize} />
-						</Button>
-					</Popover.Trigger>
-				</Tooltip>
+				{fixedSlot(
+					<Tooltip label={moreOpen ? null : t("More actions")}>
+						<Popover.Trigger asChild>
+							<Button type="button" variant="ghost" size="roundedSM" aria-label={t("More actions")} disabled={disabled}>
+								<MoreVertical size={iconSize} />
+							</Button>
+						</Popover.Trigger>
+					</Tooltip>,
+				)}
 				<Popover.Portal>
 					<Popover.Content
 						align="end"
@@ -364,54 +410,25 @@ export function MessageActions({
 						aria-label={t("More actions")}
 						className="z-50 max-h-(--radix-popover-content-available-height) w-54 overflow-y-auto rounded-xl border border-neutral-200 bg-white p-2 shadow-lg has-[[data-snooze-expanded=true]]:w-72"
 					>
-						{isMobile && (
-							<>
-								<button
-									type="button"
-									className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm text-neutral-700 hover:bg-neutral-100 pointer-coarse:py-3 disabled:text-neutral-400"
-									disabled={archiveDisabled}
-									onClick={() => void runAction("archive")}
-								>
-									<Archive className="h-4 w-4" />
-									{t("Archive")}
-								</button>
-								{canReplyAll && (
-									<button
-										type="button"
-										className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm text-neutral-700 hover:bg-neutral-100 pointer-coarse:py-3 disabled:text-neutral-400"
-										onClick={() => {
-											setMoreOpen(false);
-											void handleReply("replyAll");
-										}}
-									>
-										<ReplyAll className="h-4 w-4 rtl:-scale-x-100" />
-										{t("Reply all")}
-									</button>
-								)}
-								{canForward && (
-									<button
-										type="button"
-										className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm text-neutral-700 hover:bg-neutral-100 pointer-coarse:py-3 disabled:text-neutral-400"
-										onClick={() => {
-											setMoreOpen(false);
-											void handleForward();
-										}}
-									>
-										<Forward className="h-4 w-4 rtl:-scale-x-100" />
-										{t("Forward")}
-									</button>
-								)}
-								<button
-									type="button"
-									className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm text-neutral-700 hover:bg-neutral-100 pointer-coarse:py-3 disabled:text-neutral-400"
-									onClick={() => void runAction(markAction)}
-								>
-									{read ? <Mail className="h-4 w-4" /> : <MailOpen className="h-4 w-4" />}
-									{read ? t("Mark as unread") : t("Mark as read")}
-								</button>
-								<hr className="my-1 border-neutral-100" />
-							</>
-						)}
+						<ReaderMoreLeadItems
+							isMobile={isMobile}
+							overflowed={overflowed}
+							canReplyAll={canReplyAll}
+							canForward={canForward}
+							read={read}
+							disabled={disabled}
+							archiveDisabled={archiveDisabled}
+							spamDisabled={manageDisabled || status === "spam" || direction !== "inbound"}
+							onReply={(mode) => {
+								setMoreOpen(false);
+								void handleReply(mode);
+							}}
+							onForward={() => {
+								setMoreOpen(false);
+								void handleForward();
+							}}
+							onAction={(action) => void runAction(action)}
+						/>
 						{direction === "inbound" && status === "received" && (
 							<SnoozeMenuItem
 								messageId={messageId}
@@ -483,29 +500,38 @@ export function MessageActions({
 								{item.label}
 							</button>
 						))}
+						{overflowed("move") && (
+							<ToolbarFolderButtons
+								disabled={manageDisabled}
+								mailboxId={mailboxId}
+								onMove={(folderId) => void runAction("folder", folderId)}
+								className={MORE_ITEM_CLASS}
+							/>
+						)}
 					</Popover.Content>
 				</Popover.Portal>
 			</Popover.Root>
-			{!isMobile && (
-				<Tooltip label={canDeleteForever ? t("Delete forever") : shortcutsEnabled ? t("Delete (#)") : t("Delete")}>
-					<Button
-						variant="ghost"
-						size="roundedSM"
-						data-tone="danger"
-						aria-label={canDeleteForever ? trashLabel : shortcutsEnabled ? t("Move to trash (#)") : t("Move to trash")}
-						disabled={manageDisabled}
-						onClick={onTrashClick}
-						className={canDeleteForever ? "text-red-600 hover:text-red-700" : undefined}
-					>
-						<Trash2 size={iconSize} />
-					</Button>
-				</Tooltip>
-			)}
+			{!isMobile &&
+				fixedSlot(
+					<Tooltip label={canDeleteForever ? t("Delete forever") : shortcutsEnabled ? t("Delete (#)") : t("Delete")}>
+						<Button
+							variant="ghost"
+							size="roundedSM"
+							data-tone="danger"
+							aria-label={
+								canDeleteForever ? trashLabel : shortcutsEnabled ? t("Move to trash (#)") : t("Move to trash")
+							}
+							disabled={manageDisabled}
+							onClick={onTrashClick}
+							className={canDeleteForever ? "text-red-600 hover:text-red-700" : undefined}
+						>
+							<Trash2 size={iconSize} />
+						</Button>
+					</Tooltip>,
+				)}
 
 			<MessageSourceDialog messageId={messageId} open={sourceOpen} onOpenChange={setSourceOpen} />
 			{moduleSlots.overlays}
-
-			<span className="flex-1" />
 		</div>
 	);
 }

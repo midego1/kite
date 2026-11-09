@@ -64,4 +64,20 @@ export const driveSchemas: ModuleSchemas = {
 		}),
 		output: z.object({ updated: z.number().int().min(0) }),
 	},
+	fileReceipt: {
+		input: z.object({
+			messageId: z.string().min(1),
+			attachmentId: z.string().min(1).nullable(),
+			folderPath: z.array(z.string().min(1).max(80)).min(1).max(4),
+			baseName: z.string().min(1).max(150),
+		}),
+		output: z.object({
+			filed: z.boolean(),
+			emlFileId: z.string().nullable(),
+			htmlFileId: z.string().nullable(),
+			pdfFileId: z.string().nullable(),
+			attachmentFileId: z.string().nullable(),
+			skippedReason: z.string().nullable(),
+		}),
+	},
 };

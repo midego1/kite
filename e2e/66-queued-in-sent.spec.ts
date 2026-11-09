@@ -61,6 +61,19 @@ function rowFor(page: Page, subject: string) {
 	return page.getByRole("main").locator("[data-message-row]").filter({ hasText: subject }).last();
 }
 
+/**
+ * The bulk toolbar's control for an action, whether the default split-pane list has room to show it inline
+ * or, too narrow for that, it only reaches through "More actions" (what fits there is measured against the
+ * panel's actual width, not a fixed set). Opens "More actions" if needed, so the returned control is the one
+ * actually checkable for its disabled state; the caller presses Escape afterward either way.
+ */
+async function bulkActionControl(page: Page, action: string) {
+	const inline = page.getByTestId("bulk-toolbar").getByRole("button", { name: action }).first();
+	if (await inline.isVisible()) return inline;
+	await page.getByTestId("bulk-toolbar").getByRole("button", { name: "More actions" }).click();
+	return page.getByRole("menu").getByRole("menuitem", { name: action }).first();
+}
+
 test("a send held by the undo delay shows in Sent as Sending…, can be cancelled and is back in Drafts", async ({
 	page,
 }) => {
@@ -155,9 +168,12 @@ test("a scheduled send shows its time, cannot be archived or trashed, and Edit o
 
 	await test.step("the Sent toolbar offers no archive, spam or delete for it", async () => {
 		await rowFor(page, subject).getByRole("checkbox").check();
-		await expect(page.getByRole("button", { name: "Archive" }).first()).toBeDisabled();
-		await expect(page.getByRole("button", { name: "Report spam" }).first()).toBeDisabled();
-		await expect(page.getByRole("button", { name: "Delete", exact: true }).first()).toBeDisabled();
+		await expect(await bulkActionControl(page, "Archive")).toBeDisabled();
+		await page.keyboard.press("Escape");
+		await expect(await bulkActionControl(page, "Report spam")).toBeDisabled();
+		await page.keyboard.press("Escape");
+		await expect(await bulkActionControl(page, "Delete")).toBeDisabled();
+		await page.keyboard.press("Escape");
 		await rowFor(page, subject).getByRole("checkbox").uncheck();
 	});
 

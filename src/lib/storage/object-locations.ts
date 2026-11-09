@@ -91,7 +91,7 @@ async function tryClaimExistingRow(
  * (`B3`). Returns the claim on success, `"none"` when the key has no row yet (nothing exists for anything else
  * to race over, so there is nothing to protect — `deferUnrecordedCopy`, the only caller left using this instead
  * of `claimOrCreateLocationLease`, never writes a new location anyway), or `null` when someone else already
- * holds a still-valid claim on an existing row. Before migration 0103 there is no column to claim through;
+ * holds a still-valid claim on an existing row. Before migration 0104 there is no column to claim through;
  * acquiring then answers `"none"` rather than refusing every check over columns that cannot exist yet.
  */
 export async function claimLocationLease(
@@ -123,7 +123,7 @@ export async function claimLocationLease(
  * the bytes actually are *right now*, before any copy has happened — the caller's source, never its intended
  * target (round-8 review, `B5`): a successful `recordObjectLocation` call overwrites it with the real,
  * confirmed destination, but a move that aborts after creating this row leaves it as the only account of this
- * key's location, and a target that nothing was ever copied to yet is simply false. Before migration 0103, or
+ * key's location, and a target that nothing was ever copied to yet is simply false. Before migration 0104, or
  * on a database still missing the lease columns from an earlier version of it (both degrade the same way
  * `claimLocationLease` does), answers `"none"` rather than refusing every move over columns that cannot exist
  * yet; otherwise either a row ends up claimed, or `null` because someone else already holds one.
@@ -207,7 +207,7 @@ class LocationLeaseError extends Error {}
 /**
  * Runs `fn` only while holding the claim on `key`, creating its `object_locations` row under that claim when
  * it does not exist yet (`claimOrCreateLocationLease`; round-7 review), or while there is nothing to claim
- * through at all before migration 0103 (`"none"`), releasing however `fn` ends. A cold move wraps its own
+ * through at all before migration 0104 (`"none"`), releasing however `fn` ends. A cold move wraps its own
  * verify-copy-record-delete sequence in this (`B2`, `B3`), fencing it against a second concurrent mover of the
  * exact same key for as long as it keeps its claim renewed; `initial` is the row the move is working towards,
  * passed straight to `claimOrCreateLocationLease`.
@@ -281,7 +281,7 @@ export async function recordObjectLocation(
 		const results = await env.DB.batch([markPrevious, upsert, clearTargetCandidate]);
 		return lease ? (results[1].meta?.changes ?? 0) > 0 : true;
 	} catch (error) {
-		// `object_locations` exists (migration 0097) but `storage_cold_orphans` may not yet (migration 0103):
+		// `object_locations` exists (migration 0097) but `storage_cold_orphans` may not yet (migration 0104):
 		// the location still needs recording on its own, just without the orphan candidate mark or clear, rather
 		// than the whole batch (and so the location write) failing over a table nothing here strictly needs yet.
 		if (!isNoSuchTableError(error)) throw error;

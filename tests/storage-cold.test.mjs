@@ -25,7 +25,7 @@ const { moveColdObject } = lib.coldMove;
 const schemaScratch = makeBundleDirectory("kite-storage-cold-schema-");
 after(() => rmSync(schemaScratch, { recursive: true, force: true }));
 const beforeColdStorage = copyMigrationsBefore(schemaScratch, 97);
-const beforeOrphanTracking = copyMigrationsBefore(schemaScratch, 103);
+const beforeOrphanTracking = copyMigrationsBefore(schemaScratch, 104);
 
 const DAY = 24 * 60 * 60;
 const NOW = 1_700_000_000;
@@ -757,7 +757,7 @@ test("saving a cold rule on a database that has 0065's storage tables but not 00
 	assert.equal(result.code, "MIGRATION_PENDING");
 });
 
-test("the five-minute maintenance does not crash on a database that has 0097's cold storage tables but not 0103's orphan tracking", async (t) => {
+test("the five-minute maintenance does not crash on a database that has 0097's cold storage tables but not 0104's orphan tracking", async (t) => {
 	lib.config.clearStorageConfigCache();
 	lib.state.clearModuleStateCache();
 	const db = new lib.sqlite.SqliteDatabase(":memory:");
@@ -771,16 +771,16 @@ test("the five-minute maintenance does not crash on a database that has 0097's c
 	assert.equal(
 		db.db.prepare("SELECT count(*) AS n FROM sqlite_master WHERE name = 'storage_cold_orphans'").get().n,
 		0,
-		"0103 is not",
+		"0104 is not",
 	);
 	assert.equal(
 		db.db
 			.prepare("SELECT COUNT(*) AS n FROM pragma_table_info('storage_state') WHERE name = 'cold_orphan_cursor'")
 			.get().n,
 		0,
-		"storage_state exists (0085) without 0103's extra column either",
+		"storage_state exists (0085) without 0104's extra column either",
 	);
-	const scratchDir = makeBundleDirectory("kite-storage-cold-before0103-");
+	const scratchDir = makeBundleDirectory("kite-storage-cold-before0104-");
 	t.after(() => rmSync(scratchDir, { recursive: true, force: true }));
 	const env = {
 		DB: db,
@@ -797,7 +797,7 @@ test("the five-minute maintenance does not crash on a database that has 0097's c
 		lib.config.clearStorageConfigCache();
 	});
 	// Previously this raised a raw "no such column: cold_orphan_cursor" error straight out of the five-minute
-	// cron, on any install that has not yet run migration 0103; it must instead read and write that column's
+	// cron, on any install that has not yet run migration 0104; it must instead read and write that column's
 	// absence the same way the rest of the codebase treats a pending migration (`missingColumnFromError`).
 	await assert.doesNotReject(() => cold.runStorageColdMaintenance(env, new Date()));
 });

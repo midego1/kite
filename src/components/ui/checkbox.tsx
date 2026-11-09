@@ -38,7 +38,7 @@ export const Checkbox = React.forwardRef<HTMLButtonElement, CheckboxProps>(
 				{...props}
 			>
 				<CheckboxPrimitive.Indicator className="grid place-content-center text-current">
-					<Check className="h-3.5 w-3.5" strokeWidth={3} />
+					<Check className="h-3.5 w-3.5 pointer-coarse:h-4 pointer-coarse:w-4" strokeWidth={3} />
 				</CheckboxPrimitive.Indicator>
 			</CheckboxPrimitive.Root>
 		);

@@ -105,8 +105,8 @@ function parseScanCursor(value: string | null | undefined): ScanCursor | null {
 
 const COLD_ORPHAN_CURSOR_COLUMN = "cold_orphan_cursor";
 
-/** `storage_state` (migration 0085) can exist without its `cold_orphan_cursor` column (migration 0103) applied
- * yet, between an install's 0097 and 0103: reads then stand in as "no cursor", the same as the column's own
+/** `storage_state` (migration 0085) can exist without its `cold_orphan_cursor` column (migration 0104) applied
+ * yet, between an install's 0097 and 0104: reads then stand in as "no cursor", the same as the column's own
  * default, rather than failing the whole sweep every five minutes over a column nothing here strictly needs yet. */
 async function readScanCursor(env: ColdEnv): Promise<ScanCursor | null> {
 	try {

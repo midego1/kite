@@ -720,7 +720,21 @@
       "idx": 102,
       "version": "6",
       "when": 1794355200000,
-      "tag": "0103_add_cold_storage_orphans",
+      "tag": "0102_add_finance_receipts",
+      "breakpoints": true
+    },
+    {
+      "idx": 103,
+      "version": "6",
+      "when": 1794441600000,
+      "tag": "0103_add_assistant_sender_attempts",
+      "breakpoints": true
+    },
+    {
+      "idx": 104,
+      "version": "6",
+      "when": 1794528000000,
+      "tag": "0104_add_cold_storage_orphans",
       "breakpoints": true
     }
   ]

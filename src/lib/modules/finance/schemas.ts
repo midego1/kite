@@ -130,6 +130,18 @@ export const financeSchemas: ModuleSchemas = {
 		input: z.object({ scheduledTime: z.string().datetime({ offset: true }).optional() }),
 		output: z.object({ resumed: z.number().int().min(0) }),
 	},
+	fileReceipts: {
+		input: z.object({ scheduledTime: z.string().datetime({ offset: true }).optional() }),
+		output: z.object({ filed: z.number().int().min(0), scanned: z.number().int().min(0) }),
+	},
+	backfillReceipts: {
+		input: z.object({ kind: z.literal("finance.receipts_backfill"), userId: z.string().min(1).max(160) }),
+		output: z.object({ scanned: z.number().int().min(0) }),
+	},
+	resumeReceiptBackfills: {
+		input: z.object({ scheduledTime: z.string().datetime({ offset: true }).optional() }),
+		output: z.object({ resumed: z.number().int().min(0) }),
+	},
 	resolveRefs: resolveRefsSchemas(["finance:subscription"]),
 	search: searchSchemas,
 	list_subscriptions: listSubscriptions,

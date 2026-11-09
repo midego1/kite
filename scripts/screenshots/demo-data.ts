@@ -158,9 +158,36 @@ export const THAI_MAIL_TRANSLATED = {
 	html: `<p>Hello,</p><p>Thank you for yesterday's meeting. This is what we agreed:</p><ul><li>Our team arrives in Bangkok on Monday.</li><li>Please send us the documents before Friday.</li></ul><p>With respect,<br>Somchai</p>`,
 };
 
+/** A message whose sender fails SPF, DKIM and DMARC, for the sender authentication warning shot. */
+export const SENDER_AUTH_MAIL = {
+	from: `"Billing" <billing@northwind-invoices.test>`,
+	subject: "Your December invoice",
+	html: `<p>Hello,</p><p>Your invoice for December is attached. Thanks for your business.</p>`,
+};
+
 /** Delivers the right-to-left demo mail once, so the shot finds it in the Inbox. */
 export async function seedRtlMail(): Promise<void> {
 	await deliverOnce(RTL_MAIL);
+}
+
+/** Delivers the sender authentication demo mail once, with headers that fail every check. */
+export async function seedSenderAuthDemo(): Promise<void> {
+	const api = await apiContext(STORAGE_STATE);
+	const found = await api.get(`/api/messages?${new URLSearchParams({ q: SENDER_AUTH_MAIL.subject, limit: "20" })}`);
+	const { messages: existing } = (await found.json()) as { messages: { subject?: string }[] };
+	if (!existing.some((message) => message.subject === SENDER_AUTH_MAIL.subject)) {
+		await postInbound(api, {
+			...SENDER_AUTH_MAIL,
+			to: `"Support" <${SUPPORT_ADDRESS}>`,
+			text: plainText(SENDER_AUTH_MAIL.html),
+			headers: {
+				"Authentication-Results":
+					"mx.cloudflare.net; spf=fail smtp.mailfrom=bounce@northwind-invoices.test; dkim=fail header.d=northwind-invoices.test; dmarc=fail header.from=northwind-invoices.test policy.dmarc=none",
+			},
+		});
+		await waitForMessage(api, SENDER_AUTH_MAIL.subject);
+	}
+	await api.dispose();
 }
 
 /** Delivers the Thai demo mail once. */

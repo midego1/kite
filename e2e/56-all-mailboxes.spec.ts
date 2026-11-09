@@ -62,6 +62,41 @@ function row(page: Page, subject: string) {
 		.filter({ has: page.getByText(subject, { exact: true }) });
 }
 
+/** The bulk toolbar in the list header: scopes an action button away from any row's own, same-named one. */
+function toolbar(page: Page) {
+	return page.getByTestId("bulk-toolbar");
+}
+
+/**
+ * Runs a bulk toolbar action by its label, whether the default split-pane list has room to show it inline
+ * or, too narrow for that, it only reaches through "More actions": what fits there is measured against the
+ * panel's actual width, not a fixed set, so any action can fold away depending on what else is competing
+ * for the room.
+ */
+async function clickBulkAction(page: Page, action: string | RegExp) {
+	const inline = toolbar(page).getByRole("button", { name: action, exact: true });
+	if (await inline.isVisible()) {
+		await inline.click();
+		return;
+	}
+	await toolbar(page).getByRole("button", { name: "More actions" }).click();
+	await page.getByRole("menu").getByRole("menuitem", { name: action, exact: true }).click();
+}
+
+/** Asserts `action`'s enabled state through whichever of the inline toolbar or "More actions" offers it. */
+async function assertBulkActionEnabled(page: Page, action: string, enabled: boolean) {
+	const inline = toolbar(page).getByRole("button", { name: action, exact: true });
+	if (await inline.isVisible()) {
+		await expect(inline)[enabled ? "toBeEnabled" : "toBeDisabled"]();
+		return;
+	}
+	await toolbar(page).getByRole("button", { name: "More actions" }).click();
+	await expect(page.getByRole("menu").getByRole("menuitem", { name: action, exact: true }))[
+		enabled ? "toBeEnabled" : "toBeDisabled"
+	]();
+	await page.keyboard.press("Escape");
+}
+
 async function openSwitcher(page: Page) {
 	const trigger = page.getByRole("button", { name: /^Switch mailbox, current:/ });
 	// The first visit compiles the dashboard on a cold dev server.
@@ -274,10 +309,18 @@ test("bulk archive works across mailboxes and leaves read-only shared mail where
 	for (const subject of Object.values(subjects)) {
 		await row(page, subject).getByRole("checkbox").click();
 	}
-	await page.getByRole("button", { name: "Move to" }).click();
+	// The default split-pane list has no room for "Move to" inline, so it is reached through "More actions"
+	// here; the keyboard opens its submenu without a pointer path across the other items first.
+	const moveInline = toolbar(page).getByRole("button", { name: "Move to", exact: true });
+	if (await moveInline.isVisible()) {
+		await moveInline.click();
+	} else {
+		await toolbar(page).getByRole("button", { name: "More actions" }).click();
+		await page.getByRole("menu").getByRole("menuitem", { name: "Move to", exact: true }).press("ArrowRight");
+	}
 	await expect(page.getByText("Select mail from one mailbox to move it to a folder.")).toBeVisible();
 	await page.keyboard.press("Escape");
-	await page.getByRole("button", { name: "Archive", exact: true }).last().click();
+	await clickBulkAction(page, "Archive");
 	await expect(page.getByText("1 read-only message was left as it was.")).toBeVisible();
 	await expect(row(page, subjects.home)).toHaveCount(0);
 	await expect(row(page, subjects.work)).toHaveCount(0);
@@ -297,9 +340,11 @@ test("read-only shared mail cannot be archived or deleted from the combined view
 	await showAllMailboxes(page);
 
 	await row(page, subject).getByRole("checkbox").click();
-	await expect(page.getByRole("button", { name: "Archive", exact: true }).last()).toBeDisabled();
-	await expect(page.getByRole("button", { name: "Delete", exact: true }).last()).toBeDisabled();
-	await expect(page.getByRole("button", { name: "Mark as read" }).last()).toBeEnabled();
+	// None of these has guaranteed room inline at the default split-pane width (what fits is measured, not a
+	// fixed set), so each is checked through whichever of the toolbar or "More actions" actually offers it.
+	await assertBulkActionEnabled(page, "Mark as read", true);
+	await assertBulkActionEnabled(page, "Delete", false);
+	await assertBulkActionEnabled(page, "Archive", false);
 	await row(page, subject).getByRole("checkbox").click();
 
 	await row(page, subject).getByRole("link").first().click();

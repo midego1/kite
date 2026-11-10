@@ -135,6 +135,7 @@
 		"sass": "^1.105.1",
 		"smtp-server": "^3.21.1",
 		"tailwind-merge": "^3.7.0",
+		"undici": "^7.30.1",
 		"vinext": "1.1.0",
 		"workers-ai-provider": "^4.0.1",
 		"ws": "^8.21.0",

@@ -3,6 +3,7 @@ import { getDb } from "@/db";
 import type { AppDatabase } from "@/db";
 import { webhookDeliveries, webhooks } from "@/db/schema";
 import { newId } from "@/lib/ids";
+import { outboundFetch } from "@/lib/security/outbound-fetch";
 import { assertPublicHttpUrl } from "@/lib/security/outbound-url";
 import { openSetting } from "@/lib/security/secret-box";
 import { recordMetric, statusClass } from "@/lib/metrics.mjs";
@@ -106,7 +107,7 @@ async function attemptDelivery(
 	try {
 		const url = await assertPublicHttpUrl(env, hook.url);
 		const signature = await signPayload((await openSetting(env, hook.secret)) ?? "", delivery.payload);
-		const res = await fetch(url, {
+		const res = await outboundFetch(env)(url, {
 			method: "POST",
 			redirect: "manual",
 			signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),

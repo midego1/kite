@@ -160,6 +160,12 @@ interface CloudflareEnv {
 	 * Unset on Workers, where `src/lib/net/connect.ts` uses `cloudflare:sockets`.
 	 */
 	TCP_CONNECT?: import("./src/lib/net/types").TcpConnect;
+	/**
+	 * Self-hosted only: fetch for user-supplied addresses that resolves each host once, refuses private addresses the
+	 * caller's policy does not allow and connects to the address it checked (`server/runtime/pinned-fetch.ts`). Unset
+	 * on Workers, which cannot reach private networks; `outboundFetch` (`src/lib/security/outbound-fetch.ts`) picks.
+	 */
+	PINNED_FETCH?: import("./src/lib/security/outbound-fetch").PinnedFetch;
 	/** Dev/test only: "1" or "true" lets mail server connections reach loopback hosts on any port without TLS (the fake IMAP server); ignored in production. */
 	EXTERNAL_ACCOUNTS_ALLOW_INSECURE_LOOPBACK?: string;
 	/** Node server only: "1" or "true" lets mail server connections reach LAN hosts (RFC 1918, IPv6 ULA; still over TLS, never loopback or link-local); ignored on Workers. */

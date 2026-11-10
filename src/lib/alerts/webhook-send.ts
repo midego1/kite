@@ -1,7 +1,8 @@
 import type { AlertMessage, ChannelResult } from "./alerts-types";
 import { classifyDeliveryError, classifyWebhookResponse, runWithRetry } from "./delivery-utils";
 import { checkAlertWebhookTarget, loadAlertWebhook } from "./webhook-settings";
-import { buildWebhookRequest, detectWebhookKind } from "./webhook-utils";
+import { outboundFetch } from "@/lib/security/outbound-fetch";
+import { buildWebhookRequest, detectWebhookKind, isAlertWebhookInsecureAllowed } from "./webhook-utils";
 
 const WEBHOOK_TIMEOUT_MS = 10_000;
 const WEBHOOK_RETRY_DELAY_MS = 1_000;
@@ -53,6 +54,10 @@ export async function sendAlertWebhook(
 	if (!saved) return { channel: "webhook", outcome: "skipped", reason: "not_configured" };
 	if (saved.url === null) return failed("unreadable");
 	const url = saved.url;
+	// The dev-only loopback flag that lets the target check pass a local receiver lets the connection reach it too.
+	const send = outboundFetch(env, {
+		allowLoopback: isAlertWebhookInsecureAllowed(env.ALERT_WEBHOOK_ALLOW_INSECURE, process.env.NODE_ENV),
+	});
 
 	// A blocked target resolves to BLOCKED rather than throwing, so runWithRetry
 	// stops instead of retrying it as a network error.
@@ -67,7 +72,7 @@ export async function sendAlertWebhook(
 			}
 			const { headers, body } = buildWebhookRequest(detectWebhookKind(target, saved.kind), message);
 			try {
-				const response = await fetch(target, { method: "POST", redirect: "manual", headers, body, signal });
+				const response = await send(target, { method: "POST", redirect: "manual", headers, body, signal });
 				await response.body?.cancel().catch(() => undefined);
 				if (!classifyWebhookResponse(response.status).ok) throw new WebhookStatusError(response.status);
 				return response.status;

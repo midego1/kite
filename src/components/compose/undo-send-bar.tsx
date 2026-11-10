@@ -86,7 +86,7 @@ export function UndoSendBar({ pending, onUndo, onExpire }: UndoSendBarProps) {
 						? t("Sending failed:")
 						: (error ?? t("Sending in {seconds}s:", { seconds: undoCountdownSeconds(until, now) }))}
 				</span>
-				<Link href={sentMessageHref(messageId)} className="min-w-0 max-w-56 truncate underline">
+				<Link dir="auto" href={sentMessageHref(messageId)} className="min-w-0 max-w-56 truncate underline">
 					{snapshot.subject || t("(no subject)")}
 				</Link>
 			</span>

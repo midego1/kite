@@ -100,6 +100,7 @@ export function MailSearchInput({ variant = "header" }: { variant?: "header" | "
 						setExpanded(false);
 					}}
 					onKeyDown={onKeyDown}
+					dir="auto"
 					value={query}
 					onChange={(event) => {
 						setActive(-1);

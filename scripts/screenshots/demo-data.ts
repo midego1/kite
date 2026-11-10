@@ -2,6 +2,7 @@ import { expect, type APIRequestContext } from "@playwright/test";
 import { SUPPORT_ADDRESS, STORAGE_STATE } from "../../e2e/support/constants";
 import { createFolder, uploadFile } from "../../e2e/support/drive";
 import { apiContext, postInbound, waitForMessage } from "../../e2e/support/helpers";
+import type { InboundAttachment } from "../../e2e/support/helpers-types";
 
 // Every name, address and domain here is invented; .test and example.com are reserved for documentation.
 const MAIL = [
@@ -147,6 +148,21 @@ export const RTL_MAIL = [
 	},
 ];
 
+/** Invented Arabic mail with an Arabic-named attachment, for the changelog shot of attachment names. */
+export const RTL_ATTACHMENT_MAIL = {
+	from: `"ليلى حداد" <layla@fabrikam.test>`,
+	subject: "فاتورة شهر نوفمبر",
+	html: `<p>مرحباً،</p><p>تجدون الفاتورة مرفقة بهذه الرسالة.</p><p>ليلى</p>`,
+	attachments: [
+		{
+			// RFC 2047, as mail clients send a name that is not ASCII.
+			filename: `=?UTF-8?B?${Buffer.from("فاتورة نوفمبر.txt").toString("base64")}?=`,
+			contentType: "text/plain; charset=utf-8",
+			content: "Invoice 2026-11",
+		},
+	],
+};
+
 /** A message in Thai and what the translation shot shows for it, with the same markup. */
 export const THAI_MAIL = {
 	from: `"สมชาย ใจดี" <somchai@wingtip.test>`,
@@ -168,6 +184,10 @@ export const SENDER_AUTH_MAIL = {
 /** Delivers the right-to-left demo mail once, so the shot finds it in the Inbox. */
 export async function seedRtlMail(): Promise<void> {
 	await deliverOnce(RTL_MAIL);
+}
+
+export async function seedRtlAttachmentMail(): Promise<void> {
+	await deliverOnce([RTL_ATTACHMENT_MAIL]);
 }
 
 /** Delivers the sender authentication demo mail once, with headers that fail every check. */
@@ -195,7 +215,9 @@ export async function seedThaiMail(): Promise<void> {
 	await deliverOnce([THAI_MAIL]);
 }
 
-async function deliverOnce(mails: readonly { from: string; subject: string; html: string }[]): Promise<void> {
+async function deliverOnce(
+	mails: readonly { from: string; subject: string; html: string; attachments?: InboundAttachment[] }[],
+): Promise<void> {
 	const api = await apiContext(STORAGE_STATE);
 	for (const mail of mails) {
 		const found = await api.get(`/api/messages?${new URLSearchParams({ q: mail.subject, limit: "20" })}`);

@@ -39,8 +39,12 @@ export function SearchDropdown({ sections, activeKey, onPick }: SearchDropdownPr
 									key === activeKey && "bg-blue-50",
 								)}
 							>
-								<span className="truncate text-sm font-medium">{item.label}</span>
-								<span className="truncate text-xs text-neutral-500">{item.sublabel}</span>
+								<span dir="auto" className="truncate text-sm font-medium">
+									{item.label}
+								</span>
+								<span dir="auto" className="truncate text-xs text-neutral-500">
+									{item.sublabel}
+								</span>
 							</button>
 						);
 					})}

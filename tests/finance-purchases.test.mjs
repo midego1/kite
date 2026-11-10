@@ -19,10 +19,6 @@ await build({
 		execute: join(root, "src/lib/agent/auto-read/execute.ts"),
 		views: join(root, "src/lib/finance/payment-views.ts"),
 		manual: join(root, "src/lib/finance/manual-payments.ts"),
-		category: join(root, "src/lib/finance/category-utils.ts"),
-		csv: join(root, "src/lib/finance/payment-csv-utils.ts"),
-		filter: join(root, "src/lib/finance/payment-filter-utils.ts"),
-		exportUtils: join(root, "src/lib/finance/payment-export-utils.ts"),
 		refs: join(root, "src/lib/modules/record-refs.ts"),
 		runtime: join(root, "server/runtime/sqlite-database.ts"),
 		migrate: join(root, "server/runtime/migrate.ts"),
@@ -44,6 +40,29 @@ await build({
 		"next/navigation": "next/navigation.js",
 	},
 });
+// The pure helpers get their own build with source maps, so the coverage gate can measure them.
+await build({
+	entryPoints: {
+		category: join(root, "src/lib/finance/category-utils.ts"),
+		csv: join(root, "src/lib/finance/payment-csv-utils.ts"),
+		filter: join(root, "src/lib/finance/payment-filter-utils.ts"),
+		exportUtils: join(root, "src/lib/finance/payment-export-utils.ts"),
+		paymentUtils: join(root, "src/lib/finance/payment-utils.ts"),
+		searchUtils: join(root, "src/lib/finance/payment-search-utils.ts"),
+	},
+	outdir: join(outDir, "utils"),
+	outExtension: { ".js": ".mjs" },
+	bundle: true,
+	splitting: true,
+	platform: "node",
+	format: "esm",
+	target: "node22",
+	logLevel: "silent",
+	sourcemap: "inline",
+	packages: "external",
+	tsconfig: join(root, "tsconfig.json"),
+});
+const loadUtil = (name) => import(pathToFileURL(join(outDir, "utils", `${name}.mjs`)).href);
 const load = (name) => import(pathToFileURL(join(outDir, `${name}.mjs`)).href);
 const { invokeCapability } = await load("invoke");
 const { buildCallContext } = await load("capability");
@@ -51,10 +70,12 @@ const { clearModuleStateCache } = await load("state");
 const { undoAgentAction } = await load("execute");
 const { listPaymentsView, paymentsForExport } = await load("views");
 const { patchPayment } = await load("manual");
-const { PAYMENT_CATEGORIES, categoryOf, paymentCategoryOf } = await load("category");
-const { csvText, paymentsCsv } = await load("csv");
-const { matchesPaymentFilter, parsePaymentFilter } = await load("filter");
-const { exportFilename } = await load("exportUtils");
+const { PAYMENT_CATEGORIES, categoryOf, paymentCategoryOf } = await loadUtil("category");
+const { csvText, paymentsCsv } = await loadUtil("csv");
+const { matchesPaymentFilter, parsePaymentFilter } = await loadUtil("filter");
+const { exportFilename } = await loadUtil("exportUtils");
+const { paymentSublabel } = await loadUtil("searchUtils");
+const { detectPayment, paymentHref, paymentLabel, paymentRef } = await loadUtil("paymentUtils");
 const { resolveRecordRefs } = await load("refs");
 const { SqliteDatabase } = await load("runtime");
 const { applyMigrations } = await load("migrate");
@@ -589,4 +610,45 @@ test("with Money Watch off the tool, the search and the refs are absent", async 
 		assert.equal(result.ok, false, name);
 		assert.equal(result.error.code, "module_disabled", name);
 	}
+});
+
+// --- coverage of the small helpers --------------------------------------------------------------------------------
+
+test("a category needs a word in the vendor, subject or sender, and a missing subject or sender is no cue", () => {
+	assert.equal(categoryOf({ vendor: "Acme", subject: null, sender: null }), null);
+	assert.equal(categoryOf({ vendor: "Acme", subject: null, sender: "acme.test" }), null);
+	assert.equal(categoryOf({ vendor: "Acme", subject: "Your order has shipped", sender: null }), "shopping");
+	assert.equal(categoryOf({ vendor: "Acme", subject: null, sender: "hetzner.com" }), "software");
+	assert.equal(
+		categoryOf({ vendor: "", subject: "Flight and cinema", sender: null }),
+		null,
+		"two categories give none",
+	);
+	assert.equal(paymentCategoryOf(42), null);
+	assert.equal(paymentCategoryOf(null), null);
+});
+
+test("a payment's ref, link and label name the row, with a minus for money that came back", () => {
+	assert.deepEqual(paymentRef("fpay_1"), { kind: "finance:payment", id: "fpay_1" });
+	assert.equal(paymentHref("fpay 1"), "/finance?tab=payments&payment=fpay%201");
+	assert.match(
+		paymentLabel({ vendor: "Acme", amountMinor: 1250, currency: "EUR", docType: "payment" }, "en"),
+		/^Acme · €12\.50$/,
+	);
+	assert.match(
+		paymentLabel({ vendor: "Acme", amountMinor: 1250, currency: "EUR", docType: "refund" }, "en"),
+		/^Acme · −€12\.50$/,
+	);
+	assert.match(paymentLabel({ vendor: "Acme", amountMinor: 1250, currency: "EUR", docType: "credit" }, "en"), /−/);
+	assert.equal(typeof detectPayment, "function");
+});
+
+test("a search row's second line names the type, the day and the category when there is one", () => {
+	const at = new Date("2026-11-03T10:00:00Z");
+	assert.equal(
+		paymentSublabel({ docType: "payment", documentAt: at, category: "shopping" }),
+		"Payment · 3 Nov · shopping",
+	);
+	assert.equal(paymentSublabel({ docType: "credit", documentAt: at, category: null }), "Credit note · 3 Nov");
+	assert.equal(paymentSublabel({ docType: "invoice", documentAt: at, category: null }), "Invoice · 3 Nov");
 });

@@ -13,6 +13,5 @@ type SublabelRow = { docType: PaymentDocType; documentAt: Date; category: string
 
 /** The search row's second line: "Payment · 3 Nov · shopping". */
 export function paymentSublabel(row: SublabelRow): string {
-	const day = dateToDay(row.documentAt);
-	return [TYPE_TEXT[row.docType], day ? shortDay(day) : null, row.category].filter(Boolean).join(" · ");
+	return [TYPE_TEXT[row.docType], shortDay(dateToDay(row.documentAt)!), row.category].filter(Boolean).join(" · ");
 }

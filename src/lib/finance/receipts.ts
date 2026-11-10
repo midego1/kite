@@ -1,4 +1,4 @@
-import { and, eq, isNull, lt, or } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, lt, or, type SQL } from "drizzle-orm";
 import { getDb } from "@/db";
 import { users } from "@/db/schema";
 import { financeReceipts } from "@/db/schema/finance";
@@ -84,7 +84,7 @@ async function ownerCallContext(userId: string): Promise<CapabilityCallContext> 
  * take-over counts as another attempt and grows the next lease (`claimLeaseMs`), so a row that keeps failing
  * backs off. Returns `null` when the row is already `done`/`skipped`, or another run currently holds a live
  * claim on it. */
-async function claimReceipt(candidate: ReceiptCandidate): Promise<string | null> {
+async function claimReceipt(candidate: ReceiptCandidate): Promise<Claim | null> {
 	const now = new Date();
 	const id = newId("frcpt");
 	const inserted = await onReceiptTables(() =>
@@ -102,7 +102,7 @@ async function claimReceipt(candidate: ReceiptCandidate): Promise<string | null>
 			.onConflictDoNothing()
 			.returning({ id: financeReceipts.id }),
 	);
-	if (inserted.length > 0) return inserted[0]!.id;
+	if (inserted.length > 0) return { id: inserted[0]!.id, attempts: 0 };
 
 	// Not a fresh claim: an unexpired or already-resolved row already exists. Read its attempt count so the
 	// take-over below can grow the lease from it, then take over only if it is still exactly that row's state
@@ -127,7 +127,13 @@ async function claimReceipt(candidate: ReceiptCandidate): Promise<string | null>
 	const taken = await onReceiptTables(() =>
 		db()
 			.update(financeReceipts)
-			.set({ leaseUntil: new Date(now.getTime() + claimLeaseMs(nextAttempts)), attempts: nextAttempts, updatedAt: now })
+			.set({
+				leaseUntil: new Date(now.getTime() + claimLeaseMs(nextAttempts)),
+				attempts: nextAttempts,
+				// This run is live on the claim now: it no longer carries the previous run's failure.
+				skippedReason: null,
+				updatedAt: now,
+			})
 			.where(
 				and(
 					eq(financeReceipts.id, current.id),
@@ -138,7 +144,41 @@ async function claimReceipt(candidate: ReceiptCandidate): Promise<string | null>
 			)
 			.returning({ id: financeReceipts.id }),
 	);
-	return taken[0]?.id ?? null;
+	return taken[0] ? { id: taken[0].id, attempts: nextAttempts } : null;
+}
+
+/** A claim as the run that won it holds it: `attempts` is the token that run's later writes are checked against. */
+type Claim = { id: string; attempts: number };
+
+/** The run still owns the claim only while the row is exactly as that run left it: `pending` with the same
+ * `attempts`. A lease that ran out (or was released) and a take-over bump `attempts`, so the earlier run's late
+ * `done`/`skipped` write then matches nothing instead of overwriting the run that took over. */
+function ownsClaim(claim: Claim): SQL {
+	return and(
+		eq(financeReceipts.id, claim.id),
+		eq(financeReceipts.status, "pending"),
+		eq(financeReceipts.attempts, claim.attempts),
+	)!;
+}
+
+/** Writes `values` to the claim if this run still owns it; `false` when another run took it over meanwhile. */
+async function commitClaim(claim: Claim, values: Partial<typeof financeReceipts.$inferInsert>): Promise<boolean> {
+	const written = await onReceiptTables(() =>
+		db()
+			.update(financeReceipts)
+			.set({ ...values, updatedAt: new Date() })
+			.where(ownsClaim(claim))
+			.returning({ id: financeReceipts.id }),
+	);
+	if (written.length === 0) log.warn("finance.receipt_claim_taken_over", { claimId: claim.id });
+	return written.length > 0;
+}
+
+/** Records on a claim that its run gave up on a transient failure (the failure code in `skipped_reason`, which a
+ * pending row has no other use for), so the claim is told apart from one a run is working on right now:
+ * `releaseOwnerPendingClaims` frees the former and never the latter. A take-over clears the mark again. */
+async function markClaimFailed(claim: Claim, code: string): Promise<void> {
+	await commitClaim(claim, { skippedReason: code });
 }
 
 /** `"filed"` committed the claim to `done`; `"skipped"` committed it to a permanent `skipped` (or never claimed
@@ -162,8 +202,8 @@ export async function fileOneReceipt(candidate: ReceiptCandidate): Promise<FileR
 	if (!(await moduleHost.modules.isEnabledFor(ctx, candidate.userId, "drive"))) return "skipped";
 	if (candidate.mailboxId && (await mailboxAiOff(getEnv(), candidate.mailboxId))) return "skipped";
 
-	const claimId = await claimReceipt(candidate);
-	if (!claimId) return "pending";
+	const claim = await claimReceipt(candidate);
+	if (!claim) return "pending";
 
 	const result = await moduleHost.invoke(ctx, "drive", "fileReceipt", {
 		messageId: candidate.messageId,
@@ -176,16 +216,13 @@ export async function fileOneReceipt(candidate: ReceiptCandidate): Promise<FileR
 		// (a pending claim whose lease runs out), so the row is filed once the module is back on, as the docs say.
 		if (result.error.code === "module_disabled") {
 			log.warn("finance.receipt_module_disabled", { sourceTable: candidate.sourceTable, sourceId: candidate.sourceId });
+			await markClaimFailed(claim, result.error.code);
 			return "pending";
 		}
 		if (result.error.code === "forbidden") {
-			await onReceiptTables(() =>
-				db()
-					.update(financeReceipts)
-					.set({ status: "skipped", skippedReason: result.error.code, leaseUntil: null, updatedAt: new Date() })
-					.where(eq(financeReceipts.id, claimId)),
-			);
-			return "skipped";
+			return (await commitClaim(claim, { status: "skipped", skippedReason: result.error.code, leaseUntil: null }))
+				? "skipped"
+				: "pending";
 		}
 		// Transient (timeout, an uncaught quota or read error): the claim was already backed off by claimReceipt
 		// (a fresh claim) or the earlier take-over that won it this time; its lease expires or grows and the row
@@ -195,6 +232,7 @@ export async function fileOneReceipt(candidate: ReceiptCandidate): Promise<FileR
 			sourceId: candidate.sourceId,
 			code: result.error.code,
 		});
+		await markClaimFailed(claim, result.error.code);
 		return "pending";
 	}
 	const output = result.output as {
@@ -206,53 +244,59 @@ export async function fileOneReceipt(candidate: ReceiptCandidate): Promise<FileR
 		skippedReason: string | null;
 	};
 	if (!output.filed) {
-		await onReceiptTables(() =>
-			db()
-				.update(financeReceipts)
-				.set({
-					status: "skipped",
-					skippedReason: output.skippedReason ?? "unknown",
-					leaseUntil: null,
-					updatedAt: new Date(),
-				})
-				.where(eq(financeReceipts.id, claimId)),
-		);
-		return "skipped";
+		return (await commitClaim(claim, {
+			status: "skipped",
+			skippedReason: output.skippedReason ?? "unknown",
+			leaseUntil: null,
+		}))
+			? "skipped"
+			: "pending";
 	}
 
-	await onReceiptTables(() =>
-		db()
-			.update(financeReceipts)
-			.set({
-				emlFileId: output.emlFileId,
-				htmlFileId: output.htmlFileId,
-				pdfFileId: output.pdfFileId,
-				attachmentFileId: output.attachmentFileId,
-				status: "done",
-				leaseUntil: null,
-				filedAt: new Date(),
-				updatedAt: new Date(),
-			})
-			.where(eq(financeReceipts.id, claimId)),
-	);
-	return "filed";
+	const committed = await commitClaim(claim, {
+		emlFileId: output.emlFileId,
+		htmlFileId: output.htmlFileId,
+		pdfFileId: output.pdfFileId,
+		attachmentFileId: output.attachmentFileId,
+		status: "done",
+		skippedReason: null,
+		leaseUntil: null,
+		filedAt: new Date(),
+	});
+	return committed ? "filed" : "pending";
 }
 
+/** A claim nobody has touched for this long is not a run in progress: a filing is bounded by Drive's own 20 s
+ * timeout and the backfill's 20 s run budget, so two minutes is well past either. It lets the button free claims
+ * written before failures were marked (`markClaimFailed`). */
+const LIVE_CLAIM_MS = 2 * 60_000;
+
 /**
- * Releases every one of an owner's claims still `pending` (their lease, not their `attempts`, so a row that
- * keeps failing still backs off further on its next failure instead of being hammered every time this runs),
- * so the next sweep tick or backfill batch can take them over right away instead of waiting out a lease that
- * can by now be hours long. `startReceiptBackfill` calls this: pressing "Save receipts for existing payments"
- * again is an explicit ask to retry now, and the dialog's "will be tried again automatically" line is only true
- * if pressing the button actually does that instead of silently waiting on whatever lease a stuck row already
- * holds.
+ * Releases an owner's claims that are `pending` and not being worked on: the ones a run gave up on after a
+ * transient failure (marked by `markClaimFailed`) and any left untouched past `LIVE_CLAIM_MS`. It clears their
+ * lease, not their `attempts`, so a row that keeps failing still backs off further on its next failure instead
+ * of being hammered every time this runs, and the next sweep tick or backfill batch can take them over right
+ * away instead of waiting out a lease that can by now be hours long. A claim a run holds right now keeps its
+ * lease: releasing it would let the sweep take it over and file the same row twice at once.
+ * `startReceiptBackfill` calls this: pressing "Save receipts for existing payments" again is an explicit ask to
+ * retry now, and the dialog's "will be tried again automatically" line is only true if pressing the button
+ * actually does that instead of silently waiting on whatever lease a stuck row already holds.
  */
-export async function releaseOwnerPendingClaims(userId: string): Promise<void> {
+export async function releaseOwnerPendingClaims(userId: string, now = new Date()): Promise<void> {
 	await onReceiptTables(() =>
 		db()
 			.update(financeReceipts)
-			.set({ leaseUntil: null, updatedAt: new Date() })
-			.where(and(eq(financeReceipts.userId, userId), eq(financeReceipts.status, "pending"))),
+			.set({ leaseUntil: null, updatedAt: now })
+			.where(
+				and(
+					eq(financeReceipts.userId, userId),
+					eq(financeReceipts.status, "pending"),
+					or(
+						isNotNull(financeReceipts.skippedReason),
+						lt(financeReceipts.updatedAt, new Date(now.getTime() - LIVE_CLAIM_MS)),
+					),
+				),
+			),
 	);
 }
 

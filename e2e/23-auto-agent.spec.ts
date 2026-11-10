@@ -2142,6 +2142,9 @@ test.describe("reply suggestions", () => {
 				expect((await waitForFinishedJob(account.api, account.mailboxId, message.id, "triage")).status).toBe(
 					"completed",
 				);
+			// Messages are stamped in whole seconds and a conversation row is its newest message, ties broken by
+			// random id: delivered in the same second, either one could be the row, so the follow-up waits one out.
+			await new Promise((resolve) => setTimeout(resolve, 1_100));
 			const followUp = await deliverQuestion(account.api, account.address, "Bank <alerts@bank.test>", {
 				inReplyTo: phishId,
 			});

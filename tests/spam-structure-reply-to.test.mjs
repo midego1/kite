@@ -35,12 +35,34 @@ test("a Reply-To on another registrable domain is a mismatch", () => {
 	assert.equal(replyToMismatch("News <news@example.com>", "replies@example.net"), true);
 });
 
-test("a Reply-To on the sender's domain or one of its subdomains is not", () => {
+test("a Reply-To on the sender's domain or one of its true subdomains is not", () => {
 	assert.equal(replyToMismatch("News <news@example.com>", "replies@example.com"), false);
 	assert.equal(replyToMismatch("News <news@example.com>", "x@reply.example.com"), false);
-	assert.equal(replyToMismatch("News <news@mail.example.co.uk>", "x@support.example.co.uk"), false);
+	assert.equal(replyToMismatch("News <news@example.com>", "x@deep.reply.example.com"), false);
+	assert.equal(replyToMismatch("News <news@mail.example.co.uk>", "x@support.mail.example.co.uk"), false);
 });
 
-test("sibling tenants of a shared suffix stay apart", () => {
-	assert.equal(replyToMismatch("News <news@a.github.io>", "x@b.github.io"), true);
+test("siblings and parents are different owners, whatever the suffix list knows", () => {
+	assert.equal(replyToMismatch("News <news@mail.example.com>", "x@support.example.com"), true);
+	assert.equal(replyToMismatch("News <news@mail.example.com>", "x@example.com"), true);
+	assert.equal(
+		replyToMismatch("News <news@example.com>", "x@notexample.com"),
+		true,
+		"a suffix of the text, not a subdomain",
+	);
+});
+
+test("sibling tenants of a shared suffix stay flagged, including ones a stand-in suffix list lacks", () => {
+	for (const suffix of [
+		"github.io",
+		"eu.org",
+		"ngrok.io",
+		"trycloudflare.com",
+		"pp.ua",
+		"translate.goog",
+		"ddns.net",
+	]) {
+		assert.equal(replyToMismatch(`News <news@a.${suffix}>`, `x@b.${suffix}`), true, suffix);
+		assert.equal(replyToMismatch(`News <news@a.${suffix}>`, `x@reply.a.${suffix}`), false, `${suffix} own subdomain`);
+	}
 });

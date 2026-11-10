@@ -1,7 +1,7 @@
 ### Fixed
 
 - The reader toolbar uses the room it has: a wide Reply all no longer pushes every icon into More actions, an error message next to the toolbar stays readable, and Move to in More actions is disabled on read-only shared mail like the Move button.
-  ![The reader toolbar before (only More actions and Delete) and after (Archive and Snooze shown too)](/changelog/2026-11-10-reader-toolbar-icons-light.webp)
+  ![The reader toolbar before (Summarize, More actions and Delete only) and after (Archive and Snooze shown too)](/changelog/2026-11-10-reader-toolbar-icons-light.webp)
 - The Unverified sender badge stays fully visible next to a long sender name on a phone, screen readers read it in the conversation, and a Reply-To on a subdomain of the sender's own domain is no longer called a different domain. Opening a message no longer waits long on a slow contact check.
   ![The sender line of an open message at phone width, before (badge cut off) and after (name shortened, badge visible)](/changelog/2026-11-10-sender-badge-narrow-light.webp)
 - In a narrow message list the selected count keeps its number ("975 selected" never shows as "97…"), and switching the interface to Arabic keeps the messages you checked.

@@ -38,8 +38,6 @@ const menuLabelClass = "mt-1 px-3 pb-1 pt-2 text-sm font-medium text-neutral-500
 const menuContentClass =
 	"z-[130] max-h-[min(24rem,var(--radix-dropdown-menu-content-available-height))] w-54 overflow-y-auto rounded-xl border border-neutral-200 bg-white p-2 shadow-lg";
 
-/** An action button of the toolbar: icon and label together, since whether it is shown inline at all (rather
- * than folded into "More actions") already accounts for the room its label needs. */
 /**
  * "N selected" for the narrow toolbar head. Only the words truncate, never the number: "975 selected" at the
  * narrowest widths reads "975 sel…", not "97…", next to a destructive action. The message is split around its
@@ -61,6 +59,8 @@ function SelectedCount({ count }: { count: number }) {
 	);
 }
 
+/** An action button of the toolbar: icon and label together, since whether it is shown inline at all (rather
+ * than folded into "More actions") already accounts for the room its label needs. */
 function ToolbarButton({
 	label,
 	icon: Icon,

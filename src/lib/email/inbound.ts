@@ -187,6 +187,7 @@ export async function getMessageWithBodyForUser(env: CloudflareEnv, user: Sessio
 					findSpoofedSenderContact(env, message.userId, message.fromAddr),
 					SPOOFED_SENDER_LOOKUP_TIMEOUT_MS,
 					null,
+					() => console.warn("Display-name contact check timed out; opening the message without it"),
 				)
 			: Promise.resolve(null),
 	]);

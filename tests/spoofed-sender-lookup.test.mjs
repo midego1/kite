@@ -16,3 +16,13 @@ test("a lookup that outlasts the limit gives the fallback instead of holding the
 test("a failing lookup gives the fallback", async () => {
 	assert.equal(await settleWithin(Promise.reject(new Error("D1 down")), 200, null), null);
 });
+
+test("the timeout callback runs when the limit wins, not for a value or a rejection", async () => {
+	let timeouts = 0;
+	const onTimeout = () => (timeouts += 1);
+	await settleWithin(Promise.resolve(1), 100, null, onTimeout);
+	await settleWithin(Promise.reject(new Error("down")), 100, null, onTimeout);
+	assert.equal(timeouts, 0);
+	await settleWithin(new Promise((resolve) => setTimeout(resolve, 300)), 20, null, onTimeout);
+	assert.equal(timeouts, 1);
+});

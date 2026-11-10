@@ -1,8 +1,16 @@
 import type { ParsedEmail } from "@/lib/email/parse";
 import type { PreparedSpamContent, SpamSignal } from "../types";
 import { getDomain } from "../tokenizer";
-import { sameRegistrableDomain } from "./link-host-utils";
 import { findHeader } from "./utils";
+
+/**
+ * Whether `host` is `domain` itself or one of its true subdomains (`reply.example.com` for `example.com`): the same
+ * owner by DNS ancestry alone. It deliberately does not ask which suffix is "registrable", because a stand-in suffix
+ * list is incomplete (eu.org, ngrok.io, github.io, ...) and siblings under a shared parent are different owners.
+ */
+function isSameOrSubdomain(host: string, domain: string): boolean {
+	return host === domain || host.endsWith(`.${domain}`);
+}
 
 export function analyzeStructure(
 	message: ParsedEmail,
@@ -22,8 +30,7 @@ export function analyzeStructure(
 		signals.push({ id: "zero_width_text", score: 7, reason: "Message contains hidden zero-width characters" });
 	if (letters > 40 && upperLetters / letters > 0.65)
 		signals.push({ id: "excessive_capitals", score: 4, reason: "Message uses excessive capitalization" });
-	// A Reply-To on a subdomain of the sender's own domain (`reply.example.com` for `example.com`) is the same owner.
-	if (replyDomain && fromDomain && !sameRegistrableDomain(replyDomain, fromDomain))
+	if (replyDomain && fromDomain && !isSameOrSubdomain(replyDomain, fromDomain))
 		signals.push({ id: "reply_to_mismatch", score: 5, reason: "Reply-To domain differs from the sender domain" });
 	const credentialLure =
 		/\b(verify|confirm|unlock|restore|validate|sign[ -]?in|log[ -]?in)\b.{0,60}\b(account|password|mailbox|identity|access)\b/i.test(

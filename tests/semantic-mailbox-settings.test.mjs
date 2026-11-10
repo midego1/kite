@@ -58,3 +58,22 @@ test("after migration 0099 the switch saves and audits", async (t) => {
 		1,
 	);
 });
+
+test("switching off again clears the mailbox even when the stored value is already off, so a retry after a failed cleanup works", async (t) => {
+	const { db, env, access } = await setup(t);
+	db.db.exec(`
+		INSERT INTO app_settings (id, semantic_search_enabled, updated_at) VALUES ('default', 1, 1)
+		ON CONFLICT(id) DO UPDATE SET semantic_search_enabled = 1;
+		INSERT INTO messages (id, user_id, mailbox_id, direction, from_addr, to_addr, subject, text_body, status, created_at)
+		VALUES ('m1', 'owner', 'mailbox-a', 'inbound', 'x@example.net', 'a@example.com', 'Hi', 'Hello', 'received', 10);
+	`);
+	// The switch was stored as off by a save whose cleanup then failed: the row is still pending/indexed.
+	await setMailboxSemanticIndex(env, owner, access, false);
+	db.db.prepare("UPDATE message_embeddings SET status = 'pending' WHERE message_id = 'm1'").run();
+	await setMailboxSemanticIndex(env, owner, access, false);
+	assert.equal(db.db.prepare("SELECT status FROM message_embeddings WHERE message_id = 'm1'").get().status, "skipped");
+	assert.equal(
+		db.db.prepare("SELECT count(*) AS n FROM audit_logs WHERE action = 'search.mailbox_semantic_index'").get().n,
+		1,
+	);
+});

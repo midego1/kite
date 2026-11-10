@@ -302,9 +302,22 @@ async function embedAndUpsert(
 			);
 		return;
 	}
+	let vectors: Float32Array[];
 	try {
-		const { vectors, inputTokens } = await provider.embedTexts(allTexts);
-		await settleEmbeddingSpend(env, reservation, { inputTokens });
+		const embedded = await provider.embedTexts(allTexts);
+		vectors = embedded.vectors;
+		await settleEmbeddingSpend(env, reservation, { inputTokens: embedded.inputTokens });
+	} catch (error) {
+		const code = embeddingErrorCode(error);
+		await settleEmbeddingSpend(env, reservation, { failed: code });
+		for (const item of prepared)
+			toFail.push({ messageId: item.messageId, attempts: claimAttempts(claimed, item.messageId), code });
+		return;
+	}
+	// The embedding call succeeded and its spend is settled: a vector-store error from here on is not a provider
+	// failure, and must neither settle the spend again nor fail rows already written (`done`).
+	const done = new Set<string>();
+	try {
 		let cursor = 0;
 		const store = getVectorStore(env);
 		const stillRunning = await rowsStillRunning(
@@ -350,12 +363,13 @@ async function embedAndUpsert(
 				.returning({ messageId: messageEmbeddings.messageId });
 			if (written.length === 0)
 				await store.deleteByIds(itemVectors.map((_, chunk) => chunkVectorId(item.vectorKey, chunk)));
+			done.add(item.messageId);
 		}
 	} catch (error) {
 		const code = embeddingErrorCode(error);
-		await settleEmbeddingSpend(env, reservation, { failed: code });
 		for (const item of prepared)
-			toFail.push({ messageId: item.messageId, attempts: claimAttempts(claimed, item.messageId), code });
+			if (!done.has(item.messageId))
+				toFail.push({ messageId: item.messageId, attempts: claimAttempts(claimed, item.messageId), code });
 	}
 }
 
@@ -384,12 +398,12 @@ async function applyFailures(
 			await db
 				.update(messageEmbeddings)
 				.set({ status: "failed", attempts, leaseUntil: null, error: failure.code })
-				.where(eq(messageEmbeddings.messageId, failure.messageId));
+				.where(and(eq(messageEmbeddings.messageId, failure.messageId), eq(messageEmbeddings.status, "running")));
 		} else {
 			await db
 				.update(messageEmbeddings)
 				.set({ status: "pending", attempts, leaseUntil: null })
-				.where(eq(messageEmbeddings.messageId, failure.messageId));
+				.where(and(eq(messageEmbeddings.messageId, failure.messageId), eq(messageEmbeddings.status, "running")));
 		}
 	}
 }

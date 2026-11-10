@@ -157,7 +157,19 @@ export function SemanticSearchAdminSettings() {
 								<Switch
 									checked={data.settings.enabled}
 									disabled={!data.ready || busy}
-									onCheckedChange={(checked) => void save({ enabled: checked })}
+									onCheckedChange={async (checked) => {
+										if (
+											!checked &&
+											!(await requestConfirmation({
+												title: "Turn off search by meaning?",
+												description:
+													"This deletes the whole index. Turning it on again embeds all mail again, which costs money.",
+												confirmLabel: "Turn off",
+											}))
+										)
+											return;
+										await save({ enabled: checked });
+									}}
 									aria-label="Enable search by meaning"
 								/>
 							}
@@ -189,8 +201,13 @@ export function SemanticSearchAdminSettings() {
 											defaultValue={data.settings.backfillCapShare}
 											disabled={busy}
 											onBlur={(event) => {
-												const value = Number(event.currentTarget.value);
-												if (Number.isFinite(value)) void save({ backfillCapShare: Math.min(100, Math.max(0, value)) });
+												const raw = event.currentTarget.value.trim();
+												const value = Math.min(100, Math.max(0, Math.round(Number(raw))));
+												if (raw === "" || !Number.isFinite(value)) {
+													event.currentTarget.value = String(data.settings.backfillCapShare);
+													return;
+												}
+												if (value !== data.settings.backfillCapShare) void save({ backfillCapShare: value });
 											}}
 										/>
 										<span className="text-sm text-neutral-500">%</span>
@@ -203,12 +220,14 @@ export function SemanticSearchAdminSettings() {
 										bge-m3. Sending mail text to it needs the external-provider opt-in above.
 									</p>
 									<Input
-										placeholder="https://embeddings.example.com/v1"
+										aria-label="Embedding endpoint base URL"
+										placeholder={data.settings.compatibleBaseUrl ?? "https://embeddings.example.com/v1"}
 										value={baseUrl}
 										onChange={(event) => setBaseUrl(event.currentTarget.value)}
 										disabled={busy}
 									/>
 									<Input
+										aria-label="Embedding endpoint API key"
 										type="password"
 										placeholder="API key (leave blank to keep the saved one)"
 										value={apiKey}
@@ -222,7 +241,7 @@ export function SemanticSearchAdminSettings() {
 										onClick={() =>
 											void save({
 												embeddingProvider: "compatible",
-												compatibleBaseUrl: baseUrl || null,
+												...(baseUrl ? { compatibleBaseUrl: baseUrl } : {}),
 												...(apiKey ? { compatibleApiKey: apiKey } : {}),
 											})
 										}

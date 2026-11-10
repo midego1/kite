@@ -69,8 +69,21 @@ export async function setMailboxSemanticIndex(
 			action: SEMANTIC_INDEX_AUDIT_ACTION,
 			metadata: { semanticIndex: enabled },
 		});
-		if (enabled) await requeueMailboxSemanticIndex(env, mailboxId);
-		else await clearMailboxSemanticIndex(env, mailboxId);
+	}
+	// Off always clears (a no-op when nothing is indexed), so a retry after a failed cleanup still removes the
+	// vectors, as `setMailboxAiDisabled` does. On requeues only after a change, since it re-embeds the whole
+	// mailbox; if that fails the switch is put back, so the retry sees a change and runs it again.
+	if (!enabled) await clearMailboxSemanticIndex(env, mailboxId);
+	else if (changed.length > 0) {
+		try {
+			await requeueMailboxSemanticIndex(env, mailboxId);
+		} catch (error) {
+			await db
+				.update(mailboxAgentSettings)
+				.set({ semanticIndex: false, updatedAt: new Date() })
+				.where(eq(mailboxAgentSettings.mailboxId, mailboxId));
+			throw error;
+		}
 	}
 	return "saved";
 }

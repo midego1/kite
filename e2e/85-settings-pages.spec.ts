@@ -14,6 +14,7 @@ const SETTINGS_ROUTES: { path: string; heading: string }[] = [
 	{ path: "/settings/connected-accounts", heading: "Connected accounts" },
 	{ path: "/settings/app-passwords", heading: "App passwords" },
 	{ path: "/settings/api-keys", heading: "API keys" },
+	{ path: "/settings/mcp-apps", heading: "MCP apps" },
 	{ path: "/settings/import", heading: "Import" },
 	{ path: "/settings/export", heading: "Export" },
 ];

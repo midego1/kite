@@ -189,6 +189,13 @@ const INTERNAL_TABLES = [
 	// Sign-ins with Microsoft in progress (migration 0105): single-use, gone after 10 minutes, and tied to this
 	// install's sessions, so a restore must never bring one back.
 	"oauth_states",
+	// MCP over OAuth (migration 0106): client registrations, single-use codes, grants and token hashes. They are tied
+	// to this install's URL and sessions; a restore disconnects MCP apps (the grant's api_keys row comes back without
+	// them and the daily pruning removes it), and they reconnect with a new sign-in.
+	"mcp_oauth_clients",
+	"mcp_oauth_codes",
+	"mcp_oauth_grants",
+	"mcp_oauth_tokens",
 	// The bookkeeping of "Save receipts for existing payments" (migration 0102): a cursor over this
 	// database's own finance rows, meaningless in another database.
 	"finance_receipt_backfills",

@@ -16,6 +16,7 @@ import {
 	Mail,
 	Palette,
 	PenLine,
+	PlugZap,
 	Route,
 	Settings,
 	Shield,
@@ -100,6 +101,12 @@ const settingsNavSections: NavSection[] = [
 			},
 			{ href: "/settings/app-passwords", label: "App passwords", icon: Lock, keywords: "imap smtp jmap client" },
 			{ href: "/settings/api-keys", label: "API keys", icon: KeyRound, keywords: "token mcp jmap" },
+			{
+				href: "/settings/mcp-apps",
+				label: "MCP apps",
+				icon: PlugZap,
+				keywords: "oauth connected apps claude desktop mcp clients sign in revoke disconnect",
+			},
 		],
 	},
 	{

@@ -228,6 +228,11 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/messages/navigation`                                   | GET                    | [source](../src/app/api/messages/navigation/route.ts)                                   |
 | `/api/messages`                                              | GET                    | [source](../src/app/api/messages/route.ts)                                              |
 | `/api/migrations/pending`                                    | GET                    | [source](../src/app/api/migrations/pending/route.ts)                                    |
+| `/api/oauth/authorize`                                       | GET, POST              | [source](../src/app/api/oauth/authorize/route.ts)                                       |
+| `/api/oauth/grants`                                          | DELETE, GET            | [source](../src/app/api/oauth/grants/route.ts)                                          |
+| `/api/oauth/register`                                        | OPTIONS, POST          | [source](../src/app/api/oauth/register/route.ts)                                        |
+| `/api/oauth/revoke`                                          | OPTIONS, POST          | [source](../src/app/api/oauth/revoke/route.ts)                                          |
+| `/api/oauth/token`                                           | OPTIONS, POST          | [source](../src/app/api/oauth/token/route.ts)                                           |
 | `/api/profile/avatar`                                        | DELETE, GET, POST      | [source](../src/app/api/profile/avatar/route.ts)                                        |
 | `/api/public/booking/[eventId]`                              | GET, POST              | [source](../src/app/api/public/booking/[eventId]/route.ts)                              |
 | `/api/public/booking`                                        | GET                    | [source](../src/app/api/public/booking/route.ts)                                        |

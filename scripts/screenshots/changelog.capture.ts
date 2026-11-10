@@ -1,3 +1,4 @@
+import { createHash, randomBytes } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test, type Browser, type Locator, type Page } from "@playwright/test";
@@ -226,6 +227,62 @@ async function openSenderAuthMail(page: Page) {
 	await expect(page.locator("[data-sender-auth-warning]")).toBeVisible();
 }
 
+/** An MCP app's authorization request, as Claude Desktop would send it, for a client registered on the demo server. */
+async function demoMcpAuthorization(name: string): Promise<{ query: URLSearchParams; verifier: string }> {
+	const api = await apiContext();
+	const registered = await api.post("/api/oauth/register", {
+		headers: { Origin: "" },
+		data: { client_name: name, redirect_uris: ["https://claude.ai/api/mcp/auth_callback"] },
+	});
+	expect(registered.status(), await registered.text()).toBe(201);
+	const { client_id } = (await registered.json()) as { client_id: string };
+	await api.dispose();
+	const verifier = randomBytes(32).toString("base64url");
+	const query = new URLSearchParams({
+		response_type: "code",
+		client_id,
+		redirect_uri: "https://claude.ai/api/mcp/auth_callback",
+		code_challenge: createHash("sha256").update(verifier).digest("base64url"),
+		code_challenge_method: "S256",
+		state: randomBytes(8).toString("hex"),
+	});
+	return { query, verifier };
+}
+
+/** Connects a demo MCP app for the demo admin once, through the same consent and token routes the browser uses. */
+async function connectDemoMcpApp(name: string): Promise<void> {
+	const session = await apiContext(STORAGE_STATE);
+	const { apps } = (await (await session.get("/api/oauth/grants")).json()) as { apps: { clientName: string }[] };
+	if (apps.some((app) => app.clientName === name)) return session.dispose();
+	const { mailboxes } = (await (await session.get("/api/mailboxes")).json()) as {
+		mailboxes: { id: string; localPart: string }[];
+	};
+	const support = mailboxes.find((mailbox) => mailbox.localPart === "support") ?? mailboxes[0]!;
+	const { query, verifier } = await demoMcpAuthorization(name);
+	const decided = await session.post("/api/oauth/authorize", {
+		data: {
+			params: Object.fromEntries(query),
+			decision: "allow",
+			scopes: ["mcp:read", "mcp:draft"],
+			mailboxIds: [support.id],
+		},
+	});
+	expect(decided.ok(), await decided.text()).toBe(true);
+	const { redirectTo } = (await decided.json()) as { redirectTo: string };
+	const exchanged = await session.post("/api/oauth/token", {
+		headers: { Origin: "" },
+		form: {
+			grant_type: "authorization_code",
+			code: new URL(redirectTo).searchParams.get("code")!,
+			client_id: query.get("client_id")!,
+			redirect_uri: query.get("redirect_uri")!,
+			code_verifier: verifier,
+		},
+	});
+	expect(exchanged.ok(), await exchanged.text()).toBe(true);
+	await session.dispose();
+}
+
 const SHOTS: Shot[] = [
 	{
 		// A linked WebDAV folder in Drive: the folder in the Drive menu and its files, proxied from a demo server.
@@ -250,6 +307,29 @@ const SHOTS: Shot[] = [
 			await page.goto(`/drive/m/${id}`);
 			await expect(page.getByRole("heading", { level: 1, name: WEBDAV_LABEL })).toBeVisible();
 			await expect(page.locator('[data-drive-item="Team photo.jpg"]')).toBeVisible();
+			return page;
+		},
+	},
+	{
+		// MCP over OAuth: the consent screen an MCP app opens, with only Read mail ticked and a mailbox chosen.
+		name: "2026-11-10-mcp-oauth-consent-light",
+		viewport: { width: 1280, height: 1000 },
+		open: async (page) => {
+			const { query } = await demoMcpAuthorization("Claude");
+			await page.goto(`/oauth/authorize?${query}`);
+			await expect(page.getByRole("heading", { name: "Allow Claude to use Kite?" })).toBeVisible();
+			await page.getByRole("checkbox", { name: SUPPORT_ADDRESS }).click();
+			return page.locator("main");
+		},
+	},
+	{
+		// Settings → MCP apps with one app connected through OAuth.
+		name: "2026-11-10-mcp-apps-settings-light",
+		viewport: { width: 1280, height: 800 },
+		open: async (page) => {
+			await connectDemoMcpApp("Claude");
+			await page.goto("/settings/mcp-apps");
+			await expect(page.locator("[data-mcp-app]").filter({ hasText: "Claude" })).toBeVisible();
 			return page;
 		},
 	},

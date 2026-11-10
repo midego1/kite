@@ -96,3 +96,14 @@ export async function revokeManagedApiKey(id: string): Promise<void> {
 		throw new Error(typeof data.error === "string" ? data.error : "Could not revoke API key");
 	}
 }
+
+/** The label and description of an MCP permission, whichever modules are on (the consent screen and MCP apps list). */
+export function mcpScopeOption(scope: string): KeyScopeOption {
+	const options = keyScopeOptions(
+		"mcp",
+		MCP_KEY_SCOPES,
+		CLIENT_MODULES,
+		CLIENT_MODULES.map((module) => module.id),
+	);
+	return options.find((option) => option.value === scope) ?? { value: scope, label: scope, description: "" };
+}

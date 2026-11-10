@@ -71,12 +71,17 @@ export async function runSemanticBackfillTick(env: CloudflareEnv): Promise<void>
 		if (await pendingBacklogTooDeep(env)) return;
 		const candidates = await selectBackfillCandidates(env, settings.backfillCursor);
 		if (candidates.length === 0) return;
-		// Each message's own date, not "now": the drain (`indexer.ts`'s `isBackfillClaim`) tells a backfill batch
-		// apart from live mail by this, and it keeps a backfill page from claiming ahead of mail that arrives while
-		// it is still running (`queued_at DESC` favours the newer timestamp, which live mail's "now" almost always is).
+		// Each message's own date, not "now", so a backfill page never claims ahead of mail that arrives while it is
+		// still running (`queued_at DESC` favours the newer timestamp, which live mail's "now" almost always is).
+		// `origin` is what tells the drain these rows are the backfill's, to charge its cap share.
 		await insertPendingEmbeddingRows(
 			env,
-			candidates.map((row) => ({ id: row.id, mailboxId: row.mailboxId, queuedAt: new Date(row.createdAt * 1000) })),
+			candidates.map((row) => ({
+				id: row.id,
+				mailboxId: row.mailboxId,
+				queuedAt: new Date(row.createdAt * 1000),
+				origin: "backfill" as const,
+			})),
 		);
 		const last = candidates[candidates.length - 1];
 		await env.DB.prepare("UPDATE app_settings SET semantic_backfill_cursor = ? WHERE id = ?")

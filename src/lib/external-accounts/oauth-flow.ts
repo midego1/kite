@@ -8,7 +8,7 @@ import { openSetting, SecretBoxError, sealSetting } from "@/lib/security/secret-
 import { auditExternalAccount } from "./audit";
 import { testImapConnection } from "./connection-test";
 import { ExternalAccountRefusal, migrationPending } from "./errors";
-import { oauthTestOriginFor, resolveMicrosoftClient } from "./oauth-client";
+import { oauthTestOriginFor, pinMicrosoftTenant, resolveMicrosoftClient } from "./oauth-client";
 import {
 	capOAuthStates,
 	insertOAuthState,
@@ -25,6 +25,7 @@ import {
 	grantsImap,
 	hashOAuthState,
 	idTokenClaims,
+	isTenantDomain,
 	MICROSOFT_IMAP,
 	MICROSOFT_SMTP,
 	microsoftAuthorizeUrl,
@@ -265,8 +266,14 @@ async function redeemCode(env: CloudflareEnv, pending: PendingSignIn, code: stri
 		logger.warn("external.oauth.code_refused", { kind: tokenError.kind, code: tokenError.code });
 		throw new CallbackFailure("token");
 	});
-	const claims = idTokenClaims(tokens.idToken, client.clientId, client.tenant);
+	const claims = idTokenClaims(tokens.idToken, client.clientId, client.tenant, client.tenantId);
 	if (!claims) throw new CallbackFailure("no_address");
+	// A tenant given as a domain is pinned to the first sign-in's tenant ID; a first sign-in racing another one
+	// from a different tenant reads the winner's ID back here and is refused like any token of the wrong tenant.
+	if (isTenantDomain(client.tenant) && !client.tenantId) {
+		const pinned = await pinMicrosoftTenant(env, client, claims.tenantId);
+		if (pinned && pinned !== claims.tenantId) throw new CallbackFailure("no_address");
+	}
 	if (!tokens.refreshToken) throw new CallbackFailure("no_refresh_token");
 	if (!grantsImap(tokens.scopes)) throw new CallbackFailure("scopes");
 	return { tokens: { ...tokens, refreshToken: tokens.refreshToken }, claims };

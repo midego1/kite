@@ -1,12 +1,13 @@
 import { createLogger } from "@/lib/logger.mjs";
 import { openSetting, SecretBoxError, sealSetting } from "@/lib/security/secret-box";
 import { ExternalAccountRefusal } from "./errors";
-import { readStoredMicrosoftClient, writeStoredMicrosoftClient } from "./oauth-store";
+import { readStoredMicrosoftClient, replaceStoredMicrosoftClient, writeStoredMicrosoftClient } from "./oauth-store";
 import type { MicrosoftClientStatus } from "./types";
 import {
 	clientCheckVerdict,
 	type ClientCheck,
 	isTenant,
+	isTenantDomain,
 	type MicrosoftClient,
 	microsoftEndpoints,
 	oauthRedirectUri,
@@ -75,6 +76,35 @@ export async function microsoftClientStatus(env: ClientEnv, requestOrigin: strin
 		keyConfigured: !!env.APP_ENCRYPTION_KEY?.trim(),
 		migrationPending: saved.migrationPending,
 	};
+}
+
+/**
+ * For a registration saved with a tenant domain, remembers the tenant ID of its first successful sign-in and
+ * returns the ID that is pinned now, so a later sign-in from another tenant is refused (`idTokenClaims`). A
+ * registration in the environment, or with a tenant ID or name, has nothing to pin and answers null. The write only
+ * lands while the saved registration is still the one that was read, so entering it again (which clears the pin)
+ * is never overwritten, and of two first sign-ins racing, the one that lost reads the winner's ID back.
+ */
+export async function pinMicrosoftTenant(
+	env: ClientEnv,
+	client: MicrosoftClient,
+	tenantId: string,
+): Promise<string | null> {
+	if (envClient(env) || !isTenantDomain(client.tenant)) return null;
+	const stored = await readStoredMicrosoftClient(env);
+	if (!stored) return null;
+	try {
+		const saved = parseStoredMicrosoftClient(await openSetting(env, stored));
+		if (!saved || saved.tenant !== client.tenant) return null;
+		if (!saved.tenantId) {
+			const sealed = await sealSetting(env, JSON.stringify({ ...saved, tenantId }));
+			await replaceStoredMicrosoftClient(env, stored, sealed, new Date());
+		}
+	} catch (error) {
+		if (!(error instanceof SecretBoxError)) throw error;
+		return null;
+	}
+	return (await readSavedClient(env)).client?.tenantId ?? null;
 }
 
 /** `fetch`, sent to the loopback stand-in for Microsoft when `EXTERNAL_OAUTH_TEST_ORIGIN` allows it. */

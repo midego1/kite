@@ -276,17 +276,31 @@ const MAX_CANDIDATES_PER_OWNER_PER_TICK = 5;
  * than that when each has few rows of their own. */
 const MAX_OWNERS_PER_TICK = 20;
 
-/** The distinct owners with at least one row no table's own filters already rule out, across all three tables,
- * each capped independently (an owner with eligible rows in two tables still counts once). Finding owners
- * first, rather than fetching a single oldest-first page across everyone and hoping it is diverse enough, is
- * what keeps one owner's pile of stuck rows (always the oldest, once enough of them exist) from pushing every
- * other owner's rows out of the page before `receiptCandidates` ever sees them. */
+/** When an owner's receipts were last touched (claimed, retried, filed or skipped), or null for an owner the
+ * sweep has never reached: the rotation key of `eligibleOwnerIds`. Any claim write moves it to now, so a served
+ * owner goes to the back of the line, and a failing one too (its attempt is a write). */
+function ownerLastServed(userIdColumn: SQLiteColumn): SQL<number | null> {
+	return sql<
+		number | null
+	>`(select max(${financeReceipts.updatedAt}) from ${financeReceipts} where ${financeReceipts.userId} = ${userIdColumn})`;
+}
+
+type OwnerTurn = { userId: string; lastServed: number | null };
+
+/** The owners with at least one row no table's own filters already rule out, across all three tables, in the
+ * order the sweep serves them: never-served first, then the one served longest ago (an owner with eligible rows
+ * in two tables counts once). Each table contributes its own first `limit` owners in that order, so the first
+ * `limit` of the merged list are the first `limit` overall. Finding owners first, rather than fetching a single
+ * oldest-first page across everyone and hoping it is diverse enough, is what keeps one owner's pile of stuck
+ * rows (always the oldest, once enough of them exist) from pushing every other owner's rows out of the page
+ * before `receiptCandidates` ever sees them; rotating them, rather than taking whichever owners the database
+ * returns first, is what lets owner 21 onward get a turn at all. */
 async function eligibleOwnerIds(limit: number, createdAfter?: Date): Promise<string[]> {
 	const now = new Date();
 	const [chargeOwners, paymentOwners, subscriptionOwners] = await Promise.all([
-		onReceiptTables(() =>
+		onReceiptTables((): Promise<OwnerTurn[]> =>
 			db()
-				.selectDistinct({ userId: financeCharges.userId })
+				.select({ userId: financeCharges.userId, lastServed: ownerLastServed(financeCharges.userId) })
 				.from(financeCharges)
 				.innerJoin(financeSubscriptions, eq(financeSubscriptions.id, financeCharges.subscriptionId))
 				.leftJoin(messages, eq(messages.id, financeCharges.messageId))
@@ -299,11 +313,13 @@ async function eligibleOwnerIds(limit: number, createdAfter?: Date): Promise<str
 						not(claimedOrDone("finance_charges", financeCharges.id, now)),
 					),
 				)
+				.groupBy(financeCharges.userId)
+				.orderBy(asc(ownerLastServed(financeCharges.userId)), asc(financeCharges.userId))
 				.limit(limit),
 		),
-		onReceiptTables(() =>
+		onReceiptTables((): Promise<OwnerTurn[]> =>
 			db()
-				.selectDistinct({ userId: financePayments.userId })
+				.select({ userId: financePayments.userId, lastServed: ownerLastServed(financePayments.userId) })
 				.from(financePayments)
 				.leftJoin(messages, eq(messages.id, financePayments.messageId))
 				.where(
@@ -316,11 +332,13 @@ async function eligibleOwnerIds(limit: number, createdAfter?: Date): Promise<str
 						not(claimedOrDone("finance_payments", financePayments.id, now)),
 					),
 				)
+				.groupBy(financePayments.userId)
+				.orderBy(asc(ownerLastServed(financePayments.userId)), asc(financePayments.userId))
 				.limit(limit),
 		),
-		onReceiptTables(() =>
+		onReceiptTables((): Promise<OwnerTurn[]> =>
 			db()
-				.selectDistinct({ userId: financeSubscriptions.userId })
+				.select({ userId: financeSubscriptions.userId, lastServed: ownerLastServed(financeSubscriptions.userId) })
 				.from(financeSubscriptions)
 				.leftJoin(messages, eq(messages.id, financeSubscriptions.sourceMessageId))
 				.where(
@@ -332,19 +350,44 @@ async function eligibleOwnerIds(limit: number, createdAfter?: Date): Promise<str
 						not(claimedOrDone("finance_subscriptions", financeSubscriptions.id, now)),
 					),
 				)
+				.groupBy(financeSubscriptions.userId)
+				.orderBy(asc(ownerLastServed(financeSubscriptions.userId)), asc(financeSubscriptions.userId))
 				.limit(limit),
 		),
 	]);
-	return [...new Set([...chargeOwners, ...paymentOwners, ...subscriptionOwners].map((row) => row.userId))].slice(
-		0,
-		limit,
-	);
+	const turns = new Map<string, number>();
+	for (const { userId, lastServed } of [...chargeOwners, ...paymentOwners, ...subscriptionOwners])
+		turns.set(userId, lastServed ?? -1);
+	return [...turns]
+		.sort(([idA, a], [idB, b]) => a - b || (idA < idB ? -1 : idA > idB ? 1 : 0))
+		.slice(0, limit)
+		.map(([userId]) => userId);
 }
 
-/** Unfiled rows across all three tables, oldest first, for the automatic sweep (every owner, each capped so
- * none of them can crowd the others out of this tick) or one owner's backfill (uncapped: there is nobody else
- * to protect in that owner's own run). `createdAfter`, used only by the automatic sweep (never the explicit
- * backfill, which must still reach a user's whole history), excludes a row created before the sweep floor. */
+/** Shares `limit` rows across the owners one at a time in their turn order (every owner's oldest row, then every
+ * owner's second, ...), so a tick that cannot hold everyone's rows spreads them evenly instead of letting the
+ * owners with the oldest rows take all of it. */
+function interleaveByOwner<T>(perOwner: T[][], limit: number): T[] {
+	const picked: T[] = [];
+	for (let round = 0; picked.length < limit; round += 1) {
+		let any = false;
+		for (const rows of perOwner) {
+			const row = rows[round];
+			if (row === undefined) continue;
+			any = true;
+			picked.push(row);
+			if (picked.length >= limit) break;
+		}
+		if (!any) break;
+	}
+	return picked;
+}
+
+/** Unfiled rows across all three tables for the automatic sweep (every owner in rotation, each capped and
+ * served round-robin so none of them can crowd the others out of this tick) or one owner's backfill (uncapped,
+ * oldest first: there is nobody else to protect in that owner's own run). `createdAfter`, used only by the
+ * automatic sweep (never the explicit backfill, which must still reach a user's whole history), excludes a row
+ * created before the sweep floor. */
 export async function receiptCandidates(
 	limit: number,
 	userId?: string,
@@ -355,8 +398,5 @@ export async function receiptCandidates(
 	const perOwner = await Promise.all(
 		owners.map((ownerId) => ownerReceiptCandidates(MAX_CANDIDATES_PER_OWNER_PER_TICK, ownerId, createdAfter)),
 	);
-	return perOwner
-		.flat()
-		.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
-		.slice(0, limit);
+	return interleaveByOwner(perOwner, limit);
 }

@@ -26,6 +26,10 @@ export const messageEmbeddings = sqliteTable(
 		error: text("error"),
 		leaseUntil: integer("lease_until", { mode: "timestamp" }),
 		queuedAt: integer("queued_at", { mode: "timestamp" }),
+		/** Who queued the row (migration 0110): `backfill` only from the install backfill's insert, `live` for everything else; the drain charges the backfill's cap share by it. */
+		origin: text("origin", { enum: ["live", "backfill"] })
+			.notNull()
+			.default("live"),
 		indexedAt: integer("indexed_at", { mode: "timestamp" }),
 	},
 	(t) => [

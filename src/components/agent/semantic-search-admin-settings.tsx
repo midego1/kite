@@ -207,6 +207,8 @@ export function SemanticSearchAdminSettings() {
 													event.currentTarget.value = String(data.settings.backfillCapShare);
 													return;
 												}
+												// What is shown is what is saved: a fractional or out-of-range entry reads back rounded and clamped.
+												event.currentTarget.value = String(value);
 												if (value !== data.settings.backfillCapShare) void save({ backfillCapShare: value });
 											}}
 										/>

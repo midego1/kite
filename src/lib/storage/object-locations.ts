@@ -103,6 +103,9 @@ export async function claimLocationLease(
 	const token = newId("lease");
 	const until = nowSeconds + LEASE_SECONDS;
 	try {
+		// A purge's stranded claim row names no real location: stealing it would leave it looking like one once
+		// released, so it goes first, as in `claimOrCreateLocationLease` (the key then has no row: "none").
+		await dropStrandedPurgeRows(env, now, key);
 		const claimed = await tryClaimExistingRow(env, key, token, until, nowSeconds);
 		if (claimed) return claimed;
 		const existing = await env.DB.prepare("SELECT 1 AS found FROM object_locations WHERE key = ?")

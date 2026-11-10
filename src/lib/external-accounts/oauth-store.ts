@@ -52,6 +52,24 @@ export async function writeStoredMicrosoftClient(env: StoreEnv, sealed: string |
 		.run();
 }
 
+/**
+ * Replaces the sealed registration only while it is still `expected` (what the caller opened): a save from Admin →
+ * General in between wins, and the caller's change is dropped. Returns whether it was written.
+ */
+export async function replaceStoredMicrosoftClient(
+	env: StoreEnv,
+	expected: string,
+	sealed: string,
+	now: Date,
+): Promise<boolean> {
+	const result = await env.DB.prepare(
+		"UPDATE app_settings SET oauth_microsoft_client = ?, updated_at = ? WHERE id = ? AND oauth_microsoft_client = ?",
+	)
+		.bind(sealed, toSeconds(now), "default", expected)
+		.run();
+	return Number(result.meta?.changes ?? 0) === 1;
+}
+
 /** What a sign-in in progress carries to the callback (`oauth_states.payload`); never a secret. */
 export type OAuthStatePayload = {
 	mailboxId: string;
@@ -183,7 +201,8 @@ export type TokenWrite = {
 /**
  * Stores refreshed tokens only while the account's version is still `expectedVersion`, bumping it (spec §15.3): of two
  * refreshes at once, one stores and the other learns it lost. A refresh token that changed meanwhile (a reconnect)
- * is never overwritten with an older one.
+ * is never overwritten with an older one, and neither is the password of an account that has since been edited to
+ * sign in with one (`auth_kind`, written in the same statement as that password).
  */
 export async function storeRefreshedTokens(
 	env: StoreEnv,
@@ -193,7 +212,7 @@ export async function storeRefreshedTokens(
 	now: Date,
 ): Promise<boolean> {
 	const result = await env.DB.prepare(
-		"UPDATE external_accounts SET secret = COALESCE(?, secret), oauth_access_token = ?, oauth_expires_at = ?, oauth_scopes = ?, oauth_token_version = oauth_token_version + 1, updated_at = ? WHERE id = ? AND oauth_token_version = ? AND secret <> ''",
+		"UPDATE external_accounts SET secret = COALESCE(?, secret), oauth_access_token = ?, oauth_expires_at = ?, oauth_scopes = ?, oauth_token_version = oauth_token_version + 1, updated_at = ? WHERE id = ? AND oauth_token_version = ? AND auth_kind = 'oauth_microsoft' AND secret <> ''",
 	)
 		.bind(
 			tokens.sealedRefreshToken,

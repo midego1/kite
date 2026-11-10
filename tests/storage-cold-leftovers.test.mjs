@@ -184,6 +184,43 @@ function onStatement(env, fragment, during) {
 	return () => fired;
 }
 
+/** Runs `during` once, right after the first statement whose SQL contains `fragment` has executed. */
+function onStatementAfter(env, fragment, during) {
+	const prepare = env.DB.prepare.bind(env.DB);
+	let fired = false;
+	env.DB.prepare = (sql) => {
+		const statement = prepare(sql);
+		if (fired || !sql.includes(fragment)) return statement;
+		const bind = statement.bind.bind(statement);
+		statement.bind = (...values) => {
+			const bound = bind(...values);
+			const run = bound.run.bind(bound);
+			bound.run = async (...args) => {
+				const result = await run(...args);
+				if (!fired) {
+					fired = true;
+					env.DB.prepare = prepare;
+					await during();
+				}
+				return result;
+			};
+			return bound;
+		};
+		return statement;
+	};
+	return () => fired;
+}
+
+/** Routes a class to a store directly, as a finished route switch leaves it. */
+function routeTo(env, objectClass, storeId) {
+	env.DB.db
+		.prepare(
+			"INSERT INTO storage_routes (object_class, store_id, previous_store_id, updated_at) VALUES (?, ?, NULL, 1)",
+		)
+		.run(objectClass, storeId);
+	lib.config.clearStorageConfigCache();
+}
+
 const mailRule = (target) => ({ objectClass: "mail", afterDays: 30, minBytes: 0, target });
 const mailItem = (key = KEY) => ({ id: "m", key, size: CONTENT.length, createdAt: new Date((NOW - 90 * DAY) * 1000) });
 
@@ -263,6 +300,38 @@ test("a superseded leftover is kept while its live copy cannot be read back, or 
 	assert.equal(await has(env, "sto_c", KEY), true);
 });
 
+test("a live copy of the same size but other bytes is not proof: the leftover is kept (review of #479, P4)", async (t) => {
+	const { env } = await setup(t);
+	addMessageRow(env, "m", KEY);
+	await put(env, "sto_d", KEY, CONTENT.replace("one", "two"));
+	setLocation(env, KEY, "sto_d");
+	await put(env, "sto_c", KEY, CONTENT);
+	markLeftover(env, "sto_c", KEY);
+	const run = await cleanup(env);
+	assert.deepEqual(run.kept, { unverified: 1 });
+	assert.equal(await text(env, "sto_c", KEY), CONTENT);
+	assert.equal(leftover(env, KEY, "sto_c").kept_reason, "unverified");
+});
+
+test("an object too large to hash is only confirmed by equal ETags on both stores", async (t) => {
+	const { env } = await setup(t);
+	addMessageRow(env, "m", KEY);
+	const large = "x".repeat(9 * 1024 * 1024);
+	await put(env, "sto_d", KEY, large);
+	setLocation(env, KEY, "sto_d", { size: large.length });
+	await put(env, "sto_c", KEY, large);
+	markLeftover(env, "sto_c", KEY);
+	let run = await cleanup(env);
+	assert.deepEqual(run.kept, { unverified: 1 }, "different ETags, too large to compare byte for byte");
+	assert.equal(await has(env, "sto_c", KEY), true);
+	for (const storeId of ["sto_c", "sto_d"])
+		fake.buckets.get(BUCKETS[storeId]).objects.get(KEY).etag = "0123456789abcdef0123456789abcdef";
+	run = await cleanup(env);
+	assert.equal(run.deleted, 1, JSON.stringify(run));
+	assert.equal(await has(env, "sto_c", KEY), false);
+	assert.equal(await has(env, "sto_d", KEY), true);
+});
+
 test("a key with no location row gets a claim row naming where its bytes are now, and it is gone afterwards", async (t) => {
 	const { env } = await setup(t);
 	addMessageRow(env, "m", KEY);
@@ -338,6 +407,17 @@ test("a young leftover is untouched by the manual action", async (t) => {
 	assert.equal(run.checked, 0);
 	assert.equal(await has(env, "sto_c", KEY), true);
 	assert.equal(run.remaining, 1, "the response says what is still tracked");
+});
+
+test("a backup created in the very second a key was first seen unreferenced still keeps its copy (review of #479, P5)", async (t) => {
+	const { env } = await setup(t);
+	await put(env, "sto_c", KEY, CONTENT);
+	setLocation(env, KEY, "sto_c");
+	markLeftover(env, "sto_c", KEY, { unreferencedSince: NOW - 20 * DAY });
+	addBackup(env, "bak_same_second", { createdAt: NOW - 20 * DAY });
+	const run = await cleanup(env);
+	assert.deepEqual(run.kept, { backup: 1 });
+	assert.equal(await has(env, "sto_c", KEY), true);
 });
 
 test("a superseded leftover is kept while a retained backup from when it was the location could restore that row", async (t) => {
@@ -503,6 +583,24 @@ test("Drive: a copy on the store the file's own row names is live even when obje
 	assert.deepEqual([run.deleted, run.cleared], [0, 1]);
 	assert.equal(await has(env, "sto_c", key), true, "Drive reads its own row's store first");
 	assert.equal(await has(env, "sto_d", key), true);
+});
+
+test("Drive: a file row without a store reads the default store, so a copy there is live (review of #479, P1)", async (t) => {
+	const { env } = await setup(t);
+	const key = "drive/drv_1";
+	routeTo(env, "drive", "sto_d");
+	env.DB.db
+		.prepare(
+			`INSERT INTO drive_items (id, owner_id, kind, name, size, store_id, object_key, status, created_at, updated_at)
+			 VALUES ('drv_1', 'owner', 'file', 'a.txt', ?, NULL, ?, 'ready', 1, 1)`,
+		)
+		.run(CONTENT.length, key);
+	await put(env, "default", key, CONTENT);
+	await put(env, "sto_d", key, CONTENT);
+	markLeftover(env, "default", key, { objectClass: "drive" });
+	const run = await cleanup(env);
+	assert.deepEqual([run.deleted, run.cleared], [0, 1]);
+	assert.equal(await has(env, "default", key), true, "the only copy Drive itself reads");
 });
 
 test("Drive: a leftover neither the file's row nor its location names is deleted after its live copy reads back", async (t) => {
@@ -773,6 +871,37 @@ for (const step of ["headTo", "headFrom", "deleteFrom"]) {
 		});
 	}
 }
+
+test("a cleanup that stalls after its confirm keeps its copy, which a second cleanup relied on meanwhile (review of #479, M1/P2)", async (t) => {
+	const { env } = await setup(t);
+	addMessageRow(env, "m", KEY);
+	// Mail is routed to sto_c, so both copies are in the read chain; the key has no row and each copy is a
+	// leftover: each cleanup sees the other copy as the readable one.
+	routeTo(env, "mail", "sto_c");
+	await put(env, "sto_c", KEY, CONTENT);
+	await put(env, "default", KEY, CONTENT);
+	markLeftover(env, "sto_c", KEY);
+	markLeftover(env, "default", KEY);
+	const realNow = Date.now;
+	t.after(() => {
+		Date.now = realNow;
+	});
+	let inner = null;
+	// Right after the outer cleanup's confirm passed: the claim it extended runs out (a stall of more than 15
+	// minutes), and a second cleanup settles the other leftover, relying on the outer one's copy.
+	const fired = onStatementAfter(env, "claimed_until >= ? AND store_id = ?", async () => {
+		lapse(env, KEY);
+		Date.now = () => realNow() + 16 * 60 * 1000;
+		inner = await cleanup(env, { storeId: "default" });
+	});
+	const outer = await cleanup(env, { storeId: "sto_c" });
+	Date.now = realNow;
+	assert.equal(fired(), true);
+	assert.equal(inner.deleted, 1, `the second cleanup deleted the default copy: ${JSON.stringify(inner)}`);
+	assert.deepEqual(outer.kept, { lease_lost: 1 }, "the stalled cleanup gave up instead of deleting");
+	assert.equal(await has(env, "sto_c", KEY), true);
+	await assertReadable(env, KEY, CONTENT, "after both cleanups");
+});
 
 // Round 9's two probes, both of which lost every copy then (B6): the cleanup outside, a mover inside it.
 for (const lapsed of [false, true]) {

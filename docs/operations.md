@@ -462,15 +462,15 @@ fenced lease a cold move and a storage-migration purge take, so the three never 
    readable copy found by HEAD (Drive's own row's store, the class's read chain, the default store), or the
    leftover's own store when there is none. It never names a store that does not hold the object, and the row is
    removed again when the cleanup ends (or dropped as stranded once its claim expires).
-2. **The plan** (`planLeftover`): a copy the live location names, or the store a Drive file's own row names, is
-   live and never deleted (only its tracking row goes). A referenced key whose only copy found is the leftover
-   keeps it (`only_copy`, logged as `storage.cold_leftover_only_copy`). Anything else is either *superseded* (the
+2. **The plan** (`planLeftover`): a copy the live location names, or the store a Drive file's own row names (the
+   default store when it names none), is live and never deleted (only its tracking row goes). A referenced key
+   whose only copy found is the leftover keeps it (`only_copy`, logged as `storage.cold_leftover_only_copy`). Anything else is either *superseded* (the
    live copy is elsewhere) or *unreferenced* (nothing names the key: no message, attachment, body, Drive item,
    completed backup or queued send).
 3. **Superseded** copies are deleted only when no retained backup (completed, queued or running, safety and
    pre-migration backups included) falls in the window `[moved_at, first_orphaned_at)` in which this copy was the
    recorded location, no enabled rule or in-flight sweep archives into its store (a move back there would reuse
-   it), and the live copy reads back by HEAD with the same size.
+   it), and the live copy reads back with the same bytes (below).
 4. **Unreferenced** copies need no other copy, but the key must have been seen unreferenced for the grace period
    since the last restore (`unreferenced_since`, reset by any restore after it, since only a restore brings a
    reference back), and no retained backup may have been created before that stretch began.
@@ -483,18 +483,29 @@ fenced lease a cold move and a storage-migration purge take, so the three never 
 The whole pass is skipped while a restore is active, needs recovery, finished less than an hour ago, or a full
 backup's objects are being copied back, and a leftover on a store a storage migration is copying from or to, or
 purging, is kept (`migrating`). Every copy it keeps gets its reason (`kept_reason`: `busy`, `confirming`,
-`backup`, `only_copy`, `cold_target`, `migrating`, `restore`, `store_unavailable`, `lease_lost`, `error`) and goes
+`backup`, `only_copy`, `unverified`, `cold_target`, `migrating`, `restore`, `store_unavailable`, `lease_lost`,
+`error`) and goes
 to the back of the queue; Admin → Storage shows the reasons, the totals, how many are past the grace period and
 the last run. Keeping a copy only costs storage; a case the rules cannot settle always keeps it.
 
-**The residual.** An object store cannot delete conditionally on a D1 row, so a cleanup that stalls for longer
-than the lease (five minutes) between `confirmLeftoverClaim` and the object delete could be overtaken in that
-window, like the storage-migration purge below. A mover could then only reuse the copy if it targets the
-leftover's store, which the cold-target check repeated right before the confirm rules out unless a rule is
-retargeted and a sweep started inside those same five minutes. `tests/storage-cold-leftovers.test.mjs` runs every
-other interleaving: a mover (to a third store, or onto the leftover's own store from a batch the cleanup cannot
-see), a migration purge, a migration dropping the row and a second cleanup injected at each step of the cleanup
-with its lease live or lapsed, and the cleanup injected at each step of a mover and of a purge.
+**The residual.** An object store cannot delete conditionally on a D1 row, so once `confirmLeftoverClaim` has
+passed, nothing on the object store's side stops the delete. If the claim ran out before the delete landed, any
+other deleter could have taken the key in between and relied on this very copy: a second cleanup settling the
+key's other leftover (two copies of a row-less key both in the read chain, each the other's "other copy"), a mover
+reusing it on its own store (a sweep batch that outlived its cursor still moves to its old target), or a
+migration purge. The cleanup therefore keeps that window far inside the claim (review of #479, `M1`):
+`confirmLeftoverClaim` extends the claim to 15 minutes, the delete is only sent if no more than 30 seconds have
+passed since the confirm was sent (otherwise the copy is kept as `lease_lost`), and on a configured S3 store the
+delete request itself is aborted after 30 seconds. What remains is a delete the object store executes more than
+14 minutes after it was sent, which no runtime here produces (the R2 binding and the Node file bucket cannot take a
+deadline, but neither queues a request for minutes). `tests/storage-cold-leftovers.test.mjs` runs every other
+interleaving: a mover (to a third store, or onto the leftover's own store from a batch the cleanup cannot see), a
+migration purge, a migration dropping the row and a second cleanup injected at each step of the cleanup with its
+lease live or lapsed, the cleanup injected at each step of a mover and of a purge, and a cleanup that stalls after
+its confirm while a second cleanup deletes the other copy.
+
+The live copy must also hold the same bytes, not just as many (`m2`): equal ETags on both stores, or else, for
+objects up to 8 MiB, equal SHA-256 digests; anything that cannot be confirmed is kept as `unverified`.
 
 `deleteStore` is refused while a rule still targets the store, `object_locations` still names it, or a sweep
 still in flight targets it (`coldReferenceBlocking`), and then, checked last, while leftover candidates are on it

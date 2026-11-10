@@ -126,6 +126,11 @@ test("the admin page describes a run in one sentence", () => {
 		"Deleted 1 leftover copy. 2 copies were already gone or in use again.",
 	);
 	assert.equal(leftoverRunText({ ...run, checked: 0 }), "No leftover copies are past the grace period yet.");
+	assert.equal(
+		leftoverRunText(run, { reasons: false }),
+		"Deleted 2 leftover copies. 1 copy was already gone or in use again. Kept 2.",
+		"the reasons go on a line of their own",
+	);
 	assert.match(leftoverRunText({ ...run, skipped: "restore" }), /backup restore/);
 	assert.match(leftoverRunText({ ...run, skipped: "unsupported" }), /database update/);
 	assert.equal(keptReasonsText({ busy: 0 }), "");

@@ -401,6 +401,9 @@ export async function withPurgeLease<T>(
  * that claim, and whether the cleanup created that row itself (a key with no row), never a real location. */
 export type LeftoverClaim = { token: string; storeId: string; created: boolean };
 
+/** How long `confirmLeftoverClaim` holds the key once it passes. */
+const LEFTOVER_CONFIRM_SECONDS = 15 * 60;
+
 /**
  * Takes the same location lease a cold move and a storage-migration purge hold, for the leftover cleanup deciding
  * about one copy of `key`. An existing row is claimed the usual way (an expired claim is taken over), and the
@@ -455,11 +458,12 @@ export async function claimKeyForLeftover(
  */
 export async function confirmLeftoverClaim(env: LocationEnv, key: string, claim: LeftoverClaim, now = new Date()) {
 	const nowSeconds = Math.floor(now.getTime() / 1000);
+	// Extended well past the cleanup's own 30-second limit for issuing and finishing its delete (`M1`).
 	const result = await env.DB.prepare(
 		`UPDATE object_locations SET claimed_until = ?
 		 WHERE key = ? AND lease_token = ? AND claimed_until >= ? AND store_id = ?`,
 	)
-		.bind(nowSeconds + LEASE_SECONDS, key, claim.token, nowSeconds, claim.storeId)
+		.bind(nowSeconds + LEFTOVER_CONFIRM_SECONDS, key, claim.token, nowSeconds, claim.storeId)
 		.run();
 	return (result.meta?.changes ?? 0) > 0;
 }

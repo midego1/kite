@@ -164,7 +164,8 @@ function AutomaticCleanupForm({ overview, onChanged }: { overview: StorageOvervi
 export function LeftoversCard({ overview, onChanged }: { overview: StorageOverview; onChanged: () => void }) {
 	const { leftovers } = overview;
 	if (!leftovers.available) return null;
-	const kept = keptReasonsText(leftovers.kept);
+	// Only the last run's reasons: a kept_reason on a row may be from an earlier run.
+	const kept = leftovers.lastRun ? keptReasonsText(leftovers.lastRun.kept) : "";
 	return (
 		<section aria-labelledby="storage-leftovers" className="rounded-xl border border-neutral-200 bg-white p-5">
 			<h2 id="storage-leftovers" className="text-lg font-semibold text-neutral-900">
@@ -180,13 +181,14 @@ export function LeftoversCard({ overview, onChanged }: { overview: StorageOvervi
 						{leftovers.total.toLocaleString()} {leftovers.total === 1 ? "leftover copy" : "leftover copies"} tracked,{" "}
 						{leftovers.due.toLocaleString()} past the grace period.
 					</p>
-					{kept && <p className="text-neutral-500">Kept last time: {kept}.</p>}
 					{leftovers.lastRun && (
 						<p className="text-neutral-500">
 							Last run ({leftovers.lastRun.trigger === "automatic" ? "automatic" : "by hand"},{" "}
-							{new Date(leftovers.lastRun.at).toLocaleString()}): {leftoverRunText(leftovers.lastRun)}
+							{new Date(leftovers.lastRun.at).toLocaleString()}):{" "}
+							{leftoverRunText(leftovers.lastRun, { reasons: false })}
 						</p>
 					)}
+					{kept && <p className="text-neutral-500">Kept last time: {kept}.</p>}
 				</div>
 				<DeleteLeftovers
 					storeId={null}

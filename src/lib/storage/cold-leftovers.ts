@@ -43,6 +43,13 @@ const MANUAL_LEFTOVER_LIMIT = 50;
 const AUTOMATIC_LEFTOVER_LIMIT = 25;
 
 const seconds = (date: Date) => Math.floor(date.getTime() / 1000);
+/** How long after its final check (`confirmLeftoverClaim`, which extends the claim to 15 minutes) a delete may still
+ * be issued, and how long that delete may take: both far inside the claim, so a stalled cleanup gives up instead of
+ * deleting a copy another deleter may by then have relied on (review of #479, `M1`). */
+const CONFIRM_TO_DELETE_MS = 30_000;
+const DELETE_TIMEOUT_MS = 30_000;
+/** Objects up to this size are compared byte for byte (SHA-256) when their ETags do not already match. */
+const HASH_COMPARE_MAX_BYTES = 8 * 1024 * 1024;
 
 /**
  * Whether a restore keeps the cleanup off entirely, and when the last one ended. A restore empties and rewrites
@@ -88,7 +95,7 @@ async function backupObjectsRestoring(env: LeftoverEnv): Promise<boolean> {
  */
 async function backupCouldHold(env: LeftoverEnv, from: number | null, until: number): Promise<boolean> {
 	const row = await env.DB.prepare(
-		`SELECT 1 AS found FROM backups WHERE status IN ('completed', 'queued', 'running') AND created_at < ?
+		`SELECT 1 AS found FROM backups WHERE status IN ('completed', 'queued', 'running') AND created_at <= ?
 		 AND (? IS NULL OR completed_at IS NULL OR completed_at >= ?) LIMIT 1`,
 	)
 		.bind(until, from, from)
@@ -212,7 +219,8 @@ async function driveRowStore(env: LeftoverEnv, key: string): Promise<string | nu
 	const row = await env.DB.prepare("SELECT store_id FROM drive_items WHERE id = ? AND object_key = ?")
 		.bind(id, key)
 		.first<{ store_id: string | null }>();
-	return row?.store_id ?? null;
+	// Drive reads a row without a store from the default store (`drive/objects.ts`).
+	return row ? (row.store_id ?? DEFAULT_STORE_ID) : null;
 }
 
 /** For a key with no location row: a store a reader finds the key on without one (Drive's own row's store, then
@@ -278,8 +286,16 @@ async function deleteUnderClaim(
 	const { env } = context;
 	const changed = await changedSinceStart(context, candidate, superseded);
 	if (changed) return changed;
+	// Timed from before the confirm is sent: a cleanup that stalled after it gives up rather than delete a copy a
+	// second cleanup or a mover may since have relied on (the claim it extended outlasts both limits by far).
+	const confirmedFrom = Date.now();
 	if (!(await confirmLeftoverClaim(env, candidate.key, claim))) return "lease_lost";
-	await store.bucket.delete(candidate.key);
+	if (Date.now() - confirmedFrom > CONFIRM_TO_DELETE_MS) return "lease_lost";
+	// A store's own client honours the deadline; the R2 binding and the Node file bucket ignore the option.
+	await (store.bucket as { delete(key: string, options?: { timeoutMs?: number }): Promise<void> }).delete(
+		candidate.key,
+		{ timeoutMs: DELETE_TIMEOUT_MS },
+	);
 	const dropped = await dropCandidateUnderClaim(env, candidate.id, candidate.key, claim);
 	if (dropped && dropLocation) await dropLocationUnderClaim(env, candidate.key, claim);
 	log.info("storage.cold_leftover_deleted", {
@@ -288,6 +304,33 @@ async function deleteUnderClaim(
 		unreferenced: !superseded,
 	});
 	return "deleted";
+}
+
+const etagOf = (head: { etag?: string | null }) => (head.etag ?? "").replace(/^W\//, "").replace(/"/g, "").trim();
+
+async function sha256Of(store: ObjectStore, key: string): Promise<string | null> {
+	const object = await store.bucket.get(key);
+	if (!object || !("arrayBuffer" in object)) return null;
+	const digest = await crypto.subtle.digest("SHA-256", await object.arrayBuffer());
+	return Buffer.from(digest).toString("hex");
+}
+
+/**
+ * Whether the live copy holds the leftover's bytes, not just as many of them (review of #479, `m2`): equal ETags
+ * across the two stores (an MD5, or the same multipart layout of MD5s), or else, for an object small enough, equal
+ * SHA-256 digests of both. Anything that cannot be confirmed keeps the leftover (`unverified`).
+ */
+async function sameBytes(
+	store: ObjectStore,
+	other: ObjectStore,
+	key: string,
+	own: { etag?: string | null; size: number },
+	copy: { etag?: string | null; size: number },
+): Promise<boolean> {
+	if (etagOf(own) && etagOf(own) === etagOf(copy)) return true;
+	if (own.size > HASH_COMPARE_MAX_BYTES) return false;
+	const [mine, theirs] = await Promise.all([sha256Of(store, key), sha256Of(other, key)]);
+	return !!mine && mine === theirs;
 }
 
 /** A leftover of a key nothing references: no other copy needed, but no retained backup may hold a reference. */
@@ -336,6 +379,7 @@ async function settleSuperseded(
 	const other = storage.store(otherStoreId);
 	const copy = other ? await other.bucket.head(candidate.key) : null;
 	if (!copy || copy.size !== own.size) return "only_copy";
+	if (!(await sameBytes(store, other!, candidate.key, own, copy))) return "unverified";
 	return await deleteUnderClaim(context, store, candidate, claim, { superseded: true, dropLocation: false });
 }
 

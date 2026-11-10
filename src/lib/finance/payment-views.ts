@@ -13,6 +13,7 @@ import {
 } from "./payment-list-utils";
 import { ownerScan, scanView, SCAN_DAYS } from "./payment-scan";
 import { ledgerMessageIds, ownerPayments, type PaymentRow } from "./payments";
+import { filedSourceIds } from "./receipts";
 import { dateToDay, type ChargeRow } from "./record-utils";
 import { scanCoverageGaps } from "./scan-coverage";
 import { ownerDocuments, ownerRows } from "./subscriptions";
@@ -104,14 +105,17 @@ async function messageRefs(user: ViewUser, entries: readonly PaymentListEntry[])
  */
 export async function listPaymentsView(user: ViewUser) {
 	try {
-		const [payments, documents, subscriptions, inLedger, scan, scanCoverage] = await Promise.all([
-			ownerPayments(user.userId),
-			ownerDocuments(user.userId),
-			ownerRows(user.userId),
-			ledgerMessageIds(user.userId),
-			ownerScan(user.userId),
-			scanCoverageGaps(user.userId, new Date(Date.now() - SCAN_DAYS * 86_400_000)),
-		]);
+		const [payments, documents, subscriptions, inLedger, scan, scanCoverage, filedPayments, filedDocuments] =
+			await Promise.all([
+				ownerPayments(user.userId),
+				ownerDocuments(user.userId),
+				ownerRows(user.userId),
+				ledgerMessageIds(user.userId),
+				ownerScan(user.userId),
+				scanCoverageGaps(user.userId, new Date(Date.now() - SCAN_DAYS * 86_400_000)),
+				filedSourceIds(user.userId, "finance_payments"),
+				filedSourceIds(user.userId, "finance_charges"),
+			]);
 		const vendors = new Map(subscriptions.map((row) => [row.id, row.vendor]));
 		const byId = new Map(payments.map((row) => [row.id, row]));
 		const all = sortEntries([
@@ -142,6 +146,7 @@ export async function listPaymentsView(user: ViewUser) {
 				modelFields: modelFieldsOf(byId.get(entry.id)),
 				sender: byId.has(entry.id) ? senderOf(byId.get(entry.id)!.vendorKey) : null,
 				origin: byId.get(entry.id)?.source ?? null,
+				hasReceipts: entry.source === "payment" ? filedPayments.has(entry.id) : filedDocuments.has(entry.id),
 			})),
 			months: monthTotals(entries, paired),
 			scan: scanView(scan),

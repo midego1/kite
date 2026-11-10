@@ -3,6 +3,7 @@ import { getDb } from "@/db";
 import { storageMigrations, storageRoutes } from "@/db/schema/storage";
 import { createAuditLog } from "@/lib/mailboxes/audit";
 import { isNodeRuntime } from "@/lib/runtime";
+import { coldUseBlockingPurge } from "./cold";
 import { clearStorageConfigCache, readStorageConfig } from "./config";
 import { DEFAULT_STORE_ID, type StoreRecord } from "./config-utils";
 import { isActiveMigration, purgeConfirmationMatches } from "./migration-utils";
@@ -167,6 +168,8 @@ export async function runMigrationAction(
 				: config.stores.get(job.fromStoreId)?.name;
 		if (!name) return fail(404, "The old store no longer exists");
 		if (!purgeConfirmationMatches(body.confirm, name)) return fail(400, `Type ${name} to confirm`);
+		const coldUse = await coldUseBlockingPurge(env, job.fromStoreId);
+		if (coldUse) return fail(409, coldUse);
 		const result = await startStorageMigrationPurge(env, job);
 		if (result.ok)
 			await createAuditLog(env, {

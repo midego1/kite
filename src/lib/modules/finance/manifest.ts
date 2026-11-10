@@ -40,10 +40,15 @@ export const financeManifest: ModuleManifest = {
 	jmapCapabilities: [],
 	searchSections: financeClientData.searchSections ?? [],
 	messageStatuses: [],
-	queueMessageTypes: [{ kind: "finance.scan", queue: "agent", capability: "scanPayments", metricClass: "finance" }],
+	queueMessageTypes: [
+		{ kind: "finance.scan", queue: "agent", capability: "scanPayments", metricClass: "finance" },
+		{ kind: "finance.receipts_backfill", queue: "agent", capability: "backfillReceipts", metricClass: "finance" },
+	],
 	cronTasks: [
 		{ name: "remindRenewals", schedule: "*/5 * * * *", capability: "remindRenewals" },
 		{ name: "resumePaymentScans", schedule: "*/5 * * * *", capability: "resumePaymentScans" },
+		{ name: "fileReceipts", schedule: "*/5 * * * *", capability: "fileReceipts" },
+		{ name: "resumeReceiptBackfills", schedule: "*/5 * * * *", capability: "resumeReceiptBackfills" },
 	],
 	actionLabels: {
 		create_subscription: "Started tracking a subscription",

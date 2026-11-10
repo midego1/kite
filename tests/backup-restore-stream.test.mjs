@@ -6,11 +6,15 @@ import test, { after } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { build } from "esbuild";
 import { makeBundleDirectory } from "./support/bundle-directory.mjs";
+import { startFakeS3 } from "./support/fake-s3.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const directory = makeBundleDirectory("kite-backup-restore-stream-test-");
 const bucketRoot = mkdtempSync(join(tmpdir(), "kite-restore-bucket-"));
-after(() => {
+const fakeS3 = await startFakeS3({ buckets: ["kite-cold-target"] });
+const ENCRYPTION_KEY = "invented-encryption-key-for-restore-stream-tests";
+after(async () => {
+	await fakeS3.close();
 	rmSync(directory, { recursive: true, force: true });
 	rmSync(bucketRoot, { recursive: true, force: true });
 });
@@ -45,6 +49,10 @@ await build({
 			export { processRestoreMessage, runRestoreMaintenance } from "./src/lib/backups/restore-job.ts";
 			export { readRestoreJob, writeRestoreJob } from "./src/lib/backups/restore-job-store.ts";
 			export { restoreRowError } from "./src/lib/backups/restore-utils.ts";
+			export { runStorageColdMaintenance, updateColdRule, runColdStorageSweep, processStorageQueueMessage } from "./src/lib/storage/cold.ts";
+			export { clearStorageConfigCache } from "./src/lib/storage/config.ts";
+			export { sealSetting } from "./src/lib/security/secret-box.ts";
+			export { createStorageRouter } from "./src/lib/storage/router.ts";
 		`,
 		resolveDir: root,
 		sourcefile: "backup-restore-stream-test-entry.ts",
@@ -58,6 +66,7 @@ await build({
 	target: "node22",
 	tsconfig: join(root, "tsconfig.json"),
 	packages: "external",
+	alias: { "cloudflare:workers": join(root, "server/runtime/cloudflare-workers.ts") },
 	plugins: [migrationStatusStub],
 	logLevel: "silent",
 });
@@ -326,6 +335,10 @@ function jobEnv(db, files = bucket()) {
 	return {
 		DB: db,
 		BUCKET: files,
+		APP_ENCRYPTION_KEY: ENCRYPTION_KEY,
+		KITE_RUNTIME: "node",
+		STORAGE_ALLOW_INSECURE_ENDPOINT: "1",
+		STORAGE_ALLOW_PRIVATE_ENDPOINTS: "1",
 		OUTBOUND_QUEUE: {
 			messages,
 			async send(body) {
@@ -334,6 +347,23 @@ function jobEnv(db, files = bucket()) {
 		},
 	};
 }
+
+/** A `storage_stores` row for the fake S3's one bucket, so a cold rule can target it as `sto_target`. */
+async function addColdStore(env) {
+	const credentials = await lib.sealSetting(
+		env,
+		JSON.stringify({ accessKeyId: fakeS3.accessKeyId, secretAccessKey: fakeS3.secretAccessKey }),
+	);
+	env.DB.db
+		.prepare(
+			`INSERT INTO storage_stores (id, name, provider, endpoint, region, bucket, addressing, credentials, status, last_checked_at, created_at, updated_at)
+			 VALUES ('sto_target', 'Cold target', 'minio', ?, ?, 'kite-cold-target', 'path', ?, 'ok', ?, 1, 1)`,
+		)
+		.run(`http://${fakeS3.endpoint}`, fakeS3.region, credentials, Math.floor(Date.now() / 1000));
+	lib.clearStorageConfigCache();
+}
+
+const coldTargetObjects = () => fakeS3.buckets.get("kite-cold-target").objects;
 
 /** Runs the queued restore messages, as the consumer would, until none are left; returns how many ran. */
 async function drain(env, options = {}) {
@@ -547,6 +577,387 @@ test("the rollback leaves the storage tables as they were when the install had n
 	assert.equal(db.db.prepare("SELECT count(*) AS count FROM storage_stores").get().count, 0);
 	assert.equal(db.db.prepare("SELECT count(*) AS count FROM storage_routes").get().count, 0);
 	assert.deepEqual(messageDigest(db), before);
+});
+
+test("the rollback undoes a cold storage merge that already ran before the restore failed", async (t) => {
+	const db = await seededDatabase(t);
+	db.db.exec(`
+		INSERT INTO storage_cold_rules (object_class, after_days, min_bytes, target, enabled, updated_at)
+			VALUES ('mail', 30, 0, 'r2-ia', 1, 1);
+		INSERT INTO object_locations (key, object_class, store_id, storage_class, size, moved_at)
+			VALUES ('inbound/from-backup.eml', 'mail', 'default', 'InfrequentAccess', 10, 1);
+	`);
+	const backup = await lib.exportDatabaseRecords(db);
+	// The install's own cold storage state changes between taking that backup and restoring it: a different
+	// rule and a different location, which must survive the restore and come back exactly if it fails.
+	db.db.exec(`
+		DELETE FROM storage_cold_rules;
+		DELETE FROM object_locations;
+		INSERT INTO storage_cold_rules (object_class, after_days, min_bytes, target, enabled, updated_at)
+			VALUES ('drive', 14, 1024, 'r2-ia', 1, 1);
+		INSERT INTO object_locations (key, object_class, store_id, storage_class, size, moved_at)
+			VALUES ('drive/live-item', 'drive', 'default', 'InfrequentAccess', 20, 1);
+	`);
+	const before = messageDigest(db);
+
+	// Fails once the backup's cold storage rows are merged in, on the first batch that writes app_settings
+	// (storage_cold_rules and object_locations are restored well before it).
+	let failed = false;
+	const env = jobEnv(
+		failing(db, (_call, sqls) => {
+			if (failed || !sqls.some((sql) => sql.startsWith("INSERT INTO `app_settings`"))) return false;
+			return (failed = true);
+		}),
+		bucket(),
+	);
+	await lib.startUploadedRestore(env, upload(backup), "owner");
+	await drain(env, SMALL_BATCHES);
+
+	const job = await restoreJob(env);
+	assert.equal(job.status, "rolled_back", job.error);
+	assert.deepEqual(
+		db.db.prepare("SELECT object_class, target FROM storage_cold_rules ORDER BY object_class").all(),
+		[{ object_class: "drive", target: "r2-ia" }],
+		"the backup's merged-in mail rule is gone again",
+	);
+	assert.deepEqual(
+		db.db.prepare("SELECT key, object_class FROM object_locations ORDER BY key").all(),
+		[{ key: "drive/live-item", object_class: "drive" }],
+		"the backup's merged-in location is gone again",
+	);
+	assert.deepEqual(messageDigest(db), before);
+});
+
+test("the orphan sweep never deletes a cold copy while a restore has its table mid-rebuild, and finds it again once the restore lands", async (t) => {
+	const db = new lib.SqliteDatabase(":memory:");
+	t.after(() => db.db.close());
+	await lib.applyMigrations(db, join(root, "drizzle/migrations"));
+	db.db.exec(`
+		INSERT INTO users (id, email, password_hash, name, role, is_primary_admin, created_at) VALUES ('owner', 'owner@example.com', 'hash', 'Owner', 'admin', 1, 1);
+		INSERT INTO domains (id, user_id, hostname, zone_id, status, created_at) VALUES ('domain-1', 'owner', 'example.com', 'zone-1', 'active', 1);
+		INSERT INTO mailboxes (id, user_id, domain_id, local_part, type, created_at) VALUES ('mailbox-a', 'owner', 'domain-1', 'alex', 'personal', 1);
+		INSERT INTO messages (id, user_id, mailbox_id, direction, from_addr, to_addr, subject, status, raw_r2_key, created_at)
+			VALUES ('old', 'owner', 'mailbox-a', 'inbound', 'sender@example.net', 'alex@example.com', 'Hello', 'received', 'inbound/old.eml', 1);
+	`);
+	const env = jobEnv(db, bucket());
+	await addColdStore(env);
+	coldTargetObjects().clear();
+	// The raw mail was cold-moved to a second store before the backup below: object_locations (a merge table)
+	// is how it is still found once "old" is briefly gone, the same way a live install's router falls back to it.
+	coldTargetObjects().set("inbound/old.eml", {
+		bytes: Buffer.from("cold mail bytes"),
+		meta: { custom: {} },
+		etag: "etag1",
+		lastModified: new Date(),
+	});
+	db.db
+		.prepare(
+			"INSERT INTO object_locations (key, object_class, store_id, storage_class, size, moved_at) VALUES ('inbound/old.eml', 'mail', 'sto_target', NULL, 16, 1)",
+		)
+		.run();
+
+	await env.BUCKET.put("backups/database/full.json", await lib.exportDatabaseRecords(db));
+	db.db.exec(
+		"INSERT INTO backups (id, status, `trigger`, r2_key, filename, size, created_at, completed_at) VALUES ('bak-full', 'completed', 'manual', 'backups/database/full.json', 'full.json', 1, 1, 2)",
+	);
+
+	// Production batch limits put every DELETE in batch 1; the invocation dies right after it commits, which is
+	// exactly the window `N1` is about: `messages` emptied, not yet refilled, with nothing to say a restore is
+	// mid-flight except the job state a five-minute maintenance tick must check before touching anything cold.
+	const { message, dead } = await dieDuringRestore(db, env, 1, true, {});
+	assert.equal(dead.status, "restoring");
+	assert.equal(db.db.prepare("SELECT count(*) AS n FROM messages").get().n, 0, "the deletes segment landed");
+
+	await lib.runStorageColdMaintenance(env, new Date());
+	assert.equal(
+		db.db.prepare("SELECT count(*) AS n FROM storage_cold_orphans").get().n,
+		0,
+		"the restore in progress stops the sweep from marking anything at all",
+	);
+	assert.ok(coldTargetObjects().has("inbound/old.eml"), "the cold copy itself is untouched");
+	assert.ok(db.db.prepare("SELECT 1 FROM object_locations WHERE key = 'inbound/old.eml'").get());
+
+	// The restore finishes landing the rest of its batches; the row and the maintenance both come back clean.
+	await expireLease(env);
+	env.OUTBOUND_QUEUE.messages.push(message);
+	await drain(env, {});
+	assert.equal((await restoreJob(env)).status, "completed");
+	assert.equal(db.db.prepare("SELECT count(*) AS n FROM messages").get().n, 1);
+
+	await lib.runStorageColdMaintenance(env, new Date());
+	assert.equal(
+		db.db.prepare("SELECT count(*) AS n FROM storage_cold_orphans").get().n,
+		0,
+		"the message is back, so nothing is marked even now",
+	);
+	assert.ok(coldTargetObjects().has("inbound/old.eml"));
+});
+
+test("an abandoned restore (needsRecovery) keeps the sweep off until the safety recovery completes, not just for an hour", async (t) => {
+	const db = new lib.SqliteDatabase(":memory:");
+	t.after(() => db.db.close());
+	await lib.applyMigrations(db, join(root, "drizzle/migrations"));
+	db.db.exec(`
+		INSERT INTO users (id, email, password_hash, name, role, is_primary_admin, created_at) VALUES ('owner', 'owner@example.com', 'hash', 'Owner', 'admin', 1, 1);
+		INSERT INTO domains (id, user_id, hostname, zone_id, status, created_at) VALUES ('domain-1', 'owner', 'example.com', 'zone-1', 'active', 1);
+		INSERT INTO mailboxes (id, user_id, domain_id, local_part, type, created_at) VALUES ('mailbox-a', 'owner', 'domain-1', 'alex', 'personal', 1);
+		INSERT INTO messages (id, user_id, mailbox_id, direction, from_addr, to_addr, subject, status, raw_r2_key, created_at)
+			VALUES ('cold', 'owner', 'mailbox-a', 'inbound', 'sender@example.net', 'alex@example.com', 'Cold', 'received', 'inbound/cold.eml', 1),
+			       ('hot', 'owner', 'mailbox-a', 'inbound', 'sender@example.net', 'alex@example.com', 'Hot', 'received', 'inbound/hot.eml', 2);
+	`);
+	const env = jobEnv(db, bucket());
+	await addColdStore(env);
+	coldTargetObjects().clear();
+	coldTargetObjects().set("inbound/cold.eml", {
+		bytes: Buffer.from("cold bytes"),
+		meta: { custom: {} },
+		etag: "etag1",
+		lastModified: new Date(),
+	});
+	db.db
+		.prepare(
+			"INSERT INTO object_locations (key, object_class, store_id, storage_class, size, moved_at) VALUES ('inbound/cold.eml', 'mail', 'sto_target', NULL, 10, 1)",
+		)
+		.run();
+	await env.BUCKET.put("inbound/hot.eml", "hot bytes");
+	await env.BUCKET.put("backups/database/full.json", await lib.exportDatabaseRecords(db));
+	db.db.exec(
+		"INSERT INTO backups (id, status, `trigger`, r2_key, filename, size, created_at, completed_at) VALUES ('bak-full', 'completed', 'manual', 'backups/database/full.json', 'full.json', 1, 1, 2)",
+	);
+
+	// Dies after the deletes segment lands (both messages gone) and is never redelivered, like a worker that
+	// crashed or a deploy that replaced it; nothing resumes it on its own.
+	await dieDuringRestore(db, env, 1, true, {});
+	assert.equal(db.db.prepare("SELECT count(*) AS n FROM messages").get().n, 0, "the deletes segment landed");
+
+	// An hour and a minute of silence: the cron gives the job up rather than waiting forever.
+	await lib.runRestoreMaintenance(env, new Date(Date.now() + 61 * 60_000));
+	const abandoned = await restoreJob(env);
+	assert.equal(abandoned.status, "failed");
+	assert.equal(abandoned.needsRecovery, true, "the database is known to be only half restored");
+
+	// Three hours later, then well past the grace period: with only the 1-hour cooldown this round added, both
+	// of these would already be past it, which is exactly the gap `N1` is about.
+	await lib.runStorageColdMaintenance(env, new Date(Date.now() + 3 * 60 * 60_000));
+	assert.equal(
+		db.db.prepare("SELECT count(*) AS n FROM storage_cold_orphans").get().n,
+		0,
+		"needsRecovery alone keeps the sweep off, hours past the ordinary cooldown",
+	);
+	await lib.runStorageColdMaintenance(env, new Date(Date.now() + 3 * 60 * 60_000 + 8 * 24 * 60 * 60_000));
+	assert.equal(
+		db.db.prepare("SELECT count(*) AS n FROM storage_cold_orphans").get().n,
+		0,
+		"still off, even past what would otherwise be the full grace period",
+	);
+	assert.ok(coldTargetObjects().has("inbound/cold.eml"), "the cold copy itself was never touched");
+
+	// The admin runs the safety recovery: both messages come back, and needsRecovery finally clears.
+	await lib.startSafetyRecovery(env, "owner");
+	await drain(env, {});
+	const recovered = await restoreJob(env);
+	assert.equal(recovered.status, "completed");
+	assert.equal(recovered.needsRecovery, false);
+	assert.equal(db.db.prepare("SELECT count(*) AS n FROM messages").get().n, 2);
+
+	const routed = lib.createStorageRouter(env);
+	assert.equal(await (await routed.get("inbound/hot.eml")).text(), "hot bytes");
+	const cold = await routed.get("inbound/cold.eml");
+	assert.ok(cold, "the cold copy is still readable: it was never deleted while recovery was pending");
+	assert.equal(await cold.text(), "cold bytes");
+
+	// Recovery done, the sweep resumes normally; still within its own fresh cooldown right after finishing.
+	await lib.runStorageColdMaintenance(env, new Date(Date.now() + 3 * 60 * 60_000 + 8 * 24 * 60 * 60_000 + 60_000));
+	assert.equal(
+		db.db.prepare("SELECT count(*) AS n FROM storage_cold_orphans").get().n,
+		0,
+		"the message is back, so nothing is marked",
+	);
+});
+
+test("an undo more than 7 days after a restore still finds the cold mail the safety backup remembers", async (t) => {
+	const db = new lib.SqliteDatabase(":memory:");
+	t.after(() => db.db.close());
+	await lib.applyMigrations(db, join(root, "drizzle/migrations"));
+	db.db.exec(`
+		INSERT INTO users (id, email, password_hash, name, role, is_primary_admin, created_at) VALUES ('owner', 'owner@example.com', 'hash', 'Owner', 'admin', 1, 1);
+		INSERT INTO domains (id, user_id, hostname, zone_id, status, created_at) VALUES ('domain-1', 'owner', 'example.com', 'zone-1', 'active', 1);
+		INSERT INTO mailboxes (id, user_id, domain_id, local_part, type, created_at) VALUES ('mailbox-a', 'owner', 'domain-1', 'alex', 'personal', 1);
+	`);
+	const env = jobEnv(db, bucket());
+	await addColdStore(env);
+	coldTargetObjects().clear();
+
+	// An older backup, predating both messages below: restoring it is the ordinary operation that leaves the
+	// cold copy briefly unreferenced, not a mistake in itself.
+	await env.BUCKET.put("backups/database/older.json", await lib.exportDatabaseRecords(db));
+	db.db.exec(
+		"INSERT INTO backups (id, status, `trigger`, r2_key, filename, size, created_at, completed_at) VALUES ('bak-older', 'completed', 'manual', 'backups/database/older.json', 'older.json', 1, 1, 2)",
+	);
+
+	db.db.exec(`
+		INSERT INTO messages (id, user_id, mailbox_id, direction, from_addr, to_addr, subject, status, raw_r2_key, created_at)
+			VALUES ('newcold', 'owner', 'mailbox-a', 'inbound', 'sender@example.net', 'alex@example.com', 'Cold', 'received', 'inbound/newcold.eml', 10),
+			       ('newhot', 'owner', 'mailbox-a', 'inbound', 'sender@example.net', 'alex@example.com', 'Hot', 'received', 'inbound/newhot.eml', 11);
+	`);
+	coldTargetObjects().set("inbound/newcold.eml", {
+		bytes: Buffer.from("newcold bytes"),
+		meta: { custom: {} },
+		etag: "etag1",
+		lastModified: new Date(),
+	});
+	db.db
+		.prepare(
+			"INSERT INTO object_locations (key, object_class, store_id, storage_class, size, moved_at) VALUES ('inbound/newcold.eml', 'mail', 'sto_target', NULL, 13, 12)",
+		)
+		.run();
+	await env.BUCKET.put("inbound/newhot.eml", "newhot bytes");
+
+	// Restoring the older backup: the live install's own safety snapshot, taken right before, keeps a complete
+	// record of newcold and newhot exactly as they were, including the location row for newcold's cold copy.
+	await lib.startStoredRestore(env, "bak-older", "owner");
+	await drain(env, {});
+	const afterRestore = await restoreJob(env);
+	assert.equal(afterRestore.status, "completed");
+	const safetyId = afterRestore.safety.id;
+	assert.ok(db.db.prepare("SELECT 1 FROM backups WHERE id = ? AND status = 'completed'").get(safetyId));
+	assert.equal(db.db.prepare("SELECT count(*) AS n FROM messages").get().n, 0, "both messages are gone now");
+	assert.ok(
+		db.db.prepare("SELECT 1 FROM object_locations WHERE key = 'inbound/newcold.eml'").get(),
+		"the location survives as a merge table",
+	);
+
+	// Marked at +2h, then well past the ordinary grace period: without N2 this is exactly where the copy would
+	// be deleted, even though the safety backup taken minutes ago still has a complete record of it.
+	await lib.runStorageColdMaintenance(env, new Date(Date.now() + 2 * 60 * 60_000));
+	assert.ok(db.db.prepare("SELECT 1 FROM storage_cold_orphans WHERE key = 'inbound/newcold.eml'").get());
+	await lib.runStorageColdMaintenance(env, new Date(Date.now() + 2 * 60 * 60_000 + 8 * 24 * 60 * 60_000));
+	assert.ok(
+		coldTargetObjects().has("inbound/newcold.eml"),
+		"kept: the safety backup was completed after this copy's own moved_at",
+	);
+	assert.ok(db.db.prepare("SELECT 1 FROM storage_cold_orphans WHERE key = 'inbound/newcold.eml'").get());
+
+	// The documented undo: restoring that same safety backup brings both messages back.
+	await lib.startStoredRestore(env, safetyId, "owner");
+	await drain(env, {});
+	assert.equal((await restoreJob(env)).status, "completed");
+	assert.equal(db.db.prepare("SELECT count(*) AS n FROM messages").get().n, 2);
+
+	const routed = lib.createStorageRouter(env);
+	assert.equal(await (await routed.get("inbound/newhot.eml")).text(), "newhot bytes");
+	const cold = await routed.get("inbound/newcold.eml");
+	assert.ok(cold, "newcold is still readable after the undo, more than 7 days on");
+	assert.equal(await cold.text(), "newcold bytes");
+});
+
+test("restoring an earlier backup to undo a later restore still leaves a cold-moved message readable, with an orphan sweep in between both", async (t) => {
+	const db = new lib.SqliteDatabase(":memory:");
+	t.after(() => db.db.close());
+	await lib.applyMigrations(db, join(root, "drizzle/migrations"));
+	db.db.exec(`
+		INSERT INTO users (id, email, password_hash, name, role, is_primary_admin, created_at) VALUES ('owner', 'owner@example.com', 'hash', 'Owner', 'admin', 1, 1);
+		INSERT INTO domains (id, user_id, hostname, zone_id, status, created_at) VALUES ('domain-1', 'owner', 'example.com', 'zone-1', 'active', 1);
+		INSERT INTO mailboxes (id, user_id, domain_id, local_part, type, created_at) VALUES ('mailbox-a', 'owner', 'domain-1', 'alex', 'personal', 1);
+		INSERT INTO messages (id, user_id, mailbox_id, direction, from_addr, to_addr, subject, status, raw_r2_key, created_at)
+			VALUES ('cold', 'owner', 'mailbox-a', 'inbound', 'sender@example.net', 'alex@example.com', 'Hello', 'received', 'inbound/cold.eml', 1);
+	`);
+	const env = jobEnv(db, bucket());
+	await addColdStore(env);
+	coldTargetObjects().clear();
+	coldTargetObjects().set("inbound/cold.eml", {
+		bytes: Buffer.from("cold mail bytes"),
+		meta: { custom: {} },
+		etag: "etag1",
+		lastModified: new Date(),
+	});
+	db.db
+		.prepare(
+			"INSERT INTO object_locations (key, object_class, store_id, storage_class, size, moved_at) VALUES ('inbound/cold.eml', 'mail', 'sto_target', NULL, 16, 1)",
+		)
+		.run();
+	// This good state, with the cold message, is kept as its own backup to restore back to below.
+	await env.BUCKET.put("backups/database/good.json", await lib.exportDatabaseRecords(db));
+	db.db.exec(
+		"INSERT INTO backups (id, status, `trigger`, r2_key, filename, size, created_at, completed_at) VALUES ('bak-good', 'completed', 'manual', 'backups/database/good.json', 'good.json', 1, 1, 2)",
+	);
+
+	// A newer backup is restored over it (an ordinary restore, unrelated to the cold message).
+	await env.BUCKET.put("backups/database/newer.json", await lib.exportDatabaseRecords(db));
+	db.db.exec(
+		"INSERT INTO backups (id, status, `trigger`, r2_key, filename, size, created_at, completed_at) VALUES ('bak-newer', 'completed', 'manual', 'backups/database/newer.json', 'newer.json', 1, 1, 2)",
+	);
+	db.db.exec("UPDATE messages SET subject = 'changed by the newer restore'");
+	await lib.startStoredRestore(env, "bak-newer", "owner");
+	await drain(env, {});
+	assert.equal((await restoreJob(env)).status, "completed");
+
+	// A maintenance tick lands right after that restore finishes: within the cooldown this round added on top
+	// of the grace period, so it still skips, rather than only being safe once a restore is mid-batch.
+	await lib.runStorageColdMaintenance(env, new Date());
+	assert.equal(
+		db.db.prepare("SELECT count(*) AS n FROM storage_cold_orphans").get().n,
+		0,
+		"skipped: the restore only just finished",
+	);
+
+	// The install decides to undo that restore by restoring the earlier good backup: the same pipeline, so N1
+	// protects it identically. A maintenance tick lands mid-flight again, this time past the cooldown above.
+	await lib.startStoredRestore(env, "bak-good", "owner");
+	const message = env.OUTBOUND_QUEUE.messages.shift();
+	const dying = dyingAt(db, 1, true);
+	void lib.processRestoreMessage({ ...env, DB: dying.db }, message, {});
+	await dying.reached;
+	assert.equal((await restoreJob(env)).status, "restoring");
+	await lib.runStorageColdMaintenance(env, new Date(Date.now() + 2 * 60 * 60 * 1000));
+	assert.equal(
+		db.db.prepare("SELECT count(*) AS n FROM storage_cold_orphans").get().n,
+		0,
+		"skipped: this later restore is still active",
+	);
+
+	await expireLease(env);
+	env.OUTBOUND_QUEUE.messages.push(message);
+	await drain(env, {});
+	assert.equal((await restoreJob(env)).status, "completed");
+	assert.ok(db.db.prepare("SELECT 1 FROM messages WHERE id = 'cold'").get(), "the original message is back");
+	assert.ok(
+		db.db.prepare("SELECT 1 FROM object_locations WHERE key = 'inbound/cold.eml'").get(),
+		"its cold location survived the whole round trip",
+	);
+	assert.ok(coldTargetObjects().has("inbound/cold.eml"), "the cold copy itself was never deleted");
+});
+
+test("a merge table's rows are written with no resume probe, since an OR IGNORE batch is always safe to run again", async (t) => {
+	const db = new lib.SqliteDatabase(":memory:");
+	t.after(() => db.db.close());
+	await lib.applyMigrations(db, join(root, "drizzle/migrations"));
+	db.db.exec(`
+		INSERT INTO users (id, email, password_hash, name, role, is_primary_admin, created_at) VALUES ('owner', 'owner@example.com', 'hash', 'Owner', 'admin', 1, 1);
+		INSERT INTO domains (id, user_id, hostname, zone_id, status, created_at) VALUES ('domain-1', 'owner', 'example.com', 'zone-1', 'active', 1);
+		INSERT INTO mailboxes (id, user_id, domain_id, local_part, type, created_at) VALUES ('mailbox-a', 'owner', 'domain-1', 'alex', 'personal', 1);
+		INSERT INTO storage_cold_rules (object_class, after_days, min_bytes, target, enabled, updated_at) VALUES ('mail', 30, 0, 'r2-ia', 1, 1);
+		INSERT INTO object_locations (key, object_class, store_id, storage_class, size, moved_at) VALUES ('mail-location', 'mail', 'sto_a', NULL, 10, 1);
+		INSERT INTO messages (id, user_id, mailbox_id, direction, from_addr, to_addr, subject, status, created_at) VALUES ('msg-1', 'owner', 'mailbox-a', 'inbound', 'a@outside.test', 'alex@example.com', 'Hi', 'received', 1);
+	`);
+	const prepared = await lib.prepareDatabaseRestore(db, await lib.exportDatabaseRecords(db));
+	const mergeTables = new Set(prepared.tables.filter((table) => table.merge).map((table) => table.name));
+	assert.deepEqual([...mergeTables].sort(), ["object_locations", "storage_cold_rules"]);
+
+	// Runs the whole restore once, recording every probe `writeRows` ever attaches; `messages` (not a merge
+	// table) is included as a contrast, to prove the absence of a probe on the merge tables is not just because
+	// nothing ever got probed at all.
+	const probedTables = [];
+	const writer = new lib.RestoreBatchWriter(db);
+	const originalAdd = writer.add.bind(writer);
+	writer.add = (statement, after, probe) => {
+		if (probe) probedTables.push(probe.table);
+		return originalAdd(statement, after, probe);
+	};
+	assert.equal(await lib.executeDatabaseRestore(db, prepared, { writer }), null, "the whole restore ran in one pass");
+	assert.ok(probedTables.includes("messages"), "a plain table's batch is probed, as a sanity check");
+	for (const table of mergeTables)
+		assert.ok(!probedTables.includes(table), `${table} is a merge table and must never be probed`);
 });
 
 /**

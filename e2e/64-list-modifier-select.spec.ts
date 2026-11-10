@@ -115,13 +115,11 @@ test("a Shift-click range in conversation view carries every message of each con
 	await expect(page.getByText("3 selected")).toBeVisible();
 	await expect(checkbox(page, replySubject)).toBeChecked();
 
-	// Archiving the three rows archives all four messages.
-	await page
-		.getByText("3 selected")
-		.first()
-		.locator("..")
-		.getByRole("button", { name: "Archive", exact: true })
-		.click();
+	// Archiving the three rows archives all four messages. The default split-pane list, narrower with a
+	// message open, has no room for Archive inline, so it is reached through "More actions" instead.
+	const toolbar = page.getByTestId("bulk-toolbar");
+	await toolbar.getByRole("button", { name: "More actions" }).click();
+	await page.getByRole("menu").getByRole("menuitem", { name: "Archive", exact: true }).click();
 	await expect(rowFor(page, replySubject)).toHaveCount(0);
 	const params = new URLSearchParams({ status: "archived", mailboxId: root.mailboxId, limit: "100" });
 	const archived = (await (await api.get(`/api/messages?${params}`)).json()) as { messages: Array<{ id: string }> };
@@ -165,7 +163,7 @@ test("Shift+Arrow extends the selection from the focused row", async ({ page }) 
 	await expect(page.getByText("2 selected")).toBeVisible();
 	await expect(checkbox(page, c)).not.toBeChecked();
 
-	// It keeps working while the selection pane covers an open message.
+	// It keeps working with a message open.
 	await page.keyboard.press("Escape");
 	await expect(page.getByText(/\d+ selected/)).toHaveCount(0);
 	await subjectOf(page, e).click();
@@ -242,7 +240,9 @@ test("Escape with the account menu open leaves the selection alone", async ({ pa
 	await expect(page.getByText(/\d+ selected/)).toHaveCount(0);
 });
 
-test("a plain click collapses the selection, also on the message that is already open", async ({ page }) => {
+test("a plain click opens a row without collapsing an existing selection, and anchors the next range from it", async ({
+	page,
+}) => {
 	const [a, b, c] = await deliverMany(["Plain A", "Plain B", "Plain C"]);
 	await page.goto("/inbox");
 	await subjectOf(page, c).click({ modifiers: ["ControlOrMeta"] });
@@ -251,16 +251,23 @@ test("a plain click collapses the selection, also on the message that is already
 
 	await subjectOf(page, a).click();
 	await expect(page).toHaveURL(/\/msg_[\w-]+/);
-	await expect(page.getByText(/\d+ selected/)).toHaveCount(0);
-	for (const subject of [b, c]) await expect(checkbox(page, subject)).not.toBeChecked();
-
-	// The URL does not change when the open row is clicked again, yet the selection ends.
-	const openUrl = page.url();
-	await subjectOf(page, c).click({ modifiers: ["ControlOrMeta"] });
+	// Opening a to read it does not lose track of b and c, already checked; a itself is not added.
 	await expect(page.getByText("2 selected")).toBeVisible();
+	await expect(checkbox(page, a)).not.toBeChecked();
+	for (const subject of [b, c]) await expect(checkbox(page, subject)).toBeChecked();
+
+	// The URL does not change when the open row is clicked again, and the selection is still untouched.
+	const openUrl = page.url();
 	await subjectOf(page, a).click();
-	await expect(page.getByText(/\d+ selected/)).toHaveCount(0);
+	await expect(page.getByText("2 selected")).toBeVisible();
 	expect(page.url()).toBe(openUrl);
+
+	// A plain click still anchors the next range, from the row it opened: a Shift-click on b now
+	// reaches from a to b in list order, replacing the selection as any Shift-click range does.
+	await checkbox(page, b).click({ modifiers: ["Shift"] });
+	await expect(page.getByText("2 selected")).toBeVisible();
+	for (const subject of [a, b]) await expect(checkbox(page, subject)).toBeChecked();
+	await expect(checkbox(page, c)).not.toBeChecked();
 });
 
 test("Shift-click on a row checkbox selects the same range as Shift-click on the row", async ({ page }) => {

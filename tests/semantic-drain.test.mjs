@@ -284,3 +284,30 @@ test("drainDeleteTombstones is quiet, not throwing, before migration 0099 (S5 of
 	// must not throw "no such table: message_embedding_deletes" there, which would log as an error forever.
 	await drainDeleteTombstones({ DB: db });
 });
+
+test("a vector-store failure fails only the rows not yet written and never un-indexes one that was (review thread on indexer.ts)", async (t) => {
+	const { db, env } = await setup(t);
+	db.db.exec(`
+		INSERT INTO messages (id, user_id, mailbox_id, direction, from_addr, to_addr, subject, text_body, status, created_at)
+		VALUES ('m1', 'owner', 'mailbox-a', 'inbound', 'x@example.net', 'a@example.com', 'One', 'First body', 'received', 10),
+			('m2', 'owner', 'mailbox-a', 'inbound', 'x@example.net', 'a@example.com', 'Two', 'Second body', 'received', 11);
+	`);
+	let calls = 0;
+	env.VECTORS.upsert = async () => {
+		// Whichever row is written second fails (both queue in the same second, so the order is not fixed).
+		if (++calls === 2) throw new Error("vector store down");
+	};
+	env.AI = { run: async (_model, input) => ({ data: fakeVectors(input.text.length) }) };
+	await processEmbeddingBatch(env);
+	const rows = db.db
+		.prepare("SELECT status, attempts FROM message_embeddings ORDER BY status")
+		.all()
+		.map((row) => ({ ...row }));
+	assert.deepEqual(rows, [
+		{ status: "indexed", attempts: 0 },
+		{ status: "pending", attempts: 1 },
+	]);
+	// The embedding call itself succeeded: spend is settled once, never marked failed.
+	const failedUsage = db.db.prepare("SELECT count(*) AS n FROM ai_usage WHERE status = 'failed'").get().n;
+	assert.equal(failedUsage, 0);
+});

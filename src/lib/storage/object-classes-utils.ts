@@ -17,3 +17,16 @@ export function objectClassOf(key: string): ObjectClass {
 	}
 	return "system";
 }
+
+const DRIVE_KEY_PREFIX = "drive/";
+
+/**
+ * The Drive item id a `drive` class key names, or null for anything else: the inverse of `driveObjectKey`
+ * (`src/lib/drive/name-utils.ts`), kept here instead of imported from it so storage code never reaches into a
+ * module's own files for it.
+ */
+export function driveItemIdFromObjectKey(key: string): string | null {
+	if (!key.startsWith(DRIVE_KEY_PREFIX)) return null;
+	const id = key.slice(DRIVE_KEY_PREFIX.length);
+	return id || null;
+}

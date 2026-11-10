@@ -2,7 +2,7 @@
 
 import clsx from "clsx";
 import { isSendPending } from "@/lib/messages/send-state-utils";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { useKeyChanged } from "@/hooks/use-synced-state";
 import { useMailSearch } from "@/components/mail-search/mail-search-context";
@@ -16,6 +16,7 @@ import type { BulkMessageAction } from "@/app/api/messages/bulk/types";
 import type { Message } from "@/hooks/types";
 import { UpdateNoticeRow } from "@/components/update-notice-row";
 import { useRegisterUpdateList } from "@/components/update-notice-store";
+import { PartialBulkActionError } from "./bulk-action-batch-utils";
 import { useClearSelection } from "./use-clear-selection";
 import { useOpenRowBridge } from "./use-open-row-bridge";
 import { MessageListHeader } from "./message-list-header";
@@ -24,16 +25,21 @@ import { ListSectionLabel, PagerSlot } from "./message-list-pager";
 import { MessageListRow } from "./message-list-row";
 import {
 	applySelection,
+	expandSelectedThreadIds,
 	openIdFromPath,
 	planRowSelection,
 	replaceSelection,
+	resolveSelectedRows,
 	resolveSelectionAnchor,
+	toSelectedMessage,
 	type RowClickModifiers,
 } from "./message-range-selection-utils";
 import { dispatchMessageCountsDelta } from "./message-list-row-actions-utils";
 import { useConversationView } from "./use-conversation-view";
 import { useMessageListDensity, useMessageListLabels } from "./use-reading-layout";
 import { useMessageListKeyboard } from "./use-message-list-keyboard";
+import { resolveAllMatchingMessages, SELECT_ALL_MAX_MESSAGES } from "./select-all-utils";
+import { SelectAllBanner } from "./select-all-banner";
 import type { MessageFolderPageProps, SelectedMessage } from "./types";
 import {
 	getPageRange,
@@ -60,7 +66,7 @@ import { requestConfirmation } from "@/components/ui/confirm-dialog-utils";
 import { showProgressToast } from "@/components/ui/progress-toast";
 import { confirmReportPhishing } from "./phishing-report";
 import { confirmReportSpam } from "./spam-report";
-import { reportListActionError, reportReadOnlySkipped } from "./list-action-toast";
+import { reportListActionError, reportReadOnlySkipped, reportSelectAllTruncated } from "./list-action-toast";
 import { MessageMailboxLabel } from "./message-mailbox-label";
 import { useMessageAccess } from "./use-message-access";
 import { useEmailPageTitle } from "./use-email-page-title";
@@ -105,6 +111,7 @@ export function MessageFolderPage({
 	const [emptyingFolder, setEmptyingFolder] = useState(false);
 	const [unreadOnly, setUnreadOnly] = useState(false);
 	const [selecting, setSelecting] = useState(false);
+	const [resolvingSelectAll, setResolvingSelectAll] = useState(false);
 	const [conversationView] = useConversationView();
 	const [density] = useMessageListDensity();
 	const [labels] = useMessageListLabels();
@@ -153,8 +160,12 @@ export function MessageFolderPage({
 	// In conversation view a row stands for every message of its thread in this
 	// folder, so actions and drags carry all of them.
 	const rowMessageIds = (message: Message) => message.threadMessageIds ?? [message.id];
-	const expandSelectedIds = (ids: string[]) =>
-		ids.flatMap((id) => rowMessageIds(messages.find((message) => message.id === id) ?? ({ id } as Message)));
+	const expandSelectedIds = (ids: string[]) => expandSelectedThreadIds(ids, messages, selectedMessages);
+	// Once every row on the page is checked, and the folder holds more, offer to extend the selection to
+	// everything matching: capped at SELECT_ALL_MAX_MESSAGES, so the banner (and the bulk action after it) never
+	// has to resolve or act on an unbounded folder in one request.
+	const selectAllCap = Math.min(total, SELECT_ALL_MAX_MESSAGES);
+	const showSelectAllBanner = allVisibleSelected && selectedIds.length < selectAllCap;
 
 	const listKey = [query, mailboxScope, config.folder, config.folderId, unreadOnly, grouped, semanticOn].join("\u0000");
 	if (useKeyChanged(listKey)) {
@@ -165,6 +176,9 @@ export function MessageFolderPage({
 	// The setter can come from a parent's selection state and is not stable, so it is
 	// left out of the dependencies; listing it would clear the selection on every render.
 	const selectionAnchor = useRef<string | null>(null);
+	// Bumped by a view change (below) or an explicit clear, so a "Select all" result that resolves after either
+	// is discarded instead of silently repopulating a selection the user already left or cleared.
+	const selectAllGeneration = useRef(0);
 	// The open message (or draft) is the anchor of the next range, whether a click, a key or a link opened it.
 	const pathname = usePathname();
 	const openMessageId = selectedMessageId ?? openIdFromPath(pathname, config.hrefPrefix);
@@ -174,6 +188,7 @@ export function MessageFolderPage({
 	useEffect(() => {
 		selectionAnchor.current = null;
 		setSelectedMessages([]);
+		selectAllGeneration.current += 1;
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [listKey, offset]);
 
@@ -186,12 +201,43 @@ export function MessageFolderPage({
 	// An empty selection has no anchor: the next range starts from the open message or the focused row.
 	function clearSelection() {
 		selectionAnchor.current = null;
+		selectAllGeneration.current += 1;
 		clearAndLeave();
 	}
 	/** Escape: empties the selection and leaves the open message open (the pane falls back to it). */
 	function clearSelectionKeepOpen() {
 		selectionAnchor.current = null;
+		selectAllGeneration.current += 1;
 		setSelectedMessages([]);
+	}
+
+	/** "Select all N in folder": resolves every matching row from the server and replaces the selection with it. */
+	async function selectAllMatching() {
+		if (resolvingSelectAll) return;
+		const startGeneration = selectAllGeneration.current;
+		setResolvingSelectAll(true);
+		try {
+			const { messages: matched, truncated } = await resolveAllMatchingMessages(
+				config.folder,
+				mailboxScope,
+				{ query, read: unreadOnly ? "unread" : "all", group: grouped ? "thread" : undefined },
+				config.folderId,
+			);
+			// The search, filter, folder, mailbox or page changed, or the selection was cleared, while this was
+			// still resolving: applying it now would silently select mail the user can no longer see, or bring
+			// back a selection they already dismissed.
+			if (selectAllGeneration.current !== startGeneration) return;
+			selectionAnchor.current = null;
+			// Every row this selected is marked offPage, not just the ones past the loaded page: new mail or a
+			// move can push a row that was on the page out of it after the fact, and a folder-wide selection must
+			// not shrink back down to whatever the page happens to hold later; see `pruneSelection`.
+			setSelectedMessages(matched.map((message) => ({ ...toSelectedMessage(message), offPage: true })));
+			if (truncated) reportSelectAllTruncated(SELECT_ALL_MAX_MESSAGES);
+		} catch (error) {
+			reportListActionError(error);
+		} finally {
+			setResolvingSelectAll(false);
+		}
 	}
 
 	useEmailPageTitle(
@@ -206,18 +252,21 @@ export function MessageFolderPage({
 			return;
 		}
 		selectionAnchor.current = messageId;
+		// Any explicit change to the selection invalidates a "Select all" still resolving in the background, the
+		// same as a view change or a clear: letting its answer land after this would silently undo it.
+		selectAllGeneration.current += 1;
 		setSelectedMessages((current) => applySelection(current, messages, [messageId], selected));
 	}
 
 	/**
 	 * Shift-, Cmd- and Ctrl-click on a row (and Shift+Arrow). Rows beyond the loaded page are not in the list, so
-	 * a range selects only the loaded ones. A click without modifiers just becomes the anchor of the next range.
+	 * a range selects only the loaded ones. A click without modifiers just opens the row (or is on the open one
+	 * already) and becomes the anchor of the next range, leaving an existing checkbox selection as it was: opening
+	 * one message to read does not lose track of the others already checked.
 	 */
 	function selectRow(messageId: string, modifiers: RowClickModifiers | null, anchorId = selectionAnchor.current) {
 		if (!modifiers) {
-			// A plain click opens the row (or is on the open one already) and ends the selection.
 			selectionAnchor.current = messageId;
-			if (selectedIds.length > 0) setSelectedMessages([]);
 			return;
 		}
 		const plan = planRowSelection({
@@ -229,10 +278,20 @@ export function MessageFolderPage({
 			modifiers,
 		});
 		selectionAnchor.current = plan.anchorId;
+		selectAllGeneration.current += 1;
 		setSelectedMessages((current) => replaceSelection(current, messages, plan.selectedIds));
 	}
 
 	function toggleAllVisible(selected: boolean) {
+		selectAllGeneration.current += 1;
+		// Unchecking the header while the selection holds off-page entries (a resolved "Select all in folder")
+		// clears all of it: applying only to the visible rows would leave the header unchecked while the
+		// toolbar still said e.g. "975 selected," with no way back to the all-unchecked state from there.
+		if (!selected && selectedMessages.some((message) => message.offPage)) {
+			selectionAnchor.current = null;
+			setSelectedMessages([]);
+			return;
+		}
 		const visibleIds = messages.map((message) => message.id);
 		setSelectedMessages((current) => applySelection(current, messages, visibleIds, selected));
 	}
@@ -285,6 +344,46 @@ export function MessageFolderPage({
 			: runBulkMessageAction(ids, action, true, folderId);
 	}
 
+	/** Delete forever, confirmed up front: a separate path from the rest since nothing here is undoable or
+	 * optimistic, only a progress toast moving as batches complete. */
+	async function runDeleteForever(actionIds: string[]) {
+		const ids = expandSelectedIds(actionIds);
+		if (
+			!(await requestConfirmation({
+				title: t("Delete forever?"),
+				description: getPermanentDeleteConfirmText(ids.length),
+				confirmLabel: t("Delete forever"),
+			}))
+		)
+			return;
+		setPendingBulkAction(true);
+		clearSelection();
+		const progress = showProgressToast("Deleting forever", ids.length);
+		let completed = 0;
+		try {
+			const { deleted, skipped } = await deleteMessagesForever(ids, (done, _total, batch) => {
+				completed = done;
+				progress.update(done);
+				const gone = new Set(batch);
+				updateMessages((current) => current.filter((message) => !gone.has(message.id)));
+			});
+			const outcome = describePermanentDeleteResult(deleted, skipped);
+			progress[outcome.ok ? "succeed" : "fail"](outcome.message);
+		} catch (error) {
+			console.error(error);
+			progress.fail(
+				completed > 0
+					? t("Deleted {completed} of {length}. The rest could not be deleted; please try again.", {
+							completed,
+							length: ids.length,
+						})
+					: t("Could not delete the messages. Please try again."),
+			);
+		} finally {
+			setPendingBulkAction(false);
+		}
+	}
+
 	async function runSelectedAction(action: BulkMessageAction, folderId?: string) {
 		if (selectedIds.length === 0) return;
 		// The server skips read-only mail too; leaving it out here keeps the list and the toasts honest.
@@ -292,41 +391,7 @@ export function MessageFolderPage({
 		reportReadOnlySkipped(skipped, actionIds.length === 0);
 		if (actionIds.length === 0) return;
 		if (action === "delete") {
-			const ids = expandSelectedIds(actionIds);
-			if (
-				!(await requestConfirmation({
-					title: t("Delete forever?"),
-					description: getPermanentDeleteConfirmText(ids.length),
-					confirmLabel: t("Delete forever"),
-				}))
-			)
-				return;
-			setPendingBulkAction(true);
-			clearSelection();
-			const progress = showProgressToast("Deleting forever", ids.length);
-			let completed = 0;
-			try {
-				const { deleted, skipped } = await deleteMessagesForever(ids, (done, _total, batch) => {
-					completed = done;
-					progress.update(done);
-					const gone = new Set(batch);
-					updateMessages((current) => current.filter((message) => !gone.has(message.id)));
-				});
-				const outcome = describePermanentDeleteResult(deleted, skipped);
-				progress[outcome.ok ? "succeed" : "fail"](outcome.message);
-			} catch (error) {
-				console.error(error);
-				progress.fail(
-					completed > 0
-						? t("Deleted {completed} of {length}. The rest could not be deleted; please try again.", {
-								completed,
-								length: ids.length,
-							})
-						: t("Could not delete the messages. Please try again."),
-				);
-			} finally {
-				setPendingBulkAction(false);
-			}
+			await runDeleteForever(actionIds);
 			return;
 		}
 
@@ -335,7 +400,9 @@ export function MessageFolderPage({
 		setPendingBulkAction(true);
 		const previousMessages = messages;
 		const readValue = action === "read" ? true : action === "unread" ? false : null;
-		const selectedRows = messages.filter((message) => actionIds.includes(message.id));
+		// Falls back to the selection's own snapshot for a row "Select all in folder" reached past the loaded
+		// page, so a folder-wide mark read/unread still moves the sidebar Inbox count by the right amount.
+		const selectedRows = resolveSelectedRows(actionIds, messages, selectedMessages);
 		const inboxUnreadDelta = getInboxUnreadDelta(selectedRows, readValue, affectsInboxUnreadCount(config));
 		if (readValue !== null) {
 			updateMessages((current) =>
@@ -344,12 +411,38 @@ export function MessageFolderPage({
 			setSelectedMessages((current) => current.map((message) => ({ ...message, read: readValue })));
 			if (inboxUnreadDelta) dispatchMessageCountsDelta({ inboxUnreadDelta });
 		}
+		/**
+		 * Only the rows a later batch did not reach are rolled back and kept selected: a row whose action
+		 * already went through must not be flipped back only to be corrected again, and a retry (running the
+		 * action again on what is still selected) must never re-send an id that is done.
+		 */
+		function rollBackUnfinishedRows(error: PartialBulkActionError) {
+			const completed = new Set(error.completedIds);
+			const isRowDone = (rowId: string) => expandSelectedIds([rowId]).every((id) => completed.has(id));
+			const notDoneIds = new Set(actionIds.filter((id) => !isRowDone(id)));
+			if (readValue !== null && notDoneIds.size > 0) {
+				const previousById = new Map(previousMessages.map((message) => [message.id, message]));
+				updateMessages((current) =>
+					current.map((message) => (notDoneIds.has(message.id) ? (previousById.get(message.id) ?? message) : message)),
+				);
+				const revertedDelta = getInboxUnreadDelta(
+					selectedRows.filter((row) => notDoneIds.has(row.id)),
+					readValue,
+					affectsInboxUnreadCount(config),
+				);
+				if (revertedDelta) dispatchMessageCountsDelta({ inboxUnreadDelta: -revertedDelta });
+			}
+			setSelectedMessages((current) => current.filter((message) => notDoneIds.has(message.id)));
+		}
+
 		try {
 			// A declined confirmation did nothing, so the selection stays.
 			if ((await runListAction(expandSelectedIds(actionIds), action, folderId)) === LIST_ACTION_CANCELLED) return;
 			clearSelection();
 		} catch (error) {
-			if (readValue !== null) {
+			if (error instanceof PartialBulkActionError) {
+				rollBackUnfinishedRows(error);
+			} else if (readValue !== null) {
 				updateMessages(previousMessages);
 				if (inboxUnreadDelta) dispatchMessageCountsDelta({ inboxUnreadDelta: -inboxUnreadDelta });
 			}
@@ -391,6 +484,8 @@ export function MessageFolderPage({
 			),
 		selectionCount: selectedIds.length,
 		clearSelection: clearSelectionKeepOpen,
+		selectAllVisible: () => toggleAllVisible(true),
+		listVisible,
 	});
 
 	useOpenRowBridge({
@@ -401,13 +496,6 @@ export function MessageFolderPage({
 		listRef,
 		folder: config.folder,
 		folderId: config.folderId,
-	});
-
-	const registerAction = selection?.registerAction;
-	useLayoutEffect(() => {
-		if (!registerAction) return;
-		registerAction(runSelectedAction);
-		return () => registerAction(null);
 	});
 
 	const pager = buildListPager({
@@ -425,6 +513,9 @@ export function MessageFolderPage({
 
 	return (
 		<div className="flex h-full min-h-0 flex-1 flex-col" data-selection-scope="">
+			{/* The toolbar's own "{count} selected" is a text swap, not announced on its own; this live region
+			announces the count on every change, including what "Select all in folder" grows it to. Worded apart
+			from the toolbar's text so the two never collide under a plain text query. */}
 			<p role="status" aria-live="polite" className="sr-only">
 				{selectedIds.length > 0
 					? `${selectedIds.length} ${selectedIds.length === 1 ? "email" : "emails"} selected`
@@ -433,7 +524,6 @@ export function MessageFolderPage({
 			<MessageListHeader
 				config={config}
 				compact={compact || isMobile}
-				selectionInPane={compact}
 				showTitle={compact || isMobile}
 				listVisible={listVisible}
 				selecting={{
@@ -500,6 +590,15 @@ export function MessageFolderPage({
 					)}
 				>
 					<UpdateNoticeRow compact={(compact || isMobile) && config.folder !== "drafts"} density={density} />
+					{showSelectAllBanner && (
+						<SelectAllBanner
+							total={total}
+							max={SELECT_ALL_MAX_MESSAGES}
+							folderLabel={folderTitle(config)}
+							pending={resolvingSelectAll}
+							onSelectAll={() => void selectAllMatching()}
+						/>
+					)}
 					{paged && <PagerSlot pager={pager} labelled={!!sections[0]?.label} />}
 					{sections.map((section, index) => [
 						<ListSectionLabel key={`section-${section.key}`} section={section} withPager={index === 0 && paged} />,
@@ -527,6 +626,10 @@ export function MessageFolderPage({
 								}
 								canManage={access.canManage(message.mailboxId)}
 								onSelectedChange={updateSelectedMessage}
+								onLongPressSelect={(messageId) => {
+									setSelecting(true);
+									updateSelectedMessage(messageId, true);
+								}}
 								onRowClick={selectRow}
 								onMessageAction={async (messageId, action, folderId) => {
 									if (action === "spam" && !(await confirmReportSpam(1))) return;

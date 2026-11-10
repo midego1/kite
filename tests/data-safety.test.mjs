@@ -108,13 +108,15 @@ test("restore inserts split rows with different columns and reject empty rows", 
 });
 
 test("restore keeps the live storage config and restores it only into an empty install", () => {
+	// storage_cold_rules and object_locations are no longer decided here: they are always merged
+	// (MERGED_ON_RESTORE), never preserved outright or replaced outright. See the restore-engine tests.
+	const PRESERVED = ["storage_stores", "storage_routes"];
 	assert.deepEqual([...lib.preservedRestoreTables({})], []);
 	assert.deepEqual([...lib.preservedRestoreTables({ storage_stores: 0, storage_routes: 0 })], []);
-	assert.deepEqual([...lib.preservedRestoreTables({ storage_routes: 1 })], ["storage_stores", "storage_routes"]);
-	assert.deepEqual(
-		[...lib.preservedRestoreTables({ storage_stores: 2, storage_routes: 0 })],
-		["storage_stores", "storage_routes"],
-	);
+	assert.deepEqual([...lib.preservedRestoreTables({ storage_routes: 1 })], PRESERVED);
+	assert.deepEqual([...lib.preservedRestoreTables({ storage_stores: 2, storage_routes: 0 })], PRESERVED);
+	assert.deepEqual([...lib.preservedRestoreTables({ storage_cold_rules: 1 })], []);
+	assert.deepEqual([...lib.preservedRestoreTables({ object_locations: 3 })], []);
 });
 
 /** Records the size of every batch it is sent. */

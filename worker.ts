@@ -35,8 +35,8 @@ import { processBackupObjectsMessage } from "./src/lib/backups/objects";
 import { isBackupObjectsMessage } from "./src/lib/backups/objects-utils";
 import { processRestoreMessage, runRestoreMaintenance } from "./src/lib/backups/restore-job";
 import { isRestoreJobMessage } from "./src/lib/backups/restore-job-utils";
-import { processStorageMigration, runStorageMigrationMaintenance } from "./src/lib/storage/migration";
-import { isStorageMigrateMessage } from "./src/lib/storage/migration-utils";
+import { runStorageMigrationMaintenance } from "./src/lib/storage/migration";
+import { processStorageQueueMessage, runColdStorageSweep, runStorageColdMaintenance } from "./src/lib/storage/cold";
 import { processAttachmentJob, runAttachmentJobMaintenance } from "./src/lib/email/attachment-storage-jobs";
 import { isAttachmentStorageJobMessage } from "./src/lib/email/attachment-storage-jobs-utils";
 import { processAppendSent } from "./src/lib/external-accounts/submit";
@@ -231,8 +231,8 @@ export default {
 					await processBackupObjectsMessage(env, msg.body);
 				} else if (isRestoreJobMessage(msg.body)) {
 					await processRestoreMessage(env, msg.body);
-				} else if (isStorageMigrateMessage(msg.body)) {
-					await processStorageMigration(env, msg.body);
+				} else if (await processStorageQueueMessage(env, msg.body)) {
+					// A storage migration or cold storage sweep batch.
 				} else if (isAttachmentStorageJobMessage(msg.body)) {
 					await processAttachmentJob(env, msg.body);
 				} else if (isAppendSentMessage(msg.body)) {
@@ -292,6 +292,10 @@ export default {
 			);
 			// Raw MIME nothing references a day after intake (a message the queue gave up on).
 			ctx.waitUntil(sweepOrphanedRawMail(env, now).catch((error) => logger.error("email.raw_sweep_failed", { error })));
+			// Cold storage: starts a fresh sweep for every class with an enabled rule (docs/specs/drive-storage.md §10).
+			ctx.waitUntil(
+				runColdStorageSweep(env, now).catch((error) => logger.error("storage.cold_sweep_failed", { error })),
+			);
 		}
 		// Only the 5-minute trigger: both crons fire at 02:00 and a backup may still be running then.
 		if (controller.cron === "*/5 * * * *") {
@@ -314,6 +318,11 @@ export default {
 			ctx.waitUntil(
 				runStorageMigrationMaintenance(env, now).catch((error) =>
 					logger.error("storage.migration_maintenance_failed", { error }),
+				),
+			);
+			ctx.waitUntil(
+				runStorageColdMaintenance(env, now).catch((error) =>
+					logger.error("storage.cold_maintenance_failed", { error }),
 				),
 			);
 			// An attachment storage job whose batches stopped arriving (a lost message, a deploy) is sent again.

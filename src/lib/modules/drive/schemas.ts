@@ -35,4 +35,49 @@ export const driveSchemas: ModuleSchemas = {
 		input: z.object({}),
 		output: z.object({ objects: z.number().int().min(0), bytes: z.number().int().min(0) }),
 	},
+	storageColdCandidates: {
+		input: z.object({
+			cutoff: z.string().datetime({ offset: true }),
+			minBytes: z.number().int().min(0),
+			target: z.string().min(1).max(64),
+			cursor: z.string().max(64).nullable().optional(),
+			limit: z.number().int().min(1).max(200).optional(),
+		}),
+		output: z.object({
+			objects: z.array(
+				z.object({
+					id: z.string(),
+					key: z.string(),
+					size: z.number().int().min(0),
+					storeId: z.string(),
+					createdAt: z.string(),
+				}),
+			),
+			cursor: z.string().nullable(),
+		}),
+	},
+	storageMarkCold: {
+		input: z.object({
+			ids: z.array(z.string().min(1).max(64)).max(200),
+			storageClass: z.string().min(1).max(32).nullable(),
+			storeId: z.string().min(1).max(64).optional(),
+		}),
+		output: z.object({ updated: z.number().int().min(0) }),
+	},
+	fileReceipt: {
+		input: z.object({
+			messageId: z.string().min(1),
+			attachmentId: z.string().min(1).nullable(),
+			folderPath: z.array(z.string().min(1).max(80)).min(1).max(4),
+			baseName: z.string().min(1).max(150),
+		}),
+		output: z.object({
+			filed: z.boolean(),
+			emlFileId: z.string().nullable(),
+			htmlFileId: z.string().nullable(),
+			pdfFileId: z.string().nullable(),
+			attachmentFileId: z.string().nullable(),
+			skippedReason: z.string().nullable(),
+		}),
+	},
 };

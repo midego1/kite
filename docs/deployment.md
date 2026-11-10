@@ -170,6 +170,22 @@ By default every file Kite keeps (raw mail, attachments, Drive files, backups) i
 
 The Worker can only reach public `https` endpoints. Store changes, switches and deletions are written to the audit log.
 
+### Cold storage (optional)
+
+Below the stores, **Cold storage** sets one age rule per class (Mail, Drive, Backups): move objects older than a
+chosen number of days, and at least a chosen size, to cheaper storage. **R2 Infrequent Access** rewrites an
+object in place on the default Cloudflare R2 store (unavailable on the Node runtime, which has no storage
+classes); a configured S3-compatible store copies the object there, verifies it and deletes the original once
+confirmed. Opening, downloading and searching a moved message or file need no extra step: Kite finds it wherever
+it last recorded it. The card explains the trade-off: Infrequent Access bills every read and keeps an object at
+least 30 days, so it rarely pays off for mail that is read again soon; a second store has no minimum but adds a
+copy and its own read cost. **Run now** starts a sweep immediately instead of waiting for the daily job; a sweep
+already running is shown instead of a second one starting. A store a rule still targets, or that still holds
+objects an earlier sweep moved there, cannot be deleted until the rule points elsewhere or the objects are moved
+again. A rule cannot archive into a store a migration is still moving a class away from, or whose old copies a
+migration has not deleted yet (**Delete from** the old store first, or pick another target), and **Delete from** is
+refused while a turned-on rule, or a sweep still running, archives into that store.
+
 ## Email assistant and MCP
 
 The assistant uses the Workers AI `AI` binding and a separate `kite-agent` queue. The Deploy to Cloudflare button creates the queue; for a manual deploy, create it before deploying. The five-minute cron recovers pending auto-draft work; the 02:00 UTC cron still runs backups.
@@ -190,7 +206,7 @@ npx wrangler vectorize info kite-messages    # check: 1024 dimensions, cosine
 
 The metadata index must exist before the first vector is inserted, which is why both commands run before the deploy. This includes production and every Preview (they share the production database and the binding). An install that never turns the feature on still needs the index to exist once the binding is in the Worker's configuration; it stays empty until then. These are operator commands: never run `wrangler vectorize` (or any `wrangler ... --remote` command) from a Mission.
 
-Vectorize bills stored and queried vector dimensions separately from Workers AI embedding calls; neither is covered by the AI spend caps in Admin → Agent. Check current Vectorize pricing before a large backfill. Restoring a backup into a different database does not recreate its vectors: orphaned ones can be found and removed with **Clear stale vectors** in Admin → Agent → Search by meaning on the Node/Docker runtime, but Vectorize has no way to list every vector it holds, so that action is unsupported on Workers; recreating the index from scratch (delete it with `wrangler vectorize delete kite-messages`, then the two create commands above) and rebuilding from Admin is the only way to clear Workers orphans today.
+Vectorize bills stored and queried vector dimensions separately from Workers AI embedding calls; neither is covered by the AI spend caps in Admin → Agent. Check current Vectorize pricing before a large backfill. Restoring a backup into a different database does not recreate its vectors: orphaned ones can be found and removed with **Clear stale vectors** in Admin → Agent → Search by meaning on the Node/Docker runtime, but Vectorize has no way to list every vector it holds, so that action is unsupported on Workers; to clear Workers orphans, turn the feature off in Admin → Agent → Search by meaning first (this deletes every vector Kite still tracks and every `message_embeddings` row), then delete the index with `wrangler vectorize delete kite-messages`, run the two create commands above, and turn the feature on again, which embeds all mail again (**Rebuild index** alone would not: it keeps each row's content hash, so it treats mail as already indexed and never restores vectors an index no longer holds).
 
 Off Workers, the Node/Docker runtime needs no Vectorize index: it searches a local file (`data/vectors.sqlite`) instead, and the embedding provider is either the Workers AI REST API (`CF_ACCOUNT_ID` and `CF_TOKEN`) or an OpenAI-compatible endpoint serving `bge-m3`, configured in Admin.
 

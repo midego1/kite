@@ -5,6 +5,7 @@ import { newId } from "@/lib/ids";
 import { acceptAssistantRequest } from "@/lib/agent/email/intake";
 import { resolveInboundAddress } from "@/lib/email/routing";
 import { getMessageContactNames } from "@/lib/contacts/service";
+import { findSpoofedSenderContact } from "@/lib/contacts/spoofed-sender";
 import { getEmailAddress } from "@/lib/email/address";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { listMessageAttachments } from "@/lib/email/attachments";
@@ -173,13 +174,30 @@ export async function getMessageWithBodyForUser(env: CloudflareEnv, user: Sessio
 	const access = await getMailboxAccessLevel(db, user, row.mailboxId);
 	if (!access?.canRead) return null;
 	const message = await loadMessageBody(env, row);
-	const contactNames = await getMessageContactNames(env, message.userId, message.fromAddr, message.toAddr);
-	const attachments = await listMessageAttachments(env, messageId);
-	const unsubscribeUrl = await getUnsubscribeUrlFromRawR2Key(env, message.rawR2Key);
-	const sendState = (await loadSendStates(db, [message], user.id)).get(message.id);
-	const via = (await loadMessageVia(env, [message])).get(message.id);
+	const [contactNames, attachments, unsubscribeUrl, sendStates, viaById, spoofedMatch] = await Promise.all([
+		getMessageContactNames(env, message.userId, message.fromAddr, message.toAddr),
+		listMessageAttachments(env, messageId),
+		getUnsubscribeUrlFromRawR2Key(env, message.rawR2Key),
+		loadSendStates(db, [message], user.id),
+		loadMessageVia(env, [message]),
+		// A failed or slow contact scan must never keep the message itself from opening.
+		message.direction === "inbound"
+			? findSpoofedSenderContact(env, message.userId, message.fromAddr).catch(() => null)
+			: Promise.resolve(null),
+	]);
+	const sendState = sendStates.get(message.id);
+	const via = viaById.get(message.id);
+	// The matched address is the mailbox owner's own contact: a delegate without full access
+	// (who could not open Contacts and see it there either) learns only that a name matched one.
+	const spoofedContact = spoofedMatch === null ? null : access.canManage ? spoofedMatch : true;
 	return {
-		message: { ...message, ...contactNames, ...(sendState ? { sendState } : {}), ...(via ? { via } : {}) },
+		message: {
+			...message,
+			...contactNames,
+			...(sendState ? { sendState } : {}),
+			...(via ? { via } : {}),
+			spoofedContact,
+		},
 		body: message,
 		attachments,
 		unsubscribeUrl,

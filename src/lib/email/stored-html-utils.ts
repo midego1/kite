@@ -102,7 +102,7 @@ const VOID_TAGS = new Set(["br", "col", "hr", "img", "wbr"]);
 
 // Dropped together with everything inside: code, controls, frames and foreign content.
 // Other elements outside the allowlist are unwrapped and keep their text.
-const DROP_CONTENT_TAGS = new Set([
+export const DROP_CONTENT_TAGS = new Set([
 	"applet",
 	"iframe",
 	"math",

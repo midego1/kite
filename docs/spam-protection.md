@@ -42,6 +42,12 @@ Mail in Spam is not read by automatic reading and gets no automatic reply, notif
 
 Kite accepts mail before this analysis. Forward-only routing occurs before stored-message filtering and is outside the filter's v1 scope.
 
+### The reader's warning
+
+A message that stayed in the Inbox still shows what its authentication found: a failed SPF, DKIM or DMARC check, a DKIM signature that passed but was not issued for the From domain, a Reply-To address on a different domain than the message, or a display name that reuses a contact you have saved or mailed before with a different address, all show as a calm warning above the message, listing only the checks that actually apply, plus a small "Unverified sender" badge next to the sender's name there and on that message in the conversation. A passing DMARC check, the same way it does for the score above, outweighs a failed SPF check or a DKIM signature that passed but was not aligned: a forwarder or mailing list that fails SPF, or an ESP that signs with its own domain but aligns on SPF, is a common, legitimate pattern that still passes DMARC, so neither shows as a warning once DMARC itself passed. A message that passed cleanly shows neither, known contact or not, and a message from before this feature shipped (`messages.spam_signals` empty or missing) shows no authentication concern either way. The display-name check is the one exception: it is computed fresh from your current contacts whenever the message loads rather than read from `spam_signals`, so even a message that predates this feature, or whose stored signals are otherwise empty, still gets the warning if its sender's name reuses a contact at a different address. Nothing is re-checked beyond that: SPF, DKIM, DMARC and the Reply-To check all come straight from the signals already described above, and the display-name match reuses the same trusted-contact lookup automatic reading already makes when a sender's name matches a contact at a different address.
+
+On a shared mailbox, the matched contact's address is shown only to the owner and a full-access user; anyone else with access sees that the name matched a contact of the mailbox, not which one, so a delegate can never use this warning to learn an address they could not already see in Contacts.
+
 ## Forged headers and sender names
 
 A sender writes its own From name, `Message-ID`, `In-Reply-To` and `References`. Kite does not let those headers change what you already have (upstream Mailflare #220, #223, #224, #226):

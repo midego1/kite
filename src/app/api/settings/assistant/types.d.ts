@@ -15,4 +15,13 @@ export type AssistantSettingsResponse = {
 	instructionsMaxLength: number;
 	/** The writing style opt-in; `available` is false until migration 0070 is applied. */
 	writingStyle: { enabled: boolean; available: boolean };
+	/** Assistant by email (migration 0096); `ready` is false until that migration is applied. */
+	emailAssistant: {
+		enabled: boolean;
+		mailboxId: string | null;
+		dailyLimit: number;
+		ready: boolean;
+		/** The user's own personal mailboxes, for the mailbox picker a verified extra address's requests run in. */
+		mailboxes: { id: string; label: string }[];
+	};
 };

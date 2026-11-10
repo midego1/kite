@@ -3,19 +3,24 @@ import { requestConfirmation } from "@/components/ui/confirm-dialog-utils";
 import { authFetch } from "@/lib/auth/client";
 import { draftDeletionConfirmation, draftsNeedingConfirmation } from "./bulk-request-utils";
 
+/** Posts one bulk-action request as the server sees it, with no drafts-confirmation handling of its own: a
+ * caller that batches a selection across several requests (`runBulkMessageAction`) decides how to combine
+ * what each batch says before asking about it, rather than this function asking once per batch. */
+export function postBulkMessageBatch(payload: BulkMessagePayload, deleteDrafts?: boolean): Promise<Response> {
+	return authFetch("/api/messages/bulk", {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify(deleteDrafts ? { ...payload, deleteDrafts } : payload),
+	});
+}
+
 /**
  * Posts a bulk message action. When a Delete or Trash selection holds the user's own drafts, the server changes
  * nothing and says how many; this asks first, because a draft is deleted for good rather than moved to Trash,
  * and sends the request again with `deleteDrafts`. Resolves to null when the user cancels.
  */
 export async function postBulkMessageAction(payload: BulkMessagePayload): Promise<Response | null> {
-	const send = (deleteDrafts?: boolean) =>
-		authFetch("/api/messages/bulk", {
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify(deleteDrafts ? { ...payload, deleteDrafts } : payload),
-		});
-	const response = await send();
+	const response = await postBulkMessageBatch(payload);
 	if (response.status !== 409) return response;
 	const body = (await response
 		.clone()
@@ -24,5 +29,5 @@ export async function postBulkMessageAction(payload: BulkMessagePayload): Promis
 	const drafts = draftsNeedingConfirmation(response.status, body);
 	if (drafts === null) return response;
 	if (!(await requestConfirmation(draftDeletionConfirmation(drafts)))) return null;
-	return send(true);
+	return postBulkMessageBatch(payload, true);
 }

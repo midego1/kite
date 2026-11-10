@@ -20,6 +20,7 @@ import {
 } from "./manual-context";
 import { auditMailbox, editPlan, manualFields, type ManagedMailbox } from "./manual-utils";
 import { rowJson, subscriptionView, type SubscriptionRow } from "./record-utils";
+import { receiptsDeleteGuard } from "./receipt-delete-guard";
 import { subscriptionRemovalSnapshot } from "./removal-snapshot";
 import { ownerRow } from "./subscriptions";
 import { manualVendorKey, messageVendor, senderAddress, vendorKey } from "./vendor-utils";
@@ -154,15 +155,24 @@ export function changeSubscription(user: FinanceUser, id: string, raw: unknown):
 }
 
 /** `DELETE /api/finance/subscriptions/[id]`: removes the row and its documents, as `delete_subscription`. */
-export function removeSubscription(user: FinanceUser, id: string): Promise<FinanceAnswer> {
+export function removeSubscription(user: FinanceUser, id: string, acknowledge = false): Promise<FinanceAnswer> {
 	return answering(async () => {
 		const target = await rowForChange(user, id);
 		if ("answer" in target) return target.answer;
+		const snapshot = await subscriptionRemovalSnapshot(target.row);
+		const guarded =
+			(await receiptsDeleteGuard("finance_subscriptions", [target.row.id], acknowledge)) ??
+			(await receiptsDeleteGuard(
+				"finance_charges",
+				snapshot.removed.documents.map((document) => document.id).filter((id): id is string => typeof id === "string"),
+				acknowledge,
+			));
+		if (guarded) return guarded;
 		const executed = await executeFinanceAction(user, {
 			capability: "deleteSubscription",
 			mailboxId: target.mailboxId,
 			input: { subscriptionId: target.row.id },
-			before: await subscriptionRemovalSnapshot(target.row),
+			before: snapshot,
 		});
 		if ("answer" in executed) return executed.answer;
 		return ok({ actionId: executed.actionId });

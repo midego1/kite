@@ -1,9 +1,10 @@
 "use client";
 
 import clsx from "clsx";
-import { useRef, useState, type PointerEvent, type ReactNode } from "react";
+import { forwardRef, useImperativeHandle, useRef, useState, type PointerEvent, type ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 import { toInlineDelta } from "@/components/interface-direction-utils";
+import { TOUCH_GESTURE_INTENT_DISTANCE } from "./touch-gesture-thresholds";
 
 type SwipeAction = {
 	label: string;
@@ -20,17 +21,40 @@ type SwipeableRowProps = {
 	endAction: SwipeAction;
 	disabled?: boolean;
 	role?: string;
+	/**
+	 * Called once the drag captures the pointer, so a sibling gesture (the row's own long press) can cancel
+	 * itself: a captured pointer's later move and up events are retargeted to this element, so they never reach
+	 * a handler on a child of it again.
+	 */
+	onDragStart?: () => void;
 };
 
 const COMMIT_DISTANCE = 88;
-const INTENT_DISTANCE = 10;
+const INTENT_DISTANCE = TOUCH_GESTURE_INTENT_DISTANCE;
+
+/** Disarms a pending or active swipe without triggering its action: a sibling gesture (the row's own long
+ * press) that fires first needs this, since the same finger moving on from there would otherwise still read
+ * as the start of a swipe here. */
+export type SwipeableRowHandle = { cancel: () => void };
 
 // Touch-only swipe gestures; vertical scrolling stays with the browser via touch-action: pan-y.
-export function SwipeableRow({ children, startAction, endAction, disabled, role }: SwipeableRowProps) {
+export const SwipeableRow = forwardRef<SwipeableRowHandle, SwipeableRowProps>(function SwipeableRow(
+	{ children, startAction, endAction, disabled, role, onDragStart },
+	ref,
+) {
 	const [offset, setOffset] = useState(0);
 	const [dragging, setDragging] = useState(false);
 	const gesture = useRef<{ x: number; y: number; active: boolean; id: number } | null>(null);
 	const swiped = useRef(false);
+
+	useImperativeHandle(ref, () => ({
+		cancel() {
+			gesture.current = null;
+			swiped.current = false;
+			setDragging(false);
+			setOffset(0);
+		},
+	}));
 
 	function onPointerDown(event: PointerEvent<HTMLDivElement>) {
 		if (disabled || event.pointerType === "mouse") return;
@@ -52,6 +76,7 @@ export function SwipeableRow({ children, startAction, endAction, disabled, role 
 			current.active = true;
 			setDragging(true);
 			event.currentTarget.setPointerCapture(event.pointerId);
+			onDragStart?.();
 		}
 		setOffset(dx);
 	}
@@ -117,4 +142,4 @@ export function SwipeableRow({ children, startAction, endAction, disabled, role 
 			</div>
 		</div>
 	);
-}
+});

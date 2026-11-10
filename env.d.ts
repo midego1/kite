@@ -4,7 +4,7 @@ interface CloudflareEnv {
 	BUCKET: R2Bucket;
 	INBOUND_QUEUE: Queue<import("./src/lib/email/inbound").InboundQueueMessage>;
 	// The agent queue also carries writing style backfills, background IMAP import jobs, connected-account syncs,
-	// connected-account authentication rechecks and Money Watch payment scans.
+	// connected-account authentication rechecks, Money Watch payment scans and its "Keep receipts" backfill.
 	AGENT_QUEUE?: Queue<
 		| { kind: "agent.draft"; jobId: string }
 		| { kind: "agent.triage"; jobId: string }
@@ -15,6 +15,7 @@ interface CloudflareEnv {
 		| import("./src/lib/external-accounts/sync-utils").ExternalWritebackMessage
 		| import("./src/lib/external-accounts/auth-recheck-utils").AuthRecheckMessage
 		| import("./src/lib/finance/payment-scan").PaymentScanMessage
+		| import("./src/lib/finance/receipt-backfill").BackfillMessage
 		| { kind: "agent.assistant_email"; requestId: string }
 		// Search by meaning (docs/specs/semantic-search.md): triggers the drain; cheap and idempotent.
 		| { kind: "search.embed" }
@@ -33,7 +34,7 @@ interface CloudflareEnv {
 	 * compatible embedding provider, instead of `VECTORIZE`/`AI`, which `wrangler dev` cannot emulate locally without
 	 * remote access; ignored in production. */
 	SEMANTIC_TEST_STORE?: string;
-	// The outbound queue also carries webhook retries, manual backup exports, full-backup object copies and storage migration batches and attachment storage job batches, so that neither needs an extra binding.
+	// The outbound queue also carries webhook retries, manual backup exports, full-backup object copies, storage migration batches, cold storage batches and attachment storage job batches, so that neither needs an extra binding.
 	OUTBOUND_QUEUE: Queue<
 		| import("./src/lib/email/send").OutboundQueueMessage
 		| import("./src/lib/email/webhooks").WebhookRetryMessage
@@ -42,6 +43,7 @@ interface CloudflareEnv {
 		| import("./src/lib/backups/objects-types").BackupObjectsMessage
 		| import("./src/lib/backups/restore-job-types").RestoreJobMessage
 		| import("./src/lib/storage/migration-utils").StorageMigrateMessage
+		| import("./src/lib/storage/cold-utils").StorageColdMessage
 		| import("./src/lib/email/attachment-storage-jobs-types").AttachmentStorageJobMessage
 		| import("./src/lib/external-accounts/submit-utils").AppendSentMessage
 	>;

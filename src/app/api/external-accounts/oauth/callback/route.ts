@@ -13,12 +13,13 @@ function backToSettings(request: Request, path: string): Response {
 /**
  * Where Microsoft sends the browser back after sign-in (`${APP_URL}/api/external-accounts/oauth/callback`, spec §15.1).
  * The state is single-use and belongs to the signed-in user who started the sign-in, so this link cannot be used by
- * anyone else, or twice.
+ * anyone else, or twice. Without a session it answers 401 like any other API route.
  */
 export async function GET(request: Request) {
 	const env = getEnv();
 	const auth = await requireSessionUser(env, request);
-	if (auth.error) return backToSettings(request, oauthResultPath({ ok: false, reason: "expired" }));
+	// Like every other API route, no session is a 401: nothing about the state is read or used without one.
+	if (auth.error) return auth.error;
 	const outcome = await completeMicrosoftSignIn(env, auth.user, new URL(request.url).searchParams);
 	return backToSettings(request, oauthResultPath(outcome));
 }

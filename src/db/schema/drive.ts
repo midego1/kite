@@ -157,3 +157,54 @@ export const driveUserQuotas = sqliteTable("drive_user_quotas", {
 		.notNull()
 		.$defaultFn(() => new Date()),
 });
+
+/**
+ * A folder on a WebDAV server (Nextcloud, ownCloud, a NAS) linked into its owner's Drive (migration 0107).
+ * `base_url` is the linked folder itself, ending in `/`; `password` is the app password, sealed with
+ * `APP_ENCRYPTION_KEY` and never returned, logged or carried by a backup. Nothing of the folder's contents is
+ * copied into the database: every listing and transfer is proxied to the server.
+ */
+export const driveMounts = sqliteTable(
+	"drive_mounts",
+	{
+		id: text("id").primaryKey(),
+		ownerId: text("owner_id")
+			.notNull()
+			.references(() => users.id, { onDelete: "cascade" }),
+		kind: text("kind", { enum: ["webdav"] })
+			.notNull()
+			.default("webdav"),
+		label: text("label").notNull(),
+		baseUrl: text("base_url").notNull(),
+		username: text("username").notNull(),
+		password: text("password").notNull(),
+		/** `auth_failed` after the server refused the password (or a restore emptied it), until it is updated. */
+		status: text("status", { enum: ["ok", "auth_failed"] })
+			.notNull()
+			.default("ok"),
+		lastError: text("last_error"),
+		createdAt: integer("created_at", { mode: "timestamp" })
+			.notNull()
+			.$defaultFn(() => new Date()),
+		updatedAt: integer("updated_at", { mode: "timestamp" })
+			.notNull()
+			.$defaultFn(() => new Date()),
+	},
+	(t) => [index("drive_mounts_owner_idx").on(t.ownerId)],
+);
+
+/**
+ * One lease per upload to a linked folder in progress (migration 0107), so a user has at most
+ * `MAX_MOUNT_UPLOADS_PER_USER` at a time. A lease left by a crashed request stops counting at `expires_at`.
+ */
+export const driveMountUploads = sqliteTable(
+	"drive_mount_uploads",
+	{
+		id: text("id").primaryKey(),
+		ownerId: text("owner_id")
+			.notNull()
+			.references(() => users.id, { onDelete: "cascade" }),
+		expiresAt: integer("expires_at", { mode: "timestamp" }).notNull(),
+	},
+	(t) => [index("drive_mount_uploads_owner_idx").on(t.ownerId, t.expiresAt)],
+);

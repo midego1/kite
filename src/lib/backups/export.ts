@@ -76,6 +76,9 @@ const BACKUP_TABLES: DatabaseBackupTable[] = [
 	"drive_links",
 	"drive_settings",
 	"drive_user_quotas",
+	// Linked WebDAV folders (migration 0107), exported without their app passwords (`redactBackupRow`) and restored
+	// waiting for their owner to enter it again.
+	"drive_mounts",
 	"auto_reply_deliveries",
 	"spam_token_stats",
 	"spam_reputation",
@@ -165,6 +168,8 @@ const INTERNAL_TABLES = [
 	// Drive multipart parts of uploads in progress: the store's upload ids they
 	// name do not survive a restore, so the parts would only point at nothing.
 	"drive_upload_parts",
+	// Leases of uploads to linked WebDAV folders in progress (migration 0107): they end with their request.
+	"drive_mount_uploads",
 	// Storage migration jobs: transient work that points at the live stores, so replaying one into a
 	// restored database would restart a copy between stores that may no longer match.
 	"storage_migrations",

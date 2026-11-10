@@ -45,6 +45,7 @@ export type DatabaseBackupTable =
 	| "drive_links"
 	| "drive_settings"
 	| "drive_user_quotas"
+	| "drive_mounts"
 	| "email_templates"
 	| "calendar_events"
 	| "booking_events"

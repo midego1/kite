@@ -572,6 +572,8 @@ Tests: unit tests for the age and size rules and for read-through via `object_lo
 
 ## 11. External storage (phase 4, outline; needs phase 1)
 
+> **WebDAV shipped** (migration 0107, user docs in [docs/drive.md](../drive.md#linked-folders-webdav)). Deviations from this outline: there is no `root_path` column, since `base_url` is the linked folder itself; uploads are a single streamed `PUT` of at most 100 MB (no chunked upload yet); the address guard follows the object storage policy (`STORAGE_ALLOW_PRIVATE_ENDPOINTS` on Node, `STORAGE_ALLOW_INSECURE_ENDPOINT` for loopback outside production) and also checks every redirect target, and only `GET` and `PROPFIND` follow a redirect, without the credentials when it leaves the origin.
+
 - **WebDAV first** (Nextcloud, ownCloud, most NAS devices). Table `drive_mounts(id, owner_id, kind: "webdav", label, base_url, username, password sealed, root_path, status, last_error, created_at)`, in the Drive schema file. A mount appears as a linked folder in the Drive nav.
 - Operations are proxied: PROPFIND (Depth 1) for listing, GET with Range, PUT streaming (Nextcloud chunked upload v2 for files over 32 MiB), MKCOL, MOVE, DELETE. Nothing is copied into D1. Mounted items have no Kite share links and do not count toward the quota in v1.
 - Add a small namespace-tolerant multistatus parser (`webdav-xml-utils.ts`; `src/lib/aws/xml.ts` only has `xmlTag`). Do not add a new dependency.

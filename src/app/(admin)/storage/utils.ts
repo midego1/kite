@@ -38,6 +38,7 @@ export async function storageRequest<T>(path: string, init?: RequestInit & { jso
 			field: data.field,
 			code: data.code,
 			permission: data.permission,
+			leftoverCount: data.leftoverCount,
 		});
 	return data;
 }

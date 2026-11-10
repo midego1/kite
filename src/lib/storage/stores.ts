@@ -25,7 +25,9 @@ import { storedEndpoint } from "./endpoint-utils";
 import { ACTIVE_MIGRATION_STATUSES, VALIDATION_FRESH_MS } from "./migration-utils";
 import { listStorageMigrations } from "./migration";
 import { callStorageHook } from "./module-hooks";
+import { usageByClass } from "./usage";
 import { coldOrphanCount, coldReferenceBlocking } from "./cold";
+import { leftoverOverview, leftoversBlockingDelete } from "./cold-leftovers-state";
 import { S3Bucket } from "./s3-bucket";
 import { corsRuleJson } from "./s3-utils";
 import { presetFor } from "./s3-presets-utils";
@@ -36,7 +38,6 @@ import { readDirectUploadsState, type DirectUploadsState } from "./direct-upload
 import { completeStorageAttempt, recordStorageAttempt } from "./test-limit";
 import { createLogger } from "@/lib/logger.mjs";
 import { validateStore, validateStoreCors } from "./validate";
-import { ATTACHMENT_OBJECT_ROWS_SQL } from "@/lib/email/attachment-storage-utils";
 
 const log = createLogger("storage");
 
@@ -50,6 +51,9 @@ export type Failure = {
 	steps?: ValidationStep[];
 	/** The form field a 400 is about, so the dialog shows the message under it. */
 	field?: string;
+	/** `LEFTOVERS_ONLY` (`leftoversBlockingDelete`): only leftover copies stop a store deletion. */
+	code?: string;
+	leftoverCount?: number;
 };
 export type Result<T> = ({ ok: true } & T) | Failure;
 
@@ -77,8 +81,7 @@ export type StoreView = {
 	source: "database" | "environment";
 	blocked: string | null;
 	usedBy: RoutableClass[];
-	/** Cold-moved copies tracked as orphan candidates on this store right now; shown read-only, since nothing in
-	 * this release deletes them (round-9 review, `B6`). */
+	/** Leftover copies of cold storage moves tracked on this store right now (`cold-leftovers.ts`). */
 	leftoverCount: number;
 };
 
@@ -136,33 +139,6 @@ export function migrationView(job: MigrationRow) {
 	};
 }
 
-async function sumOf(env: StoresEnv, sql: string): Promise<{ objects: number; bytes: number }> {
-	try {
-		const row = await env.DB.prepare(sql).first<{ objects: number; bytes: number | null }>();
-		return { objects: Number(row?.objects ?? 0), bytes: Number(row?.bytes ?? 0) };
-	} catch {
-		return { objects: 0, bytes: 0 };
-	}
-}
-
-/** Objects and bytes per class from D1; raw messages have no recorded size, so mail bytes cover attachments only. */
-async function usageByClass(env: StoresEnv) {
-	const [raws, attachments, backups, drive] = await Promise.all([
-		sumOf(env, "SELECT count(*) AS objects, 0 AS bytes FROM messages WHERE raw_r2_key IS NOT NULL"),
-		sumOf(
-			env,
-			`SELECT count(*) AS objects, sum(size) AS bytes FROM (SELECT max(size) AS size FROM message_attachments WHERE ${ATTACHMENT_OBJECT_ROWS_SQL} GROUP BY r2_key)`,
-		),
-		sumOf(env, "SELECT count(*) AS objects, sum(size) AS bytes FROM backups WHERE r2_key IS NOT NULL"),
-		callStorageHook<{ objects: number; bytes: number }>("drive", "usage", {}).catch(() => null),
-	]);
-	return {
-		mail: { objects: raws.objects + attachments.objects, bytes: attachments.bytes },
-		drive: { objects: drive?.objects ?? 0, bytes: drive?.bytes ?? 0 },
-		backups,
-	};
-}
-
 /** Everything the Storage page shows; nothing in it is a secret. */
 export async function storageOverview(env: StoresEnv) {
 	const config = await readStorageConfig(env);
@@ -170,6 +146,7 @@ export async function storageOverview(env: StoresEnv) {
 	const policy = endpointPolicyFor(env);
 	const directUploads = stores.some((store) => store.sameAsBinding && !store.blocked);
 	const state = await readDirectUploadsState(env).catch(() => ({}) as DirectUploadsState);
+	const leftovers = await leftoverOverview(env);
 	return {
 		// Direct uploads are the default on Cloudflare: until they are on, the Storage page and the Admin overview
 		// remind the owner (with why the automatic setup failed, when it ran), unless dismissed.
@@ -182,7 +159,9 @@ export async function storageOverview(env: StoresEnv) {
 			name: isNodeRuntime(env) ? "Local files" : "Cloudflare R2",
 			kind: isNodeRuntime(env) ? "files" : "r2",
 			directUploads,
+			leftoverCount: leftovers.byStore[DEFAULT_STORE_ID] ?? 0,
 		},
+		leftovers,
 		stores,
 		routes: ROUTABLE_CLASSES.map((objectClass) => {
 			const route = config.routes.get(objectClass);
@@ -369,6 +348,9 @@ export async function deleteStore(env: StoresEnv, actor: Actor, id: string): Pro
 		)
 		.limit(1);
 	if (migration) return fail(409, "A running migration uses this store; cancel it or let it finish first");
+	// Checked last, so the answer offers "Delete leftovers" only when nothing else stands in the way.
+	const leftovers = await leftoversBlockingDelete(env, id);
+	if (leftovers) return fail(409, leftovers.error, leftovers);
 	await getDb(env).delete(storageStores).where(eq(storageStores.id, id));
 	clearStorageConfigCache();
 	await createAuditLog(env, {

@@ -41,6 +41,7 @@
 	"/api/admin/storage/cloudflare",
 	"/api/admin/storage/cold/[class]",
 	"/api/admin/storage/cold",
+	"/api/admin/storage/leftovers",
 	"/api/admin/storage/migrations/[id]",
 	"/api/admin/storage/reminder",
 	"/api/admin/storage",

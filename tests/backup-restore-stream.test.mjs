@@ -50,6 +50,8 @@ await build({
 			export { readRestoreJob, writeRestoreJob } from "./src/lib/backups/restore-job-store.ts";
 			export { restoreRowError } from "./src/lib/backups/restore-utils.ts";
 			export { runStorageColdMaintenance, updateColdRule, runColdStorageSweep, processStorageQueueMessage } from "./src/lib/storage/cold.ts";
+			export { purgeLeftovers } from "./src/lib/storage/cold-leftovers.ts";
+			export { saveLeftoverSettings } from "./src/lib/storage/cold-leftovers-state.ts";
 			export { clearStorageConfigCache } from "./src/lib/storage/config.ts";
 			export { sealSetting } from "./src/lib/security/secret-box.ts";
 			export { createStorageRouter } from "./src/lib/storage/router.ts";
@@ -725,6 +727,9 @@ test("an abandoned restore (needsRecovery) keeps the sweep off until the safety 
 		"INSERT INTO backups (id, status, `trigger`, r2_key, filename, size, created_at, completed_at) VALUES ('bak-full', 'completed', 'manual', 'backups/database/full.json', 'full.json', 1, 1, 2)",
 	);
 
+	// The automatic leftover cleanup is on, with the shortest grace period.
+	await lib.saveLeftoverSettings(env, "owner", { automatic: true, graceDays: 1 });
+
 	// Dies after the deletes segment lands (both messages gone) and is never redelivered, like a worker that
 	// crashed or a deploy that replaced it; nothing resumes it on its own.
 	await dieDuringRestore(db, env, 1, true, {});
@@ -751,6 +756,14 @@ test("an abandoned restore (needsRecovery) keeps the sweep off until the safety 
 		"still off, even past what would otherwise be the full grace period",
 	);
 	assert.ok(coldTargetObjects().has("inbound/cold.eml"), "the cold copy itself was never touched");
+	// Neither leftover cleanup touches anything either, manual or automatic, however long recovery waits.
+	for (const days of [1, 8, 30]) {
+		const at = new Date(Date.now() + days * 24 * 60 * 60_000);
+		const run = await lib.purgeLeftovers(env, { trigger: "manual", limit: 50, now: at });
+		assert.equal(run.skipped, "restore", "a restore that needs recovery keeps the cleanup off");
+		await lib.runStorageColdMaintenance(env, at);
+	}
+	assert.ok(coldTargetObjects().has("inbound/cold.eml"), "still untouched by the leftover cleanup");
 
 	// The admin runs the safety recovery: both messages come back, and needsRecovery finally clears.
 	await lib.startSafetyRecovery(env, "owner");
@@ -837,6 +850,16 @@ test("an undo more than 7 days after a restore still finds the cold mail the saf
 		"kept: the safety backup was completed after this copy's own moved_at",
 	);
 	assert.ok(db.db.prepare("SELECT 1 FROM storage_cold_orphans WHERE key = 'inbound/newcold.eml'").get());
+	// The leftover cleanup, by hand and automatic, keeps it for as long as the safety backup is retained: that
+	// backup can bring the message (and its reference to this copy) back.
+	await lib.saveLeftoverSettings(env, "owner", { automatic: true, graceDays: 7 });
+	for (const days of [8, 16, 30, 31]) {
+		const at = new Date(Date.now() + 2 * 60 * 60_000 + days * 24 * 60 * 60_000);
+		const run = await lib.purgeLeftovers(env, { trigger: "manual", limit: 50, now: at });
+		assert.equal(run.deleted, 0, `day ${days}: ${JSON.stringify(run)}`);
+		await lib.runStorageColdMaintenance(env, at);
+		assert.ok(coldTargetObjects().has("inbound/newcold.eml"), `day ${days}: kept`);
+	}
 
 	// The documented undo: restoring that same safety backup brings both messages back.
 	await lib.startStoredRestore(env, safetyId, "owner");

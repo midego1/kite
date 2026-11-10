@@ -291,26 +291,70 @@ function hostOf(value: string): string | null {
 	}
 }
 
+/** `value` with each ASCII `%XX` escape decoded once; non-ASCII and invalid escapes are left alone. */
+function decodeEscapesOnce(value: string): string {
+	return value.replace(/%([0-9a-f]{2})/gi, (escape, hex: string) => {
+		const code = Number.parseInt(hex, 16);
+		return code < 0x80 ? String.fromCharCode(code) : escape;
+	});
+}
+
 /** ASCII `%XX` escapes decoded, up to three rounds (a destination escaped twice); invalid escapes are left alone. */
 function decodeEscapes(value: string): string {
 	let decoded = value;
 	for (let round = 0; round < 3; round++) {
-		const next = decoded.replace(/%([0-9a-f]{2})/gi, (escape, hex: string) => {
-			const code = Number.parseInt(hex, 16);
-			return code < 0x80 ? String.fromCharCode(code) : escape;
-		});
+		const next = decodeEscapesOnce(decoded);
 		if (next === decoded) break;
 		decoded = next;
 	}
 	return decoded;
 }
 
+// What a destination starts with once decoded: `https://`, `https:/`, `https:host` or a scheme-relative `//`.
+// `https:%2F…` is a still-escaped address, not one.
+const DESTINATION_START = /^\s*(?:https?:(?!%)|\/\/)/i;
+
+/**
+ * The hostnames an `awstrack.me` link (`/L0/<escaped address>/1/<id>`) leads to, read the way a browser reads the
+ * address after the link is unescaped: the part after `/L0/` is decoded (once, twice and three times, since the
+ * tracker's own decoding is not known) and each result that starts like an address is parsed with `new URL`, which
+ * puts anything before an `@` in the user-info, however odd. Null when nothing can be read: no `/L0/` part, no
+ * result that starts like an address, or one that does not parse.
+ */
+function awstrackHosts(href: string): string[] | null {
+	let url: URL;
+	try {
+		url = new URL(href.trim());
+	} catch {
+		return null;
+	}
+	if (!url.pathname.startsWith("/L0/")) return null;
+	const rest = url.pathname.slice("/L0/".length) + url.search + url.hash;
+	const candidates: string[] = [];
+	let current = rest;
+	for (let round = 0; round < 3; round++) {
+		const next = decodeEscapesOnce(current);
+		if (next === current) break;
+		candidates.push(next);
+		current = next;
+	}
+	if (candidates.length === 0) candidates.push(rest);
+	const hosts: string[] = [];
+	for (const candidate of candidates) {
+		if (!DESTINATION_START.test(candidate)) continue;
+		const address = candidate.trim();
+		const host = hostOf(address.startsWith("//") ? `https:${address}` : address);
+		if (!host) return null;
+		hosts.push(host);
+	}
+	return hosts.length > 0 ? hosts : null;
+}
+
 // `https://host`, `https:/host` and `https:host` (browsers read all three alike), or a scheme-relative `//host`.
 const EMBEDDED_ADDRESS = /(?:https?:\/{0,2}|\/\/)([^\s/?#"'<>]+)/gi;
 
 /**
- * The hosts of addresses written in the path, query and fragment of a tracking link, in order, so the first one is
- * where a transparent tracker leads. The authority (host and user-info) is the tracker's own and never scanned.
+ * The hosts of addresses written in the path, query and fragment of a tracking link, in order. The authority (host and user-info) is the tracker's own and never scanned.
  * The rest is decoded tolerantly (a bad escape elsewhere hides nothing) and `\` counts as `/`, as browsers read it.
  * A scheme-relative `//host` counts only for a name with a dot.
  */
@@ -350,8 +394,8 @@ export function linkVerdict(href: string, text: string, senderDomain?: string | 
 	if (!shown || !target || sameRegistrableDomain(shown, target)) return "ok";
 	const domain = registrableDomain(target);
 	if (CLICK_TRACKERS.has(domain)) {
-		const [destination] = embeddedHosts(href);
-		return destination && sameRegistrableDomain(destination, shown) ? "ok" : "mismatch";
+		const hosts = awstrackHosts(href);
+		return hosts && hosts.every((host) => sameRegistrableDomain(host, shown)) ? "ok" : "mismatch";
 	}
 	if (OPAQUE_CLICK_TRACKERS.has(domain)) {
 		if (embeddedHosts(href).some((host) => !sameRegistrableDomain(host, shown))) return "mismatch";

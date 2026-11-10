@@ -207,6 +207,37 @@ test("a transparent tracker is judged by the first address in it, however the ad
 	assert.equal(flagged("https%253A%252F%252Fbank.com%252F"), false, "escaped twice, the shown site");
 });
 
+test("an awstrack destination is read the way a browser reads it, user-info and all", () => {
+	const flagged = (path, shown = "bank.com") =>
+		linkVerdict(`https://abc.r.us-east-1.awstrack.me/L0/${path}`, shown) === "mismatch";
+	// Characters the browser accepts in user-info before the @ that decide nothing about the host.
+	for (const odd of ["%22", "%27", "'", "%20", "%3C", "%3E", "%09"])
+		assert.equal(flagged(`https:%2F%2Fbank.com${odd}@evil.test%2F/1/x`), true, `bank.com${odd}@evil.test`);
+	// The first address does not parse, so a later one cannot decide.
+	assert.equal(flagged("https:%2F%2Fu:p%22x@evil.test%2F%3Fr=https:%2F%2Fbank.com/1/x"), true);
+	assert.equal(flagged("https:%2F%2Fu:p%22x@evil.test%2F/1/x"), true);
+	assert.equal(
+		flagged("https:%2F%2Fbad host%2F%3Fr%3Dhttps:%2F%2Fbank.com/1/x"),
+		true,
+		"an address that fails to parse",
+	);
+	assert.equal(flagged("https:%2F%2F%3Fr%3Dhttps:%2F%2Fbank.com/1/x"), true, "an empty host");
+	// Read after one decode, the host is evil.test: a second decode must not turn it into bank.com.
+	assert.equal(flagged("https:%2F%2Fbank.com%252F@evil.test/1/x"), true, "escaped twice");
+	assert.equal(flagged("https:%2F%2Fbank.com%25252F@evil.test/1/x"), true, "escaped three times");
+	assert.equal(flagged("https:%2F%2Fbank.com%252F%2540evil.test/1/x"), true);
+	// Only a destination right after /L0/ is read.
+	assert.equal(linkVerdict("https://abc.awstrack.me/L1/https:%2F%2Fbank.com%2F/1/x", "bank.com"), "mismatch");
+	assert.equal(linkVerdict("https://abc.awstrack.me/x/L0/https:%2F%2Fbank.com%2F/1/x", "bank.com"), "mismatch");
+	// Real destinations keep passing, with user-info that is the shown site's own, a port or a trailing dot.
+	assert.equal(flagged("https:%2F%2Fbank.com%2Flogin%3Fa%3D1%26b%3D2/1/x"), false);
+	assert.equal(flagged("https:%2F%2Fu:p@bank.com%2F/1/x"), false, "user-info, then the shown host");
+	assert.equal(flagged("https:%2F%2Fwww.bank.com:443%2Flogin/1/x"), false);
+	assert.equal(flagged("https:%2F%2Fbank.com.%2Flogin/1/x"), false);
+	assert.equal(flagged("https:%2F%2Fbank.com%2Fgo%3Fu%3Dhttps%253A%252F%252Fother.test/1/x"), false, "a later address");
+	assert.equal(flagged("https:%2F%2Fbank.com%2Fx", "https://www.bank.com/"), false);
+});
+
 test("a transparent tracker's own authority is never scanned for a destination", () => {
 	const user = "https://u%2F%2Fbank.com%2F@a1.awstrack.me/L0/https:%2F%2Fevil.test%2F/1/x";
 	assert.equal(linkVerdict(user, "bank.com", "bank.com"), "mismatch", "user-info naming the shown site");

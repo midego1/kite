@@ -456,7 +456,7 @@
 	"Related messages can be grouped into one row per conversation instead of one per message. Turn it on or off under Settings → Inbox.": "يمكن تجميع الرسائل المرتبطة في صف واحد لكل محادثة بدلاً من صف لكل رسالة. فعّل هذا الخيار أو أوقفه من الإعدادات ← البريد الوارد.",
 	"Remove": "إزالة",
 	"Remove star": "إزالة النجمة",
-	"Remove this, even though it has saved copies in Drive?": "إزالة هذا العنصر مع أنه توجد نسخ محفوظة منه في Drive؟",
+	"Remove this, even though it may have saved copies in Drive?": "إزالة هذا العنصر مع أنه قد توجد نسخ محفوظة منه في Drive؟",
 	"Remove {entry}": "إزالة {entry}",
 	"Removed {vendor}": "أُزيلت {vendor}",
 	"Rename": "إعادة تسمية",
@@ -770,7 +770,7 @@
 	"{method} passed": "نجح {method}",
 	"{name} connected accounts": "الحسابات المرتبطة بـ {name}",
 	"{name} profile picture": "صورة الملف الشخصي لـ {name}",
-	"{pending} could not be saved right now (for example, Drive storage is full) and will be tried again automatically": "تعذّر حفظ {pending} الآن (على سبيل المثال، امتلاء مساحة Drive) وستتم إعادة المحاولة تلقائيًا",
+	"{pending} could not be saved right now (for example, Drive storage is full). Choose “Save receipts for existing payments” again to retry them.": "تعذّر حفظ {pending} الآن (على سبيل المثال، امتلاء مساحة Drive). اختر \"حفظ الإيصالات للمدفوعات الحالية\" مرة أخرى لإعادة المحاولة.",
 	"{start} - {end} of {total}": "{start} - {end} من {total}",
 	"{title}. Show all mail through this account": "{title}. إظهار كل البريد عبر هذا الحساب",
 	"{value} {caption}": "{value} {caption}",
@@ -779,5 +779,5 @@
 	"Found by meaning, not exact words": "عُثر عليه حسب المعنى، لا حسب الكلمات الحرفية",
 	"Show all {count} keyword matches": "إظهار كل التطابقات حسب الكلمات المفتاحية ({count})",
 	"Showing keyword matches only — search by meaning is unavailable right now.": "يتم عرض التطابقات حسب الكلمات المفتاحية فقط — البحث حسب المعنى غير متوفر حاليًا.",
-	"“Keep receipts” already saved a copy of this mail to Drive, under Money Watch/Receipts. Removing this entry does not remove those files.": "ميزة \"الاحتفاظ بالإيصالات\" حفظت نسخة من هذه الرسالة في Drive، تحت Money Watch/Receipts. إزالة هذا العنصر لا تؤدي إلى إزالة تلك الملفات."
+	"“Keep receipts” may already have saved a copy of this mail to Drive, under Money Watch/Receipts. Removing this entry does not remove those files.": "ربما حفظت ميزة \"الاحتفاظ بالإيصالات\" نسخة من هذه الرسالة في Drive، تحت Money Watch/Receipts. إزالة هذا العنصر لا تؤدي إلى إزالة تلك الملفات."
 }

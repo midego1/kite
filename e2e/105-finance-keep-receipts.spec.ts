@@ -164,14 +164,16 @@ test.describe("Keep receipts", () => {
 
 			await page.reload();
 			await rowAction(page, payment.id, "Remove");
-			const confirm = page.getByRole("alertdialog", { name: "Remove this, even though it has saved copies in Drive?" });
+			const confirm = page.getByRole("alertdialog", {
+				name: "Remove this, even though it may have saved copies in Drive?",
+			});
 			await expect(confirm).toBeVisible();
 			await confirm.getByRole("button", { name: "Cancel" }).click();
 			await expect(row(page, payment.id)).toBeVisible();
 
 			await rowAction(page, payment.id, "Remove");
 			await page
-				.getByRole("alertdialog", { name: "Remove this, even though it has saved copies in Drive?" })
+				.getByRole("alertdialog", { name: "Remove this, even though it may have saved copies in Drive?" })
 				.getByRole("button", { name: "Remove" })
 				.click();
 			await expect(row(page, payment.id)).toHaveCount(0);
@@ -219,14 +221,16 @@ test.describe("Keep receipts", () => {
 			await fileReceiptsInTheBackground(account);
 
 			await rowAction(page, payment.id, "Remove");
-			const confirm = page.getByRole("alertdialog", { name: "Remove this, even though it has saved copies in Drive?" });
+			const confirm = page.getByRole("alertdialog", {
+				name: "Remove this, even though it may have saved copies in Drive?",
+			});
 			await expect(confirm).toBeVisible();
 			await confirm.getByRole("button", { name: "Cancel" }).click();
 			await expect(row(page, payment.id)).toBeVisible();
 
 			await rowAction(page, payment.id, "Remove");
 			await page
-				.getByRole("alertdialog", { name: "Remove this, even though it has saved copies in Drive?" })
+				.getByRole("alertdialog", { name: "Remove this, even though it may have saved copies in Drive?" })
 				.getByRole("button", { name: "Remove" })
 				.click();
 			await expect(row(page, payment.id)).toHaveCount(0);

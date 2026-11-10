@@ -326,3 +326,42 @@ test("the inline Move to trigger actually opens its dropdown in the single-pane 
 	await expect(confirm).toBeVisible();
 	await confirm.getByRole("button", { name: "Cancel" }).click();
 });
+
+test("the count keeps its number whole at the narrowest list width, whatever the words do", async ({ page }) => {
+	const subject = `Toolbar count ${uniqueToken()}`;
+	const message = await deliverTo("inbox", subject);
+	await page.setViewportSize({ width: 1400, height: 900 });
+	await page.goto(`/inbox/${message.id}`);
+	await expect(page.getByRole("heading", { level: 1, name: subject })).toBeVisible();
+	await applyListWidth(page, 250);
+	await expect(async () => expectListWidth(page, 250)).toPass({ timeout: 10_000 });
+	await rowFor(page, subject).getByRole("checkbox").check();
+	const number = toolbar(page).locator("[data-selected-count-number]");
+	await expect(number).toHaveText("1");
+	const clipped = await number.evaluate((element) => element.scrollWidth > element.clientWidth);
+	expect(clipped, "the number is never the part that is cut").toBe(false);
+	// The full message stays the accessible text and the tooltip, truncated or not.
+	await expect(page.getByText(/^1 selected$/)).toHaveAttribute("title", "1 selected");
+});
+
+test("switching the interface to Arabic keeps the checked messages", async ({ browser }) => {
+	const subject = `Toolbar arabic ${uniqueToken()}`;
+	await deliverTo("inbox", subject);
+	const context = await browser.newContext({ locale: "en-US", storageState: STORAGE_STATE });
+	const page = await context.newPage();
+	// Keeps this account's layout from syncing to the shared admin's (see e2e/101-interface-language).
+	await page.addInitScript(() => localStorage.setItem("kite-layout-sync", "off"));
+	await page.goto("/inbox");
+	await rowFor(page, subject).getByRole("checkbox").check();
+	await expect(page.getByText(/^\d+ selected$/)).toBeVisible();
+
+	await page.getByRole("button", { name: "Open account menu" }).click();
+	await page.getByRole("radio", { name: "العربية", exact: true }).click();
+	// No Escape to close the menu: on the list it is the shortcut that clears the selection, which is not what is tested.
+	await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
+
+	await expect(rowFor(page, subject).getByRole("checkbox")).toBeChecked();
+	await expect(page.getByTestId("bulk-toolbar")).toBeVisible();
+	await expect(page.getByTestId("bulk-toolbar").locator("[data-selected-count-number]")).toHaveText(/^[\d١-٩٠]+$/);
+	await context.close();
+});

@@ -60,7 +60,8 @@ const { moduleHost } = await load("host");
 const { fileOneReceipt, receiptCandidates, filedSourceIds, sweepReceipts } = await load("receipts");
 const { receiptsEnabledFor, setReceiptsEnabled } = await load("settings");
 const { receiptsDeleteGuard, RECEIPTS_IN_DRIVE_ERROR } = await load("guard");
-const { startReceiptBackfill, ownerBackfill, backfillReceipts, resumeReceiptBackfills } = await load("backfill");
+const { startReceiptBackfill, beginBackfillRow, ownerBackfill, backfillReceipts, resumeReceiptBackfills } =
+	await load("backfill");
 const { ensureFolderPath } = await load("driveReceipts");
 const { createFolder, bulkItems } = await load("driveItems");
 const { purgeDrive } = await load("driveRetention");
@@ -1083,4 +1084,35 @@ test("two simultaneous presses of the backfill button leave one running backfill
 	const rows = db.db.prepare("SELECT status FROM finance_receipt_backfills WHERE user_id = 'owner'").all();
 	assert.equal(rows.length, 1);
 	assert.equal(rows[0].status, "running");
+});
+
+test("the backfill upsert never resets a run that is already going, but starts a finished one over", async (t) => {
+	const { db } = await setup(t);
+	const earlier = Math.floor((Date.now() - 60_000) / 1000);
+	db.db
+		.prepare(
+			`INSERT INTO finance_receipt_backfills (user_id, status, scanned, filed, skipped, pending, lease_until, started_at, updated_at)
+			 VALUES ('owner', 'running', 40, 30, 10, 2, ?, ?, ?)`,
+		)
+		.run(earlier + 300, earlier, earlier);
+
+	// A second press that read the row before it was running (or raced its insert) reaches the upsert itself.
+	await beginBackfillRow("owner", new Date());
+	const stillRunning = await ownerBackfill("owner");
+	assert.equal(stillRunning.status, "running");
+	assert.deepEqual(
+		[stillRunning.scanned, stillRunning.filed, stillRunning.skipped, stillRunning.pending],
+		[40, 30, 10, 2],
+		"the counters of the run in progress are kept",
+	);
+	assert.equal(Math.floor(stillRunning.startedAt.getTime() / 1000), earlier, "and so is its start");
+	assert.ok(stillRunning.leaseUntil, "and its lease");
+
+	db.db.prepare("UPDATE finance_receipt_backfills SET status = 'done' WHERE user_id = 'owner'").run();
+	const now = new Date();
+	await beginBackfillRow("owner", now);
+	const restarted = await ownerBackfill("owner");
+	assert.equal(restarted.status, "running");
+	assert.deepEqual([restarted.scanned, restarted.filed, restarted.skipped, restarted.pending], [0, 0, 0, 0]);
+	assert.equal(restarted.leaseUntil, null);
 });

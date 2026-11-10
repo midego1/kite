@@ -9,7 +9,7 @@ import type { ReplyMode } from "./types";
 import { useT } from "@/lib/i18n/use-t";
 
 export const MORE_ITEM_CLASS =
-	"flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm text-neutral-700 hover:bg-neutral-100 pointer-coarse:py-3 disabled:text-neutral-400";
+	"flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm text-neutral-700 hover:bg-neutral-100 pointer-coarse:py-3 disabled:cursor-not-allowed disabled:text-neutral-400";
 
 /**
  * One action of the reader toolbar's row. An action that has overflowed stays rendered, but invisible and out of

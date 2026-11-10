@@ -288,7 +288,7 @@ export default function MessageDetailPage() {
 								/>
 								<div className="flex-1 min-w-0">
 									<p className="text-sm text-neutral-900 mt-1.25 flex flex-row items-center gap-1 w-full  overflow-hidden">
-										<b dir="auto" className="whitespace-nowrap">
+										<b dir="auto" className="min-w-0 whitespace-nowrap">
 											<ContactCard
 												mailboxId={message.mailboxId}
 												address={message.fromAddr}
@@ -296,7 +296,7 @@ export default function MessageDetailPage() {
 												ownAddress={ownAddress}
 												ownAddresses={ownAddresses}
 												tooltip={false}
-												triggerClassName="rounded-sm text-start hover:underline"
+												triggerClassName="block max-w-full truncate rounded-sm text-start hover:underline"
 											>
 												{fromName}
 											</ContactCard>

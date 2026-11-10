@@ -493,7 +493,8 @@ export function MessageActions({
 							<button
 								key={item.action}
 								type="button"
-								className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm text-neutral-700 hover:bg-neutral-100 pointer-coarse:py-3"
+								className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm text-neutral-700 hover:bg-neutral-100 pointer-coarse:py-3 disabled:cursor-not-allowed disabled:text-neutral-400 disabled:hover:bg-transparent"
+								disabled={manageDisabled}
 								onClick={() => void runAction(item.action)}
 							>
 								{createElement(item.icon, { size: 16 })}

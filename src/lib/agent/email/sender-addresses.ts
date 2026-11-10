@@ -69,7 +69,7 @@ export class SenderAddressesPendingError extends Error {
 }
 
 export type AddSenderAddressResult =
-	{ ok: true } | { ok: false; error: string; code: "INSTALL_DOMAIN" | "RATE_LIMITED" };
+	{ ok: true } | { ok: false; error: string; code: "INSTALL_DOMAIN" | "RATE_LIMITED" | "LIMIT_REACHED" };
 
 function toRow(row: typeof assistantSenderAddresses.$inferSelect): SenderAddressRow {
 	return { id: row.id, address: row.address, verified: !!row.verifiedAt, createdAt: row.createdAt };
@@ -344,9 +344,15 @@ export async function addSenderAddress(
 	const id = newId("ases");
 	try {
 		if (!(await insertSenderAddressRow(db, id, userId, normalized, codeHash, codeExpiresAt, now))) {
-			// This user's own MAX_SENDER_ADDRESSES cap; the reservation above still counted for them.
+			// This user's own MAX_SENDER_ADDRESSES cap (the reservation above still counted for them): said out loud,
+			// since "a code was sent" for an address that was never added would leave them waiting for a mail. It
+			// reveals nothing about the address itself, only how many of their own they hold.
 			await markUnminted(db, reservation, normalized);
-			return { ok: true };
+			return {
+				ok: false,
+				code: "LIMIT_REACHED",
+				error: `You can have at most ${MAX_SENDER_ADDRESSES} extra addresses. Remove one to add another.`,
+			};
 		}
 	} catch (error) {
 		if (!isUniqueViolation(error)) throw error;

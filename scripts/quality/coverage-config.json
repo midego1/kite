@@ -175,6 +175,7 @@
 		"src/lib/calendar/ics-parse-utils.ts",
 		"src/lib/calendar/utils.ts",
 		"src/lib/calendar/webhook-event-utils.ts",
+		"src/lib/contacts/spoofed-sender-utils.ts",
 		"src/lib/finance/amount-utils.ts",
 		"src/lib/finance/badge-utils.ts",
 		"src/lib/finance/answer-utils.ts",

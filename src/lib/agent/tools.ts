@@ -1,4 +1,5 @@
-import { and, count, desc, eq, inArray, isNull, lt, ne, or, type SQL } from "drizzle-orm";
+import { and, count, desc, eq, inArray, isNull, ne, or, type SQL } from "drizzle-orm";
+import { afterCursor } from "@/lib/messages/cursor-sql";
 import { z } from "zod";
 import { getDb, type AppDatabase } from "@/db";
 import { agentDraftMetadata, domains, mailboxes, messages } from "@/db/schema";
@@ -136,7 +137,7 @@ export const emailToolDescriptions: Record<EmailToolName, string> = {
 	get_email: "Read one email and its attachment metadata without marking it read.",
 	get_thread: "Read the recent conversation containing an email before drafting a reply.",
 	search_emails:
-		'Search email subject and body in this mailbox. Use mode: "meaning" (or the default "both") for questions about topics, not exact words, such as \'the quote for the roof repair\'; use "keyword" to match exact words only.',
+		'Search email subject and body in this mailbox. Use mode: "meaning" (or the default "both") for questions about topics, not exact words, such as \'the quote for the roof repair\'; use "keyword" to match exact words only. Keyword results page newest first: pass the returned nextCursor as cursor for the next page (meaning results are ranked by relevance and have no cursor).',
 	count_emails:
 		'Count emails in this mailbox matching an optional search query, folder, and read state with one exact database count. Use this for any "how many" question instead of listing or searching and counting results yourself.',
 	draft_email: "Save a new email draft. This never sends.",
@@ -158,8 +159,9 @@ export const emailToolDescriptions: Record<EmailToolName, string> = {
 
 export const EMAIL_TOOL_NAMES = Object.keys(emailToolSchemas) as EmailToolName[];
 
-const INVALID_CURSOR_MESSAGE =
-	"Invalid pagination cursor. To start from the first page, omit cursor or set it to null. For later pages, use only the nextCursor returned by list_emails for this mailbox and folder; never invent a cursor or use a page number or offset.";
+function invalidCursorMessage(tool: "list_emails" | "search_emails") {
+	return `Invalid pagination cursor. To start from the first page, omit cursor or set it to null. For later pages, use only the nextCursor returned by ${tool} for this mailbox${tool === "search_emails" ? ", query and mode" : ""} and folder; never invent a cursor or use a page number or offset.`;
+}
 
 async function createDraft(
 	context: AgentToolContext,
@@ -323,7 +325,7 @@ async function loadEmailPage(
 			.select(messageColumnsWithoutBodies)
 			.from(messages)
 			.where(and(...conditions))
-			.orderBy(desc(messages.createdAt))
+			.orderBy(desc(messages.createdAt), desc(messages.id))
 			.limit(pageSize + 1),
 	);
 	return {
@@ -343,8 +345,10 @@ async function listOrSearchEmails(
 	const { hybridIds, note } =
 		name === "search_emails" ? await resolveSearchEmailsQuery(context, conditions, input) : { hybridIds: null };
 	if (input.cursor) {
-		const cursor = await ownMessage(context, input.cursor as string, INVALID_CURSOR_MESSAGE);
-		conditions.push(lt(messages.createdAt, cursor.createdAt));
+		// The same keyset as the message list, so mail stored in the same second as the cursor is neither
+		// skipped nor repeated across pages.
+		const cursor = await ownMessage(context, input.cursor as string, invalidCursorMessage(name));
+		conditions.push(afterCursor(messages.createdAt, messages.id, { createdAt: cursor.createdAt, id: cursor.id }));
 	}
 	const { rows, nextCursor } = await loadEmailPage(db, conditions, hybridIds, input.limit as number);
 	return { emails: rows, nextCursor, ...(note ? { note } : {}) };

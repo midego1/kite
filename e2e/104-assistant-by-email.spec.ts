@@ -202,3 +202,30 @@ for (const variant of [
 		await expect(panel.getByRole("link", { name: "Open" })).toBeVisible();
 	});
 }
+
+test("an address refused at the five-address limit shows the reason, not a sent-code message", async ({ page }) => {
+	await page.setViewportSize({ width: 1280, height: 900 });
+	await mockAssistantEmailSettings(page);
+	await page.route("**/api/settings/assistant/email-senders", (route) =>
+		route.request().method() === "POST"
+			? route.fulfill({
+					status: 409,
+					json: {
+						error: "You can have at most 5 extra addresses. Remove one to add another.",
+						code: "LIMIT_REACHED",
+					},
+				})
+			: route.fulfill({ json: { addresses: [{ id: "ases-1", address: "me@phone.test", verified: true }] } }),
+	);
+	await page.addInitScript(() => localStorage.setItem("kite-assistant-layout", "floating"));
+	await page.goto("/inbox");
+	const toggle = page.getByRole("button", { name: /^(Open|Close) email assistant$/ });
+	await expect(toggle).toBeVisible();
+	if ((await toggle.getAttribute("aria-expanded")) !== "true") await toggle.click();
+	const panel = page.getByRole("region", { name: "Email assistant" });
+	await panel.getByRole("button", { name: "Assistant settings" }).click();
+	await panel.getByLabel("New address").fill("extra@phone.test");
+	await panel.getByRole("button", { name: "Add", exact: true }).click();
+	await expect(panel.getByRole("status").filter({ hasText: "at most 5 extra addresses" })).toBeVisible();
+	await expect(panel.getByText("a code was sent")).toHaveCount(0);
+});

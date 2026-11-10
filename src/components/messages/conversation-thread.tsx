@@ -306,7 +306,7 @@ export function ConversationMessageCard({
 									)}
 								>
 									<span dir="auto">{sender}</span>
-									<SenderAuthBadge warning={senderAuthWarning} className="ms-1" />
+									<SenderAuthBadge warning={senderAuthWarning} className="ms-1" interactive={false} />
 									{expanded && <span className="text-xs ms-1 opacity-50 font-normal">&lt;{senderEmail}&gt;</span>}
 								</span>
 								{expanded && recipients && (

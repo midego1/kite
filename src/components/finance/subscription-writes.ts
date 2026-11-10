@@ -64,9 +64,9 @@ export const subscriptionPath = (id: string) => `/api/finance/subscriptions/${en
 
 function confirmReceiptsRemoval(): Promise<boolean> {
 	return requestConfirmation({
-		title: t("Remove this, even though it has saved copies in Drive?"),
+		title: t("Remove this, even though it may have saved copies in Drive?"),
 		description: t(
-			"“Keep receipts” already saved a copy of this mail to Drive, under Money Watch/Receipts. Removing this entry does not remove those files.",
+			"“Keep receipts” may already have saved a copy of this mail to Drive, under Money Watch/Receipts. Removing this entry does not remove those files.",
 		),
 		confirmLabel: t("Remove"),
 	});

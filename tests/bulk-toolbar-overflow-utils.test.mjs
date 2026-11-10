@@ -72,3 +72,34 @@ test("an unmeasured item (width 0, not yet laid out) is treated as free and incl
 	const visible = packToolbarActions(500, 0, TOOLBAR_GAP_PX, [{ id: "pending", width: 0 }]);
 	assert.deepEqual([...visible], ["pending"]);
 });
+
+test("skipOversized leaves out an item that does not fit and still tries the smaller ones after it", () => {
+	// The 1440 / list 700 reader: a wide "Reply all" first, then icon-only actions with room for two of them.
+	const reader = [
+		{ id: "replyAll", width: 120 },
+		{ id: "archive", width: 32 },
+		{ id: "snooze", width: 32 },
+		{ id: "move", width: 40 },
+	];
+	// budget 90: replyAll (120) cannot fit, archive (32) + gap + snooze (32) = 72 does, move would make 120.
+	const visible = packToolbarActions(190, 100, TOOLBAR_GAP_PX, reader, { skipOversized: true });
+	assert.deepEqual([...visible], ["archive", "snooze"]);
+});
+
+test("without skipOversized the same row shows nothing, which is the bulk toolbar's predictable order", () => {
+	const reader = [
+		{ id: "replyAll", width: 120 },
+		{ id: "archive", width: 32 },
+	];
+	assert.deepEqual([...packToolbarActions(190, 100, TOOLBAR_GAP_PX, reader)], []);
+});
+
+test("skipOversized still puts the gap between the items it keeps", () => {
+	const row = [
+		{ id: "a", width: 50 },
+		{ id: "b", width: 50 },
+		{ id: "c", width: 10 },
+	];
+	// budget 100: a (50) + gap (8) + b (50) = 108 > 100, skipped; c: 50 + 8 + 10 = 68 fits.
+	assert.deepEqual([...packToolbarActions(200, 100, TOOLBAR_GAP_PX, row, { skipOversized: true })], ["a", "c"]);
+});

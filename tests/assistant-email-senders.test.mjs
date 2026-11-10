@@ -182,14 +182,25 @@ test("adding stops at the per-user cap and never throws for someone else's addre
 	for (let i = 0; i < MAX_SENDER_ADDRESSES; i += 1) {
 		await insertPending(database, { id: `row-${i}`, userId: "alice", address: `alice-${i}@phone.test`, code: "1" });
 	}
-	await addSenderAddress(env, db, "alice", "alice-new@phone.test");
+	const atCap = await addSenderAddress(env, db, "alice", "alice-new@phone.test");
 	assert.equal((await listSenderAddresses(db, "alice")).length, MAX_SENDER_ADDRESSES, "the cap was not exceeded");
+	// Said out loud rather than answering "code sent" for an address that was never added.
+	assert.equal(atCap.ok, false);
+	assert.equal(atCap.code, "LIMIT_REACHED");
+	assert.match(atCap.error, /at most 5 extra addresses/);
 
 	await insertPending(database, { id: "bobs", userId: "bob", address: "shared@phone.test", code: "1" });
 	// Someone else's address: addSenderAddress must not throw, and must not create a second row for it.
 	const result = await addSenderAddress(env, db, "alice", "shared@phone.test");
-	assert.equal(result.ok, true);
+	assert.equal(result.ok, false, "alice is at her cap, whoever holds the address");
+	assert.equal(result.code, "LIMIT_REACHED");
 	assert.equal((await listSenderAddresses(db, "alice")).length, MAX_SENDER_ADDRESSES);
+
+	// Under the cap, someone else's address still answers like a fresh one and never throws.
+	await database.db.prepare("DELETE FROM assistant_sender_addresses WHERE id = 'row-0'").run();
+	const underCap = await addSenderAddress(env, db, "alice", "shared@phone.test");
+	assert.equal(underCap.ok, true);
+	assert.equal((await listSenderAddresses(db, "alice")).length, MAX_SENDER_ADDRESSES - 1);
 });
 
 test("an address on a domain of this install is refused outright, never silently", async (t) => {

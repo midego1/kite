@@ -18,7 +18,11 @@ function naturalHeadWidth(head: HTMLElement | null) {
 	if (!label) return head.getBoundingClientRect().width;
 	const margin = parseFloat(getComputedStyle(label).marginInlineEnd) || 0;
 	const maxWidth = parseFloat(getComputedStyle(head).maxWidth);
-	const natural = label.scrollWidth + margin;
+	// The label's parts (the number and the words around it) shrink on their own; each part's scrollWidth is its
+	// untruncated width, whereas the label's own scrollWidth would only report the shrunken boxes.
+	const parts = Array.from(label.children) as HTMLElement[];
+	const natural =
+		(parts.length > 0 ? parts.reduce((sum, part) => sum + part.scrollWidth, 0) : label.scrollWidth) + margin;
 	return Number.isFinite(maxWidth) ? Math.min(natural, maxWidth) : natural;
 }
 

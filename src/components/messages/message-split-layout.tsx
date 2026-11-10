@@ -2,7 +2,7 @@
 
 import clsx from "clsx";
 import { usePathname } from "next/navigation";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useSidebar } from "@/components/sidebar-state";
 import { useAssistantOpen } from "@/components/agent/assistant-open-state";
 import { readColumnWidth, readInitialColumnWidth, saveColumnWidth } from "@/components/column-width-preferences";
@@ -32,6 +32,7 @@ import { ReadingPaneEmptyState } from "./reading-pane-empty-state";
 import { LIST_HEIGHT, LIST_WIDTH, foldHingeStyle, foldListBounds, useFoldSplit } from "./use-fold-split";
 import { folderTitle } from "./utils";
 import type { MessageListVisibility, MessageSplitLayoutProps, SelectedMessage } from "./types";
+import { useSurvivingSelection } from "./use-surviving-selection";
 import { BootStep } from "@/components/boot-step";
 import { useT } from "@/lib/i18n/use-t";
 
@@ -84,6 +85,13 @@ export function MessageSplitLayout({ children, config }: MessageSplitLayoutProps
 	const t = useT();
 	const pathname = usePathname();
 	const [selectedMessages, setSelectedMessages] = useState<SelectedMessage[]>([]);
+	const selectionListIdentity = useRef<string | null>(null);
+	useSurvivingSelection(selectedMessages, setSelectedMessages, selectionListIdentity);
+	const claimSelectionList = useCallback((identity: string) => {
+		if (selectionListIdentity.current === identity) return false;
+		selectionListIdentity.current = identity;
+		return true;
+	}, []);
 	const [listWidth, setListWidth] = useState(LIST_WIDTH.fallback);
 	const [listHeight, setListHeight] = useState(LIST_HEIGHT.fallback);
 	const [manualListVisible, setManualListVisible] = useState(true);
@@ -308,6 +316,7 @@ export function MessageSplitLayout({ children, config }: MessageSplitLayoutProps
 							selection={{
 								selectedMessages,
 								setSelectedMessages,
+								claimList: claimSelectionList,
 								leaveOpenMessage,
 								registerRowLookup: rowLookup.register,
 							}}

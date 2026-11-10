@@ -1,23 +1,13 @@
-import { and, countDistinct, desc, eq, getTableColumns, lt, or, sql } from "drizzle-orm";
-import type { SQL } from "drizzle-orm";
+import { and, countDistinct, desc, eq, getTableColumns, sql } from "drizzle-orm";
 import { messages } from "@/db/schema";
 import { conversationKey } from "@/lib/messages/conversation-key";
-import type { MessageListCursor } from "@/lib/messages/cursor-types";
+import { afterCursor } from "@/lib/messages/cursor-sql";
 import type { ConversationPage, ConversationPageInput, MessageListColumns } from "./types";
 
 export function getMessageListColumns(): MessageListColumns {
 	return Object.fromEntries(
 		Object.entries(getTableColumns(messages)).filter(([name]) => name !== "textBody" && name !== "htmlBody"),
 	) as MessageListColumns;
-}
-
-/** Rows strictly after `cursor` in `created_at DESC, id DESC` order. */
-export function afterCursor(
-	createdAt: Parameters<typeof lt>[0],
-	id: Parameters<typeof lt>[0],
-	cursor: MessageListCursor,
-): SQL {
-	return or(lt(createdAt, cursor.createdAt), and(eq(createdAt, cursor.createdAt), lt(id, cursor.id)))!;
 }
 
 /**

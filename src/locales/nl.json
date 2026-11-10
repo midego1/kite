@@ -456,7 +456,7 @@
 	"Related messages can be grouped into one row per conversation instead of one per message. Turn it on or off under Settings → Inbox.": "Gerelateerde berichten kunnen worden gegroepeerd tot één regel per gesprek in plaats van één per bericht. Zet dit aan of uit onder Instellingen → Inbox.",
 	"Remove": "Verwijderen",
 	"Remove star": "Ster verwijderen",
-	"Remove this, even though it has saved copies in Drive?": "Dit toch verwijderen, ook al zijn er kopieën opgeslagen in Drive?",
+	"Remove this, even though it may have saved copies in Drive?": "Dit toch verwijderen, ook al zijn er mogelijk kopieën opgeslagen in Drive?",
 	"Remove {entry}": "{entry} verwijderen",
 	"Removed {vendor}": "{vendor} verwijderd",
 	"Rename": "Hernoemen",
@@ -770,7 +770,7 @@
 	"{method} passed": "{method} geslaagd",
 	"{name} connected accounts": "Gekoppelde accounts van {name}",
 	"{name} profile picture": "Profielfoto van {name}",
-	"{pending} could not be saved right now (for example, Drive storage is full) and will be tried again automatically": "{pending} kon nu niet worden opgeslagen (bijvoorbeeld omdat de Drive-opslag vol is) en wordt automatisch opnieuw geprobeerd",
+	"{pending} could not be saved right now (for example, Drive storage is full). Choose “Save receipts for existing payments” again to retry them.": "{pending} kon nu niet worden opgeslagen (bijvoorbeeld omdat de Drive-opslag vol is). Kies 'Bonnen bewaren voor bestaande betalingen' opnieuw om het nog eens te proberen.",
 	"{start} - {end} of {total}": "{start} - {end} van {total}",
 	"{title}. Show all mail through this account": "{title}. Toon alle mail via dit account",
 	"{value} {caption}": "{value} {caption}",
@@ -779,5 +779,5 @@
 	"Found by meaning, not exact words": "Gevonden op betekenis, niet op exacte woorden",
 	"Show all {count} keyword matches": "Alle {count} zoekwoordtreffers tonen",
 	"Showing keyword matches only — search by meaning is unavailable right now.": "Er worden alleen zoekwoorden getoond — zoeken op betekenis is nu niet beschikbaar.",
-	"“Keep receipts” already saved a copy of this mail to Drive, under Money Watch/Receipts. Removing this entry does not remove those files.": "'Bonnen bewaren' heeft al een kopie van deze e-mail opgeslagen in Drive, onder Money Watch/Receipts. Dit item verwijderen verwijdert die bestanden niet."
+	"“Keep receipts” may already have saved a copy of this mail to Drive, under Money Watch/Receipts. Removing this entry does not remove those files.": "'Bonnen bewaren' heeft mogelijk al een kopie van deze e-mail opgeslagen in Drive, onder Money Watch/Receipts. Dit item verwijderen verwijdert die bestanden niet."
 }

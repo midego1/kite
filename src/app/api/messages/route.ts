@@ -46,7 +46,8 @@ import { loadMessageVia, viaSearchAvailable } from "@/lib/external-accounts/via"
 import { resolveMailboxScope } from "@/lib/mailboxes/scope-utils";
 import { mailboxScopeCondition } from "@/lib/messages/mailbox-scope";
 import { conversationKey, rowConversationKey } from "@/lib/messages/conversation-key";
-import { afterCursor, getMessageListColumns, loadConversationPage } from "./utils";
+import { getMessageListColumns, loadConversationPage } from "./utils";
+import { afterCursor } from "@/lib/messages/cursor-sql";
 import { groupThreadMembers, type ScopedThreads } from "@/lib/messages/thread-unread-utils";
 import type { ListMessage } from "./types";
 

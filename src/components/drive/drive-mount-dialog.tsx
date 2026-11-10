@@ -8,6 +8,9 @@ import { Label } from "@/components/ui/label";
 import type { DriveMountDto } from "@/lib/drive/types";
 import { linkMount, refreshMounts, updateMount, type MountForm } from "./drive-mounts-api";
 
+/** Above the phone Drive menu (the sheet is z-[110]), which stays open behind Link a folder. */
+const ABOVE_SHEET = "z-[110]";
+
 function Field({
 	id,
 	label,
@@ -78,7 +81,11 @@ export function DriveMountDialog({
 				if (!open && !busy) onClose();
 			}}
 		>
-			<DialogContent className="max-h-[calc(100vh-4rem)] overflow-y-auto sm:max-w-lg" data-drive-mount-dialog>
+			<DialogContent
+				overlayClassName={ABOVE_SHEET}
+				className={`${ABOVE_SHEET} max-h-[calc(100vh-4rem)] overflow-y-auto sm:max-w-lg`}
+				data-drive-mount-dialog
+			>
 				<DialogHeader>
 					<DialogTitle>{mount ? "Linked folder" : "Link a folder"}</DialogTitle>
 					<DialogDescription>

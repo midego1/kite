@@ -57,6 +57,8 @@ export const WEBDAV_LIMITS = {
 	maxRedirects: 3,
 	maxPropfindBytes: 4 * 1024 * 1024,
 	maxEntries: 5_000,
+	/** An upload's body is sent before the answer can start, so its deadline also allows this many bytes a second. */
+	minUploadBytesPerSecond: 256 * 1024,
 };
 
 const STATUS_MESSAGES: Partial<Record<WebdavErrorKind, string>> = {
@@ -137,6 +139,8 @@ type RequestOptions = {
 	followRedirects?: boolean;
 	/** Keep the deadline while the body is read (PROPFIND), instead of clearing it once headers arrive. */
 	deadlineCoversBody?: boolean;
+	/** Replaces the client's deadline (an upload's grows with its size). */
+	timeoutMs?: number;
 };
 
 export class WebdavClient {
@@ -166,26 +170,7 @@ export class WebdavClient {
 			const sameOrigin = current.origin === this.target.url.origin;
 			// Credentials never leave the linked folder's origin; a redirect elsewhere is followed only by GET.
 			if (!sameOrigin && method !== "GET") throw new WebdavError("server", "The server redirected to another address");
-			const headers: Record<string, string> = { "User-Agent": "Kite-WebDAV", ...options.headers };
-			if (sameOrigin) headers.Authorization = basicAuth(this.target.username, this.target.password);
-			const controller = new AbortController();
-			const timer = setTimeout(() => controller.abort(), this.timeoutMs);
-			const finish = () => clearTimeout(timer);
-			let response: Response;
-			try {
-				response = await this.fetchImpl(current.href, {
-					method,
-					headers,
-					body: options.body ?? null,
-					redirect: "manual",
-					signal: controller.signal,
-					...(options.body instanceof ReadableStream ? { duplex: "half" } : {}),
-				} as RequestInit);
-			} catch (error) {
-				finish();
-				if (controller.signal.aborted) throw new WebdavError("timeout", "The server did not answer in time");
-				throw new WebdavError("unreachable", unreachableMessage(error));
-			}
+			const { response, finish } = await this.fetchOnce(method, current, sameOrigin, options);
 			const location = response.headers.get("location");
 			if (!isRedirect(response.status) || !location || !options.followRedirects) {
 				if (!options.deadlineCoversBody) finish();
@@ -205,6 +190,35 @@ export class WebdavClient {
 			}
 			if (current.protocol !== "https:" && current.protocol !== "http:")
 				throw new WebdavError("blocked", "The server redirected to an unsupported address");
+		}
+	}
+
+	/** One request under its own deadline; `finish` clears the deadline (after the body, for PROPFIND). */
+	private async fetchOnce(
+		method: string,
+		url: URL,
+		sameOrigin: boolean,
+		options: RequestOptions,
+	): Promise<{ response: Response; finish: () => void }> {
+		const headers: Record<string, string> = { "User-Agent": "Kite-WebDAV", ...options.headers };
+		if (sameOrigin) headers.Authorization = basicAuth(this.target.username, this.target.password);
+		const controller = new AbortController();
+		const timer = setTimeout(() => controller.abort(), options.timeoutMs ?? this.timeoutMs);
+		const finish = () => clearTimeout(timer);
+		try {
+			const response = await this.fetchImpl(url.href, {
+				method,
+				headers,
+				body: options.body ?? null,
+				redirect: "manual",
+				signal: controller.signal,
+				...(options.body instanceof ReadableStream ? { duplex: "half" } : {}),
+			} as RequestInit);
+			return { response, finish };
+		} catch (error) {
+			finish();
+			if (controller.signal.aborted) throw new WebdavError("timeout", "The server did not answer in time");
+			throw new WebdavError("unreachable", unreachableMessage(error));
 		}
 	}
 
@@ -279,6 +293,7 @@ export class WebdavClient {
 		const { response } = await this.send("PUT", mountUrl(this.target.url, path), {
 			headers: { "Content-Type": contentType, "Content-Length": String(size), "If-None-Match": "*" },
 			body: body as BodyInit,
+			timeoutMs: this.timeoutMs + Math.ceil((size / WEBDAV_LIMITS.minUploadBytesPerSecond) * 1000),
 		});
 		await discard(response);
 		if (response.status !== 201 && response.status !== 204 && response.status !== 200)

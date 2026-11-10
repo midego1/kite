@@ -606,3 +606,21 @@ test("backups carry linked folders without their app password, and a restored on
 	});
 	assert.equal(row.password, "sealed", "the exported row is a copy");
 });
+
+test("an upload's deadline grows with its size, so a slow upload is not cut off", async () => {
+	const server = await fake();
+	const size = 128 * 1024;
+	const chunk = new Uint8Array(size / 4).fill(7);
+	let sent = 0;
+	const body = new ReadableStream({
+		async pull(controller) {
+			if (sent === 4) return controller.close();
+			await new Promise((resolve) => setTimeout(resolve, 60));
+			controller.enqueue(chunk);
+			sent += 1;
+		},
+	});
+	// 240 ms of sending against a 150 ms answer deadline, plus half a second for 128 KiB at the minimum rate.
+	await client(server, { timeoutMs: 150 }).put("/slow.bin", body, size, "application/octet-stream");
+	assert.equal(server.items.get("/slow.bin").data.length, size);
+});

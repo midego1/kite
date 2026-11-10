@@ -1,8 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
 import { startFakeWebdav } from "../tests/support/fake-webdav.mjs";
-import { STORAGE_STATE } from "./support/constants";
+import { BASE_URL, STORAGE_STATE } from "./support/constants";
 import { driveAccount, signedInPage } from "./support/drive";
-import { apiContext, deliverInbound, openMessage, uniqueToken } from "./support/helpers";
+import { apiContext, deliverInbound, openMessage, suppressMailboxTour, uniqueToken } from "./support/helpers";
 import { chooseOption } from "./support/select";
 
 const row = (page: Page, name: string) => page.locator(`[data-drive-item="${name}"]`);
@@ -186,6 +186,37 @@ test("a wrong app password is refused when linking, and a revoked one asks for t
 		await expect(row(page, "report.pdf")).toBeVisible();
 		await expect(banner).toHaveCount(0);
 		await expect(page.getByLabel("Needs the app password")).toHaveCount(0);
+	} finally {
+		await context.close();
+		await account.api.dispose();
+		await admin.dispose();
+		await fake.close();
+	}
+});
+
+test("on a phone, Link a folder opens above the Drive menu and links the folder", async ({ browser }) => {
+	test.setTimeout(90_000);
+	const fake = await startFakeWebdav({ files: { "/Scans": null } });
+	const admin = await apiContext(STORAGE_STATE);
+	const account = await driveAccount(admin, "drvdavph");
+	const context = await browser.newContext({
+		baseURL: BASE_URL,
+		storageState: await account.api.storageState(),
+		viewport: { width: 375, height: 812 },
+		hasTouch: true,
+	});
+	const page = await context.newPage();
+	await suppressMailboxTour(page);
+	const label = `Phone NAS ${uniqueToken("")}`;
+	try {
+		await page.goto("/drive");
+		await page.getByRole("button", { name: "My Drive", exact: true }).click();
+		const menu = page.getByRole("dialog", { name: "Drive menu" });
+		await expect(menu).toBeVisible();
+		const dialog = await linkFolder(page, { url: fake.url, username: fake.username, password: fake.password, label });
+		await expect(dialog).toHaveCount(0);
+		await expect(page.getByRole("heading", { level: 1, name: label })).toBeVisible();
+		await expect(row(page, "Scans")).toBeVisible();
 	} finally {
 		await context.close();
 		await account.api.dispose();

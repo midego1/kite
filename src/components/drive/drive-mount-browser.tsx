@@ -227,7 +227,12 @@ export function DriveMountBrowser({ mountId }: { mountId: string }) {
 			confirmLabel: "Unlink",
 		});
 		if (!confirmed) return;
-		await unlinkMount(mount.id);
+		try {
+			await unlinkMount(mount.id);
+		} catch (failure) {
+			toast.error(failure instanceof Error ? failure.message : "Could not unlink the folder");
+			return;
+		}
 		refreshMounts();
 		router.push("/drive");
 	}

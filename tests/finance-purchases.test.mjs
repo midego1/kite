@@ -140,6 +140,20 @@ test("a product word in a shop's subject never decides the category", () => {
 		[{ vendor: "Pizza Hosting Ltd", subject: "Invoice", sender: "example.com" }, null],
 		[{ vendor: "The Cloud Bakery", subject: "Receipt", sender: "example.com" }, null],
 		[{ vendor: "Acme", subject: "Your flight receipt", sender: "acme.test" }, "travel"],
+		[{ vendor: "Amazon Web Services", subject: "Your AWS invoice", sender: "aws.amazon.com" }, "software"],
+		[{ vendor: "Amazon", subject: "Your invoice", sender: "aws.amazon.com" }, "software"],
+		[{ vendor: "Google Cloud", subject: "Your invoice", sender: "google.com" }, "software"],
+		[{ vendor: "Microsoft Azure", subject: "Your invoice", sender: "microsoft.com" }, "software"],
+		[{ vendor: "Amazon", subject: "Your order of a book", sender: "amazon.nl" }, "shopping"],
+		[{ vendor: "Amazon Prime Video", subject: "Your receipt", sender: "primevideo.com" }, "entertainment"],
+		[{ vendor: "Bolt Food", subject: "Your order", sender: "bolt.eu" }, "food"],
+		[{ vendor: "Bolt", subject: "Your ride receipt", sender: "bolt.eu" }, "travel"],
+		[{ vendor: "Steam", subject: "Thank you for your purchase", sender: "steampowered.com" }, "entertainment"],
+		[{ vendor: "Steam Cleaning BV", subject: "Factuur", sender: "stoomreiniging.example" }, null],
+		[{ vendor: "Disney Dental Clinic", subject: "Invoice", sender: "disneydental.example" }, null],
+		[{ vendor: "Jumbo Visma Fanshop", subject: "Bestelling", sender: "fanshop.example" }, null],
+		[{ vendor: "Studio Energie Yoga", subject: "Factuur", sender: "yoga.example" }, null],
+		[{ vendor: "Disney", subject: "Your receipt", sender: "disneyplus.com" }, "entertainment"],
 	];
 	for (const [cues, category] of cases) assert.equal(categoryOf(cues), category, `${cues.vendor}: ${cues.subject}`);
 });
@@ -190,6 +204,10 @@ test("CSV cells never start a formula and quote what needs it", () => {
 		"  =1",
 		"\u200b=1",
 		"|cmd",
+		"\u200e=1",
+		"\u061c=1",
+		"\u2212=1",
+		"\ufe62=1",
 	])
 		assert.ok(csvText(hostile).replace(/^"/, "").startsWith("'"), JSON.stringify(hostile));
 	assert.equal(csvText("a=b"), "a=b", "only the first character matters");
@@ -797,12 +815,16 @@ test("list_payments honours a key's mailbox limit and a withdrawn mailbox", asyn
 	`);
 	await record(insertMessage(db, FLIGHT), FLIGHT);
 	await record(insertMessage(db, HOSTING, { mailboxId: "mailbox-b" }), HOSTING, { mailboxId: "mailbox-b" });
-	const list = (mailboxIds, trigger = "mcp") =>
+	const list = (mailboxIds, trigger = "mcp", mailboxLimited = false) =>
 		invokeCapability(
 			"finance",
 			"list_payments",
 			{},
-			{ ...readCtx("owner", trigger), ...(mailboxIds ? { mailboxIds } : {}) },
+			{
+				...readCtx("owner", trigger),
+				...(mailboxIds ? { mailboxIds } : {}),
+				...(mailboxLimited ? { mailboxLimited: true } : {}),
+			},
 		);
 	const vendors = async (...args) => {
 		const answer = await list(...args);
@@ -813,6 +835,9 @@ test("list_payments honours a key's mailbox limit and a withdrawn mailbox", asyn
 	assert.deepEqual(await vendors(["mailbox-b"]), ["Hetzner"]);
 	assert.deepEqual(await vendors([]), ["Hetzner", "KLM"], "a key that names no mailbox is not limited");
 	assert.deepEqual(await vendors(undefined, "chat"), ["Hetzner", "KLM"]);
+	// A key that named mailboxes, all of which have since become unreadable, sees nothing (not everything).
+	assert.deepEqual(await vendors([], "mcp", true), [], "named but none readable fails closed");
+	assert.deepEqual(await vendors(["mailbox-a"], "mcp", true), ["KLM"]);
 	// A mailbox the viewer can no longer read lists nothing, even for an unlimited call.
 	db.db.prepare("UPDATE mailboxes SET disabled = 1 WHERE id = 'mailbox-b'").run();
 	assert.deepEqual(await vendors([]), ["KLM"]);

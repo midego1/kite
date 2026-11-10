@@ -34,7 +34,16 @@ type Cued = Exclude<PaymentCategory, "other">;
 const BRANDS: readonly (readonly [Cued, RegExp])[] = [
 	[
 		"food",
-		/\b(?:uber ?eats|thuisbezorgd|deliveroo|just eat|picnic|albert heijn|jumbo|lidl|aldi|hellofresh|domino'?s|mcdonald'?s|starbucks)\b/,
+		/\b(?:uber ?eats|bolt food|thuisbezorgd|deliveroo|just eat|picnic|albert heijn|jumbo|lidl|aldi|hellofresh|domino'?s|mcdonald'?s|starbucks)\b/,
+	],
+	// Software before shopping: "Amazon Web Services" and "aws.amazon.com" are cloud bills, not a shop.
+	[
+		"software",
+		/\b(?:amazon web services|aws|google cloud|google workspace|github|gitlab|azure|microsoft 365|office 365|adobe|dropbox|figma|jetbrains|openai|anthropic|namecheap|godaddy|cloudflare|digitalocean|hetzner|vercel|netlify)\b/,
+	],
+	[
+		"entertainment",
+		/\b(?:prime video|path[eé]|ticketmaster|eventbrite|spotify|netflix|disney|playstation|xbox|nintendo|twitch|steampowered)\b|(?:^|\n)steam(?:\n|$)/,
 	],
 	[
 		"travel",
@@ -44,16 +53,8 @@ const BRANDS: readonly (readonly [Cued, RegExp])[] = [
 		"shopping",
 		/\b(?:bol\.com|amazon|coolblue|mediamarkt|ikea|zalando|wehkamp|aliexpress|ebay|etsy|decathlon|h&m|hema)\b/,
 	],
-	[
-		"software",
-		/\b(?:github|gitlab|aws|azure|google workspace|microsoft 365|office 365|adobe|dropbox|figma|jetbrains|openai|anthropic|namecheap|godaddy|cloudflare|digitalocean|hetzner|vercel|netlify)\b/,
-	],
 	["utilities", /\b(?:vattenfall|eneco|essent|vitens|kpn|ziggo|odido|t-mobile|vodafone)\b/],
 	["health", /\b(?:etos|specsavers)\b/],
-	[
-		"entertainment",
-		/\b(?:path[eé]|ticketmaster|eventbrite|spotify|netflix|disney|steam|playstation|xbox|nintendo|twitch)\b/,
-	],
 	["education", /\b(?:coursera|udemy)\b/],
 ];
 
@@ -68,7 +69,7 @@ const BUSINESS: readonly (readonly [Cued, RegExp])[] = [
 		/\b(?:restaurants?|pizza|pizzeria|sushi|burgers?|caf[eé]|coffee|koffie|bakery|bakkerij|takeaway|take-away|grocer(?:y|ies)|supermarkt)\b/,
 	],
 	["travel", /\b(?:flights?|vlucht\w*|airlines?|airways|hotels?|hostel|car rental|autohuur|taxi)\b/],
-	["utilities", /\b(?:electricity|energy|energie|stroom|broadband|glasvezel|fib(?:re|er)|telecom)\b/],
+	["utilities", /\b(?:electricity|broadband|glasvezel|fib(?:re|er)|telecom)\b/],
 	[
 		"health",
 		/\b(?:pharmacy|apotheek|dentist|tandarts|doctor|huisarts|clinic|kliniek|physio\w*|fysio\w*|optician|opticien|hospital|ziekenhuis|zorgverzeker\w*|health insurance)\b/,
@@ -78,6 +79,7 @@ const BUSINESS: readonly (readonly [Cued, RegExp])[] = [
 		"education",
 		/\b(?:courses?|cursus|tuition|collegegeld|university|universiteit|workshop|webinar|training|academy)\b/,
 	],
+	["shopping", /\b(?:fanshop|webshop|webwinkel|megastore)\b/],
 ];
 
 /**
@@ -122,8 +124,9 @@ export function categoryOf(cues: CategoryCues): PaymentCategory | null {
 	const name = `${cues.vendor}\n${cues.sender ?? ""}`.slice(0, MAX_CUE_TEXT).toLowerCase();
 	const subject = (cues.subject ?? "").slice(0, MAX_CUE_TEXT).toLowerCase();
 	const brand = BRANDS.find(([, pattern]) => pattern.test(name));
-	if (brand) return brand[0];
 	const business = single(BUSINESS, name);
+	// A brand and another category's business word in one name ("Disney Dental Clinic") is no longer obvious.
+	if (brand) return business === undefined || business === brand[0] ? brand[0] : null;
 	if (business !== undefined) return business;
 	const phrase = single(SUBJECT, subject);
 	if (phrase !== undefined) return phrase;

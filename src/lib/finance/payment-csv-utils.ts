@@ -20,7 +20,7 @@ const HEADER = ["Date", "Vendor", "Type", "Status", "Amount", "Currency", "Categ
  * ones CJK-locale builds accept, the old DDE pipe, and any leading whitespace (a no-break space or a zero-width
  * character included), which some programs skip before looking for the operator.
  */
-const FORMULA_START = /^[\s\u200b-\u200d\u2060\ufeff=+\-@|\uff1d\uff0b\uff0d\uff20]/;
+const FORMULA_START = /^[\s\p{Cf}=+\-@|\uff1d\uff0b\uff0d\uff20\ufe62\u2212]/u;
 
 /**
  * One text cell, safe to open in a spreadsheet: a value that would start a formula (`=`, `+`, `-`, `@`, a tab or a

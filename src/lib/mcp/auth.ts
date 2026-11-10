@@ -45,7 +45,7 @@ export async function authenticateMcpRequest(env: CloudflareEnv, request: Reques
 			.update(apiKeys)
 			.set({ lastUsedAt: new Date() })
 			.where(and(eq(apiKeys.id, candidate.id), or(isNull(apiKeys.lastUsedAt), lt(apiKeys.lastUsedAt, stale))));
-		return { keyId: candidate.id, user, scopes: allScopes, mailboxIds };
+		return { keyId: candidate.id, user, scopes: allScopes, mailboxIds, mailboxLimited: allowed.length > 0 };
 	}
 	return null;
 }

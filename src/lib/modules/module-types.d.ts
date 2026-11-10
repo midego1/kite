@@ -337,6 +337,8 @@ export type CapabilityCallContext = {
 	timeZone: string;
 	grants: string[];
 	mailboxIds?: string[];
+	/** An MCP key that names mailboxes: `mailboxIds` holds the readable ones, and an empty list means none. */
+	mailboxLimited?: boolean;
 	trigger: CapabilityTrigger;
 };
 

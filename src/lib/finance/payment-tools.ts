@@ -44,7 +44,10 @@ function entryOf(row: PaymentRow): PaymentListEntry {
  */
 async function readableRows(ctx: CapabilityCallContext, rows: PaymentRow[]): Promise<PaymentRow[]> {
 	const viewer = ctx.viewer!;
-	const limited = ctx.trigger === "mcp" && (ctx.mailboxIds?.length ?? 0) > 0 ? new Set(ctx.mailboxIds) : null;
+	// A key that names mailboxes is limited to the readable ones, and to nothing when none is: an empty list is "no
+	// limit" only for a key that names none (core MCP tools fail closed the same way).
+	const named = ctx.mailboxLimited === true || (ctx.mailboxIds?.length ?? 0) > 0;
+	const limited = ctx.trigger === "mcp" && named ? new Set(ctx.mailboxIds ?? []) : null;
 	const user = { id: viewer.userId, role: viewer.role as SessionUser["role"] };
 	const db = getDb(getEnv());
 	const allowed = new Map<string, boolean>();

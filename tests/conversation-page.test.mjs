@@ -70,6 +70,22 @@ test("equal timestamps select one head per thread before applying the offset", a
 	assert.deepEqual(second, { ids: ["b"], total: 2 });
 });
 
+test("messages of one thread stored in the same second: the one stored last is the head, whatever its id", async (t) => {
+	for (const order of [
+		["a", "c", "b"],
+		["c", "b", "a"],
+		["b", "a", "c"],
+	]) {
+		const fixture = createConversationFixture(
+			SqliteDatabase,
+			order.map((id) => at(100, id, "same-thread")),
+		);
+		t.after(() => fixture.database.db.close());
+		const page = await loadConversationPage({ db: fixture.db, where: fixture.where, offset: 0, limit: 5 });
+		assert.deepEqual(page, { ids: [order.at(-1)], total: 1 }, order.join());
+	}
+});
+
 test("counts and conversation heads share mailbox and status filters", async (t) => {
 	const fixture = createConversationFixture(SqliteDatabase, [
 		at(100, "visible", "shared-thread"),

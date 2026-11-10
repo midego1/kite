@@ -188,6 +188,50 @@ test("displayed addresses are compared inside attached pages, counting a mismatc
 	}
 });
 
+test("authenticated mail with its own tracked links is not a displayed link mismatch", async (t) => {
+	const { sqlite } = await setup(t);
+	const db = createDb(sqlite);
+	const seen = [];
+	const authenticated =
+		"mx.cloudflare.net; dkim=pass header.d=notify.cloudflare.com; dmarc=pass header.from=notify.cloudflare.com";
+	const run = (html, fromAddr, authenticationResults) =>
+		analyzeSpam(db, {
+			mailboxId: "mailbox-a",
+			userId: "owner",
+			envelopeFrom: "bounce@notify.cloudflare.com",
+			message: email({ html, fromAddr }),
+			authenticationResults,
+			intelligenceProvider: { check: async (input) => (seen.push(input), []) },
+		});
+	const cloudflare = "Cloudflare <noreply@notify.cloudflare.com>";
+	const tracked =
+		'<a href="https://u123.ct.sendgrid.net/ls/click?upn=u001.opaque">https://dash.cloudflare.com/restore</a>';
+	const allowed = await run(tracked, cloudflare, authenticated);
+	assert.equal(ids(allowed).includes("displayed_link_mismatch"), false);
+	assert.equal(ids(allowed).includes("sender_tracked_link"), false, "a zero-score note is not stored");
+	assert.equal(seen.length, 1, "the allowed tracked link is still shown to the threat lookups");
+	assert.ok(seen[0].urls.includes("https://u123.ct.sendgrid.net/ls/click?upn=u001.opaque"));
+	assert.ok(ids(await run(tracked, cloudflare, null)).includes("displayed_link_mismatch"), "unauthenticated");
+	const phish = '<a href="https://evil.test/login">https://dash.cloudflare.com/restore</a>';
+	assert.ok(ids(await run(phish, cloudflare, authenticated)).includes("displayed_link_mismatch"));
+	const impersonated = '<a href="https://u123.ct.sendgrid.net/ls/click?upn=x">https://paypal.com/login</a>';
+	assert.ok(ids(await run(impersonated, cloudflare, authenticated)).includes("displayed_link_mismatch"));
+	// A compromised mail account of the sender: a readable tracker destination on another site is still flagged.
+	const readable =
+		'<a href="https://abc.r.us-east-1.awstrack.me/L0/https:%2F%2Flogin.evil.test%2F/1/0100abc">https://dash.cloudflare.com/restore</a>';
+	assert.ok(ids(await run(readable, cloudflare, authenticated)).includes("displayed_link_mismatch"));
+	// Nor can a malformed escape hide a readable destination of a transparent tracker.
+	const hidden =
+		'<a href="https://abc.r.us-east-1.awstrack.me/L0/https:%2F%2Flogin.evil.test%2F/1/%E0%A4%A">https://dash.cloudflare.com/restore</a>';
+	assert.ok(ids(await run(hidden, cloudflare, authenticated)).includes("displayed_link_mismatch"));
+	// A DMARC pass for another domain than the From domain gives no allowance.
+	const forged = "mx.cloudflare.net; dmarc=pass header.from=attacker.test";
+	assert.ok(ids(await run(tracked, cloudflare, forged)).includes("displayed_link_mismatch"));
+	// A DMARC pass that names no header.from gives none either.
+	const unnamed = "mx.cloudflare.net; dmarc=pass";
+	assert.ok(ids(await run(tracked, cloudflare, unnamed)).includes("displayed_link_mismatch"));
+});
+
 test("displayed link comparisons decode HTML attributes and text once", async (t) => {
 	const { analyze } = await setup(t);
 	for (const html of [

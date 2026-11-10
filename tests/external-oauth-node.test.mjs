@@ -228,7 +228,7 @@ test("Sign in with Microsoft connects the account with XOAUTH2, the refresh toke
 	assert.match(row.secret, /^enc:v1:/);
 	assert.match(row.oauth_access_token, /^enc:v1:/);
 	assert.ok(!row.secret.includes("rt-") && !row.oauth_access_token.includes("at-"));
-	assert.equal(row.oauth_subject, "oid-1");
+	assert.equal(row.oauth_subject, "7f3c1a2b-0000-4000-8000-00000000fa4e:oid-1");
 	assert.ok(row.oauth_expires_at > Date.now() / 1000 + 3000);
 	// IMAP and SMTP both signed in with XOAUTH2, over TLS.
 	assert.ok(imap.commands.some((entry) => /AUTHENTICATE XOAUTH2 /.test(entry.line) && entry.encrypted));
@@ -383,11 +383,45 @@ test("a revoked sign-in stops the account at Sign-in failed, and Reconnect with 
 		ok: false,
 		reason: "different_account",
 	});
+	// The same address signed in as another user (a reassigned address), or in another tenant, is not the same account.
+	oauth.setAccount({ address: ADDRESS, oid: "oid-reassigned" });
+	assert.deepEqual(await completeMicrosoftSignIn(env, owner, (await signIn(env, owner, { accountId: id })).params), {
+		ok: false,
+		reason: "different_account",
+	});
+	oauth.setAccount({ address: ADDRESS, oid: "oid-1", tid: "0c0c0c0c-0000-4000-8000-000000000001" });
+	assert.deepEqual(await completeMicrosoftSignIn(env, owner, (await signIn(env, owner, { accountId: id })).params), {
+		ok: false,
+		reason: "different_account",
+	});
 	oauth.setAccount({ address: ADDRESS, oid: "oid-1" });
 	const again = await completeMicrosoftSignIn(env, owner, (await signIn(env, owner, { accountId: id })).params);
 	assert.deepEqual(again, { ok: true, accountId: id, reconnected: true });
 	assert.equal(accountRow(db).status, "active");
 	assert.ok(await oauthAccessToken(env, id));
+});
+
+test("a refresh that started before a reconnect cannot store its older token over the reconnect's", async (t) => {
+	const { db, env } = await setup(t);
+	await completeMicrosoftSignIn(env, owner, (await signIn(env)).params);
+	const id = accountRow(db).id;
+	// A refresh read the token state, then the user reconnected before it stored its answer.
+	const before = await readTokenState(env, id);
+	const reconnected = await completeMicrosoftSignIn(env, owner, (await signIn(env, owner, { accountId: id })).params);
+	assert.equal(reconnected.ok, true);
+	const after = await readTokenState(env, id);
+	assert.ok(after.version > before.version);
+	assert.notEqual(after.sealedRefreshToken, before.sealedRefreshToken);
+	const late = await storeRefreshedTokens(
+		env,
+		id,
+		before.version,
+		{ sealedRefreshToken: "stale-chain", sealedAccessToken: "stale", expiresAt: new Date(), scopes: "" },
+		new Date(),
+	);
+	assert.equal(late, false);
+	assert.equal((await readTokenState(env, id)).sealedRefreshToken, after.sealedRefreshToken);
+	assert.match(accountRow(db).oauth_subject, /^7f3c1a2b-0000-4000-8000-00000000fa4e:oid-1$/);
 });
 
 test("an SMTP server that refuses the token answers 535 after its JSON challenge, and the token stays out of errors", async (t) => {

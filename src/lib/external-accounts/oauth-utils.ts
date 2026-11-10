@@ -273,31 +273,57 @@ export function grantsImap(scopes: string): boolean {
 	return scopes.split(/\s+/).some((scope) => /(^|\/)IMAP\.AccessAsUser\.All$/i.test(scope));
 }
 
-export type IdTokenClaims = { address: string; subject: string };
+/** `subject` is `<tid>:<oid>`: the user's id is only unique within its tenant, so both are kept and compared. */
+export type IdTokenClaims = { address: string; subject: string; tenantId: string };
 
-/**
- * The address and stable user id the ID token names. The token came straight from Microsoft's token endpoint over
- * TLS, so its signature need not be checked (OpenID Connect Core §3.1.3.7); its audience must still be this app.
- * The address is `email`, else `preferred_username` (spec §15.2); the subject `oid`, else `sub`.
- */
-export function idTokenClaims(idToken: string | null, clientId: string): IdTokenClaims | null {
+/** The tenant of every personal Microsoft account (Outlook.com, Hotmail). */
+const CONSUMER_TENANT_ID = "9188040d-6c67-4c5b-b112-36a304b66dad";
+
+function decodeJwtPayload(idToken: string | null): Record<string, unknown> | null {
 	const payload = idToken?.split(".")[1];
 	if (!payload) return null;
-	let claims: Record<string, unknown>;
 	try {
 		const base64 = payload.replace(/-/g, "+").replace(/_/g, "/");
 		const binary = atob(base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), "="));
-		claims = JSON.parse(new TextDecoder().decode(Uint8Array.from(binary, (char) => char.charCodeAt(0))));
+		const claims = JSON.parse(new TextDecoder().decode(Uint8Array.from(binary, (char) => char.charCodeAt(0))));
+		return claims && typeof claims === "object" ? (claims as Record<string, unknown>) : null;
 	} catch {
 		return null;
 	}
+}
+
+/** Whether the token's tenant fits the registration's: its own id, personal only, or work and school only. */
+function tenantMatches(tid: string, tenant: string): boolean {
+	if (GUID.test(tenant)) return tid === tenant.toLowerCase();
+	if (tenant === "consumers") return tid === CONSUMER_TENANT_ID;
+	if (tenant === "organizations") return tid !== CONSUMER_TENANT_ID;
+	return true;
+}
+
+const asAddress = (value: unknown) => {
+	const text = typeof value === "string" ? value.trim().toLowerCase() : "";
+	return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text) ? text : null;
+};
+
+/**
+ * The address, tenant and stable user id the ID token names. The token came straight from Microsoft's token endpoint
+ * over TLS, so its signature need not be checked (OpenID Connect Core §3.1.3.7); its audience must be this app, and
+ * its issuer the v2.0 issuer of the tenant it names, which must fit the registration's tenant. The address is the
+ * name the user signed in as (`preferred_username`: the UPN of a work or school account, the sign-in address of a
+ * personal one), never a plain `email` claim, which with the `common` endpoint can be an unverified value an
+ * organisation set (spec §15.2); `email` counts only when Microsoft marks its domain verified (`xms_edov`). The IMAP
+ * sign-in with that address is still the proof that it is the mailbox's.
+ */
+export function idTokenClaims(idToken: string | null, clientId: string, tenant = "common"): IdTokenClaims | null {
+	const claims = decodeJwtPayload(idToken);
+	if (!claims) return null;
 	if (typeof claims.aud !== "string" || claims.aud.toLowerCase() !== clientId.toLowerCase()) return null;
-	const candidates = [claims.email, claims.preferred_username];
-	const address = candidates
-		.map((value) => (typeof value === "string" ? value.trim().toLowerCase() : ""))
-		.find((value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value));
-	const subject = [claims.oid, claims.sub].find((value): value is string => typeof value === "string" && !!value);
-	return address && subject ? { address, subject } : null;
+	const tid = typeof claims.tid === "string" ? claims.tid.toLowerCase() : "";
+	if (!GUID.test(tid) || !tenantMatches(tid, tenant)) return null;
+	if (claims.iss !== `https://login.microsoftonline.com/${tid}/v2.0`) return null;
+	const address = asAddress(claims.preferred_username) ?? (claims.xms_edov === true ? asAddress(claims.email) : null);
+	const user = [claims.oid, claims.sub].find((value): value is string => typeof value === "string" && !!value);
+	return address && user ? { address, subject: `${tid}:${user}`, tenantId: tid } : null;
 }
 
 /** Whether a cached access token must be refreshed first: none, unknown expiry, or within the margin. */

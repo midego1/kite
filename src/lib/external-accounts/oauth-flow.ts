@@ -15,6 +15,7 @@ import {
 	oauthTablesReady,
 	type OAuthStatePayload,
 	pruneOAuthStates,
+	readOAuthSubject,
 	takeOAuthState,
 	writeAccountOAuth,
 } from "./oauth-store";
@@ -264,7 +265,7 @@ async function redeemCode(env: CloudflareEnv, pending: PendingSignIn, code: stri
 		logger.warn("external.oauth.code_refused", { kind: tokenError.kind, code: tokenError.code });
 		throw new CallbackFailure("token");
 	});
-	const claims = idTokenClaims(tokens.idToken, client.clientId);
+	const claims = idTokenClaims(tokens.idToken, client.clientId, client.tenant);
 	if (!claims) throw new CallbackFailure("no_address");
 	if (!tokens.refreshToken) throw new CallbackFailure("no_refresh_token");
 	if (!grantsImap(tokens.scopes)) throw new CallbackFailure("scopes");
@@ -315,12 +316,14 @@ async function insertMicrosoftAccount(
 	return id;
 }
 
-/** A reconnect: the new refresh token replaces the old one, and checking starts again at the next tick. */
-async function renewAccount(env: CloudflareEnv, actor: AccountActor, accountId: string, sealedRefreshToken: string) {
+/**
+ * A reconnect: the account is active again and checking starts at the next tick. The new refresh token is written by
+ * `writeAccountOAuth`, with the version bump, so an older refresh still in flight cannot overwrite it.
+ */
+async function renewAccount(env: CloudflareEnv, actor: AccountActor, accountId: string) {
 	await getDb(env)
 		.update(externalAccounts)
 		.set({
-			secret: sealedRefreshToken,
 			status: "active",
 			statusReason: null,
 			lastError: null,
@@ -330,6 +333,20 @@ async function renewAccount(env: CloudflareEnv, actor: AccountActor, accountId: 
 			updatedAt: new Date(),
 		})
 		.where(and(eq(externalAccounts.id, accountId), eq(externalAccounts.userId, actor.id)));
+}
+
+/**
+ * A reconnect must sign in as the account it renews: the same address, and the same tenant and user id once one was
+ * recorded (an address can be reassigned to another user, or exist in another tenant).
+ */
+async function sameMicrosoftAccount(
+	env: CloudflareEnv,
+	row: ExternalAccountRow,
+	claims: { address: string; subject: string },
+): Promise<boolean> {
+	if (!sameMailAddress(row.address, claims.address)) return false;
+	const recorded = await readOAuthSubject(env, row.id);
+	return recorded === null || recorded === claims.subject;
 }
 
 const rowServers = (row: ExternalAccountRow): ServerPair => ({
@@ -350,7 +367,7 @@ async function complete(
 	await assertAllowed(env, actor.id);
 	const { tokens, claims } = await redeemCode(env, pending, code);
 	const reconnecting = pending.accountId ? await ownAccount(env, actor.id, pending.accountId) : null;
-	if (reconnecting && !sameMailAddress(reconnecting.address, claims.address))
+	if (reconnecting && !(await sameMicrosoftAccount(env, reconnecting, claims)))
 		throw new CallbackFailure("different_account");
 	if (!reconnecting) {
 		await assertNotKiteDomain(env, claims.address);
@@ -375,8 +392,9 @@ async function complete(
 			sealedRefreshToken,
 			now: new Date(),
 		}));
-	if (reconnecting) await renewAccount(env, actor, accountId, sealedRefreshToken);
+	if (reconnecting) await renewAccount(env, actor, accountId);
 	await writeAccountOAuth(env, accountId, {
+		sealedRefreshToken,
 		sealedAccessToken: await sealSetting(env, tokens.accessToken),
 		expiresAt: tokens.expiresAt,
 		scopes: tokens.scopes,

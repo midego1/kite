@@ -33,6 +33,8 @@ const {
 	oauthResultMessage,
 	oauthResultPath,
 	classifyConnectionError,
+	parseImapImportRequest,
+	parseImapFolderListRequest,
 } = await bundleModules("kite-external-oauth-", [
 	["xoauth2Token", "src/lib/net/xoauth2-utils.ts"],
 	[
@@ -41,6 +43,8 @@ const {
 	],
 	["oauthResultMessage, oauthResultPath", "src/lib/external-accounts/oauth-result-utils.ts"],
 	["classifyConnectionError", "src/lib/external-accounts/connection-utils.ts"],
+	["parseImapImportRequest", "src/app/api/import/imap/utils.ts"],
+	["parseImapFolderListRequest", "src/app/api/import/imap/folders/utils.ts"],
 ]);
 
 const CLIENT_ID = "11111111-2222-3333-4444-555555555555";
@@ -185,30 +189,73 @@ test("token answers: the expiry is dated from now, and failures say what to do w
 	assert.equal(tokenFailure(400, { error: "interaction_required" }).kind, "reauth");
 });
 
-test("the ID token names the address (email, else preferred_username) and the user, for this app only", () => {
+const WORK_TID = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+const CONSUMER_TID = "9188040d-6c67-4c5b-b112-36a304b66dad";
+const idToken = (claims, tid = WORK_TID) =>
+	jwt({ aud: CLIENT_ID, iss: `https://login.microsoftonline.com/${tid}/v2.0`, tid, oid: "o1", ...claims });
+
+test("the ID token names the address the user signed in as, the tenant and the user, for this app only", () => {
 	assert.deepEqual(
-		idTokenClaims(jwt({ aud: CLIENT_ID, preferred_username: "Someone@Outlook.com", oid: "o1", sub: "s1" }), CLIENT_ID),
+		idTokenClaims(idToken({ preferred_username: "Someone@Outlook.com", sub: "s1" }, CONSUMER_TID), CLIENT_ID),
 		{
 			address: "someone@outlook.com",
-			subject: "o1",
+			subject: `${CONSUMER_TID}:o1`,
+			tenantId: CONSUMER_TID,
 		},
 	);
-	assert.deepEqual(
+	// The sign-in name wins over an `email` claim, which an organisation can set to anything.
+	assert.equal(
+		idTokenClaims(idToken({ email: "ceo@victim.example", preferred_username: "b@contoso.com" }), CLIENT_ID).address,
+		"b@contoso.com",
+	);
+	// `email` counts only when Microsoft marks its domain verified, and only without a sign-in name.
+	assert.equal(idTokenClaims(idToken({ email: "a@contoso.com" }), CLIENT_ID), null);
+	assert.equal(idTokenClaims(idToken({ email: "a@contoso.com", xms_edov: true }), CLIENT_ID).address, "a@contoso.com");
+	assert.equal(
 		idTokenClaims(
-			jwt({ aud: CLIENT_ID.toUpperCase(), email: "a@contoso.com", preferred_username: "b@contoso.com", sub: "s1" }),
+			jwt({
+				aud: CLIENT_ID.toUpperCase(),
+				iss: `https://login.microsoftonline.com/${WORK_TID}/v2.0`,
+				tid: WORK_TID,
+				preferred_username: "x@contoso.com",
+				sub: "s1",
+			}),
+			CLIENT_ID,
+		).subject,
+		`${WORK_TID}:s1`,
+	);
+	// Another app's token, a missing or mismatched tenant and issuer, no address or subject, and garbage are refused.
+	assert.equal(idTokenClaims(idToken({ aud: "other", preferred_username: "a@b.com" }), CLIENT_ID), null);
+	assert.equal(idTokenClaims(idToken({ preferred_username: "not-an-address" }), CLIENT_ID), null);
+	assert.equal(idTokenClaims(idToken({ preferred_username: "a@b.com", oid: undefined }), CLIENT_ID), null);
+	assert.equal(idTokenClaims(idToken({ preferred_username: "a@b.com", tid: undefined }), CLIENT_ID), null);
+	assert.equal(idTokenClaims(idToken({ preferred_username: "a@b.com", tid: "not-a-tenant" }), CLIENT_ID), null);
+	assert.equal(
+		idTokenClaims(
+			idToken({ preferred_username: "a@b.com", iss: "https://login.microsoftonline.com/common/v2.0" }),
 			CLIENT_ID,
 		),
-		{
-			address: "a@contoso.com",
-			subject: "s1",
-		},
+		null,
 	);
-	// Another app's token, a token without an address or subject, and garbage are refused.
-	assert.equal(idTokenClaims(jwt({ aud: "other", preferred_username: "a@b.com", oid: "o" }), CLIENT_ID), null);
-	assert.equal(idTokenClaims(jwt({ aud: CLIENT_ID, preferred_username: "not-an-address", oid: "o" }), CLIENT_ID), null);
-	assert.equal(idTokenClaims(jwt({ aud: CLIENT_ID, preferred_username: "a@b.com" }), CLIENT_ID), null);
+	assert.equal(
+		idTokenClaims(idToken({ preferred_username: "a@b.com", iss: `https://evil.example/${WORK_TID}/v2.0` }), CLIENT_ID),
+		null,
+	);
 	assert.equal(idTokenClaims("not.a.jwt", CLIENT_ID), null);
 	assert.equal(idTokenClaims(null, CLIENT_ID), null);
+});
+
+test("the ID token's tenant must fit the registration's tenant", () => {
+	const work = idToken({ preferred_username: "a@contoso.com" });
+	const personal = idToken({ preferred_username: "a@outlook.com" }, CONSUMER_TID);
+	assert.ok(idTokenClaims(work, CLIENT_ID, WORK_TID));
+	assert.equal(idTokenClaims(work, CLIENT_ID, "bbbbbbbb-bbbb-4ccc-8ddd-eeeeeeeeeeee"), null);
+	assert.equal(idTokenClaims(personal, CLIENT_ID, WORK_TID), null);
+	assert.ok(idTokenClaims(personal, CLIENT_ID, "consumers"));
+	assert.equal(idTokenClaims(work, CLIENT_ID, "consumers"), null);
+	assert.ok(idTokenClaims(work, CLIENT_ID, "organizations"));
+	assert.equal(idTokenClaims(personal, CLIENT_ID, "organizations"), null);
+	assert.ok(idTokenClaims(work, CLIENT_ID, "common") && idTokenClaims(personal, CLIENT_ID, "common"));
 });
 
 test("a cached access token is used until five minutes before it expires", () => {
@@ -328,4 +375,20 @@ test("a refused OAuth sign-in says to reconnect, and the token never reaches the
 	assert.equal(problem.kind, "auth");
 	assert.match(problem.message, /Reconnect to sign in with Microsoft again/);
 	assert.ok(!problem.message.includes("at-secret"));
+});
+
+test("an import request never brings its own access token: only core's login for a connected account does", () => {
+	const request = {
+		mailboxId: "m",
+		host: "imap.example.test",
+		username: "a@b.test",
+		password: "",
+		accessToken: "client",
+	};
+	assert.throws(() => parseImapImportRequest(request), /username and password are required/);
+	assert.throws(() => parseImapFolderListRequest(request), /username and password are required/);
+	const withPassword = parseImapFolderListRequest({ ...request, password: "pw" });
+	assert.equal(withPassword.accessToken, undefined);
+	assert.equal(parseImapImportRequest(request, "from-core").accessToken, "from-core");
+	assert.equal(parseImapFolderListRequest(request, "from-core").accessToken, "from-core");
 });

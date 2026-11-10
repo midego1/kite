@@ -1079,6 +1079,20 @@ const SHOTS: Shot[] = [
 		viewport: { width: 1280, height: 1100 },
 		open: async (page) => {
 			await saveDemoMicrosoftClient();
+			// The e2e server has no APP_URL; show the redirect URI a real install registers.
+			await page.route("**/api/admin/external-accounts/microsoft", async (route) => {
+				if (route.request().method() !== "GET") return route.continue();
+				const response = await route.fetch();
+				const status = (await response.json()) as Record<string, unknown>;
+				await route.fulfill({
+					response,
+					json: {
+						...status,
+						redirectUri: "https://mail.example.com/api/external-accounts/oauth/callback",
+						appUrlSet: true,
+					},
+				});
+			});
 			await page.goto("/general");
 			const card = page.locator("[data-connected-accounts-switch]");
 			await expect(card.locator("[data-microsoft-sign-in-status]")).toContainText("On: application");

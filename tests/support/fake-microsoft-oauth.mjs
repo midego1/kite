@@ -9,9 +9,12 @@ import { createServer } from "node:http";
  * answers `invalid_grant` for a revoked or unknown one. Every access token it issues is passed to `onAccessToken`, so
  * the fake IMAP and SMTP servers accept it. Never point it at, or copy it from, Microsoft.
  *
- * Options: `port` (default any free one), `clientId`, `clientSecret`, `account` (`{ address, oid }`, who signs in), `expiresIn` (seconds),
+ * Options: `port` (default any free one), `clientId`, `clientSecret`, `account` (`{ address, oid, tid? }`, who signs in), `expiresIn` (seconds),
  * `scope` (granted scopes), `omitRefreshToken`, `onAccessToken(address, token)`.
  */
+/** The tenant the fake's accounts belong to unless an account names another (`tid`). */
+const TENANT_ID = "7f3c1a2b-0000-4000-8000-00000000fa4e";
+
 export async function startFakeMicrosoftOAuth(options = {}) {
 	const clientId = options.clientId ?? "11111111-2222-3333-4444-555555555555";
 	const clientSecret = options.clientSecret ?? "fake-client-secret~value";
@@ -29,7 +32,13 @@ export async function startFakeMicrosoftOAuth(options = {}) {
 	const base64Url = (value) => Buffer.from(value).toString("base64url");
 	const idToken = (who) =>
 		`${base64Url(JSON.stringify({ alg: "none", typ: "JWT" }))}.${base64Url(
-			JSON.stringify({ aud: clientId, preferred_username: who.address, oid: who.oid, tid: "fake-tenant" }),
+			JSON.stringify({
+				aud: clientId,
+				iss: `https://login.microsoftonline.com/${who.tid ?? TENANT_ID}/v2.0`,
+				tid: who.tid ?? TENANT_ID,
+				preferred_username: who.address,
+				oid: who.oid,
+			}),
 		)}.`;
 	const issue = (who, withIdToken) => {
 		const accessToken = `at-${randomBytes(12).toString("hex")}`;

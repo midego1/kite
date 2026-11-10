@@ -208,17 +208,36 @@ export async function storeRefreshedTokens(
 	return Number(result.meta?.changes ?? 0) === 1;
 }
 
-/** The OAuth columns of a connect or reconnect, written after the row's own columns; bumps the version. */
+/**
+ * The tokens of a connect or reconnect, written after the row's own columns: the refresh token and the version bump
+ * go in the same statement, so a refresh that started before the reconnect fails its compare-and-swap and can never
+ * store its older token over this one.
+ */
 export async function writeAccountOAuth(
 	env: StoreEnv,
 	accountId: string,
-	values: { sealedAccessToken: string; expiresAt: Date; scopes: string; subject: string },
+	values: { sealedRefreshToken: string; sealedAccessToken: string; expiresAt: Date; scopes: string; subject: string },
 ): Promise<void> {
 	await env.DB.prepare(
-		"UPDATE external_accounts SET oauth_access_token = ?, oauth_expires_at = ?, oauth_scopes = ?, oauth_subject = ?, oauth_token_version = oauth_token_version + 1 WHERE id = ?",
+		"UPDATE external_accounts SET secret = ?, oauth_access_token = ?, oauth_expires_at = ?, oauth_scopes = ?, oauth_subject = ?, oauth_token_version = oauth_token_version + 1 WHERE id = ?",
 	)
-		.bind(values.sealedAccessToken, toSeconds(values.expiresAt), values.scopes, values.subject, accountId)
+		.bind(
+			values.sealedRefreshToken,
+			values.sealedAccessToken,
+			toSeconds(values.expiresAt),
+			values.scopes,
+			values.subject,
+			accountId,
+		)
 		.run();
+}
+
+/** The `<tid>:<oid>` the account was connected as, or null (never recorded). */
+export async function readOAuthSubject(env: StoreEnv, accountId: string): Promise<string | null> {
+	const row = await env.DB.prepare("SELECT oauth_subject AS subject FROM external_accounts WHERE id = ?")
+		.bind(accountId)
+		.first<{ subject: string | null }>();
+	return row?.subject ?? null;
 }
 
 /** Forgets a cached access token, so the next use refreshes (a server refused it). */

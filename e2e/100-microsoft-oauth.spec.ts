@@ -90,6 +90,9 @@ test("the owner sets up Microsoft sign-in; a user connects, receives, sends, los
 		// The user: Sign in with Microsoft instead of a password field.
 		await routeToFakes(page, imap.port, smtp.port);
 		await page.goto("/settings/connected-accounts");
+		// A cold dev server shows its loading overlay over the page for a while; wait until the page has its data.
+		await page.waitForLoadState("load");
+		await expect(page.getByText("No connected accounts")).toBeVisible({ timeout: 60_000 });
 		await page.getByRole("button", { name: "Connect account" }).click();
 		const dialog = page.getByRole("dialog", { name: "Connect an account" });
 		await dialog.getByLabel("Email address").fill(address);

@@ -11,11 +11,13 @@ type SourceFields = {
 	secure: boolean;
 	username: string;
 	password: string;
-	/** Set for an OAuth account; undefined otherwise, so a token sent with the request never survives the merge. */
-	accessToken: string | undefined;
 };
 
-export type ConnectedSource = { fields: SourceFields; externalAccountId: string };
+/**
+ * A connected account's login for one request. `accessToken` (an OAuth account) never travels in the request body:
+ * the parsers take it as its own argument, so a token can only come from core's login, never from the client.
+ */
+export type ConnectedSource = { fields: SourceFields; externalAccountId: string; accessToken?: string };
 
 /**
  * An import from a connected account (spec §9.2): the request names `accountId` instead of typing a password, and
@@ -48,9 +50,14 @@ async function connectedAccountSource(
 			secure: login.security === "tls",
 			username: login.username,
 			password: login.auth.kind === "password" ? login.auth.password : "",
-			accessToken: login.auth.kind === "xoauth2" ? login.auth.accessToken : undefined,
 		},
+		...(login.auth.kind === "xoauth2" ? { accessToken: login.auth.accessToken } : {}),
 	};
+}
+
+/** The OAuth access token of a connected account's login, or undefined (a password, or no account). */
+export function sourceAccessToken(source: ConnectedSource | null): string | undefined {
+	return source?.accessToken;
 }
 
 /** The request body with a connected account's login filled in, and the account; or the refusal to answer. */

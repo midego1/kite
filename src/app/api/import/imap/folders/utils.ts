@@ -4,6 +4,7 @@ import type { ImapFolderListRequest } from "./types";
 
 export function parseImapFolderListRequest(
 	input: ImapFolderListRequest,
+	accessToken?: string,
 ): Omit<ImapImportInput, "folder" | "limit" | "offset"> {
 	const host = input.host?.trim() ?? "";
 	const port = Number(input.port ?? 993);
@@ -15,6 +16,6 @@ export function parseImapFolderListRequest(
 		host,
 		port,
 		secure: input.secure ?? port === 993,
-		...parseImapSignIn(input),
+		...parseImapSignIn(input, accessToken),
 	};
 }

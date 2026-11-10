@@ -4,20 +4,24 @@ import type { ImportDestination } from "@/lib/import/destination-types";
 import type { ImapImportRequest } from "./types";
 
 /**
- * The sign-in of an import request: the user name with the password, or with a connected OAuth account's access token
- * (only `resolveImportSource` sets one, and it replaces the password).
+ * The sign-in of an import request: the user name with the password, or with `accessToken`, a connected OAuth
+ * account's token from core's login (`ConnectedSource.accessToken`), which replaces the password. A token is never
+ * read from the request body.
  */
 export function parseImapSignIn(
-	input: Pick<ImapImportRequest, "username" | "password" | "accessToken">,
+	input: Pick<ImapImportRequest, "username" | "password">,
+	accessToken?: string,
 ): Pick<ImapImportInput, "username" | "password" | "accessToken"> {
 	const username = input.username?.trim() ?? "";
 	const password = input.password ?? "";
-	const accessToken = typeof input.accessToken === "string" && input.accessToken ? input.accessToken : undefined;
 	if (!username || (!password && !accessToken)) throw new Error("IMAP username and password are required");
 	return { username, password, ...(accessToken ? { accessToken } : {}) };
 }
 
-export function parseImapImportRequest(input: ImapImportRequest): ImapImportInput & {
+export function parseImapImportRequest(
+	input: ImapImportRequest,
+	accessToken?: string,
+): ImapImportInput & {
 	mailboxId: string;
 	destination: ImportDestination;
 } {
@@ -37,7 +41,7 @@ export function parseImapImportRequest(input: ImapImportRequest): ImapImportInpu
 		host,
 		port,
 		secure: input.secure ?? port === 993,
-		...parseImapSignIn(input),
+		...parseImapSignIn(input, accessToken),
 		folder,
 		limit,
 		offset,

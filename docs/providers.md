@@ -137,19 +137,24 @@ Kite asks Microsoft for `https://outlook.office.com/IMAP.AccessAsUser.All`, `htt
 
 The registration can also come from the `MICROSOFT_OAUTH_CLIENT_ID`, `MICROSOFT_OAUTH_CLIENT_SECRET` and (optional, default `common`) `MICROSOFT_OAUTH_TENANT` secrets, which win over the saved one, as `RESEND_API_KEY` does.
 
-### Microsoft 365: IMAP and SMTP for each mailbox
+### 5. Microsoft 365: check IMAP and Authenticated SMTP for each mailbox
 
-Microsoft 365 can turn IMAP and authenticated SMTP off per mailbox or for the whole organisation, and SMTP is off by default in newer tenants. If **Sign in with Microsoft** works but Kite reports that Outlook refused its IMAP sign-in, or the account says sending failed:
+Do this for every Microsoft 365 mailbox before its user connects it (Outlook.com and Hotmail accounts need nothing). Microsoft 365 can turn IMAP and authenticated SMTP off per mailbox or for the whole organisation, and SMTP AUTH is off by default in newer tenants. Without IMAP the sign-in ends with "Outlook refused Kite's IMAP sign-in"; without Authenticated SMTP the account connects but cannot send as its address.
 
 1. Open the Exchange admin center at <https://admin.exchange.microsoft.com/#/mailboxes>, choose the user's mailbox, then **Manage email apps** under **Email apps**.
-2. Turn on **IMAP** and **Authenticated SMTP** and choose **Save**.
-3. For the whole organisation, check <https://admin.exchange.microsoft.com/#/settings>, **Mail flow**: **Turn off SMTP AUTH protocol for your organization** must be unticked (a per-mailbox setting overrides it).
+2. Make sure **IMAP** and **Authenticated SMTP** are both on, and choose **Save** if you changed anything.
+3. For the whole organisation, open <https://admin.exchange.microsoft.com/#/settings>, **Mail flow**: **Turn off SMTP AUTH protocol for your organization** must be unticked, unless every mailbox that sends through Kite has Authenticated SMTP turned on itself (the per-mailbox setting wins).
+4. With Exchange Online PowerShell you can check a mailbox at once: `Get-CASMailbox user@example.com | Format-List ImapEnabled,SmtpClientAuthenticationDisabled` must show `ImapEnabled : True` and `SmtpClientAuthenticationDisabled : False` (or empty, which follows the organisation setting).
 
-Changes can take an hour to reach every server. Outlook.com and Hotmail accounts need nothing.
+Changes can take an hour to reach every server.
 
 ### When the client secret expires
 
 Microsoft refuses an expired secret, so Kite cannot renew any connected Microsoft account's access: their checks pause with "Microsoft refused this Kite's app registration" and retry on their own. Create a new secret (step 3) before the old one expires and **Replace** it in Kite; the accounts carry on without anyone reconnecting.
+
+### Which account Kite connects
+
+Kite connects the address the user signed in to Microsoft as: the sign-in name (`preferred_username`, which is the user principal name of a work or school account and the address of a personal one), never a free-form `email` claim an organisation can set, and only after Outlook's IMAP server accepted that address with the new access. The sign-in must come from a tenant that fits the registration (its own tenant for a single-tenant app, personal accounts only for `consumers`, work and school only for `organizations`). Kite records the tenant and Microsoft's user id with the account, and **Reconnect** only accepts the same address signed in as the same user in the same tenant.
 
 ### What Kite stores
 

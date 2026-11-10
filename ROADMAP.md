@@ -163,7 +163,8 @@ Files next to mail, on storage the operator chooses. Today every object (raw MIM
    - Optional: move message bodies of old mail out of D1 into storage to stay under its 10 GB limit, keeping the search index.
    - Test: unit tests for the age rules; e2e moves an old message and still opens and searches it.
 4. **External storage** (needs 2)
-   - WebDAV first (Nextcloud, ownCloud, most NAS), shown as a linked folder. Google Drive and OneDrive follow, each with the install's own OAuth app, as in milestone 6.
+   - WebDAV first (Nextcloud, ownCloud, most NAS), shown as a linked folder (shipped: [Linked folders](docs/drive.md#linked-folders-webdav), migration 0107). Browse, download with Range, upload up to 100 MB, new folder, rename, move, delete and Save to Drive into it, for the folder's owner only. Still open: sharing and public links of linked items, Nextcloud chunked upload for larger files, and linked items in Recent and search.
+   - Google Drive and OneDrive follow, each with the install's own OAuth app, as in milestone 6.
 5. **Your own database** (self-hosted)
    - The database becomes pluggable like storage: a self-hosted install can run a hosted SQLite-compatible database (libSQL, Turso) instead of the local file, behind the existing `getDb()` seam. D1 on Cloudflare and the SQLite file in Docker stay the defaults; the dialect, the migration history and the FTS5 search index do not change.
    - Credentials are encrypted with `APP_ENCRYPTION_KEY` and checked before saving, like the AWS settings, and the admin overview shows which database and storage an install uses.

@@ -56,3 +56,24 @@ export type DriveSettingsValues = {
 
 /** A route's answer: the HTTP status and the JSON body. */
 export type DriveAnswer = { status: number; body: Record<string, unknown> };
+
+/** A linked WebDAV folder as the browser gets it: never the password. */
+export type DriveMountDto = {
+	id: string;
+	label: string;
+	url: string;
+	username: string;
+	status: "ok" | "auth_failed";
+	lastError: string | null;
+	createdAt: string;
+};
+
+/** One file or folder in a linked folder; `path` is relative to the linked folder (`/` is the folder itself). */
+export type DriveMountItemDto = {
+	path: string;
+	name: string;
+	kind: "file" | "folder";
+	size: number;
+	contentType: string | null;
+	updatedAt: string | null;
+};

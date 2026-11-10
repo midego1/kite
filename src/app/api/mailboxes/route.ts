@@ -12,7 +12,9 @@ import { ensureMailboxDomainRouting, getMailboxDomainAddresses } from "@/lib/mai
 import { isAddressDelivered, isAssistantAddressTaken } from "@/lib/email/routing";
 import { listScreenerSettings, enableScreenerForNewMailbox } from "@/lib/screener/settings";
 import { aiOffMailboxIds } from "@/lib/agent/mailbox-ai";
+import { getAgentEnabled } from "@/lib/agent/provider";
 import { listSendIdentities } from "@/lib/external-accounts/identities";
+import { getSemanticInstallSettings } from "@/lib/semantic/install-settings";
 import { ensurePersonalMailbox } from "./utils";
 import type { AppDatabase } from "@/db";
 
@@ -58,6 +60,12 @@ export async function GET(request: Request) {
 	);
 	// The user's own connected addresses, offered as From after each mailbox's own (spec §7.3).
 	const identities = await listSendIdentities(env, user.id);
+	// Whether the By meaning search chip has anything to do: the feature's install switch and the assistant kill
+	// switch, not a transient provider failure (a search still attempts meaning and reports that per request).
+	const [semanticSettings, assistantEnabled] = await Promise.all([
+		getSemanticInstallSettings(env),
+		getAgentEnabled(env),
+	]);
 	return NextResponse.json({
 		mailboxes: await Promise.all(
 			rows.map(async (mailbox) => ({
@@ -72,6 +80,7 @@ export async function GET(request: Request) {
 			})),
 		),
 		canCreateShared: user.role === "admin",
+		semanticSearchAvailable: semanticSettings.enabled && assistantEnabled,
 	});
 }
 

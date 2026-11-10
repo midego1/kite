@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import {
 	clearMailboxesCache,
 	fetchMailboxOptions,
+	getCachedSemanticSearchAvailable,
 	MAILBOXES_CHANGED_EVENT,
 	isIdentityMailbox,
 	SELECTED_MAILBOX_STORAGE_KEY,
@@ -59,6 +60,8 @@ type MailboxContextValue = {
 	viewMailboxes: MailboxOption[];
 	/** The mailbox scope for the message hooks (`setMailboxScopeParam`). */
 	mailboxScope: string | null;
+	/** Whether search by meaning has anything to do for this install; hides the By meaning chip while it does not. */
+	semanticSearchAvailable: boolean;
 };
 
 const NO_HIDDEN_MAILBOXES: string[] = [];
@@ -78,6 +81,7 @@ export function MailboxProvider({ children }: { children: ReactNode }) {
 	const [mailboxes, setMailboxes] = useState<MailboxOption[]>([]);
 	const [selectedMailbox, setSelectedMailboxState] = useState<MailboxOption | null>(null);
 	const [isLoading, setIsLoading] = useState(true);
+	const [semanticSearchAvailable, setSemanticSearchAvailable] = useState(true);
 	const [storedAllMailboxes, setAllMailboxes] = useStoredState(ALL_MAILBOXES_STORAGE_KEY, false);
 	const [hiddenMailboxIds, setHiddenMailboxIds] = useStoredState(ALL_MAILBOXES_HIDDEN_STORAGE_KEY, NO_HIDDEN_MAILBOXES);
 	const allMailboxes = storedAllMailboxes === true && mailboxes.length > 1;
@@ -93,6 +97,7 @@ export function MailboxProvider({ children }: { children: ReactNode }) {
 			.then((items) => {
 				if (cancelled || sessionToken !== getClientSessionKey()) return;
 				setMailboxes(items);
+				setSemanticSearchAvailable(getCachedSemanticSearchAvailable());
 				publishStartupStats({ mailboxes: items.length });
 
 				const storedId = localStorage.getItem(SELECTED_MAILBOX_STORAGE_KEY);
@@ -157,6 +162,7 @@ export function MailboxProvider({ children }: { children: ReactNode }) {
 				.then((items) => {
 					if (sessionToken !== getClientSessionKey()) return;
 					setMailboxes(items);
+					setSemanticSearchAvailable(getCachedSemanticSearchAvailable());
 					setSelectedMailboxState((current) => items.find((mailbox) => mailbox.id === current?.id) ?? current);
 				})
 				.catch(() => {});
@@ -214,6 +220,7 @@ export function MailboxProvider({ children }: { children: ReactNode }) {
 			setAllMailboxes,
 			hiddenMailboxIds,
 			setHiddenMailboxIds,
+			semanticSearchAvailable,
 			...view,
 		}),
 		[
@@ -223,6 +230,7 @@ export function MailboxProvider({ children }: { children: ReactNode }) {
 			isLoading,
 			mailboxes,
 			selectedMailbox,
+			semanticSearchAvailable,
 			setAllMailboxes,
 			setHiddenMailboxIds,
 			setSelectedMailbox,

@@ -1,4 +1,6 @@
 import { classifyAiError } from "@/lib/agent/ai-error-utils";
+import { externalProviderRefused } from "@/lib/agent/external-provider";
+import { getAgentEnabled } from "@/lib/agent/provider";
 import { aiCallTimeoutMs, isAgentLoopbackAllowed, parseCustomAgentBaseUrl } from "@/lib/agent/provider-url-utils";
 import { getSemanticCompatibleApiKey, getSemanticInstallSettings } from "./install-settings";
 
@@ -153,6 +155,25 @@ export async function resolvedEmbeddingProviderKind(
 	if (env.AI) return "workers_ai";
 	if (env.CF_ACCOUNT_ID && env.CF_TOKEN) return "workers_ai";
 	return "compatible";
+}
+
+export type EmbeddingAvailability = { ok: true } | { ok: false; reason: string };
+
+/**
+ * Whether an embedding call may be made right now: `semantic_search_enabled`, the install kill switch, and for a
+ * compatible provider the external-provider opt-in (re-checked on every call, since it can change between them) and
+ * a configured endpoint. Shared by the indexing drain (`indexer.ts`) and query-time search (`search.ts`).
+ */
+export async function embeddingAvailability(env: CloudflareEnv): Promise<EmbeddingAvailability> {
+	const [settings, agentEnabled] = await Promise.all([getSemanticInstallSettings(env), getAgentEnabled(env)]);
+	if (!settings.enabled) return { ok: false, reason: "off" };
+	if (!agentEnabled) return { ok: false, reason: "assistant_disabled" };
+	const kind = await resolvedEmbeddingProviderKind(env);
+	if (kind === "compatible") {
+		if (await externalProviderRefused(env, "compatible")) return { ok: false, reason: "external_provider_not_allowed" };
+		if (!settings.compatibleBaseUrl) return { ok: false, reason: "no_provider" };
+	}
+	return { ok: true };
 }
 
 /**

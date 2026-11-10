@@ -24,6 +24,9 @@ export function useMessages(
 	const [limit, setLimit] = useState(filters?.limit ?? 25);
 	const [offset, setOffset] = useState(filters?.offset ?? 0);
 	const [nextCursor, setNextCursor] = useState<string | null>(null);
+	const [semantic, setSemantic] = useState<MessageListResponse["semantic"]>(undefined);
+	const [semanticReason, setSemanticReason] = useState<string | undefined>(undefined);
+	const [keywordTotal, setKeywordTotal] = useState<number | undefined>(undefined);
 	// Rows of another mailbox scope (switching to or from All mailboxes) are dropped, not shown while loading.
 	const loadedScope = useRef(mailboxId);
 
@@ -43,6 +46,9 @@ export function useMessages(
 			setLimit(data.limit ?? filters?.limit ?? 25);
 			setOffset(data.offset ?? filters?.offset ?? 0);
 			setNextCursor(data.nextCursor ?? null);
+			setSemantic(data.semantic);
+			setSemanticReason(data.semanticReason);
+			setKeywordTotal(data.keywordTotal);
 		}
 
 		async function loadMessages(force = false, showLoading = false) {
@@ -104,11 +110,24 @@ export function useMessages(
 		filters?.offset,
 		filters?.query,
 		filters?.read,
+		filters?.semantic,
 		filters?.title,
 		folder,
 		folderId,
 		mailboxId,
 	]);
 
-	return { messages, unreadCount, isLoading, total, limit, offset, nextCursor, updateMessages: setMessages };
+	return {
+		messages,
+		unreadCount,
+		isLoading,
+		total,
+		limit,
+		offset,
+		nextCursor,
+		semantic,
+		semanticReason,
+		keywordTotal,
+		updateMessages: setMessages,
+	};
 }

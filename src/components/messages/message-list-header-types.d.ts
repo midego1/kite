@@ -33,4 +33,9 @@ export type MessageListHeaderProps = {
 	screenerVisible: boolean;
 	filter: { value: MessageListFilter; onChange: (value: MessageListFilter) => void } | null;
 	emptyFolder: { folder: "trash" | "spam"; disabled: boolean; emptying: boolean; run: () => void } | null;
+	/** Shown under the search field while a search fell back to keyword matches only. */
+	semanticUnavailable?: boolean;
+	/** Shown under the search field on a hybrid page (By meaning on) that left keyword matches out of its cap:
+	 * `count` is the real keyword total, `run` turns the chip off to reach all of it. */
+	showAllKeywordMatches?: { count: number; run: () => void } | null;
 };

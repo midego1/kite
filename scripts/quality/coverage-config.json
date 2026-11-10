@@ -297,7 +297,8 @@
 		"src/lib/mcp/server-utils.ts",
 		"src/lib/admin/onboarding-checklist-utils.ts",
 		"src/lib/semantic/chunk-utils.ts",
-		"src/lib/semantic/filter-utils.ts"
+		"src/lib/semantic/filter-utils.ts",
+		"src/lib/semantic/fusion-utils.ts"
 	],
 	"ungated": {
 		"src/lib/finance/payment-keywords-utils.ts": "Only phrase lists and regular expressions; tests/finance-payments-detect.test.mjs runs them through detectPayment.",

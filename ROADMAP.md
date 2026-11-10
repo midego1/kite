@@ -197,9 +197,10 @@ Shipped in [#50](https://github.com/midego1/kite/pull/50), specified in [docs/sp
    - A document ledger: one entry per invoice, payment, credit note, refund or failed payment, linked to its message and attachment (a reference, never a copy), with a "paid in the last 12 months" total per currency.
    - Renewal and trial reminders from a module cron task: a realtime notice, the Subscriptions sidebar count and, through a new Calendar service, a calendar event.
    - The `list_subscriptions` tool, a search section, the `finance:subscription` record kind and the webhook events `finance.subscription.detected` and `finance.subscription.renewal_due`. Migration 0063; both tables are in the backup lists.
+   - **Payments by mail**: one-off receipts, invoices, refunds and credit notes found in mail are recorded automatically on the Payments tab (no card, [§25 of the spec](docs/specs/money-watch.md#25-payments-by-mail-one-off-documents)), with a fixed set of categories set only where obvious and editable by hand, a filtered **Export CSV**, the `list_payments` tool (`mcp:finance-read`), the `finance:payment` record kind, a Payments search section and the `finance.payment.recorded` webhook event ([§27](docs/specs/money-watch.md#27-payment-categories-export-and-reach)). Migrations 0094 and 0109.
    - **Keep receipts**: a per-user setting (on by default) lets a background task, every few minutes, file a tracked subscription's, a document's or a payment's mail into the owner's Drive under `Money Watch/Receipts/<year>/` shortly after it is recorded (the mail must stay until the copy is in Drive), so the row keeps working after the mail is gone; a "Save receipts for existing payments" backfill covers rows recorded earlier. See [§26 of the Money Watch spec](docs/specs/money-watch.md#26-keep-receipts-shipped). Migration 0102.
 2. **Later**
-   - One-off purchases and general expense tracking (a receipt with no subscription records nothing today).
+   - Budgets, bank or card connections and currency conversion (general expense tracking beyond payments found in mail).
    - More events (`finance.subscription.updated`, `finance.document.recorded`), assistant write tools, `mailto:` cancel links and automatic updates from renewal invoices once an Act level exists.
 
 ## Milestone 19: Module platform (builtin modules first, sandboxed apps later)

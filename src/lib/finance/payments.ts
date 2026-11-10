@@ -1,7 +1,9 @@
-import { and, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { financeCharges, financePayments, financeSubscriptions } from "@/db/schema/finance";
+import { missingColumnFromError } from "@/lib/auth/user-lookup-utils";
 import { getEnv } from "@/lib/cloudflare";
+import { insertRow, selectRows } from "@/lib/db/pending-columns";
 import { isNoSuchTableError } from "@/lib/modules/state-utils";
 import { FinanceRefusal, MIGRATION_PENDING_ERROR, financeTablesReady } from "./errors";
 
@@ -50,12 +52,36 @@ export async function paymentId(userId: string, messageId: string): Promise<stri
 	return `fpay_${hex}`;
 }
 
-/** Inserts a payment unless the owner already has a row for the message (a removed one included); true when written. */
+/**
+ * Inserts a payment unless the owner already has a row for the message (a removed one included); true when written.
+ * Before migration 0109 there is no `category` column: the insert is retried without it (a category is derived, so
+ * nothing the owner typed is lost) and "written" is whether the row now exists where it did not a moment ago.
+ */
 export async function insertPayment(values: PaymentInsert): Promise<boolean> {
-	const inserted = await onPaymentTables(() =>
-		db().insert(financePayments).values(values).onConflictDoNothing().returning({ id: financePayments.id }),
-	);
-	return inserted.length > 0;
+	return onPaymentTables(async () => {
+		try {
+			const inserted = await db()
+				.insert(financePayments)
+				.values(values)
+				.onConflictDoNothing()
+				.returning({ id: financePayments.id });
+			return inserted.length > 0;
+		} catch (error) {
+			if (missingColumnFromError(error) !== "category") throw error;
+		}
+		const existing = await rowExists(values.id!);
+		await insertRow(db(), financePayments, { ...values, category: null }, { ignoreConflict: true });
+		return !existing && (await rowExists(values.id!));
+	});
+}
+
+async function rowExists(id: string): Promise<boolean> {
+	const rows = await db()
+		.select({ id: financePayments.id })
+		.from(financePayments)
+		.where(eq(financePayments.id, id))
+		.limit(1);
+	return rows.length > 0;
 }
 
 /** Whether the owner tracks a subscription with one of these vendor keys: its documents go to that ledger instead. */
@@ -91,26 +117,25 @@ export async function messageRecorded(userId: string, messageId: string): Promis
 /** The owner's payment rows that are not removed, newest first. */
 export function ownerPayments(userId: string): Promise<PaymentRow[]> {
 	return onPaymentTables(() =>
-		db()
-			.select()
-			.from(financePayments)
-			.where(and(eq(financePayments.userId, userId), isNull(financePayments.removedAt)))
-			.orderBy(desc(financePayments.documentAt), desc(financePayments.createdAt)),
+		selectRows(
+			db(),
+			financePayments,
+			and(eq(financePayments.userId, userId), isNull(financePayments.removedAt)),
+			undefined,
+			sql`${financePayments.documentAt} DESC, ${financePayments.createdAt} DESC`,
+		),
 	);
 }
 
 /** One of the owner's payment rows, removed or not; null for anyone else. */
 export async function ownerPayment(userId: string, id: string): Promise<PaymentRow | null> {
 	const [row] = await onPaymentTables(() =>
-		db()
-			.select()
-			.from(financePayments)
-			.where(and(eq(financePayments.id, id), eq(financePayments.userId, userId)))
-			.limit(1),
+		selectRows(db(), financePayments, and(eq(financePayments.id, id), eq(financePayments.userId, userId)), 1),
 	);
 	return row ?? null;
 }
 
+/** Changing a category needs migration 0109; before it, a change that names the column is refused like any write. */
 export async function updatePayment(userId: string, id: string, columns: Partial<PaymentInsert>): Promise<boolean> {
 	const updated = await onPaymentTables(() =>
 		db()

@@ -6,7 +6,15 @@ import { MoreHorizontal, Sparkles, WalletCards } from "lucide-react";
 import { useT } from "@/lib/i18n/use-t";
 import { cn } from "@/lib/utils";
 import type { PaymentItem, PaymentListStatus } from "./payments-types";
-import { amountText, dayLabel, editable, mailHref, STATUS_LABELS, TYPE_LABELS } from "./payments-utils";
+import {
+	amountText,
+	CATEGORY_LABELS,
+	dayLabel,
+	editable,
+	mailHref,
+	STATUS_LABELS,
+	TYPE_LABELS,
+} from "./payments-utils";
 import { removeWithReceiptsCheck, writeWithUndo } from "./subscription-writes";
 
 const ITEM_CLASS =
@@ -144,6 +152,12 @@ export function PaymentRow({ item, locale, onCorrect, onChanged }: RowProps) {
 							<span dir="ltr" data-payment-sender>
 								{item.sender}
 							</span>
+						</>
+					)}
+					{item.category && (
+						<>
+							{" · "}
+							<span data-payment-category={item.category}>{t(CATEGORY_LABELS[item.category])}</span>
 						</>
 					)}
 					{!item.message || item.message.unavailable ? ` · ${t("Message deleted")}` : ""}

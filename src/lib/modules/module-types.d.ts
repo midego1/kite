@@ -17,6 +17,7 @@ export type RecordKind =
 	| "templates:template"
 	| "import:job"
 	| "finance:subscription"
+	| "finance:payment"
 	| "drive:file";
 
 export type RecordRef = { kind: RecordKind; id: string };

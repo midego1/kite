@@ -155,6 +155,7 @@ test("a correction sends only what changed, and refuses what cannot be saved", (
 		documentOn: "2026-11-01",
 		docType: "invoice",
 		status: "open",
+		category: "",
 	});
 	assert.deepEqual(view.correctionBody(form, invoice), { fields: {} });
 	assert.deepEqual(view.correctionBody({ ...form, status: "paid", amount: "119,50" }, invoice), {

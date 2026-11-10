@@ -123,6 +123,14 @@ export const financePayments = sqliteTable(
 		updatedAt: integer("updated_at", { mode: "timestamp" })
 			.notNull()
 			.$defaultFn(() => new Date()),
+		/**
+		 * Migration 0109 (spec §27). One of a small fixed set (`PAYMENT_CATEGORIES`, `src/lib/finance/category-utils.ts`),
+		 * set by code where one is obvious and by the owner otherwise; null is no category. Reads and inserts go
+		 * through `selectRows` and `insertRow`, so a deploy ahead of the migration keeps working.
+		 */
+		category: text("category", {
+			enum: ["software", "shopping", "food", "travel", "utilities", "health", "entertainment", "education", "other"],
+		}),
 	},
 	(t) => [
 		uniqueIndex("finance_payments_message_idx").on(t.userId, t.messageId),

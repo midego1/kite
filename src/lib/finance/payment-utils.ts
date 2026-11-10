@@ -1,3 +1,5 @@
+import { formatMoney } from "./amount-utils";
+import { categoryOf, type PaymentCategory } from "./category-utils";
 import type { Analysis } from "./detect-utils";
 import { bodySaysOwed, isDocumentAttachment, subjectSaysOwed } from "./document-utils";
 import { SUBJECT_KEYWORD } from "./keywords-utils";
@@ -33,6 +35,8 @@ export type PaymentFinding = {
 	docRef: string | null;
 	/** The `Message-ID`, normalised; one row per copy of a message delivered to several mailboxes. */
 	mailRef: string | null;
+	/** Set by code where one category is obvious (spec §27.2), never by the model; null otherwise. */
+	category: PaymentCategory | null;
 };
 
 /** At least this much evidence records a payment.
@@ -140,7 +144,20 @@ export function detectPayment(
 		modelFields: analysis.modelFields.filter((field) => ["vendor", "amount", "currency", "docType"].includes(field)),
 		docRef: rowReference(docType, documentReference(subject, text), analysis.amount),
 		mailRef: messageReference(input.headers.messageId),
+		category: categoryFor(analysis.vendor, subject, Boolean(person), input.message.from),
 	};
+}
+
+/** The category the vendor, subject and sender's domain make obvious (spec §27.2); a person's address names none. */
+function categoryFor(vendor: string, subject: string | null, person: boolean, from: string) {
+	return categoryOf({ vendor, subject, sender: person ? null : senderDomain(from) });
+}
+
+/** The registrable domain a message came from, "stripe.com" for `receipts@mail.stripe.com`; null without one. */
+function senderDomain(from: string): string | null {
+	const address = senderAddress(from);
+	const at = address.lastIndexOf("@");
+	return at > 0 ? registrableDomain(address.slice(at + 1)) || null : null;
 }
 
 const MAX_REF = 60;
@@ -208,4 +225,18 @@ export function worthScanning(message: LightMessage): boolean {
 	return message.attachments.some((attachment) =>
 		isDocumentAttachment({ id: "", size: 0, contentType: attachment.contentType, filename: attachment.filename }),
 	);
+}
+
+/** The record reference of a payment row (`finance:payment`, spec §27.3). */
+export const paymentRef = (id: string) => ({ kind: "finance:payment" as const, id });
+
+/** Where a payment row opens: the Payments tab showing just that row. */
+export const paymentHref = (id: string) => `/finance?tab=payments&payment=${encodeURIComponent(id)}`;
+
+type LabelRow = { vendor: string; amountMinor: number; currency: string; docType: PaymentDocType };
+
+/** "Acme · €12.00", with a minus for a refund or credit note: the row's label in search, refs and the tool. */
+export function paymentLabel(row: LabelRow, locale: string): string {
+	const sign = row.docType === "refund" || row.docType === "credit" ? "−" : "";
+	return `${row.vendor} · ${sign}${formatMoney(row.amountMinor, row.currency, locale)}`;
 }

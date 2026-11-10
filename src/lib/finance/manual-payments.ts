@@ -31,6 +31,7 @@ function beforeOf(row: PaymentRow) {
 		documentAt: row.documentAt.toISOString(),
 		docType: row.docType,
 		status: row.status,
+		category: row.category,
 		removedAt: row.removedAt ? row.removedAt.toISOString() : null,
 	};
 }
@@ -42,6 +43,7 @@ function paymentView(row: PaymentRow) {
 		docType: row.docType,
 		status: row.status,
 		amount: { minor: row.amountMinor, currency: row.currency },
+		category: row.category,
 		documentOn: dateToDay(row.documentAt),
 		messageId: row.messageId,
 	};

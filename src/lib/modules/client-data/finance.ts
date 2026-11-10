@@ -15,7 +15,10 @@ export const SUBSCRIPTION_REASONS = {
 export const financeClientData: ClientModuleData = {
 	id: "finance",
 	name: "Money Watch",
-	searchSections: [{ id: "subscriptions", label: "Subscriptions" }],
+	searchSections: [
+		{ id: "subscriptions", label: "Subscriptions" },
+		{ id: "payments", label: "Payments" },
+	],
 	suggestionKinds: ["subscription"],
 	suggestionKindMeta: {
 		subscription: {
@@ -35,8 +38,8 @@ export const financeClientData: ClientModuleData = {
 			{
 				scope: "mcp:finance-read",
 				mailboxBound: false,
-				label: "Read subscriptions",
-				description: "List tracked subscriptions and renewals",
+				label: "Read subscriptions and payments",
+				description: "List tracked subscriptions, renewals and payments",
 			},
 		],
 		api: [],

@@ -132,21 +132,29 @@ test("manifests carry what the spec lists for each module", () => {
 	assert.deepEqual(finance.apiPrefixes, [{ prefix: "/api/finance" }]);
 	assert.deepEqual(
 		finance.recordKinds.map((item) => item.kind),
-		["finance:subscription"],
+		["finance:subscription", "finance:payment"],
 	);
 	assert.deepEqual(
 		finance.webhookEvents.map((event) => event.value),
-		["finance.subscription.detected", "finance.subscription.renewal_due"],
+		["finance.subscription.detected", "finance.subscription.renewal_due", "finance.payment.recorded"],
 	);
 	assert.deepEqual(
 		finance.grants.map((item) => item.grant),
 		["finance.read", "finance.write"],
 	);
 	assert.deepEqual(finance.mcpScopes, [
-		{ scope: "mcp:finance-read", label: "Read subscriptions", grants: ["finance.read"], mailboxBound: false },
+		{
+			scope: "mcp:finance-read",
+			label: "Read subscriptions and payments",
+			grants: ["finance.read"],
+			mailboxBound: false,
+		},
 	]);
 	assert.deepEqual(finance.apiKeyScopes, []);
-	assert.deepEqual(finance.searchSections, [{ id: "subscriptions", label: "Subscriptions" }]);
+	assert.deepEqual(finance.searchSections, [
+		{ id: "subscriptions", label: "Subscriptions" },
+		{ id: "payments", label: "Payments" },
+	]);
 	assert.deepEqual(finance.cronTasks, [
 		{ name: "remindRenewals", schedule: "*/5 * * * *", capability: "remindRenewals" },
 		{ name: "resumePaymentScans", schedule: "*/5 * * * *", capability: "resumePaymentScans" },
@@ -607,13 +615,13 @@ test("lifecycle hooks follow the data-hook rule", () => {
 
 test("listCapabilities returns the enabled modules' descriptors for a surface in registry order", () => {
 	const names = (surface, enabled) => listCapabilities(surface, enabled).map((item) => item.descriptor.name);
-	assert.equal(names("assistant_tool", IDS).length, 10);
+	assert.equal(names("assistant_tool", IDS).length, 11);
 	assert.deepEqual(names("assistant_tool", ["booking", "templates", "import"]), []);
-	assert.deepEqual(names("assistant_tool", ["finance"]), ["list_subscriptions", "track_subscription"]);
+	assert.deepEqual(names("assistant_tool", ["finance"]), ["list_payments", "list_subscriptions", "track_subscription"]);
 	assert.deepEqual(names("mcp_tool", ["calendar"]), names("assistant_tool", ["calendar"]));
-	assert.deepEqual(names("mcp_tool", ["finance"]), ["list_subscriptions"]);
+	assert.deepEqual(names("mcp_tool", ["finance"]), ["list_payments", "list_subscriptions"]);
 	assert.deepEqual(names("search", ["calendar"]), ["search"]);
-	assert.deepEqual(names("search", ["finance"]), ["search"]);
+	assert.deepEqual(names("search", ["finance"]), ["search", "searchPayments"]);
 	assert.deepEqual(names("search", ["booking"]), []);
 	assert.deepEqual(names("webhook_event", IDS), [
 		"eventCreated",
@@ -622,6 +630,7 @@ test("listCapabilities returns the enabled modules' descriptors for a surface in
 		"appointmentCreated",
 		"subscriptionDetected",
 		"renewalDue",
+		"paymentRecorded",
 	]);
 	assert.deepEqual(names("webhook_event", ["booking", "calendar"]), [
 		"eventCreated",
@@ -641,7 +650,7 @@ test("listCapabilities returns the enabled modules' descriptors for a surface in
 		"purgeDrive",
 	]);
 	assert.deepEqual(names("resolve_refs", ["drive"]), ["resolveRefs"]);
-	assert.deepEqual(names("webhook_event", ["finance"]), ["subscriptionDetected", "renewalDue"]);
+	assert.deepEqual(names("webhook_event", ["finance"]), ["subscriptionDetected", "renewalDue", "paymentRecorded"]);
 });
 
 test("registry sources use static imports only, with no dynamic loading", () => {

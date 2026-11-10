@@ -104,27 +104,39 @@ export class ImapConnection {
 		this.capabilities = [];
 	}
 
-	/**
-	 * `AUTHENTICATE PLAIN` without `SASL-IR`: the server answers with a continuation, then gets the token. The token
-	 * is never part of an error message.
-	 */
+	/** `AUTHENTICATE PLAIN` (`authenticate`), kept for the password sign-in. */
 	async authenticatePlain(token: string, initialResponse: boolean): Promise<void> {
-		if (initialResponse) {
-			await this.command(`AUTHENTICATE PLAIN ${token}`, "IMAP sign-in failed");
-			return;
-		}
+		await this.authenticate("PLAIN", token, initialResponse);
+	}
+
+	/**
+	 * `AUTHENTICATE <mechanism>` with one response: on the command line under `SASL-IR`, else after the server's
+	 * continuation. PLAIN never answers a second challenge; it is cancelled (RFC 9051 §6.2.2). A second challenge to
+	 * XOAUTH2 is the server's error (base64 JSON, spec §15.4), answered with an empty line to get the final `NO`. The
+	 * token is never part of an error message.
+	 */
+	async authenticate(mechanism: "PLAIN" | "XOAUTH2", token: string, initialResponse: boolean): Promise<void> {
 		const tag = this.nextTag();
-		await this.write(`${tag} AUTHENTICATE PLAIN\r\n`);
-		let sent = false;
+		await this.write(
+			initialResponse ? `${tag} AUTHENTICATE ${mechanism} ${token}\r\n` : `${tag} AUTHENTICATE ${mechanism}\r\n`,
+		);
+		let sent = initialResponse;
 		let cancelled = false;
+		let answeredError = false;
 		const count = newResponseCount();
 		while (true) {
 			const line = await this.readCountedLine(count);
-			if (line.startsWith("+") && !cancelled) {
-				// PLAIN is one response. A second challenge is cancelled (RFC 9051 §6.2.2), never answered again.
-				if (sent) cancelled = true;
-				sent = true;
-				await this.write(cancelled ? "*\r\n" : `${token}\r\n`);
+			if (line.startsWith("+") && !cancelled && !answeredError) {
+				if (!sent) {
+					sent = true;
+					await this.write(`${token}\r\n`);
+				} else if (mechanism === "XOAUTH2") {
+					answeredError = true;
+					await this.write("\r\n");
+				} else {
+					cancelled = true;
+					await this.write("*\r\n");
+				}
 				continue;
 			}
 			if (isTaggedCompletion(line, tag)) {

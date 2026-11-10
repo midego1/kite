@@ -3,6 +3,8 @@ import type { MailSocketSecurity } from "@/lib/net/types";
 export type ExternalAccountPresetId =
 	"gmail" | "google_workspace" | "microsoft" | "icloud" | "yahoo" | "aol" | "fastmail" | "other";
 
+export type ExternalAccountAuthKind = "password" | "oauth_google" | "oauth_microsoft";
+
 export type ExternalAccountStatus = "active" | "paused" | "auth_failed" | "tls_failed" | "error" | "disabled";
 
 export type MailServerSettings = { host: string; port: number; security: MailSocketSecurity };
@@ -31,6 +33,9 @@ export type ExternalAccountPreset = {
 /** Why connecting accounts is unavailable to a user, or null when it is allowed. */
 export type ConnectRefusal = "no_key" | "install_off" | "not_permitted" | "migration_pending";
 
+/** Which OAuth sign-ins this Kite offers (`/api/external-accounts`): set up by the owner in Admin → General. */
+export type OAuthProviders = { microsoft: boolean };
+
 /** An account as the API returns it: never the password, never the cursors. */
 export type ExternalAccountView = {
 	id: string;
@@ -43,10 +48,12 @@ export type ExternalAccountView = {
 	imap: MailServerSettings;
 	smtp: MailServerSettings | null;
 	username: string;
+	/** How Kite signs in: the saved password, or Sign in with Microsoft (spec §15), whose Reconnect starts it again. */
+	authKind: ExternalAccountAuthKind;
 	status: ExternalAccountStatus;
 	statusReason: string | null;
 	lastError: string | null;
-	/** Whether a password is saved (false once it was erased). */
+	/** Whether a password (or, for an OAuth account, its sign-in) is saved (false once it was erased). */
 	hasPassword: boolean;
 	sync: ExternalAccountSyncView;
 	sending: ExternalAccountSending;
@@ -148,4 +155,22 @@ export type SendIdentity = {
 	/** What the owner has to do first, when it is not available. */
 	action: "reconnect" | "test_connection" | "verify" | null;
 	hint: string | null;
+};
+
+/** What Admin → General shows about Microsoft sign-in. The client secret is never part of it. */
+export type MicrosoftClientStatus = {
+	/** `env` when the MICROSOFT_OAUTH_* variables are set (they win), `settings` when saved here, else null. */
+	source: "env" | "settings" | null;
+	/** The Application (client) ID in use; not a secret, shown so the owner can tell which registration it is. */
+	clientId: string | null;
+	tenant: string | null;
+	/** The redirect URI to register on the app, exactly. */
+	redirectUri: string;
+	/** Whether the redirect URI is under APP_URL (else it is this request's origin, fine for development only). */
+	appUrlSet: boolean;
+	/** The saved registration cannot be opened (APP_ENCRYPTION_KEY missing or changed). */
+	unreadable: boolean;
+	/** APP_ENCRYPTION_KEY is set, so a registration can be saved here. */
+	keyConfigured: boolean;
+	migrationPending: boolean;
 };

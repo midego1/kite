@@ -1,6 +1,7 @@
 import { openMailSocket } from "@/lib/net/connect";
 import { MailServerRefusedError } from "@/lib/net/errors";
 import { allowsPlainText, mailHostPolicy } from "@/lib/net/host-guard-utils";
+import { xoauth2Token } from "@/lib/net/xoauth2-utils";
 import { ImapConnection, type ImapConnectionOptions } from "./connection";
 import {
 	chooseAuthMethod,
@@ -112,7 +113,8 @@ const UID_SEARCH_MS = 4 * 60_000;
 
 /**
  * Connects, makes sure the connection is encrypted (implicit TLS, or STARTTLS before anything else is sent) and
- * signs in with `AUTHENTICATE PLAIN` or `LOGIN`. Credentials are never sent over a plain connection, except to a
+ * signs in with `AUTHENTICATE PLAIN` or `LOGIN`, or with `AUTHENTICATE XOAUTH2` for an OAuth account (`accessToken`
+ * set). Credentials are never sent over a plain connection, except to a
  * loopback fake under `EXTERNAL_ACCOUNTS_ALLOW_INSECURE_LOOPBACK` outside production.
  */
 export async function openImapSession(
@@ -259,6 +261,13 @@ async function signIn(imap: ImapConnection, login: ImapLogin, plainTextAllowed: 
 		await imap.capability();
 	}
 	if (preauth) return;
+	if (login.accessToken) {
+		if (!imap.capabilities.includes("AUTH=XOAUTH2"))
+			throw new MailServerRefusedError("The IMAP server does not accept a Microsoft or Google sign-in (no XOAUTH2)");
+		const token = xoauth2Token(login.username, login.accessToken);
+		await imap.authenticate("XOAUTH2", token, imap.capabilities.includes("SASL-IR"));
+		return;
+	}
 	const method = chooseAuthMethod(imap.capabilities);
 	if (!method) throw new MailServerRefusedError("The IMAP server does not accept a password sign-in");
 	if (method === "login") {

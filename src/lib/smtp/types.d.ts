@@ -6,7 +6,10 @@ export type SmtpLogin = {
 	port: number;
 	security: MailSocketSecurity;
 	username: string;
+	/** Empty for an OAuth account. */
 	password: string;
+	/** An OAuth access token (spec §15.4): when set, the session signs in with XOAUTH2 and `password` is not used. */
+	accessToken?: string;
 };
 
 /** One complete reply: the code of its last line and the text of every line. */

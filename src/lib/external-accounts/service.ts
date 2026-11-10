@@ -7,9 +7,16 @@ import { newId } from "@/lib/ids";
 import type { ImapLogin } from "@/lib/imap/types";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { MailServerRefusedError } from "@/lib/net/errors";
-import { openSetting, SecretBoxError, sealSetting } from "@/lib/security/secret-box";
+import { sealSetting } from "@/lib/security/secret-box";
 import { CONNECT_REFUSAL_TEXT, connectRefusal } from "./access";
 import { auditExternalAccount, recordConnectionTest } from "./audit";
+import {
+	accountCredential,
+	type AccountCredential,
+	CredentialUnavailableError,
+	testImapWithCredential,
+} from "./credential";
+import { clearAccountOAuth } from "./oauth-store";
 import { testImapConnection, testSmtpConnection, type ImapBaseline } from "./connection-test";
 import type { ConnectionProblem } from "./connection-utils";
 import { ExternalAccountRefusal, externalAccountTablesReady } from "./errors";
@@ -76,7 +83,7 @@ export async function assertAllowed(env: CloudflareEnv, userId: string): Promise
 	if (refusal) throw refusalFor(refusal);
 }
 
-function assertKitePassword(actor: AccountActor, value: unknown): void {
+export function assertKitePassword(actor: AccountActor, value: unknown): void {
 	if (typeof value !== "string" || !value || !verifyPassword(value, actor.passwordHash))
 		throw new ExternalAccountRefusal(400, "Your Kite password is incorrect", "KITE_PASSWORD");
 }
@@ -91,7 +98,7 @@ function parse(body: unknown, current?: ExternalAccountView): ExternalAccountInp
 }
 
 /** The account's mail goes to a mailbox the user has full access to (spec §12). */
-async function assertMailbox(env: CloudflareEnv, actor: AccountActor, mailboxId: string): Promise<void> {
+export async function assertMailbox(env: CloudflareEnv, actor: AccountActor, mailboxId: string): Promise<void> {
 	const access = await getMailboxAccessLevel(getDb(env), actor, mailboxId);
 	if (!access?.canManage) throw new ExternalAccountRefusal(404, "Mailbox not found");
 }
@@ -119,7 +126,7 @@ export async function assertNotKiteDomain(env: CloudflareEnv, address: string): 
  * address proves nothing: it is never checked (that would answer for anyone who runs a server) and claims nothing
  * (migration 0082 leaves it out of the unique index).
  */
-async function assertAddressFree(
+export async function assertAddressFree(
 	env: CloudflareEnv,
 	actor: AccountActor,
 	input: Pick<ExternalAccountInput, "address" | "preset">,
@@ -156,8 +163,8 @@ async function assertServers(env: CloudflareEnv, input: ExternalAccountInput): P
 	}
 }
 
-function loginFor(input: Pick<ExternalAccountInput, "imap" | "username">, password: string): ImapLogin {
-	return { ...input.imap, username: input.username, password };
+function loginFor(input: Pick<ExternalAccountInput, "imap" | "username">, credential: AccountCredential): ImapLogin {
+	return { ...input.imap, username: input.username, ...credential };
 }
 
 /**
@@ -166,23 +173,23 @@ function loginFor(input: Pick<ExternalAccountInput, "imap" | "username">, passwo
  * is sent through the same server. A failure never fails the connect or the test of the IMAP side; its reason is
  * returned for the account's last error.
  */
-async function verifySending(
+export async function verifySending(
 	env: CloudflareEnv,
 	id: string,
 	input: Pick<ExternalAccountInput, "smtp" | "username">,
-	password: string,
+	credential: AccountCredential,
 ): Promise<ConnectionProblem | null> {
 	if (!input.smtp) {
 		await writeSmtpVerified(env, id, null);
 		return null;
 	}
-	const test = await testSmtpConnection(env, { ...input.smtp, username: input.username, password });
+	const test = await testSmtpConnection(env, { ...input.smtp, username: input.username, ...credential });
 	await writeSmtpVerified(env, id, test.ok ? new Date() : null);
 	return test.ok ? null : { ...test.problem, message: `Sending: ${test.problem.message}` };
 }
 
 /** Counts one attempt against the user's limit (429 past it); runs before any other check of the attempt. */
-function countAttempt(
+export function countAttempt(
 	env: CloudflareEnv,
 	userId: string,
 	input: Pick<ExternalAccountInput, "imap" | "preset">,
@@ -227,7 +234,7 @@ function accountColumns(input: ExternalAccountInput) {
 }
 
 /** Stores where INBOX stood at the test, unless the account already has a cursor there (a reconnect). */
-async function saveBaseline(env: CloudflareEnv, accountId: string, baseline: ImapBaseline): Promise<void> {
+export async function saveBaseline(env: CloudflareEnv, accountId: string, baseline: ImapBaseline): Promise<void> {
 	await getDb(env)
 		.insert(externalAccountFolders)
 		.values({
@@ -242,7 +249,7 @@ async function saveBaseline(env: CloudflareEnv, accountId: string, baseline: Ima
 		.onConflictDoNothing();
 }
 
-const isUniqueViolation = (error: unknown) =>
+export const isUniqueViolation = (error: unknown) =>
 	/UNIQUE constraint failed/i.test(error instanceof Error ? `${error.message} ${String(error.cause ?? "")}` : "");
 
 /**
@@ -251,7 +258,7 @@ const isUniqueViolation = (error: unknown) =>
  * it); saying "taken" there would tell anyone running a server which addresses are connected, so it gets the same
  * answer as any other pending update.
  */
-function addressConflict(preset: ExternalAccountInput["preset"]): ExternalAccountRefusal {
+export function addressConflict(preset: ExternalAccountInput["preset"]): ExternalAccountRefusal {
 	if (preset === "other")
 		return new ExternalAccountRefusal(
 			409,
@@ -281,7 +288,7 @@ export async function connectExternalAccount(
 	await assertMailbox(env, actor, input.mailboxId);
 	await assertNotKiteDomain(env, input.address);
 	await assertServers(env, input);
-	const test = await testImapConnection(env, loginFor(input, password));
+	const test = await testImapConnection(env, loginFor(input, { password }));
 	if (!test.ok) throw failedTest(test.problem);
 	await assertAddressFree(env, actor, input);
 	const now = new Date();
@@ -306,7 +313,7 @@ export async function connectExternalAccount(
 		throw error;
 	}
 	await saveBaseline(env, id, test.baseline);
-	const sendProblem = await verifySending(env, id, input, password);
+	const sendProblem = await verifySending(env, id, input, { password });
 	if (sendProblem)
 		await getDb(env)
 			.update(externalAccounts)
@@ -442,7 +449,7 @@ async function reconnect(
 	assertKitePassword(actor, edit.body.kitePassword);
 	if (input.address !== current.address) await assertNotKiteDomain(env, input.address);
 	await assertServers(env, input);
-	const test = await testImapConnection(env, loginFor(input, password));
+	const test = await testImapConnection(env, loginFor(input, { password }));
 	if (!test.ok) throw failedTest(test.problem);
 	if (input.address !== current.address || input.preset !== current.preset)
 		await assertAddressFree(env, actor, input, id);
@@ -453,9 +460,12 @@ async function reconnect(
 		current.username === input.username;
 	if (!sameInbox) await forgetInbox(env, id);
 	await saveBaseline(env, id, test.baseline);
-	const sendProblem = await verifySending(env, id, input, password);
+	const sendProblem = await verifySending(env, id, input, { password });
+	// A Microsoft account edited to a password at another provider is no longer an OAuth account.
+	if (current.authKind !== "password") await clearAccountOAuth(env, id);
 	return {
 		...fromPreset,
+		authKind: "password",
 		secret: await sealSetting(env, password),
 		status: "active",
 		statusReason: null,
@@ -467,18 +477,7 @@ async function reconnect(
 	};
 }
 
-/** The saved password, or null when it was erased or can no longer be opened (APP_ENCRYPTION_KEY changed). */
-async function openStoredSecret(env: CloudflareEnv, row: ExternalAccountRow): Promise<string | null> {
-	if (!row.secret) return null;
-	try {
-		return await openSetting(env, row.secret);
-	} catch (error) {
-		if (error instanceof SecretBoxError) return null;
-		throw error;
-	}
-}
-
-/** **Test connection** for a saved account: signs in with the saved password and records the outcome as its state. */
+/** **Test connection** for a saved account: signs in with the saved password (or Microsoft sign-in) and records the outcome as its state. */
 export async function retestExternalAccount(
 	env: CloudflareEnv,
 	actor: AccountActor,
@@ -489,12 +488,16 @@ export async function retestExternalAccount(
 	const view = serializeExternalAccount(row);
 	const now = new Date();
 	const db = getDb(env);
-	const secret = await openStoredSecret(env, row);
-	if (!secret) {
-		const problem: ConnectionProblem = {
-			kind: "auth",
-			message: "The saved password is no longer available. Reconnect the account.",
-		};
+	let opened: Awaited<ReturnType<typeof testImapWithCredential>>;
+	try {
+		const credential = await accountCredential(env, row);
+		await countAttempt(env, actor.id, view, id);
+		opened = await testImapWithCredential(env, row, { ...view.imap, username: view.username }, credential);
+	} catch (error) {
+		if (!(error instanceof CredentialUnavailableError)) throw error;
+		if (error.kind === "transient")
+			return { account: await ownView(env, actor.id, id), problem: { kind: "unreachable", message: error.message } };
+		const problem: ConnectionProblem = { kind: "auth", message: error.message };
 		await db
 			.update(externalAccounts)
 			.set({ status: "auth_failed", lastError: problem.message, updatedAt: now })
@@ -502,9 +505,8 @@ export async function retestExternalAccount(
 		await writeSmtpVerified(env, id, null);
 		return { account: await ownView(env, actor.id, id), problem };
 	}
-	await countAttempt(env, actor.id, view, id);
-	const test = await testImapConnection(env, loginFor(view, secret));
-	const sendProblem = test.ok ? await verifySending(env, id, view, secret) : null;
+	const { test, credential } = opened;
+	const sendProblem = test.ok ? await verifySending(env, id, view, credential) : null;
 	if (test.ok) {
 		// A paused account stays paused: a test proves the sign-in, not that the owner wants it running.
 		await db

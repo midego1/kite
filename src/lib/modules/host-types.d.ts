@@ -142,8 +142,9 @@ export type HostContact = { id: string; displayName: string | null };
 export type HostSourceLoginRequest = { jobId: string } | { accountId: string };
 
 /**
- * The login of a connected account, for one run of an import from it. `auth` is a password today; OAuth accounts
- * (spec §15) will answer `{ kind: "xoauth2", user, accessToken }`. Never store it.
+ * The login of a connected account, for one run of an import from it: a password, or for an OAuth account (spec §15)
+ * an access token for XOAUTH2. Never store it. `unavailable` means the sign-in could not be renewed right now (try the
+ * run again later); `auth_failed` that the owner must reconnect.
  */
 export type HostSourceLogin =
 	| {
@@ -153,10 +154,10 @@ export type HostSourceLogin =
 				port: number;
 				security: "tls" | "starttls";
 				username: string;
-				auth: { kind: "password"; password: string };
+				auth: { kind: "password"; password: string } | { kind: "xoauth2"; user: string; accessToken: string };
 			};
 	  }
-	| { ok: false; reason: "removed" | "not_allowed" | "auth_failed"; message: string };
+	| { ok: false; reason: "removed" | "not_allowed" | "auth_failed" | "unavailable"; message: string };
 
 /** What `suggestions` and `actions` need from automatic reading, bound by it so this file does not import it. */
 export type HostAgentServices = {

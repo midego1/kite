@@ -5,7 +5,10 @@ export type ImapLogin = {
 	port: number;
 	security: MailSocketSecurity;
 	username: string;
+	/** Empty for an OAuth account. */
 	password: string;
+	/** An OAuth access token (spec §15.4): when set, the session signs in with XOAUTH2 and `password` is not used. */
+	accessToken?: string;
 };
 
 export type ImapTlsPlan = { action: "none" } | { action: "starttls" } | { action: "refuse"; reason: string };

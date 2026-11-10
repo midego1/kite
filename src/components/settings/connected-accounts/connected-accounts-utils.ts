@@ -164,23 +164,71 @@ export const STATUS_LABELS: Record<ExternalAccountStatus, string> = {
 };
 
 /** What the owner should do about an account that is not connected, in plain words. */
-export function statusHint(account: Pick<ExternalAccountView, "status" | "statusReason">): string | null {
+export function statusHint(
+	account: Pick<ExternalAccountView, "status" | "statusReason"> & Partial<Pick<ExternalAccountView, "authKind">>,
+): string | null {
 	if (account.status === "active") return null;
 	if (account.statusReason === "permission_revoked") return "Paused because your admin removed your permission.";
 	if (account.statusReason === "restored") return "Restored from a backup without its password. Reconnect it.";
 	if (account.status === "disabled")
 		return "The saved password was erased after connected accounts were not allowed for 30 days. Reconnect it.";
-	if (account.status === "auth_failed") return "Sign-in failed. Reconnect with the current (app) password.";
+	if (account.status === "auth_failed")
+		return account.authKind === "oauth_microsoft"
+			? "Microsoft sign-in expired or was revoked. Reconnect to sign in with Microsoft again."
+			: "Sign-in failed. Reconnect with the current (app) password.";
 	if (account.status === "tls_failed") return "The server's certificate is not valid. Edit the server to retry.";
 	return null;
 }
 
-/** Whether the form is complete enough to send; a new account always needs both passwords. */
-export function canSubmitAccountForm(form: AccountFormState, editing: boolean, preset: PresetOption | undefined) {
-	if (!form.address.includes("@") || !form.mailboxId || !preset?.passwordSignIn) return false;
+/**
+ * Whether the form is complete enough to send; a new account always needs both passwords. With Microsoft sign-in
+ * (`oauth`) a new account needs only the Kite password, and an edit of a Microsoft account no password at all.
+ */
+export function canSubmitAccountForm(
+	form: AccountFormState,
+	editing: boolean,
+	preset: PresetOption | undefined,
+	oauth = false,
+) {
+	if (!form.address.includes("@") || !form.mailboxId) return false;
+	if (oauth) return editing || !!form.kitePassword;
+	if (!preset?.passwordSignIn) return false;
 	if (!editing && (!form.password || !form.kitePassword)) return false;
 	if (form.preset === "other" && (!form.imapHost.trim() || !Number(form.imapPort))) return false;
 	return true;
+}
+
+/**
+ * Whether the dialog signs in with Microsoft instead of a password: a new Microsoft account once the owner set it up
+ * (`microsoftSignIn`), a connected one always.
+ */
+export function usesMicrosoftSignIn(
+	preset: AccountFormState["preset"],
+	account: Pick<ExternalAccountView, "authKind"> | null,
+	microsoftSignIn: boolean,
+): boolean {
+	return preset === "microsoft" && (microsoftSignIn || account?.authKind === "oauth_microsoft");
+}
+
+/**
+ * Starts **Sign in with Microsoft** (spec §15.2) and answers the URL of Microsoft's sign-in page to open. With
+ * `accountId` it reconnects that account; otherwise the form's mailbox, label and interval go with the new account.
+ */
+export async function startMicrosoftSignIn(form: AccountFormState, accountId?: string): Promise<string> {
+	const response = await authFetch("/api/external-accounts/oauth/start", {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({
+			provider: "microsoft",
+			address: form.address.trim(),
+			label: form.label.trim() || undefined,
+			mailboxId: form.mailboxId,
+			syncIntervalMinutes: Number(form.syncIntervalMinutes),
+			kitePassword: form.kitePassword,
+			...(accountId ? { accountId } : {}),
+		}),
+	});
+	return (await readJson<{ url: string }>(response, "Could not start the Microsoft sign-in")).url;
 }
 
 /** The intervals the owner can choose (spec §6.3, decision 9). */
@@ -274,9 +322,15 @@ export function sendingText(account: Pick<ExternalAccountView, "address" | "send
 }
 
 /** The dialog's submit button: what it is doing while it works (creating a mailbox, then testing the connection). */
-export function submitLabel(saving: "mailbox" | "account" | "delete" | null, editing: boolean): string {
+export function submitLabel(
+	saving: "mailbox" | "account" | "delete" | "microsoft" | null,
+	editing: boolean,
+	microsoft = false,
+): string {
 	if (saving === "mailbox") return "Creating the mailbox…";
-	if (saving === "account") return "Testing the connection…";
+	if (saving === "microsoft") return "Opening Microsoft…";
+	if (saving === "account") return microsoft ? "Saving…" : "Testing the connection…";
+	if (microsoft && !editing) return "Sign in with Microsoft";
 	return editing ? "Save" : "Connect";
 }
 

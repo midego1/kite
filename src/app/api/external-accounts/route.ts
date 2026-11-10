@@ -3,7 +3,10 @@ import { hasValidSessionMutationOrigin } from "@/lib/auth/origin";
 import { getEnv } from "@/lib/cloudflare";
 import { CONNECT_REFUSAL_TEXT, connectRefusal } from "@/lib/external-accounts/access";
 import { answerExternal } from "@/lib/external-accounts/http";
+import { resolveMicrosoftClient } from "@/lib/external-accounts/oauth-client";
+import { oauthTablesReady } from "@/lib/external-accounts/oauth-store";
 import { EXTERNAL_ACCOUNT_PRESETS } from "@/lib/external-accounts/presets-utils";
+import type { OAuthProviders } from "@/lib/external-accounts/types";
 import { connectExternalAccount, listExternalAccounts } from "@/lib/external-accounts/service";
 import { readJsonBody } from "@/lib/http/request";
 
@@ -16,7 +19,15 @@ const presets = EXTERNAL_ACCOUNT_PRESETS.map(({ id, label, imap, smtp, passwordS
 	passwordHelp,
 }));
 
-/** The user's connected accounts (never their passwords), whether they may connect one, and the provider presets. */
+/** Which sign-ins with a provider work here: set up by the owner, and the database updated for them. */
+async function oauthProviders(env: CloudflareEnv): Promise<OAuthProviders> {
+	return { microsoft: (await oauthTablesReady(env)) && !!(await resolveMicrosoftClient(env)) };
+}
+
+/**
+ * The user's connected accounts (never their passwords), whether they may connect one, the provider presets, and
+ * which provider sign-ins (Sign in with Microsoft) this Kite offers.
+ */
 export async function GET(request: Request) {
 	const env = getEnv();
 	const auth = await requireSessionUser(env, request);
@@ -30,10 +41,11 @@ export async function GET(request: Request) {
 				refusal,
 				refusalText: refusal ? CONNECT_REFUSAL_TEXT[refusal] : null,
 				presets,
+				oauth: await oauthProviders(env),
 				migrationPending: refusal === "migration_pending",
 			};
 		},
-		{ whenPending: { accounts: [], refusal: "migration_pending", presets } },
+		{ whenPending: { accounts: [], refusal: "migration_pending", presets, oauth: { microsoft: false } } },
 	);
 }
 

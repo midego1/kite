@@ -20,6 +20,8 @@ const DEV_ONLY_VARS = [
 	"R2_S3_TEST_ENDPOINT",
 	// Lets e2e/60-imap-import.spec.ts import from the fake IMAP server on 127.0.0.1 without TLS.
 	"EXTERNAL_ACCOUNTS_ALLOW_INSECURE_LOOPBACK",
+	// Lets e2e/100-microsoft-oauth.spec.ts send Microsoft sign-in to its fake OAuth server on 127.0.0.1.
+	"EXTERNAL_OAUTH_TEST_ORIGIN",
 	"DATABASE_SIZE_TEST_HEADER",
 	// Lets scripts/attachment-storage-check.mjs kill an attachment storage job part way.
 	"ATTACHMENT_STORAGE_TEST_HOOKS",

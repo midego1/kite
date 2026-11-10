@@ -14,7 +14,7 @@ import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import type { ImapImportRequest } from "./types";
 import { parseImapImportRequest } from "./utils";
 import { withModule } from "@/lib/modules/route-guard";
-import { resolveImportSource } from "../connected-account";
+import { resolveImportSource, sourceAccessToken } from "../connected-account";
 
 export const POST = withModule("import", async (request, { checkUser }) => {
 	const env = getEnv();
@@ -30,7 +30,7 @@ export const POST = withModule("import", async (request, { checkUser }) => {
 			await readJsonBody<ImapImportRequest & { accountId?: unknown }>(request, 16 * 1024),
 		);
 		if ("error" in resolved) return resolved.error;
-		input = parseImapImportRequest(resolved.body);
+		input = parseImapImportRequest(resolved.body, sourceAccessToken(resolved.source));
 	} catch (error) {
 		const status = error instanceof RequestBodyTooLargeError ? 413 : 400;
 		return NextResponse.json(

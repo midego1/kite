@@ -13,7 +13,7 @@ const GMAIL_SERVERS = { imap: tls("imap.gmail.com", 993), smtp: tls("smtp.gmail.
  * the header is never trusted. `appendSent` is false where the provider saves SMTP submissions in Sent itself.
  * `maxMessageBytes` is the provider's limit on one message as sent (attachments base64-encoded), counted in decimal
  * megabytes to stay under it; "Other" relies on the size its server announces.
- * Microsoft accounts sign in only with Microsoft's OAuth (§15.5), which Kite does not offer yet.
+ * Microsoft accounts sign in only with Microsoft's OAuth (§15.5): **Sign in with Microsoft**, once the owner set it up.
  */
 export const EXTERNAL_ACCOUNT_PRESETS: readonly ExternalAccountPreset[] = [
 	{
@@ -51,7 +51,7 @@ export const EXTERNAL_ACCOUNT_PRESETS: readonly ExternalAccountPreset[] = [
 		maxMessageBytes: 20 * MB,
 		authservId: null,
 		passwordSignIn: false,
-		passwordHelp: "Microsoft accounts need Microsoft sign-in, which Kite does not support yet.",
+		passwordHelp: "Microsoft accounts sign in with Microsoft, not with a password.",
 	},
 	{
 		id: "icloud",

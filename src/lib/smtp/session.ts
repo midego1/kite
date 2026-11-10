@@ -1,6 +1,7 @@
 import { openMailSocket } from "@/lib/net/connect";
 import { MailServerRefusedError } from "@/lib/net/errors";
 import { allowsPlainText, mailHostPolicy } from "@/lib/net/host-guard-utils";
+import { xoauth2Token } from "@/lib/net/xoauth2-utils";
 import { SmtpConnection, type SmtpConnectionOptions } from "./connection";
 import { SmtpMessageTooLargeError } from "./errors";
 import {
@@ -41,7 +42,7 @@ const QUIT_TIMEOUT_MS = 5_000;
 
 /**
  * Connects to a submission server, makes sure the connection is encrypted (implicit TLS on 465, or STARTTLS on 587
- * before anything else is sent) and signs in with `AUTH PLAIN` or `AUTH LOGIN`. Credentials never go over a plain
+ * before anything else is sent) and signs in with `AUTH PLAIN` or `AUTH LOGIN`, or `AUTH XOAUTH2` for an OAuth account. Credentials never go over a plain
  * connection, except to a loopback fake under `EXTERNAL_ACCOUNTS_ALLOW_INSECURE_LOOPBACK` outside production. Errors
  * never contain the password.
  */
@@ -50,7 +51,7 @@ export async function openSmtpSession(
 	login: SmtpLogin,
 	options: SmtpConnectionOptions = {},
 ): Promise<SmtpSession> {
-	assertCredential(login.username, login.password);
+	if (!login.accessToken) assertCredential(login.username, login.password);
 	const socket = await openMailSocket(env, login, SMTP_PORTS);
 	const smtp = new SmtpConnection(socket, options);
 	let extensions: SmtpExtensions;
@@ -98,6 +99,10 @@ async function signIn(smtp: SmtpConnection, login: SmtpLogin, plainTextAllowed: 
 		// What was announced before the upgrade is not trustworthy (RFC 3207 §4.2).
 		extensions = parseEhloExtensions(await smtp.command(`EHLO ${SMTP_CLIENT_NAME}`, "ehlo", [250]));
 	}
+	if (login.accessToken) {
+		await authenticateXoauth2(smtp, extensions, login.username, login.accessToken);
+		return extensions;
+	}
 	const method = chooseSmtpAuthMethod(extensions.auth);
 	if (!method) throw new MailServerRefusedError("The SMTP server does not accept a password sign-in");
 	const secrets = [login.password, smtpPlainToken(login.username, login.password)];
@@ -109,6 +114,24 @@ async function signIn(smtp: SmtpConnection, login: SmtpLogin, plainTextAllowed: 
 		await smtp.command(base64Utf8(login.password), "auth", [235], { secrets });
 	}
 	return extensions;
+}
+
+/**
+ * `AUTH XOAUTH2 <token>` (spec §15.4). A server that refuses the token answers `334` with a base64 JSON error first;
+ * the empty line that answers it brings the final `535`, which fails the sign-in. Errors never contain the token.
+ */
+async function authenticateXoauth2(
+	smtp: SmtpConnection,
+	extensions: SmtpExtensions,
+	username: string,
+	accessToken: string,
+): Promise<void> {
+	if (!extensions.auth.includes("XOAUTH2"))
+		throw new MailServerRefusedError("The SMTP server does not accept a Microsoft or Google sign-in (no XOAUTH2)");
+	const token = xoauth2Token(username, accessToken);
+	const secrets = [accessToken, token];
+	const reply = await smtp.command(`AUTH XOAUTH2 ${token}`, "auth", [235, 334], { secrets });
+	if (reply.code === 334) await smtp.command("", "auth", [235], { secrets });
 }
 
 async function sendMessage(

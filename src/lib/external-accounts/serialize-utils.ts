@@ -77,6 +77,7 @@ export function serializeExternalAccount(
 				? { host: row.smtpHost, port: row.smtpPort, security: row.smtpSecurity }
 				: null,
 		username: row.username,
+		authKind: row.authKind,
 		status: row.status,
 		statusReason: row.statusReason,
 		lastError: row.lastError,

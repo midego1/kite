@@ -420,7 +420,7 @@ export function tokenResponse(
 
 /**
  * The network a registration came from, for the per-network cap: an IPv4 address's /24 or an IPv6 address's /48,
- * `unknown` without one. Only its hash is stored.
+ * `unknown` without one. Only `networkHash` of it is stored.
  */
 export function clientNetwork(ip: string | null | undefined): string {
 	const value = (ip ?? "").trim().toLowerCase();
@@ -442,6 +442,25 @@ export function clientNetwork(ip: string | null | undefined): string {
 		.join(":")}::/48`;
 }
 
+/**
+ * What a registration stores of its network: an HMAC-SHA256 keyed with the server secret (`serverSecret`), so a
+ * database dump cannot be matched against the 2^24 IPv4 /24s; plain SHA-256 only on an install without any secret.
+ */
+export async function networkHash(network: string, secret: string | null): Promise<string> {
+	if (!secret) return hashOAuthToken(network);
+	const key = await crypto.subtle.importKey(
+		"raw",
+		new TextEncoder().encode(secret),
+		{ name: "HMAC", hash: "SHA-256" },
+		false,
+		["sign"],
+	);
+	const mac = new Uint8Array(
+		await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(`kite-mcp-network:${network}`)),
+	);
+	return Array.from(mac, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
 /** The pair a refresh issued, as the grace window hands it out again. */
 export type SuccessorPair = { accessToken: string; refreshToken: string; accessExpiresAt: number };
 
@@ -454,11 +473,15 @@ async function successorKey(refreshToken: string, usage: KeyUsage): Promise<Cryp
 	return crypto.subtle.importKey("raw", material, "AES-GCM", false, [usage]);
 }
 
-/** Seals a refresh's new pair under a key only the rotated refresh token yields (AES-GCM). */
-export async function sealSuccessor(refreshToken: string, pair: SuccessorPair): Promise<string> {
+/** The additional data a sealed pair is bound to: its grant and the rotated token's row, so it opens nowhere else. */
+const successorBinding = async (refreshToken: string, keyId: string) =>
+	new TextEncoder().encode(`${keyId}:${await hashOAuthToken(refreshToken)}`);
+
+/** Seals a refresh's new pair under a key only the rotated refresh token yields (AES-GCM), bound to its grant. */
+export async function sealSuccessor(refreshToken: string, keyId: string, pair: SuccessorPair): Promise<string> {
 	const iv = crypto.getRandomValues(new Uint8Array(12));
 	const sealed = await crypto.subtle.encrypt(
-		{ name: "AES-GCM", iv },
+		{ name: "AES-GCM", iv, additionalData: await successorBinding(refreshToken, keyId) },
 		await successorKey(refreshToken, "encrypt"),
 		new TextEncoder().encode(JSON.stringify(pair)),
 	);
@@ -468,12 +491,16 @@ export async function sealSuccessor(refreshToken: string, pair: SuccessorPair): 
 	return base64Url(bytes);
 }
 
-/** The pair `sealSuccessor` sealed, or null when the token or the value does not fit. */
-export async function openSuccessor(refreshToken: string, sealed: string): Promise<SuccessorPair | null> {
+/** The pair `sealSuccessor` sealed, or null when the token, the grant or the value does not fit. */
+export async function openSuccessor(
+	refreshToken: string,
+	keyId: string,
+	sealed: string,
+): Promise<SuccessorPair | null> {
 	try {
 		const bytes = Uint8Array.from(atob(sealed.replace(/-/g, "+").replace(/_/g, "/")), (char) => char.charCodeAt(0));
 		const opened = await crypto.subtle.decrypt(
-			{ name: "AES-GCM", iv: bytes.slice(0, 12) },
+			{ name: "AES-GCM", iv: bytes.slice(0, 12), additionalData: await successorBinding(refreshToken, keyId) },
 			await successorKey(refreshToken, "decrypt"),
 			bytes.slice(12),
 		);

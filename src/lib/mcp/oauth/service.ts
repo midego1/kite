@@ -4,11 +4,13 @@ import { users } from "@/db/schema";
 import { newId } from "@/lib/ids";
 import { createLogger } from "@/lib/logger.mjs";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
+import { serverSecret } from "@/lib/security/server-secret";
 import {
 	countUnusedClients,
 	deleteGrant,
 	deleteUnusedClients,
 	deleteToken,
+	clearExpiredSuccessors,
 	grantOfUsedCode,
 	insertClient,
 	insertCode,
@@ -26,6 +28,7 @@ import {
 import {
 	clientNetwork,
 	hashOAuthToken,
+	networkHash,
 	openSuccessor,
 	OAuthError,
 	OAUTH_ACCESS_TOKEN_PREFIX,
@@ -63,7 +66,7 @@ export async function registerClient(
 ): Promise<OAuthClient> {
 	const since = toSeconds(now) - OAUTH_UNUSED_CLIENT_TTL_SECONDS;
 	await deleteUnusedClients(env, since);
-	const network = await hashOAuthToken(clientNetwork(ip));
+	const network = await networkHash(clientNetwork(ip), serverSecret(env));
 	const unused = await countUnusedClients(env, since, network);
 	if (unused.total >= OAUTH_MAX_UNUSED_CLIENTS || unused.network >= OAUTH_MAX_UNUSED_CLIENTS_PER_NETWORK)
 		throw new OAuthError("temporarily_unavailable", "Too many registrations; try again in an hour", 429);
@@ -219,7 +222,7 @@ async function replayedRefresh(env: CloudflareEnv, token: TokenRow, presented: s
 	const at = toSeconds(now);
 	const pair =
 		token.rotatedAt !== null && at - token.rotatedAt <= OAUTH_REFRESH_GRACE_SECONDS && token.successor
-			? await openSuccessor(presented, token.successor)
+			? await openSuccessor(presented, token.keyId, token.successor)
 			: null;
 	const current = pair ? await readToken(env, await hashOAuthToken(pair.refreshToken)) : null;
 	if (pair && current && current.rotatedAt === null && pair.accessExpiresAt > at) {
@@ -253,7 +256,7 @@ export async function refreshTokens(env: CloudflareEnv, input: RefreshRequest, n
 	const tokens = await newTokenPair();
 	const at = toSeconds(now);
 	const accessExpiresAt = at + OAUTH_ACCESS_TOKEN_TTL_SECONDS;
-	const sealed = await sealSuccessor(input.refreshToken, {
+	const sealed = await sealSuccessor(input.refreshToken, token.keyId, {
 		accessToken: tokens.accessToken,
 		refreshToken: tokens.refreshToken,
 		accessExpiresAt,
@@ -301,6 +304,18 @@ export async function grantOfAccessToken(env: CloudflareEnv, token: string, reso
 	} catch (error) {
 		if (isMcpOAuthPending(error)) return null;
 		throw error;
+	}
+}
+
+/**
+ * The five-minute clean-up: rotated tokens past the grace window lose their sealed successor, so it is kept minutes
+ * rather than until the daily run. Does nothing before migration 0106.
+ */
+export async function clearMcpOAuthSuccessors(env: CloudflareEnv, now: Date): Promise<void> {
+	try {
+		await clearExpiredSuccessors(env, now, OAUTH_REFRESH_GRACE_SECONDS);
+	} catch (error) {
+		if (!isMcpOAuthPending(error)) throw error;
 	}
 }
 

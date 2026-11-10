@@ -5,6 +5,7 @@ import { getEmailAddress } from "@/lib/email/address";
 import { normalizeMessageId } from "@/lib/email/thread-lookup";
 import { resolveInboundAddress } from "@/lib/email/routing";
 import { createLogger } from "@/lib/logger.mjs";
+import { serverSecret } from "@/lib/security/server-secret";
 
 const logger = createLogger("account-forwarding");
 
@@ -18,15 +19,6 @@ const MARKER_LABEL = "kite forwarded marker v1";
 
 /** Reads one header field of the message, by name. */
 type HeaderLookup = (name: string) => string | null | undefined;
-
-/** The server secret the marker is derived from: APP_ENCRYPTION_KEY, else INBOUND_WEBHOOK_SECRET, else CF_TOKEN. */
-function markerSecret(env: CloudflareEnv): string | null {
-	for (const value of [env.APP_ENCRYPTION_KEY, env.INBOUND_WEBHOOK_SECRET, env.CF_TOKEN]) {
-		const secret = value?.trim();
-		if (secret) return secret;
-	}
-	return null;
-}
 
 const keyCache = new Map<string, Promise<CryptoKey>>();
 
@@ -56,7 +48,7 @@ function messageIdOf(header: HeaderLookup): string {
  * extra hop, when the mail comes back to the install that marked it.
  */
 export async function forwardedMarker(env: CloudflareEnv, header: HeaderLookup): Promise<string> {
-	const secret = markerSecret(env);
+	const secret = serverSecret(env);
 	if (!secret) return UNSIGNED_MARKER;
 	const payload = new TextEncoder().encode(`${MARKER_LABEL}\n${messageIdOf(header)}`);
 	const mac = new Uint8Array(await crypto.subtle.sign("HMAC", await markerKey(secret), payload));

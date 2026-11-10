@@ -185,7 +185,7 @@ test("a click tracker counts as the destination it carries, not as a different s
 	);
 });
 
-test("a transparent tracker is judged by the first address in it, however the address is written", () => {
+test("a transparent tracker is judged by the address after /L0/, however that address is written", () => {
 	const flagged = (path, senderDomain = "bank.com") =>
 		linkVerdict(`https://abc.r.us-east-1.awstrack.me/L0/${path}`, "bank.com", senderDomain) === "mismatch";
 	const evil = "https:%2F%2Flogin.evil.test%2F";
@@ -226,6 +226,11 @@ test("an awstrack destination is read the way a browser reads it, user-info and 
 	assert.equal(flagged("https:%2F%2Fbank.com%252F@evil.test/1/x"), true, "escaped twice");
 	assert.equal(flagged("https:%2F%2Fbank.com%25252F@evil.test/1/x"), true, "escaped three times");
 	assert.equal(flagged("https:%2F%2Fbank.com%252F%2540evil.test/1/x"), true);
+	// Read as written too, so it does not depend on the tracker decoding the address before redirecting.
+	assert.equal(flagged("https://bank.com%2F@evil.test/1/x"), true, "undecoded, user-info ending in an escaped slash");
+	assert.equal(flagged("https://bank.com%2F%2540evil.test/1/x"), true, "undecoded and escaped twice");
+	assert.equal(flagged("https://bank.com/login/1/x"), false, "an unescaped destination, the shown site");
+	assert.equal(flagged("https://bank.com%2Flogin%3Fa%3D1/1/x"), true, "not a host as written: fails closed");
 	// Only a destination right after /L0/ is read.
 	assert.equal(linkVerdict("https://abc.awstrack.me/L1/https:%2F%2Fbank.com%2F/1/x", "bank.com"), "mismatch");
 	assert.equal(linkVerdict("https://abc.awstrack.me/x/L0/https:%2F%2Fbank.com%2F/1/x", "bank.com"), "mismatch");

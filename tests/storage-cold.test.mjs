@@ -1874,3 +1874,58 @@ test("CodeRabbit: the server refuses a rule save made from a stale form (409 RUL
 	const blind = await cold.updateColdRule(env, "owner", "mail", { ...body, afterDays: 45 });
 	assert.equal(blind.ok, true);
 });
+
+test("two saves in the same second get different stamps, so a form loaded between them is refused", async (t) => {
+	const { env } = await fixture(t);
+	await addStore(env, "sto_c", "kite-target");
+	const body = { afterDays: 30, minBytes: 0, target: "sto_c", enabled: true };
+	const first = await cold.updateColdRule(env, "owner", "mail", { ...body, expectedUpdatedAt: null });
+	assert.equal(first.ok, true, first.ok ? undefined : first.error);
+	// Tab B loads the form here, then tab A saves again at once, inside the same second.
+	const loadedByTabB = (await cold.coldRulesView(env)).find((rule) => rule.objectClass === "mail").updatedAt;
+	const second = await cold.updateColdRule(env, "owner", "mail", {
+		...body,
+		afterDays: 40,
+		expectedUpdatedAt: first.rule.updatedAt,
+	});
+	assert.equal(second.ok, true, second.ok ? undefined : second.error);
+	assert.ok(new Date(second.rule.updatedAt) > new Date(first.rule.updatedAt), "the second save is stamped later");
+	const tabB = await cold.updateColdRule(env, "owner", "mail", {
+		...body,
+		afterDays: 90,
+		expectedUpdatedAt: loadedByTabB,
+	});
+	assert.equal(tabB.code, "RULE_CHANGED", "tab B would have overwritten tab A's second edit");
+	assert.equal(
+		env.DB.db.prepare("SELECT after_days FROM storage_cold_rules WHERE object_class = 'mail'").get().after_days,
+		40,
+	);
+	// The refetch still reads back what the last save answered, and an unconditional save keeps counting up.
+	const view = (await cold.coldRulesView(env)).find((rule) => rule.objectClass === "mail");
+	assert.equal(view.updatedAt, second.rule.updatedAt);
+	const blind = await cold.updateColdRule(env, "owner", "mail", { ...body, afterDays: 50 });
+	assert.ok(blind.ok && new Date(blind.rule.updatedAt) > new Date(second.rule.updatedAt));
+});
+
+test("claimLocationLease drops an expired purge claim row instead of stealing it, and leaves a live one alone", async (t) => {
+	const { env } = await fixture(t);
+	await addStore(env, "sto_y", "kite-target");
+	const insert = (key, token, claimedUntil) =>
+		env.DB.db
+			.prepare(
+				`INSERT INTO object_locations (key, object_class, store_id, size, moved_at, lease_token, claimed_until)
+				 VALUES (?, 'mail', 'sto_y', 8, ?, ?, ?)`,
+			)
+			.run(key, NOW, token, claimedUntil);
+	insert("inbound/stranded.eml", "ptmp_dead", 1);
+	insert("inbound/live.eml", "ptmp_live", Math.floor(Date.now() / 1000) + 300);
+
+	assert.equal(await lib.objectLocations.claimLocationLease(env, "inbound/stranded.eml"), "none");
+	assert.equal(location(env, "inbound/stranded.eml"), undefined, "gone, not released into a real-looking row");
+	assert.equal(
+		await lib.objectLocations.claimLocationLease(env, "inbound/live.eml"),
+		null,
+		"a live purge keeps its claim",
+	);
+	assert.equal(location(env, "inbound/live.eml").lease_token, "ptmp_live");
+});

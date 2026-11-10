@@ -757,6 +757,13 @@
       "when": 1794700800000,
       "tag": "0106_add_mcp_oauth",
       "breakpoints": true
+    },
+    {
+      "idx": 108,
+      "version": "6",
+      "when": 1795046400000,
+      "tag": "0110_add_semantic_embedding_origin",
+      "breakpoints": true
     }
   ]
 }

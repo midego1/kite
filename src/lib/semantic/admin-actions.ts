@@ -4,7 +4,7 @@ import { messageEmbeddings } from "@/db/schema/semantic";
 import { AGENT_SETTINGS_ID } from "@/lib/agent/provider-constants";
 import { chunkVectorId } from "./filter-utils";
 import { getSemanticInstallSettings } from "./install-settings";
-import { insertPendingEmbeddingRows } from "./queue-pending";
+import { insertPendingEmbeddingRows, withOriginColumn } from "./queue-pending";
 import { getVectorStore, VectorStoreUnavailableError } from "./vector-store";
 
 /** Rows are read and deleted in pages this large, so a large install never loads its whole index at once. */
@@ -65,13 +65,19 @@ async function deleteKnownVectors(env: CloudflareEnv, where: string, params: unk
  * hash has changed since it was last indexed (`indexer.ts`'s `alreadyCurrent` check).
  */
 export async function rebuildSemanticIndex(env: CloudflareEnv): Promise<void> {
-	await env.DB.prepare(
-		`UPDATE message_embeddings
-		SET status = 'pending', queued_at = CAST(strftime('%s', 'now') AS integer), lease_until = NULL, attempts = 0, error = NULL
+	const requeue = (origin: string) =>
+		env.DB.prepare(
+			`UPDATE message_embeddings
+		SET status = 'pending', queued_at = CAST(strftime('%s', 'now') AS integer), lease_until = NULL, attempts = 0, error = NULL${origin}
 		WHERE mailbox_id IS NOT NULL
 			AND NOT coalesce((SELECT ai_disabled FROM mailbox_agent_settings WHERE mailbox_id = message_embeddings.mailbox_id), false)
 			AND coalesce((SELECT semantic_index FROM mailbox_agent_settings WHERE mailbox_id = message_embeddings.mailbox_id), true) = true`,
-	).run();
+		).run();
+	// A rebuild is live work, whoever queued the row first (`origin`, migration 0110).
+	await withOriginColumn(
+		() => requeue(", origin = 'live'"),
+		() => requeue(""),
+	);
 }
 
 /**
@@ -166,12 +172,17 @@ export async function requeueMailboxSemanticIndex(env: CloudflareEnv, mailboxId:
 		.bind(mailboxId, mailboxId)
 		.first<{ ok: number }>();
 	if (!allowed?.ok) return;
-	await env.DB.prepare(
-		`UPDATE message_embeddings SET status = 'pending', queued_at = CAST(strftime('%s', 'now') AS integer), lease_until = NULL, attempts = 0, error = NULL, content_hash = NULL
+	const requeue = (origin: string) =>
+		env.DB.prepare(
+			`UPDATE message_embeddings SET status = 'pending', queued_at = CAST(strftime('%s', 'now') AS integer), lease_until = NULL, attempts = 0, error = NULL, content_hash = NULL${origin}
 		WHERE mailbox_id = ?`,
-	)
-		.bind(mailboxId)
-		.run();
+		)
+			.bind(mailboxId)
+			.run();
+	await withOriginColumn(
+		() => requeue(", origin = 'live'"),
+		() => requeue(""),
+	);
 	// A message delivered or imported while the mailbox was excluded, or already walked past by the backfill,
 	// never got a row at all: give it one now, instead of only ever resetting rows that already existed.
 	const now = new Date();

@@ -144,7 +144,7 @@ export function detectPayment(
 		modelFields: analysis.modelFields.filter((field) => ["vendor", "amount", "currency", "docType"].includes(field)),
 		docRef: rowReference(docType, documentReference(subject, text), analysis.amount),
 		mailRef: messageReference(input.headers.messageId),
-		category: categoryFor(analysis.vendor, subject, Boolean(person), input.message.from),
+		category: categoryFor(deterministic.vendor, subject, Boolean(person), input.message.from),
 	};
 }
 

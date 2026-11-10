@@ -43,7 +43,7 @@ const BRANDS: readonly (readonly [Cued, RegExp])[] = [
 	],
 	[
 		"entertainment",
-		/\b(?:prime video|path[eé]|ticketmaster|eventbrite|spotify|netflix|disney|playstation|xbox|nintendo|twitch|steampowered)\b|(?:^|\n)steam(?:\n|$)/,
+		/\b(?:prime video|pathe|ticketmaster|eventbrite|spotify|netflix|disney|playstation|xbox|nintendo|twitch|steampowered)\b|\bpathé|(?:^|\n)steam(?:\n|$)/,
 	],
 	[
 		"travel",
@@ -66,7 +66,7 @@ const BUSINESS: readonly (readonly [Cued, RegExp])[] = [
 	["software", /\b(?:software|saas|cloud|hosting|domain names?|domeinnamen?|vps|licen[cs]es?|licentie)\b/],
 	[
 		"food",
-		/\b(?:restaurants?|pizza|pizzeria|sushi|burgers?|caf[eé]|coffee|koffie|bakery|bakkerij|takeaway|take-away|grocer(?:y|ies)|supermarkt)\b/,
+		/\b(?:restaurants?|pizza|pizzeria|sushi|burgers?|cafe|coffee|koffie|bakery|bakkerij|takeaway|take-away|grocer(?:y|ies)|supermarkt)\b|\bcafé/,
 	],
 	["travel", /\b(?:flights?|vlucht\w*|airlines?|airways|hotels?|hostel|car rental|autohuur|taxi)\b/],
 	["utilities", /\b(?:electricity|broadband|glasvezel|fib(?:re|er)|telecom)\b/],

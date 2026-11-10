@@ -56,7 +56,12 @@ export async function recordPaymentFromInput(
 		updatedAt: now,
 	});
 	if (!recorded) return "skipped";
-	if (source === "auto") await emitPaymentRecorded(ctx, { id, finding, messageId: input.message.id });
+	if (source === "auto")
+		await emitPaymentRecorded(ctx, {
+			id,
+			finding: { ...finding, category: recorded.category ?? null },
+			messageId: input.message.id,
+		});
 	return "recorded";
 }
 

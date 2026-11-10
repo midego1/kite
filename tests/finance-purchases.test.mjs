@@ -158,6 +158,10 @@ test("a product word in a shop's subject never decides the category", () => {
 		[{ vendor: "Jumbo Visma Fanshop", subject: "Bestelling", sender: "fanshop.example" }, null],
 		[{ vendor: "Studio Energie Yoga", subject: "Factuur", sender: "yoga.example" }, null],
 		[{ vendor: "Disney", subject: "Your receipt", sender: "disneyplus.com" }, "entertainment"],
+		[{ vendor: "Pathé", subject: "Je tickets", sender: "stripe.com" }, "entertainment"],
+		[{ vendor: "Café Roma", subject: "Receipt", sender: "stripe.com" }, "food"],
+		[{ vendor: "Cafe Roma", subject: "Receipt", sender: "stripe.com" }, "food"],
+		[{ vendor: "Pathé Gaumont", subject: "Receipt", sender: "stripe.com" }, "entertainment"],
 	];
 	for (const [cues, category] of cases) assert.equal(categoryOf(cues), category, `${cues.vendor}: ${cues.subject}`);
 });
@@ -698,6 +702,39 @@ test("before migration 0109 payments still record, list and change, and only the
 	// Recording the same message again is still a no-op.
 	await record(messageId, FLIGHT);
 	assert.equal(db.db.prepare("SELECT count(*) AS n FROM finance_payments").get().n, 1);
+});
+
+test("the webhook reports the category the row stored, null before migration 0109", async (t) => {
+	const { db, deliveries } = await setup(t);
+	db.db.exec("ALTER TABLE finance_payments DROP COLUMN category;");
+	await record(insertMessage(db, FLIGHT), FLIGHT);
+	const [sent] = deliveries();
+	assert.equal(sent.body.data.payment.vendor, "KLM");
+	assert.equal(sent.body.data.payment.category, null, "the detected travel was not stored, so it is not announced");
+});
+
+test("a vendor the model filled never decides the category", async (t) => {
+	const { db } = await setup(t);
+	const mail = {
+		from: "billing@acme-corp.test",
+		subject: "Your receipt [#R-1001]",
+		body: "Amount paid: €30.00\nReceipt date: Nov 2, 2026",
+	};
+	const messageId = insertMessage(db, mail);
+	const ctx = buildCallContext({
+		trigger: "auto_read",
+		viewer: { userId: "owner", role: "user", isPrimaryAdmin: false },
+		timeZone: "UTC",
+		mailboxIds: ["mailbox-a"],
+		grants: ["finance.read", "finance.write"],
+	});
+	const input = { ...stepInput(messageId, mail), model: { modules: { finance: { vendor: "Hetzner Cloud" } } } };
+	const result = await invokeCapability("finance", "recordPayment", input, ctx);
+	assert.equal(result.ok, true, JSON.stringify(result));
+	const [row] = db.db.prepare("SELECT vendor, category, model_fields FROM finance_payments").all();
+	assert.equal(row.vendor, "Hetzner Cloud", "the model's vendor is shown");
+	assert.match(row.model_fields, /vendor/);
+	assert.equal(row.category, null, "but it is not a cue: software would need the deterministic vendor");
 });
 
 test("with Money Watch off the tool, the search and the refs are absent", async (t) => {

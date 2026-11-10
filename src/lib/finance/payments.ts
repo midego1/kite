@@ -54,11 +54,12 @@ export async function paymentId(userId: string, messageId: string): Promise<stri
 }
 
 /**
- * Inserts a payment unless the owner already has a row for the message (a removed one included); true when written.
- * Before migration 0109 there is no `category` column: the insert is retried without it (a category is derived, so
- * nothing the owner typed is lost) and "written" is whether the row now exists where it did not a moment ago.
+ * Inserts a payment unless the owner already has a row for the message (a removed one included). Returns what was
+ * stored, or null when nothing was written. Before migration 0109 there is no `category` column: the insert is
+ * retried without it (a category is derived, so nothing the owner typed is lost) and the stored category is then
+ * null, which is what the webhook must report.
  */
-export async function insertPayment(values: PaymentInsert): Promise<boolean> {
+export async function insertPayment(values: PaymentInsert): Promise<{ category: PaymentInsert["category"] } | null> {
 	return onPaymentTables(async () => {
 		try {
 			const inserted = await db()
@@ -66,13 +67,13 @@ export async function insertPayment(values: PaymentInsert): Promise<boolean> {
 				.values(values)
 				.onConflictDoNothing()
 				.returning({ id: financePayments.id });
-			return inserted.length > 0;
+			return inserted.length > 0 ? { category: values.category ?? null } : null;
 		} catch (error) {
 			if (missingColumnFromError(error) !== "category") throw error;
 		}
 		const existing = await rowExists(values.id!);
 		await insertRow(db(), financePayments, { ...values, category: null }, { ignoreConflict: true });
-		return !existing && (await rowExists(values.id!));
+		return !existing && (await rowExists(values.id!)) ? { category: null } : null;
 	});
 }
 

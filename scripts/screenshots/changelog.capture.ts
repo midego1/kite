@@ -401,6 +401,67 @@ const SHOTS: Shot[] = [
 		},
 	},
 	{
+		// Admin → Agent → Search by meaning, on and partway through an indexing backfill (the progress is faked for a clean demo).
+		name: "2026-11-08-semantic-search-admin-light",
+		theme: "light",
+		viewport: { width: 1000, height: 900 },
+		open: async (page) => {
+			await page.route("**/api/admin/semantic-search", (route) =>
+				route.fulfill({
+					json: {
+						ready: true,
+						settings: {
+							enabled: true,
+							embeddingProvider: null,
+							compatibleBaseUrl: null,
+							backfillCursor: { createdAt: 1, id: "m0" },
+							backfillPaused: false,
+							backfillCapShare: 50,
+						},
+						counts: { pending: 140, running: 0, indexed: 860, skipped: 12, failed: 0, eligibleUnqueued: 0 },
+						estimatedCostUsd: 0.02,
+					},
+				}),
+			);
+			await page.goto("/agent#semantic-search");
+			const card = page.getByTestId("semantic-search-admin-settings");
+			await expect(card).toBeVisible();
+			await card.scrollIntoViewIfNeeded();
+			return card;
+		},
+	},
+	{
+		// The "By meaning" chip in the mail search box, on, typing a query that will also look for mail with the
+		// same meaning. C-4 of review round 3: the chip only renders while search by meaning is available for the
+		// install, which is off on the seeded e2e server (as everywhere, off by default), so `GET /api/mailboxes`'s
+		// `semanticSearchAvailable` is patched true here rather than flipping the real, shared admin setting (which
+		// would leak into every other shot run after this one in the same, sequential, single-worker suite); the
+		// chip is then clicked on rather than assuming its stored per-browser default, since an earlier capture in
+		// the same browser session could otherwise leave it off. The viewport is desktop width (C-4 of review round
+		// 4: at 760px, below Tailwind's md breakpoint, the mobile compose FAB floats over the search box's end and
+		// hides the clear button).
+		name: "2026-11-08-search-by-meaning-light",
+		theme: "light",
+		viewport: { width: 900, height: 160 },
+		open: async (page) => {
+			await page.route("**/api/mailboxes", async (route) => {
+				const response = await route.fetch();
+				const body = (await response.json()) as Record<string, unknown>;
+				await route.fulfill({ response, json: { ...body, semanticSearchAvailable: true } });
+			});
+			await page.goto("/inbox");
+			const panel = page.getByTestId("mail-search-panel");
+			const search = panel.getByRole("textbox", { name: /Search mail/ });
+			await search.click();
+			await search.fill("invoice");
+			const chip = panel.getByRole("button", { name: "By meaning" });
+			await expect(chip).toBeVisible();
+			if ((await chip.getAttribute("aria-pressed")) !== "true") await chip.click();
+			await expect(chip).toHaveAttribute("aria-pressed", "true");
+			return panel;
+		},
+	},
+	{
 		// Admin overview → the "Get started" checklist, part done and part not (the state is faked for a clean demo).
 		name: "2026-11-07-onboarding-checklist-light",
 		theme: "light",

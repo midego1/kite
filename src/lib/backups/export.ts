@@ -196,6 +196,12 @@ const INTERNAL_TABLES = [
 	// Undo receipts of spam and phishing reports: transient (pruned after the 7-day undo window) and tied to
 	// the toast or Activity entry that offered the undo, so a restored database starts without them.
 	"spam_report_receipts",
+	// Search by meaning (migration 0099): derived from the messages and rebuilt by its triggers, so a backup skips
+	// them. After a restore the `AFTER INSERT` trigger queues every restored eligible message again (while the
+	// feature is on); vectors of a mailbox already in both databases are overwritten, and orphans from mail not in
+	// the restored database are removed by Admin's "Clear stale vectors".
+	"message_embeddings",
+	"message_embedding_deletes",
 ];
 
 /**

@@ -5,6 +5,7 @@ import { useState, type ReactNode } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AgentActivity } from "./agent-activity";
 import { MailboxAiSetting } from "./mailbox-ai-setting";
+import { SemanticIndexSetting } from "./semantic-index-setting";
 
 const TABS = [
 	{ id: "settings", label: "Settings" },
@@ -48,7 +49,10 @@ export function AssistantSettingsTabs({
 			</TabsList>
 			<TabsContent value="settings" forceMount hidden={active !== "settings"} className="space-y-4">
 				{mailboxId && currentMailboxId && (
-					<MailboxAiSetting key={currentMailboxId} mailboxId={currentMailboxId} onChange={onAiChange} />
+					<>
+						<MailboxAiSetting key={currentMailboxId} mailboxId={currentMailboxId} onChange={onAiChange} />
+						<SemanticIndexSetting key={`${currentMailboxId}-semantic`} mailboxId={currentMailboxId} />
+					</>
 				)}
 				{children}
 			</TabsContent>

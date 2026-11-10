@@ -2,7 +2,7 @@
 
 import clsx from "clsx";
 import type { MouseEvent } from "react";
-import { Clock, Paperclip, Sparkles, TriangleAlert, type LucideIcon } from "lucide-react";
+import { Clock, Paperclip, SearchCheck, Sparkles, TriangleAlert, type LucideIcon } from "lucide-react";
 import { SuggestionBadge } from "@/components/agent/suggestion-badge";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -113,7 +113,8 @@ export function AttachmentIndicator({ message }: { message: Pick<Message, "hasAt
 	);
 }
 
-const BADGE_ICONS = { warning: TriangleAlert, neutral: Clock } as const;
+const BADGE_ICONS = { warning: TriangleAlert, neutral: Clock, match: SearchCheck } as const;
+const BADGE_COLORS = { warning: "text-amber-500", neutral: "text-violet-500", match: "text-blue-500" } as const;
 
 /** A row's state as Zero's small coloured icons; the label stays readable for screen readers and on hover. */
 export function MessageRowBadges({ message, folder }: { message: Message; folder: string }) {
@@ -125,10 +126,7 @@ export function MessageRowBadges({ message, folder }: { message: Message; folder
 				const BadgeIcon = BADGE_ICONS[badge.tone];
 				return (
 					<span key={badge.label} title={badge.label} className="inline-flex items-center">
-						<BadgeIcon
-							aria-hidden="true"
-							className={clsx("h-3.5 w-3.5", badge.tone === "warning" ? "text-amber-500" : "text-violet-500")}
-						/>
+						<BadgeIcon aria-hidden="true" className={clsx("h-3.5 w-3.5", BADGE_COLORS[badge.tone])} />
 						<span className="sr-only">{badge.label}</span>
 					</span>
 				);

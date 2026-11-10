@@ -17,11 +17,23 @@ interface CloudflareEnv {
 		| import("./src/lib/finance/payment-scan").PaymentScanMessage
 		| import("./src/lib/finance/receipt-backfill").BackfillMessage
 		| { kind: "agent.assistant_email"; requestId: string }
+		// Search by meaning (docs/specs/semantic-search.md): triggers the drain; cheap and idempotent.
+		| { kind: "search.embed" }
 	>;
 	AI?: Ai;
 	AI_MODEL?: string;
 	AI_BASE_URL?: string;
 	AI_API_KEY?: string;
+	/**
+	 * Vectors for search by meaning off Workers: the Node runtime's `data/vectors.sqlite` brute-force store, or (dev
+	 * and e2e, with `SEMANTIC_TEST_STORE`) the in-memory test store. On Workers the `VECTORIZE` binding is used
+	 * instead; `src/lib/semantic/vector-store.ts` checks both.
+	 */
+	VECTORS?: import("./src/lib/semantic/vector-store").VectorStore;
+	/** Dev/test only: "1" uses a brute-force test vector store and the fake model's `/embeddings` endpoint as the
+	 * compatible embedding provider, instead of `VECTORIZE`/`AI`, which `wrangler dev` cannot emulate locally without
+	 * remote access; ignored in production. */
+	SEMANTIC_TEST_STORE?: string;
 	// The outbound queue also carries webhook retries, manual backup exports, full-backup object copies, storage migration batches, cold storage batches and attachment storage job batches, so that neither needs an extra binding.
 	OUTBOUND_QUEUE: Queue<
 		| import("./src/lib/email/send").OutboundQueueMessage

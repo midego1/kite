@@ -29,6 +29,7 @@ test("queue messages are described by kind without addresses or headers", () => 
 		kind: "agent_assistant_email",
 	});
 	assert.deepEqual(describeQueueMessage({ kind: "import.imap", jobId: "j1" }), { kind: "import" });
+	assert.deepEqual(describeQueueMessage({ kind: "search.embed" }), { kind: "search_embed" });
 	assert.deepEqual(describeQueueMessage({ kind: "mailbox.purge", mailboxId: "m1" }), { kind: "mailbox_purge" });
 	assert.deepEqual(describeQueueMessage({ kind: "backup.run", backupId: "bak_1" }), { kind: "backup" });
 	for (const value of [null, "text", 1, {}, { kind: "constructor" }, { kind: "private@example.com" }])

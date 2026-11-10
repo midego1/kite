@@ -16,6 +16,8 @@ import { runTelemetryHeartbeat } from "@/lib/telemetry/heartbeat";
 import { resumeAuthRechecks } from "@/lib/external-accounts/auth-recheck";
 import { eraseIdleExternalCredentials } from "@/lib/external-accounts/retention";
 import { planExternalSync } from "@/lib/external-accounts/sync";
+import { drainDeleteTombstones, runEmbeddingDrainBatches } from "@/lib/semantic/indexer";
+import { runSemanticBackfillTick } from "@/lib/semantic/backfill";
 
 const logger = createLogger("node-scheduler");
 
@@ -26,6 +28,12 @@ export function startScheduler(env: CloudflareEnv) {
 	const timer = setInterval(() => {
 		runAgentMaintenance(env).catch((error) => logger.error("agent.maintenance_failed", { error }));
 		runTrashRetention(env).catch((error) => logger.error("trash.retention_failed", { error }));
+		// Search by meaning: 2 drain batches and one backfill page per minute, matching worker.ts's 5-minute cadence.
+		// Tombstones drain directly too, so a deleted message's vectors are never left searchable only because
+		// runEmbeddingDrainBatches's own gate (the kill switch, a revoked external-provider opt-in) is closed.
+		drainDeleteTombstones(env).catch((error) => logger.error("search.embedding_tombstone_drain_failed", { error }));
+		runEmbeddingDrainBatches(env, 2).catch((error) => logger.error("search.embedding_drain_failed", { error }));
+		runSemanticBackfillTick(env).catch((error) => logger.error("search.embedding_backfill_failed", { error }));
 		const now = new Date();
 		if (now.getUTCMinutes() % 5 === 0 && lastAlertMinute !== now.getTime() - (now.getTime() % 60_000)) {
 			lastAlertMinute = now.getTime() - (now.getTime() % 60_000);

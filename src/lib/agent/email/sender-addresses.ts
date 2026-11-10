@@ -33,6 +33,15 @@ const CODE_MINUTES = 30;
 /** Wrong guesses one code allows before it is dropped; a new code resets this to 0 (security review). */
 const MAX_CODE_ATTEMPTS = 5;
 
+/**
+ * The limits on one address count what each user did with it, so one user's requests or wrong guesses never block
+ * another's verification (the same split `external-accounts/identity-verification.ts` makes for its hourly limit).
+ * These caps count everyone together, a backstop against a crowd of accounts mailing or guessing at one address that
+ * is well above what the real owner could reach.
+ */
+const GLOBAL_CODES_PER_ADDRESS_PER_DAY = 50;
+const GLOBAL_FAILED_CODES_PER_ADDRESS_PER_DAY = 50;
+
 const CODE_REQUESTED_ACTION = "assistant_email.sender_code_requested";
 const VERIFIED_ACTION = "assistant_email.sender_verified";
 const VERIFY_FAILED_ACTION = "assistant_email.sender_verify_failed";
@@ -88,8 +97,10 @@ async function senderAddressesReady(env: CloudflareEnv): Promise<boolean> {
 
 /**
  * Atomically reserves one audit row for a code mail to `address`, unless doing so would push the requester past
- * `CODES_PER_USER` this hour, or the address itself past `CODES_PER_ADDRESS` this hour or `CODES_PER_ADDRESS_PER_DAY`
- * today (security review: the same three limits `identity-verification.ts` enforces for external accounts). The
+ * `CODES_PER_USER` this hour, or past `CODES_PER_ADDRESS` for this address this hour or `CODES_PER_ADDRESS_PER_DAY`
+ * today, or everyone together past `GLOBAL_CODES_PER_ADDRESS_PER_DAY` for the address today (security review: the
+ * limits `identity-verification.ts` enforces for external accounts, counted per user so that another user's requests
+ * cannot lock the owner of an address out). The
  * `INSERT … SELECT … WHERE` is one statement: SQLite serialises writes, so every concurrent caller's count sees
  * every reservation that already committed, and at most the limit can ever succeed — there is nothing to roll back.
  * Returns whether the reservation was made; the caller counts this as the attempt either way it turns out (so a
@@ -117,14 +128,21 @@ async function reserveCodeRequest(db: AppDatabase, actorUserId: string, address:
 		) < ${CODES_PER_USER}
 		and (
 			select count(*) from ${auditLogs}
-			where ${auditLogs.action} = ${CODE_REQUESTED_ACTION} and ${auditLogs.createdAt} > ${sql.param(hourAgo, auditLogs.createdAt)}
+			where ${auditLogs.actorUserId} = ${actorUserId} and ${auditLogs.action} = ${CODE_REQUESTED_ACTION}
+				and ${auditLogs.createdAt} > ${sql.param(hourAgo, auditLogs.createdAt)}
 				and json_extract(${auditLogs.metadata}, '$.address') = ${address}
 		) < ${CODES_PER_ADDRESS}
 		and (
 			select count(*) from ${auditLogs}
-			where ${auditLogs.action} = ${CODE_REQUESTED_ACTION} and ${auditLogs.createdAt} > ${sql.param(dayAgo, auditLogs.createdAt)}
+			where ${auditLogs.actorUserId} = ${actorUserId} and ${auditLogs.action} = ${CODE_REQUESTED_ACTION}
+				and ${auditLogs.createdAt} > ${sql.param(dayAgo, auditLogs.createdAt)}
 				and json_extract(${auditLogs.metadata}, '$.address') = ${address}
 		) < ${CODES_PER_ADDRESS_PER_DAY}
+		and (
+			select count(*) from ${auditLogs}
+			where ${auditLogs.action} = ${CODE_REQUESTED_ACTION} and ${auditLogs.createdAt} > ${sql.param(dayAgo, auditLogs.createdAt)}
+				and json_extract(${auditLogs.metadata}, '$.address') = ${address}
+		) < ${GLOBAL_CODES_PER_ADDRESS_PER_DAY}
 	`);
 	return result.meta.changes > 0;
 }
@@ -163,8 +181,14 @@ async function insertSenderAddressRow(
 	return result.meta.changes > 0;
 }
 
-/** Audit rows of `action` about `address` since `since` (the per-address daily failed-guess cap). */
-async function countAuditByAddress(db: AppDatabase, action: string, address: string, since: Date): Promise<number> {
+/** Audit rows of `action` about `address` since `since`, of one user when `actorUserId` is given. */
+async function countAuditByAddress(
+	db: AppDatabase,
+	action: string,
+	address: string,
+	since: Date,
+	actorUserId?: string,
+): Promise<number> {
 	const [row] = await db
 		.select({ total: sql<number>`count(*)` })
 		.from(auditLogs)
@@ -172,10 +196,21 @@ async function countAuditByAddress(db: AppDatabase, action: string, address: str
 			and(
 				eq(auditLogs.action, action),
 				gt(auditLogs.createdAt, since),
+				actorUserId ? eq(auditLogs.actorUserId, actorUserId) : undefined,
 				sql`json_extract(${auditLogs.metadata}, '$.address') = ${address}`,
 			),
 		);
 	return row?.total ?? 0;
+}
+
+/** Whether `userId` has collected `MAX_FAILED_CODES_PER_DAY` wrong codes for `address` today, or everyone has the global cap. */
+async function tooManyFailedGuesses(db: AppDatabase, userId: string, address: string, now: Date): Promise<boolean> {
+	const dayAgo = new Date(now.getTime() - DAY_MS);
+	const [mine, everyone] = await Promise.all([
+		countAuditByAddress(db, VERIFY_FAILED_ACTION, address, dayAgo, userId),
+		countAuditByAddress(db, VERIFY_FAILED_ACTION, address, dayAgo),
+	]);
+	return mine >= MAX_FAILED_CODES_PER_DAY || everyone >= GLOBAL_FAILED_CODES_PER_ADDRESS_PER_DAY;
 }
 
 /** The user's own verified and pending extra addresses; never the code hash. */
@@ -261,10 +296,7 @@ export async function addSenderAddress(
 	// Too many wrong guesses against this address today refuses a new code too, not just more guessing
 	// (identity-verification.ts's MAX_FAILED_CODES_PER_DAY): otherwise a new code every 30 minutes would let
 	// guessing resume indefinitely.
-	if (
-		(await countAuditByAddress(db, VERIFY_FAILED_ACTION, normalized, new Date(now.getTime() - DAY_MS))) >=
-		MAX_FAILED_CODES_PER_DAY
-	)
+	if (await tooManyFailedGuesses(db, userId, normalized, now))
 		return {
 			ok: false,
 			code: "RATE_LIMITED",
@@ -349,12 +381,7 @@ export async function verifySenderAddress(
 			.from(assistantSenderAddresses)
 			.where(and(eq(assistantSenderAddresses.id, id), eq(assistantSenderAddresses.userId, userId)))
 			.limit(1);
-		if (
-			existing &&
-			(await countAuditByAddress(db, VERIFY_FAILED_ACTION, existing.address, new Date(now.getTime() - DAY_MS))) >=
-				MAX_FAILED_CODES_PER_DAY
-		)
-			return false;
+		if (existing && (await tooManyFailedGuesses(db, userId, existing.address, now))) return false;
 		[claimed] = await db
 			.update(assistantSenderAddresses)
 			.set({ attempts: sql`${assistantSenderAddresses.attempts} + 1` })

@@ -78,6 +78,8 @@ const MAX_CODE_ATTEMPTS = 5;
 const CODES_PER_USER_PER_HOUR = 5;
 const CODES_PER_ADDRESS_PER_HOUR = 3;
 const MAX_FAILED_CODES_PER_DAY = 10;
+const GLOBAL_CODES_PER_ADDRESS_PER_DAY = 50;
+const GLOBAL_FAILED_CODES_PER_ADDRESS_PER_DAY = 50;
 const { getDb } = await load("db");
 const { SqliteDatabase } = await load("runtime");
 const { applyMigrations } = await load("migrate");
@@ -317,26 +319,86 @@ test("a code exhausted by wrong guesses also frees the address for the same user
 	assert.notEqual(rows[0].id, "row-1");
 });
 
-test("more than CODES_PER_ADDRESS requests for the same address in an hour are refused, even split across users", async (t) => {
+function seedAudit(database, action, address, actors) {
+	const nowSeconds = Math.floor(Date.now() / 1000);
+	const user = database.db.prepare(
+		"INSERT OR IGNORE INTO users (id, email, password_hash, name, created_at) VALUES (?, ?, 'hash', ?, 1)",
+	);
+	for (const actor of new Set(actors)) user.run(actor, `${actor}@example.com`, actor);
+	const insert = database.db.prepare(
+		"INSERT INTO audit_logs (id, actor_user_id, action, metadata, created_at) VALUES (?, ?, ?, ?, ?)",
+	);
+	actors.forEach((actor, index) =>
+		insert.run(`seed-${action}-${address}-${index}`, actor, action, JSON.stringify({ address }), nowSeconds),
+	);
+}
+
+test("more than CODES_PER_ADDRESS requests for an address by one user in an hour are refused, other users are not affected", async (t) => {
 	const { database, env, db } = await setup(t);
 	database.db.exec(
-		"INSERT INTO users (id, email, password_hash, name, created_at) VALUES ('carol', 'carol@example.com', 'hash', 'Carol', 1), ('dave', 'dave@example.com', 'hash', 'Dave', 1)",
+		"INSERT INTO users (id, email, password_hash, name, created_at) VALUES ('carol', 'carol@example.com', 'hash', 'Carol', 1)",
 	);
-	// alice and bob each request a code for the same address once, carol a second time: that is already
-	// CODES_PER_ADDRESS_PER_HOUR requests for this one address, none of them anywhere near their own per-user cap.
-	for (const userId of ["alice", "bob", "carol"]) {
-		const result = await addSenderAddress(env, db, userId, "popular@phone.test");
-		assert.equal(result.ok, true, userId);
+	for (let i = 0; i < CODES_PER_ADDRESS_PER_HOUR; i += 1) {
+		const result = await addSenderAddress(env, db, "alice", "popular@phone.test");
+		assert.equal(result.ok, true, `request ${i}`);
 	}
-	// A fourth request for the very same address, by yet another user with plenty of their own budget left, is
-	// refused: the limit is per address, not only per requester.
-	const limited = await addSenderAddress(env, db, "dave", "popular@phone.test");
+	const limited = await addSenderAddress(env, db, "alice", "popular@phone.test");
 	assert.equal(limited.ok, false);
 	assert.equal(limited.code, "RATE_LIMITED");
-	assert.equal(auditActions(database, "assistant_email.sender_code_requested").length, CODES_PER_ADDRESS_PER_HOUR);
-	// Dave's own, unrelated address is unaffected: this was never about his personal budget.
-	const daveOwn = await addSenderAddress(env, db, "dave", "dave-own@phone.test");
-	assert.equal(daveOwn.ok, true);
+	// Bob and Carol are not held back by alice's requests for the same address: they get the generic answer.
+	for (const userId of ["bob", "carol"])
+		assert.equal((await addSenderAddress(env, db, userId, "popular@phone.test")).ok, true, userId);
+	assert.equal(auditActions(database, "assistant_email.sender_code_requested").length, CODES_PER_ADDRESS_PER_HOUR + 2);
+});
+
+test("a crowd of users requesting codes for one address hits the global daily cap", async (t) => {
+	const { database, env, db } = await setup(t);
+	seedAudit(
+		database,
+		"assistant_email.sender_code_requested",
+		"flooded@phone.test",
+		Array.from({ length: GLOBAL_CODES_PER_ADDRESS_PER_DAY }, (_, i) => `spammer-${i}`),
+	);
+	const limited = await addSenderAddress(env, db, "alice", "flooded@phone.test");
+	assert.equal(limited.ok, false);
+	assert.equal(limited.code, "RATE_LIMITED");
+	assert.equal((await addSenderAddress(env, db, "alice", "elsewhere@phone.test")).ok, true);
+});
+
+test("one user's wrong guesses do not stop another user's code request for the same address", async (t) => {
+	const { database, env, db } = await setup(t);
+	seedAudit(
+		database,
+		"assistant_email.sender_verify_failed",
+		"shared@phone.test",
+		Array.from({ length: MAX_FAILED_CODES_PER_DAY }, () => "alice"),
+	);
+	const refused = await addSenderAddress(env, db, "alice", "shared@phone.test");
+	assert.equal(refused.ok, false);
+	assert.equal(refused.code, "RATE_LIMITED");
+	assert.equal((await addSenderAddress(env, db, "bob", "shared@phone.test")).ok, true);
+	// Verification itself is also counted per user: bob's pending row is not blocked by alice's failures.
+	await insertPending(database, { id: "bob-row", userId: "bob", address: "bob-shared@phone.test", code: "123456" });
+	seedAudit(
+		database,
+		"assistant_email.sender_verify_failed",
+		"bob-shared@phone.test",
+		Array.from({ length: MAX_FAILED_CODES_PER_DAY - 1 }, () => "alice"),
+	);
+	assert.equal(await verifySenderAddress(env, db, "bob", "bob-row", "123456"), true);
+});
+
+test("a crowd of wrong guesses at one address hits the global daily cap", async (t) => {
+	const { database, env, db } = await setup(t);
+	seedAudit(
+		database,
+		"assistant_email.sender_verify_failed",
+		"guessed@phone.test",
+		Array.from({ length: GLOBAL_FAILED_CODES_PER_ADDRESS_PER_DAY }, (_, i) => `guesser-${i}`),
+	);
+	const refused = await addSenderAddress(env, db, "bob", "guessed@phone.test");
+	assert.equal(refused.ok, false);
+	assert.equal(refused.code, "RATE_LIMITED");
 });
 
 test("an address with MAX_FAILED_CODES_PER_DAY failed guesses across its codes refuses new codes until tomorrow", async (t) => {

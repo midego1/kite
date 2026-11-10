@@ -12,7 +12,8 @@ import { EMPTY_INSTRUCTIONS } from "./instruction-utils";
  * `selectRow` already reads safely around their absence, so it cannot tell the difference itself).
  */
 export async function assistantEmailSettingsReady(env: CloudflareEnv): Promise<boolean> {
-	return (await userAiSettingsColumns(env)).includes("assistant_email_enabled");
+	const columns = await userAiSettingsColumns(env);
+	return ASSISTANT_EMAIL_COLUMN_NAMES.every((name) => columns.includes(name));
 }
 
 /** Whether migration 0069 created `user_ai_settings`, which every save in this file needs. */

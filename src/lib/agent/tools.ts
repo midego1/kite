@@ -137,7 +137,7 @@ export const emailToolDescriptions: Record<EmailToolName, string> = {
 	get_email: "Read one email and its attachment metadata without marking it read.",
 	get_thread: "Read the recent conversation containing an email before drafting a reply.",
 	search_emails:
-		'Search email subject and body in this mailbox. Use mode: "meaning" (or the default "both") for questions about topics, not exact words, such as \'the quote for the roof repair\'; use "keyword" to match exact words only. Results page newest first: pass the returned nextCursor as cursor for the next page.',
+		'Search email subject and body in this mailbox. Use mode: "meaning" (or the default "both") for questions about topics, not exact words, such as \'the quote for the roof repair\'; use "keyword" to match exact words only. Keyword results page newest first: pass the returned nextCursor as cursor for the next page (meaning results are ranked by relevance and have no cursor).',
 	count_emails:
 		'Count emails in this mailbox matching an optional search query, folder, and read state with one exact database count. Use this for any "how many" question instead of listing or searching and counting results yourself.',
 	draft_email: "Save a new email draft. This never sends.",

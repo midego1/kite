@@ -151,3 +151,12 @@ test("a request that needs the settings table saves nothing while that migration
 	assert.equal((await response.json()).code, "MIGRATION_PENDING");
 	assert.deepEqual(database.db.prepare("SELECT agent_max_steps FROM users WHERE id = 'user-1'").get(), stepsBefore);
 });
+
+test("a database missing only one of the assistant-by-email columns still saves nothing", async (t) => {
+	const database = await setup(t);
+	database.db.exec("ALTER TABLE user_ai_settings DROP COLUMN assistant_email_daily_limit");
+	const response = await patch({ instructions: INSTRUCTIONS, emailAssistant: { enabled: true } });
+	assert.equal(response.status, 409);
+	assert.equal((await response.json()).code, "MIGRATION_PENDING");
+	assert.equal(database.db.prepare("SELECT * FROM user_ai_settings WHERE user_id = 'user-1'").get(), undefined);
+});

@@ -4,6 +4,7 @@ import { AuthGuard } from "@/components/auth/auth-guard";
 import { hasAdminAccount } from "@/lib/auth/setup";
 import { getUserFromSession, SESSION_COOKIE } from "@/lib/auth/session";
 import { getEnv } from "@/lib/cloudflare";
+import { loginNextPath } from "@/lib/auth/next-path-utils";
 import { authPageMetadata } from "../auth-metadata";
 import { LoginClient } from "./login-client";
 
@@ -11,26 +12,28 @@ export const dynamic = "force-dynamic";
 
 export const generateMetadata = () => authPageMetadata("Sign in");
 
-export default async function LoginPage({ searchParams }: { searchParams: Promise<{ add?: string; setup?: string }> }) {
+export default async function LoginPage({
+	searchParams,
+}: {
+	searchParams: Promise<{ add?: string; setup?: string; next?: string }>;
+}) {
 	const params = await searchParams;
 	const adding = params.add === "1";
 	// Registration creates the account, domain and mailbox without signing the browser in, then sends the owner
 	// here to prove their password; this first sign-in opens the admin overview and its "Get started" checklist
 	// instead of the inbox.
 	const justFinishedSetup = params.setup === "1";
+	// An MCP app's consent screen sends a signed-out visitor here and expects them back afterwards.
+	const next = loginNextPath(params.next) ?? undefined;
 	const env = getEnv();
 	if (!(await hasAdminAccount(env))) redirect("/setup");
 	const cookieStore = await cookies();
 	const user = await getUserFromSession(env, cookieStore.get(SESSION_COOKIE)?.value);
-	if (user && !user.disabled && !adding) redirect(justFinishedSetup ? "/admin" : "/inbox");
+	if (user && !user.disabled && !adding) redirect(justFinishedSetup ? "/admin" : (next ?? "/inbox"));
 
 	return (
-		<AuthGuard
-			mode="public"
-			allowAuthenticated={adding}
-			authenticatedRedirect={justFinishedSetup ? "/admin" : undefined}
-		>
-			<LoginClient adding={adding} justFinishedSetup={justFinishedSetup} />
+		<AuthGuard mode="public" allowAuthenticated={adding} authenticatedRedirect={justFinishedSetup ? "/admin" : next}>
+			<LoginClient adding={adding} justFinishedSetup={justFinishedSetup} next={next} />
 		</AuthGuard>
 	);
 }

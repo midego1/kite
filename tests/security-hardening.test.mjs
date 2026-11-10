@@ -142,6 +142,11 @@ test("CSRF checks only cover unsafe /api requests outside the exempt prefixes", 
 	assert.equal(csrf.requiresCsrfCheck("POST", "/api/public/booking"), false);
 	assert.equal(csrf.requiresCsrfCheck("POST", "/mcp"), false);
 	assert.equal(csrf.requiresCsrfCheck("POST", "/jmap/api"), false);
+	assert.equal(csrf.requiresCsrfCheck("POST", "/api/oauth/token"), false);
+	assert.equal(csrf.requiresCsrfCheck("POST", "/api/oauth/register"), false);
+	assert.equal(csrf.requiresCsrfCheck("POST", "/api/oauth/revoke"), false);
+	assert.equal(csrf.requiresCsrfCheck("POST", "/api/oauth/authorize"), true);
+	assert.equal(csrf.requiresCsrfCheck("DELETE", "/api/oauth/grants"), true);
 });
 
 test("mutation origin decision", () => {

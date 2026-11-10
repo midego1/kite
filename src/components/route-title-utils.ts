@@ -10,6 +10,7 @@ const ROUTE_TITLES: ReadonlyArray<readonly [string, string]> = [
 	["/settings/security", "Security"],
 	["/settings/app-passwords", "App passwords"],
 	["/settings/api-keys", "API keys"],
+	["/settings/mcp-apps", "MCP apps"],
 	["/settings/connected-accounts", "Connected accounts"],
 	["/settings/export", "Export"],
 	["/settings/import", "Import"],

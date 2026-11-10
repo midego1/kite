@@ -62,28 +62,31 @@ export async function setMailboxSemanticIndex(
 		.set({ semanticIndex: enabled, updatedAt: new Date() })
 		.where(and(eq(mailboxAgentSettings.mailboxId, mailboxId), ne(mailboxAgentSettings.semanticIndex, enabled)))
 		.returning({ mailboxId: mailboxAgentSettings.mailboxId });
-	if (changed.length > 0) {
-		await createAuditLog(env, {
+	const audit = () =>
+		createAuditLog(env, {
 			actorUserId: user.id,
 			mailboxId,
 			action: SEMANTIC_INDEX_AUDIT_ACTION,
 			metadata: { semanticIndex: enabled },
 		});
-	}
 	// Off always clears (a no-op when nothing is indexed), so a retry after a failed cleanup still removes the
 	// vectors, as `setMailboxAiDisabled` does. On requeues only after a change, since it re-embeds the whole
-	// mailbox; if that fails the switch is put back, so the retry sees a change and runs it again.
-	if (!enabled) await clearMailboxSemanticIndex(env, mailboxId);
-	else if (changed.length > 0) {
+	// mailbox; if that fails the switch is put back (only while it still holds the value this save wrote, so a
+	// concurrent save is never overwritten) and no "on" is audited, so the retry sees a change and runs it again.
+	if (!enabled) {
+		if (changed.length > 0) await audit();
+		await clearMailboxSemanticIndex(env, mailboxId);
+	} else if (changed.length > 0) {
 		try {
 			await requeueMailboxSemanticIndex(env, mailboxId);
 		} catch (error) {
 			await db
 				.update(mailboxAgentSettings)
 				.set({ semanticIndex: false, updatedAt: new Date() })
-				.where(eq(mailboxAgentSettings.mailboxId, mailboxId));
+				.where(and(eq(mailboxAgentSettings.mailboxId, mailboxId), eq(mailboxAgentSettings.semanticIndex, true)));
 			throw error;
 		}
+		await audit();
 	}
 	return "saved";
 }

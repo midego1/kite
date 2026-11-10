@@ -111,10 +111,10 @@ test("a backfill-origin row is left unclaimed once the backfill's own share is s
 		`UPDATE app_settings SET agent_daily_spend_cap_micros = 1000, semantic_backfill_cap_share = 50;
 		INSERT INTO ai_usage (id, created_at, provider, model, source, cost_usd_micros, reserved) VALUES ('u1', strftime('%s','now'), 'cloudflare', '@cf/baai/bge-m3', 'embedding_backfill', 600, 0);`,
 	);
-	// A row the backfill queued before its share ran out (queued_at set to a message date, well past
-	// BACKFILL_AGE_MARGIN_MS, exactly as backfill.ts itself queues one), and an ordinary trigger-queued row.
+	// A row the backfill queued before its share ran out (origin 'backfill' and queued_at set to a message date,
+	// exactly as backfill.ts itself queues one), and an ordinary trigger-queued row.
 	insertEligibleMessage(db, "backfilled");
-	db.db.exec("UPDATE message_embeddings SET queued_at = 10 WHERE message_id = 'backfilled'");
+	db.db.exec("UPDATE message_embeddings SET queued_at = 10, origin = 'backfill' WHERE message_id = 'backfilled'");
 	insertEligibleMessage(db, "live");
 	env.AI = { run: async (_model, input) => ({ data: fakeVectors(input.text.length) }) };
 	const result = await processEmbeddingBatch(env);

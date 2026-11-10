@@ -10,6 +10,7 @@ import { EmptyState } from "@/components/ui/page";
 import { CARD_CLASS } from "@/components/ui/page-utils";
 import { Select } from "@/components/ui/select";
 import { formatMoney } from "@/lib/finance/amount-utils";
+import { MAX_EXPORT_ROWS } from "@/lib/finance/payment-export-utils";
 import { NO_CATEGORY } from "@/lib/finance/payment-filter-utils";
 import { currentLocale } from "@/lib/i18n/translator";
 import { useT } from "@/lib/i18n/use-t";
@@ -37,8 +38,6 @@ import { usePaymentList } from "./use-payments";
 
 /** At most this many month blocks are shown above the list; the filter reaches older months. */
 const MONTH_BLOCKS = 3;
-
-const EMPTY_FILTERS: PaymentFilters = { vendor: "", month: "", status: "", category: "" };
 
 function TotalLine({ total, locale }: { total: MonthCurrencyTotal; locale: string | undefined }) {
 	const t = useT();
@@ -265,10 +264,15 @@ export function PaymentsView() {
 							{list.scan ? scanText(list.scan, t) : t("Payments that arrive by mail are added here on their own.")}
 						</p>
 						<div className="flex flex-wrap items-center gap-2">
-							<ExportButton filters={focusId ? EMPTY_FILTERS : filters} disabled={items.length === 0} />
+							{!focusId && <ExportButton filters={filters} disabled={items.length === 0} />}
 							<ScanButton scan={list.scan} onStarted={reload} />
 						</div>
 					</div>
+					{(list.total ?? 0) > MAX_EXPORT_ROWS && (
+						<p className="text-xs text-neutral-500" data-payment-export-limit>
+							{t("An export holds at most 20,000 payments; narrow it with the filters to get the rest.")}
+						</p>
+					)}
 					<ScanCoverageNote gaps={list.scanCoverage} />
 					{items.length === 0 ? (
 						<EmptyState

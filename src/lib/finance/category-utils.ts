@@ -24,45 +24,79 @@ export function paymentCategoryOf(value: unknown): PaymentCategory | null {
 		: null;
 }
 
+type Cued = Exclude<PaymentCategory, "other">;
+
 /**
- * Words that make one category obvious, in English and Dutch with the common German and French ones. They are read in
- * the vendor, the subject and the sender's domain only (never the body, where sales copy and line items mention
- * everything), and a mail that matches two categories gets none. Shopping's words are generic ("your order" is on a
- * pizza receipt too), so they count only when no other category matched.
+ * Known businesses, read in the vendor and the sender's domain only and tried in order, the first match winning: a
+ * brand names its category outright, so "Uber Eats" is food (it comes before "uber", which is travel) and a shop's
+ * subject can name any product ("Training shoes", "Cloud Atlas") without changing the shop's category.
  */
-const CUES: readonly (readonly [Exclude<PaymentCategory, "other" | "shopping">, RegExp])[] = [
-	[
-		"software",
-		/\b(?:software|saas|cloud|hosting|domain names?|domeinnamen?|vps|licen[cs]es?|licentie|github|gitlab|aws|azure|google workspace|microsoft 365|office 365|adobe|dropbox|figma|jetbrains|openai|anthropic|namecheap|godaddy|cloudflare|digitalocean|hetzner|vercel|netlify)\b/,
-	],
+const BRANDS: readonly (readonly [Cued, RegExp])[] = [
 	[
 		"food",
-		/\b(?:restaurants?|pizza|pizzeria|sushi|burgers?|caf[eé]|coffee|koffie|bakery|bakkerij|bezorg\w*|maaltijd\w*|meals?|takeaway|take-away|thuisbezorgd|uber ?eats|deliveroo|just eat|picnic|albert heijn|jumbo|lidl|aldi|hellofresh|grocer(?:y|ies)|supermarkt|boodschappen)\b/,
+		/\b(?:uber ?eats|thuisbezorgd|deliveroo|just eat|picnic|albert heijn|jumbo|lidl|aldi|hellofresh|domino'?s|mcdonald'?s|starbucks)\b/,
 	],
 	[
 		"travel",
-		/\b(?:flights?|vlucht\w*|airlines?|airways|boarding pass|itinerary|reisschema|hotels?|hostel|booking\.com|airbnb|expedia|trainline|ns reizigers|ov-chipkaart|train tickets?|treinkaartjes?|treinticket|car rental|autohuur|sixt|hertz|klm|ryanair|easyjet|transavia|lufthansa|flixbus|taxi|uber)\b/,
+		/\b(?:booking\.com|airbnb|expedia|trainline|ns reizigers|ov-chipkaart|9292|sixt|hertz|klm|ryanair|easyjet|transavia|lufthansa|flixbus|uber|bolt)\b/,
 	],
 	[
-		"utilities",
-		/\b(?:electricity|energy|energie|stroom|vattenfall|eneco|essent|vitens|broadband|glasvezel|fib(?:re|er)|telecom|kpn|ziggo|odido|t-mobile|vodafone|sim only|mobiele?)\b/,
+		"shopping",
+		/\b(?:bol\.com|amazon|coolblue|mediamarkt|ikea|zalando|wehkamp|aliexpress|ebay|etsy|decathlon|h&m|hema)\b/,
 	],
 	[
-		"health",
-		/\b(?:pharmacy|apotheek|dentist|tandarts|doctor|huisarts|clinic|kliniek|physio\w*|fysio\w*|optician|opticien|hospital|ziekenhuis|zorgverzeker\w*|health insurance|specsavers)\b/,
+		"software",
+		/\b(?:github|gitlab|aws|azure|google workspace|microsoft 365|office 365|adobe|dropbox|figma|jetbrains|openai|anthropic|namecheap|godaddy|cloudflare|digitalocean|hetzner|vercel|netlify)\b/,
 	],
+	["utilities", /\b(?:vattenfall|eneco|essent|vitens|kpn|ziggo|odido|t-mobile|vodafone)\b/],
+	["health", /\b(?:etos|specsavers)\b/],
 	[
 		"entertainment",
-		/\b(?:cinema|bioscoop|path[eé]|concert|festival|theat(?:er|re)|museum|ticketmaster|eventbrite|spotify|netflix|disney|steam|playstation|xbox|nintendo|games?|gaming|twitch)\b/,
+		/\b(?:path[eé]|ticketmaster|eventbrite|spotify|netflix|disney|steam|playstation|xbox|nintendo|twitch)\b/,
 	],
+	["education", /\b(?:coursera|udemy)\b/],
+];
+
+/**
+ * Business words that make one category obvious, read in the vendor and the sender's domain only: "Acme Hosting" is
+ * software, "Pizzeria Roma" is food. Two categories in one name ("Pizza Hosting", "The Cloud Bakery") give none.
+ */
+const BUSINESS: readonly (readonly [Cued, RegExp])[] = [
+	["software", /\b(?:software|saas|cloud|hosting|domain names?|domeinnamen?|vps|licen[cs]es?|licentie)\b/],
+	[
+		"food",
+		/\b(?:restaurants?|pizza|pizzeria|sushi|burgers?|caf[eé]|coffee|koffie|bakery|bakkerij|takeaway|take-away|grocer(?:y|ies)|supermarkt)\b/,
+	],
+	["travel", /\b(?:flights?|vlucht\w*|airlines?|airways|hotels?|hostel|car rental|autohuur|taxi)\b/],
+	["utilities", /\b(?:electricity|energy|energie|stroom|broadband|glasvezel|fib(?:re|er)|telecom)\b/],
+	[
+		"health",
+		/\b(?:pharmacy|apotheek|dentist|tandarts|doctor|huisarts|clinic|kliniek|physio\w*|fysio\w*|optician|opticien|hospital|ziekenhuis|zorgverzeker\w*|health insurance)\b/,
+	],
+	["entertainment", /\b(?:cinema|bioscoop|concert|festival|theat(?:er|re)|museum)\b/],
 	[
 		"education",
-		/\b(?:courses?|cursus|tuition|collegegeld|udemy|coursera|university|universiteit|workshop|webinar|training)\b/,
+		/\b(?:courses?|cursus|tuition|collegegeld|university|universiteit|workshop|webinar|training|academy)\b/,
 	],
 ];
 
+/**
+ * What a subject may say on its own: a few phrases that name the document, not a product. A subject lists what was
+ * bought, so common nouns ("training", "cloud", "games") are not cues here, and a subject matches only when no vendor
+ * or domain word did.
+ */
+const SUBJECT: readonly (readonly [Cued, RegExp])[] = [
+	[
+		"travel",
+		/\b(?:flight receipt|boarding pass|itinerary|vluchtbevestiging|reisschema|hotel reservation|hotelreservering)\b/,
+	],
+	["utilities", /\b(?:electricity bill|energy bill|energienota|jaarnota)\b/],
+	["software", /\b(?:domain renewal|domeinnaam|hosting invoice)\b/],
+];
+
+/** Generic shop words, which count only when nothing else matched ("your order" is on a pizza receipt too). */
 const SHOPPING =
-	/\b(?:order confirmation|bestelbevestiging|your order|uw bestelling|bestelling|webshop|webwinkel|shipped|verzonden|parcel|pakket|bol\.com|amazon|coolblue|ikea|zalando|wehkamp|mediamarkt|aliexpress|ebay|etsy)\b/;
+	/\b(?:order confirmation|bestelbevestiging|your order|uw bestelling|bestelling|webshop|webwinkel|shipped|verzonden|parcel|pakket)\b/;
 
 export type CategoryCues = {
 	vendor: string;
@@ -73,13 +107,25 @@ export type CategoryCues = {
 
 const MAX_CUE_TEXT = 400;
 
+/** The one category whose pattern matches, or null when none or several do. */
+function single(table: readonly (readonly [Cued, RegExp])[], text: string): Cued | null | undefined {
+	const matched = table.filter(([, pattern]) => pattern.test(text)).map(([category]) => category);
+	return matched.length === 0 ? undefined : matched.length === 1 ? matched[0]! : null;
+}
+
 /**
- * The category one message makes obvious, or null (spec §27.2): exactly one category's words in the vendor, the subject
- * and the sender's domain. Pure and deterministic; the model never sets a category.
+ * The category one message makes obvious, or null (spec §27.2), in this order: a known business in the vendor or the
+ * sender's domain; else exactly one category's business words there; else a document phrase in the subject; else
+ * generic shop words. The body is never read and the model never sets a category. Pure and deterministic.
  */
 export function categoryOf(cues: CategoryCues): PaymentCategory | null {
-	const text = `${cues.vendor}\n${cues.subject ?? ""}\n${cues.sender ?? ""}`.slice(0, MAX_CUE_TEXT).toLowerCase();
-	const matched = CUES.filter(([, pattern]) => pattern.test(text)).map(([category]) => category);
-	if (matched.length === 0) return SHOPPING.test(text) ? "shopping" : null;
-	return matched.length === 1 ? matched[0]! : null;
+	const name = `${cues.vendor}\n${cues.sender ?? ""}`.slice(0, MAX_CUE_TEXT).toLowerCase();
+	const subject = (cues.subject ?? "").slice(0, MAX_CUE_TEXT).toLowerCase();
+	const brand = BRANDS.find(([, pattern]) => pattern.test(name));
+	if (brand) return brand[0];
+	const business = single(BUSINESS, name);
+	if (business !== undefined) return business;
+	const phrase = single(SUBJECT, subject);
+	if (phrase !== undefined) return phrase;
+	return SHOPPING.test(subject) ? "shopping" : null;
 }

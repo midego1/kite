@@ -34,7 +34,6 @@ const paymentRecorded = z.object({
 		documentOn: date,
 		category,
 	}),
-	source: z.enum(["auto", "scan"]),
 	message: messageRef,
 });
 

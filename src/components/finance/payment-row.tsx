@@ -3,6 +3,7 @@
 import Link from "next/link";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { MoreHorizontal, Sparkles, WalletCards } from "lucide-react";
+import { paymentCategoryOf } from "@/lib/finance/category-utils";
 import { useT } from "@/lib/i18n/use-t";
 import { cn } from "@/lib/utils";
 import type { PaymentItem, PaymentListStatus } from "./payments-types";
@@ -111,6 +112,7 @@ export function PaymentRow({ item, locale, onCorrect, onChanged }: RowProps) {
 	const t = useT();
 	const amount = amountText(item, locale);
 	const assisted = item.modelFields.length > 0;
+	const category = paymentCategoryOf(item.category);
 	return (
 		<li className="flex items-center gap-3 px-4 py-3" data-payment-row={item.id} data-payment-status={item.status}>
 			<div className="min-w-0 flex-1">
@@ -154,10 +156,10 @@ export function PaymentRow({ item, locale, onCorrect, onChanged }: RowProps) {
 							</span>
 						</>
 					)}
-					{item.category && (
+					{category && (
 						<>
 							{" · "}
-							<span data-payment-category={item.category}>{t(CATEGORY_LABELS[item.category])}</span>
+							<span data-payment-category={category}>{t(CATEGORY_LABELS[category])}</span>
 						</>
 					)}
 					{!item.message || item.message.unavailable ? ` · ${t("Message deleted")}` : ""}

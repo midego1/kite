@@ -1,4 +1,8 @@
 import type { z } from "zod";
+import { getDb } from "@/db";
+import type { SessionUser } from "@/lib/auth/types";
+import { getEnv } from "@/lib/cloudflare";
+import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { moduleHost } from "@/lib/modules/host";
 import type { CapabilityCallContext, CapabilityHandler } from "@/lib/modules/module-types";
 import { MIGRATION_PENDING_ERROR, refusalOf } from "./errors";
@@ -34,6 +38,27 @@ function entryOf(row: PaymentRow): PaymentListEntry {
 }
 
 /**
+ * The rows of mailboxes the call may read: an MCP key limited to some mailboxes sees only theirs, and a mailbox the
+ * viewer can no longer read (access withdrawn since the row was recorded) lists nothing. A row whose mailbox was
+ * deleted has none to check and stays, except for a limited key.
+ */
+async function readableRows(ctx: CapabilityCallContext, rows: PaymentRow[]): Promise<PaymentRow[]> {
+	const viewer = ctx.viewer!;
+	const limited = ctx.trigger === "mcp" && (ctx.mailboxIds?.length ?? 0) > 0 ? new Set(ctx.mailboxIds) : null;
+	const user = { id: viewer.userId, role: viewer.role as SessionUser["role"] };
+	const db = getDb(getEnv());
+	const allowed = new Map<string, boolean>();
+	for (const mailboxId of new Set(rows.map((row) => row.mailboxId))) {
+		if (!mailboxId) continue;
+		allowed.set(
+			mailboxId,
+			(!limited || limited.has(mailboxId)) && !!(await getMailboxAccessLevel(db, user, mailboxId))?.canRead,
+		);
+	}
+	return rows.filter((row) => (row.mailboxId ? allowed.get(row.mailboxId) : !limited));
+}
+
+/**
  * The owner's payment rows the chat may see: in the chat (`moduleHost.mail.aiHidden`, checked now) a row is left
  * out when its mail's mailbox has AI off, or the row was found there. A payment hidden from a message in a
  * subscription's ledger is left out here as in the tab.
@@ -49,7 +74,10 @@ async function visibleRows(ctx: CapabilityCallContext, userId: string): Promise<
 			refs: [paymentRef(row.id)],
 		})),
 	);
-	return shown.filter((_, index) => !hidden[index]);
+	return readableRows(
+		ctx,
+		shown.filter((_, index) => !hidden[index]),
+	);
 }
 
 /** The totals of the newest few months (they come newest first), every currency of each. */

@@ -1,4 +1,5 @@
 import { formatDecimal } from "./amount-utils";
+import { paymentCategoryOf } from "./category-utils";
 
 /** A row of the Payments CSV: what the tab shows, as plain values. */
 export type PaymentCsvRow = {
@@ -8,14 +9,18 @@ export type PaymentCsvRow = {
 	status: string;
 	amount: { minor: number; currency: string } | null;
 	category: string | null;
-	/** `mail` for a payment found in mail, `subscription` for a tracked subscription's document. */
+	/** `payment` for a payment found in mail (written as `mail`), `subscription` for a tracked subscription's document. */
 	source: "payment" | "subscription";
 };
 
 const HEADER = ["Date", "Vendor", "Type", "Status", "Amount", "Currency", "Category", "Source"];
 
-/** Characters a spreadsheet reads as the start of a formula when they open a cell. */
-const FORMULA_START = /^[\t\r\n =+\-@]/;
+/**
+ * Characters a spreadsheet reads as the start of a formula when they open a cell: the ASCII operators, the fullwidth
+ * ones CJK-locale builds accept, the old DDE pipe, and any leading whitespace (a no-break space or a zero-width
+ * character included), which some programs skip before looking for the operator.
+ */
+const FORMULA_START = /^[\s\u200b-\u200d\u2060\ufeff=+\-@|\uff1d\uff0b\uff0d\uff20]/;
 
 /**
  * One text cell, safe to open in a spreadsheet: a value that would start a formula (`=`, `+`, `-`, `@`, a tab or a
@@ -41,13 +46,14 @@ function amountCell(row: PaymentCsvRow): string {
 export function paymentsCsv(rows: readonly PaymentCsvRow[]): string {
 	const lines = rows.map((row) =>
 		[
-			row.documentOn,
+			// Every text column goes through csvText, so the guard never relies on the database holding known values.
+			csvText(row.documentOn),
 			csvText(row.vendor),
-			row.docType,
-			row.status,
+			csvText(row.docType),
+			csvText(row.status),
 			amountCell(row),
-			row.amount?.currency ?? "",
-			row.category ?? "",
+			csvText(row.amount?.currency ?? ""),
+			csvText(paymentCategoryOf(row.category) ?? ""),
 			row.source === "payment" ? "mail" : "subscription",
 		].join(","),
 	);

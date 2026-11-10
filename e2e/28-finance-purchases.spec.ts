@@ -270,11 +270,13 @@ test.describe("Money Watch purchases: categories, export, search and the assista
 
 			const page = await openTab(context, payments!.items[0].href);
 			await expect(page.locator("[data-payment-focus]")).toContainText("Showing one payment.");
+			await expect(page.locator("[data-payment-export]"), "no export while one payment is shown").toHaveCount(0);
 			await expect(page.locator("[data-payment-row]")).toHaveCount(1);
 			await expect(row(page, flight.id)).toBeVisible();
 			await page.locator("[data-payment-focus]").getByRole("link", { name: "Show all payments" }).click();
 			await expect(page.locator("[data-payment-row]")).toHaveCount(3);
 			await expect(page.locator("[data-payment-focus]")).toHaveCount(0);
+			await expect(page.locator("[data-payment-export]")).toBeVisible();
 		} finally {
 			await context.close();
 			await restore();

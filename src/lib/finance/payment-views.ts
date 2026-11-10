@@ -2,6 +2,7 @@ import { getEnv } from "@/lib/cloudflare";
 import { resolveRecordRefs } from "@/lib/modules/record-refs";
 import { normalizeTimeZone } from "@/lib/time/utils";
 import { MIGRATION_PENDING_ERROR, refusalOf } from "./errors";
+import { MAX_EXPORT_ROWS } from "./payment-export-utils";
 import { matchesPaymentFilter, type PaymentFilter } from "./payment-filter-utils";
 import type { PaymentCsvRow } from "./payment-csv-utils";
 import {
@@ -142,6 +143,7 @@ export async function listPaymentsView(user: ViewUser) {
 		const refs = await messageRefs(user, listed);
 		return {
 			truncated: entries.length > listed.length,
+			total: entries.length,
 			payments: listed.map((entry) => ({
 				id: entry.id,
 				source: entry.source,
@@ -179,9 +181,6 @@ export async function listPaymentsView(user: ViewUser) {
 		throw error;
 	}
 }
-
-/** The most rows one CSV holds; the filters narrow it, and it says so rather than cutting silently. */
-const MAX_EXPORT_ROWS = 20_000;
 
 /**
  * The Payments tab as CSV rows (spec §27.4): the same rows, status and filters as the tab, newest first, without the

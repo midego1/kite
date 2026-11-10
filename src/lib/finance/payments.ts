@@ -5,6 +5,7 @@ import { missingColumnFromError } from "@/lib/auth/user-lookup-utils";
 import { getEnv } from "@/lib/cloudflare";
 import { insertRow, selectRows } from "@/lib/db/pending-columns";
 import { isNoSuchTableError } from "@/lib/modules/state-utils";
+import { paymentCategoryOf } from "./category-utils";
 import { FinanceRefusal, MIGRATION_PENDING_ERROR, financeTablesReady } from "./errors";
 
 export type PaymentRow = typeof financePayments.$inferSelect;
@@ -114,9 +115,17 @@ export async function messageRecorded(userId: string, messageId: string): Promis
 	return !!payment;
 }
 
+/**
+ * A stored category outside the fixed set reads as none (spec §27.2): a rollback after a category was added, or a
+ * backup from a newer install, can leave one, and no surface may see it. Every read of a row goes through here.
+ */
+export function withKnownCategory<T extends { category?: string | null }>(row: T): T {
+	return { ...row, category: paymentCategoryOf(row.category) };
+}
+
 /** The owner's payment rows that are not removed, newest first. */
-export function ownerPayments(userId: string): Promise<PaymentRow[]> {
-	return onPaymentTables(() =>
+export async function ownerPayments(userId: string): Promise<PaymentRow[]> {
+	const rows = await onPaymentTables(() =>
 		selectRows(
 			db(),
 			financePayments,
@@ -125,6 +134,7 @@ export function ownerPayments(userId: string): Promise<PaymentRow[]> {
 			sql`${financePayments.documentAt} DESC, ${financePayments.createdAt} DESC`,
 		),
 	);
+	return rows.map(withKnownCategory);
 }
 
 /** One of the owner's payment rows, removed or not; null for anyone else. */
@@ -132,7 +142,7 @@ export async function ownerPayment(userId: string, id: string): Promise<PaymentR
 	const [row] = await onPaymentTables(() =>
 		selectRows(db(), financePayments, and(eq(financePayments.id, id), eq(financePayments.userId, userId)), 1),
 	);
-	return row ?? null;
+	return row ? withKnownCategory(row) : null;
 }
 
 /** Changing a category needs migration 0109; before it, a change that names the column is refused like any write. */

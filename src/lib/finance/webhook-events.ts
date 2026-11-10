@@ -33,13 +33,13 @@ export async function emitSubscriptionDetected(
 }
 
 /**
- * Tells the owner's webhooks about a payment just recorded from mail (spec §27.3), by automatic reading or by
- * "Scan last 90 days". The context's viewer is the owner, so nobody else's webhooks receive it; a failed delivery
- * never undoes the write.
+ * Tells the owner's webhooks about a payment just recorded from new mail by automatic reading (spec §27.3); the
+ * historical "Scan last 90 days" never emits it. The context's viewer is the owner, so nobody else's webhooks receive
+ * it; a failed delivery never undoes the write.
  */
 export async function emitPaymentRecorded(
 	ctx: CapabilityCallContext,
-	recorded: { id: string; finding: PaymentFinding; source: "auto" | "scan"; messageId: string },
+	recorded: { id: string; finding: PaymentFinding; messageId: string },
 ): Promise<void> {
 	const { finding } = recorded;
 	const payload = {
@@ -52,11 +52,11 @@ export async function emitPaymentRecorded(
 			documentOn: finding.documentOn,
 			category: finding.category,
 		},
-		source: recorded.source,
 		message: { kind: "mail:message", id: recorded.messageId },
 	};
 	try {
-		await moduleHost.emitWebhook(ctx, "finance", PAYMENT_RECORDED, payload as unknown as JsonValue);
+		// Queued: delivery never runs inside the triage step, whose budget a slow endpoint would eat.
+		await moduleHost.emitWebhook(ctx, "finance", PAYMENT_RECORDED, payload as unknown as JsonValue, { queued: true });
 	} catch (error) {
 		log.warn("finance.webhook_failed", { paymentId: recorded.id, error });
 	}

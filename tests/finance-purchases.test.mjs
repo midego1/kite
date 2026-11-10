@@ -19,6 +19,7 @@ await build({
 		execute: join(root, "src/lib/agent/auto-read/execute.ts"),
 		views: join(root, "src/lib/finance/payment-views.ts"),
 		manual: join(root, "src/lib/finance/manual-payments.ts"),
+		step: join(root, "src/lib/finance/payment-step.ts"),
 		refs: join(root, "src/lib/modules/record-refs.ts"),
 		runtime: join(root, "server/runtime/sqlite-database.ts"),
 		migrate: join(root, "server/runtime/migrate.ts"),
@@ -70,6 +71,7 @@ const { clearModuleStateCache } = await load("state");
 const { undoAgentAction } = await load("execute");
 const { listPaymentsView, paymentsForExport } = await load("views");
 const { patchPayment } = await load("manual");
+const { recordPaymentFromInput } = await load("step");
 const { PAYMENT_CATEGORIES, categoryOf, paymentCategoryOf } = await loadUtil("category");
 const { csvText, paymentsCsv } = await loadUtil("csv");
 const { matchesPaymentFilter, parsePaymentFilter } = await loadUtil("filter");
@@ -109,9 +111,37 @@ test("a category is set only where exactly one is obvious, in English and Dutch"
 		categoryOf({ vendor: "Kestrel Atlas", subject: "Your receipt [#1114-6093]", sender: "stripe.com" }),
 		null,
 	);
-	assert.equal(categoryOf({ vendor: "Uber Eats", subject: "Your Uber Eats order", sender: "uber.com" }), null);
+	assert.equal(categoryOf({ vendor: "Uber Eats", subject: "Your Uber Eats order", sender: "uber.com" }), "food");
+	assert.equal(categoryOf({ vendor: "Uber", subject: "Your Tuesday trip", sender: "uber.com" }), "travel");
 	assert.equal(categoryOf({ vendor: "Hotel Software GmbH", subject: "Invoice", sender: "example.com" }), null);
 	assert.equal(categoryOf({ vendor: "Acme", subject: null, sender: null }), null);
+});
+
+test("a product word in a shop's subject never decides the category", () => {
+	const cases = [
+		[{ vendor: "Bol.com", subject: "Bevestiging van je bestelling: Training schoenen", sender: "bol.com" }, "shopping"],
+		[{ vendor: "Decathlon", subject: "Your order: running shoes, training top", sender: "decathlon.nl" }, "shopping"],
+		[{ vendor: "H&M", subject: "Your order training leggings", sender: "hm.com" }, "shopping"],
+		[{ vendor: "Amazon", subject: 'Your Amazon.com order of "Cloud Atlas"', sender: "amazon.com" }, "shopping"],
+		[{ vendor: "MediaMarkt", subject: "Bestelling: Nintendo Switch", sender: "mediamarkt.nl" }, "shopping"],
+		[{ vendor: "Acme", subject: "Your order: online training course", sender: "acme.test" }, "shopping"],
+		[{ vendor: "Acme", subject: "Your games and cloud storage receipt", sender: "acme.test" }, null],
+		[{ vendor: "IKEA", subject: "Bestelling 1234", sender: "ikea.com" }, "shopping"],
+		[{ vendor: "Jumbo", subject: "Je bestelling", sender: "jumbo.com" }, "food"],
+		[{ vendor: "Albert Heijn", subject: "Bonnetje", sender: "ah.nl" }, "food"],
+		[{ vendor: "Etos", subject: "Uw bestelling", sender: "etos.nl" }, "health"],
+		[{ vendor: "Fysiotherapie Jansen", subject: "Factuur", sender: "jansen.example" }, "health"],
+		[{ vendor: "Coursera", subject: "Receipt", sender: "coursera.org" }, "education"],
+		[{ vendor: "Pathé", subject: "Je tickets", sender: "pathe.nl" }, "entertainment"],
+		[{ vendor: "Steam", subject: "Thank you for your purchase", sender: "steampowered.com" }, "entertainment"],
+		[{ vendor: "Taxi Centrale", subject: "Ride receipt", sender: "taxi.example" }, "travel"],
+		[{ vendor: "Apple", subject: "Your receipt from Apple", sender: "apple.com" }, null],
+		[{ vendor: "Patreon", subject: "Your Patreon receipt", sender: "patreon.com" }, null],
+		[{ vendor: "Pizza Hosting Ltd", subject: "Invoice", sender: "example.com" }, null],
+		[{ vendor: "The Cloud Bakery", subject: "Receipt", sender: "example.com" }, null],
+		[{ vendor: "Acme", subject: "Your flight receipt", sender: "acme.test" }, "travel"],
+	];
+	for (const [cues, category] of cases) assert.equal(categoryOf(cues), category, `${cues.vendor}: ${cues.subject}`);
 });
 
 test("only a category of the fixed set is a category", () => {
@@ -145,7 +175,22 @@ test("CSV cells never start a formula and quote what needs it", () => {
 	assert.equal(csvText("Acme, Inc."), '"Acme, Inc."');
 	assert.equal(csvText('The "Best" Shop'), '"The ""Best"" Shop"');
 	assert.equal(csvText("Line\nbreak"), '"Line\nbreak"');
-	for (const hostile of ['=HYPERLINK("http://evil.example","x")', "+1+1", "-2+3", "@SUM(A1)", "\tcmd", "\rcmd"])
+	for (const hostile of [
+		'=HYPERLINK("http://evil.example","x")',
+		"+1+1",
+		"-2+3",
+		"@SUM(A1)",
+		"\tcmd",
+		"\rcmd",
+		"\uff1d1+1",
+		"\uff0b1",
+		"\uff0d1",
+		"\uff20SUM(A1)",
+		"\u00a0=1+1",
+		"  =1",
+		"\u200b=1",
+		"|cmd",
+	])
 		assert.ok(csvText(hostile).replace(/^"/, "").startsWith("'"), JSON.stringify(hostile));
 	assert.equal(csvText("a=b"), "a=b", "only the first character matters");
 });
@@ -255,9 +300,18 @@ async function setup(t) {
 	);
 	addHook.run("wh-owner", "owner", HOOK_URL, JSON.stringify(["finance.payment.recorded"]));
 	addHook.run("wh-member", "member", HOOK_URL, JSON.stringify(["finance.payment.recorded"]));
-	const env = { DB: db, OUTBOUND_QUEUE: { send: async () => undefined }, AGENT_QUEUE: { send: async () => undefined } };
+	const queued = [];
+	const sent = [];
+	const env = {
+		DB: db,
+		OUTBOUND_QUEUE: { send: async (message) => void queued.push(message) },
+		AGENT_QUEUE: { send: async () => undefined },
+	};
 	globalThis.__kiteNodeEnv = env;
-	globalThis.fetch = async () => new Response("ok", { status: 200 });
+	globalThis.fetch = async (url) => {
+		sent.push(String(url));
+		return new Response("ok", { status: 200 });
+	};
 	clearModuleStateCache();
 	t.after(() => {
 		delete globalThis.__kiteNodeEnv;
@@ -269,7 +323,7 @@ async function setup(t) {
 			.prepare("SELECT webhook_id, event_type, payload FROM webhook_deliveries ORDER BY created_at, rowid")
 			.all()
 			.map((row) => ({ webhookId: row.webhook_id, event: row.event_type, body: JSON.parse(row.payload) }));
-	return { db, deliveries };
+	return { db, deliveries, queued, sent };
 }
 
 let counter = 0;
@@ -362,7 +416,7 @@ const payments = (db) =>
 		.all();
 
 test("a recorded payment gets a category only where one is obvious, and its owner's webhook hears of it", async (t) => {
-	const { db, deliveries } = await setup(t);
+	const { db, deliveries, queued, sent: fetched } = await setup(t);
 	const flightMessage = insertMessage(db, FLIGHT);
 	await record(flightMessage, FLIGHT);
 	await record(insertMessage(db, STRIPE), STRIPE);
@@ -391,11 +445,39 @@ test("a recorded payment gets a category only where one is obvious, and its owne
 		documentOn: "2026-11-02",
 		category: "travel",
 	});
-	assert.equal(body.data.source, "auto");
+	assert.equal(body.data.source, undefined, "no scan or auto flag in the payload");
 	assert.deepEqual(body.data.message, { kind: "mail:message", id: flightMessage });
 	// Recording the same message again writes and announces nothing.
 	await record(flightMessage, FLIGHT);
 	assert.equal(deliveries().length, 3);
+	// The first attempt is queued, never made inside the recording step, so a slow endpoint cannot hold it up.
+	assert.deepEqual(fetched, [], "no request left during recording");
+	assert.equal(queued.filter((message) => message.kind === "webhook.retry").length, 3);
+	assert.deepEqual(
+		new Set(queued.map((message) => message.deliveryId)),
+		new Set(
+			db.db
+				.prepare("SELECT id FROM webhook_deliveries")
+				.all()
+				.map((row) => row.id),
+		),
+	);
+});
+
+test("the historical scan records payments but announces none", async (t) => {
+	const { db, deliveries, queued } = await setup(t);
+	const message = insertMessage(db, FLIGHT);
+	const ctx = buildCallContext({
+		trigger: "queue",
+		viewer: { userId: "owner", role: "user", isPrimaryAdmin: false },
+		timeZone: "UTC",
+		mailboxIds: ["mailbox-a"],
+		grants: ["finance.read", "finance.write"],
+	});
+	assert.equal(await recordPaymentFromInput(ctx, stepInput(message, FLIGHT), "scan"), "recorded");
+	assert.equal(payments(db).length, 1);
+	assert.deepEqual(deliveries(), []);
+	assert.deepEqual(queued, []);
 });
 
 test("the category is changed from the Payments tab with Undo, and only to a category of the set", async (t) => {
@@ -436,14 +518,15 @@ test("list_payments, the search section and the refs answer for the owner only, 
 	const all = await list("owner");
 	assert.equal(all.ok, true, JSON.stringify(all));
 	assert.deepEqual(
-		all.output.payments.map((row) => [row.vendor, row.category, row.amount.minor]),
+		// KLM and Kestrel Atlas are dated the same day, so their order is not fixed; Hetzner is older.
+		all.output.payments.map((row) => [row.vendor, row.category, row.amount.minor]).sort(([a], [b]) => (a < b ? -1 : 1)),
 		[
+			["Hetzner", "software", 12_000],
 			["KLM", "travel", 21_240],
 			["Kestrel Atlas", null, 50_000],
-			["Hetzner", "software", 12_000],
 		],
-		"newest first",
 	);
+	assert.equal(all.output.payments.at(-1).vendor, "Hetzner", "the older payment comes last");
 	assert.deepEqual(all.output.months, [
 		{ month: "2026-11", currency: "EUR", paidMinor: 21_240, refundedMinor: 0, openMinor: 0 },
 		{ month: "2026-11", currency: "USD", paidMinor: 50_000, refundedMinor: 0, openMinor: 0 },
@@ -651,4 +734,86 @@ test("a search row's second line names the type, the day and the category when t
 	);
 	assert.equal(paymentSublabel({ docType: "credit", documentAt: at, category: null }), "Credit note · 3 Nov");
 	assert.equal(paymentSublabel({ docType: "invoice", documentAt: at, category: null }), "Invoice · 3 Nov");
+});
+
+// --- a stored category outside the set, and who may list what ----------------------------------------------------
+
+test("a stored category outside the set reads as none on every surface", async (t) => {
+	const { db } = await setup(t);
+	await record(insertMessage(db, FLIGHT), FLIGHT);
+	await record(insertMessage(db, HOSTING), HOSTING);
+	db.db.prepare("UPDATE finance_payments SET category = 'gifts' WHERE vendor = 'KLM'").run();
+	db.db.prepare("UPDATE finance_payments SET category = '=cmd|calc' WHERE vendor = 'Hetzner'").run();
+
+	const view = await listPaymentsView(viewOf(owner));
+	assert.deepEqual(
+		view.payments.map((row) => row.category),
+		[null, null],
+	);
+	const exported = await paymentsForExport("owner", {});
+	assert.deepEqual(
+		exported.rows.map((row) => row.category),
+		[null, null],
+	);
+	assert.ok(!/gifts|calc/.test(paymentsCsv(exported.rows)), "nothing foreign reaches the file");
+	const tool = await invokeCapability("finance", "list_payments", {}, readCtx("owner"));
+	assert.equal(tool.ok, true, JSON.stringify(tool));
+	assert.deepEqual(
+		tool.output.payments.map((row) => row.category),
+		[null, null],
+	);
+	assert.equal(
+		(await invokeCapability("finance", "list_payments", { category: "none" }, readCtx("owner"))).output.payments.length,
+		2,
+		"the filter agrees with what is shown",
+	);
+	const found = await invokeCapability("finance", "searchPayments", { query: "klm", limit: 5 }, readCtx("owner"));
+	assert.doesNotMatch(found.output.items[0].sublabel, /gifts/);
+	// A hostile stored category in the CSV itself is still neutralised (defence in depth).
+	assert.ok(
+		paymentsCsv([
+			{
+				documentOn: "2026-11-02",
+				vendor: "Acme",
+				docType: "payment",
+				status: "paid",
+				amount: { minor: 100, currency: "=EUR" },
+				category: "=cmd",
+				source: "payment",
+			},
+		]).includes("'=EUR"),
+	);
+	// The tab's own row can be corrected as before.
+	const [row] = db.db.prepare("SELECT id FROM finance_payments WHERE vendor = 'KLM'").all();
+	const fixed = await patchPayment(owner, row.id, { fields: { category: "travel" } });
+	assert.equal(fixed.status, 200, JSON.stringify(fixed.body));
+});
+
+test("list_payments honours a key's mailbox limit and a withdrawn mailbox", async (t) => {
+	const { db } = await setup(t);
+	db.db.exec(`
+		INSERT INTO mailboxes (id, user_id, domain_id, local_part, type, created_at) VALUES ('mailbox-b', 'owner', 'domain-1', 'second', 'personal', 3);
+		INSERT INTO mailbox_agent_settings (mailbox_id, enabled, autonomy, reviewer_user_id, capabilities, updated_at) VALUES ('mailbox-b', 1, 'suggest', 'owner', '{}', 1);
+	`);
+	await record(insertMessage(db, FLIGHT), FLIGHT);
+	await record(insertMessage(db, HOSTING, { mailboxId: "mailbox-b" }), HOSTING, { mailboxId: "mailbox-b" });
+	const list = (mailboxIds, trigger = "mcp") =>
+		invokeCapability(
+			"finance",
+			"list_payments",
+			{},
+			{ ...readCtx("owner", trigger), ...(mailboxIds ? { mailboxIds } : {}) },
+		);
+	const vendors = async (...args) => {
+		const answer = await list(...args);
+		assert.equal(answer.ok, true, JSON.stringify(answer));
+		return answer.output.payments.map((row) => row.vendor).sort();
+	};
+	assert.deepEqual(await vendors(["mailbox-a"]), ["KLM"], "a key limited to one mailbox sees only its payments");
+	assert.deepEqual(await vendors(["mailbox-b"]), ["Hetzner"]);
+	assert.deepEqual(await vendors([]), ["Hetzner", "KLM"], "a key that names no mailbox is not limited");
+	assert.deepEqual(await vendors(undefined, "chat"), ["Hetzner", "KLM"]);
+	// A mailbox the viewer can no longer read lists nothing, even for an unlimited call.
+	db.db.prepare("UPDATE mailboxes SET disabled = 1 WHERE id = 'mailbox-b'").run();
+	assert.deepEqual(await vendors([]), ["KLM"]);
 });

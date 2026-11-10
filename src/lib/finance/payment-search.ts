@@ -5,7 +5,7 @@ import { getEnv } from "@/lib/cloudflare";
 import { selectRows } from "@/lib/db/pending-columns";
 import type { CapabilityHandler } from "@/lib/modules/module-types";
 import { isNoSuchTableError } from "@/lib/modules/state-utils";
-import { paymentTablesReady } from "./payments";
+import { paymentTablesReady, withKnownCategory } from "./payments";
 import { paymentHref, paymentLabel, paymentRef } from "./payment-utils";
 import { paymentSublabel } from "./payment-search-utils";
 import { containsPattern } from "./search-utils";
@@ -40,7 +40,7 @@ export const searchPayments: CapabilityHandler = async (input, ctx) => {
 			sql`${financePayments.documentAt} DESC, ${financePayments.id} ASC`,
 		);
 		return {
-			items: rows.map((row) => ({
+			items: rows.map(withKnownCategory).map((row) => ({
 				ref: paymentRef(row.id),
 				label: paymentLabel(row, ctx.locale),
 				sublabel: paymentSublabel(row),

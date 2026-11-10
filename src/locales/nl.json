@@ -781,6 +781,7 @@
 	"Showing keyword matches only — search by meaning is unavailable right now.": "Er worden alleen zoekwoorden getoond — zoeken op betekenis is nu niet beschikbaar.",
 	"“Keep receipts” may already have saved a copy of this mail to Drive, under Money Watch/Receipts. Removing this entry does not remove those files.": "'Bonnen bewaren' heeft mogelijk al een kopie van deze e-mail opgeslagen in Drive, onder Money Watch/Receipts. Dit item verwijderen verwijdert die bestanden niet.",
 	"Export CSV": "CSV exporteren",
+	"An export holds at most 20,000 payments; narrow it with the filters to get the rest.": "Een export bevat hooguit 20.000 betalingen; beperk hem met de filters om de rest te krijgen.",
 	"Category": "Categorie",
 	"All categories": "Alle categorieën",
 	"No category": "Geen categorie",

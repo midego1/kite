@@ -60,6 +60,8 @@ export type PaymentList = {
 	months: MonthCurrencyTotal[];
 	/** The list holds only the newest rows. */
 	truncated?: boolean;
+	/** Every payment row and subscription document, whatever the list holds. */
+	total?: number;
 	scan: ScanState | null;
 	scanCoverage: ScanCoverageGap[];
 	migrationPending?: true;

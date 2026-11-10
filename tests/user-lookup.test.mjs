@@ -52,6 +52,15 @@ test("missingColumnFromError reads D1, SQLite and wrapped errors", () => {
 		"dns_skipped",
 	);
 	assert.equal(missingColumnFromError(new Error("UNIQUE constraint failed: users.email")), null);
+	// Text a sender controls, bound into the failed query, never masks the column the database names.
+	assert.equal(
+		missingColumnFromError(
+			new Error("Failed query: insert into finance_payments (vendor) values (?) params: No such column: item", {
+				cause: new Error("table finance_payments has no column named category"),
+			}),
+		),
+		"category",
+	);
 });
 
 test("a session still resolves before a new users column is migrated", async (t) => {

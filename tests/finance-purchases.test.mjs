@@ -704,6 +704,18 @@ test("before migration 0109 payments still record, list and change, and only the
 	assert.equal(db.db.prepare("SELECT count(*) AS n FROM finance_payments").get().n, 1);
 });
 
+test("before migration 0109 a vendor that reads like a database error still records", async (t) => {
+	const { db } = await setup(t);
+	db.db.exec("ALTER TABLE finance_payments DROP COLUMN category;");
+	const mail = {
+		from: '"No such column: item" <billing@acme-corp.test>',
+		subject: "Your receipt [#R-2002]",
+		body: "Amount paid: €30.00\nReceipt date: Nov 2, 2026",
+	};
+	await record(insertMessage(db, mail), mail);
+	assert.equal(db.db.prepare("SELECT count(*) AS n FROM finance_payments").get().n, 1);
+});
+
 test("the webhook reports the category the row stored, null before migration 0109", async (t) => {
 	const { db, deliveries } = await setup(t);
 	db.db.exec("ALTER TABLE finance_payments DROP COLUMN category;");

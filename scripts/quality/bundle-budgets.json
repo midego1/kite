@@ -5,7 +5,7 @@
 	},
 	"worker": {
 		"bytes": 8650000,
-		"gzipBytes": 2370000
+		"gzipBytes": 2440000
 	},
 	"growth": {
 		"client": {

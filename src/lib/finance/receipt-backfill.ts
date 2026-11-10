@@ -63,6 +63,8 @@ async function enqueueBackfill(userId: string, delaySeconds?: number): Promise<b
  * Inserts the owner's backfill row as `running`, or starts a finished one over. A row that is already running is
  * left exactly as it is (`setWhere`): a second press racing the first one's insert must not reset the run that just
  * started, or any run still going.
+ *
+ * @public Exercised by the unit tests, which call it as the second of two racing presses would.
  */
 export async function beginBackfillRow(userId: string, now: Date): Promise<void> {
 	const values = {

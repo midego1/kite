@@ -1,5 +1,4 @@
 import { and, countDistinct, desc, eq, getTableColumns, sql } from "drizzle-orm";
-import type { SQL } from "drizzle-orm";
 import { messages } from "@/db/schema";
 import { conversationKey } from "@/lib/messages/conversation-key";
 import { afterCursor } from "@/lib/messages/cursor-sql";

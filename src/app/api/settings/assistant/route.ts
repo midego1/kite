@@ -58,6 +58,53 @@ function pendingMigration() {
 	);
 }
 
+/**
+ * Everything that can be refused, checked before anything is saved, so a rejected request changes nothing: a
+ * mailbox that is not the user's own, and each migration the request needs (a deploy can run ahead of them).
+ */
+async function refuseBeforeSaving(
+	env: ReturnType<typeof getEnv>,
+	userId: string,
+	input: UpdateAssistantSettingsInput,
+	styleAvailable: boolean,
+): Promise<NextResponse | null> {
+	if (
+		input.emailAssistant?.mailboxId !== undefined &&
+		!(await ownsPersonalMailbox(env, userId, input.emailAssistant.mailboxId))
+	)
+		return NextResponse.json({ error: "Mailbox not found" }, { status: 400 });
+	if (input.writingStyle && !styleAvailable)
+		return NextResponse.json(
+			{ error: "Apply the pending database update to use the writing style profile", code: "MIGRATION_PENDING" },
+			{ status: 409 },
+		);
+	if ((input.instructions || input.writingStyle || input.emailAssistant) && !(await userAiSettingsReady(env)))
+		return pendingMigration();
+	if (input.emailAssistant && !(await assistantEmailSettingsReady(env))) return pendingMigration();
+	return null;
+}
+
+/** Writes the checked update; a pending migration still answers 409 here as a backstop for a race with the checks. */
+async function saveSettings(
+	db: ReturnType<typeof getDb>,
+	userId: string,
+	input: UpdateAssistantSettingsInput,
+): Promise<NextResponse | null> {
+	try {
+		if (input.instructions) await savePersonalInstructions(db, userId, input.instructions);
+		if (input.writingStyle) {
+			await saveWritingStyleEnabled(db, userId, input.writingStyle.enabled);
+			// Turning it off stops learning and using the profiles at once and deletes them.
+			if (!input.writingStyle.enabled) await deleteStyleProfiles(db, userId);
+		}
+		if (input.emailAssistant) await saveAssistantEmailSettings(db, userId, input.emailAssistant);
+	} catch (error) {
+		if (!(error instanceof UserAiSettingsPendingError)) throw error;
+		return NextResponse.json({ error: error.message, code: "MIGRATION_PENDING" }, { status: 409 });
+	}
+	return null;
+}
+
 export async function GET(request: Request) {
 	const env = getEnv();
 	const auth = await requireSessionUser(env, request);
@@ -88,44 +135,11 @@ export async function PATCH(request: Request) {
 	}
 
 	const db = getDb(env);
-	// Everything that can be refused is checked before anything is saved, so a rejected request changes nothing.
-	if (
-		input.emailAssistant?.mailboxId !== undefined &&
-		!(await ownsPersonalMailbox(env, auth.user.id, input.emailAssistant.mailboxId))
-	)
-		return NextResponse.json({ error: "Mailbox not found" }, { status: 400 });
 	const styleAvailable = await writingStyleAvailable(env);
-	if (input.writingStyle && !styleAvailable)
-		return NextResponse.json(
-			{ error: "Apply the pending database update to use the writing style profile", code: "MIGRATION_PENDING" },
-			{ status: 409 },
-		);
-	// Which migrations the request needs are checked up front too: a deploy ahead of them answers 409 having saved
-	// nothing, never after the instructions or the writing style were already written.
-	if ((input.instructions || input.writingStyle || input.emailAssistant) && !(await userAiSettingsReady(env)))
-		return pendingMigration();
-	if (input.emailAssistant && !(await assistantEmailSettingsReady(env))) return pendingMigration();
-	if (input.instructions) {
-		try {
-			await savePersonalInstructions(db, auth.user.id, input.instructions);
-		} catch (error) {
-			if (!(error instanceof UserAiSettingsPendingError)) throw error;
-			return NextResponse.json({ error: error.message, code: "MIGRATION_PENDING" }, { status: 409 });
-		}
-	}
-	if (input.writingStyle) {
-		await saveWritingStyleEnabled(db, auth.user.id, input.writingStyle.enabled);
-		// Turning it off stops learning and using the profiles at once and deletes them.
-		if (!input.writingStyle.enabled) await deleteStyleProfiles(db, auth.user.id);
-	}
-	if (input.emailAssistant) {
-		try {
-			await saveAssistantEmailSettings(db, auth.user.id, input.emailAssistant);
-		} catch (error) {
-			if (!(error instanceof UserAiSettingsPendingError)) throw error;
-			return NextResponse.json({ error: error.message, code: "MIGRATION_PENDING" }, { status: 409 });
-		}
-	}
+	const refusal =
+		(await refuseBeforeSaving(env, auth.user.id, input, styleAvailable)) ??
+		(await saveSettings(db, auth.user.id, input));
+	if (refusal) return refusal;
 	let maxSteps = auth.user.agentMaxSteps;
 	if (input.maxSteps !== undefined) {
 		await db.update(users).set({ agentMaxSteps: input.maxSteps }).where(eq(users.id, auth.user.id));

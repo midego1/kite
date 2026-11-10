@@ -35,8 +35,3 @@ export function displayedLinkFinding(html: string, senderDomain?: string | null)
 	parser.end(html.slice(0, 250_000));
 	return finding;
 }
-
-/** Whether an anchor's visible address names a different site than its destination. */
-export function hasDisplayedLinkMismatch(html: string, senderDomain?: string | null): boolean {
-	return displayedLinkFinding(html, senderDomain) === "mismatch";
-}

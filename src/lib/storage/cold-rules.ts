@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { storageColdRules } from "@/db/schema/storage";
 import { createAuditLog } from "@/lib/mailboxes/audit";
@@ -35,11 +35,21 @@ function wholeSeconds(date: Date): Date {
 }
 
 /**
+ * The `updated_at` of a save: the current time in whole seconds (`mode: "timestamp"`), but never the value the row
+ * already holds, always one second past it when two saves land in the same second. The write is conditional on
+ * that value (below), so without this a second save within the same second of the first would carry the same
+ * stamp, and a tab that loaded between them would still match and overwrite it. It behaves as a version counter
+ * on the existing column; a save can be stamped up to a second ahead of the clock, which nothing reads as time.
+ */
+const nextUpdatedAt = (nowSeconds: number) => sql`max(${nowSeconds}, ${storageColdRules.updatedAt} + 1)`;
+
+/**
  * Upserts one class's rule, returning the moment it was saved, or null when `expected` was given and no longer
  * matches (optimistic concurrency, CodeRabbit): `expected` is the `updatedAt` the client's form was loaded with,
  * null for a class that had no saved rule yet, and the write itself is conditional on it, so two tabs cannot
  * both pass a read-then-write check. `undefined` skips the check (an API client that never sends it).
- * `updateColdRule` validates `target` first.
+ * `updateColdRule` validates `target` first. The saved value is read back from the row, since it is the row that
+ * decides it (`nextUpdatedAt`).
  */
 async function saveColdRule(
 	env: CloudflareEnv,
@@ -48,38 +58,41 @@ async function saveColdRule(
 	input: SaveColdRuleInput,
 	expected: Date | null | undefined,
 ): Promise<Date | null> {
-	const now = wholeSeconds(new Date());
+	const nowSeconds = Math.floor(Date.now() / 1000);
 	const db = getDb(env);
-	const values = { ...input, updatedAt: now, updatedBy: actorId };
-	if (expected === undefined)
-		await db
-			.insert(storageColdRules)
-			.values({ objectClass, ...values })
-			.onConflictDoUpdate({ target: storageColdRules.objectClass, set: values });
-	else {
-		const result =
-			expected === null
+	const values = { ...input, updatedAt: new Date(nowSeconds * 1000), updatedBy: actorId };
+	const update = { ...input, updatedAt: nextUpdatedAt(nowSeconds), updatedBy: actorId };
+	const saved = { updatedAt: storageColdRules.updatedAt };
+	const [row] =
+		expected === undefined
+			? await db
+					.insert(storageColdRules)
+					.values({ objectClass, ...values })
+					.onConflictDoUpdate({ target: storageColdRules.objectClass, set: update })
+					.returning(saved)
+			: expected === null
 				? await db
 						.insert(storageColdRules)
 						.values({ objectClass, ...values })
 						.onConflictDoNothing()
+						.returning(saved)
 				: await db
 						.update(storageColdRules)
-						.set(values)
+						.set(update)
 						.where(
 							and(
 								eq(storageColdRules.objectClass, objectClass),
 								eq(storageColdRules.updatedAt, wholeSeconds(expected)),
 							),
-						);
-		if (!(result.meta?.changes ?? 0)) return null;
-	}
+						)
+						.returning(saved);
+	if (!row) return null;
 	await createAuditLog(env, {
 		actorUserId: actorId,
 		action: "storage.cold_rule_saved",
 		metadata: { objectClass, ...input },
 	});
-	return now;
+	return row.updatedAt;
 }
 
 /** The body's `expectedUpdatedAt`: absent skips the check, null means "no rule saved yet", else an ISO time. */

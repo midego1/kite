@@ -32,6 +32,7 @@ import { ReadingPaneEmptyState } from "./reading-pane-empty-state";
 import { LIST_HEIGHT, LIST_WIDTH, foldHingeStyle, foldListBounds, useFoldSplit } from "./use-fold-split";
 import { folderTitle } from "./utils";
 import type { MessageListVisibility, MessageSplitLayoutProps, SelectedMessage } from "./types";
+import { useSurvivingSelection } from "./use-surviving-selection";
 import { BootStep } from "@/components/boot-step";
 import { useT } from "@/lib/i18n/use-t";
 
@@ -85,6 +86,7 @@ export function MessageSplitLayout({ children, config }: MessageSplitLayoutProps
 	const pathname = usePathname();
 	const [selectedMessages, setSelectedMessages] = useState<SelectedMessage[]>([]);
 	const selectionListIdentity = useRef<string | null>(null);
+	useSurvivingSelection(selectedMessages, setSelectedMessages, selectionListIdentity);
 	const claimSelectionList = useCallback((identity: string) => {
 		if (selectionListIdentity.current === identity) return false;
 		selectionListIdentity.current = identity;

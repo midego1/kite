@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 import { BASE_URL, DOMAIN, STORAGE_STATE, SUPPORT_ADDRESS } from "./support/constants";
-import { apiContext, deliverInbound, openMessage, uniqueToken } from "./support/helpers";
+import { apiContext, deliverInbound, openMessage, suppressMailboxTour, uniqueToken } from "./support/helpers";
 import { createSharedMailbox, createSignedInAccount, selectMailbox, shareMailbox } from "./support/auto-read";
 
 // The reader toolbar is one row at every width (what does not fit moves into More actions), and every control of
@@ -236,13 +236,16 @@ test.describe("read-only shared mail", () => {
 		const context = await browser.newContext({ baseURL: BASE_URL, storageState: await viewer.api.storageState() });
 		const readerPage = await context.newPage();
 		await readerPage.addInitScript(() => localStorage.setItem("kite-theme", "light"));
+		await suppressMailboxTour(readerPage);
 		await selectMailbox(readerPage, sharedId);
 		await readerPage.setViewportSize({ width: 1280, height: 800 });
 		await readerPage.goto(`/inbox/${message.id}`);
-		await expect(readerPage.getByRole("heading", { level: 1, name: readOnlySubject })).toBeVisible();
+		// A first visit by a fresh account can wait on the dev server compiling the page.
+		await expect(readerPage.getByRole("heading", { level: 1, name: readOnlySubject })).toBeVisible({ timeout: 45_000 });
 
-		await expect(header(readerPage).getByRole("button", { name: "More actions" })).toBeVisible();
-		await header(readerPage).getByRole("button", { name: "More actions" }).click();
+		const more = readerPage.locator(".reader-toolbar").getByRole("button", { name: "More actions" });
+		await expect(more).toBeVisible({ timeout: 45_000 });
+		await more.click();
 		const menu = readerPage.getByRole("dialog", { name: "More actions" });
 		for (const name of ["Archived", "Spam", "Trash"]) {
 			await expect(menu.getByRole("button", { name, exact: true }), `${name} in Move to`).toBeDisabled();

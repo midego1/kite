@@ -357,7 +357,7 @@ test("switching the interface to Arabic keeps the checked messages", async ({ br
 
 	await page.getByRole("button", { name: "Open account menu" }).click();
 	await page.getByRole("radio", { name: "العربية", exact: true }).click();
-	await page.keyboard.press("Escape");
+	// No Escape to close the menu: on the list it is the shortcut that clears the selection, which is not what is tested.
 	await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
 
 	await expect(rowFor(page, subject).getByRole("checkbox")).toBeChecked();

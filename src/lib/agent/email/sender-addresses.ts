@@ -37,8 +37,10 @@ const MAX_CODE_ATTEMPTS = 5;
  * The limits on one address count what each user did with it, so one user's requests or wrong guesses never block
  * another's verification (the same split `external-accounts/identity-verification.ts` makes for its hourly limit).
  * These caps count everyone together, a backstop against a crowd of accounts mailing or guessing at one address that
- * is well above what the real owner could reach; requests that mailed nothing do not count toward the request one,
- * and the guess one only stops users who have guessed wrong themselves.
+ * is well above what the real owner could reach. The request one counts only codes that are still standing: a request
+ * that mailed nothing, and a code its requester removed again (`removeSenderAddress`), no longer count, so the codes
+ * that do count belong to rows that are live, expired or used up by wrong guesses, and only one such row stands at a
+ * time for an address. The guess one only stops users who have guessed wrong themselves.
  */
 const GLOBAL_CODES_PER_ADDRESS_PER_DAY = 50;
 const GLOBAL_FAILED_CODES_PER_ADDRESS_PER_DAY = 50;
@@ -483,6 +485,19 @@ export async function removeSenderAddress(
 		throw error;
 	}
 	if (removed.length === 0) return;
+	// Codes this user minted for the address stop counting toward the global backstop: mint, remove and mint again
+	// would otherwise fill it with codes that never stood in anyone's way.
+	await db
+		.update(auditLogs)
+		.set({ metadata: sql`json_set(${auditLogs.metadata}, '$.unminted', json('true'))` })
+		.where(
+			and(
+				eq(auditLogs.actorUserId, userId),
+				eq(auditLogs.action, CODE_REQUESTED_ACTION),
+				gt(auditLogs.createdAt, new Date(Date.now() - DAY_MS)),
+				sql`json_extract(${auditLogs.metadata}, '$.address') = ${removed[0].address}`,
+			),
+		);
 	await createAuditLog(env, {
 		actorUserId: userId,
 		action: REMOVED_ACTION,

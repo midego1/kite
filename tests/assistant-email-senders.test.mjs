@@ -376,7 +376,7 @@ test("a crowd of users minting codes for one address hits the global daily cap",
 	assert.equal((await addSenderAddress(env, db, "alice", "elsewhere@phone.test")).ok, true);
 });
 
-test("requests that mailed no code do not count toward the global cap, so colluding accounts cannot lock the owner out", async (t) => {
+test("requests that mailed no code do not count toward the global cap", async (t) => {
 	const { database, env, db } = await setup(t);
 	seedAudit(
 		database,
@@ -387,6 +387,26 @@ test("requests that mailed no code do not count toward the global cap, so collud
 	);
 	assert.equal((await addSenderAddress(env, db, "alice", "held@phone.test")).ok, true);
 	assert.equal(codeRows(database, "held@phone.test").length, 1);
+});
+
+test("codes their requester removed again do not count toward the global cap, so mint-remove cycles cannot fill it", async (t) => {
+	const { database, env, db } = await setup(t);
+	// Alice mints and removes the same address over and over; her own per-address caps stop her, so seed the rest.
+	await addSenderAddress(env, db, "alice", "cycled@phone.test");
+	const [row] = codeRows(database, "cycled@phone.test");
+	await removeSenderAddress(env, db, "alice", row.id);
+	const [request] = auditActions(database, "assistant_email.sender_code_requested");
+	assert.equal(JSON.parse(request.metadata).unminted, true, "the removed code no longer counts");
+	assert.equal(JSON.parse(request.metadata).address, "cycled@phone.test");
+	seedAudit(
+		database,
+		"assistant_email.sender_code_requested",
+		"cycled@phone.test",
+		Array.from({ length: GLOBAL_CODES_PER_ADDRESS_PER_DAY - 1 }, (_, i) => `other-${i}`),
+	);
+	// 49 standing codes by others and one removed one: still under the global cap, so a new user gets a code.
+	assert.equal((await addSenderAddress(env, db, "bob", "cycled@phone.test")).ok, true);
+	assert.equal(codeRows(database, "cycled@phone.test")[0]?.user_id, "bob");
 });
 
 test("a request that hits someone else's pending row is marked as having mailed no code, but still counts for the requester", async (t) => {

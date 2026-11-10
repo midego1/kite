@@ -220,9 +220,16 @@ test("authenticated mail with its own tracked links is not a displayed link mism
 	const readable =
 		'<a href="https://abc.r.us-east-1.awstrack.me/L0/https:%2F%2Flogin.evil.test%2F/1/0100abc">https://dash.cloudflare.com/restore</a>';
 	assert.ok(ids(await run(readable, cloudflare, authenticated)).includes("displayed_link_mismatch"));
+	// Nor can a malformed escape hide a readable destination of a transparent tracker.
+	const hidden =
+		'<a href="https://abc.r.us-east-1.awstrack.me/L0/https:%2F%2Flogin.evil.test%2F/1/%E0%A4%A">https://dash.cloudflare.com/restore</a>';
+	assert.ok(ids(await run(hidden, cloudflare, authenticated)).includes("displayed_link_mismatch"));
 	// A DMARC pass for another domain than the From domain gives no allowance.
 	const forged = "mx.cloudflare.net; dmarc=pass header.from=attacker.test";
 	assert.ok(ids(await run(tracked, cloudflare, forged)).includes("displayed_link_mismatch"));
+	// A DMARC pass that names no header.from gives none either.
+	const unnamed = "mx.cloudflare.net; dmarc=pass";
+	assert.ok(ids(await run(tracked, cloudflare, unnamed)).includes("displayed_link_mismatch"));
 });
 
 test("displayed link comparisons decode HTML attributes and text once", async (t) => {

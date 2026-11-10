@@ -84,9 +84,11 @@ function factsFor(mail) {
 		date: null,
 		attachments: [],
 	};
-	const headers = { "Authentication-Results": mail.auth ?? AUTH_PASS, ...mail.headers };
 	const sender = addressOf(mail.from);
 	const domain = sender.split("@")[1];
+	// The invented results name the sender's own domain as `header.from`, as a real DMARC pass does.
+	const auth = (mail.auth ?? AUTH_PASS).replaceAll("header.from=x", `header.from=${domain}`);
+	const headers = { "Authentication-Results": auth, ...mail.headers };
 	const signals = [
 		...analyzeAuthentication(headers["Authentication-Results"], domain),
 		...analyzeUrls(message, prepareSpamContent(message)),
@@ -262,6 +264,12 @@ test("own-domain trust needs DMARC to pass and no copied contact name", () => {
 	const shortened = { ...reset, text: `${reset.text}\nhttps://bit.ly/3x` };
 	// Another domain's DKIM signature does not authenticate the From address.
 	assert.equal(factsFor({ ...shortened, auth: "mx.cloudflare.net; dkim=pass header.d=x" }).authPassed, false);
+	assert.equal(
+		factsFor({ ...shortened, auth: "mx.cloudflare.net; dmarc=pass header.from=other.test" }).authPassed,
+		false,
+		"a DMARC pass for another domain than the From domain",
+	);
+	assert.equal(factsFor({ ...shortened, auth: "mx.cloudflare.net; dmarc=pass" }).authPassed, true, "SES names none");
 	const dkimOnly = factsFor({ ...shortened, auth: "mx.cloudflare.net; dkim=pass header.d=mail.example.com" });
 	assert.equal(dkimOnly.authPassed, true);
 	assert.deepEqual(assessPhishing(dkimOnly, flagged, capabilities).reasons, [

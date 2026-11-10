@@ -45,9 +45,14 @@ function parseUsername(value: unknown, saved: string | undefined): string | { er
 	return username;
 }
 
-/** The typed password, else the saved one on an edit. */
-function parsePassword(value: unknown, saved: string | null | undefined): string | { error: string } {
-	const password = (typeof value === "string" ? value : "") || saved || "";
+/**
+ * The typed password, else the saved one on an edit that keeps the address and username. A saved password is never
+ * sent anywhere else: after a change of address or username it must be typed again.
+ */
+function parsePassword(value: unknown, saved: string | null | undefined, reuse: boolean): string | { error: string } {
+	const typed = typeof value === "string" ? value : "";
+	if (!typed && saved && !reuse) return { error: "Enter the app password again for the new address or username" };
+	const password = typed || saved || "";
 	if (!password) return { error: "Enter the app password" };
 	if (password.length > MAX_PASSWORD_LENGTH || CONTROL.test(password))
 		return { error: "The app password is not valid; paste only the password itself" };
@@ -56,7 +61,7 @@ function parsePassword(value: unknown, saved: string | null | undefined): string
 
 /**
  * The fields of the link form, or the first problem with them. With `saved` (an edit), missing fields keep their
- * saved values and an empty password keeps the saved one.
+ * saved values, and an empty password keeps the saved one only while the address and username stay the same.
  */
 export function parseMountCredentials(body: unknown, saved: Saved | null): MountCredentials | { error: string } {
 	if (!body || typeof body !== "object") return { error: "Invalid request" };
@@ -65,7 +70,8 @@ export function parseMountCredentials(body: unknown, saved: Saved | null): Mount
 	if (!url) return { error };
 	const username = parseUsername(value.username, saved?.username);
 	if (typeof username !== "string") return username;
-	const password = parsePassword(value.password, saved?.password);
+	const sameTarget = !!saved && url.href === saved.baseUrl && username === saved.username;
+	const password = parsePassword(value.password, saved?.password, sameTarget);
 	if (typeof password !== "string") return password;
 	const label =
 		value.label === undefined || value.label === ""

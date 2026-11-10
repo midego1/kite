@@ -8,6 +8,8 @@ import { Label } from "@/components/ui/label";
 import type { DriveMountDto } from "@/lib/drive/types";
 import { linkMount, refreshMounts, updateMount, type MountForm } from "./drive-mounts-api";
 
+const withoutSlash = (url: string) => url.replace(/\/+$/, "");
+
 /** Above the phone Drive menu (the sheet is z-[110]), which stays open behind Link a folder. */
 const ABOVE_SHEET = "z-[110]";
 
@@ -56,7 +58,10 @@ export function DriveMountDialog({
 	const [error, setError] = useState<string | null>(null);
 	const set = (field: keyof MountForm) => (event: React.ChangeEvent<HTMLInputElement>) =>
 		setForm((current) => ({ ...current, [field]: event.target.value }));
-	const needsPassword = !mount || mount.status === "auth_failed";
+	// The saved password is never sent to a new address or user, so changing either asks for it again.
+	const targetChanged =
+		!!mount && (withoutSlash(form.url.trim()) !== withoutSlash(mount.url) || form.username.trim() !== mount.username);
+	const needsPassword = !mount || mount.status === "auth_failed" || targetChanged;
 
 	async function submit(event: FormEvent) {
 		event.preventDefault();
@@ -126,7 +131,11 @@ export function DriveMountDialog({
 							autoComplete="new-password"
 							autoFocus={!!mount && needsPassword}
 							placeholder={needsPassword ? undefined : "Saved; leave empty to keep it"}
-							hint="Create one for Kite in the server's security settings, so your own password stays private."
+							hint={
+								targetChanged
+									? "Enter the app password again: the saved one is only used for the address and username it was saved with."
+									: "Create one for Kite in the server's security settings, so your own password stays private."
+							}
 							value={form.password}
 							onChange={set("password")}
 						/>

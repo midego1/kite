@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { startFakeWebdav } from "../tests/support/fake-webdav.mjs";
 import { BASE_URL, STORAGE_STATE } from "./support/constants";
-import { driveAccount, signedInPage } from "./support/drive";
+import { driveAccount, signedInPage, sql } from "./support/drive";
 import { apiContext, deliverInbound, openMessage, suppressMailboxTour, uniqueToken } from "./support/helpers";
 import { chooseOption } from "./support/select";
 
@@ -186,6 +186,47 @@ test("a wrong app password is refused when linking, and a revoked one asks for t
 		await expect(row(page, "report.pdf")).toBeVisible();
 		await expect(banner).toHaveCount(0);
 		await expect(page.getByLabel("Needs the app password")).toHaveCount(0);
+
+		// The saved password never goes to a new address or username: it has to be typed again.
+		const mountId = decodeURIComponent(new URL(page.url()).pathname.split("/").pop()!);
+		const before = fake.requests.length;
+		for (const change of [{ url: "https://attacker.example/" }, { username: "mallory" }]) {
+			const moved = await account.api.patch(`/api/drive/mounts/${mountId}`, { data: change });
+			expect(moved.status(), JSON.stringify(change)).toBe(400);
+			expect((await moved.json()).error).toContain("Enter the app password again");
+		}
+		expect(fake.requests.length).toBe(before);
+		await page.getByRole("button", { name: "Linked folder settings" }).click();
+		await page.getByRole("menuitem", { name: "Edit link" }).click();
+		const relink = page.getByRole("dialog", { name: "Linked folder" });
+		const password = relink.getByLabel("App password");
+		await expect(password).not.toHaveAttribute("required", "");
+		await relink.getByLabel("Username").fill("mallory");
+		await expect(password).toHaveAttribute("required", "");
+		await expect(relink).toContainText("Enter the app password again");
+		await relink.getByRole("button", { name: "Cancel" }).click();
+		await expect(relink).toHaveCount(0);
+
+		// At most 20 uploads to linked folders at a time per user.
+		const far = Math.floor(Date.now() / 1000) + 3600;
+		sql(
+			`INSERT INTO drive_mount_uploads (id, owner_id, expires_at) VALUES ${Array.from(
+				{ length: 20 },
+				(_, index) => `('dmu_e2e_${account.id}_${index}', '${account.id}', ${far})`,
+			).join(", ")}`,
+		);
+		const upload = () =>
+			account.api.put(`/api/drive/mounts/${mountId}/content?${new URLSearchParams({ parent: "/", name: "cap.txt" })}`, {
+				data: Buffer.from("capped"),
+				headers: { "Content-Type": "text/plain" },
+			});
+		const refused = await upload();
+		expect(refused.status()).toBe(429);
+		expect(await refused.json()).toMatchObject({ code: "TOO_MANY_UPLOADS" });
+		expect(fake.items.has("/cap.txt")).toBe(false);
+		sql(`DELETE FROM drive_mount_uploads WHERE owner_id = '${account.id}'`);
+		expect((await upload()).status()).toBe(201);
+		expect(fake.file("/cap.txt")).toBe("capped");
 	} finally {
 		await context.close();
 		await account.api.dispose();

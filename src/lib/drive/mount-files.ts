@@ -1,12 +1,13 @@
 import type { SessionUser } from "@/lib/auth/types";
 import { createLogger } from "@/lib/logger.mjs";
 import { attachmentRiskRefusal, readableAttachment, sizedBody } from "./attachments";
+import { withMountUploadSlot } from "./mount-uploads";
 import { answerDrive, DriveRefusal, fail, notFound, ok } from "./errors";
 import { normalizeDriveName } from "./name-utils";
 import { driveContentHeaders } from "./range-utils";
 import type { DriveAnswer, DriveUser } from "./types";
 import { normalizeUploadContentType } from "./upload-utils";
-import { WebdavError, type WebdavClient } from "./webdav-client";
+import { timedBody, WebdavError, type WebdavClient } from "./webdav-client";
 import { joinMountPath, mountPathName, normalizeMountPath, type MountPath } from "./webdav-path-utils";
 import {
 	mountCredentials,
@@ -143,12 +144,16 @@ function proxiedFile(upstream: Response, name: string, download: boolean, method
 	const etag = upstream.headers.get("etag");
 	if (etag) headers.set("ETag", etag);
 	else headers.delete("ETag");
-	for (const header of ["content-length", "content-range", "last-modified"]) {
+	// Kite asks for identity; a server that compresses anyway has its body decoded by the runtime, and then its
+	// stated length no longer matches the bytes passed on.
+	const encoding = upstream.headers.get("content-encoding")?.trim().toLowerCase();
+	const decoded = !!encoding && encoding !== "identity";
+	for (const header of decoded ? ["last-modified"] : ["content-length", "content-range", "last-modified"]) {
 		const value = upstream.headers.get(header);
 		if (value) headers.set(header, value);
 	}
 	if (upstream.headers.get("accept-ranges") !== "bytes" && upstream.status !== 206) headers.delete("Accept-Ranges");
-	const body = method === "HEAD" ? null : upstream.body;
+	const body = method === "HEAD" || !upstream.body ? null : timedBody(upstream.body);
 	if (!body) void upstream.body?.cancel().catch(() => undefined);
 	return new Response(body, { status: upstream.status, headers });
 }
@@ -165,11 +170,15 @@ export async function uploadMountFile(
 		await request.body?.cancel().catch(() => undefined);
 		return fail(upload.status, upload.error);
 	}
-	return withMount(env, user, id, async (client) => {
-		const body = request.body ? sizedBody(request.body, upload.size) : new Uint8Array();
-		await client.put(upload.path, body, upload.size, upload.contentType);
-		return ok({ item: newFile(upload.path, upload.size, upload.contentType) }, 201);
-	});
+	const answer = await withMountUploadSlot(env, user.id, upload.size, () =>
+		withMount(env, user, id, async (client) => {
+			const body = request.body ? sizedBody(request.body, upload.size) : new Uint8Array();
+			await client.put(upload.path, body, upload.size, upload.contentType);
+			return ok({ item: newFile(upload.path, upload.size, upload.contentType) }, 201);
+		}),
+	);
+	if (answer.status >= 400) await request.body?.cancel().catch(() => undefined);
+	return answer;
 }
 
 const newFile = (path: MountPath, size: number, contentType: string) => ({
@@ -208,11 +217,13 @@ export async function saveAttachmentToMount(
 	}
 	const name = normalizeDriveName(value.name ?? source.attachment.filename) ?? "Attachment";
 	const contentType = normalizeUploadContentType(source.attachment.contentType);
-	const answer = await withMount(env, user, row.id, async (client) => {
-		const path = joinMountPath(folder, name);
-		await client.put(path, sizedBody(source.file.body, size), size, contentType);
-		return ok({ item: newFile(path, size, contentType) }, 201);
-	});
+	const answer = await withMountUploadSlot(env, user.id, size, () =>
+		withMount(env, user, row.id, async (client) => {
+			const path = joinMountPath(folder, name);
+			await client.put(path, sizedBody(source.file.body, size), size, contentType);
+			return ok({ item: newFile(path, size, contentType) }, 201);
+		}),
+	);
 	if (answer.status >= 400) await source.file.body.cancel().catch(() => undefined);
 	return answer;
 }

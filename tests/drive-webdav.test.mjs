@@ -10,7 +10,7 @@ const dav = await bundleModules("kite-drive-webdav-", [
 		"normalizeMountPath, mountPathSegments, joinMountPath, parentMountPath, mountPathName, isWithinMountPath, mountUrl, hrefToMountPath, parseWebdavUrl, webdavAddressProblem, isAllowedLocalAddress",
 		"src/lib/drive/webdav-path-utils.ts",
 	],
-	["WebdavClient, WebdavError, WEBDAV_LIMITS", "src/lib/drive/webdav-client.ts"],
+	["WebdavClient, WebdavError, WEBDAV_LIMITS, timedBody", "src/lib/drive/webdav-client.ts"],
 	[
 		"labelFromUrl, parseMountCredentials, webdavFailure, toMountItemDto, sortMountItems, parseMountUpload, parseMountMove, WEBDAV_MAX_UPLOAD_BYTES",
 		"src/lib/drive/mount-utils.ts",
@@ -275,6 +275,23 @@ test("the link form is parsed into credentials, keeping saved values on an edit"
 	const edit = dav.parseMountCredentials({ label: "Team" }, saved);
 	assert.deepEqual([edit.label, edit.url.href, edit.username, edit.password], ["Team", saved.baseUrl, "alice", "old"]);
 	assert.equal(dav.parseMountCredentials({ password: "new" }, saved).password, "new");
+	// The saved password never goes to another address or user: any change there needs it typed again.
+	for (const change of [
+		{ url: "https://attacker.example/" },
+		{ url: "https://cloud.example.com/dav/other/" },
+		{ url: "http://cloud.example.com/dav/" },
+		{ username: "bob" },
+		{ url: "https://cloud.example.com/dav/", username: "bob", password: "" },
+	])
+		assert.match(dav.parseMountCredentials(change, saved).error, /again/, JSON.stringify(change));
+	assert.equal(
+		dav.parseMountCredentials({ url: "https://attacker.example/", password: "typed" }, saved).password,
+		"typed",
+	);
+	assert.equal(
+		dav.parseMountCredentials({ url: "https://cloud.example.com/dav", username: "alice" }, saved).password,
+		"old",
+	);
 
 	for (const [body, error] of [
 		[null, /Invalid/],
@@ -492,7 +509,11 @@ test("redirects are re-checked, credentials stay on the folder's origin, and onl
 	assert.equal(other.requests.at(-1).path, "/remote.php/dav/files/alice/x.txt");
 	assert.equal(other.requests.at(-1).headers.authorization, undefined);
 	await rejectsKind(webdav.list("/elsewhere"), "server");
-	await assert.rejects(webdav.get("/private.txt"), (error) => error.kind === "blocked");
+	await assert.rejects(webdav.get("/private.txt"), (error) => {
+		assert.equal(error.kind, "blocked");
+		assert.equal(error.message, "The server redirected to an address that is not allowed", "no host is echoed");
+		return true;
+	});
 	await rejectsKind(webdav.get("/ftp.txt"), "blocked");
 	await assert.rejects(webdav.get("/loop.txt"), /too many/);
 	await rejectsKind(webdav.put("/put.txt", new Uint8Array([1]), 1, "text/plain"), "server");
@@ -623,4 +644,39 @@ test("an upload's deadline grows with its size, so a slow upload is not cut off"
 	// 240 ms of sending against a 150 ms answer deadline, plus half a second for 128 KiB at the minimum rate.
 	await client(server, { timeoutMs: 150 }).put("/slow.bin", body, size, "application/octet-stream");
 	assert.equal(server.items.get("/slow.bin").data.length, size);
+});
+
+test("a download that stalls or runs too long is cut off, and the upstream body is cancelled", async () => {
+	const chunks = (count, delayMs) => {
+		let sent = 0;
+		const state = { cancelled: false };
+		const stream = new ReadableStream({
+			async pull(controller) {
+				if (sent === count) return controller.close();
+				await new Promise((resolve) => setTimeout(resolve, delayMs));
+				controller.enqueue(new Uint8Array([sent++]));
+			},
+			cancel() {
+				state.cancelled = true;
+			},
+		});
+		return { stream, state };
+	};
+	const read = (stream) => new Response(stream).arrayBuffer().then((buffer) => new Uint8Array(buffer));
+
+	const quick = chunks(3, 5);
+	assert.deepEqual([...(await read(dav.timedBody(quick.stream, { idleMs: 200, totalMs: 1000 })))], [0, 1, 2]);
+
+	const stalled = chunks(3, 300);
+	await assert.rejects(read(dav.timedBody(stalled.stream, { idleMs: 50, totalMs: 1000 })), /stopped sending/);
+	const slow = chunks(10, 40);
+	await assert.rejects(read(dav.timedBody(slow.stream, { idleMs: 200, totalMs: 120 })), /stopped sending/);
+	await new Promise((resolve) => setTimeout(resolve, 350));
+	assert.ok(stalled.state.cancelled && slow.state.cancelled, "the upstream bodies were cancelled");
+
+	const server = await fake({ files: { "/a.txt": "hello" } });
+	await client(server)
+		.get("/a.txt")
+		.then((response) => response.text());
+	assert.equal(server.requests.at(-1).headers["accept-encoding"], "identity");
 });

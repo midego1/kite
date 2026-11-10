@@ -192,3 +192,19 @@ export const driveMounts = sqliteTable(
 	},
 	(t) => [index("drive_mounts_owner_idx").on(t.ownerId)],
 );
+
+/**
+ * One lease per upload to a linked folder in progress (migration 0107), so a user has at most
+ * `MAX_MOUNT_UPLOADS_PER_USER` at a time. A lease left by a crashed request stops counting at `expires_at`.
+ */
+export const driveMountUploads = sqliteTable(
+	"drive_mount_uploads",
+	{
+		id: text("id").primaryKey(),
+		ownerId: text("owner_id")
+			.notNull()
+			.references(() => users.id, { onDelete: "cascade" }),
+		expiresAt: integer("expires_at", { mode: "timestamp" }).notNull(),
+	},
+	(t) => [index("drive_mount_uploads_owner_idx").on(t.ownerId, t.expiresAt)],
+);

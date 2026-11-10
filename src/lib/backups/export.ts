@@ -168,6 +168,8 @@ const INTERNAL_TABLES = [
 	// Drive multipart parts of uploads in progress: the store's upload ids they
 	// name do not survive a restore, so the parts would only point at nothing.
 	"drive_upload_parts",
+	// Leases of uploads to linked WebDAV folders in progress (migration 0107): they end with their request.
+	"drive_mount_uploads",
 	// Storage migration jobs: transient work that points at the live stores, so replaying one into a
 	// restored database would restart a copy between stores that may no longer match.
 	"storage_migrations",

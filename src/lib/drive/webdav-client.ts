@@ -59,6 +59,9 @@ export const WEBDAV_LIMITS = {
 	maxEntries: 5_000,
 	/** An upload's body is sent before the answer can start, so its deadline also allows this many bytes a second. */
 	minUploadBytesPerSecond: 256 * 1024,
+	/** A download that sends nothing for this long, or runs longer than `downloadTotalMs`, is cut off. */
+	downloadIdleMs: 60_000,
+	downloadTotalMs: 60 * 60_000,
 };
 
 const STATUS_MESSAGES: Partial<Record<WebdavErrorKind, string>> = {
@@ -165,7 +168,10 @@ export class WebdavClient {
 			try {
 				await this.deps.guard(current);
 			} catch (error) {
-				throw new WebdavError("blocked", error instanceof Error ? error.message : "This address is not allowed");
+				// The guard's reason helps with the address the user typed; a redirect's target is the server's, so its
+				// host is not echoed back.
+				const reason = hop === 0 && error instanceof Error ? error.message : null;
+				throw new WebdavError("blocked", reason ?? "The server redirected to an address that is not allowed");
 			}
 			const sameOrigin = current.origin === this.target.url.origin;
 			// Credentials never leave the linked folder's origin; a redirect elsewhere is followed only by GET.
@@ -279,7 +285,8 @@ export class WebdavClient {
 
 	/** GET, streamed; `range` and `ifRange` are passed through so seeking and resumed downloads work. */
 	async get(path: MountPath, range: { range?: string | null; ifRange?: string | null } = {}): Promise<Response> {
-		const headers: Record<string, string> = {};
+		// Identity, so the length and ranges the server states match the bytes passed on.
+		const headers: Record<string, string> = { "Accept-Encoding": "identity" };
 		if (range.range) headers.Range = range.range;
 		if (range.ifRange) headers["If-Range"] = range.ifRange;
 		const { response } = await this.send("GET", mountUrl(this.target.url, path), { headers, followRedirects: true });
@@ -325,6 +332,43 @@ export class WebdavClient {
 				? new WebdavError("server", "The server could not delete everything in this folder")
 				: statusError(response.status);
 	}
+}
+
+/**
+ * A download body with deadlines after the headers arrived: each chunk must come within `idleMs`, and the whole body
+ * within `totalMs`. Past either, the upstream body is cancelled and the stream errors.
+ */
+export function timedBody(
+	body: ReadableStream<Uint8Array>,
+	limits: { idleMs: number; totalMs: number } = {
+		idleMs: WEBDAV_LIMITS.downloadIdleMs,
+		totalMs: WEBDAV_LIMITS.downloadTotalMs,
+	},
+): ReadableStream<Uint8Array> {
+	const reader = body.getReader();
+	const started = Date.now();
+	return new ReadableStream<Uint8Array>({
+		async pull(controller) {
+			const wait = Math.max(0, Math.min(limits.idleMs, limits.totalMs - (Date.now() - started)));
+			let timer: ReturnType<typeof setTimeout> | undefined;
+			const deadline = new Promise<never>((_, reject) => {
+				timer = setTimeout(() => reject(new WebdavError("timeout", "The server stopped sending the file")), wait);
+			});
+			try {
+				const { done, value } = await Promise.race([reader.read(), deadline]);
+				if (done) controller.close();
+				else controller.enqueue(value);
+			} catch (error) {
+				void reader.cancel().catch(() => undefined);
+				controller.error(error);
+			} finally {
+				clearTimeout(timer);
+			}
+		},
+		cancel(reason) {
+			return reader.cancel(reason);
+		},
+	});
 }
 
 function toItem(entry: DavEntry & { path: MountPath }): WebdavItem {

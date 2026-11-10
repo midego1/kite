@@ -8,6 +8,7 @@ import { assertPublicHttpUrl } from "@/lib/security/outbound-url";
 import { openSetting, sealSetting } from "@/lib/security/secret-box";
 import { endpointPolicyFor } from "@/lib/storage/config";
 import { DriveRefusal, fail, ok } from "./errors";
+import { allowMountCheck } from "./rate-limit";
 import type { DriveAnswer, DriveMountDto, DriveUser } from "./types";
 import { WebdavClient, WebdavError } from "./webdav-client";
 import { isAllowedLocalAddress, parseWebdavUrl, webdavAddressProblem } from "./webdav-path-utils";
@@ -54,8 +55,17 @@ export function webdavClient(env: CloudflareEnv, credentials: MountCredentials):
 	);
 }
 
-/** The folder must answer a PROPFIND with these credentials, as a folder, before anything is saved. */
-async function checkFolder(env: CloudflareEnv, credentials: MountCredentials): Promise<DriveAnswer | null> {
+/**
+ * The folder must answer a PROPFIND with these credentials, as a folder, before anything is saved. Each check is a
+ * request to an address the user chose, so it counts against the user's budget.
+ */
+async function checkFolder(
+	env: CloudflareEnv,
+	user: DriveUser,
+	credentials: MountCredentials,
+): Promise<DriveAnswer | null> {
+	if (!(await allowMountCheck(env, user.id)))
+		return fail(429, "Too many attempts. Wait a minute and try again.", "RATE_LIMITED");
 	try {
 		const root = await webdavClient(env, credentials).stat("/");
 		if (root.kind !== "folder") return fail(400, "This address is a file, not a folder", "WEBDAV_NOT_FOLDER");
@@ -122,7 +132,7 @@ export async function createMount(env: CloudflareEnv, user: DriveUser, body: unk
 	const db = getDb(env);
 	const [{ total }] = await db.select({ total: count() }).from(driveMounts).where(eq(driveMounts.ownerId, user.id));
 	if (total >= MAX_MOUNTS_PER_USER) return fail(409, `You can link up to ${MAX_MOUNTS_PER_USER} folders`);
-	const refused = await checkFolder(env, parsed);
+	const refused = await checkFolder(env, user, parsed);
 	if (refused) return refused;
 	const now = new Date();
 	const row: DriveMountRow = {
@@ -170,7 +180,7 @@ export async function updateMount(
 		parsed.password !== saved ||
 		row.status !== "ok";
 	if (credentialsChanged) {
-		const refused = await checkFolder(env, parsed);
+		const refused = await checkFolder(env, user, parsed);
 		if (refused) return refused;
 	}
 	const next = {

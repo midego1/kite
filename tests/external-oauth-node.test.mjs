@@ -30,6 +30,8 @@ const {
 	readTokenState,
 	listExternalAccounts,
 	retestExternalAccount,
+	updateExternalAccount,
+	accountCredential,
 	openSession,
 	SyncRefusedError,
 	externalSourceLogin,
@@ -50,7 +52,8 @@ const {
 	["startMicrosoftSignIn, completeMicrosoftSignIn", "src/lib/external-accounts/oauth-flow.ts"],
 	["oauthAccessToken, CredentialUnavailableError", "src/lib/external-accounts/oauth-tokens.ts"],
 	["storeRefreshedTokens, readTokenState", "src/lib/external-accounts/oauth-store.ts"],
-	["listExternalAccounts, retestExternalAccount", "src/lib/external-accounts/service.ts"],
+	["listExternalAccounts, retestExternalAccount, updateExternalAccount", "src/lib/external-accounts/service.ts"],
+	["accountCredential", "src/lib/external-accounts/credential.ts"],
 	["openSession, SyncRefusedError", "src/lib/external-accounts/sync-run.ts"],
 	["externalSourceLogin", "src/lib/external-accounts/source-login.ts"],
 	["eraseIdleExternalCredentials", "src/lib/external-accounts/retention.ts"],
@@ -87,6 +90,8 @@ async function setup(t, { saveClient = true } = {}) {
 		tls,
 		implicitTls: true,
 		saslIr: true,
+		authPlain: true,
+		users: { [ADDRESS]: "app-password" },
 		accessTokens,
 		folders: { INBOX: [sampleMessage(1, { subject: "Before connecting" })], Sent: [] },
 	});
@@ -400,6 +405,27 @@ test("an SMTP server that refuses the token answers 535 after its JSON challenge
 	assert.ok(error instanceof SmtpReplyError);
 	assert.equal(error.authFailed, true);
 	assert.ok(!error.message.includes("at-refused"));
+});
+
+test("an account edited to sign in with a password at another provider stops being an OAuth account", async (t) => {
+	const { db, env } = await setup(t);
+	await completeMicrosoftSignIn(env, owner, (await signIn(env)).params);
+	const id = accountRow(db).id;
+	await updateExternalAccount(env, owner, id, {
+		address: ADDRESS,
+		preset: "other",
+		mailboxId: "mailbox-a",
+		imap: { host: "outlook.office365.com", port: 993, security: "tls" },
+		smtp: null,
+		password: "app-password",
+		kitePassword: KITE_PASSWORD,
+	});
+	const row = accountRow(db);
+	assert.equal(row.auth_kind, "password");
+	assert.equal(row.oauth_access_token, null);
+	assert.deepEqual(await accountCredential(env, { id, authKind: row.auth_kind, secret: row.secret }), {
+		password: "app-password",
+	});
 });
 
 test("backups and erased credentials never keep a token", async (t) => {

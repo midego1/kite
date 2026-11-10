@@ -10,8 +10,13 @@ import { MailServerRefusedError } from "@/lib/net/errors";
 import { sealSetting } from "@/lib/security/secret-box";
 import { CONNECT_REFUSAL_TEXT, connectRefusal } from "./access";
 import { auditExternalAccount, recordConnectionTest } from "./audit";
-import { accountCredential, type AccountCredential, CredentialUnavailableError, signsInWithOAuth } from "./credential";
-import { expireAccessToken } from "./oauth-store";
+import {
+	accountCredential,
+	type AccountCredential,
+	CredentialUnavailableError,
+	testImapWithCredential,
+} from "./credential";
+import { clearAccountOAuth } from "./oauth-store";
 import { testImapConnection, testSmtpConnection, type ImapBaseline } from "./connection-test";
 import type { ConnectionProblem } from "./connection-utils";
 import { ExternalAccountRefusal, externalAccountTablesReady } from "./errors";
@@ -456,8 +461,11 @@ async function reconnect(
 	if (!sameInbox) await forgetInbox(env, id);
 	await saveBaseline(env, id, test.baseline);
 	const sendProblem = await verifySending(env, id, input, { password });
+	// A Microsoft account edited to a password at another provider is no longer an OAuth account.
+	if (current.authKind !== "password") await clearAccountOAuth(env, id);
 	return {
 		...fromPreset,
+		authKind: "password",
 		secret: await sealSetting(env, password),
 		status: "active",
 		statusReason: null,
@@ -467,23 +475,6 @@ async function reconnect(
 		nextSyncAt: null,
 		lastSyncAt: null,
 	};
-}
-
-/**
- * The IMAP test with the account's saved credential. An OAuth account whose cached access token the server refused gets
- * one refreshed token and one more test (spec §15.4); the credential that was used last is returned for the SMTP test.
- */
-async function testSavedCredential(
-	env: CloudflareEnv,
-	row: ExternalAccountRow,
-	view: ExternalAccountView,
-	credential: AccountCredential,
-): Promise<{ test: Awaited<ReturnType<typeof testImapConnection>>; credential: AccountCredential }> {
-	const test = await testImapConnection(env, loginFor(view, credential));
-	if (test.ok || test.problem.kind !== "auth" || !signsInWithOAuth(row)) return { test, credential };
-	await expireAccessToken(env, row.id);
-	const renewed = await accountCredential(env, row, { forceRefresh: true });
-	return { test: await testImapConnection(env, loginFor(view, renewed)), credential: renewed };
 }
 
 /** **Test connection** for a saved account: signs in with the saved password (or Microsoft sign-in) and records the outcome as its state. */
@@ -497,11 +488,11 @@ export async function retestExternalAccount(
 	const view = serializeExternalAccount(row);
 	const now = new Date();
 	const db = getDb(env);
-	let opened: { test: Awaited<ReturnType<typeof testImapConnection>>; credential: AccountCredential };
+	let opened: Awaited<ReturnType<typeof testImapWithCredential>>;
 	try {
 		const credential = await accountCredential(env, row);
 		await countAttempt(env, actor.id, view, id);
-		opened = await testSavedCredential(env, row, view, credential);
+		opened = await testImapWithCredential(env, row, { ...view.imap, username: view.username }, credential);
 	} catch (error) {
 		if (!(error instanceof CredentialUnavailableError)) throw error;
 		if (error.kind === "transient")

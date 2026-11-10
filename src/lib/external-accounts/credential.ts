@@ -1,4 +1,6 @@
+import type { ImapLogin } from "@/lib/imap/types";
 import { openSetting, SecretBoxError } from "@/lib/security/secret-box";
+import { testImapConnection } from "./connection-test";
 import { expireAccessToken } from "./oauth-store";
 import { CredentialUnavailableError, oauthAccessToken } from "./oauth-tokens";
 import type { ExternalAccountRow } from "./serialize-utils";
@@ -69,3 +71,20 @@ export async function withAccountCredential<T>(
 /** An IMAP sign-in the server refused (not Kite's own refusal before signing in). */
 export const imapSignInRefused = (error: unknown) =>
 	error instanceof Error && error.name !== "MailServerRefusedError" && /IMAP sign-in failed/i.test(error.message);
+
+/**
+ * **Test connection**'s IMAP test with the saved credential. A server that refuses an OAuth account's cached access
+ * token gets one refreshed token and one more test (spec §15.4); the credential used last goes on to the SMTP test.
+ */
+export async function testImapWithCredential(
+	env: CloudflareEnv,
+	row: CredentialRow,
+	server: Omit<ImapLogin, "password" | "accessToken">,
+	credential: AccountCredential,
+): Promise<{ test: Awaited<ReturnType<typeof testImapConnection>>; credential: AccountCredential }> {
+	const test = await testImapConnection(env, { ...server, ...credential });
+	if (test.ok || test.problem.kind !== "auth" || !signsInWithOAuth(row)) return { test, credential };
+	await expireAccessToken(env, row.id);
+	const renewed = await accountCredential(env, row, { forceRefresh: true });
+	return { test: await testImapConnection(env, { ...server, ...renewed }), credential: renewed };
+}

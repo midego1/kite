@@ -1095,7 +1095,7 @@ const SHOTS: Shot[] = [
 			await page.goto("/settings/connected-accounts");
 			await page.getByRole("button", { name: "Connect account" }).click();
 			const dialog = page.getByRole("dialog", { name: "Connect an account" });
-			await dialog.getByLabel("Email address").fill("jordan.lee@outlook.com");
+			await dialog.getByLabel("Email address").fill("jordan.lee@outlook.test");
 			await chooseOption(dialog.locator("#external-provider"), "microsoft");
 			await dialog.getByLabel("Your Kite password").fill("demo-password");
 			await expect(dialog.getByRole("button", { name: "Sign in with Microsoft" })).toBeEnabled();

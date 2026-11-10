@@ -226,6 +226,19 @@ export async function expireAccessToken(env: StoreEnv, accountId: string): Promi
 	await env.DB.prepare("UPDATE external_accounts SET oauth_expires_at = 0 WHERE id = ?").bind(accountId).run();
 }
 
+/** Forgets an account's OAuth state when it switches to a password (an edit to another provider). */
+export async function clearAccountOAuth(env: StoreEnv, accountId: string): Promise<void> {
+	try {
+		await env.DB.prepare(
+			"UPDATE external_accounts SET oauth_access_token = NULL, oauth_expires_at = NULL, oauth_scopes = NULL, oauth_subject = NULL, oauth_token_version = oauth_token_version + 1 WHERE id = ?",
+		)
+			.bind(accountId)
+			.run();
+	} catch (error) {
+		if (!isOAuthMigrationPending(error)) throw error;
+	}
+}
+
 /** Erases the cached access tokens of accounts whose credential was erased (retention). */
 export async function eraseOrphanAccessTokens(env: StoreEnv): Promise<void> {
 	try {

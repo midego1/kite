@@ -55,13 +55,17 @@ export function ConnectedAccountsSettings() {
 				: 60_000,
 	});
 	const [editing, setEditing] = useState<Editing>(null);
-	// Back from Microsoft's sign-in (`?oauth=…`): say how it went once, then drop the query from the address bar.
-	const [notice, setNotice] = useState<{ text: string; accountId?: string; tone?: "success" | "warning" } | null>(
-		initialOAuthNotice,
-	);
+	const [notice, setNotice] = useState<{ text: string; accountId?: string; tone?: "success" | "warning" } | null>(null);
+	// Back from Microsoft's sign-in (`?oauth=…`): say how it went once, after mount (the server render has no address
+	// bar), then drop the query. Both happen in the same frame, so a remounted effect still finds the query.
 	useEffect(() => {
-		if (new URLSearchParams(window.location.search).has("oauth"))
+		const result = oauthNoticeFromLocation();
+		if (!result) return;
+		const frame = requestAnimationFrame(() => {
+			setNotice(result);
 			window.history.replaceState(null, "", window.location.pathname);
+		});
+		return () => cancelAnimationFrame(frame);
 	}, []);
 	const refresh = () => {
 		// The composer's From menu lists connected addresses, so the mailbox list follows every change here.
@@ -134,9 +138,8 @@ export function ConnectedAccountsSettings() {
 	);
 }
 
-/** The notice for a return from Microsoft's sign-in, read from the address bar once. */
-function initialOAuthNotice(): { text: string; accountId?: string; tone: "success" | "warning" } | null {
-	if (typeof window === "undefined") return null;
+/** The notice for a return from Microsoft's sign-in, read from the address bar. */
+function oauthNoticeFromLocation(): { text: string; accountId?: string; tone: "success" | "warning" } | null {
 	const result = oauthResultMessage(new URLSearchParams(window.location.search));
 	if (!result) return null;
 	return result.tone === "success"

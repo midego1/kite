@@ -1,3 +1,5 @@
+import { getDb } from "@/db";
+import { listAccessibleMailboxes } from "@/lib/mailboxes/access";
 import { OAUTH_SUPPORTED_SCOPES } from "./http";
 import { findClient } from "./service";
 import { checkAuthorizationRequest, mcpResourceUrl, type AuthorizationCheck, type OAuthClient } from "./utils";
@@ -24,4 +26,15 @@ export async function readAuthorization(
 		check: checkAuthorizationRequest(params, client, mcpResourceUrl(issuer), OAUTH_SUPPORTED_SCOPES),
 		client,
 	};
+}
+
+/**
+ * The mailboxes the consent screen offers: those the user can read, without disabled ones. The decision route accepts
+ * no other.
+ */
+export async function offeredMailboxes(env: CloudflareEnv, user: Parameters<typeof listAccessibleMailboxes>[1]) {
+	const mailboxes = await listAccessibleMailboxes(getDb(env), user);
+	return mailboxes
+		.filter((mailbox) => !mailbox.disabled)
+		.map((mailbox) => ({ id: mailbox.id, address: `${mailbox.localPart}@${mailbox.hostname}` }));
 }

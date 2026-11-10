@@ -21,16 +21,34 @@ function parseList(value: string | null | undefined): string[] {
 	}
 }
 
-export async function countUnusedClients(env: StoreEnv): Promise<number> {
-	const row = await env.DB.prepare("SELECT count(*) AS total FROM mcp_oauth_clients WHERE last_used_at IS NULL").first<{
-		total: number;
-	}>();
-	return Number(row?.total ?? 0);
+/** Unused registrations made since `since` (seconds), in all and from one network (its hash). */
+export async function countUnusedClients(
+	env: StoreEnv,
+	since: number,
+	network: string,
+): Promise<{ total: number; network: number }> {
+	const row = await env.DB.prepare(
+		"SELECT count(*) AS total, coalesce(sum(network = ?), 0) AS from_network FROM mcp_oauth_clients WHERE last_used_at IS NULL AND created_at >= ?",
+	)
+		.bind(network, since)
+		.first<{ total: number; from_network: number }>();
+	return { total: Number(row?.total ?? 0), network: Number(row?.from_network ?? 0) };
 }
 
-export async function insertClient(env: StoreEnv, client: OAuthClient, now: Date): Promise<void> {
-	await env.DB.prepare("INSERT INTO mcp_oauth_clients (id, name, redirect_uris, created_at) VALUES (?, ?, ?, ?)")
-		.bind(client.id, client.name, JSON.stringify(client.redirectUris), toSeconds(now))
+/** Removes registrations never used for a grant and made before `before` (seconds). */
+export async function deleteUnusedClients(env: StoreEnv, before: number): Promise<void> {
+	await env.DB.prepare(
+		"DELETE FROM mcp_oauth_clients WHERE last_used_at IS NULL AND created_at < ? AND NOT EXISTS (SELECT 1 FROM mcp_oauth_grants g WHERE g.client_id = mcp_oauth_clients.id)",
+	)
+		.bind(before)
+		.run();
+}
+
+export async function insertClient(env: StoreEnv, client: OAuthClient, network: string, now: Date): Promise<void> {
+	await env.DB.prepare(
+		"INSERT INTO mcp_oauth_clients (id, name, redirect_uris, network, created_at) VALUES (?, ?, ?, ?, ?)",
+	)
+		.bind(client.id, client.name, JSON.stringify(client.redirectUris), network, toSeconds(now))
 		.run();
 }
 
@@ -45,6 +63,8 @@ export type CodeRow = {
 	clientId: string;
 	userId: string;
 	redirectUri: string;
+	/** Whether the authorization request named the redirect URI; the token request must then repeat it. */
+	redirectUriSent: boolean;
 	codeChallenge: string;
 	resource: string;
 	scopes: string[];
@@ -54,13 +74,14 @@ export type CodeRow = {
 
 export async function insertCode(env: StoreEnv, codeHash: string, code: CodeRow, now: Date): Promise<void> {
 	await env.DB.prepare(
-		"INSERT INTO mcp_oauth_codes (code_hash, client_id, user_id, redirect_uri, code_challenge, resource, scopes, mailbox_ids, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		"INSERT INTO mcp_oauth_codes (code_hash, client_id, user_id, redirect_uri, redirect_uri_sent, code_challenge, resource, scopes, mailbox_ids, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 	)
 		.bind(
 			codeHash,
 			code.clientId,
 			code.userId,
 			code.redirectUri,
+			code.redirectUriSent ? 1 : 0,
 			code.codeChallenge,
 			code.resource,
 			JSON.stringify(code.scopes),
@@ -75,6 +96,7 @@ type RawCode = {
 	client_id: string;
 	user_id: string;
 	redirect_uri: string;
+	redirect_uri_sent: number;
 	code_challenge: string;
 	resource: string;
 	scopes: string;
@@ -88,7 +110,7 @@ type RawCode = {
  */
 export async function takeCode(env: StoreEnv, codeHash: string, now: Date): Promise<CodeRow | null> {
 	const row = await env.DB.prepare(
-		"UPDATE mcp_oauth_codes SET used_at = ? WHERE code_hash = ? AND used_at IS NULL RETURNING client_id, user_id, redirect_uri, code_challenge, resource, scopes, mailbox_ids, expires_at",
+		"UPDATE mcp_oauth_codes SET used_at = ? WHERE code_hash = ? AND used_at IS NULL RETURNING client_id, user_id, redirect_uri, redirect_uri_sent, code_challenge, resource, scopes, mailbox_ids, expires_at",
 	)
 		.bind(toSeconds(now), codeHash)
 		.first<RawCode>();
@@ -97,6 +119,7 @@ export async function takeCode(env: StoreEnv, codeHash: string, now: Date): Prom
 		clientId: row.client_id,
 		userId: row.user_id,
 		redirectUri: row.redirect_uri,
+		redirectUriSent: Number(row.redirect_uri_sent) !== 0,
 		codeChallenge: row.code_challenge,
 		resource: row.resource,
 		scopes: parseList(row.scopes),
@@ -166,6 +189,8 @@ export type TokenRow = {
 	kind: "access" | "refresh";
 	expiresAt: number;
 	rotatedAt: number | null;
+	/** The sealed pair a rotation issued (`sealSuccessor`), for the grace window. */
+	successor: string | null;
 	clientId: string;
 	userId: string;
 	resource: string;
@@ -175,7 +200,7 @@ export type TokenRow = {
 /** A token by its hash, with its grant, or null. */
 export async function readToken(env: StoreEnv, tokenHash: string): Promise<TokenRow | null> {
 	const row = await env.DB.prepare(
-		"SELECT t.key_id, t.kind, t.expires_at, t.rotated_at, g.client_id, g.user_id, g.resource, k.scopes FROM mcp_oauth_tokens t JOIN mcp_oauth_grants g ON g.key_id = t.key_id JOIN api_keys k ON k.id = t.key_id WHERE t.token_hash = ?",
+		"SELECT t.key_id, t.kind, t.expires_at, t.rotated_at, t.successor, g.client_id, g.user_id, g.resource, k.scopes FROM mcp_oauth_tokens t JOIN mcp_oauth_grants g ON g.key_id = t.key_id JOIN api_keys k ON k.id = t.key_id WHERE t.token_hash = ?",
 	)
 		.bind(tokenHash)
 		.first<{
@@ -183,6 +208,7 @@ export async function readToken(env: StoreEnv, tokenHash: string): Promise<Token
 			kind: string;
 			expires_at: number;
 			rotated_at: number | null;
+			successor: string | null;
 			client_id: string;
 			user_id: string;
 			resource: string;
@@ -194,6 +220,7 @@ export async function readToken(env: StoreEnv, tokenHash: string): Promise<Token
 		kind: row.kind,
 		expiresAt: Number(row.expires_at),
 		rotatedAt: row.rotated_at == null ? null : Number(row.rotated_at),
+		successor: row.successor ?? null,
 		clientId: row.client_id,
 		userId: row.user_id,
 		resource: row.resource,
@@ -201,29 +228,35 @@ export async function readToken(env: StoreEnv, tokenHash: string): Promise<Token
 	};
 }
 
-/** Marks a refresh token used; false when another request already did. */
-export async function rotateRefreshToken(env: StoreEnv, tokenHash: string, now: Date): Promise<boolean> {
-	const result = await env.DB.prepare(
-		"UPDATE mcp_oauth_tokens SET rotated_at = ? WHERE token_hash = ? AND kind = 'refresh' AND rotated_at IS NULL",
-	)
-		.bind(toSeconds(now), tokenHash)
-		.run();
-	return Number(result.meta?.changes ?? 0) === 1;
-}
-
-/** The new pair of a refresh; the grant's earlier access tokens stop working with it. */
-export async function insertRefreshedTokens(
+/**
+ * A refresh in one transaction: the refresh token is retired with its sealed successor, and only when that update
+ * changed it are the new pair stored and the grant's earlier access tokens removed (each later statement checks for
+ * this request's own `sealed` value). A failure leaves the old token usable; losing a race to another refresh stores
+ * nothing. True when this request rotated the token.
+ */
+export async function rotateRefreshToken(
 	env: StoreEnv,
+	refreshHash: string,
 	keyId: string,
+	sealed: string,
 	tokens: { accessHash: string; refreshHash: string; accessExpiresAt: number; refreshExpiresAt: number },
 	now: Date,
-): Promise<void> {
+): Promise<boolean> {
 	const at = toSeconds(now);
 	const db = env.DB;
+	const won = "EXISTS (SELECT 1 FROM mcp_oauth_tokens WHERE token_hash = ? AND successor = ?)";
+	const insert = `INSERT INTO mcp_oauth_tokens (token_hash, key_id, kind, expires_at, created_at) SELECT ?, ?, ?, ?, ? WHERE ${won}`;
 	await db.batch([
-		db.prepare("DELETE FROM mcp_oauth_tokens WHERE key_id = ? AND kind = 'access'").bind(keyId),
-		db.prepare(INSERT_TOKEN).bind(tokens.accessHash, keyId, "access", tokens.accessExpiresAt, at),
-		db.prepare(INSERT_TOKEN).bind(tokens.refreshHash, keyId, "refresh", tokens.refreshExpiresAt, at),
+		db
+			.prepare(
+				"UPDATE mcp_oauth_tokens SET rotated_at = ?, successor = ? WHERE token_hash = ? AND kind = 'refresh' AND rotated_at IS NULL",
+			)
+			.bind(at, sealed, refreshHash),
+		db
+			.prepare(`DELETE FROM mcp_oauth_tokens WHERE key_id = ? AND kind = 'access' AND ${won}`)
+			.bind(keyId, refreshHash, sealed),
+		db.prepare(insert).bind(tokens.accessHash, keyId, "access", tokens.accessExpiresAt, at, refreshHash, sealed),
+		db.prepare(insert).bind(tokens.refreshHash, keyId, "refresh", tokens.refreshExpiresAt, at, refreshHash, sealed),
 		// A client that keeps refreshing is in use, so the pruning keeps its registration.
 		db
 			.prepare(
@@ -231,6 +264,11 @@ export async function insertRefreshedTokens(
 			)
 			.bind(at, keyId),
 	]);
+	const row = await db
+		.prepare("SELECT successor FROM mcp_oauth_tokens WHERE token_hash = ?")
+		.bind(refreshHash)
+		.first<{ successor: string | null }>();
+	return row?.successor === sealed;
 }
 
 export async function deleteToken(env: StoreEnv, tokenHash: string): Promise<void> {
@@ -322,12 +360,17 @@ export async function pruneMcpOAuthRows(
 	now: Date,
 	unusedClientTtlSeconds: number,
 	idleClientTtlSeconds: number,
+	graceSeconds: number,
 ): Promise<number> {
 	const at = toSeconds(now);
 	const db = env.DB;
 	await db.batch([
 		db.prepare("DELETE FROM mcp_oauth_codes WHERE expires_at < ?").bind(at - 24 * 60 * 60),
 		db.prepare("DELETE FROM mcp_oauth_tokens WHERE expires_at < ?").bind(at),
+		// Past the grace window a rotated token's successor is never opened again.
+		db
+			.prepare("UPDATE mcp_oauth_tokens SET successor = NULL WHERE successor IS NOT NULL AND rotated_at < ?")
+			.bind(at - graceSeconds),
 	]);
 	const { results } = await db
 		.prepare(

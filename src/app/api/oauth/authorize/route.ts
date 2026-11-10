@@ -1,13 +1,11 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getDb } from "@/db";
 import { requireSessionUser } from "@/lib/api/auth";
 import { API_KEY_MAX_MAILBOXES } from "@/lib/api/scopes";
 import { hasValidSessionMutationOrigin } from "@/lib/auth/origin";
 import { getEnv } from "@/lib/cloudflare";
 import { createLogger } from "@/lib/logger.mjs";
-import { getMailboxAccessLevel, listAccessibleMailboxes } from "@/lib/mailboxes/access";
-import { readAuthorization } from "@/lib/mcp/oauth/consent";
+import { offeredMailboxes, readAuthorization } from "@/lib/mcp/oauth/consent";
 import { createAuthorizationCode } from "@/lib/mcp/oauth/service";
 import { isMcpOAuthPending } from "@/lib/mcp/oauth/store";
 import {
@@ -65,14 +63,11 @@ export async function GET(request: Request) {
 		const { check, client } = await readAuthorization(env, new URL(request.url).searchParams, issuer);
 		if (check.kind !== "ok") return refusal(check, issuer);
 		const scopes = await availableKeyScopes(env, user, "mcp", check.request.scopes);
-		const mailboxes = await listAccessibleMailboxes(getDb(env), user);
 		return NextResponse.json({
 			client: { name: client!.name, redirectHost: redirectUriHost(check.request.redirectUri) },
 			scopes,
 			checked: defaultCheckedScopes(scopes),
-			mailboxes: mailboxes
-				.filter((mailbox) => !mailbox.disabled)
-				.map((mailbox) => ({ id: mailbox.id, address: `${mailbox.localPart}@${mailbox.hostname}` })),
+			mailboxes: await offeredMailboxes(env, user),
 		});
 	} catch (cause) {
 		if (isMcpOAuthPending(cause)) return pending();
@@ -115,16 +110,17 @@ export async function POST(request: Request) {
 		const mailboxIds = [...new Set(parsed.data.mailboxIds)];
 		if (!mailboxIds.length && keyScopesNeedMailbox("mcp", scopes))
 			return NextResponse.json({ error: "Choose a mailbox for mail permissions" }, { status: 400 });
-		const db = getDb(env);
-		for (const mailboxId of mailboxIds)
-			if (!(await getMailboxAccessLevel(db, user, mailboxId))?.canRead)
-				return NextResponse.json({ error: "Mailbox not found" }, { status: 403 });
+		// Only what the consent screen offered: readable and not disabled.
+		const offered = new Set((await offeredMailboxes(env, user)).map((mailbox) => mailbox.id));
+		if (mailboxIds.some((mailboxId) => !offered.has(mailboxId)))
+			return NextResponse.json({ error: "Mailbox not found" }, { status: 403 });
 		const code = await createAuthorizationCode(
 			env,
 			{
 				clientId: authorization.clientId,
 				userId: user.id,
 				redirectUri: authorization.redirectUri,
+				redirectUriSent: authorization.redirectUriSent,
 				codeChallenge: authorization.codeChallenge,
 				resource: authorization.resource,
 				scopes,

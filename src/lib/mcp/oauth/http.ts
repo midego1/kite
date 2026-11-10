@@ -100,12 +100,32 @@ export function rateLimited(): Response {
 	});
 }
 
+const tooLarge = () => new OAuthError("invalid_request", "The request is too large", 413);
+
+/** The body as text, read as a stream and abandoned past `OAUTH_MAX_BODY_BYTES`, with or without Content-Length. */
 async function boundedText(request: Request): Promise<string> {
-	const length = Number(request.headers.get("Content-Length") ?? 0);
-	if (length > OAUTH_MAX_BODY_BYTES) throw new OAuthError("invalid_request", "The request is too large", 413);
-	const text = await request.text();
-	if (text.length > OAUTH_MAX_BODY_BYTES) throw new OAuthError("invalid_request", "The request is too large", 413);
-	return text;
+	if (Number(request.headers.get("Content-Length") ?? 0) > OAUTH_MAX_BODY_BYTES) throw tooLarge();
+	if (!request.body) return "";
+	const reader = request.body.getReader();
+	const chunks: Uint8Array[] = [];
+	let size = 0;
+	for (;;) {
+		const { done, value } = await reader.read();
+		if (done) break;
+		size += value.byteLength;
+		if (size > OAUTH_MAX_BODY_BYTES) {
+			await reader.cancel().catch(() => {});
+			throw tooLarge();
+		}
+		chunks.push(value);
+	}
+	const bytes = new Uint8Array(size);
+	let offset = 0;
+	for (const chunk of chunks) {
+		bytes.set(chunk, offset);
+		offset += chunk.byteLength;
+	}
+	return new TextDecoder().decode(bytes);
 }
 
 /** A JSON object body (registration). */

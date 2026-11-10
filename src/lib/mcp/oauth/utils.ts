@@ -20,11 +20,20 @@ export const OAUTH_MAX_CLIENT_NAME_LENGTH = 100;
 export const OAUTH_MAX_STATE_LENGTH = 1024;
 /** The largest registration or token request body read. */
 export const OAUTH_MAX_BODY_BYTES = 16 * 1024;
-/** Registrations nobody has used yet; past this, new ones are refused until the daily pruning removes old ones. */
+/**
+ * Registrations made in the last `OAUTH_UNUSED_CLIENT_TTL_SECONDS` and not used yet, in all and per network; past
+ * either, new ones are refused. Older unused ones no longer count and are removed, so a flood ends within the hour.
+ */
 export const OAUTH_MAX_UNUSED_CLIENTS = 1000;
-/** A registration never used for a grant is removed after a day, one whose grants are all gone after 30 days. */
-export const OAUTH_UNUSED_CLIENT_TTL_SECONDS = 24 * 60 * 60;
+export const OAUTH_MAX_UNUSED_CLIENTS_PER_NETWORK = 20;
+/** A registration never used for a grant is removed after an hour, one whose grants are all gone after 30 days. */
+export const OAUTH_UNUSED_CLIENT_TTL_SECONDS = 60 * 60;
 export const OAUTH_IDLE_CLIENT_TTL_SECONDS = 30 * 24 * 60 * 60;
+/**
+ * A refresh token presented again this soon after it was rotated gets the same new pair instead of revoking the
+ * grant: two processes of one client refreshing at nearly the same time is common and is not theft.
+ */
+export const OAUTH_REFRESH_GRACE_SECONDS = 60;
 /** Connected apps one user may have; the oldest is disconnected when a new one is approved. */
 export const OAUTH_MAX_GRANTS_PER_USER = 50;
 
@@ -86,6 +95,29 @@ export function isAllowedRedirectUri(value: unknown): value is string {
 	if (url.username || url.password || !url.hostname) return false;
 	if (url.protocol === "https:") return true;
 	return url.protocol === "http:" && isLoopbackHost(url.hostname);
+}
+
+/**
+ * @public Exercised by the unit tests. Whether `given` is the registered redirect URI `registered`: the same string, or for a loopback http URI the same
+ * one on any port, since native apps listen on whatever port is free (RFC 8252 §7.3).
+ */
+export function redirectUriMatches(registered: string, given: string): boolean {
+	if (registered === given) return true;
+	if (!isAllowedRedirectUri(given)) return false;
+	try {
+		const want = new URL(registered);
+		const got = new URL(given);
+		return (
+			want.protocol === "http:" &&
+			got.protocol === "http:" &&
+			isLoopbackHost(want.hostname) &&
+			want.hostname.toLowerCase() === got.hostname.toLowerCase() &&
+			want.pathname === got.pathname &&
+			want.search === got.search
+		);
+	} catch {
+		return false;
+	}
 }
 
 /** The host a consent screen names for a redirect URI: where the browser is sent back to. */
@@ -269,6 +301,8 @@ export type AuthorizationRequest = {
 	state: string | null;
 	codeChallenge: string;
 	resource: string;
+	/** Whether the request named `redirectUri` (else the single registered one); the token request must repeat it. */
+	redirectUriSent: boolean;
 	/** The scopes on offer (`offeredScopes`). */
 	scopes: string[];
 };
@@ -284,8 +318,8 @@ type ParamReader = { get(name: string): string | null };
 
 /**
  * Validates an authorization request (RFC 6749 §4.1.1, OAuth 2.1 §4.1.1, RFC 7636, RFC 8707). `client` is the
- * registration `client_id` names, or null. The redirect URI must match a registered one exactly; when the client
- * registered just one, it may be left out.
+ * registration `client_id` names, or null. The redirect URI must match a registered one exactly (a loopback one on
+ * any port); when the client registered just one, it may be left out.
  */
 export function checkAuthorizationRequest(
 	params: ParamReader,
@@ -296,7 +330,7 @@ export function checkAuthorizationRequest(
 	if (!client) return { kind: "fatal", message: "This app is not registered with Kite, or its registration expired." };
 	const given = params.get("redirect_uri");
 	const redirectUri = given ?? (client.redirectUris.length === 1 ? client.redirectUris[0] : null);
-	if (!redirectUri || !client.redirectUris.includes(redirectUri))
+	if (!redirectUri || !client.redirectUris.some((registered) => redirectUriMatches(registered, redirectUri)))
 		return { kind: "fatal", message: "The app sent a redirect address it did not register." };
 	const rawState = params.get("state");
 	const state = rawState && rawState.length <= OAUTH_MAX_STATE_LENGTH ? rawState : null;
@@ -319,7 +353,15 @@ export function checkAuthorizationRequest(
 	if (!scopes.length) return fail("invalid_scope", "None of the requested scopes is supported");
 	return {
 		kind: "ok",
-		request: { clientId: client.id, redirectUri, state, codeChallenge: challenge, resource, scopes },
+		request: {
+			clientId: client.id,
+			redirectUri,
+			redirectUriSent: given !== null,
+			state,
+			codeChallenge: challenge,
+			resource,
+			scopes,
+		},
 	};
 }
 
@@ -361,12 +403,87 @@ export function authorizationServerMetadata(issuer: string, scopes: readonly str
 }
 
 /** The token response (RFC 6749 §5.1). */
-export function tokenResponse(accessToken: string, refreshToken: string, scopes: readonly string[]) {
+export function tokenResponse(
+	accessToken: string,
+	refreshToken: string,
+	scopes: readonly string[],
+	expiresIn = OAUTH_ACCESS_TOKEN_TTL_SECONDS,
+) {
 	return {
 		access_token: accessToken,
 		token_type: "Bearer",
-		expires_in: OAUTH_ACCESS_TOKEN_TTL_SECONDS,
+		expires_in: expiresIn,
 		refresh_token: refreshToken,
 		scope: scopes.join(" "),
 	};
+}
+
+/**
+ * The network a registration came from, for the per-network cap: an IPv4 address's /24 or an IPv6 address's /48,
+ * `unknown` without one. Only its hash is stored.
+ */
+export function clientNetwork(ip: string | null | undefined): string {
+	const value = (ip ?? "").trim().toLowerCase();
+	const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.\d{1,3}$/.exec(value);
+	if (v4) return `${v4[1]}.${v4[2]}.${v4[3]}.0/24`;
+	if (!value.includes(":") || !/^[0-9a-f:.]+$/.test(value)) return "unknown";
+	const [head, tail = ""] = value.split("::");
+	if (value.split("::").length > 2) return "unknown";
+	const headGroups = head ? head.split(":") : [];
+	const tailGroups = tail ? tail.split(":") : [];
+	const missing = 8 - headGroups.length - tailGroups.length;
+	const groups = value.includes("::")
+		? [...headGroups, ...Array<string>(Math.max(missing, 0)).fill("0"), ...tailGroups]
+		: headGroups;
+	if (groups.length < 3) return "unknown";
+	return `${groups
+		.slice(0, 3)
+		.map((group) => group.replace(/^0+(?=.)/, ""))
+		.join(":")}::/48`;
+}
+
+/** The pair a refresh issued, as the grace window hands it out again. */
+export type SuccessorPair = { accessToken: string; refreshToken: string; accessExpiresAt: number };
+
+async function successorKey(refreshToken: string, usage: KeyUsage): Promise<CryptoKey> {
+	// Not the stored hash: that is SHA-256 of the token alone, so the database never holds this key.
+	const material = await crypto.subtle.digest(
+		"SHA-256",
+		new TextEncoder().encode(`kite-mcp-successor:${refreshToken}`),
+	);
+	return crypto.subtle.importKey("raw", material, "AES-GCM", false, [usage]);
+}
+
+/** Seals a refresh's new pair under a key only the rotated refresh token yields (AES-GCM). */
+export async function sealSuccessor(refreshToken: string, pair: SuccessorPair): Promise<string> {
+	const iv = crypto.getRandomValues(new Uint8Array(12));
+	const sealed = await crypto.subtle.encrypt(
+		{ name: "AES-GCM", iv },
+		await successorKey(refreshToken, "encrypt"),
+		new TextEncoder().encode(JSON.stringify(pair)),
+	);
+	const bytes = new Uint8Array(iv.length + sealed.byteLength);
+	bytes.set(iv);
+	bytes.set(new Uint8Array(sealed), iv.length);
+	return base64Url(bytes);
+}
+
+/** The pair `sealSuccessor` sealed, or null when the token or the value does not fit. */
+export async function openSuccessor(refreshToken: string, sealed: string): Promise<SuccessorPair | null> {
+	try {
+		const bytes = Uint8Array.from(atob(sealed.replace(/-/g, "+").replace(/_/g, "/")), (char) => char.charCodeAt(0));
+		const opened = await crypto.subtle.decrypt(
+			{ name: "AES-GCM", iv: bytes.slice(0, 12) },
+			await successorKey(refreshToken, "decrypt"),
+			bytes.slice(12),
+		);
+		const pair = JSON.parse(new TextDecoder().decode(opened)) as Partial<SuccessorPair>;
+		return typeof pair.accessToken === "string" &&
+			typeof pair.refreshToken === "string" &&
+			typeof pair.accessExpiresAt === "number"
+			? { accessToken: pair.accessToken, refreshToken: pair.refreshToken, accessExpiresAt: pair.accessExpiresAt }
+			: null;
+	} catch {
+		return null;
+	}
 }

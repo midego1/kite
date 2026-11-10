@@ -26,8 +26,8 @@ await build({
 			export * from "./src/lib/mcp/oauth/utils.ts";
 			export * from "./src/lib/mcp/oauth/service.ts";
 			export { listGrants } from "./src/lib/mcp/oauth/store.ts";
-			export { readAuthorization } from "./src/lib/mcp/oauth/consent.ts";
-			export { OAUTH_SUPPORTED_SCOPES } from "./src/lib/mcp/oauth/http.ts";
+			export { offeredMailboxes, readAuthorization } from "./src/lib/mcp/oauth/consent.ts";
+			export { OAUTH_SUPPORTED_SCOPES, readFormBody, readJsonBody } from "./src/lib/mcp/oauth/http.ts";
 			export { authenticateMcpRequest } from "./src/lib/mcp/auth.ts";
 			export { authenticateApiKeyValue } from "./src/lib/api/key-auth.ts";
 			export { createKiteMcpHandler } from "./src/lib/mcp/server.ts";
@@ -88,7 +88,10 @@ async function fixture(t, dir = migrationsDir) {
 	return { database, env };
 }
 
-async function connect(env, { scopes = ["mcp:read"], mailboxIds = ["mailbox-1"], now = new Date() } = {}) {
+async function connect(
+	env,
+	{ scopes = ["mcp:read"], mailboxIds = ["mailbox-1"], now = new Date(), redirectUriSent = true } = {},
+) {
 	const client = await m.registerClient(env, { name: "Test client", redirectUris: [REDIRECT] }, now);
 	const code = await m.createAuthorizationCode(
 		env,
@@ -96,6 +99,7 @@ async function connect(env, { scopes = ["mcp:read"], mailboxIds = ["mailbox-1"],
 			clientId: client.id,
 			userId: "user-1",
 			redirectUri: REDIRECT,
+			redirectUriSent,
 			codeChallenge: CHALLENGE,
 			resource: RESOURCE,
 			scopes,
@@ -141,6 +145,42 @@ test("redirect URIs: https anywhere or http on loopback, no fragment, no user in
 		42,
 	])
 		assert.equal(m.isAllowedRedirectUri(uri), false, String(uri));
+});
+
+test("a loopback redirect URI matches on any port; everything else matches exactly (RFC 8252 §7.3)", () => {
+	for (const [registered, given] of [
+		[REDIRECT, "http://127.0.0.1:50000/callback"],
+		[REDIRECT, "http://127.0.0.1/callback"],
+		["http://[::1]:8080/cb", "http://[::1]:9090/cb"],
+		["http://localhost/cb?x=1", "http://localhost:3000/cb?x=1"],
+		["https://app.example/cb", "https://app.example/cb"],
+	])
+		assert.equal(m.redirectUriMatches(registered, given), true, `${registered} ${given}`);
+	for (const [registered, given] of [
+		[REDIRECT, "http://127.0.0.1:50000/callback/"],
+		[REDIRECT, "http://127.0.0.1:50000/other"],
+		[REDIRECT, "http://localhost:43123/callback"],
+		[REDIRECT, "http://127.0.0.1:50000/callback?x=1"],
+		[REDIRECT, "http://127.0.0.1:50000/callback#f"],
+		[REDIRECT, "https://127.0.0.1:43123/callback"],
+		["https://app.example/cb", "https://app.example:8443/cb"],
+		["https://localhost/cb", "https://localhost:8443/cb"],
+		["https://app.example/cb", "https://app.example/cb/"],
+	])
+		assert.equal(m.redirectUriMatches(registered, given), false, `${registered} ${given}`);
+	const client = { id: "mcpc_1", name: "App", redirectUris: [REDIRECT] };
+	const params = {
+		client_id: "mcpc_1",
+		redirect_uri: "http://127.0.0.1:61000/callback",
+		response_type: "code",
+		code_challenge: CHALLENGE,
+		code_challenge_method: "S256",
+	};
+	const ok = m.checkAuthorizationRequest(new URLSearchParams(params), client, RESOURCE, m.OAUTH_SUPPORTED_SCOPES);
+	assert.equal(ok.kind, "ok");
+	// The code goes back to the port the app asked for, and the token request must name that one.
+	assert.equal(ok.request.redirectUri, "http://127.0.0.1:61000/callback");
+	assert.equal(ok.request.redirectUriSent, true);
 });
 
 test("registration takes public clients only, with sane limits, and cleans the self-chosen name", () => {
@@ -210,6 +250,8 @@ test("the authorization request: unknown clients and redirect URIs are shown, th
 	assert.equal(check({ ...base, redirect_uri: "https://evil.example/cb" }).kind, "fatal");
 	const { redirect_uri: _omitted, ...withoutRedirect } = base;
 	assert.equal(check(withoutRedirect).kind, "ok");
+	assert.equal(check(withoutRedirect).request.redirectUriSent, false);
+	assert.equal(check(withoutRedirect).request.redirectUri, REDIRECT);
 	const twoUris = { ...client, redirectUris: [REDIRECT, "https://app.example/cb"] };
 	assert.equal(check(withoutRedirect, twoUris).kind, "fatal");
 	const errorOf = (params) => {
@@ -317,6 +359,20 @@ test("an exchange is refused for another client, redirect URI or resource, or af
 	flow = await connect(env, { now: new Date(Date.now() - 3 * 60_000) });
 	await rejects(exchange(env, flow.client, flow.code), "invalid_grant");
 	await rejects(exchange(env, flow.client, undefined), "invalid_request");
+	// Named at authorization: the token request must repeat it.
+	flow = await connect(env);
+	await rejects(exchange(env, flow.client, flow.code, { redirectUri: null }), "invalid_grant");
+});
+
+test("a token request may leave redirect_uri out when the authorization request did, but not name another", async (t) => {
+	const { env } = await fixture(t);
+	let flow = await connect(env, { redirectUriSent: false });
+	const tokens = await exchange(env, flow.client, flow.code, { redirectUri: null });
+	assert.match(tokens.access_token, /^kite_at_/);
+	flow = await connect(env, { redirectUriSent: false });
+	assert.match((await exchange(env, flow.client, flow.code)).access_token, /^kite_at_/);
+	flow = await connect(env, { redirectUriSent: false });
+	await rejects(exchange(env, flow.client, flow.code, { redirectUri: "https://evil.example/cb" }), "invalid_grant");
 });
 
 test("tokens are bound to /mcp: another audience or the REST and JMAP key paths refuse them", async (t) => {
@@ -358,9 +414,76 @@ test("refresh rotates both tokens, and a used refresh token presented again revo
 	// The earlier access token stops working with the refresh.
 	assert.equal(await m.authenticateMcpRequest(env, bearer(first.access_token), RESOURCE), null);
 	assert.ok(await m.authenticateMcpRequest(env, bearer(second.access_token), RESOURCE));
-	await rejects(refresh(first.refresh_token), "invalid_grant");
+	// Past the grace window the rotated token counts as stolen.
+	await rejects(refresh(first.refresh_token, {}, new Date(Date.now() + 61_000)), "invalid_grant");
 	assert.equal(await m.authenticateMcpRequest(env, bearer(second.access_token), RESOURCE), null);
 	await rejects(refresh(second.refresh_token), "invalid_grant");
+});
+
+test("refreshes at nearly the same time get the same new pair instead of revoking the grant", async (t) => {
+	const { env, database } = await fixture(t);
+	const { client, code } = await connect(env);
+	const first = await exchange(env, client, code);
+	const refresh = (token, now = new Date()) =>
+		m.refreshTokens(env, { clientId: client.id, refreshToken: token, resource: null, scope: null }, now);
+	// Parallel: both read the token before either rotated it; one rotates, the other gets that pair.
+	const [a, b] = await Promise.all([refresh(first.refresh_token), refresh(first.refresh_token)]);
+	assert.equal(a.access_token, b.access_token);
+	assert.equal(a.refresh_token, b.refresh_token);
+	assert.equal(
+		database.db
+			.prepare("SELECT count(*) AS n FROM mcp_oauth_tokens WHERE kind = 'refresh' AND rotated_at IS NULL")
+			.get().n,
+		1,
+	);
+	// Near-parallel: 30 seconds later the rotated token still gets the same pair, with the time it has left.
+	const late = await refresh(first.refresh_token, new Date(Date.now() + 30_000));
+	assert.equal(late.refresh_token, a.refresh_token);
+	assert.ok(late.expires_in <= 3570 && late.expires_in > 3500, String(late.expires_in));
+	assert.ok(await m.authenticateMcpRequest(env, bearer(a.access_token), RESOURCE));
+	// The sealed pair opens only with the rotated token; the database holds neither token.
+	const dump = JSON.stringify(database.db.prepare("SELECT * FROM mcp_oauth_tokens").all());
+	assert.equal(dump.includes(a.refresh_token), false);
+	// Once the client moved on with the new pair, the old token is a replay again, even within the window.
+	const next = await refresh(a.refresh_token);
+	await rejects(refresh(first.refresh_token), "invalid_grant");
+	assert.equal(await m.authenticateMcpRequest(env, bearer(next.access_token), RESOURCE), null);
+});
+
+test("a refresh that fails to save leaves the old refresh token usable", async (t) => {
+	const { env, database } = await fixture(t);
+	const { client, code } = await connect(env);
+	const first = await exchange(env, client, code);
+	const batch = env.DB.batch.bind(env.DB);
+	env.DB.batch = async () => {
+		throw new Error("D1 unavailable");
+	};
+	await assert.rejects(
+		m.refreshTokens(env, { clientId: client.id, refreshToken: first.refresh_token }, new Date()),
+		/D1 unavailable/,
+	);
+	env.DB.batch = batch;
+	assert.equal(
+		database.db.prepare("SELECT count(*) AS n FROM mcp_oauth_tokens WHERE rotated_at IS NOT NULL").get().n,
+		0,
+	);
+	// The retry, a minute and a half later, is an ordinary refresh, not a replay.
+	const retried = await m.refreshTokens(
+		env,
+		{ clientId: client.id, refreshToken: first.refresh_token },
+		new Date(Date.now() + 90_000),
+	);
+	assert.ok(await m.authenticateMcpRequest(env, bearer(retried.access_token), RESOURCE));
+});
+
+test("successor pairs are sealed with the rotated token and open with nothing else", async () => {
+	const pair = { accessToken: "kite_at_a", refreshToken: "kite_rt_b", accessExpiresAt: 123 };
+	const sealed = await m.sealSuccessor("kite_rt_old", pair);
+	assert.equal(sealed.includes("kite_rt_b"), false);
+	assert.deepEqual(await m.openSuccessor("kite_rt_old", sealed), pair);
+	assert.equal(await m.openSuccessor("kite_rt_other", sealed), null);
+	assert.equal(await m.openSuccessor(await m.hashOAuthToken("kite_rt_old"), sealed), null);
+	assert.equal(await m.openSuccessor("kite_rt_old", "garbage"), null);
 });
 
 test("an expired refresh token is refused, and a disabled user cannot refresh", async (t) => {
@@ -505,16 +628,77 @@ test("pruning removes expired rows, grants without a live refresh token, orphan 
 	assert.equal(database.db.prepare("SELECT count(*) AS n FROM mcp_oauth_clients").get().n, 0);
 });
 
-test("registrations stop at the cap of unused clients", async (t) => {
+test("registrations stop at the cap of recent unused clients, which empties within the hour", async (t) => {
 	const { env, database } = await fixture(t);
+	const now = new Date();
+	const recent = Math.floor(now.getTime() / 1000) - 60;
 	const insert = database.db.prepare(
-		"INSERT INTO mcp_oauth_clients (id, name, redirect_uris, created_at) VALUES (?, 'x', '[]', 1)",
+		"INSERT INTO mcp_oauth_clients (id, name, redirect_uris, network, created_at) VALUES (?, 'x', '[]', 'elsewhere', ?)",
 	);
-	for (let index = 0; index < m.OAUTH_MAX_UNUSED_CLIENTS; index++) insert.run(`mcpc_${index}`);
-	await assert.rejects(
-		m.registerClient(env, { name: "One more", redirectUris: [REDIRECT] }, new Date()),
-		(error) => error.code === "temporarily_unavailable" && error.status === 429,
+	for (let index = 0; index < m.OAUTH_MAX_UNUSED_CLIENTS; index++) insert.run(`mcpc_${index}`, recent);
+	const register = (at, ip = "203.0.113.9") =>
+		m.registerClient(env, { name: "One more", redirectUris: [REDIRECT] }, at, ip);
+	const refused = (error) => error.code === "temporarily_unavailable" && error.status === 429;
+	await assert.rejects(register(now), refused);
+	// An hour on they are stale: removed, and registering works again.
+	await register(new Date(now.getTime() + 61 * 60_000));
+	assert.equal(database.db.prepare("SELECT count(*) AS n FROM mcp_oauth_clients").get().n, 1);
+});
+
+test("one network cannot use up the registrations: a /24 or /48 has its own cap", async (t) => {
+	const { env } = await fixture(t);
+	const now = new Date();
+	const register = (ip) => m.registerClient(env, { name: "Flood", redirectUris: [REDIRECT] }, now, ip);
+	for (let index = 0; index < m.OAUTH_MAX_UNUSED_CLIENTS_PER_NETWORK; index++) await register(`198.51.100.${index}`);
+	await assert.rejects(register("198.51.100.250"), (error) => error.status === 429);
+	await register("198.51.101.1");
+	for (let index = 0; index < m.OAUTH_MAX_UNUSED_CLIENTS_PER_NETWORK; index++) await register(`2001:db8:1::${index}`);
+	await assert.rejects(register("2001:db8:1:ffff::1"), (error) => error.status === 429);
+	await register("2001:db8:2::1");
+	assert.equal(m.clientNetwork("198.51.100.7"), "198.51.100.0/24");
+	assert.equal(m.clientNetwork("2001:db8:1::5"), "2001:db8:1::/48");
+	assert.equal(m.clientNetwork("2001:0db8:0001:ffff:0:0:0:1"), "2001:db8:1::/48");
+	assert.equal(m.clientNetwork("::1"), "0:0:0::/48");
+	assert.equal(m.clientNetwork(null), "unknown");
+	assert.equal(m.clientNetwork("not an ip"), "unknown");
+});
+
+test("request bodies stop at 16 KiB while streaming, with or without Content-Length", async () => {
+	const big = "a".repeat(17 * 1024);
+	const streamed = (text, type) =>
+		new Request("https://kite.test/api/oauth/token", {
+			method: "POST",
+			headers: { "Content-Type": type },
+			duplex: "half",
+			body: new ReadableStream({
+				start(controller) {
+					for (let offset = 0; offset < text.length; offset += 1024)
+						controller.enqueue(new TextEncoder().encode(text.slice(offset, offset + 1024)));
+					controller.close();
+				},
+			}),
+		});
+	const tooLarge = (error) => error instanceof m.OAuthError && error.status === 413;
+	const request = streamed(`grant_type=x&pad=${big}`, "application/x-www-form-urlencoded");
+	assert.equal(request.headers.get("Content-Length"), null);
+	await assert.rejects(m.readFormBody(request), tooLarge);
+	await assert.rejects(m.readJsonBody(streamed(JSON.stringify({ pad: big }), "application/json")), tooLarge);
+	const small = await m.readFormBody(streamed("grant_type=refresh_token", "application/x-www-form-urlencoded"));
+	assert.equal(small.get("grant_type"), "refresh_token");
+});
+
+test("the consent screen offers, and the decision accepts, only readable mailboxes that are not disabled", async (t) => {
+	const { env, database } = await fixture(t);
+	database.db.exec(
+		"INSERT INTO mailboxes (id, user_id, domain_id, local_part, disabled, created_at) VALUES ('mailbox-3', 'user-1', 'domain-1', 'old', 1, 1)",
 	);
+	const user = { id: "user-1", email: "owner@example.com", role: "member" };
+	const offered = await m.offeredMailboxes(env, user);
+	assert.deepEqual(
+		offered.map((mailbox) => mailbox.id),
+		["mailbox-1"],
+	);
+	assert.equal(offered[0].address, "owner@example.com");
 });
 
 test("backups leave the OAuth tables out and still cover the database", async (t) => {

@@ -7,12 +7,12 @@ import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import {
 	countUnusedClients,
 	deleteGrant,
+	deleteUnusedClients,
 	deleteToken,
 	grantOfUsedCode,
 	insertClient,
 	insertCode,
 	insertGrant,
-	insertRefreshedTokens,
 	listGrantIds,
 	pruneMcpOAuthRows,
 	readClient,
@@ -20,10 +20,13 @@ import {
 	rotateRefreshToken,
 	takeCode,
 	toSeconds,
+	type TokenRow,
 	isMcpOAuthPending,
 } from "./store";
 import {
+	clientNetwork,
 	hashOAuthToken,
+	openSuccessor,
 	OAuthError,
 	OAUTH_ACCESS_TOKEN_PREFIX,
 	OAUTH_ACCESS_TOKEN_TTL_SECONDS,
@@ -32,11 +35,14 @@ import {
 	OAUTH_IDLE_CLIENT_TTL_SECONDS,
 	OAUTH_MAX_GRANTS_PER_USER,
 	OAUTH_MAX_UNUSED_CLIENTS,
+	OAUTH_MAX_UNUSED_CLIENTS_PER_NETWORK,
+	OAUTH_REFRESH_GRACE_SECONDS,
 	OAUTH_REFRESH_TOKEN_PREFIX,
 	OAUTH_REFRESH_TOKEN_TTL_SECONDS,
 	OAUTH_UNUSED_CLIENT_TTL_SECONDS,
 	randomOAuthToken,
 	resourceMatches,
+	sealSuccessor,
 	tokenResponse,
 	verifyPkce,
 	type ClientRegistration,
@@ -45,16 +51,24 @@ import {
 
 const log = createLogger("mcp.oauth");
 
-/** Registers a public client (RFC 7591), refusing new ones while too many are still unused. */
+/**
+ * Registers a public client (RFC 7591) for a request from `ip`. Registrations unused for an hour are removed first;
+ * new ones are refused while too many recent ones are still unused, in all or from the same /24 (IPv6 /48).
+ */
 export async function registerClient(
 	env: CloudflareEnv,
 	registration: ClientRegistration,
 	now: Date,
+	ip: string | null = null,
 ): Promise<OAuthClient> {
-	if ((await countUnusedClients(env)) >= OAUTH_MAX_UNUSED_CLIENTS)
-		throw new OAuthError("temporarily_unavailable", "Too many registrations; try again tomorrow", 429);
+	const since = toSeconds(now) - OAUTH_UNUSED_CLIENT_TTL_SECONDS;
+	await deleteUnusedClients(env, since);
+	const network = await hashOAuthToken(clientNetwork(ip));
+	const unused = await countUnusedClients(env, since, network);
+	if (unused.total >= OAUTH_MAX_UNUSED_CLIENTS || unused.network >= OAUTH_MAX_UNUSED_CLIENTS_PER_NETWORK)
+		throw new OAuthError("temporarily_unavailable", "Too many registrations; try again in an hour", 429);
 	const client = { id: `${OAUTH_CLIENT_ID_PREFIX}${randomOAuthToken().slice(0, 32)}`, ...registration };
-	await insertClient(env, client, now);
+	await insertClient(env, client, network, now);
 	log.info("mcp.oauth.client_registered", { clientId: client.id });
 	return client;
 }
@@ -68,6 +82,7 @@ export type ApprovedAuthorization = {
 	clientId: string;
 	userId: string;
 	redirectUri: string;
+	redirectUriSent: boolean;
 	codeChallenge: string;
 	resource: string;
 	scopes: string[];
@@ -131,12 +146,12 @@ export type CodeExchange = {
 };
 
 /**
- * Redeems an authorization code (OAuth 2.1 §4.1.3): single use, unexpired, the same client and redirect URI, the
- * PKCE verifier and, when named, the same resource. A code presented a second time revokes what the first use got.
+ * Redeems an authorization code (OAuth 2.1 §4.1.3): single use, unexpired, the same client, the PKCE verifier, the
+ * same redirect URI when the authorization request named one (and none when it did not) and, when named, the same
+ * resource. A code presented a second time revokes what the first use got.
  */
 export async function exchangeAuthorizationCode(env: CloudflareEnv, input: CodeExchange, now: Date) {
-	if (!input.code || !input.clientId || !input.redirectUri)
-		throw new OAuthError("invalid_request", "code, client_id and redirect_uri are required");
+	if (!input.code || !input.clientId) throw new OAuthError("invalid_request", "code and client_id are required");
 	const codeHash = await hashOAuthToken(input.code);
 	const code = await takeCode(env, codeHash, now);
 	if (!code) {
@@ -147,8 +162,10 @@ export async function exchangeAuthorizationCode(env: CloudflareEnv, input: CodeE
 		}
 		throw invalidGrant();
 	}
-	if (code.expiresAt < toSeconds(now) || code.clientId !== input.clientId || code.redirectUri !== input.redirectUri)
-		throw invalidGrant();
+	const redirectMatches = code.redirectUriSent
+		? input.redirectUri === code.redirectUri
+		: input.redirectUri === null || input.redirectUri === code.redirectUri;
+	if (code.expiresAt < toSeconds(now) || code.clientId !== input.clientId || !redirectMatches) throw invalidGrant();
 	if (!(await verifyPkce(input.codeVerifier, code.codeChallenge))) throw invalidGrant("PKCE verification failed");
 	if (!resourceMatches(input.resource, code.resource))
 		throw new OAuthError("invalid_target", "resource does not match the authorization request");
@@ -194,8 +211,30 @@ export type RefreshRequest = {
 };
 
 /**
+ * A rotated refresh token presented again. Within `OAUTH_REFRESH_GRACE_SECONDS`, while the pair it was rotated for is
+ * still the grant's current one, it gets that same pair: a client refreshing from two processes at once is not theft.
+ * Otherwise it is treated as stolen and the whole grant is revoked (RFC 9700 §4.14.2).
+ */
+async function replayedRefresh(env: CloudflareEnv, token: TokenRow, presented: string, now: Date) {
+	const at = toSeconds(now);
+	const pair =
+		token.rotatedAt !== null && at - token.rotatedAt <= OAUTH_REFRESH_GRACE_SECONDS && token.successor
+			? await openSuccessor(presented, token.successor)
+			: null;
+	const current = pair ? await readToken(env, await hashOAuthToken(pair.refreshToken)) : null;
+	if (pair && current && current.rotatedAt === null && pair.accessExpiresAt > at) {
+		if (!(await activeUser(env, token.userId))) throw invalidGrant();
+		return tokenResponse(pair.accessToken, pair.refreshToken, token.scopes, pair.accessExpiresAt - at);
+	}
+	await deleteGrant(env, token.keyId);
+	log.warn("mcp.oauth.refresh_replayed", { keyId: token.keyId });
+	throw invalidGrant();
+}
+
+/**
  * Exchanges a refresh token for a new pair (OAuth 2.1 §4.3, rotation per §4.3.1). The used token stays stored until it
- * expires so that presenting it again is recognised as theft: the whole grant is revoked (RFC 9700 §4.14.2).
+ * expires so that presenting it again is recognised: within a minute it gets the same new pair, later the whole grant
+ * is revoked (`replayedRefresh`).
  */
 export async function refreshTokens(env: CloudflareEnv, input: RefreshRequest, now: Date) {
 	if (!input.refreshToken || !input.clientId)
@@ -203,34 +242,40 @@ export async function refreshTokens(env: CloudflareEnv, input: RefreshRequest, n
 	const tokenHash = await hashOAuthToken(input.refreshToken);
 	const token = await readToken(env, tokenHash);
 	if (!token || token.kind !== "refresh" || token.clientId !== input.clientId) throw invalidGrant();
-	if (token.rotatedAt !== null) {
-		await deleteGrant(env, token.keyId);
-		log.warn("mcp.oauth.refresh_replayed", { keyId: token.keyId });
-		throw invalidGrant();
-	}
-	if (token.expiresAt < toSeconds(now)) throw invalidGrant();
 	if (!resourceMatches(input.resource, token.resource))
 		throw new OAuthError("invalid_target", "resource does not match the grant");
 	const asked = input.scope?.split(" ").filter(Boolean) ?? [];
 	if (asked.some((scope) => !token.scopes.includes(scope)))
 		throw new OAuthError("invalid_scope", "A refresh cannot add scopes");
+	if (token.rotatedAt !== null) return replayedRefresh(env, token, input.refreshToken, now);
+	if (token.expiresAt < toSeconds(now)) throw invalidGrant();
 	if (!(await activeUser(env, token.userId))) throw invalidGrant();
-	// Of two refreshes with the same token at once, one wins; the other is refused without revoking anything.
-	if (!(await rotateRefreshToken(env, tokenHash, now))) throw invalidGrant();
 	const tokens = await newTokenPair();
 	const at = toSeconds(now);
-	await insertRefreshedTokens(
+	const accessExpiresAt = at + OAUTH_ACCESS_TOKEN_TTL_SECONDS;
+	const sealed = await sealSuccessor(input.refreshToken, {
+		accessToken: tokens.accessToken,
+		refreshToken: tokens.refreshToken,
+		accessExpiresAt,
+	});
+	const rotated = await rotateRefreshToken(
 		env,
+		tokenHash,
 		token.keyId,
+		sealed,
 		{
 			accessHash: tokens.accessHash,
 			refreshHash: tokens.refreshHash,
-			accessExpiresAt: at + OAUTH_ACCESS_TOKEN_TTL_SECONDS,
+			accessExpiresAt,
 			refreshExpiresAt: at + OAUTH_REFRESH_TOKEN_TTL_SECONDS,
 		},
 		now,
 	);
-	return tokenResponse(tokens.accessToken, tokens.refreshToken, token.scopes);
+	if (rotated) return tokenResponse(tokens.accessToken, tokens.refreshToken, token.scopes);
+	// Another refresh with the same token got there first: this one gets the pair that refresh stored.
+	const winner = await readToken(env, tokenHash);
+	if (!winner) throw invalidGrant();
+	return replayedRefresh(env, winner, input.refreshToken, now);
 }
 
 /**
@@ -262,7 +307,13 @@ export async function grantOfAccessToken(env: CloudflareEnv, token: string, reso
 /** The daily clean-up; does nothing before migration 0106. */
 export async function pruneMcpOAuth(env: CloudflareEnv, now: Date): Promise<number> {
 	try {
-		return await pruneMcpOAuthRows(env, now, OAUTH_UNUSED_CLIENT_TTL_SECONDS, OAUTH_IDLE_CLIENT_TTL_SECONDS);
+		return await pruneMcpOAuthRows(
+			env,
+			now,
+			OAUTH_UNUSED_CLIENT_TTL_SECONDS,
+			OAUTH_IDLE_CLIENT_TTL_SECONDS,
+			OAUTH_REFRESH_GRACE_SECONDS,
+		);
 	} catch (error) {
 		if (isMcpOAuthPending(error)) return 0;
 		throw error;

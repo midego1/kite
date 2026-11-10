@@ -19,7 +19,12 @@ export async function POST(request: Request) {
 	if (!(await allowOAuthRequest(env, request, "register"))) return rateLimited();
 	try {
 		const now = new Date();
-		const client = await registerClient(env, parseClientRegistration(await readJsonBody(request)), now);
+		const client = await registerClient(
+			env,
+			parseClientRegistration(await readJsonBody(request)),
+			now,
+			request.headers.get("cf-connecting-ip"),
+		);
 		return noStoreJson(registrationResponse(client, now), 201);
 	} catch (error) {
 		return oauthFailure(error, log);

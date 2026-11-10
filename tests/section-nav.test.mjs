@@ -63,6 +63,7 @@ test("Settings holds the Account, Mail, Integrations and Data groups, and no adm
 		"/settings/connected-accounts",
 		"/settings/app-passwords",
 		"/settings/api-keys",
+		"/settings/mcp-apps",
 	]);
 	for (const href of hrefs(settingsNavSections)) assert.match(href, /^\/settings\//);
 });

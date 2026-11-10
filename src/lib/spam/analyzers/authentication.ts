@@ -73,13 +73,21 @@ export function analyzeAuthentication(trusted: string | null | undefined, fromDo
 }
 
 /**
- * The From domain when the sender authenticated as it (DMARC passed, or an aligned DKIM pass with no
- * failed check), else null. Same rule as `authPassed` in the automatic-reading facts.
+ * The From domain when the sender authenticated as it, else null: a DMARC pass whose `header.from`, when it
+ * names one, is that domain (a pass for another domain the message mentions does not count), or an aligned
+ * DKIM pass with no failed check. Like `authPassed` in the automatic-reading facts, plus the `header.from` check.
  */
-export function authenticatedSenderDomain(signals: readonly SpamSignal[], fromDomain: string): string | null {
-	if (!fromDomain) return null;
-	const ids = new Set(signals.map((signal) => signal.id));
-	const failed = ids.has("dmarc_failed") || ids.has("dkim_failed") || ids.has("spf_failed");
+export function authenticatedSenderDomain(
+	trusted: string | null | undefined,
+	signals: readonly SpamSignal[],
+	fromDomain: string,
+): string | null {
+	const from = fromDomain.toLowerCase().replace(/\.$/, "");
+	if (!trusted || !from) return null;
+	const dmarc = parseAuthenticationResults(trusted).results.find((entry) => entry.method === "dmarc");
+	const headerFrom = dmarc?.properties["header.from"]?.trim().toLowerCase().replace(/\.$/, "");
+	const dmarcPassed = dmarc?.result === "pass" && (!headerFrom || headerFrom === from);
+	const failed = signals.some((signal) => signal.id.endsWith("_failed"));
 	const dkimAligned = signals.some((signal) => signal.id === "dkim_passed" && signal.metadata?.aligned === true);
-	return ids.has("dmarc_passed") || (!failed && dkimAligned) ? fromDomain.toLowerCase() : null;
+	return dmarcPassed || (!failed && dkimAligned) ? from : null;
 }

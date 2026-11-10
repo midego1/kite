@@ -42,6 +42,7 @@ const SECOND_LIST_SCORE = 10;
 const KEY_STATUS = /auth[_-]?key/i;
 
 function showsRisk(signals: readonly SpamSignal[]): boolean {
+	if (signals.some((signal) => signal.id === "sender_tracked_link")) return true;
 	if (signals.some((signal) => signal.score > 0 && RISK_SIGNALS.has(signal.id))) return true;
 	return signals.reduce((total, signal) => total + Math.max(0, signal.score), 0) >= RISK_SCORE;
 }

@@ -10,6 +10,7 @@ import {
 	isUrlShortener,
 	linkHostsOf,
 	linkTextMismatch,
+	linkVerdict,
 	registrableDomain,
 	sameRegistrableDomain,
 	summarizeLinks,
@@ -187,8 +188,23 @@ test("an authenticated sender's own tracked links are not mismatches, an imperso
 	assert.equal(linkTextMismatch(tracked, "paypal.com", "cloudflare.com"), true, "shows another site");
 	assert.equal(linkTextMismatch("https://evil.test/login", "dash.cloudflare.com", "cloudflare.com"), true);
 	assert.equal(linkTextMismatch("https://attacker.github.io/", "github.io", "github.io"), true, "a shared suffix");
-	const carried = "https://abc.r.us-east-1.awstrack.me/L0/https:%2F%2Fevil.test%2F/1/0100abc";
-	assert.equal(linkTextMismatch(carried, "paypal.com", "paypal.com"), false, "the sender's own address via a tracker");
+	// A tracker that shows where it leads is judged by that destination, whoever the sender is.
+	const carried = "https://abc.r.us-east-1.awstrack.me/L0/https:%2F%2Flogin.evil.test%2F/1/0100abc";
+	assert.equal(linkTextMismatch(carried, "bank.com", "bank.com"), true, "authenticated bank.com, destination evil");
+	assert.equal(
+		linkTextMismatch("https://x.list-manage.com/track/click?u=1&e=https://evil.test/", "bank.com", "bank.com"),
+		true,
+	);
+	const own = "https://abc.r.us-east-1.awstrack.me/L0/https:%2F%2Fwww.bank.com%2Flogin/1/0100abc";
+	assert.equal(linkTextMismatch(own, "bank.com", "bank.com"), false);
+	assert.equal(
+		linkVerdict("https://abc.awstrack.me/L0/opaque-token", "bank.com", "bank.com"),
+		"sender_tracked",
+		"nothing readable in the tracker, authenticated sender's own address",
+	);
+	assert.equal(linkVerdict(tracked, "dash.cloudflare.com", "cloudflare.com"), "sender_tracked");
+	assert.equal(linkVerdict(tracked, "dash.cloudflare.com"), "mismatch");
+	assert.equal(linkVerdict("https://u1.mailgun.org/c/x", "bank.com", "bank.com"), "mismatch", "not a known tracker");
 	assert.equal(linkTextMismatch("https://evil.test/", "cloudflare.com", "evil.test"), true);
 });
 

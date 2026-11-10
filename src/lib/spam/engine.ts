@@ -33,7 +33,11 @@ export async function analyzeSpam(db: AppDatabase, input: SpamAnalysisInput): Pr
 					},
 				]
 			: []),
-		...analyzeUrls(input.message, prepared, authenticatedSenderDomain(authentication, fromDomain)),
+		...analyzeUrls(
+			input.message,
+			prepared,
+			authenticatedSenderDomain(input.authenticationResults, authentication, fromDomain),
+		),
 		...analyzeStructure(input.message, input.headers, prepared),
 		...analyzeAttachments(input.message, prepared),
 		...analyzeSafelistPressure(prepared),

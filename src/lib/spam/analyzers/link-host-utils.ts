@@ -74,7 +74,6 @@ const OPAQUE_CLICK_TRACKERS = new Set([
 	"customeriomail.com",
 	"hubspotlinks.com",
 	"klclick.com",
-	"mailgun.org",
 	"mlsend.com",
 	"postmarkapp.com",
 	"pstmrk.it",
@@ -305,26 +304,36 @@ function embeddedHosts(href: string): string[] {
 	return hosts;
 }
 
+/** What `linkVerdict` makes of a link: fine, a mismatch, or the authenticated sender's own tracked link. */
+export type LinkVerdict = "ok" | "mismatch" | "sender_tracked";
+
 /**
  * Whether a link whose text shows one address leads somewhere else: the destination's registrable
  * domain differs from the one shown, unless a known click tracker carries the shown address inside it.
- * `senderDomain` is the From domain when the sender authenticated (DMARC, or DKIM aligned with it): a
- * link that shows an address of that domain and goes through a click tracker is then the sender's own
- * tracked link, even where the tracker hides the destination.
+ * A tracker whose destination can be read is judged by it alone. `senderDomain` is the From domain when
+ * the sender authenticated: a link that shows an address of that domain and goes through a click tracker
+ * that hides its destination is then the sender's own tracked link (`sender_tracked`, no mismatch).
  */
-export function linkTextMismatch(href: string, text: string, senderDomain?: string | null): boolean {
-	if (!/^https?:\/\//i.test(href.trim())) return false;
+export function linkVerdict(href: string, text: string, senderDomain?: string | null): LinkVerdict {
+	if (!/^https?:\/\//i.test(href.trim())) return "ok";
 	const shown = displayedHost(text);
 	const target = hostOf(href.trim());
-	if (!shown || !target || sameRegistrableDomain(shown, target)) return false;
+	if (!shown || !target || sameRegistrableDomain(shown, target)) return "ok";
+	if (isClickTracker(target)) {
+		const embedded = embeddedHosts(href);
+		if (embedded.length > 0) return embedded.some((host) => sameRegistrableDomain(host, shown)) ? "ok" : "mismatch";
+	}
 	if (
 		senderDomain &&
 		sameRegistrableDomain(shown, senderDomain) &&
 		(isOpaqueClickTracker(target) || isClickTracker(target))
 	)
-		return false;
-	if (isClickTracker(target)) return !embeddedHosts(href).some((host) => sameRegistrableDomain(host, shown));
-	return true;
+		return "sender_tracked";
+	return "mismatch";
+}
+
+export function linkTextMismatch(href: string, text: string, senderDomain?: string | null): boolean {
+	return linkVerdict(href, text, senderDomain) === "mismatch";
 }
 
 /** Up to `limit` distinct link hostnames (without `www.`) from text, in order of appearance. */

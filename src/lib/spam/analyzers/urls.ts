@@ -1,7 +1,7 @@
 import type { ParsedEmail } from "@/lib/email/parse";
 import type { PreparedSpamContent, SpamSignal } from "../types";
 import { isIpHost, isLookalikeHost, isUrlShortener } from "./link-host-utils";
-import { hasDisplayedLinkMismatch } from "./urls-utils";
+import { displayedLinkFinding } from "./urls-utils";
 
 function punycodeSignal(domains: readonly string[]): SpamSignal | null {
 	const encoded = domains.filter((domain) => domain.includes("xn--"));
@@ -40,8 +40,10 @@ export function analyzeUrls(
 			reason: "Message links to an unusually large number of domains",
 			metadata: { count: domains.length },
 		});
+	let senderTracked = false;
 	for (const html of [message.html ?? "", ...prepared.webPageAttachments.map((page) => page.text)]) {
-		if (hasDisplayedLinkMismatch(html, senderDomain)) {
+		const finding = displayedLinkFinding(html, senderDomain);
+		if (finding === "mismatch") {
 			signals.push({
 				id: "displayed_link_mismatch",
 				score: 10,
@@ -49,6 +51,14 @@ export function analyzeUrls(
 			});
 			return signals;
 		}
+		if (finding === "sender_tracked") senderTracked = true;
 	}
+	// Not a finding: it only lets the threat lookups see links that would otherwise have been flagged.
+	if (senderTracked)
+		signals.push({
+			id: "sender_tracked_link",
+			score: 0,
+			reason: "A link shows the authenticated sender's own address and goes through its mail service's click tracking",
+		});
 	return signals;
 }

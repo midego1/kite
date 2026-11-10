@@ -2,14 +2,35 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import clsx from "clsx";
-import { Clock, HardDrive, Paperclip, Trash2, UsersRound, type LucideIcon } from "lucide-react";
+import {
+	CircleAlert,
+	Clock,
+	FolderSymlink,
+	HardDrive,
+	Paperclip,
+	Plus,
+	Trash2,
+	UsersRound,
+	type LucideIcon,
+} from "lucide-react";
 import { SectionNavSheet } from "@/components/section-nav-sheet";
 import { SECTION_PANEL_CLASS } from "@/components/settings/section-nav-utils";
 import { formatDriveSize } from "@/lib/drive/name-utils";
-import type { DriveUsage } from "@/lib/drive/types";
+import type { DriveMountDto, DriveUsage } from "@/lib/drive/types";
+import { mountHref } from "./drive-mounts-api";
+import { DriveMountDialog } from "./drive-mount-dialog";
 import { DRIVE_USAGE_EVENT, DRIVE_VIEW_TITLES, usagePercent } from "./drive-utils";
+import { useDriveMounts } from "./use-drive-mounts";
+
+const NAV_LINK_CLASS =
+	"flex h-9 items-center gap-3 rounded-lg px-3 text-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 max-md:min-h-11 max-md:text-base";
+const navLinkClass = (active: boolean) =>
+	clsx(
+		NAV_LINK_CLASS,
+		active ? "bg-blue-100 font-medium text-blue-900" : "text-neutral-700 hover:bg-neutral-100 hover:text-neutral-900",
+	);
 
 const LINKS: { href: string; label: string; icon: LucideIcon; match: (path: string) => boolean }[] = [
 	{
@@ -59,6 +80,49 @@ function UsageBar({ usage }: { usage: DriveUsage }) {
 	);
 }
 
+const isMountPath = (pathname: string, mount: DriveMountDto) => pathname === mountHref(mount.id);
+
+/** Linked WebDAV folders below the views, with Link a folder. */
+function LinkedFolders({ pathname }: { pathname: string }) {
+	const router = useRouter();
+	const { mounts, loaded, encryptionReady, migrationPending } = useDriveMounts();
+	const [linking, setLinking] = useState(false);
+	if (!loaded || migrationPending) return null;
+	return (
+		<div className="mt-3 border-t border-neutral-200 pt-3" data-drive-linked-folders>
+			<h3 className="px-3 pb-1 text-xs font-medium text-neutral-500">Linked folders</h3>
+			{mounts.map((mount) => {
+				const active = isMountPath(pathname, mount);
+				return (
+					<Link
+						key={mount.id}
+						href={mountHref(mount.id)}
+						aria-current={active ? "page" : undefined}
+						className={navLinkClass(active)}
+					>
+						<FolderSymlink className={clsx("h-4 w-4 shrink-0", active ? "text-neutral-900" : "text-neutral-500")} />
+						<span className="min-w-0 flex-1 truncate">{mount.label}</span>
+						{mount.status === "auth_failed" && (
+							<CircleAlert className="h-4 w-4 shrink-0 text-red-600" aria-label="Needs the app password" />
+						)}
+					</Link>
+				);
+			})}
+			<button type="button" onClick={() => setLinking(true)} className={clsx(navLinkClass(false), "w-full")}>
+				<Plus className="h-4 w-4 shrink-0 text-neutral-500" />
+				Link a folder
+			</button>
+			{linking && (
+				<DriveMountDialog
+					encryptionReady={encryptionReady}
+					onClose={() => setLinking(false)}
+					onSaved={(mount) => router.push(mountHref(mount.id))}
+				/>
+			)}
+		</div>
+	);
+}
+
 /**
  * The Drive views (My Drive, Recent, Shared with me, All attachments, Trash) as the menu panel beside the listing,
  * drawn like the Settings menu beside its page: a bordered column from `md` up, a bottom sheet behind a pill on
@@ -68,6 +132,7 @@ function DriveNav() {
 	const pathname = usePathname();
 	const [usage, setUsage] = useState<DriveUsage | null>(null);
 	const current = LINKS.find((link) => link.match(pathname));
+	const label = current?.label ?? (pathname.startsWith("/drive/m/") ? "Linked folder" : "Drive");
 
 	useEffect(() => {
 		const onUsage = (event: Event) => setUsage((event as CustomEvent<DriveUsage>).detail);
@@ -78,7 +143,7 @@ function DriveNav() {
 	return (
 		<SectionNavSheet
 			title="Drive menu"
-			label={current?.label ?? "Drive"}
+			label={label}
 			className={clsx("w-full md:flex md:min-h-0 md:w-64 md:shrink-0 md:flex-col", SECTION_PANEL_CLASS)}
 		>
 			<div className="flex h-14 shrink-0 items-center gap-2 border-b border-neutral-200 px-4">
@@ -92,22 +157,13 @@ function DriveNav() {
 				{LINKS.map(({ href, label, icon: Icon, match }) => {
 					const active = match(pathname);
 					return (
-						<Link
-							key={href}
-							href={href}
-							aria-current={active ? "page" : undefined}
-							className={clsx(
-								"flex h-9 items-center gap-3 rounded-lg px-3 text-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 max-md:min-h-11 max-md:text-base",
-								active
-									? "bg-blue-100 font-medium text-blue-900"
-									: "text-neutral-700 hover:bg-neutral-100 hover:text-neutral-900",
-							)}
-						>
+						<Link key={href} href={href} aria-current={active ? "page" : undefined} className={navLinkClass(active)}>
 							<Icon className={clsx("h-4 w-4 shrink-0", active ? "text-neutral-900" : "text-neutral-500")} />
 							{label}
 						</Link>
 					);
 				})}
+				<LinkedFolders pathname={pathname} />
 			</nav>
 			{usage && (
 				<div className="shrink-0 border-t border-neutral-200 px-4 py-3">

@@ -750,6 +750,13 @@
       "when": 1794614400000,
       "tag": "0105_add_external_account_oauth",
       "breakpoints": true
+    },
+    {
+      "idx": 107,
+      "version": "6",
+      "when": 1794787200000,
+      "tag": "0107_add_drive_mounts",
+      "breakpoints": true
     }
   ]
 }

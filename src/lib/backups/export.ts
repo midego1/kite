@@ -76,6 +76,9 @@ const BACKUP_TABLES: DatabaseBackupTable[] = [
 	"drive_links",
 	"drive_settings",
 	"drive_user_quotas",
+	// Linked WebDAV folders (migration 0107), exported without their app passwords (`redactBackupRow`) and restored
+	// waiting for their owner to enter it again.
+	"drive_mounts",
 	"auto_reply_deliveries",
 	"spam_token_stats",
 	"spam_reputation",

@@ -54,7 +54,7 @@ export const BACKUP_TABLE_GROUPS: { id: BackupTableGroupId; label: string; table
 	{
 		id: "drive",
 		label: "Drive files and sharing",
-		tables: ["drive_items", "drive_shares", "drive_links", "drive_settings", "drive_user_quotas"],
+		tables: ["drive_items", "drive_shares", "drive_links", "drive_settings", "drive_user_quotas", "drive_mounts"],
 	},
 	{
 		id: "automation",

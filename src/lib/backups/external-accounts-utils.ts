@@ -9,6 +9,7 @@ const SECRET_COLUMNS = ["secret", "oauth_refresh_token", "oauth_access_token"];
  */
 export function redactBackupRow(table: string, row: DatabaseRecord): DatabaseRecord {
 	if (table === "external_identities") return withoutPendingCode(row);
+	if (table === "drive_mounts") return { ...row, password: "" };
 	if (table !== "external_accounts") return row;
 	const redacted: DatabaseRecord = { ...row };
 	for (const column of SECRET_COLUMNS) if (column in redacted) redacted[column] = column === "secret" ? "" : null;
@@ -26,6 +27,14 @@ function withoutPendingCode(row: DatabaseRecord): DatabaseRecord {
 /** A restored connected account has no password, so it waits for its owner to reconnect it. */
 export function restoredBackupRow(table: string, row: DatabaseRecord): DatabaseRecord {
 	if (table === "external_identities") return withoutPendingCode(row);
+	// A linked WebDAV folder (migration 0107) comes back without its app password, waiting for its owner.
+	if (table === "drive_mounts")
+		return {
+			...row,
+			password: "",
+			status: "auth_failed",
+			last_error: "Enter the app password again after the restore",
+		};
 	if (table !== "external_accounts") return row;
 	return {
 		...redactBackupRow(table, row),

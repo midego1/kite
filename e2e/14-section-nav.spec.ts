@@ -149,6 +149,7 @@ test("an admin's Settings menu has the mode switch and only the Account, Mail, I
 		"Connected accounts",
 		"App passwords",
 		"API keys",
+		"MCP apps",
 	]);
 	await expect(menu.getByRole("navigation", { name: "Data" })).toBeVisible();
 	await expect(menu.getByRole("link", { name: "My account" })).toHaveAttribute("aria-current", "page");

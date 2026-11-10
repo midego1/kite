@@ -30,7 +30,7 @@ export function SenderAuthBadge({
 	if (!warning) return null;
 	const label = t("This message didn't fully pass sender authentication checks.");
 	return (
-		<Tooltip label={label}>
+		<Tooltip label={label} className="shrink-0">
 			<span
 				role="img"
 				tabIndex={interactive ? 0 : undefined}

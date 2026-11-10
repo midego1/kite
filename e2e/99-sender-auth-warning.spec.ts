@@ -141,6 +141,13 @@ test("the open message's badge is a labelled image and a focus stop; a long send
 	expect(box, "badge has a box").not.toBeNull();
 	expect(box!.x).toBeGreaterThanOrEqual(0);
 	expect(box!.x + box!.width).toBeLessThanOrEqual(375);
+	// And inside the sender line's own clipping box, which is what cut it off before.
+	const inLine = await pill.evaluate((element) => {
+		const line = element.closest("p")!.getBoundingClientRect();
+		const own = element.getBoundingClientRect();
+		return own.left >= line.left - 0.5 && own.right <= line.right + 0.5;
+	});
+	expect(inLine, "badge inside the sender line").toBe(true);
 	// The pill keeps its full width; the name gives way, not the badge.
 	const text = await pill.locator("span").last().boundingBox();
 	expect(text!.width).toBeGreaterThan(40);

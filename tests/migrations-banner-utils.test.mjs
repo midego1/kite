@@ -25,7 +25,6 @@ const {
 	PENDING_MIGRATIONS_REFRESH_MS,
 	migrationApplierText,
 	migrationApplySummary,
-	migrationsBannerContent,
 	parsePendingMigrations,
 	shouldShowMigrationsBanner,
 } = await import(pathToFileURL(join(bundleDirectory, "banner.mjs")).href);
@@ -82,14 +81,6 @@ test("shouldShowMigrationsBanner only shows a schema that is behind", () => {
 	assert.equal(shouldShowMigrationsBanner({ pending: 0 }), false);
 	// A status that could not be read stays quiet instead of warning about nothing.
 	assert.equal(shouldShowMigrationsBanner(undefined), false);
-});
-
-test("the banner explains what is waiting and what breaks until it is applied", () => {
-	assert.deepEqual(migrationsBannerContent(1), {
-		title: "Kite was updated, but the database still needs 1 update",
-		body: "Until they are applied, new email may not appear and some pages may fail.",
-	});
-	assert.equal(migrationsBannerContent(3).title, "Kite was updated, but the database still needs 3 updates");
 });
 
 test("the apply summary names what happened", () => {

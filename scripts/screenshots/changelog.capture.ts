@@ -251,7 +251,57 @@ async function connectDemoMcpApp(name: string): Promise<void> {
 	await session.dispose();
 }
 
+/**
+ * The sidebar of a short window while two database updates are being applied: the status and the apply request are
+ * mocked (the second never answers, so the run stays on screen), in the Kite classic style the owner reported it in.
+ */
+async function openDatabaseUpdateSidebar(page: Page): Promise<Locator> {
+	const names = ["0106_add_mcp_oauth_clients.sql", "0107_add_mcp_oauth_grants.sql"];
+	await page.context().addInitScript(() => {
+		localStorage.setItem("kite-style", "classic");
+		localStorage.setItem("kite-column-width:sidebar", "260");
+	});
+	await page.route("**/api/migrations/pending", (route) => route.fulfill({ json: { pending: names.length, names } }));
+	await page.route("**/api/admin/migrations", async (route) => {
+		if (route.request().method() !== "POST") return route.fulfill({ json: { ready: false, pending: names, unknown: [] } });
+		await new Promise(() => undefined);
+	});
+	await page.goto("/drafts");
+	const nav = page.getByRole("navigation", { name: "Kite" });
+	await nav.getByRole("button", { name: /^(Update now|Apply now)$/ }).click();
+	await expect(nav.getByRole("button", { name: /^Updating/ })).toBeVisible();
+	return nav;
+}
+
 const SHOTS: Shot[] = [
+	{
+		// The database update notice while it applies, in the sidebar of a short window (after the redesign).
+		name: "2026-11-10-database-update-after-dark",
+		theme: "dark",
+		viewport: { width: 1000, height: 820 },
+		open: openDatabaseUpdateSidebar,
+	},
+	{
+		// The database update notice while it applies, in the sidebar of a short window (after the redesign).
+		name: "2026-11-10-database-update-after-light",
+		theme: "light",
+		viewport: { width: 1000, height: 820 },
+		open: openDatabaseUpdateSidebar,
+	},
+	{
+		// The database update notice while it applies, in the sidebar of a short window (before the redesign).
+		name: "2026-11-10-database-update-before-dark",
+		theme: "dark",
+		viewport: { width: 1000, height: 820 },
+		open: openDatabaseUpdateSidebar,
+	},
+	{
+		// The database update notice while it applies, in the sidebar of a short window (before the redesign).
+		name: "2026-11-10-database-update-before-light",
+		theme: "light",
+		viewport: { width: 1000, height: 820 },
+		open: openDatabaseUpdateSidebar,
+	},
 	{
 		// MCP over OAuth: the consent screen an MCP app opens, with only Read mail ticked and a mailbox chosen.
 		name: "2026-11-10-mcp-oauth-consent-light",

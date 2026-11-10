@@ -8,9 +8,9 @@ import { useSidebar } from "./sidebar-state";
 
 /**
  * The operational and setup notices, rendered once: above Settings in the expanded sidebar, or over the page
- * on phones and while the sidebar is the icon rail, where they would not fit. In the sidebar they scroll past a
- * quarter of the window, so they never squeeze the menu. The usage statistics notice is not one of them: it is drawn
- * above the Admin pages only.
+ * on phones and while the sidebar is the icon rail, where they would not fit. The sidebar's footer already scrolls
+ * past 45% of its height, so the notices have no scroller of their own: a second one only produced scrollbars inside
+ * the cards. The usage statistics notice is not one of them: it is drawn above the Admin pages only.
  */
 export function DashboardNotices({ slot }: { slot: "sidebar" | "page" }) {
 	const { mobile, minimal } = useSidebar();
@@ -20,7 +20,7 @@ export function DashboardNotices({ slot }: { slot: "sidebar" | "page" }) {
 		<div
 			className={
 				slot === "sidebar"
-					? "mb-2 flex max-h-[25vh] flex-col gap-2 overflow-y-auto empty:hidden"
+					? "mb-2 flex min-w-0 flex-col gap-2 empty:hidden"
 					: "flex flex-col gap-2 px-2 pb-2 empty:hidden"
 			}
 		>

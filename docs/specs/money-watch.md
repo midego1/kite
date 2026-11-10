@@ -1206,7 +1206,7 @@ Unit: the HTML export, rewritten over `htmlparser2`'s streaming tokenizer rather
 
 ## 27. Payment categories, export and reach
 
-Status: Approved 2026-11-10 (Foreman re-scope). Builds on §25 and adds no table: it adds one column to `finance_payments`, claims migration 0109 (journal `idx` 107 while 0106-0108, assigned to work in flight elsewhere, are not merged; whichever lands later renumbers its `idx` in the rebase) and fills gaps in how a recorded payment can be filtered, exported, searched, read by the assistant and followed by webhooks. The auto-record rule of §25.1 is unchanged: there is no separate purchases table and no click-to-record suggestion.
+Status: Approved 2026-11-10 (Foreman re-scope). Builds on §25 and adds no table: it adds one column to `finance_payments`, claims migration 0109 (journal `idx` 107; 0110 merged first and took `idx` 108, the journal being in file order) and fills gaps in how a recorded payment can be filtered, exported, searched, read by the assistant and followed by webhooks. The auto-record rule of §25.1 is unchanged: there is no separate purchases table and no click-to-record suggestion.
 
 ### 27.1 Scope
 

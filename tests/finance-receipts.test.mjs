@@ -57,7 +57,8 @@ const load = (name) => import(pathToFileURL(join(outDir, `${name}.mjs`)).href);
 await load("invoke"); // binds moduleHost.invoke to the real registry as a side effect
 const { clearModuleStateCache } = await load("state");
 const { moduleHost } = await load("host");
-const { fileOneReceipt, receiptCandidates, filedSourceIds, sweepReceipts } = await load("receipts");
+const { fileOneReceipt, receiptCandidates, filedSourceIds, sweepReceipts, releaseOwnerPendingClaims } =
+	await load("receipts");
 const { receiptsEnabledFor, setReceiptsEnabled } = await load("settings");
 const { receiptsDeleteGuard, RECEIPTS_IN_DRIVE_ERROR } = await load("guard");
 const { startReceiptBackfill, beginBackfillRow, ownerBackfill, backfillReceipts, resumeReceiptBackfills } =
@@ -1100,8 +1101,9 @@ test("the backfill upsert never resets a run that is already going, but starts a
 	await beginBackfillRow("owner", new Date());
 	const stillRunning = await ownerBackfill("owner");
 	assert.equal(stillRunning.status, "running");
+	const stored = db.db.prepare("SELECT pending FROM finance_receipt_backfills WHERE user_id = 'owner'").get();
 	assert.deepEqual(
-		[stillRunning.scanned, stillRunning.filed, stillRunning.skipped, stillRunning.pending],
+		[stillRunning.scanned, stillRunning.filed, stillRunning.skipped, stored.pending],
 		[40, 30, 10, 2],
 		"the counters of the run in progress are kept",
 	);
@@ -1115,4 +1117,167 @@ test("the backfill upsert never resets a run that is already going, but starts a
 	assert.equal(restarted.status, "running");
 	assert.deepEqual([restarted.scanned, restarted.filed, restarted.skipped, restarted.pending], [0, 0, 0, 0]);
 	assert.equal(restarted.leaseUntil, null);
+});
+
+/** A second (third, ...) owner with a mailbox of their own, the same shape `setup` gives "owner". */
+function addOwner(db, id) {
+	db.db.exec(`
+		INSERT INTO users (id, email, password_hash, name, created_at) VALUES ('${id}', '${id}@example.com', 'hash', '${id}', 2);
+		INSERT INTO domains (id, user_id, hostname, zone_id, status, created_at) VALUES ('domain-${id}', '${id}', '${id}.example', 'zone-${id}', 'active', 2);
+		INSERT INTO mailboxes (id, user_id, domain_id, local_part, type, created_at) VALUES ('mailbox-${id}', '${id}', 'domain-${id}', 'me', 'personal', 2);
+		INSERT INTO mailbox_agent_settings (mailbox_id, enabled, autonomy, reviewer_user_id, capabilities, updated_at) VALUES ('mailbox-${id}', 1, 'suggest', '${id}', '{}', 2);
+	`);
+	return { mailboxId: `mailbox-${id}`, userId: id };
+}
+
+test("the button releases a claim a run gave up on, but never one a run holds right now (S7)", async (t) => {
+	const { db, env } = await setup(t);
+	const failedMessage = await insertMessage(db, env);
+	const failedId = insertPayment(db, { messageId: failedMessage });
+	const liveMessage = await insertMessage(db, env);
+	const liveId = insertPayment(db, { messageId: liveMessage });
+	// One claim failed transiently (a full quota is the usual cause); the other is a run in the middle of filing.
+	db.db.prepare("INSERT INTO drive_user_quotas (user_id, quota_bytes, updated_at) VALUES ('owner', 1, 1)").run();
+	const candidates = await receiptCandidates(10, "owner");
+	const failedCandidate = candidates.find((candidate) => candidate.sourceId === failedId);
+	assert.equal(await fileOneReceipt(failedCandidate), "pending");
+	assert.ok(receiptRow(db, failedId).skipped_reason, "the failure is recorded on the claim");
+	const now = Math.floor(Date.now() / 1000);
+	db.db
+		.prepare(
+			`INSERT INTO finance_receipts (id, user_id, source_table, source_id, message_id, status, lease_until, created_at, updated_at)
+			 VALUES ('live-claim', 'owner', 'finance_payments', ?, ?, 'pending', ?, ?, ?)`,
+		)
+		.run(liveId, liveMessage, now + 300, now, now);
+
+	await startReceiptBackfill("owner");
+
+	assert.equal(receiptRow(db, failedId).lease_until, null, "the failed claim is released for an immediate retry");
+	assert.equal(receiptRow(db, liveId).lease_until, now + 300, "the live claim keeps its lease");
+	const due = (await receiptCandidates(10, "owner")).map((candidate) => candidate.sourceId);
+	assert.deepEqual(due, [failedId], "so neither the sweep nor the backfill can take the live row over");
+});
+
+test("a claim nobody has touched for minutes is released by the button even without a recorded failure (S7)", async (t) => {
+	const { db, env } = await setup(t);
+	const messageId = await insertMessage(db, env);
+	const paymentId = insertPayment(db, { messageId });
+	const old = Math.floor(Date.now() / 1000) - 600;
+	db.db
+		.prepare(
+			`INSERT INTO finance_receipts (id, user_id, source_table, source_id, message_id, status, lease_until, attempts, created_at, updated_at)
+			 VALUES ('old-claim', 'owner', 'finance_payments', ?, ?, 'pending', ?, 3, ?, ?)`,
+		)
+		.run(paymentId, messageId, old + 86_400, old, old);
+	await releaseOwnerPendingClaims("owner");
+	assert.equal(receiptRow(db, paymentId).lease_until, null);
+	assert.equal(receiptRow(db, paymentId).attempts, 3, "released, but the backoff count is kept");
+});
+
+test("a run whose claim was taken over cannot overwrite the run that took it over (S7)", async (t) => {
+	const { db, env } = await setup(t);
+	const messageId = await insertMessage(db, env);
+	const paymentId = insertPayment(db, { messageId });
+	const [candidate] = await receiptCandidates(10, "owner");
+	const invoke = moduleHost.invoke;
+	t.after(() => {
+		moduleHost.invoke = invoke;
+	});
+	// While this run is inside Drive, its lease runs out and another run takes the claim over.
+	moduleHost.invoke = async (ctx, moduleId, name, input) => {
+		const result = await invoke(ctx, moduleId, name, input);
+		if (moduleId === "drive" && name === "fileReceipt")
+			db.db
+				.prepare("UPDATE finance_receipts SET attempts = attempts + 1, lease_until = ? WHERE source_id = ?")
+				.run(Math.floor(Date.now() / 1000) + 600, paymentId);
+		return result;
+	};
+	assert.equal(await fileOneReceipt(candidate), "pending", "the late run learns it no longer owns the claim");
+	const row = receiptRow(db, paymentId);
+	assert.equal(row.status, "pending", "its done write matched nothing");
+	assert.equal(row.eml_file_id, null);
+	assert.equal(row.attempts, 1);
+});
+
+test("a skipped write from a taken-over run is dropped too (S7)", async (t) => {
+	const { db, env } = await setup(t);
+	const messageId = await insertMessage(db, env);
+	const paymentId = insertPayment(db, { messageId });
+	const [candidate] = await receiptCandidates(10, "owner");
+	const invoke = moduleHost.invoke;
+	t.after(() => {
+		moduleHost.invoke = invoke;
+	});
+	moduleHost.invoke = async (_ctx, moduleId, name) => {
+		if (moduleId !== "drive" || name !== "fileReceipt") throw new Error("unexpected call");
+		db.db.prepare("UPDATE finance_receipts SET attempts = attempts + 1 WHERE source_id = ?").run(paymentId);
+		return { ok: true, output: { filed: false, skippedReason: "too_large" } };
+	};
+	assert.equal(await fileOneReceipt(candidate), "pending");
+	assert.equal(receiptRow(db, paymentId).status, "pending");
+});
+
+test("the sweep rotates through more owners than one tick holds, and shares the budget round-robin (S5'')", async (t) => {
+	const { db, env } = await setup(t);
+	// 26 owners, one row each, plus a first-in-line owner with five older rows: more owners than a tick looks at.
+	const heavy = addOwner(db, "a-heavy");
+	for (let i = 0; i < 5; i += 1) {
+		const messageId = await insertMessage(db, env, { mailboxId: heavy.mailboxId, userId: heavy.userId });
+		insertPayment(db, { mailboxId: heavy.mailboxId, messageId, userId: heavy.userId, createdAtSeconds: 10 + i });
+	}
+	const ownerIds = [heavy.userId];
+	for (let i = 0; i < 26; i += 1) {
+		const owner = addOwner(db, `o${String(i).padStart(2, "0")}`);
+		const messageId = await insertMessage(db, env, { mailboxId: owner.mailboxId, userId: owner.userId });
+		insertPayment(db, { mailboxId: owner.mailboxId, messageId, userId: owner.userId, createdAtSeconds: 1000 + i });
+		ownerIds.push(owner.userId);
+	}
+
+	const first = await receiptCandidates(20);
+	assert.equal(first.length, 20);
+	assert.equal(
+		new Set(first.map((candidate) => candidate.userId)).size,
+		20,
+		"one row per owner before any gets a second",
+	);
+	assert.equal(first.filter((candidate) => candidate.userId === heavy.userId).length, 1);
+
+	// Every owner gets a turn within three ticks of 20 rows; nobody is passed over because of where the database lists them.
+	const served = new Set();
+	for (let tick = 0; tick < 3; tick += 1) {
+		for (const candidate of await receiptCandidates(20)) {
+			if ((await fileOneReceipt(candidate)) === "filed") served.add(candidate.userId);
+		}
+	}
+	for (const ownerId of ownerIds) assert.ok(served.has(ownerId), `${ownerId} was served`);
+});
+
+test("the backfill's pending count follows the owner's unresolved claims, not the last batch (S5)", async (t) => {
+	const { db, env } = await setup(t);
+	const messageId = await insertMessage(db, env);
+	const paymentId = insertPayment(db, { messageId });
+	db.db.prepare("INSERT INTO drive_user_quotas (user_id, quota_bytes, updated_at) VALUES ('owner', 1, 1)").run();
+	await startReceiptBackfill("owner");
+	await backfillReceipts({ kind: "finance.receipts_backfill", userId: "owner" }, {});
+	assert.equal((await ownerBackfill("owner")).pending, 1);
+
+	// The sweep (or a later run) files it after the batch ended: the dialog must stop reporting it.
+	db.db.exec("UPDATE drive_user_quotas SET quota_bytes = NULL WHERE user_id = 'owner'");
+	db.db.prepare("UPDATE finance_receipts SET lease_until = 1 WHERE source_id = ?").run(paymentId);
+	assert.equal(await fileEligible("owner"), 1);
+	const finished = await ownerBackfill("owner");
+	assert.equal(finished.status, "done");
+	assert.equal(finished.pending, 0, "no longer pending, though no batch has run since");
+
+	// And a claim the last batch never saw still counts.
+	const otherMessage = await insertMessage(db, env);
+	const otherId = insertPayment(db, { messageId: otherMessage });
+	const now = Math.floor(Date.now() / 1000);
+	db.db
+		.prepare(
+			`INSERT INTO finance_receipts (id, user_id, source_table, source_id, message_id, status, lease_until, created_at, updated_at)
+			 VALUES ('later-claim', 'owner', 'finance_payments', ?, ?, 'pending', ?, ?, ?)`,
+		)
+		.run(otherId, otherMessage, now + 300, now, now);
+	assert.equal((await ownerBackfill("owner")).pending, 1);
 });

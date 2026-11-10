@@ -61,8 +61,8 @@ const URL_SHORTENERS = new Set([
 
 /**
  * Click-tracking redirectors that put the destination in the link at a readable place (`/L0/<address>`), so a
- * link through them counts as going to that destination: the first address in it decides. A link whose
- * destination cannot be read counts as a mismatch, as for any other site.
+ * link through them counts as going to that destination: the address right after `/L0/` decides, read in every form
+ * it can be decoded to. A link whose destination cannot be read counts as a mismatch, as for any other site.
  */
 const CLICK_TRACKERS = new Set(["awstrack.me"]);
 
@@ -316,8 +316,8 @@ const DESTINATION_START = /^\s*(?:https?:(?!%)|\/\/)/i;
 
 /**
  * The hostnames an `awstrack.me` link (`/L0/<escaped address>/1/<id>`) leads to, read the way a browser reads the
- * address after the link is unescaped: the part after `/L0/` is decoded (once, twice and three times, since the
- * tracker's own decoding is not known) and each result that starts like an address is parsed with `new URL`, which
+ * address after the link is unescaped: the part after `/L0/` as written and decoded (once, twice and three times,
+ * since the tracker's own decoding is not known) and each form that starts like an address is parsed with `new URL`, which
  * puts anything before an `@` in the user-info, however odd. Null when nothing can be read: no `/L0/` part, no
  * result that starts like an address, or one that does not parse.
  */
@@ -330,7 +330,9 @@ function awstrackHosts(href: string): string[] | null {
 	}
 	if (!url.pathname.startsWith("/L0/")) return null;
 	const rest = url.pathname.slice("/L0/".length) + url.search + url.hash;
-	const candidates: string[] = [];
+	// The part as written counts too when it already looks like an address (`https://bank.com%2F@evil.test`), so
+	// the verdict does not depend on whether the tracker decodes it before redirecting.
+	const candidates: string[] = [rest];
 	let current = rest;
 	for (let round = 0; round < 3; round++) {
 		const next = decodeEscapesOnce(current);
@@ -338,7 +340,6 @@ function awstrackHosts(href: string): string[] | null {
 		candidates.push(next);
 		current = next;
 	}
-	if (candidates.length === 0) candidates.push(rest);
 	const hosts: string[] = [];
 	for (const candidate of candidates) {
 		if (!DESTINATION_START.test(candidate)) continue;
@@ -354,7 +355,8 @@ function awstrackHosts(href: string): string[] | null {
 const EMBEDDED_ADDRESS = /(?:https?:\/{0,2}|\/\/)([^\s/?#"'<>]+)/gi;
 
 /**
- * The hosts of addresses written in the path, query and fragment of a tracking link, in order. The authority (host and user-info) is the tracker's own and never scanned.
+ * The hosts of addresses written in the path, query and fragment of a tracking link, in order. The authority (host
+ * and user-info) is the tracker's own and never scanned.
  * The rest is decoded tolerantly (a bad escape elsewhere hides nothing) and `\` counts as `/`, as browsers read it.
  * A scheme-relative `//host` counts only for a name with a dot.
  */
@@ -380,12 +382,13 @@ function embeddedHosts(href: string): string[] {
 export type LinkVerdict = "ok" | "mismatch" | "sender_tracked";
 
 /**
- * Whether a link whose text shows one address leads somewhere else: the destination's registrable
- * domain differs from the one shown. A transparent click tracker (`awstrack.me`) is judged by the first address
- * in its link, and a link it does not name one in is a mismatch. An opaque tracker never vouches for the text:
- * an address in its link can only make the verdict stricter (a different site is a mismatch), and otherwise the
- * link is the authenticated sender's own tracked link (`sender_tracked`, no mismatch) when `senderDomain`, the
- * From domain of a sender that authenticated, is the site the text shows, and a mismatch for anyone else.
+ * Whether a link whose text shows one address leads somewhere else: the destination's registrable domain differs
+ * from the one shown. A transparent click tracker (`awstrack.me`) is judged by the address after `/L0/`, in every
+ * form it can be decoded to (see `awstrackHosts`), and a link it does not name one in is a mismatch. An opaque
+ * tracker never vouches for the text: an address in its link can only make the verdict stricter (a different site
+ * is a mismatch), and otherwise the link is the authenticated sender's own tracked link (`sender_tracked`, no
+ * mismatch) when `senderDomain`, the From domain of a sender that authenticated, is the site the text shows, and a
+ * mismatch for anyone else.
  */
 export function linkVerdict(href: string, text: string, senderDomain?: string | null): LinkVerdict {
 	if (!/^https?:\/\//i.test(href.trim())) return "ok";

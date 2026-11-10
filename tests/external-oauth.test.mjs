@@ -245,6 +245,44 @@ test("the ID token names the address the user signed in as, the tenant and the u
 	assert.equal(idTokenClaims(null, CLIENT_ID), null);
 });
 
+test("a tenant given as a domain accepts any tenant until its first sign-in pinned one, then only that tenant", () => {
+	const work = idToken({ preferred_username: "a@contoso.com" });
+	const other = idToken({ preferred_username: "a@contoso.com" }, "bbbbbbbb-bbbb-4ccc-8ddd-eeeeeeeeeeee");
+	assert.ok(idTokenClaims(work, CLIENT_ID, "contoso.com"), "nothing pinned yet");
+	assert.ok(idTokenClaims(other, CLIENT_ID, "contoso.com"));
+	assert.ok(idTokenClaims(work, CLIENT_ID, "contoso.com", WORK_TID));
+	assert.equal(idTokenClaims(other, CLIENT_ID, "contoso.com", WORK_TID), null);
+	assert.ok(idTokenClaims(work, CLIENT_ID, "contoso.com", WORK_TID.toUpperCase()), "compared case-insensitively");
+	// The keywords and IDs never use a pin.
+	assert.ok(idTokenClaims(other, CLIENT_ID, "common", WORK_TID));
+	assert.equal(
+		idTokenClaims(other, CLIENT_ID, "bbbbbbbb-bbbb-4ccc-8ddd-eeeeeeeeeeee", WORK_TID)?.tenantId,
+		"bbbbbbbb-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+	);
+});
+
+test("a saved registration keeps a pinned tenant ID only for a tenant domain", () => {
+	const base = { clientId: CLIENT_ID, clientSecret: "s3cret" };
+	assert.deepEqual(parseStoredMicrosoftClient(JSON.stringify({ ...base, tenant: "contoso.com", tenantId: WORK_TID })), {
+		...base,
+		tenant: "contoso.com",
+		tenantId: WORK_TID,
+	});
+	assert.equal(
+		parseStoredMicrosoftClient(JSON.stringify({ ...base, tenant: "contoso.com", tenantId: "nope" })).tenantId,
+		undefined,
+	);
+	assert.equal(
+		parseStoredMicrosoftClient(JSON.stringify({ ...base, tenant: "common", tenantId: WORK_TID })).tenantId,
+		undefined,
+	);
+	// Entering the registration again never carries a pin in.
+	assert.equal(
+		parseMicrosoftClientInput({ ...base, tenant: "contoso.com", tenantId: WORK_TID }).client.tenantId,
+		undefined,
+	);
+});
+
 test("the ID token's tenant must fit the registration's tenant", () => {
 	const work = idToken({ preferred_username: "a@contoso.com" });
 	const personal = idToken({ preferred_username: "a@outlook.com" }, CONSUMER_TID);

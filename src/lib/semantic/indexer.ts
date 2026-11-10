@@ -15,6 +15,7 @@ import {
 import { chunkVectorId, vectorKeyFor } from "./filter-utils";
 import { getSemanticInstallSettings } from "./install-settings";
 import { backfillCapReached, reserveEmbeddingBatchSpend, settleEmbeddingSpend } from "./spend";
+import { withOriginColumn } from "./queue-pending";
 import { getVectorStore } from "./vector-store";
 
 /** Up to this many `pending` (or lease-expired `running`) rows are claimed per drain batch. */
@@ -26,10 +27,10 @@ const MAX_ATTEMPTS = 3;
 /** At most this many tombstones are drained per run. */
 const TOMBSTONE_BATCH_SIZE = 1_000;
 /**
- * A claimed row is treated as backfill-origin when its `queued_at` is older than this, relative to the claim
- * time: the backfill (`backfill.ts`) is the only writer that ever sets `queued_at` to a message's own `created_at`
- * rather than "now", so a row queued this long ago can only be one of its pages, never a just-delivered message or
- * a rebuild (both queue with "now"). Used to charge the backfill's own spend against its cap share (B6).
+ * Before migration 0110 there is no `origin` column, and a claimed row counts as backfill-origin when its
+ * `queued_at` is older than this, relative to the claim time: the backfill (`backfill.ts`) set `queued_at` to a
+ * message's own `created_at` rather than "now", so a row queued this long ago could only be one of its pages. Only
+ * the fallback `claimPendingRowsByAge` uses it.
  */
 const BACKFILL_AGE_MARGIN_MS = 10 * 60_000;
 
@@ -40,18 +41,51 @@ type ClaimedRow = {
 	contentHash: string | null;
 	chunkCount: number;
 	attempts: number;
-	queuedAt: number | null;
+	/** Who queued the row; from `queued_at`'s age on a database before migration 0110. */
+	backfill: boolean;
 };
 
 /**
  * Claims up to `CLAIM_BATCH_SIZE` rows, newest queued first, so new mail is searchable before old mail is. With
- * `excludeBackfillOrigin`, leaves out any row old enough to only be the backfill's (S3 of review round 2): once
- * the backfill's cap share is already spent for the day, claiming its rows anyway just to load their bodies and
- * attachments and give them straight back wastes a whole batch's work, every batch, for the rest of the day.
+ * `excludeBackfillOrigin`, leaves out the rows the backfill queued (S3 of review round 2): once the backfill's cap
+ * share is already spent for the day, claiming its rows anyway just to load their bodies and attachments and give
+ * them straight back wastes a whole batch's work, every batch, for the rest of the day. A row is the backfill's by
+ * its `origin` column (migration 0110), not by how old it is.
  */
 async function claimPendingRows(env: CloudflareEnv, now: Date, excludeBackfillOrigin: boolean): Promise<ClaimedRow[]> {
-	const leaseUntil = Math.floor((now.getTime() + LEASE_MS) / 1000);
-	const nowSeconds = Math.floor(now.getTime() / 1000);
+	return withOriginColumn(
+		async () => {
+			const { results } = await env.DB.prepare(
+				`UPDATE message_embeddings
+				SET status = 'running', lease_until = ?
+				WHERE message_id IN (
+					SELECT message_id FROM message_embeddings
+					WHERE (status = 'pending' OR (status = 'running' AND lease_until < ?))
+						AND (NOT ? OR origin <> 'backfill')
+					ORDER BY queued_at DESC
+					LIMIT ?
+				)
+				RETURNING message_id AS messageId, mailbox_id AS mailboxId, vector_key AS vectorKey, content_hash AS contentHash, chunk_count AS chunkCount, attempts, origin = 'backfill' AS backfill`,
+			)
+				.bind(
+					Math.floor((now.getTime() + LEASE_MS) / 1000),
+					Math.floor(now.getTime() / 1000),
+					excludeBackfillOrigin ? 1 : 0,
+					CLAIM_BATCH_SIZE,
+				)
+				.all<Omit<ClaimedRow, "backfill"> & { backfill: number }>();
+			return results.map((row) => ({ ...row, backfill: Boolean(row.backfill) }));
+		},
+		() => claimPendingRowsByAge(env, now, excludeBackfillOrigin),
+	);
+}
+
+/** `claimPendingRows` on a database that has not applied migration 0110: the backfill's rows are told apart by the age of `queued_at`. */
+async function claimPendingRowsByAge(
+	env: CloudflareEnv,
+	now: Date,
+	excludeBackfillOrigin: boolean,
+): Promise<ClaimedRow[]> {
 	const backfillCutoff = Math.floor((now.getTime() - BACKFILL_AGE_MARGIN_MS) / 1000);
 	const { results } = await env.DB.prepare(
 		`UPDATE message_embeddings
@@ -65,15 +99,18 @@ async function claimPendingRows(env: CloudflareEnv, now: Date, excludeBackfillOr
 		)
 		RETURNING message_id AS messageId, mailbox_id AS mailboxId, vector_key AS vectorKey, content_hash AS contentHash, chunk_count AS chunkCount, attempts, queued_at AS queuedAt`,
 	)
-		.bind(leaseUntil, nowSeconds, excludeBackfillOrigin ? 1 : 0, backfillCutoff, CLAIM_BATCH_SIZE)
-		.all<ClaimedRow>();
-	return results;
-}
-
-/** Whether a claimed row was queued by the backfill rather than the trigger or a rebuild (see `BACKFILL_AGE_MARGIN_MS`). */
-function isBackfillClaim(queuedAt: number | null, now: Date): boolean {
-	if (queuedAt === null) return false;
-	return now.getTime() - queuedAt * 1000 > BACKFILL_AGE_MARGIN_MS;
+		.bind(
+			Math.floor((now.getTime() + LEASE_MS) / 1000),
+			Math.floor(now.getTime() / 1000),
+			excludeBackfillOrigin ? 1 : 0,
+			backfillCutoff,
+			CLAIM_BATCH_SIZE,
+		)
+		.all<Omit<ClaimedRow, "backfill"> & { queuedAt: number | null }>();
+	return results.map(({ queuedAt, ...row }) => ({
+		...row,
+		backfill: queuedAt !== null && now.getTime() - queuedAt * 1000 > BACKFILL_AGE_MARGIN_MS,
+	}));
 }
 
 /** Whether a mailbox has search by meaning on and AI allowed, re-checked at drain time (never at enqueue time for `semantic_index`). */
@@ -204,7 +241,7 @@ export async function processEmbeddingBatch(env: CloudflareEnv): Promise<{ claim
 			texts,
 			contentHash,
 			oldChunkCount: row.chunkCount,
-			backfill: isBackfillClaim(row.queuedAt, now),
+			backfill: row.backfill,
 		});
 	}
 

@@ -203,6 +203,7 @@ export const financeReceipts = sqliteTable(
 		 * prior transient failures and grows that lease, so a owner stuck failing (a full quota) backs off instead of
 		 * occupying every sweep tick's row budget forever. */
 		status: text("status", { enum: ["pending", "done", "skipped"] }).notNull(),
+		/** Why a row was skipped for good; on a `pending` claim, the code of the transient failure its last run gave up on (null while a run holds it), which is how the backfill button tells a failed claim from a live one. */
 		skippedReason: text("skipped_reason"),
 		leaseUntil: integer("lease_until", { mode: "timestamp" }),
 		attempts: integer("attempts").notNull().default(0),

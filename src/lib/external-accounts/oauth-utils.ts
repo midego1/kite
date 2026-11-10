@@ -33,7 +33,11 @@ export const OAUTH_STATE_TTL_MS = 10 * 60_000;
 /** @public Exercised by the unit tests. A cached access token is used until this long before it expires; then it is refreshed (spec §15.3). */
 export const ACCESS_TOKEN_MARGIN_MS = 5 * 60_000;
 
-export type MicrosoftClient = { clientId: string; clientSecret: string; tenant: string };
+/**
+ * `tenantId` is only ever set on a registration saved with a tenant domain: the tenant ID of its first successful
+ * sign-in, which every later sign-in must match (`pinMicrosoftTenant`). Entering the registration again clears it.
+ */
+export type MicrosoftClient = { clientId: string; clientSecret: string; tenant: string; tenantId?: string };
 
 export type OAuthEndpoints = { authorize: string; token: string };
 
@@ -64,12 +68,22 @@ export function parseMicrosoftClientInput(body: unknown): MicrosoftClientInput {
 	return { ok: true, client: { clientId, clientSecret, tenant } };
 }
 
+/** A tenant named by its domain: Microsoft answers for it whatever its ID, so the ID is learnt from the first sign-in. */
+export function isTenantDomain(tenant: string): boolean {
+	return !TENANT_NAMES.has(tenant) && !GUID.test(tenant);
+}
+
 /** The saved registration (opened JSON), or null when it is missing or not one. */
 export function parseStoredMicrosoftClient(json: string | null): MicrosoftClient | null {
 	if (!json) return null;
 	try {
-		const parsed = parseMicrosoftClientInput(JSON.parse(json));
-		return parsed.ok ? parsed.client : null;
+		const raw = JSON.parse(json) as { tenantId?: unknown } | null;
+		const parsed = parseMicrosoftClientInput(raw);
+		if (!parsed.ok) return null;
+		const pinned = typeof raw?.tenantId === "string" ? raw.tenantId.toLowerCase() : "";
+		return GUID.test(pinned) && isTenantDomain(parsed.client.tenant)
+			? { ...parsed.client, tenantId: pinned }
+			: parsed.client;
 	} catch {
 		return null;
 	}
@@ -292,12 +306,16 @@ function decodeJwtPayload(idToken: string | null): Record<string, unknown> | nul
 	}
 }
 
-/** Whether the token's tenant fits the registration's: its own id, personal only, or work and school only. */
-function tenantMatches(tid: string, tenant: string): boolean {
+/**
+ * Whether the token's tenant fits the registration's: its own id, personal only, or work and school only. A tenant
+ * domain fits any tenant until the first sign-in has pinned its ID (`pinned`), and only that one afterwards.
+ */
+function tenantMatches(tid: string, tenant: string, pinned: string | undefined): boolean {
 	if (GUID.test(tenant)) return tid === tenant.toLowerCase();
 	if (tenant === "consumers") return tid === CONSUMER_TENANT_ID;
 	if (tenant === "organizations") return tid !== CONSUMER_TENANT_ID;
-	return true;
+	if (tenant === "common") return true;
+	return !pinned || tid === pinned.toLowerCase();
 }
 
 const asAddress = (value: unknown) => {
@@ -308,18 +326,24 @@ const asAddress = (value: unknown) => {
 /**
  * The address, tenant and stable user id the ID token names. The token came straight from Microsoft's token endpoint
  * over TLS, so its signature need not be checked (OpenID Connect Core §3.1.3.7); its audience must be this app, and
- * its issuer the v2.0 issuer of the tenant it names, which must fit the registration's tenant. The address is the
+ * its issuer the v2.0 issuer of the tenant it names, which must fit the registration's tenant (for a tenant given as
+ * a domain, the ID its first sign-in pinned, when there is one). The address is the
  * name the user signed in as (`preferred_username`: the UPN of a work or school account, the sign-in address of a
  * personal one), never a plain `email` claim, which with the `common` endpoint can be an unverified value an
  * organisation set (spec §15.2); `email` counts only when Microsoft marks its domain verified (`xms_edov`). The IMAP
  * sign-in with that address is still the proof that it is the mailbox's.
  */
-export function idTokenClaims(idToken: string | null, clientId: string, tenant = "common"): IdTokenClaims | null {
+export function idTokenClaims(
+	idToken: string | null,
+	clientId: string,
+	tenant = "common",
+	pinnedTenantId?: string,
+): IdTokenClaims | null {
 	const claims = decodeJwtPayload(idToken);
 	if (!claims) return null;
 	if (typeof claims.aud !== "string" || claims.aud.toLowerCase() !== clientId.toLowerCase()) return null;
 	const tid = typeof claims.tid === "string" ? claims.tid.toLowerCase() : "";
-	if (!GUID.test(tid) || !tenantMatches(tid, tenant)) return null;
+	if (!GUID.test(tid) || !tenantMatches(tid, tenant, pinnedTenantId)) return null;
 	if (claims.iss !== `https://login.microsoftonline.com/${tid}/v2.0`) return null;
 	const address = asAddress(claims.preferred_username) ?? (claims.xms_edov === true ? asAddress(claims.email) : null);
 	const user = [claims.oid, claims.sub].find((value): value is string => typeof value === "string" && !!value);

@@ -22,6 +22,7 @@ const {
 	validateMicrosoftClient,
 	microsoftClientStatus,
 	resolveMicrosoftClient,
+	pinMicrosoftTenant,
 	startMicrosoftSignIn,
 	completeMicrosoftSignIn,
 	oauthAccessToken,
@@ -46,7 +47,7 @@ const {
 	["hashPassword", "src/lib/auth/password.ts"],
 	["setInstallEnabled", "src/lib/external-accounts/settings.ts"],
 	[
-		"saveMicrosoftClient, validateMicrosoftClient, microsoftClientStatus, resolveMicrosoftClient",
+		"saveMicrosoftClient, validateMicrosoftClient, microsoftClientStatus, resolveMicrosoftClient, pinMicrosoftTenant",
 		"src/lib/external-accounts/oauth-client.ts",
 	],
 	["startMicrosoftSignIn, completeMicrosoftSignIn", "src/lib/external-accounts/oauth-flow.ts"],
@@ -458,6 +459,90 @@ test("an account edited to sign in with a password at another provider stops bei
 	assert.equal(row.auth_kind, "password");
 	assert.equal(row.oauth_access_token, null);
 	assert.deepEqual(await accountCredential(env, { id, authKind: row.auth_kind, secret: row.secret }), {
+		password: "app-password",
+	});
+});
+
+test("a registration with a tenant domain pins the tenant of its first sign-in, and a later sign-in from another tenant is refused", async (t) => {
+	const { db, env, oauth } = await setup(t, { saveClient: false });
+	const contoso = { clientId: oauth.clientId, clientSecret: oauth.clientSecret, tenant: "contoso.com" };
+	await saveMicrosoftClient(env, contoso);
+	const firstTid = "0c0c0c0c-0000-4000-8000-000000000001";
+	const secondTid = "0d0d0d0d-0000-4000-8000-000000000002";
+	assert.equal((await resolveMicrosoftClient(env)).tenantId, undefined, "nothing pinned before a sign-in");
+
+	oauth.setAccount({ address: ADDRESS, oid: "oid-1", tid: firstTid });
+	assert.equal((await completeMicrosoftSignIn(env, owner, (await signIn(env)).params)).ok, true);
+	assert.equal((await resolveMicrosoftClient(env)).tenantId, firstTid, "the first sign-in's tenant is remembered");
+	assert.equal(
+		db.db.prepare("SELECT oauth_microsoft_client AS v FROM app_settings").get().v.includes(firstTid),
+		false,
+		"sealed",
+	);
+
+	oauth.setAccount({ address: "other@contoso.test", oid: "oid-9", tid: secondTid });
+	assert.deepEqual(
+		await completeMicrosoftSignIn(env, owner, (await signIn(env, owner, { address: "other@contoso.test" })).params),
+		{
+			ok: false,
+			reason: "no_address",
+		},
+	);
+	oauth.setAccount({ address: "third@contoso.test", oid: "oid-3", tid: firstTid });
+	assert.equal(
+		(await completeMicrosoftSignIn(env, owner, (await signIn(env, owner, { address: "third@contoso.test" })).params))
+			.ok,
+		true,
+		"the pinned tenant still signs in",
+	);
+
+	// Entering the registration again clears the pin, so a new tenant can be chosen.
+	await saveMicrosoftClient(env, contoso);
+	assert.equal((await resolveMicrosoftClient(env)).tenantId, undefined);
+});
+
+test("the pin loses to a registration saved meanwhile, and of two racing first sign-ins the winner's tenant stands", async (t) => {
+	const { env, oauth } = await setup(t, { saveClient: false });
+	const contoso = { clientId: oauth.clientId, clientSecret: oauth.clientSecret, tenant: "contoso.com" };
+	await saveMicrosoftClient(env, contoso);
+	const stale = await resolveMicrosoftClient(env);
+	const winner = "0c0c0c0c-0000-4000-8000-000000000001";
+	const loser = "0d0d0d0d-0000-4000-8000-000000000002";
+	assert.equal(await pinMicrosoftTenant(env, stale, winner), winner);
+	assert.equal(await pinMicrosoftTenant(env, stale, loser), winner, "the second reads the first's tenant back");
+	// A registration entered again between a sign-in's read and its pin is not touched by the late pin.
+	await saveMicrosoftClient(env, { ...contoso, tenant: "fabrikam.com" });
+	assert.equal(await pinMicrosoftTenant(env, stale, loser), null);
+	assert.equal((await resolveMicrosoftClient(env)).tenantId, undefined);
+	// Nothing to pin for a keyword tenant.
+	await saveMicrosoftClient(env, { ...contoso, tenant: "common" });
+	assert.equal(await pinMicrosoftTenant(env, { ...contoso, tenant: "common" }, winner), null);
+});
+
+test("a token refresh cannot store its token over the password of an account edited to use one (version or not)", async (t) => {
+	const { db, env } = await setup(t);
+	await completeMicrosoftSignIn(env, owner, (await signIn(env)).params);
+	const id = accountRow(db).id;
+	const before = await readTokenState(env, id);
+	await updateExternalAccount(env, owner, id, {
+		address: ADDRESS,
+		preset: "other",
+		mailboxId: "mailbox-a",
+		imap: { host: "outlook.office365.com", port: 993, security: "tls" },
+		smtp: null,
+		password: "app-password",
+		kitePassword: KITE_PASSWORD,
+	});
+	const after = await readTokenState(env, id);
+	assert.ok(after.version > before.version, "the version moves once the password is written");
+	const row = accountRow(db);
+	assert.equal(row.auth_kind, "password");
+	assert.equal(row.oauth_subject, null);
+	const tokens = { sealedRefreshToken: "rotated-chain", sealedAccessToken: "late", expiresAt: new Date(), scopes: "" };
+	assert.equal(await storeRefreshedTokens(env, id, before.version, tokens, new Date()), false, "an older refresh");
+	// Even one that read the current version: the account is no longer an OAuth one, so nothing is stored.
+	assert.equal(await storeRefreshedTokens(env, id, after.version, tokens, new Date()), false);
+	assert.deepEqual(await accountCredential(env, { id, authKind: row.auth_kind, secret: accountRow(db).secret }), {
 		password: "app-password",
 	});
 });

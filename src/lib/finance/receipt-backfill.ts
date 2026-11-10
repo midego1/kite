@@ -1,6 +1,6 @@
-import { and, eq, isNull, lt, or, sql } from "drizzle-orm";
+import { and, count, eq, isNull, lt, or, sql } from "drizzle-orm";
 import { getDb } from "@/db";
-import { financeReceiptBackfills } from "@/db/schema/finance";
+import { financeReceiptBackfills, financeReceipts } from "@/db/schema/finance";
 import { getEnv } from "@/lib/cloudflare";
 import { createLogger } from "@/lib/logger.mjs";
 import type { CapabilityHandler, JsonValue } from "@/lib/modules/module-types";
@@ -44,11 +44,26 @@ export function backfillView(row: BackfillRow | null): BackfillView | null {
 	};
 }
 
+/** How many of the owner's rows still hold an unresolved claim: tried, not filed, not permanently skipped. This is
+ * what "pending" means to the owner, whichever batch last touched them. */
+async function countPendingReceipts(userId: string): Promise<number> {
+	const [row] = await onReceiptTables(() =>
+		db()
+			.select({ pending: count() })
+			.from(financeReceipts)
+			.where(and(eq(financeReceipts.userId, userId), eq(financeReceipts.status, "pending"))),
+	);
+	return row?.pending ?? 0;
+}
+
+/** The owner's backfill row, with `pending` read from their unresolved receipt claims right now rather than the
+ * stored snapshot of the last batch: a row that batch counted as pending may since have been filed or skipped by
+ * the sweep or a later run, and one that a later run left pending is still counted after this one finished. */
 export async function ownerBackfill(userId: string): Promise<BackfillRow | null> {
 	const [row] = await onReceiptTables(() =>
 		db().select().from(financeReceiptBackfills).where(eq(financeReceiptBackfills.userId, userId)).limit(1),
 	);
-	return row ?? null;
+	return row ? { ...row, pending: await countPendingReceipts(userId) } : null;
 }
 
 async function enqueueBackfill(userId: string, delaySeconds?: number): Promise<boolean> {
@@ -132,26 +147,24 @@ async function leaseBackfill(userId: string, now: Date): Promise<BackfillRow | n
 async function runBatch(
 	userId: string,
 	started: number,
-): Promise<{ scanned: number; filed: number; skipped: number; pending: number; done: boolean }> {
+): Promise<{ scanned: number; filed: number; skipped: number; done: boolean }> {
 	let scanned = 0;
 	let filed = 0;
 	let skipped = 0;
-	let pending = 0;
 	const attempted = new Set<string>();
 	for (;;) {
-		if (scanned > 0 && Date.now() - started > RUN_BUDGET_MS) return { scanned, filed, skipped, pending, done: false };
+		if (scanned > 0 && Date.now() - started > RUN_BUDGET_MS) return { scanned, filed, skipped, done: false };
 		const candidates = (await receiptCandidates(BATCH_SIZE + attempted.size, userId)).filter(
 			(candidate) => !attempted.has(candidate.sourceId),
 		);
-		if (candidates.length === 0) return { scanned, filed, skipped, pending, done: true };
+		if (candidates.length === 0) return { scanned, filed, skipped, done: true };
 		for (const candidate of candidates.slice(0, BATCH_SIZE)) {
 			attempted.add(candidate.sourceId);
 			scanned += 1;
 			const outcome = await fileOneReceipt(candidate);
 			if (outcome === "filed") filed += 1;
-			else if (outcome === "pending") pending += 1;
-			else skipped += 1;
-			if (Date.now() - started > RUN_BUDGET_MS) return { scanned, filed, skipped, pending, done: false };
+			else if (outcome === "skipped") skipped += 1;
+			if (Date.now() - started > RUN_BUDGET_MS) return { scanned, filed, skipped, done: false };
 		}
 	}
 }
@@ -169,7 +182,7 @@ export const backfillReceipts: CapabilityHandler = async (raw): Promise<JsonValu
 	const started = Date.now();
 	const row = await leaseBackfill(userId, new Date(started));
 	if (!row) return { scanned: 0 };
-	let progress: { scanned: number; filed: number; skipped: number; pending: number; done: boolean };
+	let progress: { scanned: number; filed: number; skipped: number; done: boolean };
 	try {
 		progress = await runBatch(userId, started);
 	} catch (error) {
@@ -187,9 +200,8 @@ export const backfillReceipts: CapabilityHandler = async (raw): Promise<JsonValu
 			scanned: row.scanned + progress.scanned,
 			filed: row.filed + progress.filed,
 			skipped: row.skipped + progress.skipped,
-			// A snapshot of this batch, not a running total: a row counted pending here may already have been
-			// retried (filed or permanently skipped) by the time the next batch runs, once its lease passes.
-			pending: progress.pending,
+			// Only a snapshot for the stored row: `ownerBackfill` reads the live count of unresolved claims.
+			pending: await countPendingReceipts(userId),
 			leaseUntil: null,
 			updatedAt: now,
 			...(progress.done ? { status: "done" as const, finishedAt: now } : {}),

@@ -1,3 +1,4 @@
+import { isSearchEmbedMessage, processEmbeddingBatch } from "@/lib/semantic/indexer";
 import { processAgentTriageJob } from "./auto-read/process";
 import { isAssistantEmailQueueMessage, processAssistantEmailRequest } from "./email/process";
 import { processLineSummaryJob } from "./summaries/line-job";
@@ -6,8 +7,8 @@ import { dispatchAgentJob } from "./queue-utils";
 import { isStyleBackfillMessage, processStyleBackfill } from "./writing-style";
 
 /**
- * Runs an `agent.draft`, `agent.triage`, `agent.line_summary`, `agent.style_backfill` or `agent.assistant_email`
- * queue body; false means the body is something else, such as an IMAP import.
+ * Runs an `agent.draft`, `agent.triage`, `agent.line_summary`, `agent.style_backfill`, `agent.assistant_email` or
+ * `search.embed` queue body; false means the body is something else, such as an IMAP import.
  */
 export async function processAgentQueueMessage(env: CloudflareEnv, body: unknown): Promise<boolean> {
 	if (isStyleBackfillMessage(body)) {
@@ -16,6 +17,10 @@ export async function processAgentQueueMessage(env: CloudflareEnv, body: unknown
 	}
 	if (isAssistantEmailQueueMessage(body)) {
 		await processAssistantEmailRequest(env, body.requestId);
+		return true;
+	}
+	if (isSearchEmbedMessage(body)) {
+		await processEmbeddingBatch(env);
 		return true;
 	}
 	return dispatchAgentJob(body, {

@@ -29,6 +29,9 @@ const DEV_ONLY_VARS = [
 	"KITE_TELEMETRY_URL",
 	// Only so the e2e server can save storage credentials; a real install sets it as a secret or in .dev.vars.
 	"APP_ENCRYPTION_KEY",
+	// `wrangler dev` has no local Vectorize emulation without remote access; this switches search by meaning to the
+	// D1-backed brute-force test store for npm run dev and e2e.
+	"SEMANTIC_TEST_STORE",
 ] as const;
 
 export default defineConfig(({ command }) => ({

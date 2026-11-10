@@ -12,6 +12,7 @@ import { adoptLegacyDatabaseFile } from "./data-files";
 import { adoptQueueMessages, openQueue, type InProcessQueue } from "./queue";
 import { RealtimeHubRegistry } from "./realtime";
 import { openSqliteDatabase, type SqliteDatabase } from "./sqlite-database";
+import { SqliteVectorStore } from "./sqlite-vector-store";
 import { createTcpConnect } from "./tcp-connect";
 import type { NodeRuntime } from "./types";
 
@@ -72,6 +73,11 @@ export function createNodeRuntime(): NodeRuntime {
 		AI_MODEL: optional("AI_MODEL"),
 		AI_BASE_URL: optional("AI_BASE_URL"),
 		AI_API_KEY: optional("AI_API_KEY"),
+		// Needed on Node for the Workers AI REST API path of embeddings (docs/specs/semantic-search.md section 4.2);
+		// mailerConfig() above reads its own copy for the Cloudflare Email Sending REST API.
+		CF_ACCOUNT_ID: optional("CF_ACCOUNT_ID"),
+		// A separate SQLite file, never the main database, so backups and the D1 schema stay untouched.
+		VECTORS: new SqliteVectorStore(join(dataDir, "vectors.sqlite")),
 		REALTIME: realtime.namespace(),
 		ASSETS: openAssets(publicDir),
 		IMAGES: undefined as unknown as CloudflareEnv["IMAGES"],

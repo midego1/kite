@@ -421,6 +421,36 @@ const SHOTS: Shot[] = [
 		},
 	},
 	{
+		// Admin → Agent → Search by meaning, on and partway through an indexing backfill (the progress is faked for a clean demo).
+		name: "2026-11-08-semantic-search-admin-light",
+		theme: "light",
+		viewport: { width: 1000, height: 900 },
+		open: async (page) => {
+			await page.route("**/api/admin/semantic-search", (route) =>
+				route.fulfill({
+					json: {
+						ready: true,
+						settings: {
+							enabled: true,
+							embeddingProvider: null,
+							compatibleBaseUrl: null,
+							backfillCursor: { createdAt: 1, id: "m0" },
+							backfillPaused: false,
+							backfillCapShare: 50,
+						},
+						counts: { pending: 140, running: 0, indexed: 860, skipped: 12, failed: 0, eligibleUnqueued: 0 },
+						estimatedCostUsd: 0.02,
+					},
+				}),
+			);
+			await page.goto("/agent#semantic-search");
+			const card = page.getByTestId("semantic-search-admin-settings");
+			await expect(card).toBeVisible();
+			await card.scrollIntoViewIfNeeded();
+			return card;
+		},
+	},
+	{
 		// Admin overview → the "Get started" checklist, part done and part not (the state is faked for a clean demo).
 		name: "2026-11-07-onboarding-checklist-light",
 		theme: "light",

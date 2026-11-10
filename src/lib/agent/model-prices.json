@@ -551,6 +551,14 @@
 			"asOf": "2026-10-28"
 		},
 		{
+			"id": "@cf/baai/bge-m3",
+			"provider": "cloudflare",
+			"input": 0.0118,
+			"output": 0,
+			"source": "https://developers.cloudflare.com/workers-ai/platform/pricing/",
+			"asOf": "2026-10-26"
+		},
+		{
 			"id": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
 			"provider": "cloudflare",
 			"input": 0.293,

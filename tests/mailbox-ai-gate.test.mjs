@@ -64,6 +64,9 @@ const AI_SDK_IMPORTERS = [
 	"src/lib/agent/summaries/line-job.ts",
 	"src/lib/agent/summaries/model-answer.ts",
 	"src/lib/ai/usage-types.d.ts",
+	// Only for the shared `LanguageModelUsage` shape, to settle an embedding spend reservation through the same
+	// `reconcileAiSpend` every other source uses; it never selects or calls a model.
+	"src/lib/semantic/spend.ts",
 ];
 
 /** `from "x"`, `import("x")`, `require("x")` and `export ... from "x"`, whatever the binding is called. */
@@ -90,11 +93,18 @@ test("only the listed files import the AI SDK, under any name", () => {
 	assert.deepEqual(importers.sort(), [...AI_SDK_IMPORTERS].sort(), "a new AI SDK importer: review it and list it here");
 });
 
+// Search by meaning (docs/specs/semantic-search.md) embeds mail text with Workers AI, never through a `LanguageModel`
+// (it is not chat, so `getAgentModel` does not apply): `embedding.ts` is its own model-selection file, gated instead
+// by the mailbox and install checks in `indexer.ts`/`backfill.ts` (never an AI-off mailbox, never enqueued for one)
+// and the external-provider opt-in (`resolvedEmbeddingProviderKind` plus `externalProviderRefused`) before a
+// compatible endpoint is ever asked to embed anything.
+const MODEL_SELECTION_FILES = [MODEL_FILE, "src/lib/semantic/embedding.ts"];
+
 test("the Workers AI binding is only checked for presence outside the model selection", () => {
 	const use = /\.AI\b|\[\s*["'`]AI["'`]\s*\]|\{[^}]*\bAI\b[^}]*\}\s*=\s*env\b/;
 	const presence = /!!?env\.AI\b(?!\.)|if \(env\.AI\)/;
 	const offenders = files.flatMap((file) =>
-		file === MODEL_FILE
+		MODEL_SELECTION_FILES.includes(file)
 			? []
 			: read(file)
 					.split("\n")

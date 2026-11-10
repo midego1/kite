@@ -548,6 +548,18 @@ scheduled backup retained for at least that long stays part of the guidance once
 - **Audit log.** `attachments.storage_job_started`, `attachments.storage_job_resumed` and `attachments.storage_job_cancelled`, with the job id and direction.
 - **`ATTACHMENT_STORAGE_TEST_HOOKS` (dev and test only).** Lets a start carry `testCrashAfter`, which makes the job's next batch die after that many items without recording anything, as a killed isolate would. `node scripts/attachment-storage-check.mjs` uses it against `npm run dev` to check that a killed materialize and reclaim converge. Ignored when `NODE_ENV` is `production`.
 
+### Search by meaning
+
+**Admin → Agent → Search by meaning** (`src/components/agent/semantic-search-admin-settings.tsx`, `GET`/`PUT`/`POST /api/admin/semantic-search`), primary admin only, `docs/specs/semantic-search.md`. Off by default.
+
+- **Drain.** `processEmbeddingBatch` (`src/lib/semantic/indexer.ts`) claims up to 32 `pending` rows (or `running` rows whose lease expired) from `message_embeddings`, re-checks eligibility, embeds the still-eligible ones under one spend reservation and upserts their vectors. Triggered by `{ kind: "search.embed" }` on `AGENT_QUEUE` after a message is stored or sent (cheap and idempotent), and by up to 4 batches per cron tick on Workers (`*/5 * * * *`) and 2 per tick on Node (every minute).
+- **Backfill.** `runSemanticBackfillTick` (`src/lib/semantic/backfill.ts`) inserts `pending` rows for up to 5,000 more eligible messages per tick, newest first from `app_settings.semantic_backfill_cursor`, gated by `semantic_backfill_cap_share` of the install's daily spend cap (new mail is not gated this way: it keeps being indexed until the full cap). **Pause the backfill** in Admin stops only this; live indexing continues.
+- **Rebuild index** sets every row of a mailbox that is still allowed (`semantic_index` on, `ai_disabled` off) back to `pending`; a row whose content hash has not changed since it was last indexed is skipped at no cost, so a rebuild after a quiet period is usually cheap.
+- **Clear stale vectors** removes vectors with no matching `message_embeddings` row, for an index left with orphans after a restore into a different database. Only the stores with a real table to list support this (Node's `data/vectors.sqlite`, the dev/e2e test store); Vectorize's binding cannot list its own vectors, so this answers unsupported on Workers.
+- **Tombstones.** A deleted message's vectors are queued in `message_embedding_deletes` by a database trigger and drained (`deleteByIds`, up to 1,000 per run) at the end of every drain batch, whether or not anything was claimed.
+- **The vector store.** Workers uses the `VECTORIZE` binding (index `kite-messages`, created once by hand before the binding ships — section 10 of the spec); Node uses a brute-force, int8-quantised store over `data/vectors.sqlite`, never the main database.
+- **Audit log.** `search.semantic_enabled`, `search.semantic_disabled`, `search.semantic_rebuild`, `search.semantic_clear_stale` (install actions) and `search.mailbox_semantic_index` (the per-mailbox switch).
+
 ### Import jobs
 
 IMAP imports (`src/lib/import/`) run as `import.imap` messages on the agent queue, one run of up to 200 messages or four minutes at a time, and hand the job on to the next message. A run may take longer than its budget by one IMAP command (up to ten minutes), so the capability timeout is 14 minutes, just under the 15-minute limit of a queue invocation. A run holds its job through a lease (`import_jobs.lease_until`): only a run that finds the lease empty or expired can claim the job, and jobs on the same source account run one at a time.

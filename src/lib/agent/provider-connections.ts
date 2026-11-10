@@ -2,6 +2,7 @@ import { and, asc, eq, sql, type SQL } from "drizzle-orm";
 import { getDb } from "@/db";
 import { appSettings } from "@/db/schema";
 import { agentProviders } from "@/db/schema/agent-providers";
+import { insertRow } from "@/lib/db/pending-columns";
 import { newId } from "@/lib/ids";
 import { isNoSuchTableError } from "@/lib/modules/state-utils";
 import { openSetting, SecretBoxError } from "@/lib/security/secret-box";
@@ -191,7 +192,11 @@ export async function activeAgentProviderChangedAt(env: CloudflareEnv): Promise<
 	}
 }
 
-/** Before migration 0077 the one provider lives in `app_settings`, as it always did. */
+/**
+ * Before migration 0077 the one provider lives in `app_settings`, as it always did. Creating the row and updating
+ * it are two steps (`insertRow`, then an update naming only these columns) so a later migration's new columns (a
+ * schema a deploy can run ahead of) never turn a plain insert's full column list into a missing-column error.
+ */
 export async function saveLegacyAgentProvider(env: CloudflareEnv, values: AgentProviderValues): Promise<void> {
 	const set = {
 		agentProvider: values.provider,
@@ -202,10 +207,9 @@ export async function saveLegacyAgentProvider(env: CloudflareEnv, values: AgentP
 		agentModelRates: values.modelRates,
 		updatedAt: new Date(),
 	};
-	await getDb(env)
-		.insert(appSettings)
-		.values({ id: AGENT_SETTINGS_ID, ...set })
-		.onConflictDoUpdate({ target: appSettings.id, set });
+	const db = getDb(env);
+	await insertRow(db, appSettings, { id: AGENT_SETTINGS_ID }, { ignoreConflict: true });
+	await db.update(appSettings).set(set).where(eq(appSettings.id, AGENT_SETTINGS_ID));
 }
 
 /** Turns `id` on and every other row off in one statement; it changes nothing when `id` does not exist. */

@@ -766,6 +766,13 @@ export const appSettings = sqliteTable("app_settings", {
 	alertWebhookKind: text("alert_webhook_kind", { enum: ["slack", "discord", "ntfy", "json"] }),
 	/** abuse.ch Auth-Key saved by the owner, sealed with APP_ENCRYPTION_KEY; a URLHAUS_AUTH_KEY or ABUSE_CH_AUTH_KEY secret wins. */
 	abuseChAuthKey: text("abuse_ch_auth_key"),
+	// Migration 0099 adds seven `semantic_*` columns for search by meaning (enabled, embedding provider, the
+	// compatible endpoint's URL and sealed key, the backfill cursor, pause and cap share). Deliberately not mapped
+	// here, for the same reason as `attachment_storage_job` below: Drizzle names every mapped column in an INSERT, so
+	// every one of the many unrelated settings saves elsewhere that insert a fresh `app_settings` row (resend key,
+	// agent settings, general settings, AWS config, SES and Resend receiving, the alert webhook, the abuse.ch key,
+	// branding) would fail before the migration ran. `src/lib/semantic/install-settings.ts` reads and writes them
+	// with plain SQL.
 	// Migration 0090 adds `attachment_storage_job` (JSON: the admin attachment storage job). It is deliberately not
 	// mapped here: Drizzle names every mapped column in an INSERT, so every settings save would fail until the
 	// migration ran. Only `src/lib/email/attachment-storage-jobs.ts` reads and writes it, with plain SQL.

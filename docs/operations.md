@@ -496,16 +496,26 @@ reusing it on its own store (a sweep batch that outlived its cursor still moves 
 migration purge. The cleanup therefore keeps that window far inside the claim (review of #479, `M1`):
 `confirmLeftoverClaim` extends the claim to 15 minutes, the delete is only sent if no more than 30 seconds have
 passed since the confirm was sent (otherwise the copy is kept as `lease_lost`), and on a configured S3 store the
-delete request itself is aborted after 30 seconds. What remains is a delete the object store executes more than
-14 minutes after it was sent, which no runtime here produces (the R2 binding and the Node file bucket cannot take a
-deadline, but neither queues a request for minutes). `tests/storage-cold-leftovers.test.mjs` runs every other
+delete request itself is aborted after 30 seconds. An abort is only the client giving up: the store may still apply
+the delete. So when the delete throws, for a timeout or any other error, the cleanup does not end its claim; the
+key stays claimed until the 15-minute expiry the confirm set (a key with no row keeps the claim row naming the
+other copy), and every other deleter answers busy until then (review 2 of #479, `B1`). What remains is a delete
+the object store applies more than about 14 minutes after it was sent, which no runtime here produces (the R2
+binding and the Node file bucket cannot take a deadline, but neither queues a request for minutes). `tests/storage-cold-leftovers.test.mjs` runs every other
 interleaving: a mover (to a third store, or onto the leftover's own store from a batch the cleanup cannot see), a
 migration purge, a migration dropping the row and a second cleanup injected at each step of the cleanup with its
 lease live or lapsed, the cleanup injected at each step of a mover and of a purge, and a cleanup that stalls after
 its confirm while a second cleanup deletes the other copy.
 
-The live copy must also hold the same bytes, not just as many (`m2`): equal ETags on both stores, or else, for
-objects up to 8 MiB, equal SHA-256 digests; anything that cannot be confirmed is kept as `unverified`.
+The live copy must also hold the same bytes, not just as many (`m2`): ETags that are both single-part MD5s (32 hex
+digits, no `-N`) and equal, or else, for objects up to 8 MiB, equal SHA-256 digests of both, streamed; anything that
+cannot be confirmed is kept as `unverified`. One common case therefore never qualifies: a Drive file larger than
+8 MiB was uploaded in parts, so its ETag on one store ends in `-N` while a cold copy made with a single PUT has a
+plain MD5, and its leftover stays `unverified`. The bytes are safe either way; it only costs storage, and while such
+a leftover is tracked its store cannot be deleted (`LEFTOVERS_ONLY`). To delete that store anyway, first confirm the
+files are readable in Drive, then delete the leftover objects (or empty the bucket) at the provider and run
+**Delete leftovers** on the store once more: a leftover whose copy is gone is cleared without a delete, after which
+the store can be deleted.
 
 `deleteStore` is refused while a rule still targets the store, `object_locations` still names it, or a sweep
 still in flight targets it (`coldReferenceBlocking`), and then, checked last, while leftover candidates are on it

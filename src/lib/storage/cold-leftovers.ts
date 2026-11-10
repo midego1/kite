@@ -1,6 +1,7 @@
 import { readRestoreJob } from "@/lib/backups/restore-job-store";
 import { isActiveRestore } from "@/lib/backups/restore-job-utils";
 import { missingColumnFromError } from "@/lib/auth/user-lookup-utils";
+import { createHash } from "node:crypto";
 import { createLogger } from "@/lib/logger.mjs";
 import { createAuditLog } from "@/lib/mailboxes/audit";
 import { isNoSuchTableError } from "@/lib/modules/state-utils";
@@ -43,6 +44,8 @@ const MANUAL_LEFTOVER_LIMIT = 50;
 const AUTOMATIC_LEFTOVER_LIMIT = 25;
 
 const seconds = (date: Date) => Math.floor(date.getTime() / 1000);
+/** Claims whose object delete threw: not ended, so they run out at the expiry the confirm set (`B1`). */
+const claimsHeldToExpiry = new WeakSet<LeftoverClaim>();
 /** How long after its final check (`confirmLeftoverClaim`, which extends the claim to 15 minutes) a delete may still
  * be issued, and how long that delete may take: both far inside the claim, so a stalled cleanup gives up instead of
  * deleting a copy another deleter may by then have relied on (review of #479, `M1`). */
@@ -292,10 +295,18 @@ async function deleteUnderClaim(
 	if (!(await confirmLeftoverClaim(env, candidate.key, claim))) return "lease_lost";
 	if (Date.now() - confirmedFrom > CONFIRM_TO_DELETE_MS) return "lease_lost";
 	// A store's own client honours the deadline; the R2 binding and the Node file bucket ignore the option.
-	await (store.bucket as { delete(key: string, options?: { timeoutMs?: number }): Promise<void> }).delete(
-		candidate.key,
-		{ timeoutMs: DELETE_TIMEOUT_MS },
-	);
+	try {
+		await (store.bucket as { delete(key: string, options?: { timeoutMs?: number }): Promise<void> }).delete(
+			candidate.key,
+			{ timeoutMs: DELETE_TIMEOUT_MS },
+		);
+	} catch (error) {
+		// A delete that timed out or failed may still land later (an abort is only the client giving up), so the
+		// key stays claimed until the 15-minute expiry the confirm set, instead of being handed to the next deleter
+		// right away, which would rely on this copy (review 2 of #479, `B1`).
+		claimsHeldToExpiry.add(claim);
+		throw error;
+	}
 	const dropped = await dropCandidateUnderClaim(env, candidate.id, candidate.key, claim);
 	if (dropped && dropLocation) await dropLocationUnderClaim(env, candidate.key, claim);
 	log.info("storage.cold_leftover_deleted", {
@@ -306,19 +317,36 @@ async function deleteUnderClaim(
 	return "deleted";
 }
 
-const etagOf = (head: { etag?: string | null }) => (head.etag ?? "").replace(/^W\//, "").replace(/"/g, "").trim();
+/** A single-part MD5 ETag (32 hex digits, no `-N` part count), the only form that is the object's own digest. */
+function md5Etag(head: { etag?: string | null }): string | null {
+	const etag = (head.etag ?? "").replace(/^W\//, "").replace(/"/g, "").trim().toLowerCase();
+	return /^[0-9a-f]{32}$/.test(etag) ? etag : null;
+}
 
-async function sha256Of(store: ObjectStore, key: string): Promise<string | null> {
+/** The SHA-256 of an object, streamed, or null when it is missing, has no body or turns out larger than `limit`. */
+async function sha256Of(store: ObjectStore, key: string, limit: number): Promise<string | null> {
 	const object = await store.bucket.get(key);
-	if (!object || !("arrayBuffer" in object)) return null;
-	const digest = await crypto.subtle.digest("SHA-256", await object.arrayBuffer());
-	return Buffer.from(digest).toString("hex");
+	if (!object || !("body" in object) || !object.body || object.size > limit) return null;
+	const hash = createHash("sha256");
+	let read = 0;
+	const reader = (object.body as ReadableStream<Uint8Array>).getReader();
+	try {
+		for (;;) {
+			const { done, value } = await reader.read();
+			if (done) break;
+			read += value.byteLength;
+			if (read > limit) return null;
+			hash.update(value);
+		}
+	} finally {
+		await reader.cancel().catch(() => undefined);
+	}
+	return hash.digest("hex");
 }
 
 /**
  * Whether the live copy holds the leftover's bytes, not just as many of them (review of #479, `m2`): equal ETags
- * across the two stores (an MD5, or the same multipart layout of MD5s), or else, for an object small enough, equal
- * SHA-256 digests of both. Anything that cannot be confirmed keeps the leftover (`unverified`).
+ * that are both single-part MD5s, or else, for an object small enough, equal SHA-256 digests of both, streamed. Anything that cannot be confirmed keeps the leftover (`unverified`).
  */
 async function sameBytes(
 	store: ObjectStore,
@@ -327,9 +355,13 @@ async function sameBytes(
 	own: { etag?: string | null; size: number },
 	copy: { etag?: string | null; size: number },
 ): Promise<boolean> {
-	if (etagOf(own) && etagOf(own) === etagOf(copy)) return true;
+	const ownMd5 = md5Etag(own);
+	if (ownMd5 && ownMd5 === md5Etag(copy)) return true;
 	if (own.size > HASH_COMPARE_MAX_BYTES) return false;
-	const [mine, theirs] = await Promise.all([sha256Of(store, key), sha256Of(other, key)]);
+	const [mine, theirs] = await Promise.all([
+		sha256Of(store, key, HASH_COMPARE_MAX_BYTES),
+		sha256Of(other, key, HASH_COMPARE_MAX_BYTES),
+	]);
 	return !!mine && mine === theirs;
 }
 
@@ -443,7 +475,7 @@ async function settleLeftover(context: Context, candidate: Candidate): Promise<L
 	try {
 		return await settleUnderClaim(context, store, candidate, claim, driveStore);
 	} finally {
-		await endLeftoverClaim(env, candidate.key, claim);
+		if (!claimsHeldToExpiry.has(claim)) await endLeftoverClaim(env, candidate.key, claim);
 	}
 }
 

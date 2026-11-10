@@ -903,6 +903,83 @@ test("a cleanup that stalls after its confirm keeps its copy, which a second cle
 	await assertReadable(env, KEY, CONTENT, "after both cleanups");
 });
 
+/**
+ * A delete on sto_c that the client gives up on (a timeout) without it having landed yet; `land()` applies it later,
+ * as a slow store would after the abort.
+ */
+async function slowDeleteOnStoC(env) {
+	const bucket = (await getStorage(env)).store("sto_c").bucket;
+	const original = bucket.delete.bind(bucket);
+	let pending = null;
+	bucket.delete = async (key, options) => {
+		bucket.delete = original;
+		pending = key;
+		assert.equal(options?.timeoutMs, 30_000, "the delete carries its deadline");
+		throw new DOMException("The operation was aborted due to timeout", "TimeoutError");
+	};
+	return {
+		land: async () => {
+			assert.ok(pending, "the delete was sent");
+			await original(pending);
+		},
+	};
+}
+
+for (const variant of ["the same run", "a second cleanup"]) {
+	test(`a delete that times out keeps the key claimed, so a late landing never takes the last copy (${variant}, review 2 of #479, B1)`, async (t) => {
+		const { env } = await setup(t);
+		addMessageRow(env, "m", KEY);
+		routeTo(env, "mail", "sto_c");
+		await put(env, "sto_c", KEY, CONTENT);
+		await put(env, "default", KEY, CONTENT);
+		// sto_c's leftover is settled first (the queue is ordered by when each was last looked at).
+		markLeftover(env, "sto_c", KEY, { orphanedAt: NOW - 31 * DAY });
+		markLeftover(env, "default", KEY);
+		const slow = await slowDeleteOnStoC(env);
+		if (variant === "the same run") {
+			const run = await cleanup(env);
+			assert.deepEqual(run.kept, { error: 1, busy: 1 }, JSON.stringify(run));
+		} else {
+			assert.deepEqual((await cleanup(env, { storeId: "sto_c" })).kept, { error: 1 });
+			assert.deepEqual((await cleanup(env, { storeId: "default" })).kept, { busy: 1 }, "the key is still claimed");
+		}
+		const claim = location(env, KEY);
+		assert.equal(claim.store_id, "default", "the held claim names the copy that stays");
+		assert.ok(claim.claimed_until >= NOW + 14 * 60, "held to the confirm's 15-minute expiry");
+		await slow.land();
+		assert.equal(await has(env, "sto_c", KEY), false);
+		await assertReadable(env, KEY, CONTENT, "after the late delete landed");
+
+		// Once the claim has run out, the next cleanup finds the default copy is the only one and keeps it.
+		lapse(env, KEY);
+		const later = await cleanup(env, { days: 1 });
+		assert.equal(later.deleted, 0, JSON.stringify(later));
+		assert.equal(await has(env, "default", KEY), true);
+		await assertReadable(env, KEY, CONTENT, "after the next cleanup");
+	});
+}
+
+test("the final check holds the key for 15 minutes, well past the 30-second limit for issuing and finishing the delete", async (t) => {
+	const { env } = await setup(t);
+	addMessageRow(env, "m", KEY);
+	await put(env, "sto_d", KEY, CONTENT);
+	setLocation(env, KEY, "sto_d");
+	await put(env, "sto_c", KEY, CONTENT);
+	markLeftover(env, "sto_c", KEY);
+	let claimedUntil = null;
+	const fired = onStatementAfter(env, "claimed_until >= ? AND store_id = ?", async () => {
+		claimedUntil = location(env, KEY).claimed_until;
+	});
+	const run = await cleanup(env);
+	assert.equal(fired(), true);
+	assert.equal(run.deleted, 1);
+	const now = Math.floor(Date.now() / 1000);
+	assert.ok(
+		claimedUntil >= now + 14 * 60 && claimedUntil <= now + 15 * 60 + 5,
+		`claimed_until ${claimedUntil - now}s ahead`,
+	);
+});
+
 // Round 9's two probes, both of which lost every copy then (B6): the cleanup outside, a mover inside it.
 for (const lapsed of [false, true]) {
 	test(`B6 probe A: a sweep mover inside the cleanup of a row-less key whose leftover is gone keeps a copy (lease ${lapsed ? "lapsed" : "live"})`, async (t) => {

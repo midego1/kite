@@ -14,7 +14,7 @@ export type PendingEmbeddingRow = { id: string; mailboxId: string; queuedAt: Dat
 const INSERT_CHUNK_SIZE = 16;
 
 /** Whether `error` is the missing `message_embeddings.origin` column of a database that has not applied 0110. */
-export function isMissingOriginColumn(error: unknown): boolean {
+function isMissingOriginColumn(error: unknown): boolean {
 	return missingColumnFromError(error) === "origin";
 }
 

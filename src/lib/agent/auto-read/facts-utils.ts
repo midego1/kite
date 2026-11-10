@@ -90,7 +90,7 @@ function authResult(signals: Set<string>, method: (typeof AUTH_METHODS)[number])
 
 /**
  * Whether Kite's `authPassed` rule is satisfied: a DMARC pass, or a DKIM pass aligned with the From domain
- * (`metadata.aligned`), with no authentication failure. SPF is not required: a DMARC pass already implies an
+ * (`metadata.aligned`), with no authentication failure. A DMARC pass whose `header.from` names another domain does not count. SPF is not required: a DMARC pass already implies an
  * aligned SPF or DKIM pass (RFC 7489), so a failed SPF check of a forwarded message does not undo it, and DKIM
  * alone counts only for the From domain's own signature (any domain can sign its mail, including a hostile one).
  *
@@ -103,7 +103,12 @@ export function authPassedFromSignals(signals: readonly RawAuthSignal[]): boolea
 	const ids = parseSignalIds(signals);
 	const authFailed = AUTH_METHODS.some((method) => ids.has(`${method}_failed`));
 	const dkimAligned = signals.some((signal) => signal.id === "dkim_passed" && signal.metadata?.aligned === true);
-	return ids.has("dmarc_passed") || (!authFailed && dkimAligned);
+	// A pass for another domain than the From domain (`headerFrom: "mismatch"`) is no pass for this sender. One that
+	// names no domain (SES) or was stored before the check existed still counts.
+	const dmarcPassed = signals.some(
+		(signal) => signal.id === "dmarc_passed" && signal.metadata?.headerFrom !== "mismatch",
+	);
+	return dmarcPassed || (!authFailed && dkimAligned);
 }
 
 /** `text/calendar` (any parameters), `application/ics`, or a `.ics` filename. */

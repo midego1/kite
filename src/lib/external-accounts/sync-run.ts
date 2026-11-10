@@ -5,10 +5,10 @@ import { getEmailAddress } from "@/lib/email/address";
 import { parseRawHeaders } from "@/lib/email/raw-headers";
 import { imapLimits, type ImapMessageSummary } from "@/lib/imap/protocol-utils";
 import { openImapSession, type ImapSession } from "@/lib/imap/session";
+import { credentialSecrets, CredentialUnavailableError, imapSignInRefused, withAccountCredential } from "./credential";
 import type { ImapFetchedMessage, ImapLimits } from "@/lib/imap/types";
 import { createLogger } from "@/lib/logger.mjs";
 import { MailServerRefusedError } from "@/lib/net/errors";
-import { openSetting, SecretBoxError } from "@/lib/security/secret-box";
 import { shortServerText } from "./connection-utils";
 import { assertMailServerHost } from "@/lib/net/host-guard";
 import type { ExternalAccountRow } from "./serialize-utils";
@@ -71,39 +71,45 @@ export type RunOptions = {
 /** How long before its lease runs out a run stops, so it never outlives it (another run may take over then). */
 const LEASE_MARGIN_MS = 2 * 60_000;
 
-/** Signs in with the saved password, opened only for this run. */
+/**
+ * Signs in with the saved password, or an OAuth account's access token, opened only for this run. A refused cached
+ * token is refreshed once (`withAccountCredential`); a sign-in that cannot be renewed stops the account (Reconnect).
+ */
 export async function openSession(
 	env: CloudflareEnv,
 	account: ExternalAccountRow,
 	limits: Partial<ImapLimits> | undefined,
 ): Promise<ImapSession> {
-	let password: string | null;
-	try {
-		password = await openSetting(env, account.secret);
-	} catch (error) {
-		if (error instanceof SecretBoxError)
-			throw new SyncRefusedError("The saved password can no longer be opened. Reconnect the account.", "auth");
-		throw error;
-	}
-	if (!password)
-		throw new SyncRefusedError("The saved password is no longer available. Reconnect the account.", "auth");
 	await assertMailServerHost(env, account.imapHost, account.imapPort);
 	try {
-		return await openImapSession(
+		return await withAccountCredential(
 			env,
-			{
-				host: account.imapHost,
-				port: account.imapPort,
-				security: account.imapSecurity,
-				username: account.username,
-				password,
+			account,
+			async (credential) => {
+				try {
+					return await openImapSession(
+						env,
+						{
+							host: account.imapHost,
+							port: account.imapPort,
+							security: account.imapSecurity,
+							username: account.username,
+							...credential,
+						},
+						limits,
+					);
+				} catch (error) {
+					// A server that echoes the password or token back must not get it into the account's error text.
+					if (error instanceof Error)
+						for (const secret of credentialSecrets(credential)) error.message = error.message.split(secret).join("•••");
+					throw error;
+				}
 			},
-			limits,
+			imapSignInRefused,
 		);
 	} catch (error) {
-		// A server that echoes the password back must not get it into the account's error text.
-		if (error instanceof Error && password && error.message.includes(password))
-			error.message = error.message.split(password).join("•••");
+		if (error instanceof CredentialUnavailableError)
+			throw new SyncRefusedError(error.message, error.kind === "auth" ? "auth" : "transient");
 		throw error;
 	}
 }

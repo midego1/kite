@@ -10,7 +10,11 @@ export function getMessageListColumns(): MessageListColumns {
 	) as MessageListColumns;
 }
 
-/** Select one newest matching message per thread before applying pagination. */
+/**
+ * Select one newest matching message per thread before applying pagination. Timestamps are whole seconds, so
+ * messages of one thread that arrive within the same second are told apart by insertion order (`rowid`), not by
+ * their random ids: the one stored last is the conversation's row.
+ */
 export async function loadConversationPage({
 	db,
 	where,
@@ -24,7 +28,7 @@ export async function loadConversationPage({
 			id: messages.id,
 			createdAt: messages.createdAt,
 			position:
-				sql<number>`row_number() over (partition by ${threadKey} order by ${messages.createdAt} desc, ${messages.id} desc)`.as(
+				sql<number>`row_number() over (partition by ${threadKey} order by ${messages.createdAt} desc, ${messages}.rowid desc)`.as(
 					"position",
 				),
 		})

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link2, Plus } from "lucide-react";
 import { useSelectedMailbox } from "@/components/mailbox-provider";
@@ -13,6 +13,7 @@ import { useConfirm } from "@/components/ui/confirm-dialog";
 import { List, ListRow, ListRowDetail, ListRowTitle } from "@/components/ui/list";
 import { Notice } from "@/components/ui/notice";
 import { EmptyState, PageHeader } from "@/components/ui/page";
+import { oauthResultMessage } from "@/lib/external-accounts/oauth-result-utils";
 import type { ExternalAccountView } from "@/lib/external-accounts/types";
 import { AccountFormDialog } from "./account-form-dialog";
 import { AccountSending } from "./account-sending";
@@ -55,6 +56,17 @@ export function ConnectedAccountsSettings() {
 	});
 	const [editing, setEditing] = useState<Editing>(null);
 	const [notice, setNotice] = useState<{ text: string; accountId?: string; tone?: "success" | "warning" } | null>(null);
+	// Back from Microsoft's sign-in (`?oauth=…`): say how it went once, after mount (the server render has no address
+	// bar), then drop the query. Both happen in the same frame, so a remounted effect still finds the query.
+	useEffect(() => {
+		const result = oauthNoticeFromLocation();
+		if (!result) return;
+		const frame = requestAnimationFrame(() => {
+			setNotice(result);
+			window.history.replaceState(null, "", window.location.pathname);
+		});
+		return () => cancelAnimationFrame(frame);
+	}, []);
 	const refresh = () => {
 		// The composer's From menu lists connected addresses, so the mailbox list follows every change here.
 		window.dispatchEvent(new Event(MAILBOXES_CHANGED_EVENT));
@@ -74,7 +86,7 @@ export function ConnectedAccountsSettings() {
 		<div className="space-y-6">
 			<PageHeader
 				title="Connected accounts"
-				description="Connect a Gmail, iCloud, Fastmail, Yahoo or other IMAP account: Kite checks its Inbox for new mail every few minutes, can import the mail already there and can send as its address."
+				description="Connect a Gmail, Outlook.com or Microsoft 365, iCloud, Fastmail, Yahoo or other IMAP account: Kite checks its Inbox for new mail every few minutes, can import the mail already there and can send as its address."
 				actions={
 					allowed && (
 						<Button onClick={() => setEditing({ account: null })}>
@@ -99,6 +111,7 @@ export function ConnectedAccountsSettings() {
 					onOpenChange={(open) => !open && setEditing(null)}
 					account={editing.account}
 					presets={data.presets}
+					microsoftSignIn={!!data.oauth?.microsoft}
 					onForwardInstead={showForwarding}
 					onMailboxLeftBehind={(address) => {
 						setNotice({
@@ -123,6 +136,15 @@ export function ConnectedAccountsSettings() {
 			)}
 		</div>
 	);
+}
+
+/** The notice for a return from Microsoft's sign-in, read from the address bar. */
+function oauthNoticeFromLocation(): { text: string; accountId?: string; tone: "success" | "warning" } | null {
+	const result = oauthResultMessage(new URLSearchParams(window.location.search));
+	if (!result) return null;
+	return result.tone === "success"
+		? { text: result.text, accountId: result.accountId ?? undefined, tone: "success" }
+		: { text: result.text, tone: "warning" };
 }
 
 function ConnectedNotice({

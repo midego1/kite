@@ -15,7 +15,7 @@ import type { PlannedImportFolder } from "./folder-mapping-types";
 const DIRECT_IMPORT_BYTES = 32 * 1024 * 1024;
 
 type ImapImportEnv = Parameters<typeof openImapSession>[0];
-type ImapAccount = Pick<ImapImportInput, "host" | "port" | "secure" | "username" | "password">;
+type ImapAccount = Pick<ImapImportInput, "host" | "port" | "secure" | "username" | "password" | "accessToken">;
 
 /**
  * Signs in to the source account of an import (`secure` off means STARTTLS, never plain text). With a `guard` (the
@@ -31,6 +31,7 @@ export function openImportSession(env: ImapImportEnv, input: ImapAccount, signal
 				security: imapSecurity(input.secure),
 				username: input.username,
 				password: input.password,
+				...(input.accessToken ? { accessToken: input.accessToken } : {}),
 			},
 			{ signal },
 		);

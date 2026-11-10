@@ -431,6 +431,8 @@ async function importSource(
 	if (!job.externalAccountId) return { refused: "The account was removed" };
 	// Core reads the job's owner and account itself; the module never names an account in the background.
 	const answer = await moduleHost.accounts.sourceLogin(ctx, "import", { jobId: job.id });
+	// Microsoft could not renew the sign-in just now: the run fails like an unreachable server and is tried again.
+	if (!answer.ok && answer.reason === "unavailable") throw new Error(answer.message);
 	if (!answer.ok) return { refused: answer.message };
 	const { login } = answer;
 	return {
@@ -438,7 +440,8 @@ async function importSource(
 		port: login.port,
 		secure: login.security === "tls",
 		username: login.username,
-		password: login.auth.password,
+		password: login.auth.kind === "password" ? login.auth.password : "",
+		...(login.auth.kind === "xoauth2" ? { accessToken: login.auth.accessToken } : {}),
 	};
 }
 

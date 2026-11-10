@@ -20,19 +20,29 @@ export function redactedErrorMessage(error: unknown, secrets: readonly string[] 
 	return message;
 }
 
+/** What to do when an OAuth account's token is refused (spec §15.1): sign in again, or ask the organisation's admin. */
+const OAUTH_SIGN_IN_HINT =
+	"Reconnect to sign in with Microsoft again. For a work or school account, an administrator may have to allow IMAP and SMTP AUTH for the mailbox.";
+
 /**
  * Sorts a failed connection test. `refused` is Kite's own refusal (a private host, no TLS, no password sign-in), and
- * `secrets` are removed from the text in case a server echoed one back.
+ * `secrets` are removed from the text in case a server echoed one back. `oauth` words a refused sign-in for an
+ * account that signs in with Microsoft instead of a password.
  */
 export function classifyConnectionError(
 	error: unknown,
-	options: { refused: boolean; secrets?: readonly string[] },
+	options: { refused: boolean; secrets?: readonly string[]; oauth?: boolean },
 ): ConnectionProblem {
 	const message = redactedErrorMessage(error, options.secrets);
 	const text = shortServerText(message);
 	if (options.refused) return { kind: "refused", message: text };
 	if (/sign-in failed|AUTHENTICATIONFAILED|AUTHORIZATIONFAILED|invalid credentials|LOGIN failed/i.test(message))
-		return { kind: "auth", message: `Sign-in failed. Check the user name and the (app) password. ${text}`.trim() };
+		return {
+			kind: "auth",
+			message: options.oauth
+				? shortServerText(`Sign-in failed. ${OAUTH_SIGN_IN_HINT} ${text}`)
+				: `Sign-in failed. Check the user name and the (app) password. ${text}`.trim(),
+		};
 	if (/certificate|TLS|SSL|handshake|self[- ]signed|CERT_|ERR_TLS/i.test(message))
 		return { kind: "tls", message: text };
 	return { kind: "unreachable", message: text };

@@ -116,7 +116,7 @@ Phases 1 to 3 are specified in [docs/specs/external-accounts.md](docs/specs/exte
 | iCloud, Yahoo, AOL, Fastmail | App-specific password | Yes |
 | Other IMAP hosts | Account password | Yes |
 | Google Workspace | OAuth. Password sign-in ended in 2025; app passwords work only where the admin allows them | Partly |
-| Outlook.com and Microsoft 365 | OAuth only. Microsoft retired password sign-in for IMAP (Outlook.com in 2024) | No |
+| Outlook.com and Microsoft 365 | OAuth only. Microsoft retired password sign-in for IMAP (Outlook.com in 2024) | Yes, with **Sign in with Microsoft** once the owner registers the install's Entra app (item 4) |
 | Proton Mail | Proton Mail Bridge, which runs on the user's own computer and cannot be reached from a Worker | No, out of scope |
 
 Google treats full Gmail access (`https://mail.google.com/`) as a restricted scope: a public app needs Google's verification and a yearly security assessment. Kite does not ship one shared Google app. Each install registers its own in Google Cloud, which needs no verification when it is internal to a Workspace organisation or used by a few test users.
@@ -139,6 +139,7 @@ Google treats full Gmail access (`https://mail.google.com/`) as a restricted sco
    - Sign in with Microsoft (Outlook.com and Microsoft 365) or Google, then use XOAUTH2 for IMAP and SMTP. Refresh tokens are encrypted with `APP_ENCRYPTION_KEY` like the other stored secrets.
    - Admin settings take the client ID and secret of the install's own app registration, with setup steps in `docs/providers.md`.
    - Test: unit tests for the XOAUTH2 string and token refresh; manual check against a real test account, since CI has no provider credentials.
+   - **Microsoft: built (November 2026, migration 0105).** Admin → General → Connected accounts → Microsoft sign-in takes the Entra registration (checked with Microsoft, sealed; `MICROSOFT_OAUTH_*` variables win); **Sign in with Microsoft** in the connect dialog uses the authorization-code flow with PKCE and a single-use state; tokens are renewed before they expire with compare-and-swap, a revoked sign-in shows **Reconnect**; sync, import, send-as and Test connection sign in with XOAUTH2 on Workers and Node. Tests: `tests/external-oauth.test.mjs`, `tests/external-oauth-node.test.mjs`, `e2e/100-microsoft-oauth.spec.ts` against `tests/support/fake-microsoft-oauth.mjs`. Still open: a check against a real Outlook.com and Microsoft 365 account, and Google.
 
 **Two-way sync is opt-in and bounded.** Mirroring reads, moves and deletes back to the provider is a per-account choice ([Two-way sync](docs/external-accounts.md#two-way-sync), since November 2026): it polls like the rest of sync, needs no always-open connection, and stops at the settings it lists instead of mirroring every folder.
 

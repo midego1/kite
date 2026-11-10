@@ -22,6 +22,16 @@ function aligned(entry: AuthenticationResult, fromDomain: string): boolean {
 }
 
 /**
+ * Whether the DMARC result names the From domain as `header.from` (`match`), another domain (`mismatch`: a pass for
+ * a domain the message only mentions), or none (`absent`: SES, whose verdict is for the From header it saw).
+ */
+function headerFromState(entry: AuthenticationResult, fromDomain: string): "match" | "mismatch" | "absent" {
+	const headerFrom = entry.properties["header.from"]?.trim().toLowerCase().replace(/\.$/, "");
+	if (!headerFrom) return "absent";
+	return headerFrom === fromDomain.toLowerCase().replace(/\.$/, "") ? "match" : "mismatch";
+}
+
+/**
  * The result that speaks for each method. SPF: the `smtp.mailfrom` check, since Cloudflare also
  * reports the HELO check first, else one that is not a HELO check. DKIM: a pass from any signature,
  * else a failure. DMARC: the first one.
@@ -60,7 +70,9 @@ export function analyzeAuthentication(trusted: string | null | undefined, fromDo
 				reason: `${method.toUpperCase()} authentication passed`,
 				...(method === "dkim"
 					? { metadata: { aligned: entries.some((entry) => aligned(entry, fromDomain.toLowerCase())) } }
-					: {}),
+					: method === "dmarc"
+						? { metadata: { headerFrom: headerFromState(entries[0]!, fromDomain) } }
+						: {}),
 			});
 		if (result === "fail")
 			signals.push({
@@ -70,4 +82,24 @@ export function analyzeAuthentication(trusted: string | null | undefined, fromDo
 			});
 	}
 	return signals;
+}
+
+/**
+ * The From domain when the sender authenticated as it, else null: a DMARC pass whose `header.from` is that domain
+ * (a pass that names none, or another domain the message mentions, does not count), or an aligned
+ * DKIM pass with no failed check. Like `authPassed` in the automatic-reading facts, plus the `header.from` check.
+ */
+export function authenticatedSenderDomain(
+	trusted: string | null | undefined,
+	signals: readonly SpamSignal[],
+	fromDomain: string,
+): string | null {
+	const from = fromDomain.toLowerCase().replace(/\.$/, "");
+	if (!trusted || !from) return null;
+	const dmarc = parseAuthenticationResults(trusted).results.find((entry) => entry.method === "dmarc");
+	const headerFrom = dmarc?.properties["header.from"]?.trim().toLowerCase().replace(/\.$/, "");
+	const dmarcPassed = dmarc?.result === "pass" && headerFrom === from;
+	const failed = signals.some((signal) => signal.id.endsWith("_failed"));
+	const dkimAligned = signals.some((signal) => signal.id === "dkim_passed" && signal.metadata?.aligned === true);
+	return dmarcPassed || (!failed && dkimAligned) ? from : null;
 }

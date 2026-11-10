@@ -9,7 +9,7 @@ import { parseSizeCursor, sizeProgress } from "@/lib/import/folder-size-utils";
 import { importServerProblem } from "@/lib/import/imap";
 import { importSignInGuard, SignInLimitError, signInLimitResponse } from "@/lib/import/sign-in-limit";
 import { withModule } from "@/lib/modules/route-guard";
-import { resolveImportSource } from "../../connected-account";
+import { resolveImportSource, sourceAccessToken } from "../../connected-account";
 import type { ImapFolderListRequest } from "../../imap/folders/types";
 import { parseImapFolderListRequest } from "../../imap/folders/utils";
 
@@ -35,7 +35,7 @@ export const POST = withModule("import", async (request, { checkUser }) => {
 	try {
 		const resolved = await resolveImportSource(auth.user, await readJsonBody<SizesRequest>(request, 16 * 1024));
 		if ("error" in resolved) return resolved.error;
-		input = parseImapFolderListRequest(resolved.body);
+		input = parseImapFolderListRequest(resolved.body, sourceAccessToken(resolved.source));
 		if (typeof resolved.body.folder !== "string" || !resolved.body.folder.trim())
 			throw new Error("A folder is required");
 		folder = resolved.body.folder;

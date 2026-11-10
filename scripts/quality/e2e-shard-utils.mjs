@@ -15,7 +15,7 @@ export function parseShard(value) {
 
 /**
  * `E2E_PAIR=2/10` → slices 3 and 4 of 20: each of the ten jobs runs two slices side by side, on ports far enough
- * apart that the fakes derived from them (E2E_PORT + 95 to 97) stay clear of the other slice.
+ * apart that the fakes derived from them (E2E_PORT + 94 to 97) stay clear of the other slice.
  */
 export function pairSlices(value, basePort = 3200) {
 	const { current, total } = parseShard(value);

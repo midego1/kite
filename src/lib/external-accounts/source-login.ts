@@ -4,8 +4,8 @@ import { externalAccounts } from "@/db/schema/external-accounts";
 import { importJobs } from "@/db/schema/import-jobs";
 import type { HostSourceLogin, HostSourceLoginRequest } from "@/lib/modules/host-types";
 import type { CapabilityCallContext, ModuleId } from "@/lib/modules/module-types";
-import { openSetting, SecretBoxError } from "@/lib/security/secret-box";
 import { CONNECT_REFUSAL_TEXT, connectRefusal } from "./access";
+import { accountCredential, CredentialUnavailableError } from "./credential";
 import { externalAccountTablesReady } from "./errors";
 
 const REMOVED: HostSourceLogin = { ok: false, reason: "removed", message: "The account was removed" };
@@ -45,8 +45,9 @@ async function resolveTarget(
 
 /**
  * `moduleHost.accounts.sourceLogin` (spec §9.2): the login of a connected account for one run of an import from it,
- * for the import module only, after checking whose account it is and that it may be used. The password is opened
- * here and returned to the caller only; nothing is copied into the job, so removing the account stops it.
+ * for the import module only, after checking whose account it is and that it may be used. The password (or a current
+ * OAuth access token) is opened here and returned to the caller only; nothing is copied into the job, so removing the
+ * account stops it.
  */
 export async function externalSourceLogin(
 	env: CloudflareEnv,
@@ -62,7 +63,9 @@ export async function externalSourceLogin(
 	const db = getDb(env);
 	const [account] = await db
 		.select({
+			id: externalAccounts.id,
 			address: externalAccounts.address,
+			authKind: externalAccounts.authKind,
 			imapHost: externalAccounts.imapHost,
 			imapPort: externalAccounts.imapPort,
 			imapSecurity: externalAccounts.imapSecurity,
@@ -78,30 +81,29 @@ export async function externalSourceLogin(
 	if (refusal) return { ok: false, reason: "not_allowed", message: CONNECT_REFUSAL_TEXT[refusal] };
 	if (!account.secret || account.status === "auth_failed" || account.status === "disabled")
 		return reconnect(account.address);
-	let password: string | null;
+	let credential: Awaited<ReturnType<typeof accountCredential>>;
 	try {
-		password = await openSetting(env, account.secret);
+		credential = await accountCredential(env, account);
 	} catch (error) {
-		if (!(error instanceof SecretBoxError)) throw error;
+		if (!(error instanceof CredentialUnavailableError)) throw error;
+		// Microsoft could not be reached: the run stops and the job tries again, the account stays as it is.
+		if (error.kind === "transient") return { ok: false, reason: "unavailable", message: error.message };
 		await db
 			.update(externalAccounts)
-			.set({
-				status: "auth_failed",
-				lastError: "The saved password can no longer be opened. Reconnect the account.",
-				updatedAt: new Date(),
-			})
+			.set({ status: "auth_failed", lastError: error.message, updatedAt: new Date() })
 			.where(eq(externalAccounts.id, target.accountId));
 		return reconnect(account.address);
 	}
-	if (!password) return reconnect(account.address);
-	return {
-		ok: true,
-		login: {
-			host: account.imapHost,
-			port: account.imapPort,
-			security: account.imapSecurity,
-			username: account.username,
-			auth: { kind: "password", password },
-		},
+	const login = {
+		host: account.imapHost,
+		port: account.imapPort,
+		security: account.imapSecurity,
+		username: account.username,
 	};
+	if (credential.accessToken)
+		return {
+			ok: true,
+			login: { ...login, auth: { kind: "xoauth2", user: account.username, accessToken: credential.accessToken } },
+		};
+	return { ok: true, login: { ...login, auth: { kind: "password", password: credential.password } } };
 }

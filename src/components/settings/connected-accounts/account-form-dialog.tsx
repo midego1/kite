@@ -23,7 +23,10 @@ import {
 	emptyAccountForm,
 	SYNC_INTERVAL_OPTIONS,
 	saveAccount,
+	startMicrosoftSignIn,
+	usesMicrosoftSignIn,
 } from "./connected-accounts-utils";
+import { MicrosoftLogo, MicrosoftSignInFields } from "./microsoft-sign-in";
 
 type FieldsProps = { form: AccountFormState; setForm: (form: AccountFormState) => void };
 
@@ -31,13 +34,15 @@ const mailboxAddress = (mailbox: MailboxOption) => `${mailbox.localPart}@${mailb
 
 /**
  * Connect an account, or edit one (`account` set). A known provider brings its own servers; "Other" asks for them.
- * The Kite password is asked again because the account's password is saved (spec §11.5).
+ * The Kite password is asked again because the account's password is saved (spec §11.5). Microsoft accounts sign in
+ * with Microsoft instead (`microsoftSignIn`, spec §15): the dialog sends the browser to Microsoft's sign-in page.
  */
 export function AccountFormDialog({
 	open,
 	onOpenChange,
 	account,
 	presets,
+	microsoftSignIn = false,
 	onSaved,
 	onForwardInstead,
 	onMailboxLeftBehind,
@@ -46,6 +51,8 @@ export function AccountFormDialog({
 	onOpenChange: (open: boolean) => void;
 	account: ExternalAccountView | null;
 	presets: PresetOption[];
+	/** The owner set up Sign in with Microsoft, so Microsoft accounts can be connected. */
+	microsoftSignIn?: boolean;
 	/** Closes the dialog and opens the forwarding guide at this provider (where connecting is not possible). */
 	onForwardInstead?: (provider: ForwardingProviderId) => void;
 	/** `unusedMailbox`: the address of a mailbox Kite created for this try that the account was not connected to. */
@@ -60,7 +67,7 @@ export function AccountFormDialog({
 	);
 	// The mailboxes may arrive after the dialog opened; until one is chosen, the first one the user manages is used.
 	const chosenId = firstId(draft.mailboxId, managed[0]?.id);
-	const [saving, setSaving] = useState<"mailbox" | "account" | "delete" | null>(null);
+	const [saving, setSaving] = useState<"mailbox" | "account" | "delete" | "microsoft" | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	// With no mailbox to choose from (a new account of someone who may create mailboxes) the new mailbox is the choice.
 	const fresh = useNewMailbox({
@@ -80,6 +87,7 @@ export function AccountFormDialog({
 	};
 	const preset = presets.find((entry) => entry.id === form.preset);
 	const editing = !!account;
+	const microsoft = usesMicrosoftSignIn(form.preset, account, microsoftSignIn);
 	const { created } = fresh;
 	const mailbox = managed.find((entry) => entry.id === form.mailboxId);
 
@@ -114,6 +122,10 @@ export function AccountFormDialog({
 		// From here on the dialog stands on the new mailbox, so a second try reuses it instead of making another.
 		const connecting = target ? { ...form, mailboxId: target.id } : form;
 		if (target) setForm(connecting);
+		if (microsoft && !editing) {
+			await signInWithMicrosoft(connecting);
+			return;
+		}
 		setSaving("account");
 		try {
 			const saved = await saveAccount(account, connecting);
@@ -124,6 +136,18 @@ export function AccountFormDialog({
 		} catch (submitError) {
 			setError(errorText(submitError, "Could not save the account"));
 		} finally {
+			setSaving(null);
+		}
+	}
+
+	/** Opens Microsoft's sign-in page; the callback brings the browser back to Connected accounts. */
+	async function signInWithMicrosoft(source: AccountFormState, accountId?: string) {
+		setSaving("microsoft");
+		setError(null);
+		try {
+			window.location.assign(await startMicrosoftSignIn(source, accountId));
+		} catch (startError) {
+			setError(errorText(startError, "Could not start the Microsoft sign-in"));
 			setSaving(null);
 		}
 	}
@@ -147,8 +171,8 @@ export function AccountFormDialog({
 				<DialogHeader>
 					<DialogTitle>{editing ? `Edit ${account.address}` : "Connect an account"}</DialogTitle>
 					<DialogDescription>
-						Kite signs in to the account over an encrypted connection and saves the password encrypted. Nothing at the
-						provider is changed.
+						Kite signs in to the account over an encrypted connection and saves{" "}
+						{microsoft ? "its Microsoft sign-in" : "the password"} encrypted. Nothing at the provider is changed.
 					</DialogDescription>
 				</DialogHeader>
 				<form onSubmit={(event) => void submit(event)} className="space-y-4" aria-label="Account settings">
@@ -166,22 +190,19 @@ export function AccountFormDialog({
 						/>
 					</div>
 					<ProviderFields form={form} setForm={setForm} presets={presets} preset={preset} />
-					{preset?.passwordSignIn === false && onForwardInstead && (
-						<Notice tone="warning" compact icon={false} role="none">
-							Forward this account&apos;s mail to Kite instead: it needs no password.{" "}
-							<button
-								type="button"
-								className="font-medium underline underline-offset-2"
-								onClick={() => onForwardInstead(forwardingProviderFor(preset.id))}
-							>
-								Set up forwarding
-							</button>
-						</Notice>
-					)}
-					{form.preset === "other" && <ServerFields form={form} setForm={setForm} />}
-					{preset?.passwordSignIn !== false && (
-						<CredentialFields form={form} setForm={setForm} preset={preset} editing={editing} />
-					)}
+					<SignInFields
+						form={form}
+						setForm={setForm}
+						preset={preset}
+						editing={editing}
+						microsoft={microsoft}
+						onForwardInstead={onForwardInstead}
+						reconnect={
+							account?.authKind === "oauth_microsoft"
+								? { busy: saving !== null, onClick: () => void signInWithMicrosoft(form, account.id) }
+								: null
+						}
+					/>
 					<MailboxField form={form} setForm={setForm} mailboxes={managed} fresh={fresh} />
 					<IntervalField form={form} setForm={setForm} />
 					{mailbox?.type === "shared" && (
@@ -206,14 +227,75 @@ export function AccountFormDialog({
 						</Button>
 						<Button
 							type="submit"
-							disabled={saving !== null || !!fresh.problem || !canSubmitAccountForm(form, editing, preset)}
+							disabled={saving !== null || !!fresh.problem || !canSubmitAccountForm(form, editing, preset, microsoft)}
 						>
-							{submitLabel(saving, editing)}
+							<SubmitLabel saving={saving} editing={editing} microsoft={microsoft} />
 						</Button>
 					</div>
 				</form>
 			</DialogContent>
 		</Dialog>
+	);
+}
+
+/** The submit button's text, with Microsoft's logo while it reads Sign in with Microsoft. */
+function SubmitLabel({
+	saving,
+	editing,
+	microsoft,
+}: {
+	saving: Parameters<typeof submitLabel>[0];
+	editing: boolean;
+	microsoft: boolean;
+}) {
+	return (
+		<>
+			{microsoft && !editing && saving === null && <MicrosoftLogo />}
+			{submitLabel(saving, editing, microsoft)}
+		</>
+	);
+}
+
+/**
+ * How the account signs in: the servers ("Other"), the password fields, Sign in with Microsoft, or, for a Microsoft
+ * account on a Kite without Microsoft sign-in, the offer to forward its mail instead.
+ */
+function SignInFields({
+	form,
+	setForm,
+	preset,
+	editing,
+	microsoft,
+	onForwardInstead,
+	reconnect,
+}: FieldsProps & {
+	preset: PresetOption | undefined;
+	editing: boolean;
+	microsoft: boolean;
+	onForwardInstead?: (provider: ForwardingProviderId) => void;
+	reconnect: { busy: boolean; onClick: () => void } | null;
+}) {
+	return (
+		<>
+			{preset?.passwordSignIn === false && !microsoft && onForwardInstead && (
+				<Notice tone="warning" compact icon={false} role="none">
+					{form.preset === "microsoft" && "Microsoft sign-in is not set up on this Kite yet; ask your admin. "}
+					Forward this account&apos;s mail to Kite instead: it needs no password.{" "}
+					<button
+						type="button"
+						className="font-medium underline underline-offset-2"
+						onClick={() => onForwardInstead(forwardingProviderFor(preset.id))}
+					>
+						Set up forwarding
+					</button>
+				</Notice>
+			)}
+			{form.preset === "other" && <ServerFields form={form} setForm={setForm} />}
+			{preset?.passwordSignIn !== false && (
+				<CredentialFields form={form} setForm={setForm} preset={preset} editing={editing} />
+			)}
+			{microsoft && <MicrosoftSignInFields form={form} setForm={setForm} reconnect={reconnect} />}
+		</>
 	);
 }
 

@@ -181,6 +181,9 @@ const INTERNAL_TABLES = [
 	// The bookkeeping of "Recheck authentication" on a connected account (migration 0100): a cursor over that
 	// account's own mail, meaningless in another database.
 	"external_account_auth_rechecks",
+	// Sign-ins with Microsoft in progress (migration 0105): single-use, gone after 10 minutes, and tied to this
+	// install's sessions, so a restore must never bring one back.
+	"oauth_states",
 	// The bookkeeping of "Save receipts for existing payments" (migration 0102): a cursor over this
 	// database's own finance rows, meaningless in another database.
 	"finance_receipt_backfills",

@@ -5,6 +5,7 @@ import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { authFetch } from "@/lib/auth/client";
+import { MicrosoftSignInForm } from "./microsoft-sign-in-form";
 
 type InstallSwitch = {
 	enabled: boolean;
@@ -77,15 +78,17 @@ export function ConnectedAccountsCard() {
 				</div>
 				{data && <p data-connected-accounts-status>{switchText(data)}</p>}
 				<p>
-					Users can connect a Gmail, iCloud, Fastmail, Yahoo or other IMAP account and import its mail without typing
-					the password each time. Kite stores the password encrypted with APP_ENCRYPTION_KEY, never shows it again and
-					leaves it out of backups. You can take the permission away per user under Accounts → Permissions.
+					Users can connect a Gmail, iCloud, Fastmail, Yahoo or other IMAP account (and, with Microsoft sign-in below,
+					an Outlook.com or Microsoft 365 account) and import its mail without typing the password each time. Kite
+					stores the password encrypted with APP_ENCRYPTION_KEY, never shows it again and leaves it out of backups. You
+					can take the permission away per user under Accounts → Permissions.
 				</p>
 				{error && (
 					<p role="alert" className="text-red-600">
 						{error}
 					</p>
 				)}
+				<MicrosoftSignInForm />
 			</CardContent>
 		</Card>
 	);

@@ -15,6 +15,9 @@ import { createServer as createTlsServer, TLSSocket } from "node:tls";
  * - `starttls`: offer STARTTLS on a plain connection (port 143 style).
  * - `injectAfterStartTls`: bytes sent right after the STARTTLS OK, before the handshake (a downgrade attack).
  * - `authPlain`, `saslIr`: advertise `AUTH=PLAIN` and `SASL-IR`.
+ * - `accessTokens`: `{ [username]: token }` (the caller's object, so a test can revoke one); advertises `AUTH=XOAUTH2`
+ *   and takes `AUTHENTICATE XOAUTH2`, answering a refused token as Microsoft and Google do: a `+` continuation with base64
+ *   JSON (`{"status":"401",…}`), then `NO` once the client answers it.
  * - `loginDisabledWithoutTls`: advertise `LOGINDISABLED` and refuse sign-in until the connection is encrypted.
  * - `greetingCapabilities`: put `[CAPABILITY …]` in the greeting (default true).
  * - `specialUse`: advertise SPECIAL-USE and report `folderAttributes` (`{ [name]: ["\\Sent"] }`) in LIST.
@@ -165,6 +168,7 @@ export async function startFakeImap(options = {}) {
 			if (!state.encrypted && options.starttls) list.push("STARTTLS");
 			if (!state.encrypted && options.loginDisabledWithoutTls) list.push("LOGINDISABLED");
 			if (options.authPlain) list.push("AUTH=PLAIN");
+			if (options.accessTokens) list.push("AUTH=XOAUTH2");
 			if (options.saslIr) list.push("SASL-IR");
 			if (state.authenticated && options.specialUse) list.push("SPECIAL-USE");
 			if (state.authenticated && options.statusSize) list.push("STATUS=SIZE");
@@ -219,6 +223,26 @@ export async function startFakeImap(options = {}) {
 			send(`${tag} OK [CAPABILITY ${capabilities()}] Signed in\r\n`);
 		};
 
+		/** XOAUTH2 (`user=…^Aauth=Bearer …^A^A`): OK for a known token, else the error continuation. */
+		const xoauth2 = (tag, token) => {
+			const fields = Object.fromEntries(
+				Buffer.from(token, "base64")
+					.toString("utf8")
+					.split("\x01")
+					.filter(Boolean)
+					.map((field) => [field.slice(0, field.indexOf("=")), field.slice(field.indexOf("=") + 1)]),
+			);
+			const bearer = /^Bearer (.+)$/.exec(fields.auth ?? "")?.[1];
+			if (bearer && options.accessTokens[fields.user] === bearer && !nextLoginFails) {
+				state.authenticated = true;
+				return send(`${tag} OK [CAPABILITY ${capabilities()}] AUTHENTICATE completed\r\n`);
+			}
+			nextLoginFails = false;
+			state.xoauthError = tag;
+			const error = Buffer.from(JSON.stringify({ status: "401", schemes: "bearer", scope: "imap" })).toString("base64");
+			send(`+ ${error}\r\n`);
+		};
+
 		const plain = (tag, token) => {
 			const [, username, password] = Buffer.from(token, "base64").toString("utf8").split("\0");
 			signIn(tag, username, password);
@@ -226,8 +250,17 @@ export async function startFakeImap(options = {}) {
 
 		function respond(line) {
 			commands.push({ line, encrypted: state.encrypted });
+			if (state.xoauthError) {
+				const tag = state.xoauthError;
+				state.xoauthError = null;
+				return send(`${tag} NO AUTHENTICATE failed.\r\n`);
+			}
 			if (state.pendingAuth) {
 				const tag = state.pendingAuth;
+				if (state.pendingMechanism === "XOAUTH2") {
+					state.pendingAuth = null;
+					return xoauth2(tag, line.trim());
+				}
 				if (line.trim() === "*") {
 					state.pendingAuth = null;
 					return send(`${tag} BAD Authentication cancelled\r\n`);
@@ -273,9 +306,17 @@ export async function startFakeImap(options = {}) {
 			}
 			if (name === "AUTHENTICATE") {
 				const [mechanism, token] = args.split(" ");
-				if (mechanism?.toUpperCase() !== "PLAIN" || !options.authPlain) return send(`${tag} NO unsupported\r\n`);
+				const kind = mechanism?.toUpperCase();
+				if (kind === "XOAUTH2" && options.accessTokens) {
+					if (token) return xoauth2(tag, token);
+					state.pendingAuth = tag;
+					state.pendingMechanism = "XOAUTH2";
+					return send("+ \r\n");
+				}
+				if (kind !== "PLAIN" || !options.authPlain) return send(`${tag} NO unsupported\r\n`);
 				if (token) return plain(tag, token);
 				state.pendingAuth = tag;
+				state.pendingMechanism = "PLAIN";
 				return send("+ \r\n");
 			}
 			if (!state.authenticated) return send(`${tag} BAD sign in first\r\n`);

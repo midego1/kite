@@ -1,14 +1,16 @@
 import { Parser } from "htmlparser2";
-import { linkTextMismatch } from "./link-host-utils";
+import { linkVerdict, type LinkVerdict } from "./link-host-utils";
 
 /**
- * Whether an anchor's visible address (a URL or a bare hostname) names a different site than its
- * destination, without parsing more than the URL scan limit.
+ * The worst thing the anchors' visible addresses (a URL or a bare hostname) say about their destinations,
+ * without parsing more than the URL scan limit: `mismatch` when one names a different site than its
+ * destination, else `sender_tracked` when one is the authenticated sender's own tracked link (`senderDomain`,
+ * see `linkVerdict`), else null.
  */
-export function hasDisplayedLinkMismatch(html: string): boolean {
+export function displayedLinkFinding(html: string, senderDomain?: string | null): Exclude<LinkVerdict, "ok"> | null {
 	let href: string | undefined;
 	let text = "";
-	let mismatch = false;
+	let finding: Exclude<LinkVerdict, "ok"> | null = null;
 	const parser = new Parser(
 		{
 			onopentag(name, attributes) {
@@ -22,7 +24,8 @@ export function hasDisplayedLinkMismatch(html: string): boolean {
 			},
 			onclosetag(name) {
 				if (name !== "a") return;
-				if (href && linkTextMismatch(href, text)) mismatch = true;
+				const verdict = href ? linkVerdict(href, text, senderDomain) : "ok";
+				if (verdict === "mismatch" || (verdict === "sender_tracked" && finding === null)) finding = verdict;
 				href = undefined;
 				text = "";
 			},
@@ -30,5 +33,5 @@ export function hasDisplayedLinkMismatch(html: string): boolean {
 		{ decodeEntities: true },
 	);
 	parser.end(html.slice(0, 250_000));
-	return mismatch;
+	return finding;
 }

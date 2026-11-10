@@ -15,7 +15,7 @@ import { createAccountJobResponse } from "./account";
 import { resolveServer } from "./server-check";
 import type { AccountImportJobRequest, ImapImportJobRequest } from "./types";
 import { withModule } from "@/lib/modules/route-guard";
-import { jobSourceFields, resolveImportSource, type ConnectedSource } from "../connected-account";
+import { jobSourceFields, resolveImportSource, type ConnectedSource, sourceAccessToken } from "../connected-account";
 
 export const GET = withModule("import", async (request, { checkUser }) => {
 	const env = getEnv();
@@ -52,7 +52,7 @@ export const POST = withModule("import", async (request, { checkUser }) => {
 		({ body, source } = resolved);
 		if ((body as { scope?: string }).scope === "account")
 			return await createAccountJobResponse(env, request, user, body as unknown as AccountImportJobRequest, source);
-		input = parseImapImportRequest(body);
+		input = parseImapImportRequest(body, sourceAccessToken(source));
 	} catch (error) {
 		const status = error instanceof RequestBodyTooLargeError ? 413 : 400;
 		return Response.json({ error: error instanceof Error ? error.message : "Invalid IMAP import request" }, { status });

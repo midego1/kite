@@ -10,6 +10,7 @@ import {
 	isUrlShortener,
 	linkHostsOf,
 	linkTextMismatch,
+	linkVerdict,
 	registrableDomain,
 	sameRegistrableDomain,
 	summarizeLinks,
@@ -173,10 +174,118 @@ test("a click tracker counts as the destination it carries, not as a different s
 	);
 	assert.equal(linkTextMismatch("https://abc.awstrack.me/L0/%E0%A4%A", "example.com"), true, "undecodable");
 	assert.equal(
+		linkTextMismatch("https://abc.awstrack.me/L0/https:%2F%2Fexample.com%2F%E0%A4%A/1/0100abc", "example.com"),
+		false,
+		"a bad escape after a readable destination",
+	);
+	assert.equal(
 		linkTextMismatch("https://evil.test/?next=https://example.com/", "example.com"),
 		true,
 		"only known trackers count as carrying a destination",
 	);
+});
+
+test("a transparent tracker is judged by the first address in it, however the address is written", () => {
+	const flagged = (path, senderDomain = "bank.com") =>
+		linkVerdict(`https://abc.r.us-east-1.awstrack.me/L0/${path}`, "bank.com", senderDomain) === "mismatch";
+	const evil = "https:%2F%2Flogin.evil.test%2F";
+	assert.equal(flagged(`${evil}/1/%E0%A4%A`), true, "a malformed escape elsewhere hides nothing");
+	assert.equal(flagged(`${evil}%3Fx=%`), true, "a stray percent sign");
+	assert.equal(flagged("https:%252F%252Flogin.evil.test%252F"), true, "escaped twice");
+	assert.equal(flagged("https:%255C%255Clogin.evil.test%255C"), true, "backslashes, escaped twice");
+	assert.equal(flagged("https:%5C%5Clogin.evil.test%5C"), true, "backslashes");
+	assert.equal(flagged("https:\\\\login.evil.test\\"), true, "literal backslashes");
+	assert.equal(flagged("%2F%2Flogin.evil.test%2F"), true, "scheme-relative");
+	assert.equal(flagged("https:%2Flogin.evil.test%2F"), true, "one slash");
+	assert.equal(flagged("https%3A%2F%2Fbank.com%40login.evil.test%2F"), true, "user info naming the shown site");
+	assert.equal(flagged("https:%2F%2Flogin.evil.test%2F%3Fr%3Dhttps:%2F%2Fbank.com"), true, "only the first counts");
+	assert.equal(flagged("/1/0100abc"), true, "an empty destination");
+	assert.equal(flagged("opaque-token", null), true, "nothing carried, unauthenticated");
+	assert.equal(flagged("https:%2F%2Fwww.bank.com%2Flogin%3Fn%3D1/1/0100abc"), false, "the shown site");
+	assert.equal(flagged("https:%2F%2Fbank.com%2Fa%2F/1/%E0%A4%A"), false, "the shown site, a malformed escape");
+	assert.equal(flagged("%2F%2Fwww.bank.com%2Flogin"), false, "scheme-relative, the shown site");
+	assert.equal(flagged("https%253A%252F%252Fbank.com%252F"), false, "escaped twice, the shown site");
+});
+
+test("a transparent tracker's own authority is never scanned for a destination", () => {
+	const user = "https://u%2F%2Fbank.com%2F@a1.awstrack.me/L0/https:%2F%2Fevil.test%2F/1/x";
+	assert.equal(linkVerdict(user, "bank.com", "bank.com"), "mismatch", "user-info naming the shown site");
+	assert.equal(linkVerdict("https://bank.com%40x@a1.awstrack.me/L0/opaque", "bank.com", "bank.com"), "mismatch");
+	assert.equal(linkVerdict("https://a1.awstrack.me/L0/https:%2F%2Fwww.bank.com%2F/1/x", "bank.com"), "ok");
+});
+
+test("an opaque tracker never vouches for the text: an address in its link only makes the verdict stricter", () => {
+	const sendgrid = "https://u1.ct.sendgrid.net/ls/click?upn=TOKEN";
+	// Decoys that name the shown site: no sender, and no authenticated sender of another domain, gets a pass.
+	for (const href of [
+		`${sendgrid}&r=https%3A%2F%2Fwww.bank.com`,
+		`${sendgrid}&r=https://www.bank.com`,
+		`${sendgrid}#https://bank.com`,
+		`${sendgrid}//bank.com`,
+		"https://abc.hubspotlinks.com/Ctc/x?u=https://bank.com",
+		"https://click.pstmrk.it/3s/TOKEN?x=//www.bank.com",
+		"https://u%2F%2Fbank.com%2F@u1.ct.sendgrid.net/ls/click?upn=TOKEN",
+		"https://mandrillapp.com/track/click/30000000/evil.test?p=eyJ&u=https://bank.com",
+		"https://x.sparkpostmail.com/f/a/QkFTRTY0/x?r=https://www.bank.com",
+		"https://x.list-manage.com/track/click?u=1&id=2&e=https://bank.com",
+	]) {
+		assert.equal(linkVerdict(href, "bank.com"), "mismatch", `${href} (no sender)`);
+		assert.equal(linkVerdict(href, "bank.com", "attacker.test"), "mismatch", `${href} (another sender)`);
+	}
+	// An authenticated sender showing its own site keeps the allowance, with or without such an address.
+	for (const href of [
+		sendgrid,
+		`${sendgrid}&r=https://www.bank.com`,
+		"https://x.list-manage.com/track/click?u=1&id=2",
+		"https://x.mandrillapp.com/track/click?p=1",
+		"https://x.sparkpostmail.com/f/a/xyz",
+	])
+		assert.equal(linkVerdict(href, "bank.com", "bank.com"), "sender_tracked", href);
+	// A different site anywhere in the link, whatever comes first, is a mismatch for everyone.
+	for (const href of [
+		`${sendgrid}&u=https%3A%2F%2Fevil.test`,
+		`${sendgrid}&r=//www.bank.com&d=https://evil.test`,
+		`${sendgrid}&d=https://evil.test&r=//www.bank.com`,
+		`${sendgrid}#https://evil.test`,
+		"https://x.mandrillapp.com/track/click?p=1&url=https%3A%2F%2Fevil.test",
+	])
+		assert.equal(linkVerdict(href, "bank.com", "bank.com"), "mismatch", href);
+	assert.equal(linkVerdict("https://x.mandrillapp.com/track/click?p=1", "bank.com"), "mismatch");
+	assert.equal(isClickTracker("x.mandrillapp.com"), true);
+});
+
+test("an authenticated sender's own tracked links are not mismatches, an impersonator's are", () => {
+	const tracked = "https://u123.ct.sendgrid.net/ls/click?upn=u001.opaqueToken";
+	assert.equal(linkTextMismatch(tracked, "https://dash.cloudflare.com/login"), true, "sender not authenticated");
+	assert.equal(linkTextMismatch(tracked, "https://dash.cloudflare.com/login", "cloudflare.com"), false);
+	assert.equal(linkTextMismatch(tracked, "dash.cloudflare.com", "notify.cloudflare.com"), false, "same organisation");
+	assert.equal(linkTextMismatch(tracked, "paypal.com", "cloudflare.com"), true, "shows another site");
+	assert.equal(linkTextMismatch("https://evil.test/login", "dash.cloudflare.com", "cloudflare.com"), true);
+	assert.equal(linkTextMismatch("https://attacker.github.io/", "github.io", "github.io"), true, "a shared suffix");
+	// A tracker that shows where it leads is judged by that destination, whoever the sender is.
+	const carried = "https://abc.r.us-east-1.awstrack.me/L0/https:%2F%2Flogin.evil.test%2F/1/0100abc";
+	assert.equal(linkTextMismatch(carried, "bank.com", "bank.com"), true, "authenticated bank.com, destination evil");
+	assert.equal(
+		linkTextMismatch("https://x.list-manage.com/track/click?u=1&e=https://evil.test/", "bank.com", "bank.com"),
+		true,
+	);
+	const own = "https://abc.r.us-east-1.awstrack.me/L0/https:%2F%2Fwww.bank.com%2Flogin/1/0100abc";
+	assert.equal(linkTextMismatch(own, "bank.com", "bank.com"), false);
+	assert.equal(
+		linkVerdict("https://abc.awstrack.me/L0/opaque-token", "bank.com", "bank.com"),
+		"mismatch",
+		"a transparent tracker whose destination cannot be read is a mismatch, whoever sent it",
+	);
+	assert.equal(
+		linkVerdict("https://x.list-manage.com/track/click?u=1&id=2", "bank.com", "bank.com"),
+		"sender_tracked",
+		"Mailchimp links keep the destination in a token",
+	);
+	assert.equal(linkVerdict("https://x.list-manage.com/track/click?u=1&id=2", "bank.com"), "mismatch");
+	assert.equal(linkVerdict(tracked, "dash.cloudflare.com", "cloudflare.com"), "sender_tracked");
+	assert.equal(linkVerdict(tracked, "dash.cloudflare.com"), "mismatch");
+	assert.equal(linkVerdict("https://u1.mailgun.org/c/x", "bank.com", "bank.com"), "mismatch", "not a known tracker");
+	assert.equal(linkTextMismatch("https://evil.test/", "cloudflare.com", "evil.test"), true);
 });
 
 test("link hosts are distinct, without www, in order and capped", () => {

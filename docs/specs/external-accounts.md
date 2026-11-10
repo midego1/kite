@@ -389,6 +389,8 @@ Numbers are taken at build time; each PR adds its own migration, with backup lis
 
 ### 10.4 Phase 4
 
+**As built (Microsoft, migration 0105, November 2026).** The refresh token is sealed in `external_accounts.secret` instead of a separate `oauth_refresh_token` column, so every path that already erases or strips the password (the 30-day retention, backups, restore, "has a password" checks) handles the token the same way. The other columns are as below, without `oauth_refresh_token`, and none of them is mapped in Drizzle: `src/lib/external-accounts/oauth-store.ts` reads and writes them with plain SQL, so whole-row reads and inserts keep working before the migration. `app_settings.oauth_microsoft_client` is unmapped the same way. `oauth_states` keys the state by its SHA-256 and carries the connect form's choices (mailbox, label, interval, switches) as JSON in `payload`; it is internal and pruned by the daily run. Google is not built yet.
+
 - `external_accounts`: `oauth_refresh_token` (sealed), `oauth_access_token` (sealed), `oauth_expires_at`, `oauth_scopes`, `oauth_token_version integer NOT NULL DEFAULT 0`, `oauth_subject` (the provider's stable user id).
 - `app_settings`: `oauth_google_client` and `oauth_microsoft_client` (sealed JSON `{ clientId, clientSecret, tenant? }`); env vars `GOOGLE_OAUTH_CLIENT_ID`/`_SECRET` and `MICROSOFT_OAUTH_CLIENT_ID`/`_SECRET` win when set, as `RESEND_API_KEY` does.
 - `oauth_states` (new, internal): `state` hash, `user_id`, `provider`, `code_verifier` (sealed), `account_id` (reconnect), `expires_at` (10 minutes). In `INTERNAL_TABLES`.
@@ -494,6 +496,10 @@ Authorization code with PKCE. `state` and the verifier live in `oauth_states` fo
 - Refresh is single-flight per account: the refresher bumps `oauth_token_version` with a compare-and-swap `UPDATE … WHERE oauth_token_version = ?`, and a loser re-reads instead of refreshing again. Microsoft rotates refresh tokens on every refresh, so the new one is always stored; Google's stays.
 - `invalid_grant` (revoked, password changed, Testing-app expiry, 90 days unused at Microsoft) → `auth_failed` and Reconnect (§6.5).
 - The token endpoint is reached with `fetch` through `assertPublicHttpUrl` against fixed provider origins.
+
+**As built (identity).** The address is `preferred_username` (the UPN or the personal account's address); `email` counts only with `xms_edov: true`, because with the `common` endpoint an organisation can set it to anything. The ID token's `tid` must be a GUID that fits the registration's tenant and `iss` must be that tenant's v2.0 issuer. `oauth_subject` stores `<tid>:<oid>`, and a reconnect must match both the address and that subject. A reconnect writes the new refresh token and bumps `oauth_token_version` in one statement, so a refresh started before it fails its compare-and-swap.
+
+**As built.** A refresh stores its tokens with `UPDATE … WHERE oauth_token_version = ?` after the token request; a refresh that loses the race uses the stored token (or its own, which is as valid) and stores nothing, so the account keeps one refresh token. A server that refuses a cached access token (`IMAP sign-in failed`, SMTP 535) gets one forced refresh and one more try (`withAccountCredential`, `src/lib/external-accounts/credential.ts`). `invalid_grant` and the other sign-in errors set `auth_failed`; a refused app registration (`invalid_client`, an expired client secret) is the owner's to fix, so it counts as transient and the account recovers once the owner replaces the secret. The registration is checked before it is saved by redeeming a made-up code: Microsoft's answer tells a refused secret or unknown client from a refused code.
 
 ### 15.4 XOAUTH2
 

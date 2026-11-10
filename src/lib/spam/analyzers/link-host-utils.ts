@@ -60,10 +60,32 @@ const URL_SHORTENERS = new Set([
 ]);
 
 /**
- * Click-tracking redirectors of mail services that put the destination in the link itself, so a link
- * through them counts as going to that destination.
+ * Click-tracking redirectors that put the destination in the link at a readable place (`/L0/<address>`), so a
+ * link through them counts as going to that destination: the first address in it decides. A link whose
+ * destination cannot be read counts as a mismatch, as for any other site.
  */
-const CLICK_TRACKERS = new Set(["awstrack.me", "list-manage.com", "mandrillapp.com", "sparkpostmail.com"]);
+const CLICK_TRACKERS = new Set(["awstrack.me"]);
+
+/**
+ * Click-tracking redirectors that keep the destination in a token (often base64), so it cannot be read from
+ * the link: any address found in one is text its sender added, which the tracker ignores. Such a link only
+ * stops counting as a mismatch when the sender authenticated and the address the text shows is the sender's own.
+ */
+const OPAQUE_CLICK_TRACKERS = new Set([
+	"customeriomail.com",
+	"hubspotlinks.com",
+	"klclick.com",
+	"list-manage.com",
+	"mandrillapp.com",
+	"mlsend.com",
+	"postmarkapp.com",
+	"pstmrk.it",
+	"rs6.net",
+	"sendgrid.net",
+	"sendibt3.com",
+	"sparkpostmail.com",
+	"sparkpostmail1.com",
+]);
 
 const IPV4 = /^\d{1,3}(?:\.\d{1,3}){3}$/;
 const IPV6 = /^\[[0-9a-f:.]+\]$/i;
@@ -118,8 +140,10 @@ export function isUrlShortener(host: string): boolean {
 	return URL_SHORTENERS.has(cleanHost(host).replace(/^www\./, ""));
 }
 
+/** Whether the host is a known click tracker, whether or not its links show their destination. */
 export function isClickTracker(host: string): boolean {
-	return CLICK_TRACKERS.has(registrableDomain(host));
+	const domain = registrableDomain(host);
+	return CLICK_TRACKERS.has(domain) || OPAQUE_CLICK_TRACKERS.has(domain);
 }
 
 const BASE = 36;
@@ -267,32 +291,77 @@ function hostOf(value: string): string | null {
 	}
 }
 
-/** Hosts of `http(s)://` addresses written inside a tracking link, decoded once. */
+/** ASCII `%XX` escapes decoded, up to three rounds (a destination escaped twice); invalid escapes are left alone. */
+function decodeEscapes(value: string): string {
+	let decoded = value;
+	for (let round = 0; round < 3; round++) {
+		const next = decoded.replace(/%([0-9a-f]{2})/gi, (escape, hex: string) => {
+			const code = Number.parseInt(hex, 16);
+			return code < 0x80 ? String.fromCharCode(code) : escape;
+		});
+		if (next === decoded) break;
+		decoded = next;
+	}
+	return decoded;
+}
+
+// `https://host`, `https:/host` and `https:host` (browsers read all three alike), or a scheme-relative `//host`.
+const EMBEDDED_ADDRESS = /(?:https?:\/{0,2}|\/\/)([^\s/?#"'<>]+)/gi;
+
+/**
+ * The hosts of addresses written in the path, query and fragment of a tracking link, in order, so the first one is
+ * where a transparent tracker leads. The authority (host and user-info) is the tracker's own and never scanned.
+ * The rest is decoded tolerantly (a bad escape elsewhere hides nothing) and `\` counts as `/`, as browsers read it.
+ * A scheme-relative `//host` counts only for a name with a dot.
+ */
 function embeddedHosts(href: string): string[] {
-	let decoded = href;
+	let url: URL;
 	try {
-		decoded = decodeURIComponent(href);
-	} catch {}
+		url = new URL(href.trim());
+	} catch {
+		return [];
+	}
+	const decoded = decodeEscapes(url.pathname + url.search + url.hash).replaceAll("\\", "/");
 	const hosts: string[] = [];
-	const rest = decoded.slice(decoded.indexOf("://") + 3);
-	for (const match of rest.matchAll(/https?:\/\/[^\s/?#"'<>]+/gi)) {
-		const host = hostOf(match[0]);
+	for (const match of decoded.matchAll(EMBEDDED_ADDRESS)) {
+		const scheme = /^https?:/i.test(match[0]);
+		if (!scheme && !match[1]!.includes(".")) continue;
+		const host = hostOf(`https://${match[1]}`);
 		if (host) hosts.push(host);
 	}
 	return hosts;
 }
 
+/** What `linkVerdict` makes of a link: fine, a mismatch, or the authenticated sender's own tracked link. */
+export type LinkVerdict = "ok" | "mismatch" | "sender_tracked";
+
 /**
  * Whether a link whose text shows one address leads somewhere else: the destination's registrable
- * domain differs from the one shown, unless a known click tracker carries the shown address inside it.
+ * domain differs from the one shown. A transparent click tracker (`awstrack.me`) is judged by the first address
+ * in its link, and a link it does not name one in is a mismatch. An opaque tracker never vouches for the text:
+ * an address in its link can only make the verdict stricter (a different site is a mismatch), and otherwise the
+ * link is the authenticated sender's own tracked link (`sender_tracked`, no mismatch) when `senderDomain`, the
+ * From domain of a sender that authenticated, is the site the text shows, and a mismatch for anyone else.
  */
-export function linkTextMismatch(href: string, text: string): boolean {
-	if (!/^https?:\/\//i.test(href.trim())) return false;
+export function linkVerdict(href: string, text: string, senderDomain?: string | null): LinkVerdict {
+	if (!/^https?:\/\//i.test(href.trim())) return "ok";
 	const shown = displayedHost(text);
 	const target = hostOf(href.trim());
-	if (!shown || !target || sameRegistrableDomain(shown, target)) return false;
-	if (isClickTracker(target)) return !embeddedHosts(href).some((host) => sameRegistrableDomain(host, shown));
-	return true;
+	if (!shown || !target || sameRegistrableDomain(shown, target)) return "ok";
+	const domain = registrableDomain(target);
+	if (CLICK_TRACKERS.has(domain)) {
+		const [destination] = embeddedHosts(href);
+		return destination && sameRegistrableDomain(destination, shown) ? "ok" : "mismatch";
+	}
+	if (OPAQUE_CLICK_TRACKERS.has(domain)) {
+		if (embeddedHosts(href).some((host) => !sameRegistrableDomain(host, shown))) return "mismatch";
+		if (senderDomain && sameRegistrableDomain(shown, senderDomain)) return "sender_tracked";
+	}
+	return "mismatch";
+}
+
+export function linkTextMismatch(href: string, text: string, senderDomain?: string | null): boolean {
+	return linkVerdict(href, text, senderDomain) === "mismatch";
 }
 
 /** Up to `limit` distinct link hostnames (without `www.`) from text, in order of appearance. */

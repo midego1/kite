@@ -2,12 +2,13 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test, type Browser, type Locator, type Page } from "@playwright/test";
 import sharp from "sharp";
-import { ADMIN, STORAGE_STATE, SUPPORT_ADDRESS } from "../../e2e/support/constants";
+import { ADMIN, FAKE_MICROSOFT_OAUTH_PORT, STORAGE_STATE, SUPPORT_ADDRESS } from "../../e2e/support/constants";
 import { useFakeProvider as connectFakeProvider } from "../../e2e/support/agent";
 import { startFakeModel } from "../../e2e/support/fake-model";
 import type { FakeModel } from "../../e2e/support/fake-model-types";
 import { apiContext, deliverInbound, postInbound, waitForMessage } from "../../e2e/support/helpers";
 import { turnScreenerOff } from "../../e2e/support/screener";
+import { chooseOption } from "../../e2e/support/select";
 import {
 	RTL_MAIL,
 	seedDemoData,
@@ -23,6 +24,7 @@ import {
 } from "./demo-data";
 import { mockConnectedAccountAuthRecheck, mockForYou, mockForYouPreview } from "./demo-mocks";
 import { sampleMessage, startFakeImap } from "../../tests/support/fake-imap.mjs";
+import { startFakeMicrosoftOAuth } from "../../tests/support/fake-microsoft-oauth.mjs";
 
 // Screenshots for the changelog (docs/releasing.md#screenshots-in-the-changelog), taken against the isolated,
 // seeded e2e server, so only invented demo data appears. They land in public/changelog/<name>.webp, ready for a
@@ -60,6 +62,24 @@ const GMAIL_MAIL = [
 	["Wingtip Toys", "orders@wingtip.test", "Your order #4821 has shipped", "Your order should arrive on Thursday."],
 	["Tom Okafor", "tom@adventure-works.test", "Offsite agenda and travel details", "The offsite is on 14-15 November."],
 ] as const;
+
+/** A fake Microsoft token endpoint (EXTERNAL_OAUTH_TEST_ORIGIN) that accepts the demo registration, once. */
+let demoMicrosoft: Awaited<ReturnType<typeof startFakeMicrosoftOAuth>> | null = null;
+
+/** Saves an invented Entra registration in Admin → General, checked against the fake, unless one is saved. */
+async function saveDemoMicrosoftClient(): Promise<void> {
+	const api = await apiContext(STORAGE_STATE);
+	const status = (await (await api.get("/api/admin/external-accounts/microsoft")).json()) as { source: string | null };
+	if (status.source) return;
+	demoMicrosoft ??= await startFakeMicrosoftOAuth({
+		port: FAKE_MICROSOFT_OAUTH_PORT,
+		clientId: "6f1c2d3e-4a5b-4c6d-8e7f-90a1b2c3d4e5",
+	});
+	const response = await api.put("/api/admin/external-accounts/microsoft", {
+		data: { clientId: demoMicrosoft.clientId, clientSecret: demoMicrosoft.clientSecret, tenant: "common" },
+	});
+	expect(response.ok(), await response.text()).toBe(true);
+}
 
 /** The demo admin's All mailboxes view with mail through a connected account; once, so a kept server is not doubled. */
 async function seedCompactLabelsDemo(): Promise<void> {
@@ -1115,6 +1135,49 @@ const SHOTS: Shot[] = [
 		},
 	},
 	{
+		// Admin → General: Microsoft sign-in set up in the Connected accounts card, with the redirect URI to register.
+		name: "2026-11-10-microsoft-sign-in-admin-light",
+		viewport: { width: 1280, height: 1100 },
+		open: async (page) => {
+			await saveDemoMicrosoftClient();
+			// The e2e server has no APP_URL; show the redirect URI a real install registers.
+			await page.route("**/api/admin/external-accounts/microsoft", async (route) => {
+				if (route.request().method() !== "GET") return route.continue();
+				const response = await route.fetch();
+				const status = (await response.json()) as Record<string, unknown>;
+				await route.fulfill({
+					response,
+					json: {
+						...status,
+						redirectUri: "https://mail.example.com/api/external-accounts/oauth/callback",
+						appUrlSet: true,
+					},
+				});
+			});
+			await page.goto("/general");
+			const card = page.locator("[data-connected-accounts-switch]");
+			await expect(card.locator("[data-microsoft-sign-in-status]")).toContainText("On: application");
+			await card.scrollIntoViewIfNeeded();
+			return card;
+		},
+	},
+	{
+		// The connect dialog for an Outlook.com or Microsoft 365 account: no password field, Sign in with Microsoft.
+		name: "2026-11-10-sign-in-with-microsoft-light",
+		viewport: { width: 1280, height: 900 },
+		open: async (page) => {
+			await saveDemoMicrosoftClient();
+			await page.goto("/settings/connected-accounts");
+			await page.getByRole("button", { name: "Connect account" }).click();
+			const dialog = page.getByRole("dialog", { name: "Connect an account" });
+			await dialog.getByLabel("Email address").fill("jordan.lee@outlook.test");
+			await chooseOption(dialog.locator("#external-provider"), "microsoft");
+			await dialog.getByLabel("Your Kite password").fill("demo-password");
+			await expect(dialog.getByRole("button", { name: "Sign in with Microsoft" })).toBeEnabled();
+			return dialog;
+		},
+	},
+	{
 		// The assistant panel when no AI provider is configured at all: a notice instead of a silent, broken chat.
 		name: "2026-11-08-no-provider-notice-light",
 		viewport: { width: 1280, height: 900 },
@@ -1243,6 +1306,8 @@ test.describe("changelog screenshots", () => {
 		demoModel = null;
 		await demoTwoWay?.close();
 		demoTwoWay = null;
+		await demoMicrosoft?.close();
+		demoMicrosoft = null;
 	});
 
 	for (const shot of SHOTS) {

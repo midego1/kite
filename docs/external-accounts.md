@@ -1,6 +1,6 @@
 # Connected accounts
 
-A connected account is a mail account at another provider (Gmail, Google Workspace, iCloud Mail, Yahoo Mail, AOL Mail, Fastmail or any other IMAP provider) whose sign-in Kite keeps, so you can bring its mail into Kite without typing the password each time. By default Kite only reads from the account and never deletes, moves or marks anything there; [two-way sync](#two-way-sync) is a choice you make per account.
+A connected account is a mail account at another provider (Gmail, Google Workspace, Outlook.com and Microsoft 365, iCloud Mail, Yahoo Mail, AOL Mail, Fastmail or any other IMAP provider) whose sign-in Kite keeps, so you can bring its mail into Kite without typing the password each time. By default Kite only reads from the account and never deletes, moves or marks anything there; [two-way sync](#two-way-sync) is a choice you make per account.
 
 A connected account does three things:
 
@@ -8,7 +8,7 @@ A connected account does three things:
 - **Existing mail can be imported.** **Import mail** copies the account's existing mail into Kite in the background (see [Importing a whole account](modules.md#importing-a-whole-account)).
 - **You can [send as its address](#send-as-the-accounts-address)** from the composer, through the provider's own mail server. With two-way sync off that is the only thing Kite ever writes at the provider: the provider keeps the sent message, and Kite may save a copy in its Sent folder.
 
-You do not have to connect an account to get its mail into Kite: [forwarding](#forward-mail-to-kite-instead) at the provider needs no password in Kite and delivers each message the moment it arrives. It is the way for Outlook.com, Hotmail and Microsoft 365, which cannot be connected yet.
+You do not have to connect an account to get its mail into Kite: [forwarding](#forward-mail-to-kite-instead) at the provider needs no password in Kite and delivers each message the moment it arrives. It is also the way for Outlook.com, Hotmail and Microsoft 365 on a Kite where the owner has not set up [Microsoft sign-in](#sign-in-with-microsoft).
 
 ## Connect an account
 
@@ -23,7 +23,20 @@ You do not have to connect an account to get its mail into Kite: [forwarding](#f
 5. Enter **your Kite password** again. Kite asks for it because it is about to store another account's password.
 6. **Connect.** Kite signs in to the account and opens its Inbox read-only. Only when that works is the account saved, and Kite notes where the Inbox stands: checking for new mail starts with mail that arrives after this moment. An address at a known provider can be connected once in this Kite. That is checked only after the provider's own server accepted the password, so nobody learns whether such an address is connected without its password, and the answer never says by whom. An **Other IMAP provider** account is never checked against other accounts and does not reserve its address, because anyone can run a server that accepts any address: someone else may connect the same address, and the answer never tells whether it is connected already. Kite then also signs in to the provider's SMTP server with the same password, without sending anything; when that works, you can send as the address. When it does not, the account is still connected and its row says why sending is not available (**Test connection** tries again).
 
-Outlook.com, Hotmail and Microsoft 365 accounts sign in only with Microsoft's own sign-in (OAuth), which Kite does not support yet, so they cannot be connected. Choosing that provider in the dialog offers **Set up forwarding**, which opens the [forwarding guide](#forward-mail-to-kite-instead) at Outlook.
+### Sign in with Microsoft
+
+Outlook.com, Hotmail and Microsoft 365 accounts sign in only with Microsoft's own sign-in (OAuth), never with a password or app password. Once the owner of this Kite has [set up Microsoft sign-in](providers.md#microsoft-sign-in-for-connected-accounts):
+
+1. In **Connect account**, enter the address and choose **Outlook.com or Microsoft 365** as the provider (Kite picks it for `outlook.com`, `hotmail.com`, `live.com` and for domains whose mail goes to Microsoft 365). There is no password field.
+2. Choose **Mail goes to** and **Check for new mail** as for any account, and enter **your Kite password**.
+3. Choose **Sign in with Microsoft**. Microsoft's sign-in page opens: sign in as that account and accept what Kite asks for (reading and sending its mail over IMAP and SMTP, staying signed in, and your address). Kite never sees your Microsoft password.
+4. Microsoft sends you back to **Settings → Connected accounts**, which says **Microsoft account connected.** Kite has signed in to Outlook's IMAP server with the new access, noted where the Inbox stands, and tested sending through Outlook's SMTP server. The address is the one you signed in with, whatever you typed in step 1.
+
+A sign-in that does not finish within 10 minutes, is cancelled, or comes back to another Kite user expires and connects nothing; start again from **Connect account**. A work or school account may need an administrator to approve Kite first ("Need admin approval"), and Microsoft 365 can turn IMAP or SMTP off per mailbox; Kite names both cases, and the owner's guide has the steps.
+
+Kite keeps the account's access renewed in the background. When Microsoft stops accepting it (you revoked Kite's access, changed your password, or did not use the account for 90 days), the account shows **Sign-in failed** with **Reconnect**: open it, enter your Kite password and choose **Sign in with Microsoft again**, as the same Microsoft account. Signing in as a different account is refused, even with the same address: Kite compares Microsoft's user id and tenant too. Everything else (new mail, import, two-way sync, sending as the address) works as for any other connected account; Outlook keeps its own copy of sent mail, so Kite saves no Sent copy there.
+
+Without Microsoft sign-in on this Kite, choosing that provider in the dialog offers **Set up forwarding** instead, which opens the [forwarding guide](#forward-mail-to-kite-instead) at Outlook.
 
 After connecting, **Import existing mail** (in the confirmation, or **Import mail** on the account) opens Settings → Import with the account chosen under **Sign in with** and the account's mailbox selected, so the import goes where its new mail goes: show the folders (with each folder's size and the totals the import adds, see [Importing a whole account](modules.md#importing-a-whole-account)), adjust the mapping and start the import. The import job keeps no password of its own; every run asks for the account's login, so removing the account stops its imports at their next run ("The account was removed").
 
@@ -151,7 +164,7 @@ Each account shows its label, address, provider, the mailbox its mail goes to, i
 | Connected | Kite can sign in and checks for new mail ("Checked 2 minutes ago · next check at 14:35"). | Nothing. |
 | Connected, with "The provider is limiting connections; Kite will try again at 14:35." | The provider asked Kite to slow down. Kite waits, from 15 minutes up to 6 hours. | Nothing. |
 | Connected, with "Could not reach imap.example.com since 09:10; retrying." | The server has not answered three checks in a row (shown from the third). Kite keeps trying, waiting longer each time. | Nothing, unless it lasts. |
-| Sign-in failed | The provider refused the password (it was changed or revoked), or the saved password can no longer be opened because `APP_ENCRYPTION_KEY` changed. Checking stops, a notice in the sidebar says so, and your open Kite tabs show a message once. | **Reconnect** with the current (app) password. |
+| Sign-in failed | The provider refused the password (it was changed or revoked), or the saved password can no longer be opened because `APP_ENCRYPTION_KEY` changed. For a Microsoft account: Microsoft no longer accepts Kite's access (revoked, password changed, 90 days unused). Checking stops, a notice in the sidebar says so, and your open Kite tabs show a message once. | **Reconnect** with the current (app) password, or **Sign in with Microsoft again**. |
 | Certificate problem | The server's TLS certificate is not valid for its name. Checking stops. | Edit the server, or ask the provider. |
 | Error | Kite refused the server (a private address, another port), the server lacks something Kite needs (an Inbox, a password sign-in), you no longer have full access to the account's mailbox, or the server has not answered for a day (then Kite keeps trying every 6 hours). The sidebar notice lists it. | Edit the account, or **Check now** once the problem is fixed. |
 | Paused | Your admin took away your permission to connect accounts (connected accounts that were working show this). | Ask your admin. |
@@ -202,5 +215,6 @@ Each account row says whether you can send as its address and, if not, what to d
 - A disabled Kite account's connected accounts are not checked either, and new mail is only delivered while the owner has full access to the chosen mailbox.
 - Connected accounts need database migration 0079, and migration 0082 for **Other IMAP provider** addresses to stop reserving the address. Until 0079 is applied from the admin overview, the page says "Apply the pending database update to use connected accounts" and nothing is checked.
 - Sending as a connected account also needs migration 0083; until it is applied, no connected address is offered in the From menu.
+- **Admin → General → Connected accounts → Microsoft sign-in** (primary administrator) holds this Kite's own Microsoft Entra app registration, which Outlook.com and Microsoft 365 accounts sign in with; the steps are in [Sending and receiving providers](providers.md#microsoft-sign-in-for-connected-accounts). It needs migration 0105; until that is applied, the card says "Apply the pending database update" and **Sign in with Microsoft** is not offered.
 - Verification codes need migration 0089 (`external_identities`); until it is applied, asking for a code answers "Apply the pending database update to use connected accounts", and only known providers' sign-in addresses can be sent as.
 - Turning connected accounts off, or taking a user's permission away, also stops sending as those accounts at once, scheduled sends included.

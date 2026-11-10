@@ -13,7 +13,7 @@ Open **Admin → Domains**, expand a domain, and use the **Setup receiving email
 
 > Selecting a provider does not change DNS. The Setup button inside the provider's card does. This lets you prepare a new provider while the old one keeps working.
 
-Mail accounts at other providers (Gmail, iCloud, Fastmail, Yahoo and other IMAP providers) are not domains: you connect them per user under **Settings → Connected accounts**, with the provider's servers filled in from a preset and an app password. See [Connected accounts](external-accounts.md).
+Mail accounts at other providers (Gmail, iCloud, Fastmail, Yahoo and other IMAP providers) are not domains: you connect them per user under **Settings → Connected accounts**, with the provider's servers filled in from a preset and an app password. Outlook.com, Hotmail and Microsoft 365 accounts sign in with Microsoft instead, once the owner has [set up Microsoft sign-in](#microsoft-sign-in-for-connected-accounts). See [Connected accounts](external-accounts.md).
 
 ## Choosing at add time
 
@@ -93,12 +93,80 @@ You cannot clean up the provider that is currently selected.
 - **Attachments.** Cloudflare sends large files as R2 download links to stay under its 5 MiB limit. Resend and SES send attachments directly, within the administrator's outgoing limit (up to 25 MB).
 - **Size.** Inbound mail from any provider is capped at 25 MiB and the same attachment limits apply; larger messages are dropped.
 
+## Microsoft sign-in for connected accounts
+
+Outlook.com, Hotmail and Microsoft 365 accounts cannot sign in to IMAP or SMTP with a password: Microsoft only accepts its own sign-in (OAuth). Kite ships no shared Microsoft app, so the owner registers one for this Kite in Microsoft Entra, once, and enters its IDs and a client secret under **Admin → General → Connected accounts → Microsoft sign-in**. Users then see **Sign in with Microsoft** when they connect an Outlook.com or Microsoft 365 account. This takes about ten minutes and needs no paid Azure subscription: a free Microsoft account can register apps.
+
+Before you start:
+
+- `APP_URL` must be the public HTTPS address of Kite (for example `https://mail.example.com`), because Microsoft sends the browser back to it. Microsoft accepts plain `http` only for `localhost`.
+- `APP_ENCRYPTION_KEY` must be set: Kite saves the client secret encrypted and refuses to save it otherwise.
+- Open **Admin → General** in Kite and copy the **Redirect URI** shown under **Microsoft sign-in**. It is `APP_URL` followed by `/api/external-accounts/oauth/callback`.
+
+### 1. Register the app
+
+1. Open the Microsoft Entra admin center at <https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade> and sign in. (The same page is in the Azure portal at <https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade>.)
+2. Choose **New registration**.
+3. **Name**: anything your users will recognise on Microsoft's consent screen, for example `Kite mail`.
+4. **Supported account types**:
+   - For Outlook.com and Hotmail **and** work or school accounts: **Accounts in any organizational directory (Any Microsoft Entra ID tenant - Multitenant) and personal Microsoft accounts**. Use tenant `common` in Kite.
+   - For one organisation's Microsoft 365 accounts only: **Accounts in this organizational directory only (Single tenant)**. Use the **Directory (tenant) ID** in Kite.
+5. **Redirect URI**: platform **Web**, value the Redirect URI you copied from Kite, exactly (`https://mail.example.com/api/external-accounts/oauth/callback`).
+6. Choose **Register**. On the app's **Overview** page, copy the **Application (client) ID** (and, for a single-tenant app, the **Directory (tenant) ID**).
+
+### 2. Add the mail permissions
+
+1. In the app, open **API permissions** and choose **Add a permission**.
+2. Choose **Microsoft Graph**, then **Delegated permissions**.
+3. Tick `IMAP.AccessAsUser.All` and `SMTP.Send` (search for "IMAP" and "SMTP"), and also `offline_access`, `openid` and `email` under **OpenId permissions**. Choose **Add permissions**.
+4. Optional, for a Microsoft 365 organisation where users may not approve apps themselves: choose **Grant admin consent for (your organisation)** and confirm. Without it, a user of such an organisation sees "Need admin approval" at sign-in, and Kite says the same.
+
+Kite asks Microsoft for `https://outlook.office.com/IMAP.AccessAsUser.All`, `https://outlook.office.com/SMTP.Send`, `offline_access`, `openid` and `email`; the Graph permissions above are how Entra lists those. Kite never asks for access to files, contacts or calendars.
+
+### 3. Create a client secret
+
+1. In the app, open **Certificates & secrets**, tab **Client secrets**, and choose **New client secret**.
+2. Enter a description (for example `Kite`) and an expiry. Microsoft allows at most 24 months; note the date.
+3. Choose **Add**, then copy the secret's **Value** at once (Microsoft shows it only now). Do not copy the **Secret ID**.
+
+### 4. Enter it in Kite
+
+1. Open **Admin → General** in Kite (only the primary administrator can change this) and find **Microsoft sign-in** in the **Connected accounts** card.
+2. Enter the **Application (client) ID**, the **Tenant** (`common`, or the Directory (tenant) ID for a single-tenant app) and the **Client secret** (the Value).
+3. Choose **Save**. Kite checks the ID and secret with Microsoft before saving: a wrong secret, a Secret ID instead of the Value, an unknown client ID or tenant is refused with Microsoft's reason. The secret is saved encrypted and never shown again; **Replace** and **Remove** are next to it.
+
+The registration can also come from the `MICROSOFT_OAUTH_CLIENT_ID`, `MICROSOFT_OAUTH_CLIENT_SECRET` and (optional, default `common`) `MICROSOFT_OAUTH_TENANT` secrets, which win over the saved one, as `RESEND_API_KEY` does.
+
+### 5. Microsoft 365: check IMAP and Authenticated SMTP for each mailbox
+
+Do this for every Microsoft 365 mailbox before its user connects it (Outlook.com and Hotmail accounts need nothing). Microsoft 365 can turn IMAP and authenticated SMTP off per mailbox or for the whole organisation, and SMTP AUTH is off by default in newer tenants. Without IMAP the sign-in ends with "Outlook refused Kite's IMAP sign-in"; without Authenticated SMTP the account connects but cannot send as its address.
+
+1. Open the Exchange admin center at <https://admin.exchange.microsoft.com/#/mailboxes>, choose the user's mailbox, then **Manage email apps** under **Email apps**.
+2. Make sure **IMAP** and **Authenticated SMTP** are both on, and choose **Save** if you changed anything.
+3. For the whole organisation, open <https://admin.exchange.microsoft.com/#/settings>, **Mail flow**: **Turn off SMTP AUTH protocol for your organization** must be unticked, unless every mailbox that sends through Kite has Authenticated SMTP turned on itself (the per-mailbox setting wins).
+4. With Exchange Online PowerShell you can check a mailbox at once: `Get-CASMailbox user@example.com | Format-List ImapEnabled,SmtpClientAuthenticationDisabled` must show `ImapEnabled : True` and `SmtpClientAuthenticationDisabled : False` (or empty, which follows the organisation setting).
+
+Changes can take an hour to reach every server.
+
+### When the client secret expires
+
+Microsoft refuses an expired secret, so Kite cannot renew any connected Microsoft account's access: their checks pause with "Microsoft refused this Kite's app registration" and retry on their own. Create a new secret (step 3) before the old one expires and **Replace** it in Kite; the accounts carry on without anyone reconnecting.
+
+### Which account Kite connects
+
+Kite connects the address the user signed in to Microsoft as: the sign-in name (`preferred_username`, which is the user principal name of a work or school account and the address of a personal one), never a free-form `email` claim an organisation can set, and only after Outlook's IMAP server accepted that address with the new access. The sign-in must come from a tenant that fits the registration (its own tenant for a single-tenant app, personal accounts only for `consumers`, work and school only for `organizations`). Kite records the tenant and Microsoft's user id with the account, and **Reconnect** only accepts the same address signed in as the same user in the same tenant.
+
+### What Kite stores
+
+The refresh token Microsoft issues is stored encrypted with `APP_ENCRYPTION_KEY` in place of a password, and the current access token is cached encrypted until five minutes before it expires; Microsoft hands out a new refresh token with each renewal, and Kite keeps the newest. Neither is ever shown, logged, sent to the browser or kept in a backup. A user who revokes Kite at <https://account.live.com/consent/Manage> (personal accounts) or <https://myapps.microsoft.com> (work or school), changes their password, or does not use the account for 90 days sees **Sign-in failed** with **Reconnect** on the account.
+
 ## Configuration reference
 
 | Variable | Purpose |
 |---|---|
 | `RESEND_API_KEY` | Resend key used when none is saved in the app |
 | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION` | SES credentials used when none are saved in the app |
-| `APP_URL` | Public HTTPS address; required for Resend and SES receiving, because the providers call this app |
+| `APP_URL` | Public HTTPS address; required for Resend and SES receiving, because the providers call this app, and for Microsoft sign-in, whose redirect URI sits under it |
+| `MICROSOFT_OAUTH_CLIENT_ID`, `MICROSOFT_OAUTH_CLIENT_SECRET`, `MICROSOFT_OAUTH_TENANT` | Microsoft sign-in for connected accounts, used instead of the registration saved in the app; the tenant defaults to `common` |
 
-Settings saved in the app take precedence over these variables. Keys saved in the app are stored as plain text in the `app_settings` table (as the AI provider key already is), so protect database backups accordingly.
+Settings saved in the app take precedence over these variables, except Microsoft sign-in, where the variables win. Keys saved in the app are stored as plain text in the `app_settings` table (as the AI provider key already is), so protect database backups accordingly; the Microsoft client secret is the exception and is stored encrypted with `APP_ENCRYPTION_KEY`.

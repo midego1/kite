@@ -3,7 +3,7 @@ import type { AppDatabase } from "@/db";
 import { contacts, spamReputation } from "@/db/schema";
 import { getEmailAddress } from "@/lib/email/address";
 import { analyzeAttachments } from "./analyzers/attachments";
-import { analyzeAuthentication } from "./analyzers/authentication";
+import { analyzeAuthentication, authenticatedSenderDomain } from "./analyzers/authentication";
 import { analyzeSafelistPressure } from "./analyzers/pressure";
 import { getReputationKeys } from "./analyzers/reputation";
 import { analyzeStructure } from "./analyzers/structure";
@@ -33,7 +33,11 @@ export async function analyzeSpam(db: AppDatabase, input: SpamAnalysisInput): Pr
 					},
 				]
 			: []),
-		...analyzeUrls(input.message, prepared),
+		...analyzeUrls(
+			input.message,
+			prepared,
+			authenticatedSenderDomain(input.authenticationResults, authentication, fromDomain),
+		),
 		...analyzeStructure(input.message, input.headers, prepared),
 		...analyzeAttachments(input.message, prepared),
 		...analyzeSafelistPressure(prepared),

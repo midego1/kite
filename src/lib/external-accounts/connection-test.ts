@@ -27,7 +27,8 @@ export async function testImapConnection(env: TestEnv, login: ImapLogin): Promis
 			ok: false,
 			problem: classifyConnectionError(error, {
 				refused: error instanceof MailServerRefusedError,
-				secrets: [login.password],
+				secrets: [login.password, login.accessToken ?? ""],
+				oauth: !!login.accessToken,
 			}),
 		};
 	} finally {
@@ -51,7 +52,8 @@ export async function testSmtpConnection(env: TestEnv, login: SmtpLogin): Promis
 			ok: false,
 			problem: classifyConnectionError(error, {
 				refused: error instanceof MailServerRefusedError,
-				secrets: [login.password],
+				secrets: [login.password, login.accessToken ?? ""],
+				oauth: !!login.accessToken,
 			}),
 		};
 	}

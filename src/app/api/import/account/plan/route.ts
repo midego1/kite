@@ -6,7 +6,7 @@ import { readJsonBody } from "@/lib/http/request";
 import { importServerProblem, planAccountImport } from "@/lib/import/imap";
 import { importSignInGuard, SignInLimitError, signInLimitResponse } from "@/lib/import/sign-in-limit";
 import { withModule } from "@/lib/modules/route-guard";
-import { resolveImportSource } from "../../connected-account";
+import { resolveImportSource, sourceAccessToken } from "../../connected-account";
 import type { ImapFolderListRequest } from "../../imap/folders/types";
 import { parseImapFolderListRequest } from "../../imap/folders/utils";
 
@@ -28,7 +28,7 @@ export const POST = withModule("import", async (request, { checkUser }) => {
 			await readJsonBody<ImapFolderListRequest & { accountId?: unknown }>(request, 16 * 1024),
 		);
 		if ("error" in resolved) return resolved.error;
-		input = parseImapFolderListRequest(resolved.body);
+		input = parseImapFolderListRequest(resolved.body, sourceAccessToken(resolved.source));
 	} catch (error) {
 		const status = error instanceof RequestBodyTooLargeError ? 413 : 400;
 		return NextResponse.json({ error: error instanceof Error ? error.message : "Invalid IMAP request" }, { status });

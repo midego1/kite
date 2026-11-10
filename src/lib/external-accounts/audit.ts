@@ -12,6 +12,7 @@ export type ExternalAccountAuditAction =
 	| "external_account.connection_tested"
 	| "external_account.permission_changed"
 	| "external_account.install_switch_changed"
+	| "external_account.oauth_client_changed"
 	| "external_account.credentials_erased"
 	| "external_account.sync_failed"
 	| "external_account.sync_recovered"
@@ -35,6 +36,20 @@ export async function auditExternalAccount(
 	},
 ): Promise<void> {
 	await createAuditLog(env, input);
+}
+
+/** The owner saved or removed the Microsoft app registration; the metadata never carries the client secret. */
+export async function auditMicrosoftClient(
+	env: CloudflareEnv,
+	actorUserId: string,
+	change: "saved" | "removed",
+	details: { clientId?: string; tenant?: string },
+): Promise<void> {
+	await auditExternalAccount(env, {
+		actorUserId,
+		action: "external_account.oauth_client_changed",
+		metadata: { provider: "microsoft", change, ...details },
+	});
 }
 
 /** Connection tests per user in `TEST_WINDOW_MS` (spec §11.2): the form cannot guess passwords or scan hosts. */

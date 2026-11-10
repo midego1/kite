@@ -227,7 +227,8 @@ export const jmapMailboxRevisions = sqliteTable("jmap_mailbox_revisions", {
 
 export const apiKeys = sqliteTable("api_keys", {
 	id: text("id").primaryKey(),
-	kind: text("kind", { enum: ["legacy", "mcp"] })
+	// `oauth`: an MCP client connected with OAuth (migration 0106); it has no usable key, only tokens in mcp_oauth_tokens.
+	kind: text("kind", { enum: ["legacy", "mcp", "oauth"] })
 		.notNull()
 		.default("legacy"),
 	userId: text("user_id")

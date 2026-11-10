@@ -1,4 +1,4 @@
-import { and, eq, lt, or, isNull } from "drizzle-orm";
+import { and, eq, lt, ne, or, isNull } from "drizzle-orm";
 import { getDb } from "@/db";
 import { apiKeys, mcpKeyMailboxes, users } from "@/db/schema";
 import { parseScopes, verifyApiKey } from "@/lib/api-keys";
@@ -18,7 +18,11 @@ export async function authenticateApiKeyValue(env: CloudflareEnv, key: string): 
 	if (!trimmed) return null;
 	const prefix = trimmed.slice(0, 12);
 	const db = getDb(env);
-	const candidates = await db.select().from(apiKeys).where(eq(apiKeys.prefix, prefix));
+	// An OAuth grant (kind `oauth`) is an MCP-only credential and has no key; its tokens never reach this path.
+	const candidates = await db
+		.select()
+		.from(apiKeys)
+		.where(and(eq(apiKeys.prefix, prefix), ne(apiKeys.kind, "oauth")));
 
 	for (const candidate of candidates) {
 		if (!verifyApiKey(trimmed, candidate.keyHash)) continue;

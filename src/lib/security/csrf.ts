@@ -4,10 +4,19 @@ const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 /**
  * API paths that are legitimately called cross-origin or without a browser:
- * API-key routes and public, self-authenticating webhooks. Matching is per path
- * segment, so `/api/inbound` covers `/api/inbound/ses` but not `/api/inboundx`.
+ * API-key routes, public, self-authenticating webhooks, and the cookie-free OAuth endpoints MCP clients call
+ * (registration, token, revocation; never the consent or grant routes, which use the session). Matching is per
+ * path segment, so `/api/inbound` covers `/api/inbound/ses` but not `/api/inboundx`.
  */
-export const CSRF_EXEMPT_API_PREFIXES = ["/api/v1", "/api/inbound", "/api/public", "/api/seed"] as const;
+export const CSRF_EXEMPT_API_PREFIXES = [
+	"/api/v1",
+	"/api/inbound",
+	"/api/public",
+	"/api/seed",
+	"/api/oauth/register",
+	"/api/oauth/token",
+	"/api/oauth/revoke",
+] as const;
 
 function matchesPrefix(pathname: string, prefix: string): boolean {
 	return pathname === prefix || pathname.startsWith(`${prefix}/`);

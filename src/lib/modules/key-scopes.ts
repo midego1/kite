@@ -38,3 +38,19 @@ export async function refuseDisabledKeyScopes(
 	const refusal = scopeRefusal(declarations, kind, scopes, enabled);
 	return refusal ? Response.json(refusal.body, { status: refusal.status }) : null;
 }
+
+/** The scopes among `scopes` the user may pick now: core ones, and a module's only while it is on for them. */
+export async function availableKeyScopes(
+	env: CloudflareEnv,
+	user: Pick<SessionUser, "id" | "role" | "isPrimaryAdmin">,
+	kind: KeyScopeKind,
+	scopes: readonly string[],
+): Promise<string[]> {
+	if (scopes.every((scope) => scopeOwner(declarations, kind, scope) === null)) return [...scopes];
+	const enabled = await listEnabledModules(env, {
+		userId: user.id,
+		role: user.role,
+		isPrimaryAdmin: user.isPrimaryAdmin,
+	});
+	return scopes.filter((scope) => scopeRefusal(declarations, kind, [scope], enabled) === null);
+}

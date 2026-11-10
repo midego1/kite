@@ -389,6 +389,10 @@ export async function updateExternalAccount(
 		if (isUniqueViolation(error)) throw addressConflict(input.preset);
 		throw error;
 	}
+	// A Microsoft account edited to a password at another provider is no longer an OAuth account. Cleared after the
+	// password is written, not before: the write above also turns the account into a password one, which a refresh
+	// still in flight can no longer store its token over, and this bump then fences one that started in between.
+	if (signIn && current.authKind !== "password") await clearAccountOAuth(env, id);
 	await auditExternalAccount(env, {
 		actorUserId: actor.id,
 		action: "external_account.updated",
@@ -461,8 +465,6 @@ async function reconnect(
 	if (!sameInbox) await forgetInbox(env, id);
 	await saveBaseline(env, id, test.baseline);
 	const sendProblem = await verifySending(env, id, input, { password });
-	// A Microsoft account edited to a password at another provider is no longer an OAuth account.
-	if (current.authKind !== "password") await clearAccountOAuth(env, id);
 	return {
 		...fromPreset,
 		authKind: "password",

@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.11.10.2] - 2026-11-10
+
+### Added
+
+- Outlook.com, Hotmail and Microsoft 365 accounts can now be connected under [Settings → Connected accounts](/settings/connected-accounts) with **Sign in with Microsoft**: new mail arrives, existing mail can be imported and you can send as the address, without a password. When Microsoft stops accepting the sign-in, the account shows **Reconnect**.
+  ![The connect dialog with Outlook.com or Microsoft 365 chosen and the Sign in with Microsoft button](/changelog/2026-11-10-sign-in-with-microsoft-light.webp)
+- The owner turns this on once in [Admin → General](/general) by entering this Kite's own Microsoft app registration; the client secret is checked with Microsoft and saved encrypted. This needs a database update applied from the Admin overview; the [setup steps](https://github.com/midego1/kite/blob/main/docs/providers.md#microsoft-sign-in-for-connected-accounts) walk through the Microsoft side.
+  ![Microsoft sign-in in the Connected accounts card of Admin → General, with the redirect URI to register](/changelog/2026-11-10-microsoft-sign-in-admin-light.webp)
+
+### Fixed
+
+- When two messages of one conversation arrive in the same second, the conversation list now shows the one that arrived last.
+- Mail from a sender that passed authentication, such as Cloudflare notices, is no longer flagged as phishing when its links show the sender's own address but open through the sender's mail service.
+- Another user asking for codes for the same email address can no longer stop you from verifying an address for the assistant.
+
 ## [2026.11.10.1] - 2026-11-10
 
 ### Added

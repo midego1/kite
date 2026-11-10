@@ -5,12 +5,22 @@ import { parseScopes, verifyApiKey } from "@/lib/api-keys";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { ADMIN_API_KEY_SCOPES } from "@/lib/api/scopes";
 import { allKeyScopes, scopeDeclarations } from "@/lib/modules/key-scope-utils";
+import { keyScopesNeedMailbox } from "@/lib/modules/key-scopes";
 import { MODULE_MANIFESTS } from "@/lib/modules/registry";
 import type { McpPrincipal } from "./types";
 
 /** Core scopes plus every module's, on or off, so a key keeps authenticating while its module is off. */
 const MCP_SCOPES = new Set(allKeyScopes(scopeDeclarations(MODULE_MANIFESTS), "mcp"));
 const ADMIN_SCOPES = new Set<string>(ADMIN_API_KEY_SCOPES);
+
+/**
+ * Whether a key is limited to mailboxes: it names some, or its scopes could only be created with some (a mailbox
+ * deleted since cascades its row away, and "none left" must read as nothing, not as no limit). A key of module scopes
+ * that need no mailbox, such as `mcp:finance-read` alone, is not limited.
+ */
+function limitedToMailboxes(isMailKey: boolean, named: number, scopes: string[]): boolean {
+	return isMailKey && (named > 0 || keyScopesNeedMailbox("mcp", scopes));
+}
 
 export async function authenticateMcpRequest(env: CloudflareEnv, request: Request): Promise<McpPrincipal | null> {
 	const authorization = request.headers.get("Authorization") ?? "";
@@ -45,7 +55,13 @@ export async function authenticateMcpRequest(env: CloudflareEnv, request: Reques
 			.update(apiKeys)
 			.set({ lastUsedAt: new Date() })
 			.where(and(eq(apiKeys.id, candidate.id), or(isNull(apiKeys.lastUsedAt), lt(apiKeys.lastUsedAt, stale))));
-		return { keyId: candidate.id, user, scopes: allScopes, mailboxIds, mailboxLimited: allowed.length > 0 };
+		return {
+			keyId: candidate.id,
+			user,
+			scopes: allScopes,
+			mailboxIds,
+			mailboxLimited: limitedToMailboxes(isMailKey, allowed.length, allScopes),
+		};
 	}
 	return null;
 }

@@ -20,6 +20,8 @@ await build({
 		views: join(root, "src/lib/finance/payment-views.ts"),
 		manual: join(root, "src/lib/finance/manual-payments.ts"),
 		step: join(root, "src/lib/finance/payment-step.ts"),
+		mcpAuth: join(root, "src/lib/mcp/auth.ts"),
+		apiKeys: join(root, "src/lib/api-keys.ts"),
 		refs: join(root, "src/lib/modules/record-refs.ts"),
 		runtime: join(root, "server/runtime/sqlite-database.ts"),
 		migrate: join(root, "server/runtime/migrate.ts"),
@@ -72,6 +74,8 @@ const { undoAgentAction } = await load("execute");
 const { listPaymentsView, paymentsForExport } = await load("views");
 const { patchPayment } = await load("manual");
 const { recordPaymentFromInput } = await load("step");
+const { authenticateMcpRequest } = await load("mcpAuth");
+const { generateApiKey, scopesToJson } = await load("apiKeys");
 const { PAYMENT_CATEGORIES, categoryOf, paymentCategoryOf } = await loadUtil("category");
 const { csvText, paymentsCsv } = await loadUtil("csv");
 const { matchesPaymentFilter, parsePaymentFilter } = await loadUtil("filter");
@@ -841,4 +845,70 @@ test("list_payments honours a key's mailbox limit and a withdrawn mailbox", asyn
 	// A mailbox the viewer can no longer read lists nothing, even for an unlimited call.
 	db.db.prepare("UPDATE mailboxes SET disabled = 1 WHERE id = 'mailbox-b'").run();
 	assert.deepEqual(await vendors([]), ["KLM"]);
+});
+
+test("list_payments through a real MCP key: limited to its readable mailboxes, nothing when they are gone, all for a finance-only key", async (t) => {
+	const { db } = await setup(t);
+	db.db.exec(`
+		INSERT INTO mailboxes (id, user_id, domain_id, local_part, type, created_at) VALUES ('mailbox-b', 'owner', 'domain-1', 'second', 'personal', 3);
+		INSERT INTO mailbox_agent_settings (mailbox_id, enabled, autonomy, reviewer_user_id, capabilities, updated_at) VALUES ('mailbox-b', 1, 'suggest', 'owner', '{}', 1);
+	`);
+	await record(insertMessage(db, FLIGHT), FLIGHT);
+	await record(insertMessage(db, HOSTING, { mailboxId: "mailbox-b" }), HOSTING, { mailboxId: "mailbox-b" });
+	const makeKey = (scopes, mailboxIds) => {
+		const key = generateApiKey();
+		const id = `key-${++counter}`;
+		db.db
+			.prepare(
+				"INSERT INTO api_keys (id, kind, user_id, name, prefix, key_hash, scopes, created_at) VALUES (?, 'mcp', 'owner', 'e2e', ?, ?, ?, 1)",
+			)
+			.run(id, key.prefix, key.hash, scopesToJson(scopes));
+		for (const mailboxId of mailboxIds)
+			db.db.prepare("INSERT INTO mcp_key_mailboxes (key_id, mailbox_id) VALUES (?, ?)").run(id, mailboxId);
+		return key.fullKey;
+	};
+	// What the MCP server does with the authenticated principal, then the tool call itself.
+	const listed = async (fullKey) => {
+		const principal = await authenticateMcpRequest(
+			globalThis.__kiteNodeEnv,
+			new Request("https://kite.test/mcp", { headers: { Authorization: `Bearer ${fullKey}` } }),
+		);
+		assert.ok(principal, "the key authenticates");
+		const ctx = buildCallContext({
+			trigger: "mcp",
+			viewer: { userId: principal.user.id, role: principal.user.role, isPrimaryAdmin: false },
+			timeZone: "UTC",
+			mailboxIds: principal.mailboxIds,
+			mailboxLimited: principal.mailboxLimited,
+			grants: ["finance.read"],
+		});
+		const answer = await invokeCapability("finance", "list_payments", {}, ctx);
+		assert.equal(answer.ok, true, JSON.stringify(answer));
+		return answer.output.payments.map((row) => row.vendor).sort();
+	};
+	const scopes = ["mcp:read", "mcp:finance-read"];
+
+	assert.deepEqual(await listed(makeKey(scopes, ["mailbox-a"])), ["KLM"], "named and readable: only its mailbox");
+	assert.deepEqual(
+		await listed(makeKey(["mcp:finance-read"], [])),
+		["Hetzner", "KLM"],
+		"a finance-only key names none",
+	);
+
+	const unshared = makeKey(scopes, ["mailbox-b"]);
+	assert.deepEqual(await listed(unshared), ["Hetzner"]);
+	db.db.prepare("UPDATE mailboxes SET disabled = 1 WHERE id = 'mailbox-b'").run();
+	assert.deepEqual(await listed(unshared), [], "named, none readable any more: nothing");
+
+	const deleted = makeKey(scopes, ["mailbox-b"]);
+	// Removing the mailbox cascades away the key's row, which is what a deleted mailbox does to a key.
+	db.db.pragma?.("foreign_keys = ON");
+	db.db.prepare("DELETE FROM messages WHERE mailbox_id = 'mailbox-b'").run();
+	db.db.prepare("DELETE FROM mailboxes WHERE id = 'mailbox-b'").run();
+	assert.equal(
+		db.db.prepare("SELECT 1 FROM mcp_key_mailboxes WHERE mailbox_id = 'mailbox-b'").all().length,
+		0,
+		"the key names no mailbox any more",
+	);
+	assert.deepEqual(await listed(deleted), [], "named mailboxes deleted (rows cascaded away): nothing, not everything");
 });

@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.11.10.1] - 2026-11-10
+
+### Added
+
+- Search can now also find mail by what it means, not only its exact words, while [search by meaning](/agent#semantic-search) is turned on. Turn off the **By meaning** chip next to a search to use exact words only.
+  ![The By meaning chip next to a search, for mail matched on meaning as well as exact words](/changelog/2026-11-08-search-by-meaning-light.webp)
+
 ## [2026.11.10.0] - 2026-11-10
 
 ### Added

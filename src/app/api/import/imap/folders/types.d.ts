@@ -4,4 +4,6 @@ export type ImapFolderListRequest = {
 	secure?: boolean;
 	username?: string;
 	password?: string;
+	/** Set by `resolveImportSource` for a connected OAuth account, never by the form. */
+	accessToken?: string;
 };

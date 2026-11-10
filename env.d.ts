@@ -154,4 +154,12 @@ interface CloudflareEnv {
 	EXTERNAL_ACCOUNTS_ALLOW_PRIVATE_HOSTS?: string;
 	/** Node server only: comma-separated extra ports mail server connections may use besides 993 and 143 (DavMail, Proton Bridge on 1143); ignored on Workers. */
 	EXTERNAL_ACCOUNTS_EXTRA_PORTS?: string;
+	/** Microsoft sign-in for connected accounts: the Entra app's Application (client) ID; with the secret, wins over Admin → General. */
+	MICROSOFT_OAUTH_CLIENT_ID?: string;
+	/** The Entra app's client secret (its Value); set as a secret, never in wrangler.jsonc. */
+	MICROSOFT_OAUTH_CLIENT_SECRET?: string;
+	/** The Entra tenant: common (default), organizations, consumers, a tenant ID or a tenant domain. */
+	MICROSOFT_OAUTH_TENANT?: string;
+	/** Dev/test only: an http loopback origin that stands in for Microsoft's sign-in and token endpoints (e2e); ignored in production. */
+	EXTERNAL_OAUTH_TEST_ORIGIN?: string;
 }

@@ -5,7 +5,15 @@ import { normalizeTimeZone } from "@/lib/time/utils";
 type ImportUser = { id: string; role: string; isPrimaryAdmin: boolean; timeZone: string | null };
 
 /** The IMAP login fields of an import request, as the form would have sent them. */
-type SourceFields = { host: string; port: number; secure: boolean; username: string; password: string };
+type SourceFields = {
+	host: string;
+	port: number;
+	secure: boolean;
+	username: string;
+	password: string;
+	/** Set for an OAuth account; undefined otherwise, so a token sent with the request never survives the merge. */
+	accessToken: string | undefined;
+};
 
 export type ConnectedSource = { fields: SourceFields; externalAccountId: string };
 
@@ -39,7 +47,8 @@ async function connectedAccountSource(
 			port: login.port,
 			secure: login.security === "tls",
 			username: login.username,
-			password: login.auth.password,
+			password: login.auth.kind === "password" ? login.auth.password : "",
+			accessToken: login.auth.kind === "xoauth2" ? login.auth.accessToken : undefined,
 		},
 	};
 }

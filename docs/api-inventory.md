@@ -38,6 +38,7 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/admin/attachment-storage`                              | GET, POST              | [source](../src/app/api/admin/attachment-storage/route.ts)                              |
 | `/api/admin/aws`                                             | DELETE, GET, POST, PUT | [source](../src/app/api/admin/aws/route.ts)                                             |
 | `/api/admin/database-size`                                   | GET                    | [source](../src/app/api/admin/database-size/route.ts)                                   |
+| `/api/admin/external-accounts/microsoft`                     | DELETE, GET, PUT       | [source](../src/app/api/admin/external-accounts/microsoft/route.ts)                     |
 | `/api/admin/external-accounts`                               | GET, PUT               | [source](../src/app/api/admin/external-accounts/route.ts)                               |
 | `/api/admin/general`                                         | GET, PUT               | [source](../src/app/api/admin/general/route.ts)                                         |
 | `/api/admin/migrations`                                      | GET, POST              | [source](../src/app/api/admin/migrations/route.ts)                                      |
@@ -168,6 +169,8 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/external-accounts/[id]/two-way`                        | GET, PUT               | [source](../src/app/api/external-accounts/[id]/two-way/route.ts)                        |
 | `/api/external-accounts/attention`                           | GET                    | [source](../src/app/api/external-accounts/attention/route.ts)                           |
 | `/api/external-accounts/detect`                              | GET                    | [source](../src/app/api/external-accounts/detect/route.ts)                              |
+| `/api/external-accounts/oauth/callback`                      | GET                    | [source](../src/app/api/external-accounts/oauth/callback/route.ts)                      |
+| `/api/external-accounts/oauth/start`                         | POST                   | [source](../src/app/api/external-accounts/oauth/start/route.ts)                         |
 | `/api/external-accounts`                                     | GET, POST              | [source](../src/app/api/external-accounts/route.ts)                                     |
 | `/api/finance/badge`                                         | GET                    | [source](../src/app/api/finance/badge/route.ts)                                         |
 | `/api/finance/detect`                                        | POST                   | [source](../src/app/api/finance/detect/route.ts)                                        |

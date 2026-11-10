@@ -3,6 +3,7 @@ import type {
 	ExternalAccountPresetId,
 	ExternalAccountView,
 	MailServerSettings,
+	OAuthProviders,
 } from "@/lib/external-accounts/types";
 
 export type PresetOption = {
@@ -19,6 +20,8 @@ export type ConnectedAccountsState = {
 	refusal: ConnectRefusal | null;
 	refusalText: string | null;
 	presets: PresetOption[];
+	/** Provider sign-ins the owner set up (Sign in with Microsoft); absent from an older server. */
+	oauth?: OAuthProviders;
 	migrationPending: boolean;
 };
 

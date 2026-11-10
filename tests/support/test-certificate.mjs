@@ -56,6 +56,11 @@ export function createTestCertificate(names = ["localhost", "127.0.0.1"]) {
 	);
 	const signature = sign("sha256", tbs, privateKey);
 	const der = seq(tbs, SHA256_RSA, tlv(0x03, Buffer.from([0]), signature));
-	const cert = `-----BEGIN CERTIFICATE-----\n${der.toString("base64").replace(/.{64}/g, "$&\n")}\n-----END CERTIFICATE-----\n`;
+	// 64 characters a line, with no empty line before the footer when the body fills its last line exactly.
+	const body = der
+		.toString("base64")
+		.match(/.{1,64}/g)
+		.join("\n");
+	const cert = `-----BEGIN CERTIFICATE-----\n${body}\n-----END CERTIFICATE-----\n`;
 	return { cert, key: privateKey.export({ type: "pkcs8", format: "pem" }) };
 }

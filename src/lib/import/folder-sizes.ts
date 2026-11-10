@@ -9,7 +9,7 @@ import {
 	sumSizes,
 } from "./folder-size-utils";
 
-type ImapAccount = Pick<ImapImportInput, "host" | "port" | "secure" | "username" | "password">;
+type ImapAccount = Pick<ImapImportInput, "host" | "port" | "secure" | "username" | "password" | "accessToken">;
 type SizeEnv = Parameters<typeof openImportSession>[0];
 
 /**

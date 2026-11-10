@@ -11,6 +11,8 @@ export const FAKE_ABUSE_CH_PORT = Number(process.env.E2E_FAKE_ABUSE_CH_PORT ?? E
 export const FAKE_CLOUDFLARE_PORT = Number(process.env.E2E_FAKE_CLOUDFLARE_PORT ?? E2E_PORT + 96);
 /** The fake S3 that stands in for `<account>.r2.cloudflarestorage.com` in the same setup. */
 export const FAKE_R2_S3_PORT = Number(process.env.E2E_FAKE_R2_S3_PORT ?? E2E_PORT + 95);
+/** The fake Microsoft sign-in (tests/support/fake-microsoft-oauth.mjs); the dev server sends Microsoft sign-in here. */
+export const FAKE_MICROSOFT_OAUTH_PORT = Number(process.env.E2E_FAKE_MICROSOFT_OAUTH_PORT ?? E2E_PORT + 94);
 /** Set by scripts/quality/e2e-pair.mjs for each of the two slices it runs side by side, so nothing collides. */
 const SLICE = process.env.E2E_SLICE;
 export const E2E_PERSIST_DIR = SLICE ? `.wrangler/e2e-state-${SLICE}` : ".wrangler/e2e-state";

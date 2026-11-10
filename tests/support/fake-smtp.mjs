@@ -3,7 +3,8 @@ import { SMTPServer } from "smtp-server";
 
 /**
  * A small SMTP submission server for tests, on the `smtp-server` dependency: implicit TLS (port 465 style) or
- * STARTTLS (587 style) with a throwaway certificate, `AUTH PLAIN` and `AUTH LOGIN`, and every accepted message recorded
+ * STARTTLS (587 style) with a throwaway certificate, `AUTH PLAIN` and `AUTH LOGIN` (and `AUTH XOAUTH2` when
+ * `authMethods` lists it, checked against `accessTokens`: `{ [username]: token }`), and every accepted message recorded
  * with its envelope and bytes. A recording proxy sits in front of it, so tests can check that no credential ever
  * crossed the wire in plain text, and so it can misbehave in ways `smtp-server` never would. Never point it at, or copy
  * it from, a real provider.
@@ -57,6 +58,11 @@ export async function startFakeSmtp(options = {}) {
 			auths.push({ method: auth.method, username: auth.username, secure: !!session.secure });
 			const injected = failure("auth");
 			if (injected) return callback(injected);
+			// XOAUTH2 (`accessTokens`): a refused token gets the 334 JSON error first, as Microsoft and Google answer.
+			if (auth.method === "XOAUTH2")
+				return options.accessTokens?.[auth.username] === auth.accessToken
+					? callback(null, { user: auth.username })
+					: callback(null, { data: { status: "401", schemes: "bearer", scope: "smtp" } });
 			if (users[auth.username] !== auth.password)
 				return callback(Object.assign(new Error("5.7.8 Username and Password not accepted"), { responseCode: 535 }));
 			callback(null, { user: auth.username });

@@ -9,13 +9,22 @@ import type { OutboundProviderMessage } from "@/lib/email/outbound-provider-type
 import { openImapSession } from "@/lib/imap/session";
 import { createLogger } from "@/lib/logger.mjs";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
-import { openSetting, SecretBoxError } from "@/lib/security/secret-box";
+import { SmtpReplyError } from "@/lib/smtp/errors";
 import { submitMessage } from "@/lib/smtp/session";
 import type { SmtpLogin } from "@/lib/smtp/types";
 import { connectRefusal } from "./access";
+import {
+	accountCredential,
+	type AccountCredential,
+	CredentialUnavailableError,
+	imapSignInRefused,
+	signsInWithOAuth,
+	withAccountCredential,
+} from "./credential";
 import { externalAccountTablesReady } from "./errors";
 import { readIdentities, verifiedAddresses } from "./identity-store";
 import { SEND_BLOCK_TEXT, sameAddress, sendBlock } from "./identity-utils";
+import { expireAccessToken } from "./oauth-store";
 import { findPreset } from "./presets-utils";
 import { readSmtpVerified, writeSmtpVerified } from "./send-state";
 import { appendRecentErrors } from "./recent-errors";
@@ -25,6 +34,7 @@ import {
 	appendRetryDelaySeconds,
 	classifySubmitFailure,
 	MAX_APPEND_ATTEMPTS,
+	MAX_SUBMIT_ATTEMPTS,
 	pickSentFolder,
 	sentRawKey,
 	submissionEnvelope,
@@ -67,14 +77,20 @@ const CLAIM_HEARTBEAT_MS = 60_000;
 
 const TAKEN_BACK = "The send was taken back before it was delivered";
 
-type Account = ExternalAccountRow & { password: string };
+type Account = ExternalAccountRow & { credential: AccountCredential };
 
 /**
  * The account a send goes through, checked again when the send runs (a scheduled or undoable send may wait): it must
  * still exist, belong to the sender and be allowed to send as `from`, its own address or one it verified with a code
- * (a removed code stops the sends still waiting). Its password is opened here and nowhere else.
+ * (a removed code stops the sends still waiting). Its password (or OAuth access token) is opened here and nowhere
+ * else; a Microsoft sign-in that cannot be renewed now is tried again later, one that was revoked needs a reconnect.
  */
-async function openAccount(env: CloudflareEnv, target: SubmissionTarget, from: string): Promise<Account> {
+async function openAccount(
+	env: CloudflareEnv,
+	target: SubmissionTarget,
+	from: string,
+	attempt: number,
+): Promise<Account> {
 	const removed = new SubmissionError("The account was removed", "fail");
 	if (!(await externalAccountTablesReady(env))) throw removed;
 	const db = getDb(env);
@@ -95,17 +111,18 @@ async function openAccount(env: CloudflareEnv, target: SubmissionTarget, from: s
 		proven.has(from),
 	);
 	if (block) throw new SubmissionError(`Not sent from ${from}. ${SEND_BLOCK_TEXT[block]}`, "fail");
-	let password: string | null = null;
 	try {
-		password = await openSetting(env, row.secret);
+		return { ...row, credential: await accountCredential(env, row) };
 	} catch (error) {
-		if (!(error instanceof SecretBoxError)) throw error;
-	}
-	if (!password) {
-		await markAuthFailed(env, row, "The saved password can no longer be opened. Reconnect the account.");
+		if (!(error instanceof CredentialUnavailableError)) throw error;
+		if (error.kind === "transient")
+			throw new SubmissionError(
+				`Not sent from ${from}. ${error.message}`,
+				attempt < MAX_SUBMIT_ATTEMPTS ? "retry" : "fail",
+			);
+		await markAuthFailed(env, row, error.message);
 		throw new SubmissionError(`Not sent from ${from}. ${SEND_BLOCK_TEXT.reconnect}`, "fail");
 	}
-	return { ...row, password };
 }
 
 /**
@@ -132,6 +149,14 @@ async function assertStillSendable(
 	if (!access?.canSendOnBehalf) throw refuse("You can no longer send from this mailbox.");
 }
 
+/** A refresh that failed during the send: Reconnect for a revoked sign-in, a later try when Microsoft was away. */
+function credentialFailure(error: unknown, attempt: number): ReturnType<typeof classifySubmitFailure> | null {
+	if (!(error instanceof CredentialUnavailableError)) return null;
+	const base = { deliveryUnknown: false, message: error.message };
+	if (error.kind === "auth") return { ...base, action: "fail", authFailed: true };
+	return { ...base, action: attempt < MAX_SUBMIT_ATTEMPTS ? "retry" : "fail", authFailed: false };
+}
+
 /** The password stopped working: the account shows Reconnect, and the address leaves the From menu. */
 async function markAuthFailed(env: CloudflareEnv, row: ExternalAccountRow, message: string): Promise<void> {
 	const now = new Date();
@@ -147,14 +172,32 @@ async function markAuthFailed(env: CloudflareEnv, row: ExternalAccountRow, messa
 	await writeSmtpVerified(env, row.id, null);
 }
 
-function smtpLogin(account: Account): SmtpLogin {
+function smtpLogin(account: ExternalAccountRow, credential: AccountCredential): SmtpLogin {
 	return {
 		host: account.smtpHost!,
 		port: account.smtpPort!,
 		security: account.smtpSecurity!,
 		username: account.username,
-		password: account.password,
+		...credential,
 	};
+}
+
+/**
+ * Submits with the account's credential. A server that refuses an OAuth account's access token at sign-in (before any
+ * part of the message went out) gets one refreshed token and one more try (spec §15.4).
+ */
+async function submitWithCredential(
+	env: CloudflareEnv,
+	account: Account,
+	submit: (login: SmtpLogin) => Promise<unknown>,
+): Promise<void> {
+	try {
+		await submit(smtpLogin(account, account.credential));
+	} catch (error) {
+		if (!signsInWithOAuth(account) || !(error instanceof SmtpReplyError && error.authFailed)) throw error;
+		await expireAccessToken(env, account.id);
+		await submit(smtpLogin(account, await accountCredential(env, account, { forceRefresh: true })));
+	}
 }
 
 /**
@@ -171,7 +214,7 @@ export async function sendViaSubmission(
 	attempt = 1,
 ): Promise<{ messageId: string; rawR2Key: string; appendSent: boolean }> {
 	const from = getEmailAddress(message.from).trim().toLowerCase();
-	const account = await openAccount(env, target, from);
+	const account = await openAccount(env, target, from, attempt);
 	const built = buildMimeMessage(message, { messageId: mintMessageId(from, target.messageId) });
 	const preset = findPreset(account.preset);
 	if (preset?.maxMessageBytes && built.raw.byteLength > preset.maxMessageBytes)
@@ -183,14 +226,16 @@ export async function sendViaSubmission(
 	const heartbeat = setInterval(() => void renewClaim().catch(() => undefined), CLAIM_HEARTBEAT_MS);
 	const started = Date.now();
 	try {
-		await submitMessage(env, smtpLogin(account), submissionEnvelope(message), built.raw, undefined, {
-			// The last moment the send can still be stopped without anything reaching the provider.
-			beforeData: async () => {
-				if (!(await renewClaim())) throw new SubmissionError(TAKEN_BACK, "fail");
-			},
-		});
+		await submitWithCredential(env, account, (login) =>
+			submitMessage(env, login, submissionEnvelope(message), built.raw, undefined, {
+				// The last moment the send can still be stopped without anything reaching the provider.
+				beforeData: async () => {
+					if (!(await renewClaim())) throw new SubmissionError(TAKEN_BACK, "fail");
+				},
+			}),
+		);
 	} catch (error) {
-		const failure = classifySubmitFailure(error, attempt);
+		const failure = credentialFailure(error, attempt) ?? classifySubmitFailure(error, attempt);
 		if (failure.authFailed) await markAuthFailed(env, account, failure.message);
 		// Nothing went out: the stored bytes go too. A retry rewrites them; "delivery unknown" keeps them on its row.
 		if (failure.action === "fail" && !failure.deliveryUnknown) await dropSentRaw(env, target.messageId, rawR2Key);
@@ -257,15 +302,19 @@ async function appendToSent(
 	const object = await env.BUCKET.get(rawR2Key);
 	if (!object) throw new Error("The sent message is no longer stored");
 	const raw = new Uint8Array(await object.arrayBuffer());
-	const password = await openSetting(env, row.secret).catch(() => null);
-	if (!password) throw new Error("The saved password is not available");
-	const session = await openImapSession(env, {
-		host: row.imapHost,
-		port: row.imapPort,
-		security: row.imapSecurity,
-		username: row.username,
-		password,
-	});
+	const session = await withAccountCredential(
+		env,
+		row,
+		(credential) =>
+			openImapSession(env, {
+				host: row.imapHost,
+				port: row.imapPort,
+				security: row.imapSecurity,
+				username: row.username,
+				...credential,
+			}),
+		imapSignInRefused,
+	);
 	try {
 		const folder = pickSentFolder(await session.listMailboxes());
 		if (!folder) throw new Error("The account has no Sent folder");

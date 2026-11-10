@@ -26,6 +26,7 @@ import {
 import { mockConnectedAccountAuthRecheck, mockForYou, mockForYouPreview } from "./demo-mocks";
 import { sampleMessage, startFakeImap } from "../../tests/support/fake-imap.mjs";
 import { startFakeMicrosoftOAuth } from "../../tests/support/fake-microsoft-oauth.mjs";
+import { startFakeWebdav } from "../../tests/support/fake-webdav.mjs";
 
 // Screenshots for the changelog (docs/releasing.md#screenshots-in-the-changelog), taken against the isolated,
 // seeded e2e server, so only invented demo data appears. They land in public/changelog/<name>.webp, ready for a
@@ -140,6 +141,37 @@ async function seedCompactLabelsDemo(): Promise<void> {
 		await waitForMessage(api, subject);
 	}
 	await api.dispose();
+}
+
+/** A fake Nextcloud on 127.0.0.1 with invented files, for the linked-folder shots. */
+let demoWebdav: Awaited<ReturnType<typeof startFakeWebdav>> | null = null;
+const WEBDAV_LABEL = "Nextcloud";
+
+/** Links the demo admin's Drive to the fake WebDAV server (again, since its port changes) and returns the folder id. */
+async function seedLinkedFolderDemo(): Promise<string> {
+	demoWebdav ??= await startFakeWebdav({
+		username: "demo",
+		files: {
+			"/Projects": null,
+			"/Photos": null,
+			"/Invoices": null,
+			"/Budget 2026.xlsx": Buffer.alloc(48_213, 1),
+			"/Meeting notes.md": "# Offsite\n\nAgenda and travel details.",
+			"/Brand guidelines.pdf": Buffer.alloc(2_418_000, 2),
+			"/Team photo.jpg": Buffer.alloc(812_000, 3),
+		},
+	});
+	const api = await apiContext(STORAGE_STATE);
+	const { mounts } = (await (await api.get("/api/drive/mounts")).json()) as { mounts: { id: string; label: string }[] };
+	for (const mount of mounts.filter((item) => item.label === WEBDAV_LABEL))
+		await api.delete(`/api/drive/mounts/${mount.id}`);
+	const response = await api.post("/api/drive/mounts", {
+		data: { label: WEBDAV_LABEL, url: demoWebdav.url, username: demoWebdav.username, password: demoWebdav.password },
+	});
+	expect(response.status(), await response.text()).toBe(201);
+	const { mount } = (await response.json()) as { mount: { id: string } };
+	await api.dispose();
+	return mount.id;
 }
 
 /** Three invented senders, reported as spam once, for the easier-selection shot's bulk toolbar. */
@@ -263,6 +295,32 @@ async function connectDemoMcpApp(name: string): Promise<void> {
 }
 
 const SHOTS: Shot[] = [
+	{
+		// A linked WebDAV folder in Drive: the folder in the Drive menu and its files, proxied from a demo server.
+		name: "2026-11-10-drive-linked-folder-light",
+		theme: "light",
+		viewport: { width: 1280, height: 760 },
+		open: async (page) => {
+			const id = await seedLinkedFolderDemo();
+			await page.goto(`/drive/m/${id}`);
+			await expect(page.getByRole("heading", { level: 1, name: WEBDAV_LABEL })).toBeVisible();
+			await expect(page.locator('[data-drive-item="Team photo.jpg"]')).toBeVisible();
+			return page;
+		},
+	},
+	{
+		// The same linked folder on a phone (375 px), with the Drive menu folded into its pill.
+		name: "2026-11-10-drive-linked-folder-mobile-light",
+		theme: "light",
+		viewport: { width: 375, height: 760 },
+		open: async (page) => {
+			const id = await seedLinkedFolderDemo();
+			await page.goto(`/drive/m/${id}`);
+			await expect(page.getByRole("heading", { level: 1, name: WEBDAV_LABEL })).toBeVisible();
+			await expect(page.locator('[data-drive-item="Team photo.jpg"]')).toBeVisible();
+			return page;
+		},
+	},
 	{
 		// MCP over OAuth: the consent screen an MCP app opens, with only Read mail ticked and a mailbox chosen.
 		name: "2026-11-10-mcp-oauth-consent-light",
@@ -1491,6 +1549,8 @@ test.describe("changelog screenshots", () => {
 		demoTwoWay = null;
 		await demoMicrosoft?.close();
 		demoMicrosoft = null;
+		await demoWebdav?.close();
+		demoWebdav = null;
 	});
 
 	for (const shot of SHOTS) {

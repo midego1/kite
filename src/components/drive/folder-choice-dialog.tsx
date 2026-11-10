@@ -18,6 +18,9 @@ export function FolderChoiceDialog({
 	verb,
 	exclude,
 	notice,
+	location,
+	picker,
+	targetName,
 	chooseDisabled = false,
 	onChoose,
 }: {
@@ -29,6 +32,11 @@ export function FolderChoiceDialog({
 	exclude?: ReadonlySet<string>;
 	/** Shown above the buttons, such as the risk warning of a flagged attachment. */
 	notice?: ReactNode;
+	/** Above the folders: where to save (My Drive or a linked folder), when there is a choice. */
+	location?: ReactNode;
+	/** Replaces the My Drive folder picker (a linked folder's own picker); `targetName` then names its folder. */
+	picker?: ReactNode;
+	targetName?: string;
 	chooseDisabled?: boolean;
 	onChoose: (folder: DriveCrumb | null) => Promise<void>;
 }) {
@@ -66,7 +74,8 @@ export function FolderChoiceDialog({
 					<DialogTitle>{title}</DialogTitle>
 					<DialogDescription>{description}</DialogDescription>
 				</DialogHeader>
-				<FolderPicker trail={trail} onTrailChange={setTrail} active={open} exclude={exclude} />
+				{location}
+				{picker || <FolderPicker trail={trail} onTrailChange={setTrail} active={open} exclude={exclude} />}
 				{notice}
 				{error && (
 					<p role="alert" className="text-sm text-red-600">
@@ -78,7 +87,7 @@ export function FolderChoiceDialog({
 						Cancel
 					</Button>
 					<Button type="button" onClick={() => void choose()} disabled={busy || chooseDisabled}>
-						{busy ? "Working…" : `${verb} to ${current ? current.name : "My Drive"}`}
+						{busy ? "Working…" : `${verb} to ${targetName ?? (current ? current.name : "My Drive")}`}
 					</Button>
 				</div>
 			</DialogContent>

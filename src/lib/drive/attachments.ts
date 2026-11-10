@@ -121,6 +121,30 @@ export function sizedBody(body: ReadableStream, size: number): ReadableStream {
 	return readable;
 }
 
+type ReadableAttachment = NonNullable<Awaited<ReturnType<typeof readableAttachment>>>;
+
+/**
+ * The same gate as a download: a flagged file is copied (into Drive or a linked folder) only once the user has
+ * seen the warning. A refusal cancels the attachment's stream.
+ */
+export async function attachmentRiskRefusal(
+	env: CloudflareEnv,
+	source: ReadableAttachment,
+	acknowledged: boolean,
+): Promise<DriveAnswer | null> {
+	const risk = await assessStoredAttachment(env, source.attachment);
+	if (risk.level === "ok" || acknowledged) return null;
+	await source.file.body.cancel().catch(() => undefined);
+	return {
+		status: 409,
+		body: {
+			error: "This file is flagged as risky. Review the warning before saving it.",
+			code: "ATTACHMENT_RISK",
+			risk,
+		},
+	};
+}
+
 /**
  * `POST /api/drive/attachments/[id]/save` `{ parentId, name?, acknowledge? }`: copies a readable attachment into a
  * Drive folder the user can edit, as an independent file counted against the folder owner's quota. A flagged file
@@ -141,19 +165,8 @@ export async function saveAttachmentToDrive(
 	const ownerId = parentId ? (await editableFolder(db, user.id, parentId)).folder.ownerId : user.id;
 	const source = await readableAttachment(env, user, attachmentId);
 	if (!source) return notFound();
-	// The same gate as a download: a flagged file is copied only once the user has seen the warning.
-	const risk = await assessStoredAttachment(env, source.attachment);
-	if (risk.level !== "ok" && value.acknowledge !== true) {
-		await source.file.body.cancel().catch(() => undefined);
-		return {
-			status: 409,
-			body: {
-				error: "This file is flagged as risky. Review the warning before saving it.",
-				code: "ATTACHMENT_RISK",
-				risk,
-			},
-		};
-	}
+	const refused = await attachmentRiskRefusal(env, source, value.acknowledge === true);
+	if (refused) return refused;
 	const store = await newDriveStore(env);
 	const id = newId("drv");
 	const now = new Date();

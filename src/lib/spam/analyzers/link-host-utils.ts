@@ -61,9 +61,10 @@ const URL_SHORTENERS = new Set([
 
 /**
  * Click-tracking redirectors of mail services that put the destination in the link itself, so a link
- * through them counts as going to that destination.
+ * through them counts as going to that destination. A link whose destination cannot be read counts as a
+ * mismatch, as for any other site.
  */
-const CLICK_TRACKERS = new Set(["awstrack.me", "list-manage.com", "mandrillapp.com", "sparkpostmail.com"]);
+const CLICK_TRACKERS = new Set(["awstrack.me", "mandrillapp.com", "sparkpostmail.com"]);
 
 /**
  * Click-tracking redirectors that keep the destination in an opaque token, so it cannot be read from the
@@ -74,6 +75,7 @@ const OPAQUE_CLICK_TRACKERS = new Set([
 	"customeriomail.com",
 	"hubspotlinks.com",
 	"klclick.com",
+	"list-manage.com",
 	"mlsend.com",
 	"postmarkapp.com",
 	"pstmrk.it",
@@ -136,8 +138,10 @@ export function isUrlShortener(host: string): boolean {
 	return URL_SHORTENERS.has(cleanHost(host).replace(/^www\./, ""));
 }
 
+/** Whether the host is a known click tracker, whether or not its links show their destination. */
 export function isClickTracker(host: string): boolean {
-	return CLICK_TRACKERS.has(registrableDomain(host));
+	const domain = registrableDomain(host);
+	return CLICK_TRACKERS.has(domain) || OPAQUE_CLICK_TRACKERS.has(domain);
 }
 
 function isOpaqueClickTracker(host: string): boolean {
@@ -289,16 +293,36 @@ function hostOf(value: string): string | null {
 	}
 }
 
-/** Hosts of `http(s)://` addresses written inside a tracking link, decoded once. */
+/** ASCII `%XX` escapes decoded, up to three rounds (a destination escaped twice); invalid escapes are left alone. */
+function decodeEscapes(value: string): string {
+	let decoded = value;
+	for (let round = 0; round < 3; round++) {
+		const next = decoded.replace(/%([0-9a-f]{2})/gi, (escape, hex: string) => {
+			const code = Number.parseInt(hex, 16);
+			return code < 0x80 ? String.fromCharCode(code) : escape;
+		});
+		if (next === decoded) break;
+		decoded = next;
+	}
+	return decoded;
+}
+
+// `https://host`, `https:/host` and `https:host` (browsers read all three alike), or a scheme-relative `//host`.
+const EMBEDDED_ADDRESS = /(?:https?:\/{0,2}|\/\/)([^\s/?#"'<>]+)/gi;
+
+/**
+ * The hosts of addresses written inside a tracking link after its own address, in order, so the first one is
+ * where the link leads. The link is decoded tolerantly (a bad escape elsewhere in it hides nothing) and `\`
+ * counts as `/`, as browsers read it. A scheme-relative `//host` counts only for a name with a dot.
+ */
 function embeddedHosts(href: string): string[] {
-	let decoded = href;
-	try {
-		decoded = decodeURIComponent(href);
-	} catch {}
-	const hosts: string[] = [];
+	const decoded = decodeEscapes(href).replaceAll("\\", "/");
 	const rest = decoded.slice(decoded.indexOf("://") + 3);
-	for (const match of rest.matchAll(/https?:\/\/[^\s/?#"'<>]+/gi)) {
-		const host = hostOf(match[0]);
+	const hosts: string[] = [];
+	for (const match of rest.matchAll(EMBEDDED_ADDRESS)) {
+		const scheme = /^https?:/i.test(match[0]);
+		if (!scheme && !match[1]!.includes(".")) continue;
+		const host = hostOf(`https://${match[1]}`);
 		if (host) hosts.push(host);
 	}
 	return hosts;
@@ -310,9 +334,11 @@ export type LinkVerdict = "ok" | "mismatch" | "sender_tracked";
 /**
  * Whether a link whose text shows one address leads somewhere else: the destination's registrable
  * domain differs from the one shown, unless a known click tracker carries the shown address inside it.
- * A tracker whose destination can be read is judged by it alone. `senderDomain` is the From domain when
- * the sender authenticated: a link that shows an address of that domain and goes through a click tracker
- * that hides its destination is then the sender's own tracked link (`sender_tracked`, no mismatch).
+ * A tracker whose link names its destination is judged by that destination alone (the first address in it).
+ * `senderDomain` is the From domain when the sender authenticated: a link that shows an address of that domain
+ * and goes through an opaque click tracker, one that keeps the destination in a token, is then the sender's own
+ * tracked link (`sender_tracked`, no mismatch). A transparent tracker whose destination cannot be read is a
+ * mismatch whoever sent it.
  */
 export function linkVerdict(href: string, text: string, senderDomain?: string | null): LinkVerdict {
 	if (!/^https?:\/\//i.test(href.trim())) return "ok";
@@ -320,15 +346,12 @@ export function linkVerdict(href: string, text: string, senderDomain?: string | 
 	const target = hostOf(href.trim());
 	if (!shown || !target || sameRegistrableDomain(shown, target)) return "ok";
 	if (isClickTracker(target)) {
-		const embedded = embeddedHosts(href);
-		if (embedded.length > 0) return embedded.some((host) => sameRegistrableDomain(host, shown)) ? "ok" : "mismatch";
+		// The first address written in the link is where it leads; a later one is only a parameter.
+		const [destination] = embeddedHosts(href);
+		if (destination) return sameRegistrableDomain(destination, shown) ? "ok" : "mismatch";
+		if (senderDomain && sameRegistrableDomain(shown, senderDomain) && isOpaqueClickTracker(target))
+			return "sender_tracked";
 	}
-	if (
-		senderDomain &&
-		sameRegistrableDomain(shown, senderDomain) &&
-		(isOpaqueClickTracker(target) || isClickTracker(target))
-	)
-		return "sender_tracked";
 	return "mismatch";
 }
 

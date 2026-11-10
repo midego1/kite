@@ -174,10 +174,52 @@ test("a click tracker counts as the destination it carries, not as a different s
 	);
 	assert.equal(linkTextMismatch("https://abc.awstrack.me/L0/%E0%A4%A", "example.com"), true, "undecodable");
 	assert.equal(
+		linkTextMismatch("https://abc.awstrack.me/L0/https:%2F%2Fexample.com%2F%E0%A4%A/1/0100abc", "example.com"),
+		false,
+		"a bad escape after a readable destination",
+	);
+	assert.equal(
 		linkTextMismatch("https://evil.test/?next=https://example.com/", "example.com"),
 		true,
 		"only known trackers count as carrying a destination",
 	);
+});
+
+test("a transparent tracker is judged by the first address in it, however the address is written", () => {
+	const flagged = (path, senderDomain = "bank.com") =>
+		linkVerdict(`https://abc.r.us-east-1.awstrack.me/L0/${path}`, "bank.com", senderDomain) === "mismatch";
+	const evil = "https:%2F%2Flogin.evil.test%2F";
+	assert.equal(flagged(`${evil}/1/%E0%A4%A`), true, "a malformed escape elsewhere hides nothing");
+	assert.equal(flagged(`${evil}%3Fx=%`), true, "a stray percent sign");
+	assert.equal(flagged("https:%252F%252Flogin.evil.test%252F"), true, "escaped twice");
+	assert.equal(flagged("https:%255C%255Clogin.evil.test%255C"), true, "backslashes, escaped twice");
+	assert.equal(flagged("https:%5C%5Clogin.evil.test%5C"), true, "backslashes");
+	assert.equal(flagged("https:\\\\login.evil.test\\"), true, "literal backslashes");
+	assert.equal(flagged("%2F%2Flogin.evil.test%2F"), true, "scheme-relative");
+	assert.equal(flagged("https:%2Flogin.evil.test%2F"), true, "one slash");
+	assert.equal(flagged("https%3A%2F%2Fbank.com%40login.evil.test%2F"), true, "user info naming the shown site");
+	assert.equal(flagged("https:%2F%2Flogin.evil.test%2F%3Fr%3Dhttps:%2F%2Fbank.com"), true, "only the first counts");
+	assert.equal(flagged("/1/0100abc"), true, "an empty destination");
+	assert.equal(flagged("opaque-token", null), true, "nothing carried, unauthenticated");
+	assert.equal(flagged("https:%2F%2Fwww.bank.com%2Flogin%3Fn%3D1/1/0100abc"), false, "the shown site");
+	assert.equal(flagged("https:%2F%2Fbank.com%2Fa%2F/1/%E0%A4%A"), false, "the shown site, a malformed escape");
+	assert.equal(flagged("%2F%2Fwww.bank.com%2Flogin"), false, "scheme-relative, the shown site");
+	assert.equal(flagged("https%253A%252F%252Fbank.com%252F"), false, "escaped twice, the shown site");
+	// A destination in a query parameter of a tracker.
+	assert.equal(
+		linkTextMismatch("https://x.mandrillapp.com/track/click?p=1&url=https%3A%2F%2Fevil.test", "bank.com"),
+		true,
+	);
+	assert.equal(
+		linkTextMismatch("https://x.mandrillapp.com/track/click?p=1&url=https%3A%2F%2Fbank.com", "bank.com"),
+		false,
+	);
+	assert.equal(
+		linkTextMismatch("https://x.mandrillapp.com/track/click?p=1", "bank.com", "bank.com"),
+		true,
+		"missing param",
+	);
+	assert.equal(linkTextMismatch("https://x.sparkpostmail.com/f/a/xyz", "bank.com", "bank.com"), true);
 });
 
 test("an authenticated sender's own tracked links are not mismatches, an impersonator's are", () => {
@@ -199,9 +241,15 @@ test("an authenticated sender's own tracked links are not mismatches, an imperso
 	assert.equal(linkTextMismatch(own, "bank.com", "bank.com"), false);
 	assert.equal(
 		linkVerdict("https://abc.awstrack.me/L0/opaque-token", "bank.com", "bank.com"),
-		"sender_tracked",
-		"nothing readable in the tracker, authenticated sender's own address",
+		"mismatch",
+		"a transparent tracker whose destination cannot be read is a mismatch, whoever sent it",
 	);
+	assert.equal(
+		linkVerdict("https://x.list-manage.com/track/click?u=1&id=2", "bank.com", "bank.com"),
+		"sender_tracked",
+		"Mailchimp links keep the destination in a token",
+	);
+	assert.equal(linkVerdict("https://x.list-manage.com/track/click?u=1&id=2", "bank.com"), "mismatch");
 	assert.equal(linkVerdict(tracked, "dash.cloudflare.com", "cloudflare.com"), "sender_tracked");
 	assert.equal(linkVerdict(tracked, "dash.cloudflare.com"), "mismatch");
 	assert.equal(linkVerdict("https://u1.mailgun.org/c/x", "bank.com", "bank.com"), "mismatch", "not a known tracker");

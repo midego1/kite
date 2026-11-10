@@ -115,7 +115,6 @@ export function MigrationNoticeCard({ notice, compact = false, className }: Migr
 	const status = {
 		backup: t("Saving a backup…"),
 		applying: t("Applying {done} of {total}…", { done: view.done, total: view.total }),
-		recovering: t("Connection lost, checking…"),
 		elsewhere: t("Update in progress…"),
 	}[phase];
 
@@ -158,7 +157,9 @@ export function MigrationNoticeCard({ notice, compact = false, className }: Migr
 							</p>
 						)}
 					</div>
-					<p className="opacity-80">{t("Keep this page open.")}</p>
+					<p className="opacity-80">
+						{progress.recovering ? t("Connection lost, checking…") : t("Keep this page open.")}
+					</p>
 					<ProgressLine done={view.done} total={view.total} label={t("Database update progress")} />
 				</>
 			)}
@@ -198,7 +199,7 @@ export function MigrationNoticeCard({ notice, compact = false, className }: Migr
 				) : isAdmin ? (
 					<AdminLink label={t("Admin overview")} />
 				) : null}
-				{state === "failed" && isPrimaryAdmin && <AdminLink label={t("Admin overview")} />}
+				{isPrimaryAdmin && (state === "failed" || !compact) && <AdminLink label={t("Admin overview")} />}
 				{state !== "failed" && <DetailsDialog data={data} />}
 			</div>
 		</section>

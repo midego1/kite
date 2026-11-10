@@ -5,7 +5,7 @@ import type { MigrationProgressView } from "./migration-progress-utils";
 export type MigrationNoticeState = "pending" | "applying" | "failed";
 
 /** Which sentence the status line of a running update shows. */
-export type MigrationNoticePhase = "backup" | "applying" | "recovering" | "elsewhere";
+export type MigrationNoticePhase = "backup" | "applying" | "elsewhere";
 
 /** A run in progress always wins; an error is only shown once nothing runs, so Retry never sits beside a spinner. */
 export function migrationNoticeState({ busy, error }: { busy: boolean; error: string | null }): MigrationNoticeState {
@@ -15,11 +15,11 @@ export function migrationNoticeState({ busy, error }: { busy: boolean; error: st
 
 /**
  * The status of a running update. A run another tab or the admin card started has no steps here, so it only
- * says it is going on; this tab's own run is the backup until the first update lands.
+ * says it is going on; this tab's own run is the backup until the first update lands. A dropped connection is
+ * not a phase: the count stays and the hint line says it is being checked.
  */
 export function migrationNoticePhase(view: MigrationProgressView, ownsRun: boolean): MigrationNoticePhase {
 	if (!ownsRun) return "elsewhere";
-	if (view.notice) return "recovering";
 	return view.done > 0 && view.total > 0 ? "applying" : "backup";
 }
 

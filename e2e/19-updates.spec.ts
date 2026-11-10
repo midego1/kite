@@ -222,12 +222,12 @@ test("the primary admin applies pending database updates from the banner", async
 	// With nothing open the notice sits in the empty reading pane, and there is no second copy above the list.
 	await expect(page.getByTestId("reading-pane-empty").getByRole("region", { name: "Database updates" })).toBeVisible();
 	await expect(banner).toHaveCount(1);
-	await expect(banner).toContainText("Kite was updated, but the database still needs 2 updates");
+	await expect(banner).toContainText("2 updates waiting");
 	await expect(banner).toContainText("new email may not appear and some pages may fail");
-	await expect(banner).toContainText("0001_add_column.sql");
+	await expect(banner).not.toContainText(".sql");
 	await expect(banner.getByRole("link", { name: "Admin overview" })).toHaveAttribute("href", "/admin");
 
-	await banner.getByRole("button", { name: "Apply now" }).click();
+	await banner.getByRole("button", { name: "Update now" }).click();
 	await expect(banner).toContainText("Database updated");
 	await expect(banner).toContainText("2 database updates applied. A safety backup was saved first.");
 	// The warning is gone once the status reports nothing pending, and only one POST was sent.
@@ -253,9 +253,9 @@ test("a member is told to ask an administrator and gets no Apply button", async 
 	await signIn(page, `${username}@${DOMAIN}`, USER_PASSWORD);
 	const banner = page.getByRole("region", { name: "Database updates" });
 	await expect(banner).toBeVisible();
-	await expect(banner).toContainText("still needs 1 update");
+	await expect(banner).toContainText("1 update waiting");
 	await expect(banner).toContainText("Ask an administrator to apply them.");
-	await expect(banner.getByRole("button", { name: "Apply now" })).toHaveCount(0);
+	await expect(banner.getByRole("button", { name: "Update now" })).toHaveCount(0);
 	await expect(banner.getByRole("link", { name: "Admin overview" })).toHaveCount(0);
 	await context.close();
 });
@@ -289,12 +289,11 @@ test("with a message open the notice moves to a compact notice in the sidebar", 
 	await expect(
 		page.getByRole("navigation", { name: "Kite" }).getByRole("region", { name: "Database updates" }),
 	).toHaveCount(1);
-	await expect(notice).toContainText("still needs 1 update");
-	await expect(notice).toHaveAttribute("title", "0001_add_column.sql");
+	await expect(notice).toContainText("1 update waiting");
 	// Compact: a title, one short line and the button, not a bar across the page.
 	expect((await notice.boundingBox())!.height).toBeLessThan(120);
 
-	await notice.getByRole("button", { name: "Apply now" }).click();
+	await notice.getByRole("button", { name: "Update now" }).click();
 	await expect(notice).toContainText("1 database update applied.");
 	await expect(notice).not.toContainText("Kite was updated");
 	// The compact result leaves at once through its close button, the same way it leaves on its own.
@@ -341,7 +340,7 @@ test.describe("the Database updated notice", () => {
 		await page.clock.install();
 		await openInbox(page);
 		const notice = page.getByRole("region", { name: "Database updates" });
-		await notice.getByRole("button", { name: "Apply now" }).click();
+		await notice.getByRole("button", { name: "Update now" }).click();
 		await expect(notice).toContainText("Database updated");
 		await expect(notice).toContainText("2 database updates applied. A safety backup was saved first.");
 		return notice;
@@ -416,17 +415,17 @@ test.describe("the Database updated notice", () => {
 		await page.clock.install();
 		await openInbox(page);
 		const notice = page.getByRole("region", { name: "Database updates" });
-		await expect(notice).toContainText("still needs 2 updates");
+		await expect(notice).toContainText("2 updates waiting");
 		await page.clock.fastForward(60_000);
-		await expect(notice).toContainText("still needs 2 updates");
+		await expect(notice).toContainText("2 updates waiting");
 
-		await notice.getByRole("button", { name: "Apply now" }).click();
+		await notice.getByRole("button", { name: "Update now" }).click();
 		await expect(notice.getByRole("alert")).toContainText("The database is not reachable right now.");
 		await page.clock.fastForward(60_000);
 		await expect(notice).toBeVisible();
 		await expect(notice.getByRole("alert")).toContainText("The database is not reachable right now.");
-		await expect(notice).toContainText("still needs 2 updates");
-		await expect(notice.getByRole("button", { name: "Apply now" })).toBeVisible();
+		await expect(notice).toContainText("Update failed");
+		await expect(notice.getByRole("button", { name: "Retry" })).toBeVisible();
 		await expect(notice.getByRole("button", { name: "Dismiss" })).toHaveCount(0);
 		await expect(page.locator(NOTICE_FLIGHT)).toHaveCount(0);
 	});

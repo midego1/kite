@@ -211,3 +211,32 @@ for (const variant of [
 		await expectClean(card);
 	});
 }
+
+for (const variant of [
+	{ language: "nl", dir: "ltr", pending: "4 updates wachten", applying: "Back-up opslaan…", button: "Nu bijwerken" },
+	{
+		language: "ar",
+		dir: "rtl",
+		pending: "4 تحديثات بانتظار التطبيق",
+		applying: "جارٍ حفظ نسخة احتياطية…",
+		button: "حدّث الآن",
+	},
+]) {
+	test(`the notice is translated to ${variant.language} and keeps its layout (${variant.dir})`, async ({ page }) => {
+		await page.addInitScript((language) => {
+			localStorage.setItem("kite-layout-sync", "off");
+			localStorage.setItem("kite-interface-language", language);
+		}, variant.language);
+		const server = await mockMigrations(page);
+		const card = await openSidebarCard(page, 200);
+		await expect(page.locator("html")).toHaveAttribute("dir", variant.dir);
+		await expect(card).toContainText(variant.pending);
+		await expectClean(card);
+
+		await card.getByRole("button", { name: variant.button }).click();
+		await expect(card).toHaveAttribute("data-state", "applying");
+		await expect(card).toContainText(variant.applying);
+		await expectClean(card);
+		server.finish();
+	});
+}

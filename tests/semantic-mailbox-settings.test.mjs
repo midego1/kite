@@ -77,3 +77,34 @@ test("switching off again clears the mailbox even when the stored value is alrea
 		1,
 	);
 });
+
+test("a failing requeue puts the switch back, leaves no 'on' audit entry, and the retry runs it again", async (t) => {
+	const { db, env, access } = await setup(t);
+	db.db.exec(`
+		INSERT INTO app_settings (id, semantic_search_enabled, updated_at) VALUES ('default', 1, 1)
+		ON CONFLICT(id) DO UPDATE SET semantic_search_enabled = 1;
+		INSERT INTO messages (id, user_id, mailbox_id, direction, from_addr, to_addr, subject, text_body, status, created_at)
+		VALUES ('m1', 'owner', 'mailbox-a', 'inbound', 'x@example.net', 'a@example.com', 'Hi', 'Hello', 'received', 10);
+	`);
+	await setMailboxSemanticIndex(env, owner, access, false);
+	db.db.exec("UPDATE message_embeddings SET status = 'indexed' WHERE message_id = 'm1'");
+	const audits = () =>
+		db.db.prepare("SELECT count(*) AS n FROM audit_logs WHERE action = 'search.mailbox_semantic_index'").get().n;
+	assert.equal(audits(), 1, "the switch off");
+	const stored = () =>
+		db.db.prepare("SELECT semantic_index AS on_ FROM mailbox_agent_settings WHERE mailbox_id = 'mailbox-a'").get().on_;
+
+	// The requeue's UPDATE fails (a trigger stands in for a D1 error); the switch must read off again.
+	db.db.exec(
+		"CREATE TRIGGER fail_requeue BEFORE UPDATE OF status ON message_embeddings WHEN new.status = 'pending' BEGIN SELECT RAISE(ABORT, 'requeue failed'); END",
+	);
+	await assert.rejects(setMailboxSemanticIndex(env, owner, access, true), /requeue failed/);
+	assert.equal(stored(), 0, "reverted");
+	assert.equal(audits(), 1, "no 'on' entry for a switch that did not stay on");
+
+	db.db.exec("DROP TRIGGER fail_requeue");
+	assert.equal(await setMailboxSemanticIndex(env, owner, access, true), "saved");
+	assert.equal(stored(), 1);
+	assert.equal(audits(), 2, "the retry audits the change that stuck");
+	assert.equal(db.db.prepare("SELECT status FROM message_embeddings WHERE message_id = 'm1'").get().status, "pending");
+});

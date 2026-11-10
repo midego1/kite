@@ -37,7 +37,8 @@ const MAX_CODE_ATTEMPTS = 5;
  * The limits on one address count what each user did with it, so one user's requests or wrong guesses never block
  * another's verification (the same split `external-accounts/identity-verification.ts` makes for its hourly limit).
  * These caps count everyone together, a backstop against a crowd of accounts mailing or guessing at one address that
- * is well above what the real owner could reach.
+ * is well above what the real owner could reach; requests that mailed nothing do not count toward the request one,
+ * and the guess one only stops users who have guessed wrong themselves.
  */
 const GLOBAL_CODES_PER_ADDRESS_PER_DAY = 50;
 const GLOBAL_FAILED_CODES_PER_ADDRESS_PER_DAY = 50;
@@ -106,7 +107,13 @@ async function senderAddressesReady(env: CloudflareEnv): Promise<boolean> {
  * Returns whether the reservation was made; the caller counts this as the attempt either way it turns out (so a
  * conflict on the address a moment later still shows up against the requester's own hourly budget).
  */
-async function reserveCodeRequest(db: AppDatabase, actorUserId: string, address: string, now: Date): Promise<boolean> {
+async function reserveCodeRequest(
+	db: AppDatabase,
+	actorUserId: string,
+	address: string,
+	now: Date,
+): Promise<string | null> {
+	const auditId = newId("aud");
 	const hourAgo = new Date(now.getTime() - CODE_WINDOW_MS);
 	const dayAgo = new Date(now.getTime() - DAY_MS);
 	const metadata = JSON.stringify({ address });
@@ -120,7 +127,7 @@ async function reserveCodeRequest(db: AppDatabase, actorUserId: string, address:
 	);
 	const result = await db.run(sql`
 		insert into ${auditLogs} (${insertColumns})
-		select ${newId("aud")}, ${actorUserId}, ${CODE_REQUESTED_ACTION}, ${metadata}, ${sql.param(now, auditLogs.createdAt)}
+		select ${auditId}, ${actorUserId}, ${CODE_REQUESTED_ACTION}, ${metadata}, ${sql.param(now, auditLogs.createdAt)}
 		where (
 			select count(*) from ${auditLogs}
 			where ${auditLogs.actorUserId} = ${actorUserId} and ${auditLogs.action} = ${CODE_REQUESTED_ACTION}
@@ -142,9 +149,23 @@ async function reserveCodeRequest(db: AppDatabase, actorUserId: string, address:
 			select count(*) from ${auditLogs}
 			where ${auditLogs.action} = ${CODE_REQUESTED_ACTION} and ${auditLogs.createdAt} > ${sql.param(dayAgo, auditLogs.createdAt)}
 				and json_extract(${auditLogs.metadata}, '$.address') = ${address}
+				and coalesce(json_extract(${auditLogs.metadata}, '$.unminted'), 0) = 0
 		) < ${GLOBAL_CODES_PER_ADDRESS_PER_DAY}
 	`);
-	return result.meta.changes > 0;
+	return result.meta.changes > 0 ? auditId : null;
+}
+
+/**
+ * Marks a reserved request as one that mailed no code (the address is held by someone else, or the user is at
+ * their own address cap). It still counts against the requester's own limits, so the answer never tells whether
+ * the address is free, but it no longer counts toward the global backstop: other accounts' requests cannot use
+ * that up and keep the address's real owner from getting a code.
+ */
+async function markUnminted(db: AppDatabase, auditId: string, address: string): Promise<void> {
+	await db
+		.update(auditLogs)
+		.set({ metadata: JSON.stringify({ address, unminted: true }) })
+		.where(eq(auditLogs.id, auditId));
 }
 
 /**
@@ -203,14 +224,18 @@ async function countAuditByAddress(
 	return row?.total ?? 0;
 }
 
-/** Whether `userId` has collected `MAX_FAILED_CODES_PER_DAY` wrong codes for `address` today, or everyone has the global cap. */
+/**
+ * Whether `userId` has collected `MAX_FAILED_CODES_PER_DAY` wrong codes for `address` today, or, once they have
+ * guessed wrong themselves, everyone together has reached the global cap (so an owner with a clean record is
+ * never stopped by other accounts' guesses).
+ */
 async function tooManyFailedGuesses(db: AppDatabase, userId: string, address: string, now: Date): Promise<boolean> {
 	const dayAgo = new Date(now.getTime() - DAY_MS);
 	const [mine, everyone] = await Promise.all([
 		countAuditByAddress(db, VERIFY_FAILED_ACTION, address, dayAgo, userId),
 		countAuditByAddress(db, VERIFY_FAILED_ACTION, address, dayAgo),
 	]);
-	return mine >= MAX_FAILED_CODES_PER_DAY || everyone >= GLOBAL_FAILED_CODES_PER_ADDRESS_PER_DAY;
+	return mine >= MAX_FAILED_CODES_PER_DAY || (mine > 0 && everyone >= GLOBAL_FAILED_CODES_PER_ADDRESS_PER_DAY);
 }
 
 /** The user's own verified and pending extra addresses; never the code hash. */
@@ -303,7 +328,8 @@ export async function addSenderAddress(
 			error: "Too many wrong codes were entered for this address today. Try again tomorrow.",
 		};
 
-	if (!(await reserveCodeRequest(db, userId, normalized, now)))
+	const reservation = await reserveCodeRequest(db, userId, normalized, now);
+	if (!reservation)
 		return {
 			ok: false,
 			code: "RATE_LIMITED",
@@ -315,9 +341,14 @@ export async function addSenderAddress(
 	const codeExpiresAt = new Date(now.getTime() + CODE_MINUTES * 60 * 1000);
 	const id = newId("ases");
 	try {
-		if (!(await insertSenderAddressRow(db, id, userId, normalized, codeHash, codeExpiresAt, now))) return { ok: true }; // this user's own MAX_SENDER_ADDRESSES cap; the reservation above still counted
+		if (!(await insertSenderAddressRow(db, id, userId, normalized, codeHash, codeExpiresAt, now))) {
+			// This user's own MAX_SENDER_ADDRESSES cap; the reservation above still counted for them.
+			await markUnminted(db, reservation, normalized);
+			return { ok: true };
+		}
 	} catch (error) {
 		if (!isUniqueViolation(error)) throw error;
+		await markUnminted(db, reservation, normalized);
 		// Someone already holds this exact address (this user's own still-pending row, or another user's,
 		// verified or not): nothing in the response may say which, so this returns having sent nothing new.
 		return { ok: true };

@@ -319,7 +319,7 @@ test("a code exhausted by wrong guesses also frees the address for the same user
 	assert.notEqual(rows[0].id, "row-1");
 });
 
-function seedAudit(database, action, address, actors) {
+function seedAudit(database, action, address, actors, extra = {}) {
 	const nowSeconds = Math.floor(Date.now() / 1000);
 	const user = database.db.prepare(
 		"INSERT OR IGNORE INTO users (id, email, password_hash, name, created_at) VALUES (?, ?, 'hash', ?, 1)",
@@ -329,29 +329,40 @@ function seedAudit(database, action, address, actors) {
 		"INSERT INTO audit_logs (id, actor_user_id, action, metadata, created_at) VALUES (?, ?, ?, ?, ?)",
 	);
 	actors.forEach((actor, index) =>
-		insert.run(`seed-${action}-${address}-${index}`, actor, action, JSON.stringify({ address }), nowSeconds),
+		insert.run(
+			`seed-${action}-${address}-${index}-${Object.keys(extra).join("")}`,
+			actor,
+			action,
+			JSON.stringify({ address, ...extra }),
+			nowSeconds,
+		),
 	);
 }
 
-test("more than CODES_PER_ADDRESS requests for an address by one user in an hour are refused, other users are not affected", async (t) => {
+const codeRows = (database, address) =>
+	database.db.prepare("SELECT * FROM assistant_sender_addresses WHERE address = ?").all(address);
+
+test("more than CODES_PER_ADDRESS requests for an address by one user in an hour are refused, other users still get a code", async (t) => {
 	const { database, env, db } = await setup(t);
-	database.db.exec(
-		"INSERT INTO users (id, email, password_hash, name, created_at) VALUES ('carol', 'carol@example.com', 'hash', 'Carol', 1)",
+	// Alice's three requests this hour were all for this address, and none of them left a row (the address is free).
+	seedAudit(
+		database,
+		"assistant_email.sender_code_requested",
+		"popular@phone.test",
+		Array.from({ length: CODES_PER_ADDRESS_PER_HOUR }, () => "alice"),
 	);
-	for (let i = 0; i < CODES_PER_ADDRESS_PER_HOUR; i += 1) {
-		const result = await addSenderAddress(env, db, "alice", "popular@phone.test");
-		assert.equal(result.ok, true, `request ${i}`);
-	}
 	const limited = await addSenderAddress(env, db, "alice", "popular@phone.test");
 	assert.equal(limited.ok, false);
 	assert.equal(limited.code, "RATE_LIMITED");
-	// Bob and Carol are not held back by alice's requests for the same address: they get the generic answer.
-	for (const userId of ["bob", "carol"])
-		assert.equal((await addSenderAddress(env, db, userId, "popular@phone.test")).ok, true, userId);
-	assert.equal(auditActions(database, "assistant_email.sender_code_requested").length, CODES_PER_ADDRESS_PER_HOUR + 2);
+	assert.equal(codeRows(database, "popular@phone.test").length, 0);
+	// Bob is not held back by alice's requests: he gets a real code row for the same address.
+	assert.equal((await addSenderAddress(env, db, "bob", "popular@phone.test")).ok, true);
+	const [row] = codeRows(database, "popular@phone.test");
+	assert.equal(row?.user_id, "bob");
+	assert.ok(row.code_hash, "a code was minted for bob");
 });
 
-test("a crowd of users requesting codes for one address hits the global daily cap", async (t) => {
+test("a crowd of users minting codes for one address hits the global daily cap", async (t) => {
 	const { database, env, db } = await setup(t);
 	seedAudit(
 		database,
@@ -363,6 +374,33 @@ test("a crowd of users requesting codes for one address hits the global daily ca
 	assert.equal(limited.ok, false);
 	assert.equal(limited.code, "RATE_LIMITED");
 	assert.equal((await addSenderAddress(env, db, "alice", "elsewhere@phone.test")).ok, true);
+});
+
+test("requests that mailed no code do not count toward the global cap, so colluding accounts cannot lock the owner out", async (t) => {
+	const { database, env, db } = await setup(t);
+	seedAudit(
+		database,
+		"assistant_email.sender_code_requested",
+		"held@phone.test",
+		Array.from({ length: GLOBAL_CODES_PER_ADDRESS_PER_DAY }, (_, i) => `colluder-${i}`),
+		{ unminted: true },
+	);
+	assert.equal((await addSenderAddress(env, db, "alice", "held@phone.test")).ok, true);
+	assert.equal(codeRows(database, "held@phone.test").length, 1);
+});
+
+test("a request that hits someone else's pending row is marked as having mailed no code, but still counts for the requester", async (t) => {
+	const { database, env, db } = await setup(t);
+	await insertPending(database, { id: "alice-row", userId: "alice", address: "held@phone.test", code: "123456" });
+	assert.equal((await addSenderAddress(env, db, "bob", "held@phone.test")).ok, true);
+	const [request] = auditActions(database, "assistant_email.sender_code_requested");
+	assert.equal(request.actor_user_id, "bob");
+	assert.equal(JSON.parse(request.metadata).unminted, true);
+	assert.equal(codeRows(database, "held@phone.test").length, 1, "alice's row is untouched, no row for bob");
+	// It still counts in bob's own budget: the answer never says whether the address is free.
+	await addSenderAddress(env, db, "bob", "held@phone.test");
+	await addSenderAddress(env, db, "bob", "held@phone.test");
+	assert.equal((await addSenderAddress(env, db, "bob", "held@phone.test")).code, "RATE_LIMITED");
 });
 
 test("one user's wrong guesses do not stop another user's code request for the same address", async (t) => {
@@ -377,6 +415,7 @@ test("one user's wrong guesses do not stop another user's code request for the s
 	assert.equal(refused.ok, false);
 	assert.equal(refused.code, "RATE_LIMITED");
 	assert.equal((await addSenderAddress(env, db, "bob", "shared@phone.test")).ok, true);
+	assert.equal(codeRows(database, "shared@phone.test")[0]?.user_id, "bob", "bob got a code row");
 	// Verification itself is also counted per user: bob's pending row is not blocked by alice's failures.
 	await insertPending(database, { id: "bob-row", userId: "bob", address: "bob-shared@phone.test", code: "123456" });
 	seedAudit(
@@ -388,7 +427,7 @@ test("one user's wrong guesses do not stop another user's code request for the s
 	assert.equal(await verifySenderAddress(env, db, "bob", "bob-row", "123456"), true);
 });
 
-test("a crowd of wrong guesses at one address hits the global daily cap", async (t) => {
+test("a crowd of wrong guesses at one address hits the global cap only for users who guessed wrong themselves", async (t) => {
 	const { database, env, db } = await setup(t);
 	seedAudit(
 		database,
@@ -396,7 +435,11 @@ test("a crowd of wrong guesses at one address hits the global daily cap", async 
 		"guessed@phone.test",
 		Array.from({ length: GLOBAL_FAILED_CODES_PER_ADDRESS_PER_DAY }, (_, i) => `guesser-${i}`),
 	);
-	const refused = await addSenderAddress(env, db, "bob", "guessed@phone.test");
+	// Bob has a clean record on this address: the crowd does not stop him.
+	assert.equal((await addSenderAddress(env, db, "bob", "guessed@phone.test")).ok, true);
+	assert.equal(codeRows(database, "guessed@phone.test")[0]?.user_id, "bob");
+	seedAudit(database, "assistant_email.sender_verify_failed", "guessed@phone.test", ["guesser-0"], { again: 1 });
+	const refused = await addSenderAddress(env, db, "guesser-0", "guessed@phone.test");
 	assert.equal(refused.ok, false);
 	assert.equal(refused.code, "RATE_LIMITED");
 });

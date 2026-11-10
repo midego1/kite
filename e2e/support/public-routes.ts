@@ -122,4 +122,43 @@ export const PUBLIC_ROUTES: PublicRoute[] = [
 		status: 503,
 		reason: "Resend webhook, verified with a secret that the e2e server does not configure",
 	},
+	{
+		method: "OPTIONS",
+		path: "/api/oauth/register",
+		status: 204,
+		reason: "CORS preflight of a cookie-free MCP OAuth endpoint, for browser-based MCP clients",
+	},
+	{
+		method: "POST",
+		path: "/api/oauth/register",
+		status: 400,
+		reason:
+			"Dynamic Client Registration for MCP apps (RFC 7591); grants nothing until a user consents; an empty body is a validation error",
+	},
+	{
+		method: "OPTIONS",
+		path: "/api/oauth/token",
+		status: 204,
+		reason: "CORS preflight of a cookie-free MCP OAuth endpoint, for browser-based MCP clients",
+	},
+	{
+		method: "POST",
+		path: "/api/oauth/token",
+		status: 400,
+		reason:
+			"OAuth token endpoint for MCP apps, authenticated by the code with PKCE or the refresh token in the body; an empty body is a validation error",
+	},
+	{
+		method: "OPTIONS",
+		path: "/api/oauth/revoke",
+		status: 204,
+		reason: "CORS preflight of a cookie-free MCP OAuth endpoint, for browser-based MCP clients",
+	},
+	{
+		method: "POST",
+		path: "/api/oauth/revoke",
+		status: 400,
+		reason:
+			"OAuth token revocation for MCP apps, authenticated by the token in the body; an empty body is a validation error",
+	},
 ];

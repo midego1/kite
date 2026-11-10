@@ -14,6 +14,7 @@ import { agentActions } from "@/db/schema/agent-auto-read";
 import { aiSummaries } from "@/db/schema/agent-summaries";
 import { assistantEmailRequests } from "@/db/schema/assistant-email";
 import { MCP_TOOL_CALL_ACTION } from "@/lib/mcp/audit";
+import { pruneMcpOAuth } from "@/lib/mcp/oauth/service";
 import type { PruningPolicy, PruningResult } from "./pruning-types";
 import {
 	MCP_AUDIT_DAILY_MAX_BATCHES,
@@ -124,6 +125,12 @@ export async function runDatabasePruning(
 		result.assistant_email_stale_raw = await pruneStaleAssistantEmailRequests(env, now, policy);
 	} catch (error) {
 		console.error("Pruning assistant_email_stale_raw failed", error);
+	}
+	try {
+		// MCP over OAuth: expired codes and tokens, grants without a live refresh token and unused registrations.
+		result.mcp_oauth_grants = await pruneMcpOAuth(env, now);
+	} catch (error) {
+		console.error("Pruning mcp_oauth failed", error);
 	}
 	const jobs: Array<[string, PrunableTable, number, (cutoff: Date) => SQL | undefined, number?]> = [
 		[

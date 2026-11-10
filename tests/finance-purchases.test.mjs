@@ -921,6 +921,7 @@ test("list_payments through a real MCP key: limited to its readable mailboxes, n
 		const principal = await authenticateMcpRequest(
 			globalThis.__kiteNodeEnv,
 			new Request("https://kite.test/mcp", { headers: { Authorization: `Bearer ${fullKey}` } }),
+			"https://kite.test/mcp",
 		);
 		assert.ok(principal, "the key authenticates");
 		const ctx = buildCallContext({

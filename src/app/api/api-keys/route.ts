@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, ne } from "drizzle-orm";
 import { z } from "zod";
 import { getEnv } from "@/lib/cloudflare";
 import { getDb } from "@/db";
@@ -35,7 +35,8 @@ export async function GET(request: Request) {
 			lastUsedAt: apiKeys.lastUsedAt,
 		})
 		.from(apiKeys)
-		.where(eq(apiKeys.userId, user.id));
+		// Apps connected with OAuth are listed and revoked under Settings → MCP apps.
+		.where(and(eq(apiKeys.userId, user.id), ne(apiKeys.kind, "oauth")));
 	const keyIds = rows.map((row) => row.id);
 	const allowed = keyIds.length
 		? await db.select().from(mcpKeyMailboxes).where(inArray(mcpKeyMailboxes.keyId, keyIds))
@@ -98,7 +99,7 @@ export async function DELETE(request: Request) {
 	const [key] = await db
 		.select({ id: apiKeys.id, scopes: apiKeys.scopes })
 		.from(apiKeys)
-		.where(and(eq(apiKeys.id, id), eq(apiKeys.userId, user.id)))
+		.where(and(eq(apiKeys.id, id), eq(apiKeys.userId, user.id), ne(apiKeys.kind, "oauth")))
 		.limit(1);
 	if (!key) return NextResponse.json({ error: "Key not found" }, { status: 404 });
 	if (parseScopes(key.scopes).some((scope) => ["domains", "accounts", "mailboxes"].includes(scope)))

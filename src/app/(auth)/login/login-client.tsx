@@ -14,9 +14,12 @@ import { submitLogin, submitMfaCode } from "./utils";
 export function LoginClient({
 	adding = false,
 	justFinishedSetup = false,
+	next,
 }: {
 	adding?: boolean;
 	justFinishedSetup?: boolean;
+	/** The MCP consent screen to return to (`loginNextPath`). */
+	next?: string;
 }) {
 	const router = useRouter();
 	const [error, setError] = useState<string | null>(null);
@@ -27,7 +30,7 @@ export function LoginClient({
 	const [code, setCode] = useState("");
 
 	function finish(redirect?: string) {
-		router.replace(justFinishedSetup ? "/admin" : (redirect ?? "/inbox"));
+		router.replace(justFinishedSetup ? "/admin" : (next ?? redirect ?? "/inbox"));
 		router.refresh();
 	}
 

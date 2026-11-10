@@ -90,6 +90,8 @@ An administrator can add other users as hosts of a booking event. The booking is
 
 Admin > API keys can also grant the `accounts` and `mailboxes` scopes independently. These routes use `Authorization: Bearer <key>` and require the key owner to retain the admin role. Each key can access only accounts created by its owner and mailboxes owned by those accounts or the admin.
 
+MCP clients can also connect to `/mcp` with OAuth 2.1 instead of a key (`/.well-known/oauth-protected-resource/mcp`, `/.well-known/oauth-authorization-server`, `POST /api/oauth/register`, `POST /api/oauth/token`, `POST /api/oauth/revoke`); see [Connecting an MCP app with OAuth](email-assistant-and-mcp.md#connecting-an-mcp-app-with-oauth). The signed-in user's connected apps are `GET /api/oauth/grants` and `DELETE /api/oauth/grants?id=<id>`.
+
 Admin API keys cannot read or send mail. Enable **Allow MCP access** when creating an admin key to use its selected `domains`, `accounts`, and `mailboxes` permissions through `/mcp`. The `manage_domains`, `manage_accounts`, and `manage_mailboxes` tools expose the corresponding management actions below. Admin MCP keys do not expose mail tools. Use Settings > API keys for mail and mail MCP access.
 
 | Scope | Kite route | Purpose |

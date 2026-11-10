@@ -97,6 +97,64 @@ function parseJson(raw: string): unknown {
 
 const tokens = (value: string) => Math.max(1, Math.ceil(value.length / 4));
 
+/**
+ * Deterministic fake embeddings for the "search by meaning" e2e spec: words in the same row below
+ * share a fixed pseudo-random unit vector, so texts that share no words but share a concept (an
+ * invoice in English, a factuur in Dutch) still embed close together, while unrelated texts land far
+ * apart. A text matching no row falls back to a vector hashed from its own words.
+ */
+const EMBEDDING_SYNONYMS: string[][] = [
+	["invoice", "invoices", "bill", "billing", "factuur", "facturen"],
+	["roof", "roofing", "dak", "dakwerk"],
+	["dentist", "dentistry", "tandarts", "tandartspraktijk"],
+];
+const EMBEDDING_DIMENSIONS = 1024;
+
+/** A small seeded PRNG (xorshift32) so the same seed always yields the same vector. */
+function seededUnitVector(seed: string, dims: number): number[] {
+	let state = 2166136261 >>> 0;
+	for (let index = 0; index < seed.length; index++) {
+		state ^= seed.charCodeAt(index);
+		state = Math.imul(state, 16777619) >>> 0;
+	}
+	function next(): number {
+		state ^= state << 13;
+		state >>>= 0;
+		state ^= state >>> 17;
+		state ^= state << 5;
+		state >>>= 0;
+		return state / 4294967296;
+	}
+	const values = Array.from({ length: dims }, () => next() * 2 - 1);
+	const norm = Math.sqrt(values.reduce((sum, value) => sum + value * value, 0)) || 1;
+	return values.map((value) => value / norm);
+}
+
+function wordsOf(text: string): string[] {
+	return text
+		.toLowerCase()
+		.split(/[^\p{L}\p{N}]+/u)
+		.filter(Boolean);
+}
+
+/** The concept each word belongs to (its row's first word), or the word itself when it matches none. */
+function conceptsOf(text: string): string[] {
+	const words = new Set(wordsOf(text));
+	const concepts = EMBEDDING_SYNONYMS.filter((row) => row.some((word) => words.has(word))).map((row) => row[0]);
+	return concepts.length ? concepts : [text];
+}
+
+function fakeEmbed(text: string): number[] {
+	const concepts = conceptsOf(text);
+	const dims = new Array(EMBEDDING_DIMENSIONS).fill(0);
+	for (const concept of concepts) {
+		const vector = seededUnitVector(concept, EMBEDDING_DIMENSIONS);
+		for (let index = 0; index < EMBEDDING_DIMENSIONS; index++) dims[index] += vector[index];
+	}
+	const norm = Math.sqrt(dims.reduce((sum, value) => sum + value * value, 0)) || 1;
+	return dims.map((value) => value / norm);
+}
+
 function toolCallsOf(id: number, reply: FakeModelReply) {
 	return (reply.toolCalls ?? []).map((call, index) => ({
 		id: `call_fake_${id}_${index}`,
@@ -257,6 +315,23 @@ export async function startFakeModel(options: FakeModelOptions = {}): Promise<Fa
 		response.end(completionStream(entry.id, body, reply, promptChars));
 	}
 
+	async function embeddings(request: IncomingMessage, response: ServerResponse, path: string) {
+		const raw = await readBody(request);
+		const parsed = parseJson(raw) as { model?: unknown; input?: unknown } | null;
+		const input = Array.isArray(parsed?.input)
+			? (parsed?.input as unknown[]).filter((v): v is string => typeof v === "string")
+			: [];
+		record(request, path, { kind: "other", body: parsed });
+		const data = input.map((text, index) => ({ object: "embedding", index, embedding: fakeEmbed(text) }));
+		const promptTokens = input.reduce((sum, text) => sum + tokens(text), 0);
+		sendJson(response, 200, {
+			object: "list",
+			data,
+			model: typeof parsed?.model === "string" ? parsed.model : "bge-m3",
+			usage: { prompt_tokens: promptTokens, total_tokens: promptTokens },
+		});
+	}
+
 	async function scenarioControl(request: IncomingMessage, response: ServerResponse) {
 		if (request.method === "DELETE") defaultScenario = "default";
 		if (request.method === "POST") {
@@ -299,6 +374,7 @@ export async function startFakeModel(options: FakeModelOptions = {}): Promise<Fa
 			});
 		}
 		if (path === "/chat/completions" && request.method === "POST") return chat(request, response, path);
+		if (path === "/embeddings" && request.method === "POST") return embeddings(request, response, path);
 		sendJson(response, 404, { error: { message: "Not found", type: "invalid_request_error" } });
 	}
 

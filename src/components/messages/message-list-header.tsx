@@ -92,6 +92,8 @@ export function MessageListHeader({
 	emptyFolder,
 	screenerVisible,
 	listVisible,
+	semanticUnavailable,
+	showAllKeywordMatches,
 }: MessageListHeaderProps) {
 	const t = useT();
 	const bulk = selection.count > 0;
@@ -175,6 +177,22 @@ export function MessageListHeader({
 			</div>
 			<div className="flex flex-col gap-3 px-3 pb-2 pt-3">
 				<MailSearchInput variant="panel" />
+				{semanticUnavailable && (
+					<p className="text-xs text-neutral-500">
+						{t("Showing keyword matches only — search by meaning is unavailable right now.")}
+					</p>
+				)}
+				{showAllKeywordMatches && (
+					<p className="text-xs text-neutral-500">
+						<button
+							type="button"
+							onClick={showAllKeywordMatches.run}
+							className="font-medium text-blue-700 underline-offset-2 hover:underline"
+						>
+							{t("Show all {count} keyword matches", { count: showAllKeywordMatches.count })}
+						</button>
+					</p>
+				)}
 				<MessageListChips config={config} filter={filter} screenerVisible={screenerVisible} />
 			</div>
 		</div>

@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { useKeyChanged } from "@/hooks/use-synced-state";
 import { useMailSearch } from "@/components/mail-search/mail-search-context";
+import { useSemanticSearchChip } from "@/components/mail-search/use-semantic-search-chip";
 import { useSelectedMailbox } from "@/components/mailbox-provider";
 import { usePageLoading } from "@/components/page-loading";
 import { useIsMobile } from "@/components/sidebar-mobile-utils";
@@ -51,6 +52,7 @@ import {
 	planEmptyFolderInView,
 	deleteMessagesForever,
 	supportsUnreadFilter,
+	semanticUnavailableNote,
 	LIST_ACTION_CANCELLED,
 } from "./utils";
 import {
@@ -99,6 +101,7 @@ export function MessageFolderPage({
 	} = useSelectedMailbox();
 	const access = useMessageAccess();
 	const { query, view } = useMailSearch();
+	const [semanticOn, setSemanticOn] = useSemanticSearchChip();
 	const isMobile = useIsMobile();
 	const [offset, setOffset] = useState(0);
 	// Cursor that starts the page at each offset, filled in as the user pages forward.
@@ -113,7 +116,7 @@ export function MessageFolderPage({
 	const [density] = useMessageListDensity();
 	const [labels] = useMessageListLabels();
 	const grouped = conversationView && config.folder !== "drafts";
-	const { messages, isLoading, total, limit, nextCursor, updateMessages } = useMessages(
+	const { messages, isLoading, total, limit, nextCursor, updateMessages, semantic, keywordTotal } = useMessages(
 		config.folder,
 		mailboxScope,
 		{
@@ -123,10 +126,12 @@ export function MessageFolderPage({
 			cursor: offset > 0 ? pageCursors[offset] : null,
 			read: unreadOnly ? "unread" : "all",
 			group: grouped ? "thread" : undefined,
+			semantic: semanticOn,
 		},
 		!mailboxesLoading,
 		config.folderId,
 	);
+	const semanticUnavailable = semanticUnavailableNote(query, semantic);
 	const { counts } = useMessageCounts(mailboxScope, !mailboxesLoading);
 	// In All mailboxes the Screener applies while any listed mailbox holds new senders back.
 	const screenerVisible =
@@ -162,7 +167,7 @@ export function MessageFolderPage({
 	const selectAllCap = Math.min(total, SELECT_ALL_MAX_MESSAGES);
 	const showSelectAllBanner = allVisibleSelected && selectedIds.length < selectAllCap;
 
-	const listKey = [query, mailboxScope, config.folder, config.folderId, unreadOnly, grouped].join("\u0000");
+	const listKey = [query, mailboxScope, config.folder, config.folderId, unreadOnly, grouped, semanticOn].join("\u0000");
 	if (useKeyChanged(listKey)) {
 		setOffset(0);
 		setPageCursors({});
@@ -529,6 +534,8 @@ export function MessageFolderPage({
 					},
 				}}
 				screenerVisible={screenerVisible}
+				semanticUnavailable={semanticUnavailable}
+				showAllKeywordMatches={keywordTotal ? { count: keywordTotal, run: () => setSemanticOn(false) } : null}
 				nested={!!selectedMessageId}
 				selection={{
 					count: selectedIds.length,

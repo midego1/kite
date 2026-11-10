@@ -20,6 +20,7 @@ import {
 import * as financeTables from "@/db/schema/finance";
 import * as moduleTables from "@/db/schema/modules";
 import * as screenerTables from "@/db/schema/screener";
+import * as semanticTables from "@/db/schema/semantic";
 import * as storageTables from "@/db/schema/storage";
 import * as telemetryTables from "@/db/schema/telemetry";
 import * as userPreferenceTables from "@/db/schema/user-preferences";
@@ -43,6 +44,7 @@ const schema = {
 	...driveSchemaTables,
 	...storageTables,
 	...screenerTables,
+	...semanticTables,
 	...telemetryTables,
 	externalAccounts,
 	externalAccountAuthRechecks,

@@ -207,6 +207,18 @@ test("before migration 0091 no mailbox has AI off and the switch answers 409 MIG
 	await drain(answered);
 });
 
+test("turning No AI back off still saves before migration 0099 (R4 of review round 2)", async (t) => {
+	// 0091/0092 are applied (the switch itself works) but 0099 (search by meaning) is not: `semantic_index`
+	// does not exist on `mailbox_agent_settings` yet, which used to throw "no such column" (not "no such table",
+	// so uncaught) out of `requeueMailboxSemanticIndex` and turn an otherwise-successful save into a 500.
+	const before = copyMigrationsBefore(scratch, 99);
+	const { setAi } = await harness(t, { migrations: before });
+	const off = await setAi("mailbox-off", true);
+	assert.equal(off.status, 200);
+	const on = await setAi("mailbox-off", false);
+	assert.equal(on.status, 200, await on.text());
+});
+
 test("only someone who can manage the mailbox changes the switch, with an audit row", async (t) => {
 	const { database, setAi, requests } = await harness(t);
 	const denied = await setAi("mailbox-off", true, "reader");

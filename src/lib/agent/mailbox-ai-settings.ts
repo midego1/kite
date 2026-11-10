@@ -7,6 +7,7 @@ import type { SessionUser } from "@/lib/auth/types";
 import { createAuditLog } from "@/lib/mailboxes/audit";
 import type { MailboxAccessLevel } from "@/lib/mailboxes/types";
 import { isNoSuchTableError } from "@/lib/modules/state-utils";
+import { clearMailboxSemanticIndex, requeueMailboxSemanticIndex } from "@/lib/semantic/admin-actions";
 import { skipPendingMailboxJobs } from "./auto-read/install-settings";
 import { ensureMailboxAgentSettingsRow } from "./auto-read/mailbox-settings";
 import { notifySuggestionsQuietly } from "./auto-read/suggestion-events";
@@ -104,5 +105,13 @@ export async function setMailboxAiDisabled(
 			metadata: { aiDisabled: disabled },
 		});
 	if (disabled || changed.length > 0) await clearMailboxAi(env, mailboxId);
+	// Search by meaning (docs/specs/semantic-search.md): "No AI for this mailbox" keeps the mailbox's mail away from
+	// every AI provider, embeddings included, exactly as the feature's own mailbox switch does. Only an actual flip
+	// acts: turning AI off deletes the mailbox's vectors, and turning it back on queues its messages again.
+	const semanticAction = (error: unknown) => {
+		if (!isNoSuchTableError(error)) throw error;
+	};
+	if (disabled) await clearMailboxSemanticIndex(env, mailboxId).catch(semanticAction);
+	else if (changed.length > 0) await requeueMailboxSemanticIndex(env, mailboxId).catch(semanticAction);
 	return "saved";
 }

@@ -1,4 +1,5 @@
 import { sqliteTable, text, integer, index, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { sql } from "drizzle-orm";
 import { users } from "./index";
 
 /** A Drive file or folder. Files keep their bytes at `object_key` on the store named by `store_id`. */
@@ -40,8 +41,34 @@ export const driveItems = sqliteTable(
 		index("drive_items_parent_idx").on(t.parentId),
 		index("drive_items_trashed_idx").on(t.trashedAt),
 		index("drive_items_upload_expiry_idx").on(t.uploadExpiresAt),
+		// The cold storage orphan sweep's liveness check (`cold.ts`'s `stillReferenced`) looks a key up here;
+		// folders (null) never match, so the index only covers files.
+		index("drive_items_object_key_idx")
+			.on(t.objectKey)
+			.where(sql`object_key IS NOT NULL`),
 	],
 );
+
+/**
+ * The columns cold storage (src/lib/drive/storage-hooks.ts, migration 0097) needs, as a narrow view of
+ * `drive_items`. Kept off `driveItems` itself on purpose: Drizzle names every column of a table in whole-row
+ * selects, and several of those already exist (`attachments.ts`, `items.ts`, `refs.ts`, `access.ts`), so adding
+ * `storage_class` there would fail them on a database the migration has not reached yet.
+ */
+export const driveItemColdView = sqliteTable("drive_items", {
+	id: text("id").primaryKey(),
+	kind: text("kind", { enum: ["file", "folder"] }).notNull(),
+	status: text("status", { enum: ["uploading", "ready"] }).notNull(),
+	storeId: text("store_id"),
+	objectKey: text("object_key"),
+	size: integer("size").notNull().default(0),
+	trashedAt: integer("trashed_at", { mode: "timestamp" }),
+	createdAt: integer("created_at", { mode: "timestamp" })
+		.notNull()
+		.$defaultFn(() => new Date()),
+	/** Set only for a file rewritten in place to a cheaper storage class (R2 Infrequent Access); null otherwise. */
+	storageClass: text("storage_class"),
+});
 
 /** A Drive item shared with another account; the role applies to the whole subtree. */
 export const driveShares = sqliteTable(

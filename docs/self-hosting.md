@@ -218,6 +218,8 @@ Set `AI_BASE_URL`, `AI_API_KEY`, and `AI_MODEL` in the container environment to 
 
 The MCP endpoint is `/mcp`. Create a dedicated mailbox-scoped Bearer key in **Assistant → MCP** and give the key to a client that supports custom HTTP headers. The endpoint uses Streamable HTTP; `request_send` gives the client a review URL, and only an authenticated Kite browser session can confirm delivery. MCP read and draft tools remain available when no AI model is configured.
 
+**Assistant by email** needs a hop that verifies the sender before Kite ever sees the mail: the Cloudflare relay (redeploy it after any update, so it keeps sending `X-Kite-Headers-Signature`) or Amazon SES. It does not work over the direct SMTP listener, because nothing there verifies a sender's authentication, so every request arriving that way is dropped without a reply. A domain whose receiving provider is Resend cannot host an assistant address yet either. An admin creates the address itself on Domains → domain details; each user then opts in in the assistant panel's Settings tab.
+
 ## Running without Docker
 
 ```bash

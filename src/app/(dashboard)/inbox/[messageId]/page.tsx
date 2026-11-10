@@ -10,6 +10,7 @@ import { useSelectedMailbox } from "@/components/mailbox-provider";
 import { ContactCard } from "@/components/contacts/contact-card";
 import { ContactAvatar } from "@/components/contacts/contact-avatar";
 import { MessageActions } from "@/components/message-actions/message-actions";
+import { READER_TOOLBAR_SPACER_ATTR } from "@/components/message-actions/use-reader-toolbar-overflow";
 import { MessageAttachmentViewer } from "@/components/message-attachment-viewer";
 import { MessageAttachmentCard } from "@/components/message-attachment-card";
 import { MessageDetailSkeleton } from "@/components/page-skeletons";
@@ -61,6 +62,9 @@ import { SummarizeButton, ThreadSummaryCard } from "@/components/messages/thread
 import { useThreadSummary } from "@/components/messages/use-thread-summary";
 import { showsCurrentSummary } from "@/components/messages/thread-summary-utils";
 import { useT } from "@/lib/i18n/use-t";
+import { SenderAuthWarningNotice } from "@/components/messages/sender-auth-warning";
+import { SenderAuthBadge } from "@/components/messages/sender-auth-badge";
+import { deriveSenderAuthWarning } from "@/components/messages/sender-auth-warning-utils";
 
 export default function MessageDetailPage() {
 	const t = useT();
@@ -160,6 +164,8 @@ export default function MessageDetailPage() {
 	};
 	const currentAccountName = messageMailbox?.displayName ?? messageMailbox?.localPart;
 	const { fromName, fromAddress } = getMessageHeaderParties(message, currentAccountName);
+	// spamSignals and spoofedContact are only ever set on inbound mail, so a sent or draft message derives no warning.
+	const senderAuthWarning = deriveSenderAuthWarning(message.spamSignals, message.spoofedContact);
 	const toEntries = splitEmailAddressList(message.toAddr);
 	const ccEntries = splitEmailAddressList(message.ccAddr);
 	const bccEntries = splitEmailAddressList(message.bccAddr);
@@ -184,14 +190,12 @@ export default function MessageDetailPage() {
 	};
 	return (
 		<InlineComposerHost messageId={message.id}>
-			{/* min-h, not h: the reader toolbar's buttons wrap onto a second line rather than overflow when the
-			header is too narrow to hold them (message-actions.tsx), and this lets the header grow to fit. */}
-			<div className="sticky top-0 z-40 flex min-h-14 items-center gap-1 border-b border-neutral-200 bg-white px-3">
+			<div className="@container sticky top-0 z-40 flex min-h-14 items-center gap-1 border-b border-neutral-200 bg-white px-3">
 				<MessageReadingHeaderButton />
 				<MessageDetailNavigation messageId={message.id} unread={message.direction === "inbound" && !message.read} />
 				{/* On a phone this space goes to the reader toolbar instead (message-actions.tsx is `max-md:flex-1`
-				there): Reply, Trash and Report spam need the room this spacer would otherwise keep empty. */}
-				<span className="min-w-0 flex-1 max-md:hidden" />
+				there). On desktop its width is the room the toolbar may still use (use-reader-toolbar-overflow.ts). */}
+				<span {...{ [READER_TOOLBAR_SPACER_ATTR]: "" }} className="min-w-0 flex-1 max-md:hidden" />
 				<SummarizeButton controller={summary} />
 				<MessageActions
 					messageId={message.id}
@@ -246,16 +250,7 @@ export default function MessageDetailPage() {
 				<ScreenerBanner message={message} mailbox={messageMailbox} alignWide={!isAnyPanelVisible} />
 				<SendStateBanner message={message} alignWide={!isAnyPanelVisible} />
 				<ThreadSummaryCard key={message.id} controller={summary} />
-				{/* <div className="px-6">
-        <div className="mx-auto w-full max-w-[640px]">
-          <SpamScoreDetails
-            score={message.spamScore}
-            verdict={message.spamVerdict}
-            signals={message.spamSignals}
-            analysisError={message.spamAnalysisError}
-          />
-        </div>
-      </div> */}
+				<SenderAuthWarningNotice warning={senderAuthWarning} alignWide={!isAnyPanelVisible} />
 				<ConversationThread
 					currentMessageId={message.id}
 					threadId={message.threadId}
@@ -309,6 +304,7 @@ export default function MessageDetailPage() {
 										<span dir="ltr" className="text-neutral-500 text-xs flex-1 overflow-hidden text-ellipsis min-w-0">
 											&lt;{fromAddress}&gt;
 										</span>
+										<SenderAuthBadge warning={senderAuthWarning} className="shrink-0" />
 									</p>
 									<p className="text-xs text-neutral-500">
 										{t("to")}{" "}

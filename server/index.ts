@@ -32,8 +32,7 @@ import { processBackupObjectsMessage } from "@/lib/backups/objects";
 import { isBackupObjectsMessage } from "@/lib/backups/objects-utils";
 import { processRestoreMessage } from "@/lib/backups/restore-job";
 import { isRestoreJobMessage } from "@/lib/backups/restore-job-utils";
-import { processStorageMigration } from "@/lib/storage/migration";
-import { isStorageMigrateMessage } from "@/lib/storage/migration-utils";
+import { processStorageQueueMessage } from "@/lib/storage/cold";
 import { processAttachmentJob } from "@/lib/email/attachment-storage-jobs";
 import { isAttachmentStorageJobMessage } from "@/lib/email/attachment-storage-jobs-utils";
 import { processAppendSent } from "@/lib/external-accounts/submit";
@@ -85,8 +84,9 @@ async function main() {
 		else if (isBackupRunMessage(body)) await runDatabaseBackup(env, body.backupId);
 		else if (isBackupObjectsMessage(body)) await processBackupObjectsMessage(env, body);
 		else if (isRestoreJobMessage(body)) await processRestoreMessage(env, body);
-		else if (isStorageMigrateMessage(body)) await processStorageMigration(env, body);
-		else if (isAttachmentStorageJobMessage(body)) await processAttachmentJob(env, body);
+		else if (await processStorageQueueMessage(env, body)) {
+			// A storage migration or cold storage sweep batch.
+		} else if (isAttachmentStorageJobMessage(body)) await processAttachmentJob(env, body);
 		else if (isAppendSentMessage(body)) await processAppendSent(env, body);
 		else if ((await dispatchModuleQueueMessage(env, "outbound", body)).handled) {
 			// A module's own message kind, routed through the registry.

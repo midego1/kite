@@ -214,6 +214,49 @@ test("deleting a store is refused while a route, a Drive file or a running migra
 	assert.equal(drive.status, 409);
 	assert.match(drive.error, /Drive/);
 	env.DB.db.prepare("DELETE FROM drive_items").run();
+	env.DB.db
+		.prepare(
+			"INSERT INTO storage_cold_rules (object_class, after_days, min_bytes, target, enabled, updated_at) VALUES ('backups', 30, 0, 'sto_a', 1, 1)",
+		)
+		.run();
+	const coldRule = await stores.deleteStore(env, actor, "sto_a");
+	assert.equal(coldRule.status, 409);
+	assert.match(coldRule.error, /cold storage rule/);
+	env.DB.db.prepare("DELETE FROM storage_cold_rules").run();
+	env.DB.db
+		.prepare(
+			"INSERT INTO object_locations (key, object_class, store_id, storage_class, size, moved_at) VALUES ('backups/database/old.json', 'backups', 'sto_a', NULL, 10, 1)",
+		)
+		.run();
+	const coldObject = await stores.deleteStore(env, actor, "sto_a");
+	assert.equal(coldObject.status, 409);
+	assert.match(coldObject.error, /cold storage sweep/);
+	env.DB.db.prepare("DELETE FROM object_locations").run();
+	// A copy the orphan sweep is still deciding whether to delete (a losing mover's copy, a migration's
+	// leftover) has no object_locations row of its own any more, but still physically sits on the store.
+	env.DB.db
+		.prepare(
+			"INSERT INTO storage_cold_orphans (id, store_id, key, object_class, moved_at, orphaned_at, first_orphaned_at) VALUES ('sco_1', 'sto_a', 'backups/database/leftover.json', 'backups', 1, 1, 1)",
+		)
+		.run();
+	const orphanCopy = await stores.deleteStore(env, actor, "sto_a");
+	assert.equal(orphanCopy.status, 409);
+	assert.match(orphanCopy.error, /later release/);
+	env.DB.db.prepare("DELETE FROM storage_cold_orphans").run();
+	// A sweep already in flight keeps its rule as it was when it started (`cold.ts`'s cutoff snapshot), so a
+	// rule changed or disabled after that would not show up in the checks above; the job's own cursor must
+	// still be checked.
+	env.DB.db
+		.prepare(
+			`INSERT INTO storage_cold_jobs (object_class, status, cursor, created_at) VALUES ('backups', 'running', ?, 1)`,
+		)
+		.run(
+			JSON.stringify({ rule: { objectClass: "backups", afterDays: 30, minBytes: 0, target: "sto_a" }, sources: {} }),
+		);
+	const activeSweep = await stores.deleteStore(env, actor, "sto_a");
+	assert.equal(activeSweep.status, 409);
+	assert.match(activeSweep.error, /cold storage sweep/);
+	env.DB.db.prepare("DELETE FROM storage_cold_jobs").run();
 	const deleted = await stores.deleteStore(env, actor, "sto_a");
 	assert.equal(deleted.ok, true);
 	assert.equal(rows(env).length, 0);

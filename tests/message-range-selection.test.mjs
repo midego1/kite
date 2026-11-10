@@ -11,7 +11,14 @@ const outDir = makeBundleDirectory("kite-range-selection-test-");
 after(() => rmSync(outDir, { recursive: true, force: true }));
 
 await build({
-	entryPoints: [join(root, "src/components/messages/message-range-selection-utils.ts")],
+	stdin: {
+		contents: `
+			export * from "./src/components/messages/message-range-selection-utils.ts";
+			export { getInboxUnreadDelta } from "./src/lib/messages/thread-unread-utils.ts";
+		`,
+		resolveDir: root,
+		sourcefile: "message-range-selection-test-entry.ts",
+	},
 	outfile: join(outDir, "entry.mjs"),
 	bundle: true,
 	sourcemap: "inline",
@@ -23,10 +30,14 @@ await build({
 });
 
 const {
+	expandSelectedThreadIds,
+	getInboxUnreadDelta,
 	isApplePlatform,
 	openIdFromPath,
 	planRowSelection,
+	pruneSelection,
 	replaceSelection,
+	resolveSelectedRows,
 	resolveSelectionAnchor,
 	rowClickModifiers,
 } = await import(pathToFileURL(join(outDir, "entry.mjs")).href);
@@ -54,13 +65,32 @@ test("without an anchor on the page only the clicked row is used", () => {
 });
 
 test("rows that left the list leave the selection, and an unchanged selection keeps its identity", async () => {
-	const { pruneSelection } = await import(pathToFileURL(join(outDir, "entry.mjs")).href);
 	const selected = [
 		{ id: "a", read: true },
 		{ id: "b", read: false },
 	];
 	assert.deepEqual(pruneSelection(selected, [{ id: "a" }]), [{ id: "a", read: true }]);
 	assert.equal(pruneSelection(selected, [{ id: "a" }, { id: "b" }]), selected);
+});
+
+test("an offPage entry is never dropped, even once its row is gone from the loaded page entirely", () => {
+	// "Select all in folder" marks every row it selected offPage, not just the ones past what was loaded: a
+	// row that was on the page at selection time can still be pushed off it later by new mail or a move, and
+	// a refresh of the page must not silently shrink a folder-wide selection back down to what it now holds.
+	const selected = [
+		{ id: "a", read: true, offPage: true },
+		{ id: "b", read: false, offPage: true },
+	];
+	assert.deepEqual(pruneSelection(selected, []), selected);
+	assert.deepEqual(pruneSelection(selected, [{ id: "a" }]), selected);
+});
+
+test("an offPage entry is still dropped once a non-offPage entry beside it leaves the page", () => {
+	const selected = [
+		{ id: "a", read: true, offPage: true },
+		{ id: "b", read: false },
+	];
+	assert.deepEqual(pruneSelection(selected, []), [{ id: "a", read: true, offPage: true }]);
 });
 
 const click = (extra = {}) => ({ button: 0, shiftKey: false, metaKey: false, ctrlKey: false, altKey: false, ...extra });
@@ -178,6 +208,53 @@ test("replaceSelection keeps rows already selected and swaps the rest", () => {
 	);
 	assert.equal(next[0].read, false);
 	assert.equal(next[1].mailboxId, "m1");
+});
+
+test("expandSelectedThreadIds prefers a loaded row's current thread ids over the selection's own snapshot", () => {
+	// The row is still loaded, with its thread grown past what the selection snapshotted when it was checked
+	// (a reply arriving, a filter widening what the thread's scope includes): the live row wins.
+	const messages = [{ id: "root", threadMessageIds: ["root", "reply"] }];
+	const selected = [{ id: "root", read: false, threadMessageIds: ["root"] }];
+	assert.deepEqual(expandSelectedThreadIds(["root"], messages, selected), ["root", "reply"]);
+});
+
+test("expandSelectedThreadIds falls back to the selection's snapshot for a row this page never loaded", () => {
+	// "Select all in folder" can select ids past the loaded page; only the selection itself knows their thread.
+	const messages = [{ id: "other" }];
+	const selected = [{ id: "off-page", read: false, threadMessageIds: ["off-page", "off-page-reply"] }];
+	assert.deepEqual(expandSelectedThreadIds(["off-page"], messages, selected), ["off-page", "off-page-reply"]);
+});
+
+test("expandSelectedThreadIds falls back to the bare id when neither the row nor a snapshot has one", () => {
+	assert.deepEqual(expandSelectedThreadIds(["solo"], [], []), ["solo"]);
+	const messages = [{ id: "solo" }];
+	assert.deepEqual(expandSelectedThreadIds(["solo"], messages, []), ["solo"]);
+});
+
+test("resolveSelectedRows prefers the loaded row, and falls back to the selection's snapshot past the loaded page", () => {
+	const messages = [{ id: "loaded", direction: "inbound", read: false }];
+	const selected = [
+		{ id: "loaded", direction: "inbound", read: true },
+		{ id: "off-page", direction: "inbound", read: false },
+	];
+	// "loaded" comes back as the fresh row, not the (now stale) snapshot; "off-page" has only the snapshot,
+	// and "missing" (selected nowhere, loaded nowhere) is left out rather than invented.
+	assert.deepEqual(resolveSelectedRows(["loaded", "off-page", "missing"], messages, selected), [
+		messages[0],
+		selected[1],
+	]);
+});
+
+test("marking a folder-wide selection read moves the sidebar Inbox count by an off-page row too", () => {
+	// Only "on-page" is still loaded; "off-page" is a row "Select all in folder" reached past it, known only
+	// through the selection's own snapshot (`toSelectedMessage`), unread like "on-page".
+	const messages = [{ id: "on-page", direction: "inbound", read: false }];
+	const selected = [
+		{ id: "on-page", direction: "inbound", read: false },
+		{ id: "off-page", direction: "inbound", read: false },
+	];
+	const rows = resolveSelectedRows(["on-page", "off-page"], messages, selected);
+	assert.equal(getInboxUnreadDelta(rows, true, true), -2);
 });
 
 test("the open message or draft is read from its route", () => {

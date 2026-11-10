@@ -28,11 +28,14 @@ export type BackupTableRange = { start: number; end: number; rows: number };
 
 export type PreparedRestoreTable = {
 	name: string;
-	/** Null when the backup has no rows for the table; it is still emptied. */
+	/** Null when the backup has no rows for the table; it is still emptied, unless `merge` is true. */
 	range: BackupTableRange | null;
 	columns: string[];
 	/** The primary key columns, used to tell whether a batch was committed when a restore resumes. */
 	primaryKey: string[];
+	/** A merge table (`MERGED_ON_RESTORE`) is never emptied first, and the backup's rows are inserted with
+	 * `OR IGNORE`, so a live row survives and only a key or id the live table lacks is added back. */
+	merge: boolean;
 };
 
 /**

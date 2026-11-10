@@ -1,7 +1,9 @@
 {
 	"gated": [
+		"src/lib/agent/email/daily-limit-utils.ts",
 		"src/lib/agent/email/guards-utils.ts",
 		"src/lib/agent/email/reply-utils.ts",
+		"src/lib/agent/email/request-reasons-utils.ts",
 		"src/lib/agent/translation/detect-language-utils.ts",
 		"src/lib/agent/translation/segment-utils.ts",
 		"src/lib/agent/translation/prompt-utils.ts",
@@ -45,6 +47,7 @@
 		"src/lib/storage/config-utils.ts",
 		"src/lib/storage/validate-utils.ts",
 		"src/lib/storage/migration-utils.ts",
+		"src/lib/storage/cold-utils.ts",
 		"src/lib/storage/store-input-utils.ts",
 		"src/lib/storage/credential-utils.ts",
 		"src/lib/storage/cloudflare-r2-utils.ts",
@@ -209,6 +212,8 @@
 		"src/lib/email/word-wrap-utils.ts",
 		"src/lib/email/mime-body-utils.ts",
 		"src/lib/email/stored-html-utils.ts",
+		"src/lib/email/receipt-html-export-utils.ts",
+		"src/lib/email/receipt-pdf-utils.ts",
 		"src/lib/email/linkify-utils.ts",
 		"src/app/(dashboard)/inbox/[messageId]/email-html-sanitizer-utils.ts",
 		"src/lib/import/imap-utils.ts",

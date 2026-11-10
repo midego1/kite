@@ -5,6 +5,13 @@ export const BACKUP_PREFIX = "backups/database";
 /** Uploaded backup files wait here while they are restored, and are deleted afterwards. */
 export const BACKUP_UPLOAD_PREFIX = "backups/uploads";
 
+/** The backup id a database export's own `r2_key` names, or null for anything else. */
+export function backupIdFromR2Key(key: string): string | null {
+	if (!key.startsWith(`${BACKUP_PREFIX}/`)) return null;
+	const id = key.slice(BACKUP_PREFIX.length + 1).split("/")[0];
+	return id || null;
+}
+
 /**
  * How long a backup may stay queued or running before it counts as interrupted.
  * A Worker invocation is killed without running its own error handler when the

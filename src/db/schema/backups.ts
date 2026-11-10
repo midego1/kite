@@ -1,4 +1,5 @@
 import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { sql } from "drizzle-orm";
 import { users } from "./index";
 
 /**
@@ -56,5 +57,12 @@ export const backups = sqliteTable(
 		/** JSON result of the last restore of the mail files (`BackupObjectsRestoreResult`). */
 		objectsRestore: text("objects_restore"),
 	},
-	(t) => [index("backups_created_idx").on(t.createdAt), index("backups_status_idx").on(t.status)],
+	(t) => [
+		index("backups_created_idx").on(t.createdAt),
+		index("backups_status_idx").on(t.status),
+		// The cold storage orphan sweep's liveness check (`cold.ts`'s `stillReferenced`) looks a key up here.
+		index("backups_r2_key_idx")
+			.on(t.r2Key)
+			.where(sql`r2_key IS NOT NULL`),
+	],
 );

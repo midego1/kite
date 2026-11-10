@@ -180,11 +180,13 @@ async function rollBack(run: RestoreRun): Promise<void> {
 		const schema = await schemaFingerprint(run.env.DB);
 		if (!run.job.rollbackPlan || schema !== run.job.schema) {
 			// The restore's own preserved set: the half-restored database may have gained or lost storage rows.
+			// `merge: []` forces the cold storage tables to be wiped and replaced like any other, undoing any
+			// rows a merge added before the restore failed, rather than leaving a partial merge in place.
 			const preserved = run.job.plan?.preserved;
 			const prepared = await prepareDatabaseRestore(
 				run.env.DB,
 				await bucketBackupSource(run.env.BUCKET, safety.r2Key),
-				{ preserved: Array.isArray(preserved) ? preserved : [] },
+				{ preserved: Array.isArray(preserved) ? preserved : [], merge: [] },
 			);
 			await save(run, { rollbackPlan: strip(prepared), schema, cursor: { at: RESTORE_START, pending: null } });
 			return;

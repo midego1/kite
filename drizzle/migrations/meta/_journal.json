@@ -705,15 +705,43 @@
     {
       "idx": 100,
       "version": "6",
-      "when": 1794268800000,
-      "tag": "0099_add_semantic_search",
+      "when": 1794225600000,
+      "tag": "0097_add_cold_storage",
       "breakpoints": true
     },
     {
       "idx": 101,
       "version": "6",
-      "when": 1794355200000,
+      "when": 1794247200000,
+      "tag": "0099_add_semantic_search",
+      "breakpoints": true
+    },
+    {
+      "idx": 102,
+      "version": "6",
+      "when": 1794268800000,
       "tag": "0100_add_external_account_auth_recheck",
+      "breakpoints": true
+    },
+    {
+      "idx": 103,
+      "version": "6",
+      "when": 1794355200000,
+      "tag": "0102_add_finance_receipts",
+      "breakpoints": true
+    },
+    {
+      "idx": 104,
+      "version": "6",
+      "when": 1794441600000,
+      "tag": "0103_add_assistant_sender_attempts",
+      "breakpoints": true
+    },
+    {
+      "idx": 105,
+      "version": "6",
+      "when": 1794528000000,
+      "tag": "0104_add_cold_storage_orphans",
       "breakpoints": true
     }
   ]

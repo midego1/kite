@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { STORAGE_STATE, SUPPORT_ADDRESS } from "./support/constants";
-import { apiContext, deliverInbound, uniqueToken, waitForMessage } from "./support/helpers";
+import { apiContext, deliverInbound, postInbound, uniqueToken, waitForMessage } from "./support/helpers";
+import { BULK_ACTION_BATCH_SIZE } from "../src/components/messages/bulk-action-batch-utils";
 
 // Reporting spam trains the filter, so every route to it asks first, and the toast that follows can undo it.
 
@@ -34,6 +35,26 @@ async function expectStill(page: Page, subject: string, status: string) {
 
 const dialog = (page: Page, name: string) => page.getByRole("alertdialog", { name });
 const toastFor = (page: Page, text: string | RegExp) => page.getByRole("status").filter({ hasText: text });
+
+/** The bulk toolbar in the list header: its action buttons sit beside the "N selected" count. */
+function selectionToolbar(page: Page) {
+	return page.getByTestId("bulk-toolbar");
+}
+
+/**
+ * Runs a bulk toolbar action by its label, whether the default split-pane list has room to show it inline
+ * or, too narrow for that, it only reaches through "More actions" (Report spam/Not spam and Delete forever
+ * fold away there first; Delete and Mark as read always stay inline).
+ */
+async function clickBulkAction(page: Page, action: string | RegExp) {
+	const inline = selectionToolbar(page).getByRole("button", { name: action });
+	if (await inline.first().isVisible()) {
+		await inline.first().click();
+		return;
+	}
+	await selectionToolbar(page).getByRole("button", { name: "More actions" }).click();
+	await page.getByRole("menu").getByRole("menuitem", { name: action }).click();
+}
 
 function rowFor(page: Page, subject: string) {
 	return page
@@ -123,19 +144,79 @@ test("reporting a selection names the count, Cancel changes nothing, and Undo pu
 	for (const { subject } of [first, second]) await rowFor(page, subject).getByRole("checkbox").check();
 	await expect(page.getByText("2 selected")).toBeVisible();
 
-	await page.getByRole("button", { name: "Report spam" }).first().click();
+	await clickBulkAction(page, "Report spam");
 	const confirm = dialog(page, "Report 2 messages as spam?");
 	await expect(confirm).toBeVisible();
 	await confirm.getByRole("button", { name: "Cancel" }).click();
 	for (const { subject } of [first, second]) await expectStill(page, subject, "received");
 
-	await page.getByRole("button", { name: "Report spam" }).first().click();
+	await clickBulkAction(page, "Report spam");
 	await confirm.getByRole("button", { name: "Report spam" }).click();
 	for (const { subject } of [first, second]) await statusOf(subject, "spam");
 	const toast = toastFor(page, "2 messages reported as spam");
 	await expect(toast).toBeVisible();
 	await toast.getByRole("button", { name: "Undo" }).click();
 	for (const { subject } of [first, second]) await statusOf(subject, "received");
+});
+
+test("reporting more than a batch of selected messages trains every one, over several requests, and Undo restores them all", async ({
+	page,
+}) => {
+	// 51 deliveries, a report and an undo, each training or untraining one message at a time on the server: well
+	// past the default timeout on a busy dev server, so this polls aggregate counts (one request each) instead
+	// of each message in turn, and gives both the test and every poll a generous budget.
+	test.setTimeout(240_000);
+	const token = uniqueToken();
+	const count = BULK_ACTION_BATCH_SIZE + 1;
+	const api = await apiContext(STORAGE_STATE);
+	const subjects = Array.from({ length: count }, (_, index) => `Batch report ${token} ${index}`);
+	for (const subject of subjects) {
+		await postInbound(api, {
+			from: `"Report Sender" <${uniqueToken("rs")}@outside.test>`,
+			to: SUPPORT_ADDRESS,
+			subject,
+			text: subject,
+		});
+	}
+	async function countWithStatus(status: string): Promise<number> {
+		const params = new URLSearchParams({ q: token, limit: "1", status });
+		const response = await api.get(`/api/messages?${params}`, { timeout: 60_000 });
+		return ((await response.json()) as { total: number }).total;
+	}
+	await expect
+		.poll(async () => countWithStatus("received"), { timeout: 90_000, intervals: [500, 1000, 2000] })
+		.toBe(count);
+
+	let bulkRequests = 0;
+	page.on("request", (request) => {
+		if (request.method() === "POST" && new URL(request.url()).pathname === "/api/messages/bulk") bulkRequests += 1;
+	});
+
+	await page.goto("/inbox");
+	const search = page.getByPlaceholder(/^Search mail/);
+	await search.fill(token);
+	await expect(page.getByText(subjects.at(-1)!, { exact: true })).toBeVisible();
+
+	await page.getByRole("checkbox", { name: "Select all visible messages" }).check();
+	const banner = page.getByRole("button", { name: new RegExp(`Select all ${count} in Inbox`) });
+	await expect(banner).toBeVisible();
+	await banner.click();
+	await expect(page.getByText(`${count} selected`)).toBeVisible();
+
+	await clickBulkAction(page, "Report spam");
+	await dialog(page, `Report ${count} messages as spam?`).getByRole("button", { name: "Report spam" }).click();
+
+	await expect.poll(async () => countWithStatus("spam"), { timeout: 90_000, intervals: [500, 1000, 2000] }).toBe(count);
+	// One request per batch of 50, not one for all 51: the second batch would otherwise risk a Worker's limits.
+	expect(bulkRequests).toBeGreaterThan(1);
+
+	const toast = toastFor(page, `${count} messages reported as spam`);
+	await expect(toast).toBeVisible();
+	await toast.getByRole("button", { name: "Undo" }).click();
+	await expect
+		.poll(async () => countWithStatus("received"), { timeout: 90_000, intervals: [500, 1000, 2000] })
+		.toBe(count);
+	await api.dispose();
 });
 
 test("moving mail out of Spam with Not spam asks nothing", async ({ page }) => {
@@ -148,7 +229,7 @@ test("moving mail out of Spam with Not spam asks nothing", async ({ page }) => {
 	// Moving it back needs no question.
 	await page.goto(`/spam`);
 	await rowFor(page, subject).getByRole("checkbox").check();
-	await page.getByRole("button", { name: "Not spam" }).first().click();
+	await clickBulkAction(page, "Not spam");
 	await expect(page.getByRole("alertdialog")).toHaveCount(0);
 	await statusOf(subject, "received");
 });

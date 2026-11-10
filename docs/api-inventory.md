@@ -51,6 +51,8 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/admin/storage/cloudflare/buckets`                      | POST                   | [source](../src/app/api/admin/storage/cloudflare/buckets/route.ts)                      |
 | `/api/admin/storage/cloudflare/direct-uploads`               | POST                   | [source](../src/app/api/admin/storage/cloudflare/direct-uploads/route.ts)               |
 | `/api/admin/storage/cloudflare`                              | GET                    | [source](../src/app/api/admin/storage/cloudflare/route.ts)                              |
+| `/api/admin/storage/cold/[class]`                            | POST, PUT              | [source](../src/app/api/admin/storage/cold/[class]/route.ts)                            |
+| `/api/admin/storage/cold`                                    | GET                    | [source](../src/app/api/admin/storage/cold/route.ts)                                    |
 | `/api/admin/storage/migrations/[id]`                         | GET, POST              | [source](../src/app/api/admin/storage/migrations/[id]/route.ts)                         |
 | `/api/admin/storage/reminder`                                | POST                   | [source](../src/app/api/admin/storage/reminder/route.ts)                                |
 | `/api/admin/storage`                                         | GET                    | [source](../src/app/api/admin/storage/route.ts)                                         |
@@ -76,6 +78,7 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/agent/compose`                                         | GET, POST              | [source](../src/app/api/agent/compose/route.ts)                                         |
 | `/api/agent/conversations/[id]`                              | DELETE, GET            | [source](../src/app/api/agent/conversations/[id]/route.ts)                              |
 | `/api/agent/conversations`                                   | GET                    | [source](../src/app/api/agent/conversations/route.ts)                                   |
+| `/api/agent/email-requests`                                  | GET                    | [source](../src/app/api/agent/email-requests/route.ts)                                  |
 | `/api/agent/jobs/[id]/retry`                                 | POST                   | [source](../src/app/api/agent/jobs/[id]/retry/route.ts)                                 |
 | `/api/agent/jobs`                                            | GET                    | [source](../src/app/api/agent/jobs/route.ts)                                            |
 | `/api/agent/mcp-keys`                                        | DELETE, GET, POST      | [source](../src/app/api/agent/mcp-keys/route.ts)                                        |
@@ -174,6 +177,8 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/finance/payments/[id]`                                 | DELETE, PATCH          | [source](../src/app/api/finance/payments/[id]/route.ts)                                 |
 | `/api/finance/payments`                                      | GET                    | [source](../src/app/api/finance/payments/route.ts)                                      |
 | `/api/finance/payments/scan`                                 | POST                   | [source](../src/app/api/finance/payments/scan/route.ts)                                 |
+| `/api/finance/receipts/backfill`                             | POST                   | [source](../src/app/api/finance/receipts/backfill/route.ts)                             |
+| `/api/finance/receipts`                                      | GET, PATCH             | [source](../src/app/api/finance/receipts/route.ts)                                      |
 | `/api/finance/subscriptions/[id]/documents`                  | POST                   | [source](../src/app/api/finance/subscriptions/[id]/documents/route.ts)                  |
 | `/api/finance/subscriptions/[id]`                            | DELETE, GET, PATCH     | [source](../src/app/api/finance/subscriptions/[id]/route.ts)                            |
 | `/api/finance/subscriptions`                                 | GET, POST              | [source](../src/app/api/finance/subscriptions/route.ts)                                 |
@@ -234,6 +239,9 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/seed`                                                  | POST                   | [source](../src/app/api/seed/route.ts)                                                  |
 | `/api/send`                                                  | POST                   | [source](../src/app/api/send/route.ts)                                                  |
 | `/api/send/undo`                                             | POST                   | [source](../src/app/api/send/undo/route.ts)                                             |
+| `/api/settings/assistant/email-senders/[id]`                 | DELETE                 | [source](../src/app/api/settings/assistant/email-senders/[id]/route.ts)                 |
+| `/api/settings/assistant/email-senders/[id]/verify`          | POST                   | [source](../src/app/api/settings/assistant/email-senders/[id]/verify/route.ts)          |
+| `/api/settings/assistant/email-senders`                      | GET, POST              | [source](../src/app/api/settings/assistant/email-senders/route.ts)                      |
 | `/api/settings/assistant`                                    | GET, PATCH             | [source](../src/app/api/settings/assistant/route.ts)                                    |
 | `/api/settings/assistant/writing-style/backfill`             | POST                   | [source](../src/app/api/settings/assistant/writing-style/backfill/route.ts)             |
 | `/api/settings/assistant/writing-style`                      | DELETE, GET            | [source](../src/app/api/settings/assistant/writing-style/route.ts)                      |

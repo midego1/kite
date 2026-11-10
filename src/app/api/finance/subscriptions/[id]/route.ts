@@ -36,5 +36,6 @@ export const DELETE = withModule<SubscriptionRouteContext>("finance", async (req
 	const denied = await checkUser(user);
 	if (denied) return denied;
 	const { id } = await params;
-	return respond(await removeSubscription(user, id));
+	const body = (await readJson(request)) as { acknowledge?: unknown } | null;
+	return respond(await removeSubscription(user, id, body?.acknowledge === true));
 });

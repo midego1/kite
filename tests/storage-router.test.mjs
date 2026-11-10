@@ -19,7 +19,7 @@ const lib = await bundleModules("kite-storage-router-", [
 		"readChain, deleteTargets, activeStoreId, routesUsingStore, keyHint, parseCredentials, environmentStore, environmentClasses, mergeEnvironmentRoutes, storeRecordFromRow",
 		"src/lib/storage/config-utils.ts",
 	],
-	["objectClassOf", "src/lib/storage/object-classes-utils.ts"],
+	["objectClassOf, driveItemIdFromObjectKey", "src/lib/storage/object-classes-utils.ts"],
 ]);
 
 const fake = await startFakeS3({ buckets: ["kite-mail", "kite-drive"] });
@@ -90,6 +90,13 @@ test("keys are classified by prefix; everything unlisted is system", () => {
 		["driver/x", "system"],
 	])
 		assert.equal(lib.objectClassOf(key), objectClass, key);
+});
+
+test("driveItemIdFromObjectKey is the inverse of driveObjectKey, for a drive key only", () => {
+	assert.equal(lib.driveItemIdFromObjectKey("drive/drv_1"), "drv_1");
+	assert.equal(lib.driveItemIdFromObjectKey("drive/"), null, "an empty id is not one");
+	assert.equal(lib.driveItemIdFromObjectKey("inbound/a.eml"), null, "not a drive key at all");
+	assert.equal(lib.driveItemIdFromObjectKey("driver/x"), null, "a near-miss prefix is not a match");
 });
 
 test("without stores every class reads and writes the default store", async (t) => {

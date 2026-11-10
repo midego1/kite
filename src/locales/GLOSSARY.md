@@ -40,6 +40,8 @@ These are names, written in Latin letters in every language and never translated
 | Phishing | Phishing | تصيد | |
 | Not phishing | Geen phishing | ليست تصيدًا | The button that marks a flagged message as genuine and trusts its sender. |
 | AI | AI | الذكاء الاصطناعي | |
+| SPF, DKIM, DMARC | SPF, DKIM, DMARC | SPF، DKIM، DMARC | The authentication standards' own acronyms, kept in Latin letters in every language. |
+| Unverified sender | Niet-geverifieerde afzender | مُرسِل غير موثّق | The reader's sender authentication warning and its thread badge. |
 
 ## Arabic counts
 

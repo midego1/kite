@@ -2,11 +2,11 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, test, type Browser, type Locator, type Page } from "@playwright/test";
 import sharp from "sharp";
-import { ADMIN, STORAGE_STATE } from "../../e2e/support/constants";
+import { ADMIN, STORAGE_STATE, SUPPORT_ADDRESS } from "../../e2e/support/constants";
 import { useFakeProvider as connectFakeProvider } from "../../e2e/support/agent";
 import { startFakeModel } from "../../e2e/support/fake-model";
 import type { FakeModel } from "../../e2e/support/fake-model-types";
-import { apiContext, postInbound, waitForMessage } from "../../e2e/support/helpers";
+import { apiContext, deliverInbound, postInbound, waitForMessage } from "../../e2e/support/helpers";
 import { turnScreenerOff } from "../../e2e/support/screener";
 import {
 	RTL_MAIL,
@@ -14,7 +14,9 @@ import {
 	seedPagedMail,
 	seedPaymentsDemo,
 	seedRtlMail,
+	seedSenderAuthDemo,
 	seedThaiMail,
+	SENDER_AUTH_MAIL,
 	THAI_MAIL,
 	THAI_MAIL_TRANSLATED,
 	THREAD,
@@ -119,6 +121,37 @@ async function seedCompactLabelsDemo(): Promise<void> {
 	await api.dispose();
 }
 
+/** Three invented senders, reported as spam once, for the easier-selection shot's bulk toolbar. */
+const SPAM_SELECTION_MAIL = [
+	["Prize Center", "prize@sweepstakes-reward.test", "You've won! Claim your prize now"],
+	["Account Alerts", "security@account-verify-centre.test", "Account verification needed"],
+	["Crypto Bonus", "offers@crypto-bonus-deals.test", "Double your crypto in 24 hours"],
+] as const;
+
+async function seedSpamSelectionDemo(): Promise<void> {
+	const api = await apiContext(STORAGE_STATE);
+	await turnScreenerOff(api);
+	// Each fixture is checked on its own: a run against a reused server that was interrupted after reporting
+	// only some of them (or after delivering one but not yet reporting it) must still seed the rest, not skip
+	// the whole set because the first one alone already exists, or redeliver one that is already there but not
+	// yet reported.
+	for (const [name, address, subject] of SPAM_SELECTION_MAIL) {
+		const spamProbe = await api.get(`/api/messages?${new URLSearchParams({ q: subject, status: "spam", limit: "1" })}`);
+		const { messages: inSpam } = (await spamProbe.json()) as { messages: unknown[] };
+		if (inSpam.length > 0) continue;
+		const anyProbe = await api.get(`/api/messages?${new URLSearchParams({ q: subject, limit: "1" })}`);
+		const { messages: existing } = (await anyProbe.json()) as { messages: { id: string }[] };
+		const id =
+			existing[0]?.id ??
+			(
+				await deliverInbound(api, { from: `"${name}" <${address}>`, to: SUPPORT_ADDRESS, subject, text: subject })
+			).id;
+		const response = await api.post("/api/messages/bulk", { data: { messageIds: [id], action: "spam" } });
+		expect(response.ok(), await response.text()).toBe(true);
+	}
+	await api.dispose();
+}
+
 /** A model for the shots that need the assistant: nothing it answers appears in them. */
 let demoModel: { fake: FakeModel; restore: () => Promise<void> } | null = null;
 
@@ -132,6 +165,13 @@ async function openThaiMail(page: Page) {
 	await page.goto("/inbox");
 	await page.getByRole("main").getByText(THAI_MAIL.subject, { exact: true }).first().click();
 	await expect(page.getByTestId("translation-bar")).toContainText("This message is in Thai.");
+}
+
+async function openSenderAuthMail(page: Page) {
+	await seedSenderAuthDemo();
+	await page.goto("/inbox");
+	await page.getByRole("main").getByText(SENDER_AUTH_MAIL.subject, { exact: true }).first().click();
+	await expect(page.locator("[data-sender-auth-warning]")).toBeVisible();
 }
 
 const SHOTS: Shot[] = [
@@ -234,6 +274,16 @@ const SHOTS: Shot[] = [
 			await page.getByRole("button", { name: "Translate to English" }).click();
 			await expect(page.getByTestId("translation-bar")).toContainText("Translated from Thai");
 			await expect(page.frameLocator('iframe[title="Message body"]').last().getByText("Bangkok")).toBeVisible();
+			return page.locator("[data-reader-scroll]");
+		},
+	},
+	{
+		// The reader's calm warning for a sender that failed SPF, DKIM and DMARC, with its thread badge.
+		name: "2026-11-08-sender-auth-warning-light",
+		theme: "light",
+		viewport: { width: 1280, height: 700 },
+		open: async (page) => {
+			await openSenderAuthMail(page);
 			return page.locator("[data-reader-scroll]");
 		},
 	},
@@ -484,6 +534,137 @@ const SHOTS: Shot[] = [
 		},
 	},
 	{
+		// Admin → Storage → Cold storage: a mail rule moved to a demo store, Drive's rule on but not run yet.
+		name: "2026-11-08-cold-storage-light",
+		theme: "light",
+		viewport: { width: 1100, height: 1200 },
+		open: async (page) => {
+			await page.route("**/api/admin/storage/cold", (route) =>
+				route.fulfill({
+					json: {
+						rules: [
+							{ objectClass: "mail", afterDays: 180, minBytes: 0, target: "sto_demo", enabled: true, updatedAt: "2026-11-08T00:00:00.000Z" },
+							{ objectClass: "drive", afterDays: 365, minBytes: 10_485_760, target: "r2-ia", enabled: true, updatedAt: "2026-11-08T00:00:00.000Z" },
+							{ objectClass: "backups", afterDays: 90, minBytes: 0, target: "r2-ia", enabled: false, updatedAt: null },
+						],
+						jobs: [
+							{
+								objectClass: "mail",
+								status: "completed",
+								objectsDone: 482,
+								bytesDone: 212_000_000,
+								errors: 0,
+								lastError: null,
+								startedAt: "2026-11-08T02:00:00.000Z",
+								finishedAt: "2026-11-08T02:04:00.000Z",
+							},
+						],
+						iaAvailable: true,
+					},
+				}),
+			);
+			await page.route("**/api/admin/storage", (route) =>
+				route.fulfill({
+					json: {
+						directUploadsReminder: { show: false, setup: null },
+						defaultStore: { id: "default", name: "Cloudflare R2", kind: "r2", directUploads: true },
+						stores: [
+							{
+								id: "sto_demo",
+								name: "Backblaze archive",
+								provider: "b2",
+								endpoint: "s3.us-west-002.backblazeb2.com",
+								region: "us-west-002",
+								bucket: "kite-archive",
+								addressing: "path",
+								keyHint: "9f2c",
+								sameAsBinding: false,
+								status: "ok",
+								lastCheckedAt: "2026-11-08T00:00:00.000Z",
+								lastError: null,
+								source: "database",
+								blocked: null,
+								usedBy: [],
+							},
+						],
+						routes: [],
+						migrations: [],
+						usage: {
+							mail: { objects: 12_400, bytes: 4_900_000_000 },
+							drive: { objects: 860, bytes: 1_800_000_000 },
+							backups: { objects: 14, bytes: 2_100_000_000 },
+						},
+						encryptionReady: true,
+						migrationPending: false,
+						endpointPolicy: { allowInsecure: false, allowPrivate: false },
+						runtime: "workers",
+					},
+				}),
+			);
+			await page.goto("/storage");
+			const section = page.locator("section", { has: page.getByRole("heading", { name: "Cold storage" }) });
+			await expect(section).toBeVisible();
+			await expect(section.locator('[data-cold-rule="mail"]').getByRole("status")).toHaveText("Up to date");
+			await section.scrollIntoViewIfNeeded();
+			return section;
+		},
+	},
+	{
+		// Admin → Storage → Stores: the read-only leftover count on a store still holding tracked candidates.
+		name: "2026-11-09-leftover-count-light",
+		theme: "light",
+		viewport: { width: 1100, height: 500 },
+		open: async (page) => {
+			await page.route("**/api/admin/storage/cold", (route) =>
+				route.fulfill({ json: { rules: [], jobs: [], iaAvailable: true } }),
+			);
+			await page.route("**/api/admin/storage", (route) =>
+				route.fulfill({
+					json: {
+						directUploadsReminder: { show: false, setup: null },
+						defaultStore: { id: "default", name: "Cloudflare R2", kind: "r2", directUploads: true },
+						stores: [
+							{
+								id: "sto_demo",
+								name: "Backblaze archive",
+								provider: "b2",
+								endpoint: "s3.us-west-002.backblazeb2.com",
+								region: "us-west-002",
+								bucket: "kite-archive",
+								addressing: "path",
+								keyHint: "9f2c",
+								sameAsBinding: false,
+								status: "ok",
+								lastCheckedAt: "2026-11-08T00:00:00.000Z",
+								lastError: null,
+								source: "database",
+								blocked: null,
+								usedBy: ["mail"],
+								leftoverCount: 37,
+							},
+						],
+						routes: [],
+						migrations: [],
+						usage: {
+							mail: { objects: 12_400, bytes: 4_900_000_000 },
+							drive: { objects: 860, bytes: 1_800_000_000 },
+							backups: { objects: 14, bytes: 2_100_000_000 },
+						},
+						encryptionReady: true,
+						migrationPending: false,
+						endpointPolicy: { allowInsecure: false, allowPrivate: false },
+						runtime: "workers",
+					},
+				}),
+			);
+			await page.goto("/storage");
+			const section = page.locator("section", { has: page.getByRole("heading", { name: "Stores" }) });
+			await expect(section.getByText("37 leftover copies from cold storage moves")).toBeVisible();
+			await section.scrollIntoViewIfNeeded();
+			return section;
+		},
+	},
+	{
 		// Settings → Connected accounts → Connect account: Mail goes to → New mailbox for this account.
 		name: "2026-11-05-new-mailbox-light",
 		theme: "light",
@@ -727,6 +908,59 @@ const SHOTS: Shot[] = [
 			return page;
 		},
 	},
+	{
+		// The Spam list header once three invented reports are checked: the bulk toolbar's text labels next to
+		// its icons, where only unlabelled icons far from the list used to show. A list resized wide enough
+		// (what fits is measured against the panel's actual width, not a fixed breakpoint) gives every action
+		// room, as a full-width list or a phone also can.
+		name: "2026-11-08-easier-selection-light",
+		theme: "light",
+		// Wider than the other shots: the split layout only grants the list panel the width it asks for once
+		// the reading pane beside it still gets its own reserved minimum out of what is left.
+		viewport: { width: 1650, height: 420 },
+		open: async (page) => {
+			await seedSpamSelectionDemo();
+			await page.addInitScript(() => localStorage.setItem("kite-column-width:message-list", "1000"));
+			await page.goto("/spam");
+			const rows = page.locator("[data-message-row]");
+			// The seeded admin account already holds one spam example of its own; only check the three delivered here.
+			for (const [, , subject] of SPAM_SELECTION_MAIL) {
+				const row = rows.filter({ has: page.getByText(subject, { exact: true }) });
+				await expect(row).toBeVisible();
+				await row.getByRole("checkbox").check();
+			}
+			const toolbar = page.getByTestId("bulk-toolbar");
+			await expect(toolbar.getByRole("button", { name: "Delete", exact: true })).toBeVisible();
+			await expect(toolbar.getByRole("button", { name: "Archive", exact: true })).toBeVisible();
+			await expect(toolbar.getByRole("button", { name: "Mark as read" })).toBeVisible();
+			await expect(toolbar.getByRole("button", { name: "Delete forever" })).toBeVisible();
+			await expect(toolbar.getByRole("button", { name: "Not spam" })).toBeVisible();
+			await expect(toolbar.getByRole("button", { name: "Move to", exact: true })).toBeVisible();
+			await expect(toolbar.getByRole("button", { name: "More actions" })).toHaveCount(0);
+			return page.locator("#kite-message-list-panel");
+		},
+	},
+	{
+		// The same Spam list at its default, unresized width: none of the individual actions has room next to
+		// the selected count, so they all fold into "More actions" instead of clipping off the edge the way
+		// they used to; Clear selection and More actions itself always stay reachable.
+		name: "2026-11-08-easier-selection-narrow-light",
+		theme: "light",
+		viewport: { width: 1280, height: 420 },
+		open: async (page) => {
+			await seedSpamSelectionDemo();
+			await page.goto("/spam");
+			const rows = page.locator("[data-message-row]");
+			for (const [, , subject] of SPAM_SELECTION_MAIL) {
+				const row = rows.filter({ has: page.getByText(subject, { exact: true }) });
+				await expect(row).toBeVisible();
+				await row.getByRole("checkbox").check();
+			}
+			await expect(page.getByText(`${SPAM_SELECTION_MAIL.length} selected`)).toBeVisible();
+			await expect(page.getByRole("button", { name: "More actions" })).toBeVisible();
+			return page.locator("#kite-message-list-panel");
+		},
+	},
 	...(
 		[
 			["2026-11-06-interface-dutch", "nl", "Accountmenu openen"],
@@ -773,6 +1007,22 @@ const SHOTS: Shot[] = [
 		},
 	},
 	{
+		// "Keep receipts": the per-user setting and the "Save receipts for existing payments" backfill, open over the
+		// same invented Payments demo data.
+		name: "2026-11-08-money-watch-keep-receipts",
+		theme: "light",
+		viewport: { width: 1280, height: 900 },
+		open: async (page) => {
+			await seedPaymentsDemo();
+			await page.goto("/finance?tab=payments");
+			await expect(page.locator("[data-payment-row]").first()).toBeVisible();
+			await page.getByRole("button", { name: "Keep receipts" }).click();
+			const dialog = page.getByRole("dialog", { name: "Keep receipts" });
+			await expect(dialog.getByRole("switch", { name: "Keep receipts" })).toBeVisible();
+			return dialog;
+		},
+	},
+	{
 		// Scan last 90 days partway through: the status line's own progress, over the real seeded rows (the scan status
 		// itself is faked, since a real scan of this little demo mail finishes before a screenshot could catch it running).
 		name: "2026-11-08-money-watch-scan-progress-light",
@@ -812,6 +1062,25 @@ const SHOTS: Shot[] = [
 			}
 			await expect(toggleAi).toBeChecked();
 			return panel.getByTestId("mailbox-ai-setting");
+		},
+	},
+	{
+		// The assistant panel's settings: Assistant by email turned on, showing the mailbox picker and daily limit.
+		name: "2026-11-08-assistant-by-email-light",
+		viewport: { width: 1280, height: 900 },
+		open: async (page) => {
+			await page.goto("/inbox");
+			const toggle = page.getByRole("button", { name: /^(Open|Close) email assistant$/ });
+			await expect(toggle).toBeVisible();
+			if ((await toggle.getAttribute("aria-label")) === "Open email assistant") await toggle.click({ timeout: 45_000 });
+			const panel = page.locator("#email-assistant-panel");
+			await panel.getByRole("button", { name: "Assistant settings" }).click();
+			const emailToggle = panel.getByRole("switch", { name: "Assistant by email" });
+			await expect(emailToggle).toBeEnabled();
+			if ((await emailToggle.getAttribute("aria-checked")) !== "true") await emailToggle.click();
+			await expect(emailToggle).toBeChecked();
+			await expect(panel.getByText("Mailbox for requests from a verified extra address")).toBeVisible();
+			return panel;
 		},
 	},
 	{

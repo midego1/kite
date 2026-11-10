@@ -31,8 +31,10 @@ import {
 } from "./migration-utils";
 import { callStorageHook } from "./module-hooks";
 import { objectClassOf } from "./object-classes-utils";
+import { deleteObjectLocations, lookupObjectLocation, markOrphanCandidate } from "./object-locations";
+import { purgeOldCopy } from "./migration-purge";
 import { ATTACHMENT_OBJECT_ROWS_SQL } from "@/lib/email/attachment-storage-utils";
-import type { KiteBucket, ObjectStore, RoutableClass, Storage } from "./types";
+import type { ObjectStore, RoutableClass, Storage } from "./types";
 
 const log = createLogger("storage");
 
@@ -53,8 +55,11 @@ async function enqueue(env: MigrationEnv, jobId: string, delaySeconds?: number):
 /** Offloaded HTML bodies (`src/lib/email/bodies.ts`); the column exists from migration 0074. */
 const BODY_KEY_COLUMN = "html_body_key";
 
-/** Runs a query over `messages.html_body_key`, answering `whenPending` before migration 0074 added it. */
-async function beforeBodyColumn<T>(query: () => Promise<T>, whenPending: T): Promise<T> {
+/**
+ * Runs a query over `messages.html_body_key`, answering `whenPending` before migration 0074 added it.
+ * @public Also used by `cold.ts`, whose mail sources are the same ones this file enumerates.
+ */
+export async function beforeBodyColumn<T>(query: () => Promise<T>, whenPending: T): Promise<T> {
 	try {
 		return await query();
 	} catch (error) {
@@ -139,7 +144,14 @@ async function drivePage(job: Job, cursor: MigrationCursor, after: string | null
 	return { items: page?.objects ?? [], exhausted: !page?.cursor };
 }
 
-function sized(body: ReadableStream, size: number): ReadableStream {
+/**
+ * The R2 binding learns a streamed body's length from a `FixedLengthStream` wrapper; an S3 target instead takes
+ * an explicit `contentLength` option (`lengthOption` below) and wraps the stream itself when signing the
+ * request, so wrapping it here too would pipe it through two independent `FixedLengthStream`s nested inside one
+ * another, which is fragile under real network conditions.
+ */
+function sized(body: ReadableStream, size: number, target: ObjectStore): ReadableStream {
+	if (target.id !== DEFAULT_STORE_ID) return body;
 	const Fixed = (globalThis as { FixedLengthStream?: new (length: number) => TransformStream }).FixedLengthStream;
 	return Fixed ? body.pipeThrough(new Fixed(size)) : body;
 }
@@ -153,27 +165,72 @@ function lengthOption(target: ObjectStore, length: number) {
 }
 
 /**
+ * Whether `etag` is shaped like a real single-part content MD5 (32 hex characters): an MD5 is always exactly
+ * this shape, so this reliably catches a multipart ETag (`<hash>-<parts>`, which also encodes the part
+ * boundaries used to make it, not just the bytes). It does not reliably catch SSE-KMS or SSE-C server-side
+ * encryption on real AWS (round-5 review, `L3b`): those ETags are documented as not being a hash of the object
+ * data, but are still 32 hex characters, the same shape a real MD5 has, so there is no way to tell them apart
+ * by shape alone. The copy below still fails safe when that happens: the mismatch this lets through is caught
+ * there and rejected rather than trusted, so a wrongly "comparable" ETag can corrupt nothing, only make an
+ * S3-to-S3 copy off an SSE-KMS/SSE-C source retry every sweep instead of ever completing.
+ */
+function looksLikeContentMd5Etag(etag: string): boolean {
+	return /^[0-9a-f]{32}$/i.test(etag);
+}
+
+/**
+ * Whether `existing` can stand in for `head` without copying: same size, and, when both stores are real
+ * S3-compatible ones (not the self-hosted file bucket, whose ETag is a random UUID rather than a content hash,
+ * `sized` above), the same ETag too. A multipart object's ETag is not a simple content hash (it also encodes the
+ * part boundaries used to make it), so two equal-size multipart ETags are not proof of equal bytes and two
+ * unequal ones are not proof they differ; this only tightens the single-part case the plain size check missed.
+ */
+export function matchesExisting(
+	head: R2Object,
+	existing: R2Object | null,
+	sourceId: string,
+	targetId: string,
+): boolean {
+	if (!existing || existing.size !== head.size) return false;
+	if (sourceId === DEFAULT_STORE_ID || targetId === DEFAULT_STORE_ID) return true;
+	if (!head.etag || !existing.etag || !looksLikeContentMd5Etag(head.etag) || !looksLikeContentMd5Etag(existing.etag))
+		return true;
+	return head.etag === existing.etag;
+}
+
+/**
  * Copies one object with its metadata; large objects go part by part with ranged reads. The copy is written to
  * `targetKey`, which is `key` for a move between stores and another name for the copies full backups keep.
+ * `storageClass`, used only by a same-store cold rewrite (`cold.ts`), rides along on the create/put call; a store
+ * that does not understand it (a plain S3-compatible bucket) ignores the extra option.
  */
 export async function copyObject(
-	source: KiteBucket,
+	source: ObjectStore,
 	head: R2Object,
 	target: ObjectStore,
 	key: string,
 	targetKey = key,
+	options?: { storageClass?: string; onPart?: () => Promise<void> },
 ): Promise<number | null> {
-	const metadata = { httpMetadata: head.httpMetadata, customMetadata: head.customMetadata };
+	const { onPart, ...rest } = options ?? {};
+	const metadata = { httpMetadata: head.httpMetadata, customMetadata: head.customMetadata, ...rest };
 	if (head.size > MULTIPART_COPY_THRESHOLD && target.bucket.createMultipartUpload) {
 		const upload = await target.bucket.createMultipartUpload(targetKey, metadata);
 		try {
 			const parts = [];
 			for (const part of copyParts(head.size, COPY_PART_BYTES)) {
-				const range = await source.get(key, { range: { offset: part.offset, length: part.length } });
+				const range = await source.bucket.get(key, { range: { offset: part.offset, length: part.length } });
 				if (!range?.body) throw new Error("The source object changed during the copy");
 				parts.push(
-					await upload.uploadPart(part.partNumber, sized(range.body, part.length), lengthOption(target, part.length)),
+					await upload.uploadPart(
+						part.partNumber,
+						sized(range.body, part.length, target),
+						lengthOption(target, part.length),
+					),
 				);
+				// Keeps a long multipart copy's lease from lapsing mid-transfer (`B3`); a no-op for a caller
+				// that holds no lease, or none to renew (a first-ever move of this key).
+				await onPart?.();
 			}
 			await upload.complete(parts);
 		} catch (error) {
@@ -182,10 +239,31 @@ export async function copyObject(
 		}
 		return head.size;
 	}
-	const object = await source.get(key);
+	const object = await source.bucket.get(key);
 	if (!object) return null;
-	const body = object.size === 0 ? new Uint8Array(0) : sized(object.body, object.size);
-	await target.bucket.put(targetKey, body, { ...metadata, ...lengthOption(target, object.size) });
+	const body = object.size === 0 ? new Uint8Array(0) : sized(object.body, object.size, target);
+	const written = await target.bucket.put(targetKey, body, { ...metadata, ...lengthOption(target, object.size) });
+	// A single-part PUT's ETag is the MD5 of the bytes on both R2 and plain S3-compatible stores, so it is
+	// comparable across them; the self-hosted Node runtime's file bucket makes up a random one on every write
+	// instead (never a content hash), so this only compares when neither side is that store. `head.etag` can
+	// still fail to look like a real content MD5 (a multipart one from the source object itself having been
+	// uploaded in parts, which Drive always does, or SSE-KMS/SSE-C on AWS), in which case it is not comparable
+	// to this copy's own single-part ETag even for identical bytes.
+	if (
+		source.id !== DEFAULT_STORE_ID &&
+		target.id !== DEFAULT_STORE_ID &&
+		head.etag &&
+		looksLikeContentMd5Etag(head.etag) &&
+		written?.etag &&
+		head.etag !== written.etag
+	) {
+		// Never delete a copy this call has not itself recorded anywhere (`m2`, round-8 review): if this
+		// mover stalled between the PUT above and this compare, a second mover could already have found this
+		// exact copy (same size, so its own copy step is skipped), recorded it and deleted its own source,
+		// making this the only copy left. Throwing without deleting leaves it for cleanup or the next mover to
+		// judge with the full picture, instead of trusting a size-only glance at a copy nothing here owns yet.
+		throw new Error("The copy's ETag does not match the source; the target store may have altered the bytes");
+	}
 	return object.size;
 }
 
@@ -208,34 +286,76 @@ export async function findSource(
 }
 
 /**
+ * `chain` widened with wherever a cold move (`cold.ts`) may have put this key: wherever `object_locations`
+ * says it now lives, then `target` itself (a crash between confirming a cold move's copy and recording its
+ * location leaves the object there with nothing pointing to it yet, so a reader must still be able to find it
+ * directly), checked before the class's normal chain. Anything that reads an object by key outside `cold.ts`
+ * itself — a migration, a full backup — needs this too, or a cold-moved object reads back as missing.
+ */
+export async function locationAwareSources(
+	env: { DB: D1Database },
+	storage: Storage,
+	chain: ObjectStore[],
+	key: string,
+	target?: string,
+): Promise<ObjectStore[]> {
+	const location = await lookupObjectLocation(env, key);
+	const recorded = location && storage.store(location.storeId);
+	const targeted = target ? storage.store(target) : null;
+	const candidates = [recorded, targeted, ...chain].filter((store): store is ObjectStore => !!store);
+	return [...new Set(candidates)];
+}
+
+/**
  * Copy, verify or purge one batch. Sizes are compared between the two stores' HEADs rather than D1, which records
  * decoded sizes for some objects. An object already complete on the target is never copied again.
  */
-async function runItems(storage: Storage, job: Job, cursor: MigrationCursor, items: Item[]): Promise<BatchResult> {
+async function runItems(
+	env: { DB: D1Database },
+	storage: Storage,
+	job: Job,
+	cursor: MigrationCursor,
+	items: Item[],
+): Promise<BatchResult> {
 	const from = storage.store(job.fromStoreId);
 	const to = storage.store(job.toStoreId);
 	if (!from || !to) throw new Error("A store of this migration is missing or blocked");
-	const sources = [...new Set([from, storage.store(DEFAULT_STORE_ID)!])];
+	const baseChain = [...new Set([from, storage.store(DEFAULT_STORE_ID)!])];
 	const result: BatchResult = { processed: 0, bytes: 0, errors: 0, lastError: null, moved: [] };
 	for (const item of items) {
 		result.processed += 1;
 		if (objectClassOf(item.key) !== job.objectClass) continue;
 		try {
-			const present = await to.bucket.head(item.key);
 			if (cursor.phase === "purge") {
-				const old = await from.bucket.head(item.key);
-				if (!old) continue;
-				if (!present || present.size !== old.size)
-					throw new Error("Not complete on the new store; kept on the old one");
-				await from.bucket.delete(item.key);
+				await purgeOldCopy(env, from, to, job.objectClass as RoutableClass, item);
 				continue;
 			}
+			const present = await to.bucket.head(item.key);
+			// A cold move (`cold.ts`) may have already parked this key on a store outside this migration's
+			// own old/default chain; without this it reads back as missing from both stores.
+			const sources = await locationAwareSources(env, storage, baseChain, item.key);
 			const source = await findSource(sources, item.key);
 			if (!source && !present) throw new Error("An object named in the database is missing from both stores");
-			if (source && (!present || present.size !== source.head.size)) {
-				const copied = await copyObject(source.store.bucket, source.head, to, item.key);
+			if (source && !matchesExisting(source.head, present, source.store.id, to.id)) {
+				const copied = await copyObject(source.store, source.head, to, item.key);
 				if (copied === null) throw new Error("The object disappeared from the old store during the copy");
 				result.bytes += copied;
+			}
+			// The object is reachable through the normal chain now (it is on `to`); a location a cold move
+			// recorded outside this migration's own old/default chain is stale once that happens, and keeping
+			// it would needlessly block deleting that store and have the next cold sweep move the object again.
+			// The cold copy still physically sits on that store, though, so it is marked an orphan candidate
+			// rather than just forgotten: the orphan sweep (`cold.ts`) deletes it after its own grace period,
+			// re-checking first, instead of it being a permanently untracked copy nothing points at any more.
+			if (source && source.store.id !== from.id && source.store.id !== to.id) {
+				const stale = await lookupObjectLocation(env, item.key);
+				await deleteObjectLocations(env, [item.key]);
+				await markOrphanCandidate(env, {
+					storeId: source.store.id,
+					key: item.key,
+					objectClass: job.objectClass,
+					movedAt: stale?.movedAt ?? new Date(),
+				});
 			}
 			result.moved.push(item.id);
 		} catch (error) {
@@ -277,7 +397,7 @@ async function runSource(
 	const after = state.sources[source] ?? null;
 	const page = source === "drive" ? await drivePage(job, state, after) : await d1Page(env, source, after);
 	const batch = takeBatch(page.items);
-	const result = await runItems(await getStorage(env), job, state, batch);
+	const result = await runItems(env, await getStorage(env), job, state, batch);
 	const fromSource = state.phase !== "purge" && driveStoreFor(job, state) === job.fromStoreId;
 	if (source === "drive" && fromSource && result.moved.length)
 		await callStorageHook("drive", "markMoved", {

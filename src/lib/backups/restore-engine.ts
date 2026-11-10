@@ -80,15 +80,17 @@ async function writeRows(table: PreparedRestoreTable, context: SegmentContext): 
 	const { writer, index, from } = context;
 	if (!table.range?.rows) return;
 	const columns = new Set(table.columns);
-	const builder = new TableInsertBuilder<RestorePosition>(table.name, columns);
+	const builder = new TableInsertBuilder<RestorePosition>(table.name, columns, { ignoreConflicts: table.merge });
 	const emit = async (built: ReturnType<typeof builder.finish>) => {
 		if (!built) return;
-		await writer.add(built.statement, built.meta, {
-			table: table.name,
-			row: built.last,
-			primaryKey: table.primaryKey,
-			columns,
-		});
+		// A merge table's insert is `OR IGNORE` (idempotent: a row the batch already committed before an
+		// interruption is simply ignored the second time), so resuming needs no probe to tell whether it ran —
+		// it is always safe to run again, unlike a plain insert that would collide on an already-committed row.
+		await writer.add(
+			built.statement,
+			built.meta,
+			table.merge ? null : { table: table.name, row: built.last, primaryKey: table.primaryKey, columns },
+		);
 		context.reached = built.meta!;
 		context.checkDeadline();
 	};
@@ -168,7 +170,8 @@ export async function executeDatabaseRestore(
 			const segment = segments[context.index]!;
 			const next = { segment: context.index + 1, offset: null, rows: 0 };
 			if (segment.kind === "deletes") {
-				await writeRepeatable(writer, planRestoreDeletes(prepared.tables.map((table) => table.name)), context);
+				const emptied = prepared.tables.filter((table) => !table.merge).map((table) => table.name);
+				await writeRepeatable(writer, planRestoreDeletes(emptied), context);
 				// Its own batches: until they are in, rows that look restored may simply be the live ones, so no probe
 				// of a later batch can be trusted before them.
 				await writer.flush();

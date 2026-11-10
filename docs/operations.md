@@ -394,6 +394,146 @@ Drive (`src/lib/drive/`) keeps file contents under `drive/<itemId>` in the store
 - **Backups.** `storage_stores` and `storage_routes` are in the `system` group (credentials stay sealed); `storage_migrations` is internal. A restore leaves a live storage config alone: when the target already has stores or routes, both tables keep their current rows. Object contents are never in the database backup itself; [full backups](#full-backups) copy the mail objects next to it, and everything else (Drive files) needs a backup of each bucket. Moving the Backups class to another store does not move the copies full backups made: take a new full backup after the switch.
 - **`STORAGE_ALLOW_INSECURE_ENDPOINT` (dev and test only).** Allows `http` and loopback endpoints, as the e2e suite's fake S3 needs. Without the flag, or when `NODE_ENV` is `production`, the header does nothing.
 
+### Cold storage
+
+`src/lib/storage/cold.ts` (ROADMAP Milestone 7 item 3, `docs/specs/drive-storage.md` §10) runs one age rule per
+routable class (mail, Drive, backups), saved under **Admin → Storage → Cold storage**: objects older than
+`afterDays` and at least `minBytes` move to the rule's `target`, either `r2-ia` (a same-store rewrite to R2
+Infrequent Access, only where the active store reports that capability) or another configured store (a copy,
+verified by HEAD, then the source is deleted). The daily 02:00 UTC cron (`runColdStorageSweep`) starts a fresh
+sweep for every enabled rule whose previous one has finished; batches ride `OUTBOUND_QUEUE` as `storage.cold`
+messages and the five-minute cron (`runStorageColdMaintenance`) resends one whose lease expired without a later
+batch arriving, the same claim-and-batch pattern `storage_migrations` uses. Mail and backups record where a
+moved object now lives in `object_locations`, which the storage router (`src/lib/storage/router.ts`) consults
+once the normal read chain misses, so opening a cold message or file needs no extra step. Drive files record
+their own `store_id` and `storage_class` on `drive_items`, since that row is already the source of truth for
+where a file lives, but a cold move writes the same `object_locations` row too (key `drive/<id>`, same as mail
+and backups): a restore can roll `drive_items.store_id` back to a store a later sweep already moved the file
+off, and the Drive read path (`streamDriveFile`, `presignedDownload`) falls back to `object_locations` and
+repairs the row the first time that happens. Changing a rule's target after a sweep still finds an object
+through `object_locations` even when the new target is not the class's active route. A store a rule still
+targets, or that `object_locations` still names, cannot be deleted (`deleteStore` in `src/lib/storage/stores.ts`)
+until the rule points elsewhere or the objects are moved again; a sweep already running when a store is deleted
+(it keeps the rule as it was when it started, so a rule changed since would not otherwise show it) blocks the
+delete too.
+
+**The orphan sweep.** A cold-moved copy can lose its only pointer without the bytes being gone: a message
+deleted mid-sweep, a delete that could not reach its store last time, two deliveries of the same move racing to
+different targets (the loser's copy has nothing naming it once the winner's `recordObjectLocation` overwrites
+the row, which marks it as part of the same write rather than a separate read-then-write so two truly
+simultaneous movers cannot both miss it), or a migration that finds the object reachable the normal way again
+and drops the now-stale cold location (`src/lib/storage/migration.ts`). A move that deletes its own old copy
+itself (the normal case, `moveColdObject`/`moveColdDriveObject`) clears the mark `recordObjectLocation` made for
+it the moment that delete succeeds (round-5 review, `B1`): the mark exists only in case that delete fails, not
+as a permanent record, so a store a rule simply stopped targeting is never kept around by a leftover that was
+never actually left over.
+
+Every copy a move could not clean up itself is recorded in `storage_cold_jobs`'s sibling table
+`storage_cold_orphans` as a candidate, for visibility only: **this PR deletes no orphan candidate's copy at
+all, automatically or manually** (round-9 review, foreman decision). An earlier round added a manual, per-store
+"Delete leftovers" admin action running the same grace-period, backup-window and lease-fenced deletion the
+automatic cron once ran on its own, but the round-9 review found it unfenced for a key with no
+`object_locations` row yet and reproduced the loss of every copy of a live message through it (`B6`): a store
+migration's own cleanup routinely drops a row and marks the old store's copy a candidate with none (`migration.ts`
+below), which is exactly the state a nightly sweep re-populates for the same key moments later, and the manual
+action's claim then proceeded with no fence and no check for another readable copy. Rather than extend the
+fencing further, the whole deletion path — the action, its route and its admin button — was removed. A move
+that records a key onto a store that still carries a stale candidate for it clears that candidate in the same
+statement regardless (round-6 review, `M1`): a copy that is the recorded location is by definition not a
+leftover. Cleanup of a tracked candidate is a follow-up for a later release, alongside reintroducing the
+automatic deleter the foreman's round-8 decision split out in the first place; both need the fencing this round
+found missing before either can act on a key with no row.
+
+Admin → Storage → Stores shows a store's tracked candidate count next to it, read-only, with a line explaining
+that cleanup arrives in a later release (`coldOrphanCount`/`countOrphanCandidates`); it carries no action.
+`deleteStore` is refused while a store a rule still targets, that `object_locations` still names, that a sweep
+still in flight targets, or that still has any tracked orphan candidate (`coldReferenceBlocking`), with a message
+naming which; a candidate's store stays undeletable until a later release can resolve it. Each of those checks
+answers "nothing" on its own before its table exists, so the in-flight sweep check still runs on a database
+that has `0097` but not yet `0104` (round-10 review, `n3`).
+
+The fencing token on the key's own `object_locations` row (`leaseToken`/`claimedUntil`) still matters: it is
+what stops two cold moves of the exact same key from racing each other, whichever direction either is headed
+(round-6/7 review, `B2`–`B4`). A key with no row yet (a store migration can leave exactly that, having just
+dropped one) is claimed by creating one under the claim rather than going unprotected
+(`claimOrCreateLocationLease`, round-7 review). A plain time-boxed lease (round 5's first attempt, with its own
+`storage_key_leases` table) was not enough by itself, because nothing re-checked it once handed out: a move that
+ran long enough for it to expire could still land its write after a second mover had already taken over the key
+(round-6 review, `B3`). The token closes that instead of the timer: `recordObjectLocation` only commits while
+the exact token it was given is still the one on the row and `claimedUntil` has not passed, checked and cleared
+in the same statement, the same way `import_jobs.lease_until` fences a sync run's writes (above). A move renews
+its token between multipart parts, and once more after the copy (or the skip) and right before that commit, so
+neither a legitimately long multipart copy nor a plain single-part one loses it first; a move that falls behind
+anyway has its commit refused rather than trusted, and on a refused commit it deletes nothing (round-7 review,
+`B4`): a refusal means someone else has held the token since, and on that same key and target that someone may
+already be a second mover (a resent batch, a redelivered queue message) that has already recorded the target
+and deleted the source itself, so the target copy a refused move finds there can be the only copy left. It only
+marks the target a fresh orphan candidate, under one more claim and only while the live location does not
+already name it, leaving its fate to a later release's cleanup rather than deciding it here. The same-store
+rewrite to R2 Infrequent Access, and its "already at target" shortcut counterpart on a cross-store rule, record
+under this same fenced claim too (round-8/9 review, `m1`/`m5`): an unfenced write there could otherwise overwrite
+a concurrent mover's own fenced record for a retargeted key.
+
+**Storage-migration purge versus cold moves (round-10 review, `B7`).** A cold rule may archive into the store a
+completed migration moved a class away from, and that migration's purge deletes each key's old copy there after a
+size match. Unfenced, a purge racing a mover that was copying the key back into that store could delete the copy
+the mover had just recorded while the mover deleted its own source, leaving no copy. Two fences close this.
+
+- **The lease.** The purge takes the key's location lease for its check and its delete (`purgeOldCopy` in
+  `src/lib/storage/migration-purge.ts`, through `withPurgeLease` in `src/lib/storage/object-locations.ts`). A live
+  claim makes it keep the key and count an error ("A cold storage move is working on this object"); a key whose
+  `object_locations` row names the old store is its live cold copy, never a leftover, and is skipped. A key with
+  no row gets one created under the claim (token prefix `ptmp_`), naming the new store, and removed again
+  afterwards. Its last statement before the object delete is `confirmPurgeLease`, which only passes while its own
+  token is still the row's and unexpired, and extends it (round-11 review, `m1`); otherwise the key is kept. On
+  the mover's side, its fenced record names its target in the same statement that releases its lease, so a purge
+  claiming next sees the old store named and skips the key.
+- **The residual.** An object store cannot delete conditionally on a D1 row, so a purge that stalls for longer
+  than the lease (five minutes) between `confirmPurgeLease` and the delete call itself could still be overtaken
+  by a mover in that window. The lease does not close that; the configuration does.
+- **The configuration.** `updateColdRule` answers 409 `STORE_MIGRATING` for an enabled rule targeting a store a
+  migration is still moving away from or has not purged (`unpurgedMigrationFrom`; cancelled jobs aside), and the
+  `purge-source` migration action answers 409 while an enabled rule or a queued or running sweep targets the old
+  store (`coldUseBlockingPurge`). So no sweep moves anything into a store while its purge runs.
+- **Stranded claim rows (round-11 review, `m2`).** A purge that stops mid-key (a crash, a deploy) can leave its
+  `ptmp_` row behind. Once its claim has expired it is dropped at the next claim of that key (by a purge or a
+  cold move) and by the five-minute maintenance (`dropStrandedPurgeRows`), and `coldReferenceBlocking` never
+  counts a `ptmp_` row as an object a sweep moved onto the store (`storeHoldsLocatedObjects`).
+
+The five-minute maintenance runs `scanForOrphanCandidates` in a batch of up to 200 rows: it keyset-paginates
+through `object_locations` from a cursor saved in `storage_state` (round-robin, so a backlog larger than one
+batch is still fully covered over many runs instead of the same oldest rows absorbing every run forever) and
+marks what looks unreferenced as a candidate. It never deletes anything, and nothing else in this PR does
+either. It skips entirely while a restore is active, needs recovery (an abandoned restore, or one whose own
+rollback failed, both left for the admin to resolve from the safety backup; the database is known to still be
+partially restored until that runs), or finished less than an hour ago: a restore's "deletes" segment empties
+`messages`, `message_attachments`, `drive_items` and `backups` before writing them back, possibly over several
+queue invocations (the rollback path does the same), and since `object_locations` survives a restore as a merge
+table, a sweep mid-restore would otherwise see every cold key as briefly unreferenced. A `backups` rule only
+sweeps the database export document each backup makes (`backups.r2_key`), not the mail file copies a
+[full backup](#full-backups) writes alongside it, which stay on their current store. **Run now**
+(`POST /api/admin/storage/cold/[class]`) starts a sweep immediately; saving a rule or running it now answers 409
+`MIGRATION_PENDING` before migration `0097` is applied, even once `0065` has been (`coldStorageTablesReady`). Saving a rule
+(`PUT`) takes an optional `expectedUpdatedAt`, the `updatedAt` the form was loaded with (null for a class never
+saved): the write is conditional on it and answers 409 `RULE_CHANGED` when the stored rule changed since, and the
+answer's `updatedAt` is the stored whole-second value the next save should send.
+`GET /api/admin/storage/cold` reports each class's rule and its latest sweep.
+Logs: `storage.cold_errors`, `storage.cold_batch_failed`. Backups:
+`storage_cold_rules` and `object_locations` are in the `system` group; unlike `storage_stores` and
+`storage_routes`, a restore merges their rows into the target's current ones (`INSERT OR IGNORE`: a live row
+wins, and a row only the backup has is added back) rather than keeping or replacing them wholesale, since they
+are data that changes between backups, not store configuration (a restored row's own `leaseToken`/`claimedUntil`
+are always stale, but harmless: either a live row already there wins outright, or the worst a stale value can
+do is make the row briefly unclaimable until its `claimedUntil` passes, after which it is reclaimed exactly as
+an expired one always is). `storage_cold_jobs` and `storage_cold_orphans` are internal, so neither a sweep's
+progress nor a pending candidate is itself restored; a restored `object_locations` row is simply re-evaluated by
+the next scan.
+
+Since nothing in this PR deletes a cold copy, a tracked orphan candidate cannot currently be lost to a restore
+or a disabled backup schedule either. That changes with whichever follow-up reintroduces cleanup: it will need
+its own grace period measured against backup retention, the same way the removed manual action's did, so a
+scheduled backup retained for at least that long stays part of the guidance once cleanup exists again.
+
 ### Attachment storage
 
 **Admin → Storage → Attachment storage** (`src/app/(admin)/storage/attachment-storage-card.tsx`, `GET` and `POST /api/admin/attachment-storage`) shows how attachments are stored: files with an object of their own, files served from their raw message, rows that share another row's object, and the received or imported files **Reclaim space** has not looked at yet. Starting or stopping a job takes the primary admin and a same-origin request; reading the counts takes any admin. See `docs/specs/attachments-once.md` §5.5.

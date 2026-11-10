@@ -6,6 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.11.10.2] - 2026-11-10
+
+### Added
+
+- Outlook.com, Hotmail and Microsoft 365 accounts can now be connected under [Settings → Connected accounts](/settings/connected-accounts) with **Sign in with Microsoft**: new mail arrives, existing mail can be imported and you can send as the address, without a password. When Microsoft stops accepting the sign-in, the account shows **Reconnect**.
+  ![The connect dialog with Outlook.com or Microsoft 365 chosen and the Sign in with Microsoft button](/changelog/2026-11-10-sign-in-with-microsoft-light.webp)
+- The owner turns this on once in [Admin → General](/general) by entering this Kite's own Microsoft app registration; the client secret is checked with Microsoft and saved encrypted. This needs a database update applied from the Admin overview; the [setup steps](https://github.com/midego1/kite/blob/main/docs/providers.md#microsoft-sign-in-for-connected-accounts) walk through the Microsoft side.
+  ![Microsoft sign-in in the Connected accounts card of Admin → General, with the redirect URI to register](/changelog/2026-11-10-microsoft-sign-in-admin-light.webp)
+
+### Fixed
+
+- Links that go through Amazon SES click tracking and hide another site behind odd characters in the address are now flagged as a mismatch.
+- When two messages of one conversation arrive in the same second, the conversation list now shows the one that arrived last.
+- Mail from a sender that passed authentication, such as Cloudflare notices, is no longer flagged as phishing when its links show the sender's own address but open through the sender's mail service.
+- Another user asking for codes for the same email address can no longer stop you from verifying an address for the assistant.
+- The reader toolbar uses the room it has: a wide Reply all no longer pushes every icon into More actions, an error message next to the toolbar stays readable, and Move to in More actions is disabled on read-only shared mail like the Move button.
+  ![The reader toolbar before (Summarize, More actions and Delete only) and after (Archive and Snooze shown too)](/changelog/2026-11-10-reader-toolbar-icons-light.webp)
+- The Unverified sender badge stays fully visible next to a long sender name on a phone, screen readers read it in the conversation, and a Reply-To on a subdomain of the sender's own domain is no longer called a different domain. Opening a message no longer waits long on a slow contact check.
+  ![The sender line of an open message at phone width, before (badge cut off) and after (name shortened, badge visible)](/changelog/2026-11-10-sender-badge-narrow-light.webp)
+- In a narrow message list the selected count keeps its number ("975 selected" never shows as "97…"), and switching the interface to Arabic keeps the messages you checked.
+- The assistant's search can now page through results, and it no longer skips mail that arrived in the same second as the last result on the previous page.
+- Adding a sixth extra address for the assistant by email now says you are at the limit instead of "a code was sent", and a settings save that needs a pending database update changes nothing instead of saving part of it.
+- Keep receipts: the delete prompt says an entry may have saved copies in Drive, and the existing-payments dialog says to run it again to retry receipts that could not be saved.
+
 ## [2026.11.10.1] - 2026-11-10
 
 ### Added

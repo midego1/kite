@@ -82,6 +82,7 @@ export async function createKiteMcpHandler(
 		viewer,
 		timeZone: normalizeTimeZone(principal.user.timeZone),
 		mailboxIds: principal.mailboxIds,
+		mailboxLimited: principal.mailboxLimited,
 		grants,
 	});
 	return createMcpHandler(

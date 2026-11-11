@@ -2,13 +2,21 @@ import type { z } from "zod";
 import { jsonValueProblem } from "./json-utils";
 import type { CapabilityCallContext, JsonValue, ModuleId } from "./module-types";
 
+/** `queued`: the first delivery attempt runs on the queue, not inside the emitting request. */
+export type WebhookEmitOptions = { queued?: boolean };
+
 export type WebhookEmitDeps = {
 	/** The module that declares the event: `null` for a core event, `undefined` for an unknown one. */
 	owner(event: string): ModuleId | null | undefined;
 	/** The schema a module's payload for the event must satisfy, or `null` when the module declares none. */
 	payloadSchema(moduleId: ModuleId, event: string): Promise<z.ZodType | null>;
 	isEnabledFor(viewer: NonNullable<CapabilityCallContext["viewer"]>, moduleId: ModuleId): Promise<boolean>;
-	dispatch(userId: string, event: string, payload: Record<string, unknown>): Promise<void>;
+	dispatch(
+		userId: string,
+		event: string,
+		payload: Record<string, unknown>,
+		options?: WebhookEmitOptions,
+	): Promise<void>;
 };
 
 /** A module asked to emit something it may not: another module's event or a payload that breaks the event's schema. @public Test-only: thrown here, matched only by tests. */
@@ -29,6 +37,7 @@ export function createWebhookEmitter(deps: WebhookEmitDeps) {
 		moduleId: ModuleId,
 		event: string,
 		payload: JsonValue,
+		options?: WebhookEmitOptions,
 	): Promise<void> {
 		const owner = deps.owner(event);
 		if (owner === undefined) throw new WebhookEmitError(`Unknown webhook event ${event}`);
@@ -46,6 +55,6 @@ export function createWebhookEmitter(deps: WebhookEmitDeps) {
 		}
 		if (!ctx.viewer) throw new WebhookEmitError("A webhook event needs an acting user");
 		if (!(await deps.isEnabledFor(ctx.viewer, moduleId))) return;
-		await deps.dispatch(ctx.viewer.userId, event, payload);
+		await deps.dispatch(ctx.viewer.userId, event, payload, options);
 	};
 }

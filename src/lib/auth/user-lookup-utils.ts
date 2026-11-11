@@ -11,7 +11,9 @@ export function missingColumnFromError(error: unknown): string | null {
 		else if (typeof current === "string") messages.push(current);
 		current = current instanceof Error ? current.cause : null;
 	}
-	for (const message of messages) {
+	// The database's own error is the innermost cause. The wrapper's message carries the query and its bound values,
+	// which can hold text from a mail, so it is read last and never masks the real column.
+	for (const message of messages.reverse()) {
 		const match =
 			/no such column: (?:"?\w+"?\.)?"?(\w+)"?/i.exec(message) ?? /has no column named "?(\w+)"?/i.exec(message);
 		if (match) return match[1];

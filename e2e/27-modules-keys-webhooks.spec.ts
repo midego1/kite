@@ -270,7 +270,7 @@ test("the key forms list calendar scopes only while Calendar is on, and existing
 			"Request send review",
 			"Read calendar",
 			"Manage calendar",
-			"Read subscriptions",
+			"Read subscriptions and payments",
 		]);
 
 		await setModuleState(api, { modules: { calendar: false } });
@@ -281,7 +281,7 @@ test("the key forms list calendar scopes only while Calendar is on, and existing
 			"Manage drafts",
 			"Organize mail",
 			"Request send review",
-			"Read subscriptions",
+			"Read subscriptions and payments",
 		]);
 		await page.keyboard.press("Escape");
 		const row = page.getByText("E2E form keeps scopes").locator("xpath=ancestor::span[contains(@class,'flex-1')][1]");
@@ -308,7 +308,7 @@ async function deleteWebhooks(api: APIRequestContext, ids: string[]) {
 
 const CALENDAR_EVENT_LABELS = ["Calendar event created", "Calendar event updated", "Calendar event deleted"];
 
-const FINANCE_EVENT_LABELS = ["Subscription detected", "Subscription renewal due"];
+const FINANCE_EVENT_LABELS = ["Subscription detected", "Subscription renewal due", "Payment recorded"];
 
 test("the webhook picker lists calendar and booking events only while their modules are on", async ({ page }) => {
 	const api = await owner();

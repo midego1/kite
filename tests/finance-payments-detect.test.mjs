@@ -90,6 +90,7 @@ test("a one-off Stripe receipt lands as paid, USD 500.00, from the merchant, on 
 		modelFields: [],
 		docRef: "1114-6093:50000USD",
 		mailRef: null,
+		category: null,
 	});
 });
 

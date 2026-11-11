@@ -8,6 +8,8 @@ import { resumePaymentScans, scanPayments } from "@/lib/finance/payment-scan";
 import { recordPaymentStep } from "@/lib/finance/payment-step";
 import { backfillReceipts, resumeReceiptBackfills } from "@/lib/finance/receipt-backfill";
 import { sweepReceipts } from "@/lib/finance/receipts";
+import { listPaymentsTool } from "@/lib/finance/payment-tools";
+import { searchPayments } from "@/lib/finance/payment-search";
 import { resolveFinanceRefs } from "@/lib/finance/refs";
 import { remindRenewals } from "@/lib/finance/reminders";
 import { searchSubscriptions } from "@/lib/finance/search";
@@ -33,7 +35,9 @@ export const financeHandlers: Record<string, CapabilityHandler> = {
 	resumePaymentScans,
 	resolveRefs: resolveFinanceRefs,
 	search: searchSubscriptions,
+	searchPayments,
 	list_subscriptions: listSubscriptionsTool,
+	list_payments: listPaymentsTool,
 	track_subscription: trackSubscriptionTool,
 	previewTrackSubscription,
 	remindRenewals,

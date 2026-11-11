@@ -1,7 +1,9 @@
 import { z } from "zod";
+import { missingColumnFromError } from "@/lib/auth/user-lookup-utils";
 import type { CapabilityCallContext, CapabilityHandler, JsonValue } from "@/lib/modules/module-types";
+import { PAYMENT_CATEGORIES } from "./category-utils";
 import { isDayString } from "./date-utils";
-import { FinanceRefusal, refusalOf } from "./errors";
+import { FinanceRefusal, MIGRATION_PENDING_ERROR, refusalOf } from "./errors";
 import { initialStatus, referenceNumber, rowReference, type PaymentDocType, type PaymentStatus } from "./payment-utils";
 import { ownerPayment, removePaymentRow, updatePayment, type PaymentRow } from "./payments";
 import { dayToDate } from "./record-utils";
@@ -10,6 +12,8 @@ import { manualVendorKey } from "./vendor-utils";
 const day = z.string().refine(isDayString, "Not a calendar date");
 const docType = z.enum(["invoice", "payment", "credit", "refund"]);
 const status = z.enum(["open", "paid", "refunded", "credited"]);
+/** A category of the fixed set, or null for none (spec §27.2). */
+const category = z.enum(PAYMENT_CATEGORIES).nullable();
 
 /** What a correction may change; the status of anything but an invoice follows its type. */
 export const paymentFieldsSchema = z
@@ -20,6 +24,7 @@ export const paymentFieldsSchema = z
 		documentOn: day,
 		docType,
 		status,
+		category,
 	})
 	.partial()
 	.strict();
@@ -40,6 +45,7 @@ const previousSchema = z
 		documentAt: z.string().datetime({ offset: true }),
 		docType,
 		status,
+		category,
 		removedAt: z.string().datetime({ offset: true }).nullable(),
 	})
 	.partial();
@@ -81,6 +87,7 @@ function correctedColumns(row: PaymentRow, fields: PaymentFields) {
 		...(fields.amountMinor !== undefined ? { amountMinor: fields.amountMinor } : {}),
 		...(fields.currency !== undefined ? { currency: fields.currency } : {}),
 		...(fields.documentOn !== undefined ? { documentAt: dayToDate(fields.documentOn)! } : {}),
+		...(fields.category !== undefined ? { category: fields.category } : {}),
 		docType: type,
 		status: statusFor(type, fields.status, row.status),
 	};
@@ -96,6 +103,7 @@ function snapshot(row: PaymentRow): Previous {
 		documentAt: row.documentAt.toISOString(),
 		docType: row.docType,
 		status: row.status,
+		category: row.category,
 		removedAt: row.removedAt ? row.removedAt.toISOString() : null,
 	};
 }
@@ -132,6 +140,8 @@ async function updateOrRefuse(userId: string, id: string, columns: Parameters<ty
 		const text = error instanceof Error ? `${error.message} ${String(error.cause ?? "")}` : "";
 		if (/UNIQUE constraint failed/i.test(text))
 			throw new FinanceRefusal(409, "Another payment already records this document");
+		// Migration 0109 adds the category column; a change that names it waits for the migration.
+		if (missingColumnFromError(error) === "category") throw new FinanceRefusal(409, MIGRATION_PENDING_ERROR);
 		throw error;
 	}
 }
@@ -197,7 +207,9 @@ export const updatePaymentAction = paymentAction(updateInput, async ({ userId, i
 	const row = await requirePayment(userId, input.paymentId);
 	const prior = priorOf(before, row);
 	await updateOrRefuse(userId, row.id, correctedColumns(row, input.fields));
-	const { removedAt: _removed, ...previous } = prior;
+	// The category is put back only by a change that touched it, so an undo never names a column it did not write.
+	const { removedAt: _removed, category: previousCategory, ...rest } = prior;
+	const previous = input.fields.category === undefined ? rest : { ...rest, category: previousCategory ?? null };
 	return { result: resultOf(row), inverse: { userId, paymentId: row.id, previous } };
 });
 

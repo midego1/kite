@@ -83,6 +83,7 @@ export function MessageSourceDialog({ messageId, open, onOpenChange }: MessageSo
 								>
 									<span className="font-medium text-neutral-700">{label}</span>
 									<span
+										dir={label === "From" || label === "To" || label === "Subject" ? "auto" : undefined}
 										className={
 											label === "Message ID" && value ? "break-all text-green-700" : "break-words text-neutral-900"
 										}

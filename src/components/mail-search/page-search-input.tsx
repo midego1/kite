@@ -84,6 +84,7 @@ export function PageSearchInput() {
 					aria-controls={listboxId}
 					aria-activedescendant={activeId}
 					autoComplete="off"
+					dir="auto"
 					value={query}
 					onChange={(event) => {
 						setQuery(event.target.value);

@@ -40,7 +40,9 @@ export function MessageAttachmentCard({ attachment, messageId, mailboxId, onPrev
 				) : (
 					<Icon className={`h-4 w-4 shrink-0 ${iconColor}`} aria-hidden="true" />
 				)}
-				<span className="min-w-0 truncate text-neutral-900">{attachment.filename}</span>
+				<span dir="auto" className="min-w-0 truncate text-neutral-900">
+					{attachment.filename}
+				</span>
 				<span className="shrink-0 text-neutral-500">{formatAttachmentSize(attachment.size)}</span>
 			</button>
 			{hasMenu && (

@@ -11,10 +11,12 @@ import { apiContext, deliverInbound, postInbound, waitForMessage } from "../../e
 import { turnScreenerOff } from "../../e2e/support/screener";
 import { chooseOption } from "../../e2e/support/select";
 import {
+	RTL_ATTACHMENT_MAIL,
 	RTL_MAIL,
 	seedDemoData,
 	seedPagedMail,
 	seedPaymentsDemo,
+	seedRtlAttachmentMail,
 	seedRtlMail,
 	seedSenderAuthDemo,
 	seedThaiMail,
@@ -334,6 +336,19 @@ async function connectDemoMcpApp(name: string): Promise<void> {
 }
 
 const SHOTS: Shot[] = [
+	{
+		// RTL audit: an Arabic attachment name reads right to left on its card, like the subject and the sender above it.
+		name: "2026-11-10-rtl-attachment-name-light",
+		viewport: { width: 1280, height: 800 },
+		open: async (page) => {
+			await seedRtlAttachmentMail();
+			await page.goto("/inbox");
+			await page.getByRole("main").getByText(RTL_ATTACHMENT_MAIL.subject, { exact: true }).first().click();
+			await expect(page.getByRole("heading", { level: 1, name: RTL_ATTACHMENT_MAIL.subject })).toBeVisible();
+			await expect(page.locator('[dir="auto"]', { hasText: "فاتورة نوفمبر" }).first()).toBeVisible();
+			return page;
+		},
+	},
 	{
 		// A linked WebDAV folder in Drive: the folder in the Drive menu and its files, proxied from a demo server.
 		name: "2026-11-10-drive-linked-folder-light",

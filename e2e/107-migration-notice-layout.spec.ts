@@ -82,13 +82,13 @@ async function expectClean(card: Locator) {
 	expect(scrollers).toEqual([]);
 }
 
-async function useSidebarWidth(page: Page, width: number) {
+async function presetSidebarWidth(page: Page, width: number) {
 	await page.addInitScript((value) => localStorage.setItem("kite-column-width:sidebar", String(value)), width);
 }
 
 /** The sidebar's own notice: a list without a reading pane, so the strip above Settings shows it. */
 async function openSidebarCard(page: Page, width: number) {
-	await useSidebarWidth(page, width);
+	await presetSidebarWidth(page, width);
 	// A short window is the hard case: the notice, Settings and the menu share the sidebar's height.
 	await page.setViewportSize({ width: 1400, height: 640 });
 	await page.goto("/drafts");

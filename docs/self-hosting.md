@@ -144,7 +144,7 @@ and the DNS page shows what to set by hand.
 |---|---|---|
 | `PORT` | `3000` | HTTP port |
 | `DATA_DIR` | `/data` | SQLite database, blobs and backups |
-| `APP_URL` | request origin | Public URL behind a proxy; also the only origin used in password reset links (no reset mail is sent without it) |
+| `APP_URL` | request origin | Public URL behind a proxy; also the only origin used in password reset links (no reset mail is sent without it), and the address passkeys are bound to (without it, passkeys fail behind a proxy that terminates TLS; see [Passkeys](passkeys.md#for-administrators)) |
 | `TRUST_PROXY` | unset | Set to `true` behind a reverse proxy so the client IP is read from `X-Forwarded-For`; otherwise forwarded headers are ignored for rate limiting |
 | `SETUP_TOKEN` | generated | Token required to create the first admin. When unset in production a random one is generated at start and printed in the log with the `/setup?setup_token=…` link |
 | `APP_ENCRYPTION_KEY` | unset | Encrypts provider keys and webhook secrets stored in the database. Plaintext values keep working and are encrypted when next saved; losing the key makes them unreadable |

@@ -89,6 +89,8 @@ const BACKUP_TABLES: DatabaseBackupTable[] = [
 	"password_reset_tokens",
 	"mfa_recovery_codes",
 	"login_challenges",
+	// Passkeys (migration 0112): public keys and counters only, so a restored account signs in with the same passkeys.
+	"passkeys",
 	"mailbox_agent_settings",
 	"user_ai_settings",
 	"writing_style_profiles",
@@ -189,6 +191,10 @@ const INTERNAL_TABLES = [
 	// Sign-ins with Microsoft in progress (migration 0105): single-use, gone after 10 minutes, and tied to this
 	// install's sessions, so a restore must never bring one back.
 	"oauth_states",
+	// Passkey ceremonies in progress (migration 0112): single-use challenges that expire within minutes.
+	"passkey_challenges",
+	// The time step of each user's last re-authentication code (migration 0112): replay protection for this install.
+	"totp_used_steps",
 	// MCP over OAuth (migration 0106): client registrations, single-use codes, grants and token hashes. They are tied
 	// to this install's URL and sessions; a restore disconnects MCP apps (the grant's api_keys row comes back without
 	// them and the daily pruning removes it), and they reconnect with a new sign-in.

@@ -2,14 +2,17 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
-import { Mail, ShieldCheck } from "lucide-react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { KeyRound, Mail, ShieldCheck } from "lucide-react";
 import { AuthShell } from "@/components/auth/auth-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { TurnstileField } from "@/components/auth/turnstile";
-import { submitLogin, submitMfaCode } from "./utils";
+import { conditionalMediationAvailable, isPasskeyCancel, passkeysSupported } from "@/lib/auth/passkey-client-utils";
+import { PasskeySignInUnavailableError, signInWithPasskey, submitLogin, submitMfaCode } from "./utils";
+
+const subscribeNever = () => () => {};
 
 export function LoginClient({
 	adding = false,
@@ -28,10 +31,72 @@ export function LoginClient({
 	// Set once the password is accepted for an account with a second factor.
 	const [challengeToken, setChallengeToken] = useState<string | null>(null);
 	const [code, setCode] = useState("");
+	const [passkeyLoading, setPasskeyLoading] = useState(false);
+	// Read after hydration only: the server cannot know whether the browser has WebAuthn.
+	const canUsePasskeys = useSyncExternalStore(subscribeNever, passkeysSupported, () => false);
+	// The pending passkey request, autofill or dialog; the browser allows only one at a time.
+	const passkeyRequest = useRef<AbortController | null>(null);
 
-	function finish(redirect?: string) {
-		router.replace(justFinishedSetup ? "/admin" : (next ?? redirect ?? "/inbox"));
-		router.refresh();
+	const finish = useCallback(
+		(redirect?: string) => {
+			router.replace(justFinishedSetup ? "/admin" : (next ?? redirect ?? "/inbox"));
+			router.refresh();
+		},
+		[router, justFinishedSetup, next],
+	);
+
+	/**
+	 * Offers the browser's passkeys in the email field's autofill. One attempt per visit: after a refused passkey the
+	 * button is the way to try again, so a browser that answers on its own can never loop against the server.
+	 */
+	const offerPasskeyAutofill = useCallback(() => {
+		passkeyRequest.current?.abort();
+		const controller = new AbortController();
+		passkeyRequest.current = controller;
+		void (async () => {
+			if (!(await conditionalMediationAvailable())) return;
+			try {
+				const result = await signInWithPasskey({ conditional: true, signal: controller.signal });
+				if (!result || controller.signal.aborted) return;
+				if (result.ok) finish(result.data.redirect);
+				else setError(result.data.error ?? "Passkey sign-in failed");
+			} catch (error) {
+				if (controller.signal.aborted || isPasskeyCancel(error)) return;
+				if (!(error instanceof PasskeySignInUnavailableError))
+					setError(error instanceof Error ? error.message : "Passkey sign-in failed");
+			}
+		})();
+	}, [finish]);
+
+	useEffect(() => {
+		if (challengeToken) return;
+		offerPasskeyAutofill();
+		return () => passkeyRequest.current?.abort();
+	}, [challengeToken, offerPasskeyAutofill]);
+
+	async function onPasskeySignIn() {
+		passkeyRequest.current?.abort();
+		const controller = new AbortController();
+		passkeyRequest.current = controller;
+		setPasskeyLoading(true);
+		setError(null);
+		let cancelled = false;
+		try {
+			const result = await signInWithPasskey({ conditional: false, signal: controller.signal });
+			if (result?.ok) {
+				finish(result.data.redirect);
+				return;
+			}
+			if (result) setError(result.data.error ?? "Passkey sign-in failed");
+			else cancelled = true;
+		} catch (error) {
+			if (isPasskeyCancel(error)) cancelled = true;
+			else setError(error instanceof Error ? error.message : "Passkey sign-in failed");
+		} finally {
+			setPasskeyLoading(false);
+		}
+		// Closing the dialog brings the autofill back; a refused passkey does not, so nothing retries on its own.
+		if (cancelled && passkeyRequest.current === controller) offerPasskeyAutofill();
 	}
 
 	async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -94,7 +159,7 @@ export function LoginClient({
 				title="Two-factor authentication"
 				description="Enter the 6-digit code from your authenticator app, or one of your recovery codes."
 			>
-				<form onSubmit={onSubmitCode} className="space-y-5">
+				<form key="code" onSubmit={onSubmitCode} className="space-y-5">
 					<div className="space-y-2">
 						<Label htmlFor="code">Code</Label>
 						<Input
@@ -149,14 +214,14 @@ export function LoginClient({
 					: "Open your mailbox and continue from the same inbox workspace."
 			}
 		>
-			<form method="post" onSubmit={onSubmit} className="space-y-5">
+			<form key="password" method="post" onSubmit={onSubmit} className="space-y-5">
 				<div className="space-y-2">
 					<Label htmlFor="email">Email</Label>
 					<Input
 						id="email"
 						name="email"
 						type="email"
-						autoComplete="email"
+						autoComplete="username webauthn"
 						required
 						aria-invalid={error ? true : undefined}
 						aria-describedby={error ? "login-error" : undefined}
@@ -195,6 +260,18 @@ export function LoginClient({
 				<Button type="submit" className="h-10 w-full [@media(pointer:coarse)]:h-11" disabled={loading}>
 					{loading ? "Signing in..." : "Sign in"}
 				</Button>
+				{canUsePasskeys && (
+					<Button
+						type="button"
+						variant="outline"
+						className="h-10 w-full [@media(pointer:coarse)]:h-11"
+						disabled={loading || passkeyLoading}
+						onClick={() => void onPasskeySignIn()}
+					>
+						<KeyRound className="h-4 w-4" />
+						{passkeyLoading ? "Waiting for your passkey..." : "Sign in with a passkey"}
+					</Button>
+				)}
 			</form>
 		</AuthShell>
 	);

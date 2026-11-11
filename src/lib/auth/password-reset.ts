@@ -1,9 +1,11 @@
-import { and, eq, gt, isNull } from "drizzle-orm";
+import { and, eq, gt, isNull, sql } from "drizzle-orm";
 import { getDb } from "@/db";
-import { passwordResetTokens, users } from "@/db/schema";
+import { passwordResetTokens, sessions, users } from "@/db/schema";
+import { passkeys } from "@/db/schema/passkeys";
+import { isNoSuchTableError } from "@/lib/modules/state-utils";
 import { newId } from "@/lib/ids";
 import { hashPassword } from "@/lib/auth/password";
-import { deleteUserSessions, hashSessionToken } from "@/lib/auth/session";
+import { hashSessionToken } from "@/lib/auth/session";
 import { getBranding } from "@/lib/branding/service";
 import { sendSystemEmail } from "@/lib/email/system-mail";
 import { createAuditLog } from "@/lib/mailboxes/audit";
@@ -82,17 +84,63 @@ export async function completePasswordReset(
 		.limit(1);
 	if (!row) return { ok: false, error: "This reset link is invalid or has expired. Request a new one." };
 
-	await db
-		.update(users)
-		.set({ passwordHash: hashPassword(newPassword) })
-		.where(eq(users.id, row.userId));
-	await db.update(passwordResetTokens).set({ usedAt: new Date() }).where(eq(passwordResetTokens.id, row.id));
-	await deleteUserSessions(env, row.userId);
+	const redeemed = await redeemResetLink(env, row, hashPassword(newPassword));
+	if (!redeemed) return { ok: false, error: "This reset link is invalid or has expired. Request a new one." };
+	const { passkeysRemoved } = redeemed;
 	await createAuditLog(env, {
 		actorUserId: row.userId,
 		targetUserId: row.userId,
 		action: "auth.password_reset",
-		metadata: { ipAddress: request.headers.get("cf-connecting-ip") ?? "unknown" },
+		metadata: { ipAddress: request.headers.get("cf-connecting-ip") ?? "unknown", passkeysRemoved },
 	});
 	return { ok: true };
+}
+
+/**
+ * One batch, so either all of it happens or none does: claim the link (only while it is unused, by replacing its hash
+ * with a value unique to this redemption), then set the password, end every session and delete every passkey, each
+ * only if this batch made that claim. A second redemption racing this one claims nothing and changes nothing.
+ * Someone who once had the password could have added a passkey; after a reset only the new password opens the
+ * account until the owner adds their passkeys again. Before migration 0112 the batch runs without the passkeys.
+ */
+async function redeemResetLink(
+	env: CloudflareEnv,
+	row: { id: string; userId: string },
+	passwordHash: string,
+): Promise<{ passkeysRemoved: number } | null> {
+	const db = getDb(env);
+	const claim = `redeemed:${newId()}`;
+	const claimed = sql`exists (select 1 from ${passwordResetTokens} where ${passwordResetTokens.id} = ${row.id} and ${passwordResetTokens.tokenHash} = ${claim})`;
+	const core = [
+		db
+			.update(passwordResetTokens)
+			.set({ usedAt: new Date(), tokenHash: claim })
+			.where(
+				and(
+					eq(passwordResetTokens.id, row.id),
+					isNull(passwordResetTokens.usedAt),
+					gt(passwordResetTokens.expiresAt, new Date()),
+				),
+			)
+			.returning({ id: passwordResetTokens.id }),
+		db
+			.update(users)
+			.set({ passwordHash })
+			.where(and(eq(users.id, row.userId), claimed)),
+		db.delete(sessions).where(and(eq(sessions.userId, row.userId), claimed)),
+	] as const;
+	try {
+		const [won, , , removed] = await db.batch([
+			...core,
+			db
+				.delete(passkeys)
+				.where(and(eq(passkeys.userId, row.userId), claimed))
+				.returning({ id: passkeys.id }),
+		]);
+		return won.length ? { passkeysRemoved: removed.length } : null;
+	} catch (error) {
+		if (!isNoSuchTableError(error)) throw error;
+		const [won] = await db.batch([...core]);
+		return won.length ? { passkeysRemoved: 0 } : null;
+	}
 }

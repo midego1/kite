@@ -179,12 +179,19 @@ export function microsoftAuthorizeUrl(input: {
 	return url.toString();
 }
 
-/** The form body of an authorization-code redemption (with the PKCE verifier) or of a refresh. */
-export function tokenRequestBody(
-	client: Pick<MicrosoftClient, "clientId" | "clientSecret">,
-	grant:
-		| { kind: "authorization_code"; code: string; verifier: string; redirectUri: string }
-		| { kind: "refresh_token"; refreshToken: string },
+/** A token request's grant: an authorization code with its PKCE verifier, or a refresh token. */
+export type TokenGrant =
+	| { kind: "authorization_code"; code: string; verifier: string; redirectUri: string }
+	| { kind: "refresh_token"; refreshToken: string };
+
+/**
+ * The form body of a token request at any provider: the client, then the grant, then `scopes` (the `scope` parameter
+ * of a code redemption and of a refresh) when the provider wants one.
+ */
+export function oauthTokenBody(
+	client: { clientId: string; clientSecret: string },
+	grant: TokenGrant,
+	scopes?: { code: string; refresh: string },
 ): URLSearchParams {
 	const body = new URLSearchParams({ client_id: client.clientId, client_secret: client.clientSecret });
 	if (grant.kind === "authorization_code") {
@@ -192,13 +199,23 @@ export function tokenRequestBody(
 		body.set("code", grant.code);
 		body.set("code_verifier", grant.verifier);
 		body.set("redirect_uri", grant.redirectUri);
-		body.set("scope", MICROSOFT_SCOPES.join(" "));
 	} else {
 		body.set("grant_type", "refresh_token");
 		body.set("refresh_token", grant.refreshToken);
-		body.set("scope", MICROSOFT_REFRESH_SCOPES.join(" "));
 	}
+	if (scopes) body.set("scope", grant.kind === "authorization_code" ? scopes.code : scopes.refresh);
 	return body;
+}
+
+/** The form body of an authorization-code redemption (with the PKCE verifier) or of a refresh at Microsoft. */
+export function tokenRequestBody(
+	client: Pick<MicrosoftClient, "clientId" | "clientSecret">,
+	grant: TokenGrant,
+): URLSearchParams {
+	return oauthTokenBody(client, grant, {
+		code: MICROSOFT_SCOPES.join(" "),
+		refresh: MICROSOFT_REFRESH_SCOPES.join(" "),
+	});
 }
 
 export type OAuthTokens = {
@@ -237,8 +254,11 @@ export function aadstsCode(description: unknown): string | null {
 const REAUTH_ERRORS = new Set(["invalid_grant", "interaction_required", "consent_required", "login_required"]);
 const CLIENT_ERRORS = new Set(["invalid_client", "unauthorized_client", "unsupported_grant_type"]);
 
-/** Sorts a token endpoint's error answer (or a status without a body). */
-export function tokenFailure(status: number, body: unknown): OAuthTokenError {
+/**
+ * Sorts a token endpoint's error answer (or a status without a body). `provider` names who answered in the message;
+ * Microsoft and Google use the same OAuth error codes.
+ */
+export function tokenFailure(status: number, body: unknown, provider = "Microsoft"): OAuthTokenError {
 	const data = (body && typeof body === "object" ? body : {}) as { error?: unknown; error_description?: unknown };
 	const error = typeof data.error === "string" ? data.error : null;
 	const code = aadstsCode(data.error_description);
@@ -247,28 +267,32 @@ export function tokenFailure(status: number, body: unknown): OAuthTokenError {
 	if (error && REAUTH_ERRORS.has(error))
 		return new OAuthTokenError(
 			"reauth",
-			`Microsoft sign-in expired or was revoked. Reconnect the account${detail}.`,
+			`${provider} sign-in expired or was revoked. Reconnect the account${detail}.`,
 			code ?? error,
 		);
 	if (error && CLIENT_ERRORS.has(error))
 		return new OAuthTokenError(
 			"client",
-			`Microsoft refused this Kite's app registration. Ask your admin to check Microsoft sign-in in Admin → General${detail}.`,
+			`${provider} refused this Kite's app registration. Ask your admin to check ${provider} sign-in in Admin → General${detail}.`,
 			code ?? error,
 		);
 	if (status >= 500 || status === 429 || error === "temporarily_unavailable")
-		return new OAuthTokenError("transient", `Microsoft could not be reached. Kite tries again later${detail}.`, code);
-	return new OAuthTokenError("reauth", `Microsoft refused the sign-in. Reconnect the account${detail}.`, code ?? error);
+		return new OAuthTokenError("transient", `${provider} could not be reached. Kite tries again later${detail}.`, code);
+	return new OAuthTokenError(
+		"reauth",
+		`${provider} refused the sign-in. Reconnect the account${detail}.`,
+		code ?? error,
+	);
 }
 
 /** A successful token answer, checked; `now` dates the expiry. */
-export function parseTokenResponse(body: unknown, now: Date): OAuthTokens {
+export function parseTokenResponse(body: unknown, now: Date, provider = "Microsoft"): OAuthTokens {
 	const data = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
 	const accessToken = typeof data.access_token === "string" ? data.access_token : "";
 	const type = typeof data.token_type === "string" ? data.token_type.toLowerCase() : "";
 	const expiresIn = Number(data.expires_in);
 	if (!accessToken || /[\s\0-\x1f\x7f]/.test(accessToken) || (type && type !== "bearer"))
-		throw new OAuthTokenError("transient", "Microsoft answered without a usable access token.");
+		throw new OAuthTokenError("transient", `${provider} answered without a usable access token.`);
 	const seconds = Number.isFinite(expiresIn) && expiresIn > 0 ? Math.min(expiresIn, 24 * 3600) : 3600;
 	return {
 		accessToken,
@@ -287,13 +311,17 @@ export function grantsImap(scopes: string): boolean {
 	return scopes.split(/\s+/).some((scope) => /(^|\/)IMAP\.AccessAsUser\.All$/i.test(scope));
 }
 
+/** Who signed in, as an ID token names them: the address, and the provider's stable id for the user. */
+export type OAuthIdentity = { address: string; subject: string };
+
 /** `subject` is `<tid>:<oid>`: the user's id is only unique within its tenant, so both are kept and compared. */
-export type IdTokenClaims = { address: string; subject: string; tenantId: string };
+export type IdTokenClaims = OAuthIdentity & { tenantId: string };
 
 /** The tenant of every personal Microsoft account (Outlook.com, Hotmail). */
 const CONSUMER_TENANT_ID = "9188040d-6c67-4c5b-b112-36a304b66dad";
 
-function decodeJwtPayload(idToken: string | null): Record<string, unknown> | null {
+/** The claims of a JWT, unverified (the caller says why that is enough), or null when it is not one. */
+export function decodeJwtPayload(idToken: string | null): Record<string, unknown> | null {
 	const payload = idToken?.split(".")[1];
 	if (!payload) return null;
 	try {
@@ -318,7 +346,8 @@ function tenantMatches(tid: string, tenant: string, pinned: string | undefined):
 	return !pinned || tid === pinned.toLowerCase();
 }
 
-const asAddress = (value: unknown) => {
+/** A claim as a lowercased mail address, or null. */
+export const asAddress = (value: unknown) => {
 	const text = typeof value === "string" ? value.trim().toLowerCase() : "";
 	return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text) ? text : null;
 };

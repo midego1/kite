@@ -23,8 +23,8 @@ const {
 	microsoftClientStatus,
 	resolveMicrosoftClient,
 	pinMicrosoftTenant,
-	startMicrosoftSignIn,
-	completeMicrosoftSignIn,
+	startOAuthSignIn,
+	completeOAuthSignIn,
 	oauthAccessToken,
 	CredentialUnavailableError,
 	storeRefreshedTokens,
@@ -50,7 +50,7 @@ const {
 		"saveMicrosoftClient, validateMicrosoftClient, microsoftClientStatus, resolveMicrosoftClient, pinMicrosoftTenant",
 		"src/lib/external-accounts/oauth-client.ts",
 	],
-	["startMicrosoftSignIn, completeMicrosoftSignIn", "src/lib/external-accounts/oauth-flow.ts"],
+	["startOAuthSignIn, completeOAuthSignIn", "src/lib/external-accounts/oauth-flow.ts"],
 	["oauthAccessToken, CredentialUnavailableError", "src/lib/external-accounts/oauth-tokens.ts"],
 	["storeRefreshedTokens, readTokenState", "src/lib/external-accounts/oauth-store.ts"],
 	["listExternalAccounts, retestExternalAccount, updateExternalAccount", "src/lib/external-accounts/service.ts"],
@@ -134,9 +134,10 @@ async function setup(t, { saveClient = true } = {}) {
 
 /** Starts a sign-in, lets the fake consent, and answers the callback's query, as the browser would carry it. */
 async function signIn(env, actor = owner, body = {}) {
-	const { url } = await startMicrosoftSignIn(
+	const { url } = await startOAuthSignIn(
 		env,
 		actor,
+		"microsoft",
 		{ mailboxId: "mailbox-a", kitePassword: KITE_PASSWORD, address: ADDRESS, ...body },
 		ORIGIN,
 	);
@@ -214,7 +215,7 @@ test("Sign in with Microsoft connects the account with XOAUTH2, the refresh toke
 	assert.notEqual(stateRow.state_hash, url.searchParams.get("state"));
 	assert.match(stateRow.code_verifier, /^enc:v1:/);
 
-	const outcome = await completeMicrosoftSignIn(env, owner, params);
+	const outcome = await completeOAuthSignIn(env, owner, params);
 	assert.equal(outcome.ok, true, JSON.stringify(outcome));
 	assert.equal(outcome.reconnected, false);
 	assert.equal(db.db.prepare("SELECT count(*) AS n FROM oauth_states").get().n, 0);
@@ -245,35 +246,46 @@ test("Sign in with Microsoft connects the account with XOAUTH2, the refresh toke
 	assert.ok(!/rt-|at-|enc:v1/.test(json));
 
 	// The state was used: the same callback again, or another user's, connects nothing.
-	assert.deepEqual(await completeMicrosoftSignIn(env, owner, params), { ok: false, reason: "expired" });
+	assert.deepEqual(await completeOAuthSignIn(env, owner, params), { ok: false, reason: "expired", provider: null });
 	const second = await signIn(env);
-	assert.deepEqual(await completeMicrosoftSignIn(env, other, second.params), { ok: false, reason: "expired" });
+	assert.deepEqual(await completeOAuthSignIn(env, other, second.params), {
+		ok: false,
+		reason: "expired",
+		provider: null,
+	});
 	// Connecting the same address again is refused.
 	const third = await signIn(env);
-	assert.deepEqual(await completeMicrosoftSignIn(env, owner, third.params), { ok: false, reason: "address_taken" });
+	assert.deepEqual(await completeOAuthSignIn(env, owner, third.params), {
+		ok: false,
+		reason: "address_taken",
+		provider: "microsoft",
+	});
 	assert.equal(oauth.requests.filter((entry) => entry.kind === "token").length, 2);
 });
 
 test("a refused or cancelled sign-in connects nothing and says why", async (t) => {
 	const { db, env, oauth } = await setup(t);
 	oauth.denyNext();
-	assert.deepEqual(await completeMicrosoftSignIn(env, owner, (await signIn(env)).params), {
+	assert.deepEqual(await completeOAuthSignIn(env, owner, (await signIn(env)).params), {
 		ok: false,
 		reason: "cancelled",
+		provider: "microsoft",
 	});
 	oauth.denyNext("access_denied", "AADSTS65001: The user or administrator has not consented to use the application.");
-	assert.deepEqual(await completeMicrosoftSignIn(env, owner, (await signIn(env)).params), {
+	assert.deepEqual(await completeOAuthSignIn(env, owner, (await signIn(env)).params), {
 		ok: false,
 		reason: "admin_consent",
+		provider: "microsoft",
 	});
 	oauth.failNextToken(400, { error: "invalid_grant", error_description: "AADSTS54005: code already redeemed" });
-	assert.deepEqual(await completeMicrosoftSignIn(env, owner, (await signIn(env)).params), {
+	assert.deepEqual(await completeOAuthSignIn(env, owner, (await signIn(env)).params), {
 		ok: false,
 		reason: "token",
+		provider: "microsoft",
 	});
 	// A wrong Kite password stops it before Microsoft is asked.
 	const wrong = await refusal(
-		startMicrosoftSignIn(env, owner, { mailboxId: "mailbox-a", kitePassword: "nope" }, ORIGIN),
+		startOAuthSignIn(env, owner, "microsoft", { mailboxId: "mailbox-a", kitePassword: "nope" }, ORIGIN),
 	);
 	assert.equal(wrong.code, "KITE_PASSWORD");
 	assert.equal(db.db.prepare("SELECT count(*) AS n FROM external_accounts").get().n, 0);
@@ -281,7 +293,7 @@ test("a refused or cancelled sign-in connects nothing and says why", async (t) =
 
 test("tokens are refreshed before they expire, rotated, stored once, and used for sync, sending and imports", async (t) => {
 	const { db, env, oauth, accessTokens } = await setup(t);
-	await completeMicrosoftSignIn(env, owner, (await signIn(env)).params);
+	await completeOAuthSignIn(env, owner, (await signIn(env)).params);
 	const id = accountRow(db).id;
 	const first = accessTokens[ADDRESS];
 	// Cached: no token request.
@@ -343,7 +355,7 @@ test("tokens are refreshed before they expire, rotated, stored once, and used fo
 
 test("a revoked sign-in stops the account at Sign-in failed, and Reconnect with the same account fixes it", async (t) => {
 	const { db, env, oauth } = await setup(t);
-	await completeMicrosoftSignIn(env, owner, (await signIn(env)).params);
+	await completeOAuthSignIn(env, owner, (await signIn(env)).params);
 	const id = accountRow(db).id;
 	oauth.revokeAll();
 	db.db.prepare("UPDATE external_accounts SET oauth_expires_at = 0").run();
@@ -380,35 +392,38 @@ test("a revoked sign-in stops the account at Sign-in failed, and Reconnect with 
 
 	// Reconnecting as another Microsoft account is refused; as the same one, the account is active again.
 	oauth.setAccount({ address: "someone-else@outlook.test", oid: "oid-2" });
-	assert.deepEqual(await completeMicrosoftSignIn(env, owner, (await signIn(env, owner, { accountId: id })).params), {
+	assert.deepEqual(await completeOAuthSignIn(env, owner, (await signIn(env, owner, { accountId: id })).params), {
 		ok: false,
 		reason: "different_account",
+		provider: "microsoft",
 	});
 	// The same address signed in as another user (a reassigned address), or in another tenant, is not the same account.
 	oauth.setAccount({ address: ADDRESS, oid: "oid-reassigned" });
-	assert.deepEqual(await completeMicrosoftSignIn(env, owner, (await signIn(env, owner, { accountId: id })).params), {
+	assert.deepEqual(await completeOAuthSignIn(env, owner, (await signIn(env, owner, { accountId: id })).params), {
 		ok: false,
 		reason: "different_account",
+		provider: "microsoft",
 	});
 	oauth.setAccount({ address: ADDRESS, oid: "oid-1", tid: "0c0c0c0c-0000-4000-8000-000000000001" });
-	assert.deepEqual(await completeMicrosoftSignIn(env, owner, (await signIn(env, owner, { accountId: id })).params), {
+	assert.deepEqual(await completeOAuthSignIn(env, owner, (await signIn(env, owner, { accountId: id })).params), {
 		ok: false,
 		reason: "different_account",
+		provider: "microsoft",
 	});
 	oauth.setAccount({ address: ADDRESS, oid: "oid-1" });
-	const again = await completeMicrosoftSignIn(env, owner, (await signIn(env, owner, { accountId: id })).params);
-	assert.deepEqual(again, { ok: true, accountId: id, reconnected: true });
+	const again = await completeOAuthSignIn(env, owner, (await signIn(env, owner, { accountId: id })).params);
+	assert.deepEqual(again, { ok: true, provider: "microsoft", accountId: id, reconnected: true });
 	assert.equal(accountRow(db).status, "active");
 	assert.ok(await oauthAccessToken(env, id));
 });
 
 test("a refresh that started before a reconnect cannot store its older token over the reconnect's", async (t) => {
 	const { db, env } = await setup(t);
-	await completeMicrosoftSignIn(env, owner, (await signIn(env)).params);
+	await completeOAuthSignIn(env, owner, (await signIn(env)).params);
 	const id = accountRow(db).id;
 	// A refresh read the token state, then the user reconnected before it stored its answer.
 	const before = await readTokenState(env, id);
-	const reconnected = await completeMicrosoftSignIn(env, owner, (await signIn(env, owner, { accountId: id })).params);
+	const reconnected = await completeOAuthSignIn(env, owner, (await signIn(env, owner, { accountId: id })).params);
 	assert.equal(reconnected.ok, true);
 	const after = await readTokenState(env, id);
 	assert.ok(after.version > before.version);
@@ -444,7 +459,7 @@ test("an SMTP server that refuses the token answers 535 after its JSON challenge
 
 test("an account edited to sign in with a password at another provider stops being an OAuth account", async (t) => {
 	const { db, env } = await setup(t);
-	await completeMicrosoftSignIn(env, owner, (await signIn(env)).params);
+	await completeOAuthSignIn(env, owner, (await signIn(env)).params);
 	const id = accountRow(db).id;
 	await updateExternalAccount(env, owner, id, {
 		address: ADDRESS,
@@ -472,7 +487,7 @@ test("a registration with a tenant domain pins the tenant of its first sign-in, 
 	assert.equal((await resolveMicrosoftClient(env)).tenantId, undefined, "nothing pinned before a sign-in");
 
 	oauth.setAccount({ address: ADDRESS, oid: "oid-1", tid: firstTid });
-	assert.equal((await completeMicrosoftSignIn(env, owner, (await signIn(env)).params)).ok, true);
+	assert.equal((await completeOAuthSignIn(env, owner, (await signIn(env)).params)).ok, true);
 	assert.equal((await resolveMicrosoftClient(env)).tenantId, firstTid, "the first sign-in's tenant is remembered");
 	assert.equal(
 		db.db.prepare("SELECT oauth_microsoft_client AS v FROM app_settings").get().v.includes(firstTid),
@@ -482,16 +497,16 @@ test("a registration with a tenant domain pins the tenant of its first sign-in, 
 
 	oauth.setAccount({ address: "other@contoso.test", oid: "oid-9", tid: secondTid });
 	assert.deepEqual(
-		await completeMicrosoftSignIn(env, owner, (await signIn(env, owner, { address: "other@contoso.test" })).params),
+		await completeOAuthSignIn(env, owner, (await signIn(env, owner, { address: "other@contoso.test" })).params),
 		{
 			ok: false,
 			reason: "no_address",
+			provider: "microsoft",
 		},
 	);
 	oauth.setAccount({ address: "third@contoso.test", oid: "oid-3", tid: firstTid });
 	assert.equal(
-		(await completeMicrosoftSignIn(env, owner, (await signIn(env, owner, { address: "third@contoso.test" })).params))
-			.ok,
+		(await completeOAuthSignIn(env, owner, (await signIn(env, owner, { address: "third@contoso.test" })).params)).ok,
 		true,
 		"the pinned tenant still signs in",
 	);
@@ -521,7 +536,7 @@ test("the pin loses to a registration saved meanwhile, and of two racing first s
 
 test("a token refresh cannot store its token over the password of an account edited to use one (version or not)", async (t) => {
 	const { db, env } = await setup(t);
-	await completeMicrosoftSignIn(env, owner, (await signIn(env)).params);
+	await completeOAuthSignIn(env, owner, (await signIn(env)).params);
 	const id = accountRow(db).id;
 	const before = await readTokenState(env, id);
 	await updateExternalAccount(env, owner, id, {
@@ -549,7 +564,7 @@ test("a token refresh cannot store its token over the password of an account edi
 
 test("backups and erased credentials never keep a token", async (t) => {
 	const { db, env } = await setup(t);
-	await completeMicrosoftSignIn(env, owner, (await signIn(env)).params);
+	await completeOAuthSignIn(env, owner, (await signIn(env)).params);
 	const redacted = redactBackupRow("external_accounts", accountRow(db));
 	assert.equal(redacted.secret, "");
 	assert.equal(redacted.oauth_access_token, null);

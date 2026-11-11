@@ -56,7 +56,7 @@ export function ConnectedAccountsSettings() {
 	});
 	const [editing, setEditing] = useState<Editing>(null);
 	const [notice, setNotice] = useState<{ text: string; accountId?: string; tone?: "success" | "warning" } | null>(null);
-	// Back from Microsoft's sign-in (`?oauth=…`): say how it went once, after mount (the server render has no address
+	// Back from Microsoft's or Google's sign-in (`?oauth=…`): say how it went once, after mount (the server render has no address
 	// bar), then drop the query. Both happen in the same frame, so a remounted effect still finds the query.
 	useEffect(() => {
 		const result = oauthNoticeFromLocation();
@@ -111,7 +111,7 @@ export function ConnectedAccountsSettings() {
 					onOpenChange={(open) => !open && setEditing(null)}
 					account={editing.account}
 					presets={data.presets}
-					microsoftSignIn={!!data.oauth?.microsoft}
+					oauthProviders={{ microsoft: !!data.oauth?.microsoft, google: !!data.oauth?.google }}
 					onForwardInstead={showForwarding}
 					onMailboxLeftBehind={(address) => {
 						setNotice({
@@ -138,7 +138,7 @@ export function ConnectedAccountsSettings() {
 	);
 }
 
-/** The notice for a return from Microsoft's sign-in, read from the address bar. */
+/** The notice for a return from a provider's sign-in, read from the address bar. */
 function oauthNoticeFromLocation(): { text: string; accountId?: string; tone: "success" | "warning" } | null {
 	const result = oauthResultMessage(new URLSearchParams(window.location.search));
 	if (!result) return null;

@@ -25,6 +25,7 @@
 	"/api/admin/attachment-storage",
 	"/api/admin/aws",
 	"/api/admin/database-size",
+	"/api/admin/external-accounts/google",
 	"/api/admin/external-accounts/microsoft",
 	"/api/admin/external-accounts",
 	"/api/admin/general",

@@ -4,6 +4,7 @@ import { getEnv } from "@/lib/cloudflare";
 import { CONNECT_REFUSAL_TEXT, connectRefusal } from "@/lib/external-accounts/access";
 import { answerExternal } from "@/lib/external-accounts/http";
 import { resolveMicrosoftClient } from "@/lib/external-accounts/oauth-client";
+import { resolveGoogleClient } from "@/lib/external-accounts/oauth-google-client";
 import { oauthTablesReady } from "@/lib/external-accounts/oauth-store";
 import { EXTERNAL_ACCOUNT_PRESETS } from "@/lib/external-accounts/presets-utils";
 import type { OAuthProviders } from "@/lib/external-accounts/types";
@@ -21,12 +22,13 @@ const presets = EXTERNAL_ACCOUNT_PRESETS.map(({ id, label, imap, smtp, passwordS
 
 /** Which sign-ins with a provider work here: set up by the owner, and the database updated for them. */
 async function oauthProviders(env: CloudflareEnv): Promise<OAuthProviders> {
-	return { microsoft: (await oauthTablesReady(env)) && !!(await resolveMicrosoftClient(env)) };
+	if (!(await oauthTablesReady(env))) return { microsoft: false, google: false };
+	return { microsoft: !!(await resolveMicrosoftClient(env)), google: !!(await resolveGoogleClient(env)) };
 }
 
 /**
  * The user's connected accounts (never their passwords), whether they may connect one, the provider presets, and
- * which provider sign-ins (Sign in with Microsoft) this Kite offers.
+ * which provider sign-ins (Sign in with Microsoft or Google) this Kite offers.
  */
 export async function GET(request: Request) {
 	const env = getEnv();
@@ -45,7 +47,9 @@ export async function GET(request: Request) {
 				migrationPending: refusal === "migration_pending",
 			};
 		},
-		{ whenPending: { accounts: [], refusal: "migration_pending", presets, oauth: { microsoft: false } } },
+		{
+			whenPending: { accounts: [], refusal: "migration_pending", presets, oauth: { microsoft: false, google: false } },
+		},
 	);
 }
 

@@ -243,6 +243,8 @@
 		"src/lib/external-accounts/via-utils.ts",
 		"src/lib/external-accounts/oauth-utils.ts",
 		"src/lib/external-accounts/oauth-result-utils.ts",
+		"src/lib/external-accounts/oauth-google-utils.ts",
+		"src/lib/external-accounts/oauth-provider-utils.ts",
 		"src/lib/net/xoauth2-utils.ts",
 		"src/components/connected-accounts-banner-utils.ts",
 		"src/lib/external-accounts/identity-utils.ts",

@@ -389,18 +389,25 @@ test("granted scopes: IMAP is required", () => {
 });
 
 test("the callback's outcome travels as codes only, and the page turns them into words", () => {
-	const connected = oauthResultPath({ ok: true, accountId: "xacct_1", reconnected: false });
-	assert.equal(connected, "/settings/connected-accounts?oauth=connected&account=xacct_1");
+	const connected = oauthResultPath({ ok: true, provider: "microsoft", accountId: "xacct_1", reconnected: false });
+	assert.equal(connected, "/settings/connected-accounts?oauth=connected&account=xacct_1&provider=microsoft");
 	const message = oauthResultMessage(new URL(connected, "http://k").searchParams);
 	assert.deepEqual(message, { tone: "success", text: "Microsoft account connected.", accountId: "xacct_1" });
 	const failed = oauthResultMessage(
-		new URL(oauthResultPath({ ok: false, reason: "admin_consent" }), "http://k").searchParams,
+		new URL(oauthResultPath({ ok: false, reason: "admin_consent", provider: "microsoft" }), "http://k").searchParams,
 	);
 	assert.equal(failed.tone, "error");
 	assert.match(failed.text, /administrator/);
 	// A made-up reason never puts its own text on the page.
-	const unknown = oauthResultMessage(new URLSearchParams("oauth=failed&reason=<script>"));
+	const unknown = oauthResultMessage(new URLSearchParams("oauth=failed&reason=<script>&provider=microsoft"));
 	assert.equal(unknown.text, "Something went wrong connecting the Microsoft account. Try again.");
+	// A state that was not found names no provider, and the page does not guess one.
+	const expired = oauthResultPath({ ok: false, reason: "expired", provider: null });
+	assert.equal(expired, "/settings/connected-accounts?oauth=failed&reason=expired");
+	assert.equal(
+		oauthResultMessage(new URL(expired, "http://k").searchParams).text,
+		"The sign-in expired or was already used. Start it again from Connect account.",
+	);
 	assert.equal(oauthResultMessage(new URLSearchParams("")), null);
 });
 

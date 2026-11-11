@@ -25,6 +25,7 @@ import {
 } from "./demo-data";
 import { mockConnectedAccountAuthRecheck, mockForYou, mockForYouPreview } from "./demo-mocks";
 import { sampleMessage, startFakeImap } from "../../tests/support/fake-imap.mjs";
+import { startFakeGoogleOAuth } from "../../tests/support/fake-google-oauth.mjs";
 import { startFakeMicrosoftOAuth } from "../../tests/support/fake-microsoft-oauth.mjs";
 import { startFakeWebdav } from "../../tests/support/fake-webdav.mjs";
 
@@ -81,6 +82,44 @@ async function saveDemoMicrosoftClient(): Promise<void> {
 		data: { clientId: demoMicrosoft.clientId, clientSecret: demoMicrosoft.clientSecret, tenant: "common" },
 	});
 	expect(response.ok(), await response.text()).toBe(true);
+}
+
+/** A fake Google token endpoint on the same test origin (under /google), for the demo OAuth client's check. */
+let demoGoogle: Awaited<ReturnType<typeof startFakeGoogleOAuth>> | null = null;
+
+/** Saves an invented Google OAuth client in Admin → General, checked against the fake, unless one is saved. */
+async function saveDemoGoogleClient(): Promise<void> {
+	const api = await apiContext(STORAGE_STATE);
+	const status = (await (await api.get("/api/admin/external-accounts/google")).json()) as { source: string | null };
+	if (status.source) return;
+	// The Microsoft fake holds the same port; its registration is saved already, so it is not needed any more.
+	await demoMicrosoft?.close();
+	demoMicrosoft = null;
+	demoGoogle ??= await startFakeGoogleOAuth({
+		port: FAKE_MICROSOFT_OAUTH_PORT,
+		clientId: "804215379961-k1t3d3m0cl13nt0000000000000000.apps.googleusercontent.com",
+	});
+	const response = await api.put("/api/admin/external-accounts/google", {
+		data: { clientId: demoGoogle.clientId, clientSecret: demoGoogle.clientSecret, hostedDomain: "" },
+	});
+	expect(response.ok(), await response.text()).toBe(true);
+}
+
+/** The e2e server has no APP_URL; show the redirect URI a real install registers. */
+async function showPublicRedirectUri(page: Page, provider: "microsoft" | "google"): Promise<void> {
+	await page.route(`**/api/admin/external-accounts/${provider}`, async (route) => {
+		if (route.request().method() !== "GET") return route.continue();
+		const response = await route.fetch();
+		const status = (await response.json()) as Record<string, unknown>;
+		await route.fulfill({
+			response,
+			json: {
+				...status,
+				redirectUri: "https://mail.example.com/api/external-accounts/oauth/callback",
+				appUrlSet: true,
+			},
+		});
+	});
 }
 
 /** The demo admin's All mailboxes view with mail through a connected account; once, so a kept server is not doubled. */
@@ -1409,20 +1448,7 @@ const SHOTS: Shot[] = [
 		viewport: { width: 1280, height: 1100 },
 		open: async (page) => {
 			await saveDemoMicrosoftClient();
-			// The e2e server has no APP_URL; show the redirect URI a real install registers.
-			await page.route("**/api/admin/external-accounts/microsoft", async (route) => {
-				if (route.request().method() !== "GET") return route.continue();
-				const response = await route.fetch();
-				const status = (await response.json()) as Record<string, unknown>;
-				await route.fulfill({
-					response,
-					json: {
-						...status,
-						redirectUri: "https://mail.example.com/api/external-accounts/oauth/callback",
-						appUrlSet: true,
-					},
-				});
-			});
+			await showPublicRedirectUri(page, "microsoft");
 			await page.goto("/general");
 			const card = page.locator("[data-connected-accounts-switch]");
 			await expect(card.locator("[data-microsoft-sign-in-status]")).toContainText("On: application");
@@ -1443,6 +1469,36 @@ const SHOTS: Shot[] = [
 			await chooseOption(dialog.locator("#external-provider"), "microsoft");
 			await dialog.getByLabel("Your Kite password").fill("demo-password");
 			await expect(dialog.getByRole("button", { name: "Sign in with Microsoft" })).toBeEnabled();
+			return dialog;
+		},
+	},
+	{
+		// Admin → General: Google sign-in set up in the Connected accounts card, with the redirect URI to register.
+		name: "2026-11-11-google-sign-in-admin-light",
+		viewport: { width: 1280, height: 1000 },
+		open: async (page) => {
+			await saveDemoGoogleClient();
+			await showPublicRedirectUri(page, "google");
+			await page.goto("/general");
+			const section = page.locator("[data-google-sign-in-settings]");
+			await expect(section.locator("[data-google-sign-in-status]")).toContainText("On: client");
+			await section.scrollIntoViewIfNeeded();
+			return section;
+		},
+	},
+	{
+		// The connect dialog for a Gmail account once Google sign-in is set up: Sign in with Google, no app password.
+		name: "2026-11-11-sign-in-with-google-light",
+		viewport: { width: 1280, height: 900 },
+		open: async (page) => {
+			await saveDemoGoogleClient();
+			await page.goto("/settings/connected-accounts");
+			await page.getByRole("button", { name: "Connect account" }).click();
+			const dialog = page.getByRole("dialog", { name: "Connect an account" });
+			await dialog.getByLabel("Email address").fill("jordan.lee@gmail.com");
+			await chooseOption(dialog.locator("#external-provider"), "gmail");
+			await dialog.getByLabel("Your Kite password").fill("demo-password");
+			await expect(dialog.getByRole("button", { name: "Sign in with Google", exact: true })).toBeEnabled();
 			return dialog;
 		},
 	},
@@ -1577,6 +1633,8 @@ test.describe("changelog screenshots", () => {
 		demoTwoWay = null;
 		await demoMicrosoft?.close();
 		demoMicrosoft = null;
+		await demoGoogle?.close();
+		demoGoogle = null;
 		await demoWebdav?.close();
 		demoWebdav = null;
 	});

@@ -1,18 +1,22 @@
 import type { ImapLogin } from "@/lib/imap/types";
 import { openSetting, SecretBoxError } from "@/lib/security/secret-box";
 import { testImapConnection } from "./connection-test";
+import { oauthProviderOf, type OAuthProviderId } from "./oauth-provider-utils";
 import { expireAccessToken } from "./oauth-store";
 import { CredentialUnavailableError, oauthAccessToken } from "./oauth-tokens";
 import type { ExternalAccountRow } from "./serialize-utils";
 
 export { CredentialUnavailableError } from "./oauth-tokens";
 
-/** What an IMAP or SMTP login carries for an account: its password, or (OAuth) an access token and no password. */
-export type AccountCredential = { password: string; accessToken?: string };
+/**
+ * What an IMAP or SMTP login carries for an account: its password, or (OAuth) an access token and no password, and
+ * whose token it is.
+ */
+export type AccountCredential = { password: string; accessToken?: string; oauthProvider?: OAuthProviderId };
 
 type CredentialRow = Pick<ExternalAccountRow, "id" | "authKind" | "secret">;
 
-/** Whether the account signs in with Microsoft (or, later, Google) instead of a password. */
+/** Whether the account signs in with Microsoft or Google instead of a password. */
 export function signsInWithOAuth(row: Pick<ExternalAccountRow, "authKind">): boolean {
 	return row.authKind !== "password";
 }
@@ -26,8 +30,9 @@ export async function accountCredential(
 	row: CredentialRow,
 	options: { forceRefresh?: boolean } = {},
 ): Promise<AccountCredential> {
-	if (row.authKind === "oauth_microsoft")
-		return { password: "", accessToken: await oauthAccessToken(env, row.id, options) };
+	const provider = oauthProviderOf(row.authKind);
+	if (provider)
+		return { password: "", accessToken: await oauthAccessToken(env, row.id, options), oauthProvider: provider };
 	if (row.authKind !== "password")
 		throw new CredentialUnavailableError("auth", "This kind of sign-in is not supported yet. Reconnect the account.");
 	let password: string | null;

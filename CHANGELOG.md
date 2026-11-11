@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.11.11.0] - 2026-11-11
+
+### Added
+
+- **Delete leftovers** in [Admin → Storage](/storage) removes old copies cold storage moves left behind, per store or for all, also when deleting a store. A copy goes only after a grace period, once it is readable elsewhere or unused and no kept backup needs it. Needs a database update applied from the [Admin overview](/admin).
+  ![Delete leftovers on a store and the Leftover copies section in Admin → Storage](/changelog/2026-11-10-delete-leftovers-light.webp)
+- The cleanup can also run on its own; it stays off until you turn on **Delete leftovers automatically** there, next to the grace period.
+- Money Watch sorts the payments it finds in mail into categories such as software, food or travel, but only when the vendor or subject makes the category obvious. You can change it when you correct a payment and filter the Payments tab by it. Categories need the database update on the admin overview; until then payments are still recorded without one.
+
+  ![The Payments tab with an Export CSV button, a category filter and categories such as Software and Food on the rows](/changelog/2026-11-10-money-watch-payment-categories-light.webp)
+
+  ![The same Payments tab on a phone](/changelog/2026-11-10-money-watch-payment-categories-phone-light.webp)
+- Export the Payments tab as a CSV spreadsheet with the filters you have set, and ask the assistant about your payments by month, vendor or category, in chat or over MCP.
+- Payments now show up in the search box, and a webhook event tells your own tools when Money Watch records a new payment.
+
 ## [2026.11.10.4] - 2026-11-10
 
 ### Added

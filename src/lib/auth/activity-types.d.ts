@@ -1,4 +1,12 @@
-export type AuthActivityAction = "auth.login" | "auth.logout" | "auth.mfa_verified" | "auth.password_reset";
+export type AuthActivityAction =
+	| "auth.login"
+	| "auth.logout"
+	| "auth.mfa_verified"
+	| "auth.password_reset"
+	| "auth.passkey_verified"
+	| "auth.passkey_added"
+	| "auth.passkey_removed"
+	| "auth.mfa_reset";
 
 export type AuthActivityMetadata = {
 	ipAddress: string;

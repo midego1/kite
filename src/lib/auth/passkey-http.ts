@@ -1,0 +1,76 @@
+import { NextResponse } from "next/server";
+import { requireSessionUser } from "@/lib/api/auth";
+import { hasValidSessionMutationOrigin } from "@/lib/auth/origin";
+import { allowLoginAttempt } from "@/lib/auth/rate-limit";
+import { verifyReauthentication } from "@/lib/auth/reauth";
+import { readJsonBody } from "@/lib/http/request";
+import { passkeyReauthSchema } from "@/lib/validators";
+import { PasskeysUnavailableError } from "@/lib/auth/passkeys";
+import type { PasskeyResult } from "@/lib/auth/passkeys-types";
+
+type SignedInUser = NonNullable<Awaited<ReturnType<typeof requireSessionUser>>["user"]>;
+
+const NO_STORE = { "Cache-Control": "no-store" };
+
+/** Runs a passkey route; before migration 0112 it answers 503 `MIGRATION_PENDING` instead of failing. */
+export async function withPasskeys(run: () => Promise<Response>): Promise<Response> {
+	try {
+		return await run();
+	} catch (error) {
+		if (!(error instanceof PasskeysUnavailableError)) throw error;
+		return NextResponse.json({ error: error.message, code: "MIGRATION_PENDING" }, { status: 503, headers: NO_STORE });
+	}
+}
+
+export function passkeyFailure(result: Extract<PasskeyResult<unknown>, { ok: false }>): NextResponse {
+	return NextResponse.json({ error: result.error, code: result.code }, { status: result.status, headers: NO_STORE });
+}
+
+export function tooManyAttempts(): NextResponse {
+	return NextResponse.json(
+		{ error: "Too many attempts. Try again shortly." },
+		{ status: 429, headers: { "Retry-After": "60" } },
+	);
+}
+
+export function noStoreJson(body: unknown, init?: { status?: number }): NextResponse {
+	return NextResponse.json(body, { status: init?.status ?? 200, headers: NO_STORE });
+}
+
+/**
+ * The guard in front of adding or removing a passkey: a session, a same-origin request, the login rate limit, then
+ * the password or an authenticator code in the body. Returns the user, or the response to send instead.
+ */
+export async function requirePasskeyReauthentication(
+	env: CloudflareEnv,
+	request: Request,
+): Promise<{ user: SignedInUser; error: null } | { user: null; error: Response }> {
+	const auth = await requireSessionUser(env, request);
+	if (auth.error) return { user: null, error: auth.error };
+	const error = await checkReauthentication(env, request, auth.user);
+	return error ? { user: null, error } : { user: auth.user, error: null };
+}
+
+/**
+ * For a signed-in user (the account holder, or an admin acting on someone else): a same-origin request, the login
+ * rate limit, then that user's password or authenticator code in the body. Null when it checks out.
+ */
+export async function checkReauthentication(
+	env: CloudflareEnv,
+	request: Request,
+	user: SignedInUser,
+): Promise<Response | null> {
+	if (!hasValidSessionMutationOrigin(request)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+	if (!(await allowLoginAttempt(env, request))) return tooManyAttempts();
+	const body = await readJsonBody(request, 16 * 1024).catch(() => null);
+	const parsed = passkeyReauthSchema.safeParse(body);
+	if (!parsed.success) {
+		// Answer about the field the person used: a too-short code is not a missing password.
+		const usedCode = !!body && typeof body === "object" && "code" in body && !("password" in body);
+		const error = usedCode ? "Enter the 6-digit code from your authenticator app" : "Enter your password";
+		return NextResponse.json({ error }, { status: 400 });
+	}
+	if (await verifyReauthentication(env, user, parsed.data)) return null;
+	const error = parsed.data.password !== undefined ? "Password is incorrect" : "That code did not match";
+	return NextResponse.json({ error }, { status: 400 });
+}

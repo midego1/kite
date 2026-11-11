@@ -22,7 +22,7 @@ test("an early click on Sign in waits for the page to become interactive and sig
 	// Module scripts hold back DOMContentLoaded, so only wait for the server's HTML.
 	await page.goto("/login", { waitUntil: "commit" });
 
-	const submit = page.getByRole("button", { name: "Sign in" });
+	const submit = page.getByRole("button", { name: "Sign in", exact: true });
 	await expect(submit).toBeVisible();
 	// Not interactive yet: disabled, without looking dimmed.
 	await expect(submit).toBeDisabled();

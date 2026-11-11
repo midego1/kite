@@ -139,6 +139,50 @@ export const mfaDisableSchema = z.object({
 	code: z.string().trim().min(6).max(32),
 });
 
+const base64Url = (max: number) =>
+	z
+		.string()
+		.min(1)
+		.max(max)
+		.regex(/^[A-Za-z0-9_-]+$/);
+
+/** Re-authentication before a passkey is added or removed: the password, or a code from the authenticator app. */
+export const passkeyReauthSchema = z
+	.object({
+		password: z.string().min(1).max(128).optional(),
+		code: z.string().trim().min(6).max(12).optional(),
+	})
+	.refine((value) => value.password !== undefined || value.code !== undefined);
+
+export const passkeyRegistrationSchema = z.object({
+	ceremonyId: z.string().min(8).max(200),
+	name: z.string().max(200).nullish(),
+	credential: z.object({
+		id: base64Url(1400),
+		rawId: base64Url(1400),
+		type: z.literal("public-key"),
+		response: z.object({
+			clientDataJSON: base64Url(4096),
+			attestationObject: base64Url(16_384),
+			transports: z.array(z.string().max(32)).max(8).optional(),
+		}),
+	}),
+});
+
+export const passkeySignInSchema = z.object({
+	credential: z.object({
+		id: base64Url(1400),
+		rawId: base64Url(1400),
+		type: z.literal("public-key"),
+		response: z.object({
+			clientDataJSON: base64Url(4096),
+			authenticatorData: base64Url(4096),
+			signature: base64Url(1024),
+			userHandle: base64Url(128).nullish(),
+		}),
+	}),
+});
+
 export const domainSchema = z.object({
 	hostname: z.string().min(3),
 });

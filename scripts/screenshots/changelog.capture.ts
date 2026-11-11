@@ -227,6 +227,17 @@ async function openSenderAuthMail(page: Page) {
 	await expect(page.locator("[data-sender-auth-warning]")).toBeVisible();
 }
 
+/** The Admin → Storage overview's leftover cleanup state with nothing tracked and the defaults. */
+const NO_LEFTOVERS = {
+	available: true,
+	settings: { automatic: false, graceDays: 7 },
+	lastRun: null,
+	total: 0,
+	due: 0,
+	kept: {},
+	byStore: {},
+};
+
 /** An MCP app's authorization request, as Claude Desktop would send it, for a client registered on the demo server. */
 async function demoMcpAuthorization(name: string): Promise<{ query: URLSearchParams; verifier: string }> {
 	const api = await apiContext();
@@ -756,7 +767,8 @@ const SHOTS: Shot[] = [
 				route.fulfill({
 					json: {
 						directUploadsReminder: { show: false, setup: null },
-						defaultStore: { id: "default", name: "Cloudflare R2", kind: "r2", directUploads: true },
+						defaultStore: { id: "default", name: "Cloudflare R2", kind: "r2", directUploads: true, leftoverCount: 0 },
+						leftovers: NO_LEFTOVERS,
 						stores: [
 							{
 								id: "sto_demo",
@@ -799,6 +811,96 @@ const SHOTS: Shot[] = [
 		},
 	},
 	{
+		// Admin → Storage: Delete leftovers on a store, and the Leftover copies card with the automatic cleanup.
+		name: "2026-11-10-delete-leftovers-light",
+		theme: "light",
+		viewport: { width: 1280, height: 1200 },
+		open: async (page) => {
+			await page.route("**/api/admin/storage/cold", (route) =>
+				route.fulfill({ json: { rules: [], jobs: [], iaAvailable: true } }),
+			);
+			await page.route("**/api/admin/storage", (route) =>
+				route.fulfill({
+					json: {
+						directUploadsReminder: { show: false, setup: null },
+						defaultStore: { id: "default", name: "Cloudflare R2", kind: "r2", directUploads: true, leftoverCount: 0 },
+						leftovers: {
+							available: true,
+							settings: { automatic: false, graceDays: 7 },
+							lastRun: {
+								at: "2026-11-09T14:12:00.000Z",
+								trigger: "manual",
+								storeId: "sto_old",
+								checked: 25,
+								deleted: 21,
+								cleared: 1,
+								kept: { backup: 3 },
+								skipped: null,
+							},
+							total: 37,
+							due: 31,
+							kept: { backup: 3, cold_target: 2 },
+							byStore: { sto_old: 37 },
+						},
+						stores: [
+							{
+								id: "sto_old",
+								name: "Old Backblaze bucket",
+								provider: "b2",
+								endpoint: "s3.us-west-002.backblazeb2.com",
+								region: "us-west-002",
+								bucket: "kite-archive-2025",
+								addressing: "path",
+								keyHint: "9f2c",
+								sameAsBinding: false,
+								status: "ok",
+								lastCheckedAt: "2026-11-09T00:00:00.000Z",
+								lastError: null,
+								source: "database",
+								blocked: null,
+								usedBy: [],
+								leftoverCount: 37,
+							},
+						],
+						routes: [],
+						migrations: [],
+						usage: {
+							mail: { objects: 12_400, bytes: 4_900_000_000 },
+							drive: { objects: 860, bytes: 1_800_000_000 },
+							backups: { objects: 14, bytes: 2_100_000_000 },
+						},
+						encryptionReady: true,
+						migrationPending: false,
+						endpointPolicy: { allowInsecure: false, allowPrivate: false },
+						runtime: "workers",
+					},
+				}),
+			);
+			await page.goto("/storage");
+			const stores = page.locator("section", { has: page.getByRole("heading", { name: "Stores" }) });
+			await expect(stores.getByText("37 leftover copies from cold storage moves.")).toBeVisible();
+			const card = page.locator("section", { has: page.getByRole("heading", { name: "Leftover copies" }) });
+			await expect(card.getByText("37 leftover copies tracked, 31 past the grace period.")).toBeVisible();
+			// Both sections, side by side in one picture: the store row's action and the card below the others.
+			await page.evaluate(() => {
+				const main = document.querySelector("main") ?? document.body;
+				const sections = [...main.querySelectorAll("section")];
+				for (const section of sections) {
+					const heading = section.querySelector("h2")?.textContent ?? "";
+					if (heading !== "Stores" && heading !== "Leftover copies") (section as HTMLElement).style.display = "none";
+				}
+			});
+			// The column holding both sections (the page header stays out).
+			const column = stores.locator("xpath=..");
+			await page.evaluate(() => {
+				const header = document.querySelector("main h1")?.closest("header, div");
+				if (header) (header as HTMLElement).style.display = "none";
+			});
+			await column.scrollIntoViewIfNeeded();
+			return column;
+		},
+	},
+	{
 		// Admin → Storage → Stores: the read-only leftover count on a store still holding tracked candidates.
 		name: "2026-11-09-leftover-count-light",
 		theme: "light",
@@ -811,7 +913,8 @@ const SHOTS: Shot[] = [
 				route.fulfill({
 					json: {
 						directUploadsReminder: { show: false, setup: null },
-						defaultStore: { id: "default", name: "Cloudflare R2", kind: "r2", directUploads: true },
+						defaultStore: { id: "default", name: "Cloudflare R2", kind: "r2", directUploads: true, leftoverCount: 0 },
+						leftovers: NO_LEFTOVERS,
 						stores: [
 							{
 								id: "sto_demo",

@@ -31,7 +31,7 @@ import {
 } from "./migration-utils";
 import { callStorageHook } from "./module-hooks";
 import { objectClassOf } from "./object-classes-utils";
-import { deleteObjectLocations, lookupObjectLocation, markOrphanCandidate } from "./object-locations";
+import { dropStaleLocationUnderLease, lookupObjectLocation, markOrphanCandidate } from "./object-locations";
 import { purgeOldCopy } from "./migration-purge";
 import { ATTACHMENT_OBJECT_ROWS_SQL } from "@/lib/email/attachment-storage-utils";
 import type { ObjectStore, RoutableClass, Storage } from "./types";
@@ -344,17 +344,20 @@ async function runItems(
 			// The object is reachable through the normal chain now (it is on `to`); a location a cold move
 			// recorded outside this migration's own old/default chain is stale once that happens, and keeping
 			// it would needlessly block deleting that store and have the next cold sweep move the object again.
-			// The cold copy still physically sits on that store, though, so it is marked an orphan candidate
-			// rather than just forgotten: the orphan sweep (`cold.ts`) deletes it after its own grace period,
-			// re-checking first, instead of it being a permanently untracked copy nothing points at any more.
+			// The cold copy still physically sits on that store, though, so it is marked a leftover rather than
+			// just forgotten, for the leftover cleanup (`cold-leftovers.ts`) to settle under its own checks. The
+			// drop runs under the key's location lease and only while the row still names that store: a cleanup
+			// holding the lease may be deleting another copy on the strength of this very row, and when someone
+			// holds it the row stays (it names a store that had the object) for a later batch or sweep.
 			if (source && source.store.id !== from.id && source.store.id !== to.id) {
-				const stale = await lookupObjectLocation(env, item.key);
-				await deleteObjectLocations(env, [item.key]);
+				const previous = await lookupObjectLocation(env, item.key);
+				if (previous && previous.storeId !== from.id && previous.storeId !== to.id)
+					await dropStaleLocationUnderLease(env, item.key, previous.storeId);
 				await markOrphanCandidate(env, {
 					storeId: source.store.id,
 					key: item.key,
 					objectClass: job.objectClass,
-					movedAt: stale?.movedAt ?? new Date(),
+					movedAt: previous?.movedAt ?? new Date(),
 				});
 			}
 			result.moved.push(item.id);

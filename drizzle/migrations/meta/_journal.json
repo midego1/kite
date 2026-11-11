@@ -768,6 +768,13 @@
     {
       "idx": 109,
       "version": "6",
+      "when": 1794873600000,
+      "tag": "0108_add_cold_leftover_cleanup",
+      "breakpoints": true
+    },
+    {
+      "idx": 110,
+      "version": "6",
       "when": 1795046400000,
       "tag": "0110_add_semantic_embedding_origin",
       "breakpoints": true

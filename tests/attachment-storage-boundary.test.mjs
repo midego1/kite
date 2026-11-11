@@ -21,7 +21,7 @@ const OBJECT_COPIERS = [
 	"src/lib/storage/migration.ts",
 	"src/lib/storage/cold-orphans.ts",
 	"src/lib/storage/cold-sources.ts",
-	"src/lib/storage/stores.ts",
+	"src/lib/storage/usage.ts",
 	"src/lib/email/attachment-storage-report.ts",
 	"src/lib/email/attachment-repair.ts",
 	JOB_BATCHES,

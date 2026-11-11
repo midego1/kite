@@ -1,10 +1,16 @@
 import type { DirectUploadsSetupRecord } from "@/lib/storage/direct-uploads-state";
+import type { LeftoverRunResult } from "@/lib/storage/cold-leftovers";
+import type { LeftoverOverview } from "@/lib/storage/cold-leftovers-state";
+import type { LeftoverRunSummary } from "@/lib/storage/cold-leftovers-utils";
 import type { StoreView } from "@/lib/storage/stores";
 import type { R2Jurisdiction } from "@/lib/storage/s3-presets-utils";
 import type { RoutableClass, S3Addressing, S3Provider } from "@/lib/storage/types";
 import type { ValidationReport, ValidationStep } from "@/lib/storage/validate-utils";
 
-export type { StoreView, ValidationReport, ValidationStep };
+export type { LeftoverOverview, LeftoverRunResult, StoreView, ValidationReport, ValidationStep };
+
+/** A leftover cleanup run as Admin → Storage shows it: the last one stored, or a manual one just finished. */
+export type LeftoverRunView = LeftoverRunSummary;
 
 export type MigrationView = {
 	id: string;
@@ -49,7 +55,8 @@ export type ColdStorageOverview = { rules: ColdRuleView[]; jobs: ColdJobView[]; 
 
 export type StorageOverview = {
 	directUploadsReminder: { show: boolean; setup: DirectUploadsSetupRecord | null };
-	defaultStore: { id: string; name: string; kind: "r2" | "files"; directUploads: boolean };
+	defaultStore: { id: string; name: string; kind: "r2" | "files"; directUploads: boolean; leftoverCount: number };
+	leftovers: LeftoverOverview;
 	stores: StoreView[];
 	routes: RouteView[];
 	migrations: MigrationView[];
@@ -96,6 +103,8 @@ export type StorageFailure = {
 	code?: string;
 	/** The account permission CF_TOKEN lacks. */
 	permission?: string;
+	/** `LEFTOVERS_ONLY`: how many leftover copies are all that stops a store deletion. */
+	leftoverCount?: number;
 };
 
 export type R2Choices = {

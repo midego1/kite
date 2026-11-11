@@ -394,7 +394,7 @@ Drive (`src/lib/drive/`) keeps file contents under `drive/<itemId>` in the store
 - **Automatic R2 setup.** `src/lib/storage/auto-setup.ts` (Cloudflare calls in `cloudflare-r2.ts`) runs from registration (`setUpDirectUploadsAtInstall`, never failing registration), **Set up automatically** (`POST /api/admin/storage/cloudflare/direct-uploads`) and **Connect R2 in one click** (`POST /api/admin/storage/cloudflare/buckets`); `GET /api/admin/storage/cloudflare` lists the account's buckets for the pickers. The POST routes have the save route's authorization and share the attempt limit (five a minute per admin, one `storage.auto_setup` audit row per attempt with its outcome, `rate_limited` past the limit, refused when the limit cannot be checked). Each run has a budget (45 seconds at registration, 60 from the Storage page): a step only starts while time is left (the token only with at least five seconds), every Cloudflare call and every check request is capped by what is left (past the deadline the remaining checks are skipped), the key wait stops early, and five seconds are kept for the cleanup, so all of it, cleanup included, ends inside the request and nothing is left for after the response. The steps: account (`CF_ACCOUNT_ID`, else `GET /zones/{id}` for a zone Kite manages, else `GET /accounts`), a refusal (`already_connected`) when any R2 store already uses the bucket on the same endpoint host (and, for direct uploads, while they already have keys), so no second token is made, bucket (list or create, `cf-r2-jurisdiction` header), an account-owned token with only **Workers R2 Storage Bucket Item Write** on `com.cloudflare.edge.r2.bucket.<account>_<jurisdiction>_<bucket>`, the bucket CORS rule through the R2 API (read first, Kite's rule `kite-direct-uploads` added or replaced and every other rule kept, since the PUT replaces the whole policy; a later failure puts the earlier policy back, or deletes it when there was none), waiting for the new keys within the budget, a probe through the `BUCKET` binding read back with the new keys (direct uploads only), then `createStore`. A failure or timeout after the token exists deletes the token again; each attempt's token is named "Kite direct uploads: <bucket> (<jurisdiction>, <attempt tag>)", the tag being eight characters of the attempt's audit row id, and only when the create request was actually sent but got no answer in time is the token with exactly that name looked up (paging through up to 500 tokens) and deleted, so no other attempt's, jurisdiction's or install's token can be touched; and a token Cloudflare reports without its value is deleted at once. An audit or note write that fails after the store was saved is logged (`storage.auto_setup_record_failed`) and does not fail the answer. The bucket picker (`GET /api/admin/storage/cloudflare`) uses the `LOGIN_RATE_LIMIT` binding under `storage-r2-buckets:<user id>` and logs `storage.r2_listing_limiter_unavailable` when the limiter errors. The token value, its SHA-256 (the S3 secret) and the token id are never returned or logged; the secret is only stored sealed like a manual entry. The outcome of the direct-uploads setup and the dismissed reminder are kept in the one-row `storage_state` table (migration 0085; a table of its own so `app_settings` writes keep working before the migration, and internal to backups), which the storage overview turns into `directUploadsReminder` (the Storage page's notice and the Admin overview's `direct-uploads` attention item, both reading the `admin-storage` query); before the migration the reminder shows without a reason and **Dismiss** answers 409 `MIGRATION_PENDING`. Logs: `storage.auto_setup`, `storage.auto_setup_limit_unavailable`, `storage.direct_uploads_install_failed`.
 - **Redirects.** Every request to a store (saved stores at runtime too, through `src/lib/aws/client.ts`) and every Cloudflare R2 API call uses `redirect: "manual"`: a 3xx fails instead of being followed, so a store behind a redirecting proxy must be saved with its final endpoint.
 - **`CLOUDFLARE_API_TEST_ORIGIN` and `R2_S3_TEST_ENDPOINT` (dev and test only).** Loopback http stand-ins for the Cloudflare API and the R2 S3 endpoint, which the e2e suite's fakes answer; ignored when `NODE_ENV` is `production`.
-- **Audit log.** `storage.auto_setup`, `storage.store_tested` (one per Test connection attempt: store id, provider, endpoint, bucket; never a key), `storage.store_created`, `storage.store_updated`, `storage.store_deleted`, `storage.route_switched`, `storage.migration_started`, `storage.migration_cancelled` and `storage.migration_purged`.
+- **Audit log.** `storage.auto_setup`, `storage.store_tested` (one per Test connection attempt: store id, provider, endpoint, bucket; never a key), `storage.store_created`, `storage.store_updated`, `storage.store_deleted`, `storage.route_switched`, `storage.migration_started`, `storage.migration_cancelled`, `storage.migration_purged`, `storage.cold_rule_saved`, `storage.leftovers_deleted` and `storage.leftover_cleanup_updated`.
 - **Backups.** `storage_stores` and `storage_routes` are in the `system` group (credentials stay sealed); `storage_migrations` is internal. A restore leaves a live storage config alone: when the target already has stores or routes, both tables keep their current rows. Object contents are never in the database backup itself; [full backups](#full-backups) copy the mail objects next to it, and everything else (Drive files) needs a backup of each bucket. Moving the Backups class to another store does not move the copies full backups made: take a new full backup after the switch.
 - **`STORAGE_ALLOW_INSECURE_ENDPOINT` (dev and test only).** Allows `http` and loopback endpoints, as the e2e suite's fake S3 needs. Without the flag, or when `NODE_ENV` is `production`, the header does nothing.
 
@@ -433,28 +433,96 @@ as a permanent record, so a store a rule simply stopped targeting is never kept 
 never actually left over.
 
 Every copy a move could not clean up itself is recorded in `storage_cold_jobs`'s sibling table
-`storage_cold_orphans` as a candidate, for visibility only: **this PR deletes no orphan candidate's copy at
-all, automatically or manually** (round-9 review, foreman decision). An earlier round added a manual, per-store
-"Delete leftovers" admin action running the same grace-period, backup-window and lease-fenced deletion the
-automatic cron once ran on its own, but the round-9 review found it unfenced for a key with no
-`object_locations` row yet and reproduced the loss of every copy of a live message through it (`B6`): a store
-migration's own cleanup routinely drops a row and marks the old store's copy a candidate with none (`migration.ts`
-below), which is exactly the state a nightly sweep re-populates for the same key moments later, and the manual
-action's claim then proceeded with no fence and no check for another readable copy. Rather than extend the
-fencing further, the whole deletion path — the action, its route and its admin button — was removed. A move
-that records a key onto a store that still carries a stale candidate for it clears that candidate in the same
-statement regardless (round-6 review, `M1`): a copy that is the recorded location is by definition not a
-leftover. Cleanup of a tracked candidate is a follow-up for a later release, alongside reintroducing the
-automatic deleter the foreman's round-8 decision split out in the first place; both need the fencing this round
-found missing before either can act on a key with no row.
+`storage_cold_orphans` as a leftover candidate. A move that records a key onto a store that still carries a stale
+candidate for it clears that candidate in the same statement (round-6 review, `M1`): a copy that is the recorded
+location is by definition not a leftover. The five-minute scan (below) only marks; deleting a candidate is the
+**leftover cleanup**'s job alone.
 
-Admin → Storage → Stores shows a store's tracked candidate count next to it, read-only, with a line explaining
-that cleanup arrives in a later release (`coldOrphanCount`/`countOrphanCandidates`); it carries no action.
-`deleteStore` is refused while a store a rule still targets, that `object_locations` still names, that a sweep
-still in flight targets, or that still has any tracked orphan candidate (`coldReferenceBlocking`), with a message
-naming which; a candidate's store stays undeletable until a later release can resolve it. Each of those checks
-answers "nothing" on its own before its table exists, so the in-flight sweep check still runs on a database
-that has `0097` but not yet `0104` (round-10 review, `n3`).
+**The leftover cleanup** (`src/lib/storage/cold-leftovers.ts`, migration `0108`) replaces the deleter rounds 4 to
+9 of the cold storage review removed (it lost the last copy of a live message for a key with no row, `B6`). It
+runs two ways, both doing one bounded pass with the same checks (`purgeLeftovers`):
+
+- **Delete leftovers**, by hand: Admin → Storage, per store (the default store and environment stores included)
+  or for every store at once from the **Leftover copies** card. `POST /api/admin/storage/leftovers` with
+  `{ storeId? }`, primary admin only, same-origin, up to 50 copies per request (the answer says how many are
+  still tracked, so a second click continues), audited as `storage.leftovers_deleted` with what it deleted and
+  why it kept the rest. When leftovers are all that stops `deleteStore`, it answers 409 with
+  `code: "LEFTOVERS_ONLY"` and `leftoverCount`, and the store row offers **Delete leftovers**.
+- **Automatically**, off by default: the **Delete leftovers automatically** checkbox (`PUT
+  /api/admin/storage/leftovers` with `{ automatic, graceDays }`, audited as `storage.leftover_cleanup_updated`)
+  lets the five-minute maintenance settle up to 25 copies per run, audited (with no actor) only when it deleted
+  something. Settings and the last run live in `storage_state.leftover_cleanup` (JSON), which is internal.
+
+A candidate is looked at only once it has been one for the **grace period** (`graceDays`, 7 by default, 1 to 365,
+counted from `first_orphaned_at`, which a deferral never moves). Then, holding the key's location lease, the same
+fenced lease a cold move and a storage-migration purge take, so the three never act on one key at once:
+
+1. **The claim.** An existing `object_locations` row is claimed the usual way. A key with no row gets one created
+   under the claim (token prefix `ptmp_`, like a purge's) naming the store its bytes are on right now: another
+   readable copy found by HEAD (Drive's own row's store, the class's read chain, the default store), or the
+   leftover's own store when there is none. It never names a store that does not hold the object, and the row is
+   removed again when the cleanup ends (or dropped as stranded once its claim expires).
+2. **The plan** (`planLeftover`): a copy the live location names, or the store a Drive file's own row names (the
+   default store when it names none), is live and never deleted (only its tracking row goes). A referenced key
+   whose only copy found is the leftover keeps it (`only_copy`, logged as `storage.cold_leftover_only_copy`). Anything else is either *superseded* (the
+   live copy is elsewhere) or *unreferenced* (nothing names the key: no message, attachment, body, Drive item,
+   completed backup or queued send).
+3. **Superseded** copies are deleted only when no retained backup (completed, queued or running, safety and
+   pre-migration backups included) falls in the window `[moved_at, first_orphaned_at)` in which this copy was the
+   recorded location, no enabled rule or in-flight sweep archives into its store (a move back there would reuse
+   it), and the live copy reads back with the same bytes (below).
+4. **Unreferenced** copies need no other copy, but the key must have been seen unreferenced for the grace period
+   since the last restore (`unreferenced_since`, reset by any restore after it, since only a restore brings a
+   reference back), and no retained backup may have been created before that stretch began.
+5. **The delete.** Right before it, the run repeats its start-of-run checks (a restore, a cold target, a
+   migration using the store) and then `confirmLeftoverClaim`, one conditional statement that only passes while
+   its token is still the row's, unexpired, and the row still names the store the plan was made on. Only then is
+   the object deleted; the tracking row (and, for an unreferenced key, its location row) is dropped afterwards in
+   statements that check the same token.
+
+The whole pass is skipped while a restore is active, needs recovery, finished less than an hour ago, or a full
+backup's objects are being copied back, and a leftover on a store a storage migration is copying from or to, or
+purging, is kept (`migrating`). Every copy it keeps gets its reason (`kept_reason`: `busy`, `confirming`,
+`backup`, `only_copy`, `unverified`, `cold_target`, `migrating`, `restore`, `store_unavailable`, `lease_lost`,
+`error`) and goes
+to the back of the queue; Admin → Storage shows the reasons, the totals, how many are past the grace period and
+the last run. Keeping a copy only costs storage; a case the rules cannot settle always keeps it.
+
+**The residual.** An object store cannot delete conditionally on a D1 row, so once `confirmLeftoverClaim` has
+passed, nothing on the object store's side stops the delete. If the claim ran out before the delete landed, any
+other deleter could have taken the key in between and relied on this very copy: a second cleanup settling the
+key's other leftover (two copies of a row-less key both in the read chain, each the other's "other copy"), a mover
+reusing it on its own store (a sweep batch that outlived its cursor still moves to its old target), or a
+migration purge. The cleanup therefore keeps that window far inside the claim (review of #479, `M1`):
+`confirmLeftoverClaim` extends the claim to 15 minutes, the delete is only sent if no more than 30 seconds have
+passed since the confirm was sent (otherwise the copy is kept as `lease_lost`), and on a configured S3 store the
+delete request itself is aborted after 30 seconds. An abort is only the client giving up: the store may still apply
+the delete. So when the delete throws, for a timeout or any other error, the cleanup does not end its claim; the
+key stays claimed until the 15-minute expiry the confirm set (a key with no row keeps the claim row naming the
+other copy), and every other deleter answers busy until then (review 2 of #479, `B1`). What remains is a delete
+the object store applies more than about 14 minutes after it was sent, which no runtime here produces (the R2
+binding and the Node file bucket cannot take a deadline, but neither queues a request for minutes). `tests/storage-cold-leftovers.test.mjs` runs every other
+interleaving: a mover (to a third store, or onto the leftover's own store from a batch the cleanup cannot see), a
+migration purge, a migration dropping the row and a second cleanup injected at each step of the cleanup with its
+lease live or lapsed, the cleanup injected at each step of a mover and of a purge, and a cleanup that stalls after
+its confirm while a second cleanup deletes the other copy.
+
+The live copy must also hold the same bytes, not just as many (`m2`): ETags that are both single-part MD5s (32 hex
+digits, no `-N`) and equal, or else, for objects up to 8 MiB, equal SHA-256 digests of both, streamed; anything that
+cannot be confirmed is kept as `unverified`. One common case therefore never qualifies: a Drive file larger than
+8 MiB was uploaded in parts, so its ETag on one store ends in `-N` while a cold copy made with a single PUT has a
+plain MD5, and its leftover stays `unverified`. The bytes are safe either way; it only costs storage, and while such
+a leftover is tracked its store cannot be deleted (`LEFTOVERS_ONLY`). To delete that store anyway, first confirm the
+files are readable in Drive, then delete the leftover objects (or empty the bucket) at the provider and run
+**Delete leftovers** on the store once more: a leftover whose copy is gone is cleared without a delete, after which
+the store can be deleted.
+
+`deleteStore` is refused while a rule still targets the store, `object_locations` still names it, or a sweep
+still in flight targets it (`coldReferenceBlocking`), and then, checked last, while leftover candidates are on it
+(`coldOrphanCount`), which is the case that offers the cleanup. Each of those checks answers "nothing" on its own
+before its table exists, so the in-flight sweep check still runs on a database that has `0097` but not yet `0104`
+(round-10 review, `n3`). Before `0108` the cleanup reports `skipped: "unsupported"` (409 `MIGRATION_PENDING` from
+the API) and marking falls back to the `0104` columns.
 
 The fencing token on the key's own `object_locations` row (`leaseToken`/`claimedUntil`) still matters: it is
 what stops two cold moves of the exact same key from racing each other, whichever direction either is headed
@@ -473,7 +541,7 @@ anyway has its commit refused rather than trusted, and on a refused commit it de
 already be a second mover (a resent batch, a redelivered queue message) that has already recorded the target
 and deleted the source itself, so the target copy a refused move finds there can be the only copy left. It only
 marks the target a fresh orphan candidate, under one more claim and only while the live location does not
-already name it, leaving its fate to a later release's cleanup rather than deciding it here. The same-store
+already name it, leaving its fate to the leftover cleanup rather than deciding it here. The same-store
 rewrite to R2 Infrequent Access, and its "already at target" shortcut counterpart on a cross-store rule, record
 under this same fenced claim too (round-8/9 review, `m1`/`m5`): an unfenced write there could otherwise overwrite
 a concurrent mover's own fenced record for a retargeted key.
@@ -507,8 +575,9 @@ the mover had just recorded while the mover deleted its own source, leaving no c
 The five-minute maintenance runs `scanForOrphanCandidates` in a batch of up to 200 rows: it keyset-paginates
 through `object_locations` from a cursor saved in `storage_state` (round-robin, so a backlog larger than one
 batch is still fully covered over many runs instead of the same oldest rows absorbing every run forever) and
-marks what looks unreferenced as a candidate. It never deletes anything, and nothing else in this PR does
-either. It skips entirely while a restore is active, needs recovery (an abandoned restore, or one whose own
+marks what looks unreferenced as a candidate, recording `unreferenced_since` on its first sighting; marking the
+same live location again on later passes changes nothing. It never deletes anything; only the leftover cleanup
+above does. It skips entirely while a restore is active, needs recovery (an abandoned restore, or one whose own
 rollback failed, both left for the admin to resolve from the safety backup; the database is known to still be
 partially restored until that runs), or finished less than an hour ago: a restore's "deletes" segment empties
 `messages`, `message_attachments`, `drive_items` and `backups` before writing them back, possibly over several
@@ -533,10 +602,11 @@ an expired one always is). `storage_cold_jobs` and `storage_cold_orphans` are in
 progress nor a pending candidate is itself restored; a restored `object_locations` row is simply re-evaluated by
 the next scan.
 
-Since nothing in this PR deletes a cold copy, a tracked orphan candidate cannot currently be lost to a restore
-or a disabled backup schedule either. That changes with whichever follow-up reintroduces cleanup: it will need
-its own grace period measured against backup retention, the same way the removed manual action's did, so a
-scheduled backup retained for at least that long stays part of the guidance once cleanup exists again.
+A restore never loses a tracked candidate's copy to the cleanup: the whole pass is off around a restore, a
+superseded copy waits for every retained backup from when it was the location, and an unreferenced one for every
+retained backup from before its unreferenced stretch, which a restore restarts. Keep scheduled backups for at
+least as long as you would want to undo a restore; once the backups that could bring a reference back are pruned
+or deleted, the cleanup may remove the copy.
 
 ### Attachment storage
 

@@ -7,7 +7,8 @@ import { isNoSuchTableError } from "@/lib/modules/state-utils";
 import { getBranding } from "@/lib/branding/service";
 import { consumeRecoveryCode, countUnusedRecoveryCodes, issueRecoveryCodes } from "@/lib/auth/recovery-codes";
 import { deleteUserSessions } from "@/lib/auth/session";
-import { buildOtpauthUrl, generateTotpSecret, verifyTotp } from "@/lib/auth/totp";
+import { buildOtpauthUrl, generateTotpSecret, matchTotpStep } from "@/lib/auth/totp";
+import { claimTotpStep } from "@/lib/auth/totp-steps";
 import type { MfaEnrollment, MfaStatus } from "@/lib/auth/mfa-types";
 
 export async function getMfaStatus(
@@ -50,7 +51,8 @@ export async function confirmMfaEnrollment(
 ): Promise<{ ok: true; recoveryCodes: string[] } | { ok: false; error: string }> {
 	if (!user.totpSecret) return { ok: false, error: "Start enrolment first" };
 	if (user.totpEnabled) return { ok: false, error: "Two-factor authentication is already on" };
-	if (!(await verifyTotp(user.totpSecret, code)))
+	const step = await matchTotpStep(user.totpSecret, code);
+	if (step === null || !(await claimTotpStep(env, user.id, step)))
 		return { ok: false, error: "That code did not match. Check the time on your device and try again." };
 
 	const db = getDb(env);
@@ -102,7 +104,9 @@ export async function verifySecondFactor(
 	code: string,
 ): Promise<"totp" | "recovery" | null> {
 	if (!user.totpEnabled || !user.totpSecret) return null;
-	if (await verifyTotp(user.totpSecret, code)) return "totp";
+	// A code is good once, wherever it was used (sign-in, re-authentication), within its 90-second window.
+	const step = await matchTotpStep(user.totpSecret, code);
+	if (step !== null) return (await claimTotpStep(env, user.id, step)) ? "totp" : null;
 	if (await consumeRecoveryCode(env, user.id, code)) return "recovery";
 	return null;
 }

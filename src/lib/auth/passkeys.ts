@@ -6,6 +6,7 @@ import { newId } from "@/lib/ids";
 import { getBranding } from "@/lib/branding/service";
 import { isNoSuchTableError } from "@/lib/modules/state-utils";
 import { findUser } from "@/lib/auth/user-lookup";
+import { hashSessionToken } from "@/lib/auth/session";
 import { consumePasskeyChallenge, createPasskeyChallenge } from "@/lib/auth/passkey-challenges";
 import {
 	defaultPasskeyName,
@@ -158,7 +159,7 @@ export async function finishPasskeyRegistration(
 		if (taken) return { ok: false, status: 409, error: "This passkey is already registered.", code: "duplicate" };
 		const transports = sanitizeTransports(input.credential.response.transports);
 		const id = newId("pk");
-		const inserted = await insertWithinCap(env, {
+		const inserted = await insertWithinCap(env, sessionToken, {
 			id,
 			userId: user.id,
 			credentialId: verified.credentialId,
@@ -174,6 +175,13 @@ export async function finishPasskeyRegistration(
 		if (inserted === "duplicate")
 			return { ok: false, status: 409, error: "This passkey is already registered.", code: "duplicate" };
 		if (inserted === "cap") return { ok: false, status: 400, error: capMessage(), code: "limit" };
+		if (inserted === "session_ended")
+			return {
+				ok: false,
+				status: 401,
+				error: "Your session ended. Sign in again to add a passkey.",
+				code: "session_ended",
+			};
 		const [row] = await db.select().from(passkeys).where(eq(passkeys.id, id)).limit(1);
 		return { ok: true, value: summary(row) };
 	});
@@ -271,14 +279,21 @@ function capMessage(): string {
  */
 async function insertWithinCap(
 	env: CloudflareEnv,
+	sessionToken: string | undefined,
 	row: Omit<typeof passkeys.$inferInsert, "createdAt" | "lastUsedAt">,
-): Promise<"inserted" | "cap" | "duplicate"> {
+): Promise<"inserted" | "cap" | "duplicate" | "session_ended"> {
+	if (!sessionToken) return "session_ended";
+	const sessionHash = await hashSessionToken(sessionToken);
+	const now = Math.floor(Date.now() / 1000);
 	try {
+		// The session that started the ceremony must still exist: a password reset or an admin reset that ended it while
+		// this request was in flight must not be followed by a new passkey.
 		const result = await env.DB.prepare(
 			`INSERT INTO passkeys (id, user_id, credential_id, public_key, algorithm, sign_count, transports, aaguid,
 				backup_eligible, backed_up, name, created_at)
 			SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-			WHERE (SELECT count(*) FROM passkeys WHERE user_id = ?) < ?`,
+			WHERE (SELECT count(*) FROM passkeys WHERE user_id = ?) < ?
+				AND EXISTS (SELECT 1 FROM sessions WHERE token_hash = ? AND user_id = ? AND expires_at > ?)`,
 		)
 			.bind(
 				row.id,
@@ -292,12 +307,21 @@ async function insertWithinCap(
 				row.backupEligible ? 1 : 0,
 				row.backedUp ? 1 : 0,
 				row.name,
-				Math.floor(Date.now() / 1000),
+				now,
 				row.userId,
 				MAX_PASSKEYS_PER_USER,
+				sessionHash,
+				row.userId,
+				now,
 			)
 			.run();
-		return (result.meta.changes ?? 0) > 0 ? "inserted" : "cap";
+		if ((result.meta.changes ?? 0) > 0) return "inserted";
+		const session = await env.DB.prepare(
+			"SELECT 1 AS found FROM sessions WHERE token_hash = ? AND user_id = ? AND expires_at > ?",
+		)
+			.bind(sessionHash, row.userId, now)
+			.first();
+		return session ? "cap" : "session_ended";
 	} catch (error) {
 		if (hasUniqueCause(error)) return "duplicate";
 		throw error;
@@ -335,15 +359,4 @@ export async function removePasskey(env: CloudflareEnv, userId: string, id: stri
 			.returning({ name: passkeys.name });
 		return row?.name ?? null;
 	});
-}
-
-/** Every passkey of a user, for an admin's reset of their second factors. A missing table means there are none. */
-export async function deleteUserPasskeys(env: CloudflareEnv, userId: string): Promise<number> {
-	try {
-		const rows = await getDb(env).delete(passkeys).where(eq(passkeys.userId, userId)).returning({ id: passkeys.id });
-		return rows.length;
-	} catch (error) {
-		if (isNoSuchTableError(error)) return 0;
-		throw error;
-	}
 }

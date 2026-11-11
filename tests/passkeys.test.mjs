@@ -31,14 +31,13 @@ await build({
 			export {
 				beginPasskeyRegistration,
 				beginPasskeySignIn,
-				deleteUserPasskeys,
 				finishPasskeyRegistration,
 				finishPasskeySignIn,
 				listPasskeys,
 				PasskeysUnavailableError,
 				removePasskey,
 			} from "./src/lib/auth/passkeys.ts";
-			export { resetUserSecondFactors } from "./src/lib/auth/mfa.ts";
+			export { resetUserSecondFactors, verifySecondFactor } from "./src/lib/auth/mfa.ts";
 			export { verifyReauthentication } from "./src/lib/auth/reauth.ts";
 			export { hashPassword } from "./src/lib/auth/password.ts";
 			export { totp } from "./src/lib/auth/totp.ts";
@@ -671,6 +670,11 @@ async function database(t, { migrated = true } = {}) {
 			('usr_a', 'a@example.com', '${kite.hashPassword("correct horse")}', 'A', 1),
 			('usr_b', 'b@example.com', 'x', 'B', 1);
 	`);
+	// The sessions the ceremonies below are started from ("sess_1", "sess_2" for usr_a).
+	const insertSession = db.db.prepare(
+		"INSERT INTO sessions (id, user_id, token_hash, expires_at, created_at) VALUES (?, 'usr_a', ?, 9999999999, 1)",
+	);
+	for (const token of ["sess_1", "sess_2"]) insertSession.run(`row_${token}`, await kite.hashSessionToken(token));
 	return { env: { DB: db }, db: db.db };
 }
 
@@ -895,6 +899,102 @@ test("redeeming a password reset link removes the account's passkeys", async (t)
 	assert.equal(JSON.parse(audit.metadata).passkeysRemoved, 1);
 });
 
+test("reset-link redemption is one batch: a failure changes nothing, and the link still works afterwards", async (t) => {
+	const { env, db } = await database(t);
+	const token = "reset_token_rollback";
+	db.exec(`
+		INSERT INTO passkeys (id, user_id, credential_id, public_key, algorithm, name, created_at) VALUES
+			('pk_1', 'usr_a', 'cred1', 'key', -7, 'Phone', 1);
+		CREATE TRIGGER passkeys_refuse_delete BEFORE DELETE ON passkeys BEGIN SELECT RAISE(ABORT, 'refused'); END;
+	`);
+	db.prepare(
+		"INSERT INTO password_reset_tokens (id, user_id, token_hash, expires_at, created_at) VALUES ('t1', 'usr_a', ?, ?, 1)",
+	).run(await kite.hashSessionToken(token), Math.floor(Date.now() / 1000) + 600);
+	const before = db.prepare("SELECT password_hash FROM users WHERE id = 'usr_a'").get().password_hash;
+	await assert.rejects(kite.completePasswordReset(env, token, "a new password", request()));
+	assert.equal(db.prepare("SELECT password_hash FROM users WHERE id = 'usr_a'").get().password_hash, before);
+	assert.equal(db.prepare("SELECT used_at FROM password_reset_tokens WHERE id = 't1'").get().used_at, null);
+	assert.equal(db.prepare("SELECT count(*) AS n FROM sessions").get().n, 2);
+	assert.equal(db.prepare("SELECT count(*) AS n FROM passkeys").get().n, 1);
+	db.exec("DROP TRIGGER passkeys_refuse_delete");
+	assert.deepEqual(await kite.completePasswordReset(env, token, "a new password", request()), { ok: true });
+	assert.equal(db.prepare("SELECT count(*) AS n FROM sessions").get().n, 0);
+	assert.equal(db.prepare("SELECT count(*) AS n FROM passkeys").get().n, 0);
+	assert.notEqual(db.prepare("SELECT used_at FROM password_reset_tokens WHERE id = 't1'").get().used_at, null);
+	// Used once: the link is gone.
+	assert.equal((await kite.completePasswordReset(env, token, "third password", request())).ok, false);
+});
+
+test("two redemptions of one reset link racing: one wins, the other changes nothing", async (t) => {
+	const { env, db } = await database(t);
+	const token = "reset_token_race";
+	db.prepare(
+		"INSERT INTO password_reset_tokens (id, user_id, token_hash, expires_at, created_at) VALUES ('t1', 'usr_a', ?, ?, 1)",
+	).run(await kite.hashSessionToken(token), Math.floor(Date.now() / 1000) + 600);
+	const results = await Promise.all([
+		kite.completePasswordReset(env, token, "first new password", request()),
+		kite.completePasswordReset(env, token, "second new password", request()),
+	]);
+	assert.deepEqual(
+		results.map((result) => result.ok),
+		[true, false],
+	);
+	const hash = db.prepare("SELECT password_hash FROM users WHERE id = 'usr_a'").get().password_hash;
+	assert.equal(
+		await kite.verifyReauthentication(
+			env,
+			{ id: "usr_a", passwordHash: hash, totpEnabled: false, totpSecret: null },
+			{ password: "first new password" },
+		),
+		true,
+	);
+	assert.equal(db.prepare("SELECT count(*) AS n FROM audit_logs WHERE action = 'auth.password_reset'").get().n, 1);
+});
+
+test("before migration 0112 a reset link still works without the passkeys", async (t) => {
+	const { env, db } = await database(t, { migrated: false });
+	const token = "reset_token_premigration";
+	db.prepare(
+		"INSERT INTO password_reset_tokens (id, user_id, token_hash, expires_at, created_at) VALUES ('t1', 'usr_a', ?, ?, 1)",
+	).run(await kite.hashSessionToken(token), Math.floor(Date.now() / 1000) + 600);
+	assert.deepEqual(await kite.completePasswordReset(env, token, "a new password", request()), { ok: true });
+	assert.equal(db.prepare("SELECT count(*) AS n FROM sessions").get().n, 0);
+});
+
+test("a TOTP code is good once across sign-in and re-authentication", async (t) => {
+	const { env } = await database(t);
+	const secret = "JBSWY3DPEHPK3PXP";
+	const user = { id: "usr_a", passwordHash: "x", totpEnabled: true, totpSecret: secret };
+	const now = Date.now();
+	const code = await kite.totp(secret, now);
+	assert.equal(await kite.verifySecondFactor(env, user, code), "totp");
+	assert.equal(await kite.verifySecondFactor(env, user, code), null);
+	assert.equal(await kite.verifyReauthentication(env, user, { code }), false);
+	const next = await kite.totp(secret, now + 30_000);
+	assert.equal(await kite.verifyReauthentication(env, user, { code: next }), true);
+	assert.equal(await kite.verifySecondFactor(env, user, next), null);
+});
+
+test("a passkey is not added once the session that started the ceremony has ended", async (t) => {
+	const { env, db } = await database(t);
+	const user = { id: "usr_a", email: "a@example.com", name: "A" };
+	const started = await kite.beginPasskeyRegistration(env, request(), user, "sess_1");
+	const authenticator = await softwareAuthenticator();
+	const credential = await authenticator.register({
+		origin: "http://localhost:3200",
+		rpId: "localhost",
+		challenge: started.value.options.challenge,
+	});
+	db.exec("DELETE FROM sessions WHERE id = 'row_sess_1'");
+	const result = await kite.finishPasskeyRegistration(env, request(), user, "sess_1", {
+		ceremonyId: started.value.ceremonyId,
+		name: null,
+		credential,
+	});
+	assert.equal(result.code, "session_ended");
+	assert.equal(db.prepare("SELECT count(*) AS n FROM passkeys").get().n, 0);
+});
+
 test("the passkey cap holds even when registrations race", async (t) => {
 	const { env, db } = await database(t);
 	const user = { id: "usr_a", email: "a@example.com", name: "A" };
@@ -936,7 +1036,7 @@ test("an admin reset is one batch: if any part fails, sessions and TOTP are left
 		CREATE TRIGGER passkeys_refuse_delete BEFORE DELETE ON passkeys BEGIN SELECT RAISE(ABORT, 'refused'); END;
 	`);
 	await assert.rejects(kite.resetUserSecondFactors(env, "usr_a"));
-	assert.equal(db.prepare("SELECT count(*) AS n FROM sessions").get().n, 1);
+	assert.equal(db.prepare("SELECT count(*) AS n FROM sessions").get().n, 3);
 	assert.equal(db.prepare("SELECT totp_enabled FROM users WHERE id = 'usr_a'").get().totp_enabled, 1);
 	db.exec("DROP TRIGGER passkeys_refuse_delete");
 	assert.deepEqual(await kite.resetUserSecondFactors(env, "usr_a"), { passkeysRemoved: 1 });
@@ -1008,7 +1108,6 @@ test("before migration 0112 passkeys report unavailable and resets still work", 
 	const { env } = await database(t, { migrated: false });
 	await assert.rejects(kite.listPasskeys(env, "usr_a"), kite.PasskeysUnavailableError);
 	await assert.rejects(kite.beginPasskeySignIn(env, request()), kite.PasskeysUnavailableError);
-	assert.equal(await kite.deleteUserPasskeys(env, "usr_a"), 0);
 	assert.deepEqual(await kite.resetUserSecondFactors(env, "usr_a"), { passkeysRemoved: 0 });
 });
 

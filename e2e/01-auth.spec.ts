@@ -37,7 +37,7 @@ test.describe("authentication", () => {
 			expect(await contrastBetween(description, card), `${label} description`).toBeGreaterThanOrEqual(4.5);
 			const forgot = page.getByRole("link", { name: "Forgot password?" });
 			expect(await contrastBetween(forgot, card), `${label} link`).toBeGreaterThanOrEqual(4.5);
-			const button = page.getByRole("button", { name: "Sign in" });
+			const button = page.getByRole("button", { name: "Sign in", exact: true });
 			expect(await contrastBetween(button), `${label} button`).toBeGreaterThanOrEqual(4.5);
 		}
 	});

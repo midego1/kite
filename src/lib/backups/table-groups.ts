@@ -21,6 +21,7 @@ export const BACKUP_TABLE_GROUPS: { id: BackupTableGroupId; label: string; table
 			"password_reset_tokens",
 			"mfa_recovery_codes",
 			"login_challenges",
+			"passkeys",
 			"user_module_access",
 			"user_preferences",
 			"booking_appointments",

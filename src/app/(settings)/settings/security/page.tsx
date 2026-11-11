@@ -1,5 +1,6 @@
 import { ChangePasswordForm } from "@/components/settings/change-password-form";
 import { MfaSettings } from "@/components/settings/mfa-settings";
+import { PasskeySettings } from "@/components/settings/passkey-settings";
 import { PageHeader, SettingsCard, SettingsCardSection } from "@/components/ui/page";
 
 export default function SecuritySettingsPage() {
@@ -15,6 +16,12 @@ export default function SecuritySettingsPage() {
 					description="Require a code from an authenticator app when signing in."
 				>
 					<MfaSettings />
+				</SettingsCardSection>
+				<SettingsCardSection
+					title="Passkeys"
+					description="Sign in with your device's fingerprint, face or PIN, or a security key."
+				>
+					<PasskeySettings />
 				</SettingsCardSection>
 			</SettingsCard>
 		</div>

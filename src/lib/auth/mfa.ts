@@ -1,11 +1,14 @@
 import { eq } from "drizzle-orm";
 import QRCode from "qrcode";
 import { getDb } from "@/db";
-import { mfaRecoveryCodes, users } from "@/db/schema";
+import { mfaRecoveryCodes, sessions, users } from "@/db/schema";
+import { passkeys } from "@/db/schema/passkeys";
+import { isNoSuchTableError } from "@/lib/modules/state-utils";
 import { getBranding } from "@/lib/branding/service";
 import { consumeRecoveryCode, countUnusedRecoveryCodes, issueRecoveryCodes } from "@/lib/auth/recovery-codes";
 import { deleteUserSessions } from "@/lib/auth/session";
-import { buildOtpauthUrl, generateTotpSecret, verifyTotp } from "@/lib/auth/totp";
+import { buildOtpauthUrl, generateTotpSecret, matchTotpStep } from "@/lib/auth/totp";
+import { claimTotpStep } from "@/lib/auth/totp-steps";
 import type { MfaEnrollment, MfaStatus } from "@/lib/auth/mfa-types";
 
 export async function getMfaStatus(
@@ -48,7 +51,8 @@ export async function confirmMfaEnrollment(
 ): Promise<{ ok: true; recoveryCodes: string[] } | { ok: false; error: string }> {
 	if (!user.totpSecret) return { ok: false, error: "Start enrolment first" };
 	if (user.totpEnabled) return { ok: false, error: "Two-factor authentication is already on" };
-	if (!(await verifyTotp(user.totpSecret, code)))
+	const step = await matchTotpStep(user.totpSecret, code);
+	if (step === null || !(await claimTotpStep(env, user.id, step)))
 		return { ok: false, error: "That code did not match. Check the time on your device and try again." };
 
 	const db = getDb(env);
@@ -68,6 +72,31 @@ export async function disableMfa(env: CloudflareEnv, userId: string): Promise<vo
 	await db.delete(mfaRecoveryCodes).where(eq(mfaRecoveryCodes.userId, userId));
 }
 
+/**
+ * An admin's reset for someone who lost their devices: signs the account out everywhere, turns TOTP off and deletes
+ * the recovery codes and every passkey, in one batch, so either all of it happens or none does. Before migration
+ * 0112 there is no passkeys table and the batch runs without it.
+ */
+export async function resetUserSecondFactors(env: CloudflareEnv, userId: string): Promise<{ passkeysRemoved: number }> {
+	const db = getDb(env);
+	const core = [
+		db.delete(sessions).where(eq(sessions.userId, userId)),
+		db.update(users).set({ totpSecret: null, totpEnabled: false, totpConfirmedAt: null }).where(eq(users.id, userId)),
+		db.delete(mfaRecoveryCodes).where(eq(mfaRecoveryCodes.userId, userId)),
+	] as const;
+	try {
+		const results = await db.batch([
+			...core,
+			db.delete(passkeys).where(eq(passkeys.userId, userId)).returning({ id: passkeys.id }),
+		]);
+		return { passkeysRemoved: results[3].length };
+	} catch (error) {
+		if (!isNoSuchTableError(error)) throw error;
+		await db.batch([...core]);
+		return { passkeysRemoved: 0 };
+	}
+}
+
 /** A login's second step: a TOTP code, or one of the recovery codes as a fallback. */
 export async function verifySecondFactor(
 	env: CloudflareEnv,
@@ -75,7 +104,9 @@ export async function verifySecondFactor(
 	code: string,
 ): Promise<"totp" | "recovery" | null> {
 	if (!user.totpEnabled || !user.totpSecret) return null;
-	if (await verifyTotp(user.totpSecret, code)) return "totp";
+	// A code is good once, wherever it was used (sign-in, re-authentication), within its 90-second window.
+	const step = await matchTotpStep(user.totpSecret, code);
+	if (step !== null) return (await claimTotpStep(env, user.id, step)) ? "totp" : null;
 	if (await consumeRecoveryCode(env, user.id, code)) return "recovery";
 	return null;
 }

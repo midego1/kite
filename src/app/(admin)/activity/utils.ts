@@ -20,6 +20,9 @@ export function formatActivityDate(value: string): string {
 export function getActivityLabel(action: string): string {
 	if (action === "auth.login") return "Login";
 	if (action === "auth.logout") return "Logout";
+	if (action === "auth.passkey_added") return "Passkey added";
+	if (action === "auth.passkey_removed") return "Passkey removed";
+	if (action === "auth.mfa_reset") return "Two-factor reset";
 	if (action === "module.enabled") return "Module on";
 	if (action === "module.disabled") return "Module off";
 	if (action === "module.user_access") return "Module access";

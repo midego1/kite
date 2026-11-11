@@ -77,6 +77,7 @@ const LATER_MIGRATIONS = [
 	"0108_add_cold_leftover_cleanup.sql",
 	"0109_add_finance_payment_category.sql",
 	"0110_add_semantic_embedding_origin.sql",
+	"0112_add_passkeys.sql",
 	"0114_add_followup_indexes.sql",
 ];
 /** Columns a later migration adds to a table this test pins; everything else must stay as it was. */

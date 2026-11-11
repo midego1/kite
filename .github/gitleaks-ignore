@@ -10,3 +10,12 @@ d9087260e68eba9eed5d2049c1d4e5ab8146c985:tests/storage-store-form.test.mjs:gener
 f8c543626f8112c9a52f7c1b4c439d6c8510fc38:tests/storage-store-form.test.mjs:generic-api-key:21
 # 1e3130e (PR #367 only): the invented marker "NOAI-7731-SECRET" a unit test puts in mail to check it never reaches the fake model; renamed in a later commit.
 1e3130ed43d6598aeb5025257a3bd6d864a582af:tests/mailbox-ai-off.test.mjs:generic-api-key:89
+# c3b30b8 (PR #486): "authenticatorData" fields of the WebAuthn test vectors, public navigator.credentials output from
+# Chromium's throwaway virtual authenticator (no private key or credential); later commits are covered by the
+# tests/fixtures/webauthn/ path exception in .gitleaks.toml.
+c3b30b8cc546c7464a518ec2e452d6c4258f28f6:tests/fixtures/webauthn/chromium-virtual-authenticator.json:generic-api-key:18
+c3b30b8cc546c7464a518ec2e452d6c4258f28f6:tests/fixtures/webauthn/chromium-virtual-authenticator.json:generic-api-key:26
+c3b30b8cc546c7464a518ec2e452d6c4258f28f6:tests/fixtures/webauthn/chromium-virtual-authenticator.json:generic-api-key:47
+c3b30b8cc546c7464a518ec2e452d6c4258f28f6:tests/fixtures/webauthn/chromium-virtual-authenticator.json:generic-api-key:55
+c3b30b8cc546c7464a518ec2e452d6c4258f28f6:tests/fixtures/webauthn/chromium-virtual-authenticator.json:generic-api-key:76
+c3b30b8cc546c7464a518ec2e452d6c4258f28f6:tests/fixtures/webauthn/chromium-virtual-authenticator.json:generic-api-key:84

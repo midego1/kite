@@ -1,5 +1,10 @@
 {
 	"gated": [
+		"src/lib/auth/passkey-utils.ts",
+		"src/lib/auth/webauthn/base64url-utils.ts",
+		"src/lib/auth/webauthn/cbor-utils.ts",
+		"src/lib/auth/webauthn/cose-utils.ts",
+		"src/lib/auth/webauthn/verify-utils.ts",
 		"src/lib/agent/email/daily-limit-utils.ts",
 		"src/lib/agent/email/guards-utils.ts",
 		"src/lib/agent/email/reply-utils.ts",
@@ -314,6 +319,7 @@
 		"src/lib/semantic/fusion-utils.ts"
 	],
 	"ungated": {
+		"src/lib/auth/passkey-client-utils.ts": "Browser WebAuthn glue around navigator.credentials and ArrayBuffers; covered by e2e/107-passkeys.spec.ts with the virtual authenticator.",
 		"src/lib/finance/payment-keywords-utils.ts": "Only phrase lists and regular expressions; tests/finance-payments-detect.test.mjs runs them through detectPayment.",
 		"src/lib/agent/fixed-rules-utils.ts": "Only the two prompt rule strings; the prompt fixture tests pin their text byte for byte.",
 		"src/lib/auth/password-reset-utils.ts": "no unit test bundles it; covered only through the e2e suite",

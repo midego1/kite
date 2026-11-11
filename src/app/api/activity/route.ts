@@ -29,6 +29,9 @@ export async function GET(request: Request) {
 			inArray(auditLogs.action, [
 				"auth.login",
 				"auth.logout",
+				"auth.passkey_added",
+				"auth.passkey_removed",
+				"auth.mfa_reset",
 				...MODULE_AUDIT_ACTIONS,
 				...TELEMETRY_AUDIT_ACTIONS,
 				...AGENT_PROVIDER_AUDIT_ACTIONS,

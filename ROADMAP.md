@@ -40,25 +40,27 @@ A feature is done only when all three pass and it has a new or updated test: a `
 
 Make the app usable for Arabic, Hebrew, Persian and Urdu mail and users.
 
-1. **RTL message content**
+All five items have shipped: item 1 in [#352](https://github.com/midego1/kite/pull/352), item 2 in [#355](https://github.com/midego1/kite/pull/355), item 3 in [#359](https://github.com/midego1/kite/pull/359), item 4 in [#360](https://github.com/midego1/kite/pull/360) and item 5 in [#378](https://github.com/midego1/kite/pull/378) (Dutch, with Arabic as an opt-in draft; wording fixes in [#393](https://github.com/midego1/kite/pull/393)). An audit on 2026-11-10 checked every acceptance criterion below against the code and the tests and found them met; it added `dir="auto"` to the few places that still showed text from mail without it: attachment names on their cards and in the viewer, the subject in the undo-send bar, From, To and Subject in the message source dialog, template subjects, the assistant's recent requests by email, and the search fields and results. What is still English (Settings, Admin, the modules' own pages, signed-out pages) is listed in [Translations](docs/translations.md).
+
+1. **RTL message content (shipped in [#352](https://github.com/midego1/kite/pull/352))**
    - Message bodies, subjects, previews and sender names render with `dir="auto"`, so an Arabic email reads right to left inside an English UI.
    - The sandboxed email frame sets `dir="auto"` on its body and keeps the sender's own `dir` attributes.
    - Plain-text messages with RTL text align right.
    - Test: an e2e spec delivers an Arabic and a Hebrew message (inbound helper in `e2e/support/helpers.ts`) and asserts the computed `direction` in the list, the reader and the frame.
-2. **RTL composer**
+2. **RTL composer (shipped in [#355](https://github.com/midego1/kite/pull/355))**
    - The rich-text editor and subject field use `dir="auto"` per paragraph; a toolbar button switches the current paragraph's direction.
    - Sent HTML keeps the `dir` attributes; `htmlToPlainText` output is unchanged for LTR text.
    - Test: unit tests for the HTML helpers in `rich-text-utils.ts`, and an e2e spec that types Arabic, sends it and checks the sent HTML.
-3. **Logical CSS throughout**
+3. **Logical CSS throughout (shipped in [#359](https://github.com/midego1/kite/pull/359))**
    - Replace physical Tailwind utilities (`ml-`, `mr-`, `pl-`, `pr-`, `left-`, `right-`, `text-left`, `rounded-l-` and similar, in about 37 files) with logical ones (`ms-`, `me-`, `ps-`, `pe-`, `start-`, `end-`, `text-start`).
    - Directional icons (chevrons, arrows, the reply icon) flip with `rtl:` variants.
    - Test: a lint rule or unit test that fails on new physical utilities in `src/`.
-4. **RTL interface setting**
+4. **RTL interface setting (shipped in [#360](https://github.com/midego1/kite/pull/360))**
    - A setting in the account menu (next to Reading layout) for interface direction: Automatic (from the browser language), Left to right, Right to left. Stored like the reading layout.
    - The root `<html>` gets `dir` before first paint, with no layout flash.
    - The reading pane divider, sidebar, dropdowns, toasts and dialogs mirror correctly.
    - Test: e2e spec switches to RTL and checks the sidebar sits on the right, the divider still resizes, and the account menu opens in place.
-5. **Interface translations (foundation)** (see [Translations](docs/translations.md))
+5. **Interface translations (foundation) (shipped in [#378](https://github.com/midego1/kite/pull/378))** (see [Translations](docs/translations.md))
    - Introduce a small message catalog (no heavy dependency) with English as the source and one RTL language as the first translation.
    - Start with the shell: sidebar, account menu, message list, reader toolbar, composer.
    - Dates and times use `Intl` with the user's locale.
@@ -85,6 +87,7 @@ All three items have shipped. A fourth pass added readable names for the waiting
 1. **HTML sanitizing with an allowlist (shipped in [#51](https://github.com/midego1/kite/pull/51))**: sanitize stored and displayed email HTML with DOMPurify (or an equivalent that runs on Workers) in addition to the sandboxed frame. Test: unit tests with known XSS payloads. Stored mail is cleaned with htmlparser2 in `parseRawMime`, display goes through DOMPurify; see [SECURITY.md](SECURITY.md#email-html).
 2. **Secret scan before going public (done)**: scan the full git history for keys and personal data; document the result in `SECURITY.md`. Result: no secrets on `main`, two known synthetic test values on old pull request refs, and the maintainer's address only in commit metadata; see [SECURITY.md](SECURITY.md#history-scan).
 3. **MCP over OAuth (built, November 2026, migration 0106)**: MCP clients can connect with OAuth 2.1 instead of a pasted API key, with the same per-scope tool filtering. `/mcp` answers `401` with the Protected Resource Metadata (RFC 9728), Kite is its own authorization server (RFC 8414) with Dynamic Client Registration for public clients (RFC 7591, https or loopback redirect URIs, exact match except the loopback port, per-network caps), the authorization-code flow with PKCE S256 only and a consent screen for the signed-in user (only **Read mail** ticked), hour-long access tokens and rotating 30-day refresh tokens (a one-minute grace window for parallel refreshes) stored as hashes and bound to `/mcp` (RFC 8707), revocation (RFC 7009) and **Settings → MCP apps** with **Revoke**. A connection is an `api_keys` row of kind `oauth`, so tool filtering, mailbox access, audit rows and send requests are those of an MCP key. Docs: [Connecting an MCP app with OAuth](docs/email-assistant-and-mcp.md#connecting-an-mcp-app-with-oauth). Tests: `tests/mcp-oauth.test.mjs`, `e2e/106-mcp-oauth.spec.ts`. Still open: a check with Claude Desktop against a public install, private-use redirect schemes (`cursor://`) and the admin scopes over OAuth, which stay on admin MCP keys.
+4. **Passkeys (built, November 2026, migration 0112)**: sign in with a passkey (WebAuthn) instead of the password, offered as autofill on the email field and with a **Sign in with a passkey** button. Passkeys are discoverable, user verification is always required, so a passkey sign-in counts as two-factor and no TOTP code is asked for. Settings → Security lists them (name, added, last used, synced) and adding or removing one re-checks the password or a TOTP code; an admin's **Reset two-factor and passkeys** removes them with TOTP and the recovery codes. Verification is hand-written on Web Crypto (CBOR and COSE parsing in-repo, ES256, RS256 and EdDSA, attestation "none", single-use five-minute challenges bound to the session or the browser, origin and RP ID from `APP_URL`, signature counter regressions refused) and runs the same on Workers and Node. Docs: [Passkeys](docs/passkeys.md), [spec](docs/specs/passkeys.md). Tests: `tests/passkeys.test.mjs` (real browser vectors), `e2e/107-passkeys.spec.ts` (CDP virtual authenticator).
 
 ## Milestone 5: Agents
 

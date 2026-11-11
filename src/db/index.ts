@@ -19,6 +19,7 @@ import {
 } from "@/db/schema/external-accounts";
 import * as financeTables from "@/db/schema/finance";
 import * as moduleTables from "@/db/schema/modules";
+import * as passkeyTables from "@/db/schema/passkeys";
 import * as screenerTables from "@/db/schema/screener";
 import * as semanticTables from "@/db/schema/semantic";
 import * as storageTables from "@/db/schema/storage";
@@ -40,6 +41,7 @@ const schema = {
 	...summaryTables,
 	...spamReportTables,
 	...moduleTables,
+	...passkeyTables,
 	...financeTables,
 	...driveSchemaTables,
 	...storageTables,

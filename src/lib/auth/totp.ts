@@ -77,17 +77,18 @@ export async function totp(secret: string, at: number = Date.now()): Promise<str
 }
 
 /**
- * Accept the current step and one on either side, so a phone whose clock is a
- * few seconds off still works. Comparison is constant-time.
+ * The time step a code belongs to, or null. The current step and one on either side are accepted, so a phone
+ * whose clock is a few seconds off still works; comparison is constant-time. Callers claim the step
+ * (`claimTotpStep`) so a code works once.
  */
-export async function verifyTotp(secret: string, code: string, at: number = Date.now()): Promise<boolean> {
+export async function matchTotpStep(secret: string, code: string, at: number = Date.now()): Promise<number | null> {
 	const candidate = code.replace(/\s+/g, "");
-	if (!/^\d{6}$/.test(candidate)) return false;
+	if (!/^\d{6}$/.test(candidate)) return null;
 	const counter = totpCounter(at);
-	let matched = false;
+	let matched: number | null = null;
 	for (const delta of [-1, 0, 1]) {
 		const expected = await hotp(secret, counter + delta);
-		if (timingSafeEqual(expected, candidate)) matched = true;
+		if (timingSafeEqual(expected, candidate)) matched = counter + delta;
 	}
 	return matched;
 }

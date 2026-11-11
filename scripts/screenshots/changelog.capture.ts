@@ -26,6 +26,7 @@ import {
 import { mockConnectedAccountAuthRecheck, mockForYou, mockForYouPreview } from "./demo-mocks";
 import { sampleMessage, startFakeImap } from "../../tests/support/fake-imap.mjs";
 import { startFakeMicrosoftOAuth } from "../../tests/support/fake-microsoft-oauth.mjs";
+import { startFakeWebdav } from "../../tests/support/fake-webdav.mjs";
 
 // Screenshots for the changelog (docs/releasing.md#screenshots-in-the-changelog), taken against the isolated,
 // seeded e2e server, so only invented demo data appears. They land in public/changelog/<name>.webp, ready for a
@@ -142,6 +143,37 @@ async function seedCompactLabelsDemo(): Promise<void> {
 	await api.dispose();
 }
 
+/** A fake Nextcloud on 127.0.0.1 with invented files, for the linked-folder shots. */
+let demoWebdav: Awaited<ReturnType<typeof startFakeWebdav>> | null = null;
+const WEBDAV_LABEL = "Nextcloud";
+
+/** Links the demo admin's Drive to the fake WebDAV server (again, since its port changes) and returns the folder id. */
+async function seedLinkedFolderDemo(): Promise<string> {
+	demoWebdav ??= await startFakeWebdav({
+		username: "demo",
+		files: {
+			"/Projects": null,
+			"/Photos": null,
+			"/Invoices": null,
+			"/Budget 2026.xlsx": Buffer.alloc(48_213, 1),
+			"/Meeting notes.md": "# Offsite\n\nAgenda and travel details.",
+			"/Brand guidelines.pdf": Buffer.alloc(2_418_000, 2),
+			"/Team photo.jpg": Buffer.alloc(812_000, 3),
+		},
+	});
+	const api = await apiContext(STORAGE_STATE);
+	const { mounts } = (await (await api.get("/api/drive/mounts")).json()) as { mounts: { id: string; label: string }[] };
+	for (const mount of mounts.filter((item) => item.label === WEBDAV_LABEL))
+		await api.delete(`/api/drive/mounts/${mount.id}`);
+	const response = await api.post("/api/drive/mounts", {
+		data: { label: WEBDAV_LABEL, url: demoWebdav.url, username: demoWebdav.username, password: demoWebdav.password },
+	});
+	expect(response.status(), await response.text()).toBe(201);
+	const { mount } = (await response.json()) as { mount: { id: string } };
+	await api.dispose();
+	return mount.id;
+}
+
 /** Three invented senders, reported as spam once, for the easier-selection shot's bulk toolbar. */
 const SPAM_SELECTION_MAIL = [
 	["Prize Center", "prize@sweepstakes-reward.test", "You've won! Claim your prize now"],
@@ -194,6 +226,17 @@ async function openSenderAuthMail(page: Page) {
 	await page.getByRole("main").getByText(SENDER_AUTH_MAIL.subject, { exact: true }).first().click();
 	await expect(page.locator("[data-sender-auth-warning]")).toBeVisible();
 }
+
+/** The Admin → Storage overview's leftover cleanup state with nothing tracked and the defaults. */
+const NO_LEFTOVERS = {
+	available: true,
+	settings: { automatic: false, graceDays: 7 },
+	lastRun: null,
+	total: 0,
+	due: 0,
+	kept: {},
+	byStore: {},
+};
 
 /** An MCP app's authorization request, as Claude Desktop would send it, for a client registered on the demo server. */
 async function demoMcpAuthorization(name: string): Promise<{ query: URLSearchParams; verifier: string }> {
@@ -301,6 +344,32 @@ const SHOTS: Shot[] = [
 		theme: "light",
 		viewport: { width: 1000, height: 820 },
 		open: openDatabaseUpdateSidebar,
+	},
+	{
+		// A linked WebDAV folder in Drive: the folder in the Drive menu and its files, proxied from a demo server.
+		name: "2026-11-10-drive-linked-folder-light",
+		theme: "light",
+		viewport: { width: 1280, height: 760 },
+		open: async (page) => {
+			const id = await seedLinkedFolderDemo();
+			await page.goto(`/drive/m/${id}`);
+			await expect(page.getByRole("heading", { level: 1, name: WEBDAV_LABEL })).toBeVisible();
+			await expect(page.locator('[data-drive-item="Team photo.jpg"]')).toBeVisible();
+			return page;
+		},
+	},
+	{
+		// The same linked folder on a phone (375 px), with the Drive menu folded into its pill.
+		name: "2026-11-10-drive-linked-folder-mobile-light",
+		theme: "light",
+		viewport: { width: 375, height: 760 },
+		open: async (page) => {
+			const id = await seedLinkedFolderDemo();
+			await page.goto(`/drive/m/${id}`);
+			await expect(page.getByRole("heading", { level: 1, name: WEBDAV_LABEL })).toBeVisible();
+			await expect(page.locator('[data-drive-item="Team photo.jpg"]')).toBeVisible();
+			return page;
+		},
 	},
 	{
 		// MCP over OAuth: the consent screen an MCP app opens, with only Read mail ticked and a mailbox chosen.
@@ -748,7 +817,8 @@ const SHOTS: Shot[] = [
 				route.fulfill({
 					json: {
 						directUploadsReminder: { show: false, setup: null },
-						defaultStore: { id: "default", name: "Cloudflare R2", kind: "r2", directUploads: true },
+						defaultStore: { id: "default", name: "Cloudflare R2", kind: "r2", directUploads: true, leftoverCount: 0 },
+						leftovers: NO_LEFTOVERS,
 						stores: [
 							{
 								id: "sto_demo",
@@ -791,6 +861,96 @@ const SHOTS: Shot[] = [
 		},
 	},
 	{
+		// Admin → Storage: Delete leftovers on a store, and the Leftover copies card with the automatic cleanup.
+		name: "2026-11-10-delete-leftovers-light",
+		theme: "light",
+		viewport: { width: 1280, height: 1200 },
+		open: async (page) => {
+			await page.route("**/api/admin/storage/cold", (route) =>
+				route.fulfill({ json: { rules: [], jobs: [], iaAvailable: true } }),
+			);
+			await page.route("**/api/admin/storage", (route) =>
+				route.fulfill({
+					json: {
+						directUploadsReminder: { show: false, setup: null },
+						defaultStore: { id: "default", name: "Cloudflare R2", kind: "r2", directUploads: true, leftoverCount: 0 },
+						leftovers: {
+							available: true,
+							settings: { automatic: false, graceDays: 7 },
+							lastRun: {
+								at: "2026-11-09T14:12:00.000Z",
+								trigger: "manual",
+								storeId: "sto_old",
+								checked: 25,
+								deleted: 21,
+								cleared: 1,
+								kept: { backup: 3 },
+								skipped: null,
+							},
+							total: 37,
+							due: 31,
+							kept: { backup: 3, cold_target: 2 },
+							byStore: { sto_old: 37 },
+						},
+						stores: [
+							{
+								id: "sto_old",
+								name: "Old Backblaze bucket",
+								provider: "b2",
+								endpoint: "s3.us-west-002.backblazeb2.com",
+								region: "us-west-002",
+								bucket: "kite-archive-2025",
+								addressing: "path",
+								keyHint: "9f2c",
+								sameAsBinding: false,
+								status: "ok",
+								lastCheckedAt: "2026-11-09T00:00:00.000Z",
+								lastError: null,
+								source: "database",
+								blocked: null,
+								usedBy: [],
+								leftoverCount: 37,
+							},
+						],
+						routes: [],
+						migrations: [],
+						usage: {
+							mail: { objects: 12_400, bytes: 4_900_000_000 },
+							drive: { objects: 860, bytes: 1_800_000_000 },
+							backups: { objects: 14, bytes: 2_100_000_000 },
+						},
+						encryptionReady: true,
+						migrationPending: false,
+						endpointPolicy: { allowInsecure: false, allowPrivate: false },
+						runtime: "workers",
+					},
+				}),
+			);
+			await page.goto("/storage");
+			const stores = page.locator("section", { has: page.getByRole("heading", { name: "Stores" }) });
+			await expect(stores.getByText("37 leftover copies from cold storage moves.")).toBeVisible();
+			const card = page.locator("section", { has: page.getByRole("heading", { name: "Leftover copies" }) });
+			await expect(card.getByText("37 leftover copies tracked, 31 past the grace period.")).toBeVisible();
+			// Both sections, side by side in one picture: the store row's action and the card below the others.
+			await page.evaluate(() => {
+				const main = document.querySelector("main") ?? document.body;
+				const sections = [...main.querySelectorAll("section")];
+				for (const section of sections) {
+					const heading = section.querySelector("h2")?.textContent ?? "";
+					if (heading !== "Stores" && heading !== "Leftover copies") (section as HTMLElement).style.display = "none";
+				}
+			});
+			// The column holding both sections (the page header stays out).
+			const column = stores.locator("xpath=..");
+			await page.evaluate(() => {
+				const header = document.querySelector("main h1")?.closest("header, div");
+				if (header) (header as HTMLElement).style.display = "none";
+			});
+			await column.scrollIntoViewIfNeeded();
+			return column;
+		},
+	},
+	{
 		// Admin → Storage → Stores: the read-only leftover count on a store still holding tracked candidates.
 		name: "2026-11-09-leftover-count-light",
 		theme: "light",
@@ -803,7 +963,8 @@ const SHOTS: Shot[] = [
 				route.fulfill({
 					json: {
 						directUploadsReminder: { show: false, setup: null },
-						defaultStore: { id: "default", name: "Cloudflare R2", kind: "r2", directUploads: true },
+						defaultStore: { id: "default", name: "Cloudflare R2", kind: "r2", directUploads: true, leftoverCount: 0 },
+						leftovers: NO_LEFTOVERS,
 						stores: [
 							{
 								id: "sto_demo",
@@ -1438,6 +1599,8 @@ test.describe("changelog screenshots", () => {
 		demoTwoWay = null;
 		await demoMicrosoft?.close();
 		demoMicrosoft = null;
+		await demoWebdav?.close();
+		demoWebdav = null;
 	});
 
 	for (const shot of SHOTS) {

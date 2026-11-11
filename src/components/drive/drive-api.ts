@@ -8,7 +8,17 @@ export async function driveError(response: Response, fallback: string): Promise<
 	return data?.error || fallback;
 }
 
-/** A Drive API call that answers JSON; a failure throws with the server's message. */
+/** A failed Drive API call: the server's message, and its `code` when it sent one. */
+export class DriveRequestError extends Error {
+	constructor(
+		message: string,
+		readonly code: string | null,
+	) {
+		super(message);
+	}
+}
+
+/** A Drive API call that answers JSON; a failure throws a `DriveRequestError` with the server's message. */
 export async function driveRequest<T>(
 	url: string,
 	init: { method?: string; body?: unknown } = {},
@@ -20,7 +30,10 @@ export async function driveRequest<T>(
 			? {}
 			: { headers: { "Content-Type": "application/json" }, body: JSON.stringify(init.body) }),
 	});
-	if (!response.ok) throw new Error(await driveError(response, fallback));
+	if (!response.ok) {
+		const data = (await response.json().catch(() => null)) as { error?: string; code?: string } | null;
+		throw new DriveRequestError(data?.error || fallback, data?.code ?? null);
+	}
 	return (await response.json()) as T;
 }
 

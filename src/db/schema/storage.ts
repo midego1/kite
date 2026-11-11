@@ -125,12 +125,14 @@ export const objectLocations = sqliteTable(
 /**
  * A cold-moved copy nothing in `object_locations` points at any more: the losing side of two deliveries that
  * raced to different targets for the same key (`object-locations.ts`), or a migration's old copy left behind
- * once the object became reachable through the normal chain again (`migration.ts`). Tracked by the orphan
- * sweep (`src/lib/storage/cold-orphans.ts`) for visibility only: nothing in this PR deletes one, automatically
- * or manually (round-9 review, `B6`); cleanup of a tracked candidate is a follow-up for a later release.
- * `(storeId, key)` is unique so the same copy is never marked twice. `orphanedAt` and `movedAt` are kept (not
- * read by anything today) so a future cleanup pass has the same grace-period and backup-window data to work
- * from without a second migration.
+ * once the object became reachable through the normal chain again (`migration.ts`). Marked by the orphan
+ * sweep (`src/lib/storage/cold-orphans.ts`) and the movers, and deleted only by the leftover cleanup
+ * (`src/lib/storage/cold-leftovers.ts`): the manual "Delete leftovers" action or the optional automatic cleanup,
+ * after the grace period and outside the `(movedAt, firstOrphanedAt)` backup window, under the key's location
+ * lease. `(storeId, key)` is unique so the same copy is never marked twice; `orphanedAt` only orders the
+ * cleanup's queue. Migration 0108 adds `unreferenced_since` (when a check first saw the key referenced by
+ * nothing, after the last restore) and `kept_reason` (why the last cleanup kept it), read and written through
+ * raw SQL so the drizzle shape still matches a database before 0108.
  */
 export const storageColdOrphans = sqliteTable(
 	"storage_cold_orphans",

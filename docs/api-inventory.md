@@ -54,6 +54,7 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/admin/storage/cloudflare`                              | GET                    | [source](../src/app/api/admin/storage/cloudflare/route.ts)                              |
 | `/api/admin/storage/cold/[class]`                            | POST, PUT              | [source](../src/app/api/admin/storage/cold/[class]/route.ts)                            |
 | `/api/admin/storage/cold`                                    | GET                    | [source](../src/app/api/admin/storage/cold/route.ts)                                    |
+| `/api/admin/storage/leftovers`                               | POST, PUT              | [source](../src/app/api/admin/storage/leftovers/route.ts)                               |
 | `/api/admin/storage/migrations/[id]`                         | GET, POST              | [source](../src/app/api/admin/storage/migrations/[id]/route.ts)                         |
 | `/api/admin/storage/reminder`                                | POST                   | [source](../src/app/api/admin/storage/reminder/route.ts)                                |
 | `/api/admin/storage`                                         | GET                    | [source](../src/app/api/admin/storage/route.ts)                                         |
@@ -151,6 +152,11 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/drive/items/bulk`                                      | POST                   | [source](../src/app/api/drive/items/bulk/route.ts)                                      |
 | `/api/drive/items`                                           | GET                    | [source](../src/app/api/drive/items/route.ts)                                           |
 | `/api/drive/links/[id]`                                      | DELETE, PATCH          | [source](../src/app/api/drive/links/[id]/route.ts)                                      |
+| `/api/drive/mounts/[id]/content`                             | GET, PUT               | [source](../src/app/api/drive/mounts/[id]/content/route.ts)                             |
+| `/api/drive/mounts/[id]/folders`                             | POST                   | [source](../src/app/api/drive/mounts/[id]/folders/route.ts)                             |
+| `/api/drive/mounts/[id]/items`                               | DELETE, GET, PATCH     | [source](../src/app/api/drive/mounts/[id]/items/route.ts)                               |
+| `/api/drive/mounts/[id]`                                     | DELETE, PATCH          | [source](../src/app/api/drive/mounts/[id]/route.ts)                                     |
+| `/api/drive/mounts`                                          | GET, POST              | [source](../src/app/api/drive/mounts/route.ts)                                          |
 | `/api/drive/settings/quotas/[userId]`                        | DELETE, PUT            | [source](../src/app/api/drive/settings/quotas/[userId]/route.ts)                        |
 | `/api/drive/settings`                                        | GET, PATCH             | [source](../src/app/api/drive/settings/route.ts)                                        |
 | `/api/drive/settings/usage`                                  | GET                    | [source](../src/app/api/drive/settings/usage/route.ts)                                  |

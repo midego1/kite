@@ -17,6 +17,11 @@ export function allowPublicLinkRequest(env: CloudflareEnv, request: Request): Pr
 	return allow(env.DRIVE_LINK_RATE_LIMIT, clientIp(request), "Drive link");
 }
 
+/** Linking or editing a linked folder sends a request to the server it names, so each user gets a budget. */
+export function allowMountCheck(env: CloudflareEnv, userId: string): Promise<boolean> {
+	return allow(env.LOGIN_RATE_LIMIT, `drive-mount-check:${userId}`, "Drive mount check");
+}
+
 /** Password attempts on one link from one IP share the login budget. */
 export function allowLinkUnlockAttempt(env: CloudflareEnv, request: Request, linkId: string): Promise<boolean> {
 	return allow(env.LOGIN_RATE_LIMIT, `drive-unlock:${clientIp(request)}:${linkId}`, "Drive unlock");

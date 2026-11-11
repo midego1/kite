@@ -1,5 +1,3 @@
-import { getDb } from "@/db";
-import { storageColdOrphans } from "@/db/schema/storage";
 import { newId } from "@/lib/ids";
 import { missingColumnFromError } from "@/lib/auth/user-lookup-utils";
 import { isNoSuchTableError } from "@/lib/modules/state-utils";
@@ -7,36 +5,66 @@ import type { RoutableClass } from "./types";
 
 type LocationEnv = { DB: D1Database };
 
+/** The column migration 0108 adds for the leftover cleanup (`cold-leftovers.ts`); every write that sets it falls back
+ * to the 0104 shape until it exists. */
+export function isMissingLeftoverColumn(error: unknown): boolean {
+	const column = missingColumnFromError(error);
+	return column === "unreferenced_since" || column === "kept_reason";
+}
+
 /**
- * Records a cold-moved copy nothing in `object_locations` points at any more as a candidate for the orphan
- * sweep (`cold.ts`), which deletes it only after a grace period (and no retained backup could still need it,
- * `movedAt`), re-checking its reference at that point. A second mark of the same copy is a no-op (`storeId, key`
- * is unique). `firstOrphanedAt` starts equal to `orphanedAt` but, unlike it, is never bumped by a later deferral
- * (`B1`): it is the fixed upper bound of the only window a completed backup could still hold a reference to
- * this exact copy in.
+ * Records a cold-moved copy nothing in `object_locations` points at any more as a leftover candidate, which the
+ * leftover cleanup (`cold-leftovers.ts`) deletes only after a grace period, outside every window a retained
+ * backup could still need it in, re-checking everything under the key's lease at that point. A second mark of a
+ * superseded copy (`storeId, key` is unique) widens the window instead of being dropped: `movedAt` keeps the
+ * earliest and `firstOrphanedAt` the latest time this copy stopped being the recorded location, since a copy
+ * that became the location again (a restore merging an old row back) and was superseded a second time could be
+ * named by any backup taken in between. `firstOrphanedAt` is never bumped by a deferral (`B1`), unlike
+ * `orphanedAt`, which only orders the cleanup's queue. `unreferenced` is the orphan scan's mark of a key's live
+ * location that nothing references any more: it only records `unreferenced_since` (if not set yet) and never
+ * widens anything, since the copy never stopped being the location and the scan sees it again every pass.
  */
 export async function markOrphanCandidate(
 	env: LocationEnv,
-	input: { storeId: string; key: string; objectClass: RoutableClass; movedAt: Date },
+	input: { storeId: string; key: string; objectClass: RoutableClass; movedAt: Date; unreferenced?: boolean },
 	now = new Date(),
 ): Promise<void> {
+	const nowSeconds = Math.floor(now.getTime() / 1000);
+	const movedAt = Math.floor(input.movedAt.getTime() / 1000);
+	const widen = `ON CONFLICT (store_id, key) DO UPDATE SET moved_at = min(moved_at, excluded.moved_at),
+		 first_orphaned_at = max(first_orphaned_at, excluded.first_orphaned_at)`;
 	try {
-		await getDb(env)
-			.insert(storageColdOrphans)
-			.values({
-				id: newId("sco"),
-				storeId: input.storeId,
-				key: input.key,
-				objectClass: input.objectClass,
-				movedAt: input.movedAt,
-				orphanedAt: now,
-				firstOrphanedAt: now,
-			})
-			.onConflictDoNothing();
+		await env.DB.prepare(
+			`INSERT INTO storage_cold_orphans (id, store_id, key, object_class, moved_at, orphaned_at, first_orphaned_at, unreferenced_since)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+			 ${
+					input.unreferenced
+						? "ON CONFLICT (store_id, key) DO UPDATE SET unreferenced_since = coalesce(unreferenced_since, excluded.unreferenced_since)"
+						: widen
+				}`,
+		)
+			.bind(
+				newId("sco"),
+				input.storeId,
+				input.key,
+				input.objectClass,
+				movedAt,
+				nowSeconds,
+				nowSeconds,
+				input.unreferenced ? nowSeconds : null,
+			)
+			.run();
+		return;
 	} catch (error) {
 		if (isNoSuchTableError(error)) return;
-		throw error;
+		if (!isMissingLeftoverColumn(error)) throw error;
 	}
+	await env.DB.prepare(
+		`INSERT INTO storage_cold_orphans (id, store_id, key, object_class, moved_at, orphaned_at, first_orphaned_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?) ${input.unreferenced ? "ON CONFLICT (store_id, key) DO NOTHING" : widen}`,
+	)
+		.bind(newId("sco"), input.storeId, input.key, input.objectClass, movedAt, nowSeconds, nowSeconds)
+		.run();
 }
 
 /** Drops a specific copy's orphan-candidate row once its own mover has deleted the bytes itself (`B1`): marking
@@ -369,6 +397,132 @@ export async function withPurgeLease<T>(
 	}
 }
 
+/** A leftover cleanup's claim on one key (`claimKeyForLeftover`): its token, the store the key's row names under
+ * that claim, and whether the cleanup created that row itself (a key with no row), never a real location. */
+export type LeftoverClaim = { token: string; storeId: string; created: boolean };
+
+/** How long `confirmLeftoverClaim` holds the key once it passes. */
+const LEFTOVER_CONFIRM_SECONDS = 15 * 60;
+
+/**
+ * Takes the same location lease a cold move and a storage-migration purge hold, for the leftover cleanup deciding
+ * about one copy of `key`. An existing row is claimed the usual way (an expired claim is taken over), and the
+ * claim answers the store it names. A key with no row gets one created under the claim, with a `ptmp_` token like
+ * a migration purge's, naming the store the bytes are on right now (`locate`: another readable copy, or the
+ * leftover's own store when there is none), never anywhere they are not; a concurrent mover then backs off. Answers
+ * `"busy"` while someone else holds a live claim, and `"unsupported"` before migration 0104, when there is no lease
+ * to hold: the cleanup then deletes nothing.
+ */
+export async function claimKeyForLeftover(
+	env: LocationEnv,
+	key: string,
+	objectClass: RoutableClass,
+	locate: () => Promise<{ storeId: string; size: number }>,
+	now = new Date(),
+): Promise<LeftoverClaim | "busy" | "unsupported"> {
+	const nowSeconds = Math.floor(now.getTime() / 1000);
+	const until = nowSeconds + LEASE_SECONDS;
+	try {
+		await dropStrandedPurgeRows(env, now, key);
+		const token = newId("lease");
+		if (await tryClaimExistingRow(env, key, token, until, nowSeconds)) {
+			const row = await env.DB.prepare("SELECT store_id FROM object_locations WHERE key = ? AND lease_token = ?")
+				.bind(key, token)
+				.first<{ store_id: string }>();
+			return row ? { token, storeId: row.store_id, created: false } : "busy";
+		}
+		const existing = await env.DB.prepare("SELECT 1 AS found FROM object_locations WHERE key = ?")
+			.bind(key)
+			.first<{ found: number }>();
+		if (existing) return "busy";
+		const where = await locate();
+		const purgeToken = newId(PURGE_ROW_PREFIX);
+		const inserted = await env.DB.prepare(
+			`INSERT INTO object_locations (key, object_class, store_id, storage_class, size, moved_at, lease_token, claimed_until)
+			 VALUES (?, ?, ?, NULL, ?, ?, ?, ?)
+			 ON CONFLICT (key) DO NOTHING`,
+		)
+			.bind(key, objectClass, where.storeId, where.size, nowSeconds, purgeToken, until)
+			.run();
+		return (inserted.meta?.changes ?? 0) > 0 ? { token: purgeToken, storeId: where.storeId, created: true } : "busy";
+	} catch (error) {
+		if (isNoSuchTableError(error) || isMissingLeaseColumn(error)) return "unsupported";
+		throw error;
+	}
+}
+
+/**
+ * The leftover cleanup's last check before an object delete, in one conditional statement: its claim is still the
+ * row's, has not expired, and the row still names the store it named when the decision was made (an unfenced write
+ * elsewhere can change `store_id` without touching the token), extending the claim. `false` means do not delete.
+ */
+export async function confirmLeftoverClaim(env: LocationEnv, key: string, claim: LeftoverClaim, now = new Date()) {
+	const nowSeconds = Math.floor(now.getTime() / 1000);
+	// Extended well past the cleanup's own 30-second limit for issuing and finishing its delete (`M1`).
+	const result = await env.DB.prepare(
+		`UPDATE object_locations SET claimed_until = ?
+		 WHERE key = ? AND lease_token = ? AND claimed_until >= ? AND store_id = ?`,
+	)
+		.bind(nowSeconds + LEFTOVER_CONFIRM_SECONDS, key, claim.token, nowSeconds, claim.storeId)
+		.run();
+	return (result.meta?.changes ?? 0) > 0;
+}
+
+/** Drops one leftover's tracking row, only while `claim` still holds `key` (checked in the same statement). */
+export async function dropCandidateUnderClaim(env: LocationEnv, id: string, key: string, claim: LeftoverClaim) {
+	const result = await env.DB.prepare(
+		`DELETE FROM storage_cold_orphans WHERE id = ?
+		 AND EXISTS (SELECT 1 FROM object_locations WHERE key = ? AND lease_token = ?)`,
+	)
+		.bind(id, key, claim.token)
+		.run();
+	return (result.meta?.changes ?? 0) > 0;
+}
+
+/** Drops `key`'s location row for good (its object is unreferenced and gone), only while `claim` still holds it and
+ * it still names the claimed store, in one statement. */
+export async function dropLocationUnderClaim(env: LocationEnv, key: string, claim: LeftoverClaim) {
+	const result = await env.DB.prepare("DELETE FROM object_locations WHERE key = ? AND lease_token = ? AND store_id = ?")
+		.bind(key, claim.token, claim.storeId)
+		.run();
+	return (result.meta?.changes ?? 0) > 0;
+}
+
+/** Ends a leftover claim: removes the row the cleanup created for it, or releases the claim on a real row; both
+ * matched by the exact token, so a claim someone else holds by now is never touched. */
+export async function endLeftoverClaim(env: LocationEnv, key: string, claim: LeftoverClaim): Promise<void> {
+	if (claim.created)
+		await env.DB.prepare("DELETE FROM object_locations WHERE key = ? AND lease_token = ?").bind(key, claim.token).run();
+	else await releaseLocationLease(env, key, claim.token);
+}
+
+/**
+ * A storage migration's drop of a cold location it made stale (the object is on the migration's new store now),
+ * under the key's lease instead of a blind delete: a leftover cleanup holding the lease may be deciding about
+ * another copy on the strength of this very row. Answers false, keeping the row (which still names a store that
+ * holds the object), when someone else holds the lease or the row no longer names `storeId`.
+ */
+export async function dropStaleLocationUnderLease(
+	env: LocationEnv,
+	key: string,
+	storeId: string,
+	now = new Date(),
+): Promise<boolean> {
+	const nowSeconds = Math.floor(now.getTime() / 1000);
+	const token = newId("lease");
+	try {
+		await dropStrandedPurgeRows(env, now, key);
+		if (!(await tryClaimExistingRow(env, key, token, nowSeconds + LEASE_SECONDS, nowSeconds))) return false;
+	} catch (error) {
+		if (!isNoSuchTableError(error) && !isMissingLeaseColumn(error)) throw error;
+		await deleteObjectLocations(env, [key]);
+		return true;
+	}
+	const dropped = await dropLocationUnderClaim(env, key, { token, storeId, created: false });
+	if (!dropped) await releaseLocationLease(env, key, token);
+	return dropped;
+}
+
 /**
  * Records where an object now lives after a cold move (`cold.ts`). Mail and backups are read through this on
  * a chain miss (`router.ts`); Drive files are normally read by their row's own `store_id`/`storage_class`
@@ -399,7 +553,8 @@ export async function recordObjectLocation(
 		`INSERT INTO storage_cold_orphans (id, store_id, key, object_class, moved_at, orphaned_at, first_orphaned_at)
 		 SELECT ?, store_id, key, object_class, moved_at, ?, ?
 		 FROM object_locations WHERE key = ? AND store_id <> ?
-		 ON CONFLICT (store_id, key) DO NOTHING`,
+		 ON CONFLICT (store_id, key) DO UPDATE SET moved_at = min(moved_at, excluded.moved_at),
+		 first_orphaned_at = max(first_orphaned_at, excluded.first_orphaned_at)`,
 	).bind(newId("sco"), now, now, input.key, input.storeId);
 	const upsert = lease
 		? env.DB.prepare(

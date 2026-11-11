@@ -76,6 +76,9 @@ const BACKUP_TABLES: DatabaseBackupTable[] = [
 	"drive_links",
 	"drive_settings",
 	"drive_user_quotas",
+	// Linked WebDAV folders (migration 0107), exported without their app passwords (`redactBackupRow`) and restored
+	// waiting for their owner to enter it again.
+	"drive_mounts",
 	"auto_reply_deliveries",
 	"spam_token_stats",
 	"spam_reputation",
@@ -165,6 +168,8 @@ const INTERNAL_TABLES = [
 	// Drive multipart parts of uploads in progress: the store's upload ids they
 	// name do not survive a restore, so the parts would only point at nothing.
 	"drive_upload_parts",
+	// Leases of uploads to linked WebDAV folders in progress (migration 0107): they end with their request.
+	"drive_mount_uploads",
 	// Storage migration jobs: transient work that points at the live stores, so replaying one into a
 	// restored database would restart a copy between stores that may no longer match.
 	"storage_migrations",
@@ -194,8 +199,9 @@ const INTERNAL_TABLES = [
 	// The bookkeeping of "Save receipts for existing payments" (migration 0102): a cursor over this
 	// database's own finance rows, meaningless in another database.
 	"finance_receipt_backfills",
-	// The direct-uploads setup note and the dismissed reminder (migration 0085): the outcome of this deployment's own
-	// R2 setup, not user data, so a restore into another install must not carry it over.
+	// The direct-uploads setup note and the dismissed reminder (migration 0085), the orphan scan's cursor and the
+	// leftover cleanup's settings and last run (migration 0108): this deployment's own state, not user data, so a
+	// restore into another install must not carry it over.
 	"storage_state",
 	// Usage statistics: the install id identifies this deployment, so a restore into another one must not clone it,
 	// and the choice, the notice and its start day stay those of the deployment restored into.

@@ -74,6 +74,7 @@ const LATER_MIGRATIONS = [
 	"0105_add_external_account_oauth.sql",
 	"0106_add_mcp_oauth.sql",
 	"0107_add_drive_mounts.sql",
+	"0108_add_cold_leftover_cleanup.sql",
 	"0109_add_finance_payment_category.sql",
 	"0110_add_semantic_embedding_origin.sql",
 ];

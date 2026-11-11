@@ -10,6 +10,7 @@ import { SkeletonRows } from "@/components/ui/skeleton";
 import { AttachmentStorageCard } from "./attachment-storage-card";
 import { ColdStorageCard } from "./cold-storage-card";
 import { DataRoutes } from "./data-routes";
+import { DeleteLeftovers, LeftoversCard } from "./leftovers-card";
 import { MigrationsCard } from "./migrations-card";
 import { StepList } from "./step-list";
 import { DirectUploadsDialog, StoreDialog } from "./store-dialog";
@@ -17,6 +18,7 @@ import type { StorageOverview, StoreView, ValidationStep } from "./types";
 import {
 	CLASS_LABELS,
 	STORAGE_QUERY_KEY,
+	StorageRequestError,
 	errorText,
 	fetchStorageOverview,
 	formatCheckedAt,
@@ -31,17 +33,47 @@ import { PageHeader } from "@/components/ui/page";
 
 type DialogState = { store: StoreView | null; binding?: boolean } | null;
 
+/** "N leftover copies from cold storage moves" under a store, with its own "Delete leftovers". */
+function StoreLeftovers({
+	storeId,
+	label,
+	count,
+	graceDays,
+	onChanged,
+}: {
+	storeId: string;
+	label: string;
+	count: number;
+	graceDays: number;
+	onChanged: () => void;
+}) {
+	return (
+		<div data-store-leftovers={storeId} className="flex flex-wrap items-start gap-3 empty:hidden">
+			{count > 0 && (
+				<p className="flex-1 pt-1 text-xs text-neutral-500">
+					{count.toLocaleString()} leftover {count === 1 ? "copy" : "copies"} from cold storage moves.
+				</p>
+			)}
+			<DeleteLeftovers storeId={storeId} label={label} count={count} graceDays={graceDays} onDone={onChanged} />
+		</div>
+	);
+}
+
 function StoreRow({
 	store,
+	graceDays,
 	onEdit,
 	onChanged,
 }: {
 	store: StoreView;
+	graceDays: number;
 	onEdit: (store: StoreView) => void;
 	onChanged: () => void;
 }) {
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+	// Set when deleting the store failed only because of leftover copies: the row then offers the cleanup.
+	const [onlyLeftovers, setOnlyLeftovers] = useState(false);
 	const [steps, setSteps] = useState<ValidationStep[] | null>(null);
 	const [checkedAt, setCheckedAt] = useState<Date | null>(null);
 	const badge = statusBadge(store);
@@ -74,11 +106,13 @@ function StoreRow({
 		if (!confirmed) return;
 		setBusy(true);
 		setError(null);
+		setOnlyLeftovers(false);
 		try {
 			await storageRequest(`/stores/${encodeURIComponent(store.id)}`, { method: "DELETE" });
 			onChanged();
 		} catch (caught) {
 			setError(errorText(caught, "Could not delete the store"));
+			setOnlyLeftovers(caught instanceof StorageRequestError && caught.details.code === "LEFTOVERS_ONLY");
 		} finally {
 			setBusy(false);
 		}
@@ -103,12 +137,6 @@ function StoreRow({
 					{(store.blocked ?? store.lastError) && (
 						<p className="text-sm text-red-600">{store.blocked ?? store.lastError}</p>
 					)}
-					{store.leftoverCount > 0 && (
-						<p className="text-xs text-neutral-500">
-							{store.leftoverCount} leftover {store.leftoverCount === 1 ? "copy" : "copies"} from cold storage moves;
-							cleanup for these arrives in a later release.
-						</p>
-					)}
 				</div>
 				<div className="flex gap-2">
 					<Button size="sm" variant="outline" disabled={busy || !!store.blocked} onClick={() => void test()}>
@@ -129,8 +157,16 @@ function StoreRow({
 			{error && (
 				<p role="alert" className="text-sm text-red-600">
 					{error}
+					{onlyLeftovers && " Delete leftovers removes the ones that are safe to delete; then delete the store again."}
 				</p>
 			)}
+			<StoreLeftovers
+				storeId={store.id}
+				label={store.name}
+				count={store.leftoverCount}
+				graceDays={graceDays}
+				onChanged={onChanged}
+			/>
 			{steps && <StepList steps={steps} checkedAt={checkedAt} />}
 		</li>
 	);
@@ -146,6 +182,7 @@ function StoresCard({
 	onChanged: () => void;
 }) {
 	const { defaultStore } = overview;
+	const { graceDays } = overview.leftovers.settings;
 	const canAdd = overview.encryptionReady;
 	const recommendDirect = defaultStore.kind === "r2" && !defaultStore.directUploads;
 	return (
@@ -163,35 +200,50 @@ function StoresCard({
 				</Button>
 			</div>
 			<ul className="mt-2 divide-y divide-neutral-200">
-				<li data-store="default" className="flex flex-wrap items-center gap-3 py-3">
-					<div className="min-w-48 flex-1">
-						<p className="font-medium text-neutral-900">
-							Default: {defaultStore.name}
-							<span className="ms-2 rounded-md bg-green-600/10 px-2 py-0.5 text-xs font-medium text-green-800">
-								Built in
-							</span>
-						</p>
-						<p className="text-sm text-neutral-500">
-							{defaultStore.kind === "r2"
-								? defaultStore.directUploads
-									? "The Worker's bucket binding. Browsers upload Drive files to it directly."
-									: "The Worker's bucket binding. Drive uploads pass through Kite."
-								: "Files in Kite's data directory. Drive uploads pass through Kite."}
-						</p>
+				<li data-store="default" className="space-y-2 py-3">
+					<div className="flex flex-wrap items-center gap-3">
+						<div className="min-w-48 flex-1">
+							<p className="font-medium text-neutral-900">
+								Default: {defaultStore.name}
+								<span className="ms-2 rounded-md bg-green-600/10 px-2 py-0.5 text-xs font-medium text-green-800">
+									Built in
+								</span>
+							</p>
+							<p className="text-sm text-neutral-500">
+								{defaultStore.kind === "r2"
+									? defaultStore.directUploads
+										? "The Worker's bucket binding. Browsers upload Drive files to it directly."
+										: "The Worker's bucket binding. Drive uploads pass through Kite."
+									: "Files in Kite's data directory. Drive uploads pass through Kite."}
+							</p>
+						</div>
+						{recommendDirect && (
+							<Button
+								size="sm"
+								variant="outline"
+								disabled={!canAdd}
+								onClick={() => onDialog({ store: null, binding: true })}
+							>
+								Enable direct uploads
+							</Button>
+						)}
 					</div>
-					{recommendDirect && (
-						<Button
-							size="sm"
-							variant="outline"
-							disabled={!canAdd}
-							onClick={() => onDialog({ store: null, binding: true })}
-						>
-							Enable direct uploads
-						</Button>
-					)}
+					<StoreLeftovers
+						storeId={defaultStore.id}
+						label={defaultStore.name}
+						count={defaultStore.leftoverCount}
+						graceDays={graceDays}
+						onChanged={onChanged}
+					/>
 				</li>
 				{overview.stores.map((store) => (
-					<StoreRow key={store.id} store={store} onEdit={(entry) => onDialog({ store: entry })} onChanged={onChanged} />
+					<StoreRow
+						key={store.id}
+						store={store}
+						graceDays={graceDays}
+						onEdit={(entry) => onDialog({ store: entry })}
+						onChanged={onChanged}
+					/>
 				))}
 			</ul>
 		</section>
@@ -257,6 +309,7 @@ export function StorageAdmin() {
 					<DataRoutes overview={data} onChanged={refresh} />
 					<MigrationsCard overview={data} onChanged={refresh} />
 					<ColdStorageCard overview={data} />
+					<LeftoversCard overview={data} onChanged={refresh} />
 				</>
 			)}
 			{data && <AttachmentStorageCard />}

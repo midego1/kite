@@ -517,8 +517,8 @@ test("the five-minute maintenance marks an unreferenced cold copy a candidate, a
 	assert.ok(location(env, "inbound/old.eml"), "the location survives being marked a candidate");
 	assert.ok(orphan(env, "inbound/old.eml", "sto_target"), "recorded as an orphan candidate");
 
-	// This PR deletes no leftover copy at all, automatically or manually (round-9 review): the cron never
-	// deletes anything, however much later it runs, and marking it again changes nothing either.
+	// The orphan scan only marks, and the automatic leftover cleanup is off by default: the cron never deletes
+	// anything, however much later it runs, and marking it again changes nothing either.
 	await cold.runStorageColdMaintenance(env, new Date((NOW + GRACE_PERIOD_DAY * DAY) * 1000));
 	assert.equal(target().has("inbound/old.eml"), true, "still untouched");
 	assert.ok(orphan(env, "inbound/old.eml", "sto_target"));
@@ -622,19 +622,19 @@ test("a migration that copies a cold-moved object back into the new hot store dr
 	assert.equal(await (await routed.get("inbound/old.eml")).text(), "raw old", "still reads fine through the chain");
 
 	// The cold copy the migration left behind on sto_target still physically exists, though: it is tracked as
-	// an orphan candidate (L1) rather than silently forgotten, which also still blocks deleting that store,
-	// isolated here from the (already covered elsewhere) rule-still-targets-it block.
+	// an orphan candidate (L1) rather than silently forgotten, which also still blocks deleting that store
+	// (as a leftover, so the refusal offers "Delete leftovers"), isolated here from the rule-still-targets-it block.
 	assert.ok(orphan(env, "inbound/old.eml", "sto_target"), "the leftover copy is tracked for cleanup");
 	env.DB.db.prepare("DELETE FROM storage_cold_rules").run();
-	assert.match(await cold.coldReferenceBlocking(env, "sto_target"), /later release/);
+	assert.equal(await cold.coldReferenceBlocking(env, "sto_target"), null);
+	assert.equal((await stores.deleteStore(env, actor, "sto_target")).code, "LEFTOVERS_ONLY");
 	assert.ok(target().has("inbound/old.eml"), "the bytes are still there, not yet deleted");
 
-	// This PR deletes no leftover copy at all, automatically or manually (round-9 review): the block, the
-	// candidate and the bytes all remain exactly as they are no matter how much later the cron runs.
+	// The automatic leftover cleanup is off by default: the cron alone never deletes the copy.
 	await cold.runStorageColdMaintenance(env, new Date(Date.now() + GRACE_PERIOD_DAY * DAY * 1000));
 	assert.ok(target().has("inbound/old.eml"), "still not deleted");
 	assert.ok(orphan(env, "inbound/old.eml", "sto_target"));
-	assert.match(await cold.coldReferenceBlocking(env, "sto_target"), /later release/, "still refused");
+	assert.equal((await stores.deleteStore(env, actor, "sto_target")).code, "LEFTOVERS_ONLY", "still refused");
 	assert.equal(await (await routed.get("inbound/old.eml")).text(), "raw old", "still reads fine from the hot store");
 });
 
@@ -663,17 +663,16 @@ test("a losing mover's copy, when two deliveries raced to different targets for 
 	assert.equal(location(env, key).store_id, "sto_b", "the second write is what the row names");
 	assert.ok(orphan(env, key, "sto_a"), "the first target's now-untracked copy is a candidate");
 	assert.equal(orphan(env, key, "sto_b"), undefined, "the winner was never touched");
-	assert.match(await cold.coldReferenceBlocking(env, "sto_a"), /later release/, "blocks deleting the loser's store");
+	assert.equal(await cold.coldOrphanCount(env, "sto_a"), 1, "blocks deleting the loser's store");
 	// sto_b is separately blocked too, for the usual reason (it holds the live location) rather than a
 	// candidate of its own: the winner was never marked.
 	assert.match(await cold.coldReferenceBlocking(env, "sto_b"), /sweep moved here/);
 
-	// This PR deletes no leftover copy at all, automatically or manually (round-9 review): the loser's copy,
-	// the winner and both blocks all remain exactly as they are no matter how much later the cron runs.
+	// With the automatic leftover cleanup off (the default), the cron alone never deletes the loser's copy.
 	await cold.runStorageColdMaintenance(env, new Date(Date.now() + GRACE_PERIOD_DAY * DAY * 1000));
 	assert.equal(fake.buckets.get("kite-target").objects.has(key), true, "the loser's bytes are still there");
 	assert.ok(orphan(env, key, "sto_a"));
-	assert.match(await cold.coldReferenceBlocking(env, "sto_a"), /later release/, "still refused");
+	assert.equal(await cold.coldOrphanCount(env, "sto_a"), 1, "still refused");
 	assert.equal(location(env, key).store_id, "sto_b", "the winning row is untouched throughout");
 	assert.equal(
 		Buffer.from(fake.buckets.get("kite-target-2").objects.get(key).bytes).toString("utf8"),
@@ -1054,8 +1053,8 @@ test("B2: a move back onto a store that already holds an unrelated, inert orphan
 	await setColdRule(env, "mail", { afterDays: 30, target: "sto_c" });
 
 	// The five-minute maintenance genuinely runs in the middle of the move, after its confirming HEAD and
-	// before its own record, not merely before or after it: it only ever marks (nothing in this PR deletes a
-	// candidate, round-9 review), so it cannot disturb the move, and the stale candidate on sto_c stays inert.
+	// before its own record, not merely before or after it: with the leftover cleanup off (the default) it only
+	// ever marks, so it cannot disturb the move, and the stale candidate on sto_c stays inert.
 	interleaveBeforeRecord(env, () => cold.runStorageColdMaintenance(env, new Date(NOW * 1000)));
 	await cold.runColdStorageSweep(env, new Date(NOW * 1000));
 	await drain(env, queue);
@@ -1365,7 +1364,7 @@ test("m3: the shortcut marks a copy still on the normal chain a candidate, inste
 	assert.ok(orphan(env, key, "default"), "the normal chain's own copy is marked a candidate instead");
 });
 
-test("B6: no code path in this PR ever deletes an orphan candidate's copy, however long it has been marked", async (t) => {
+test("B6: with the automatic leftover cleanup off (the default), maintenance never deletes a candidate's copy, however long it has been marked", async (t) => {
 	const { env, queue } = await fixture(t);
 	await addStore(env, "sto_a", "kite-target");
 	await addStore(env, "sto_b", "kite-target-2");
@@ -1428,8 +1427,8 @@ test("B6: no code path in this PR ever deletes an orphan candidate's copy, howev
 		"the winner is never touched either",
 	);
 
-	// The deletion machinery itself was removed, not just left unreached: nothing exported from either module
-	// offers a way to delete a tracked candidate's copy.
+	// The round-9 deletion machinery is gone for good: the only deleter is the lease-holding leftover cleanup
+	// (`cold-leftovers.ts`, tests/storage-cold-leftovers.test.mjs).
 	for (const name of [
 		"purgeColdOrphans",
 		"purgeOrphanCandidates",
@@ -1712,6 +1711,9 @@ test("n2: object deletes in the cold storage code stay limited to the mover's ow
 		"src/lib/storage/cold-utils.ts": 0,
 		"src/lib/storage/cold-rules.ts": 0,
 		"src/lib/storage/cold-move.ts": 2,
+		// The leftover cleanup's one object delete, right after `confirmLeftoverClaim` (tests/storage-cold-leftovers.test.mjs).
+		"src/lib/storage/cold-leftovers.ts": 1,
+		"src/lib/storage/cold-leftovers-utils.ts": 0,
 	};
 	for (const [file, count] of Object.entries(allowed)) {
 		const source = readFileSync(join(root, file), "utf8");

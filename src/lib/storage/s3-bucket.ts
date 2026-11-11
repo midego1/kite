@@ -238,14 +238,18 @@ export class S3Bucket {
 		return new S3Object(key, new Response(null, { headers: http }), length);
 	}
 
-	/** Deletes up to 10 keys at a time in parallel, as upstream does; a key that is already gone is fine. */
-	async delete(keys: string | string[]): Promise<void> {
+	/** Deletes up to 10 keys at a time in parallel, as upstream does; a key that is already gone is fine. A
+	 * `timeoutMs` bounds each request, for a caller whose right to delete only lasts so long. */
+	async delete(keys: string | string[], options?: { timeoutMs?: number }): Promise<void> {
 		const list = Array.isArray(keys) ? keys : [keys];
 		for (let index = 0; index < list.length; index += 10) {
 			await Promise.all(
 				list.slice(index, index + 10).map(async (key) => {
 					try {
-						await this.request(key, { method: "DELETE" });
+						await this.request(key, {
+							method: "DELETE",
+							...(options?.timeoutMs ? { timeoutMs: options.timeoutMs } : {}),
+						});
 					} catch (error) {
 						if (!isMissing(error)) throw error;
 					}

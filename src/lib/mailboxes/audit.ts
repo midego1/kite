@@ -4,7 +4,7 @@ import { newId } from "@/lib/ids";
 import { runInChunks } from "@/db/chunk-utils";
 import type { AuditLogInput } from "./types";
 
-export async function createAuditLog(env: CloudflareEnv, input: AuditLogInput): Promise<void> {
+export async function createAuditLog(env: Pick<CloudflareEnv, "DB">, input: AuditLogInput): Promise<void> {
 	const db = getDb(env);
 	await db.insert(auditLogs).values({
 		id: newId("aud"),

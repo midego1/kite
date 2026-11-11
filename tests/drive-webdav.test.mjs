@@ -724,7 +724,13 @@ test("a compressed part of a file is refused, a compressed whole file loses its 
 	const whole = dav.proxiedFile(
 		new Response(body(), {
 			status: 200,
-			headers: { "content-encoding": "gzip", "content-type": "text/plain", "content-length": "3", etag: '"e1"' },
+			headers: {
+				"content-encoding": "gzip",
+				"content-type": "text/plain",
+				"content-length": "3",
+				"accept-ranges": "bytes",
+				etag: '"e1"',
+			},
 		}),
 		"a.txt",
 		false,
@@ -732,6 +738,7 @@ test("a compressed part of a file is refused, a compressed whole file loses its 
 	);
 	assert.equal(whole.status, 200);
 	assert.equal(whole.headers.get("content-length"), null);
+	assert.equal(whole.headers.get("accept-ranges"), null, "a decoded body offers no byte ranges");
 	assert.equal(whole.headers.get("etag"), '"e1"');
 	assert.equal(await whole.text(), "hello");
 

@@ -473,6 +473,9 @@ async function successorKey(refreshToken: string, usage: KeyUsage): Promise<Cryp
 	return crypto.subtle.importKey("raw", material, "AES-GCM", false, [usage]);
 }
 
+/** Marks a pair sealed with `successorBinding` as its additional data. */
+const BOUND_SUCCESSOR_PREFIX = "v2.";
+
 /** The additional data a sealed pair is bound to: its grant and the rotated token's row, so it opens nowhere else. */
 const successorBinding = async (refreshToken: string, keyId: string) =>
 	new TextEncoder().encode(`${keyId}:${await hashOAuthToken(refreshToken)}`);
@@ -488,19 +491,26 @@ export async function sealSuccessor(refreshToken: string, keyId: string, pair: S
 	const bytes = new Uint8Array(iv.length + sealed.byteLength);
 	bytes.set(iv);
 	bytes.set(new Uint8Array(sealed), iv.length);
-	return base64Url(bytes);
+	return `${BOUND_SUCCESSOR_PREFIX}${base64Url(bytes)}`;
 }
 
-/** The pair `sealSuccessor` sealed, or null when the token, the grant or the value does not fit. */
+/**
+ * The pair `sealSuccessor` sealed, or null when the token, the grant or the value does not fit. A value without the
+ * prefix was sealed before pairs were bound to their grant; it opens without additional data, and the five-minute
+ * run drops such values within minutes of a deploy.
+ */
 export async function openSuccessor(
 	refreshToken: string,
 	keyId: string,
 	sealed: string,
 ): Promise<SuccessorPair | null> {
 	try {
-		const bytes = Uint8Array.from(atob(sealed.replace(/-/g, "+").replace(/_/g, "/")), (char) => char.charCodeAt(0));
+		const bound = sealed.startsWith(BOUND_SUCCESSOR_PREFIX);
+		const encoded = bound ? sealed.slice(BOUND_SUCCESSOR_PREFIX.length) : sealed;
+		const bytes = Uint8Array.from(atob(encoded.replace(/-/g, "+").replace(/_/g, "/")), (char) => char.charCodeAt(0));
+		const additional = bound ? { additionalData: await successorBinding(refreshToken, keyId) } : {};
 		const opened = await crypto.subtle.decrypt(
-			{ name: "AES-GCM", iv: bytes.slice(0, 12), additionalData: await successorBinding(refreshToken, keyId) },
+			{ name: "AES-GCM", iv: bytes.slice(0, 12), ...additional },
 			await successorKey(refreshToken, "decrypt"),
 			bytes.slice(12),
 		);

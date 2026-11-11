@@ -486,6 +486,24 @@ test("successor pairs are sealed with the rotated token, bound to their grant, a
 	assert.equal(await m.openSuccessor("kite_rt_old", "key_1", "garbage"), null);
 	// The additional data binds it to the grant: the right token on another grant's row does not open it.
 	assert.equal(await m.openSuccessor("kite_rt_old", "key_2", sealed), null);
+	// Stripping the marker does not downgrade a bound value to one opened without additional data.
+	assert.ok(sealed.startsWith("v2."));
+	assert.equal(await m.openSuccessor("kite_rt_old", "key_1", sealed.slice(3)), null);
+	// A pair sealed before the binding (no marker, no additional data) still opens during its minute after a deploy.
+	const key = await crypto.subtle.importKey(
+		"raw",
+		await crypto.subtle.digest("SHA-256", new TextEncoder().encode("kite-mcp-successor:kite_rt_old")),
+		"AES-GCM",
+		false,
+		["encrypt"],
+	);
+	const iv = crypto.getRandomValues(new Uint8Array(12));
+	const ciphertext = new Uint8Array(
+		await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(JSON.stringify(pair))),
+	);
+	const legacy = Buffer.concat([iv, ciphertext]).toString("base64url");
+	assert.deepEqual(await m.openSuccessor("kite_rt_old", "key_2", legacy), pair);
+	assert.equal(await m.openSuccessor("kite_rt_other", "key_2", legacy), null);
 });
 
 test("the sealed grace pair is dropped by the five-minute run once its minute is over", async (t) => {
@@ -713,6 +731,15 @@ test("a registration keeps only a keyed hash of its network, and only until it i
 			new Date(),
 		);
 		await exchange(env, client, code);
+		assert.equal(
+			database.db.prepare("SELECT network FROM mcp_oauth_clients WHERE id = ?").get(client.id).network,
+			null,
+		);
+		// A registration used before that change kept its network; the daily pruning clears it.
+		database.db
+			.prepare("UPDATE mcp_oauth_clients SET network = 'old-unkeyed-hash', last_used_at = ? WHERE id = ?")
+			.run(Math.floor(Date.now() / 1000), client.id);
+		await m.pruneMcpOAuth(env, new Date());
 		assert.equal(
 			database.db.prepare("SELECT network FROM mcp_oauth_clients WHERE id = ?").get(client.id).network,
 			null,

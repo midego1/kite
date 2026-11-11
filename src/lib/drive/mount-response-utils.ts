@@ -28,7 +28,9 @@ export function proxiedFile(upstream: Response, name: string, download: boolean,
 		const value = upstream.headers.get(header);
 		if (value) headers.set(header, value);
 	}
-	if (upstream.headers.get("accept-ranges") !== "bytes" && upstream.status !== 206) headers.delete("Accept-Ranges");
+	// A decoded body has no byte offsets of its own to serve ranges from.
+	if (decoded || (upstream.headers.get("accept-ranges") !== "bytes" && upstream.status !== 206))
+		headers.delete("Accept-Ranges");
 	const body = method === "HEAD" || !upstream.body ? null : timedBody(upstream.body);
 	if (!body) void upstream.body?.cancel().catch(() => undefined);
 	return new Response(body, { status: upstream.status, headers });

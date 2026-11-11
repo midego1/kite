@@ -375,6 +375,8 @@ export async function pruneMcpOAuthRows(
 	await db.batch([
 		db.prepare("DELETE FROM mcp_oauth_codes WHERE expires_at < ?").bind(at - 24 * 60 * 60),
 		db.prepare("DELETE FROM mcp_oauth_tokens WHERE expires_at < ?").bind(at),
+		// A registration in use keeps no network; this also clears ones used before the first grant cleared it.
+		db.prepare("UPDATE mcp_oauth_clients SET network = NULL WHERE network IS NOT NULL AND last_used_at IS NOT NULL"),
 		// The five-minute run (clearExpiredSuccessors) normally got there first.
 		db
 			.prepare("UPDATE mcp_oauth_tokens SET successor = NULL WHERE successor IS NOT NULL AND rotated_at < ?")

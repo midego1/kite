@@ -171,6 +171,17 @@ test("the owner sets up Google sign-in; a user connects Gmail, receives, sends, 
 		await expect(page.getByText("Google account reconnected.")).toBeVisible();
 		await expect.poll(async () => (await readAccounts(user.api))[0].status).toBe("active");
 
+		// Moving the saved account to an app password needs that password; changing one's mind keeps Google.
+		await row.getByRole("button", { name: "Edit" }).click();
+		const switching = page.getByRole("dialog", { name: `Edit ${address}` });
+		await switching.getByRole("button", { name: "Use an app password instead" }).click();
+		await switching.getByLabel("Your Kite password").fill(AUTO_READ_ACCOUNT_PASSWORD);
+		await expect(switching.getByRole("button", { name: "Save" })).toBeDisabled();
+		await switching.getByRole("button", { name: "Keep signing in with Google" }).click();
+		await expect(switching.getByRole("button", { name: "Sign in with Google again" })).toBeVisible();
+		await switching.getByRole("button", { name: "Cancel" }).click();
+		expect((await readAccounts(user.api))[0].authKind).toBe("oauth_google");
+
 		// A sign-in that was cancelled at Google connects nothing and says so.
 		oauth.denyNext();
 		await page.getByRole("button", { name: "Connect account" }).click();

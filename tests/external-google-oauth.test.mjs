@@ -32,6 +32,7 @@ const {
 	oauthResultPath,
 	classifyConnectionError,
 	oauthSignInFor,
+	switchesToPassword,
 	submitLabel,
 	statusHint,
 } = await bundleModules("kite-external-google-oauth-", [
@@ -47,7 +48,10 @@ const {
 	["oauthAccountPreset, oauthProviderOf, isOAuthProvider", "src/lib/external-accounts/oauth-provider-utils.ts"],
 	["oauthResultMessage, oauthResultPath", "src/lib/external-accounts/oauth-result-utils.ts"],
 	["classifyConnectionError", "src/lib/external-accounts/connection-utils.ts"],
-	["oauthSignInFor, submitLabel, statusHint", "src/components/settings/connected-accounts/connected-accounts-utils.ts"],
+	[
+		"oauthSignInFor, switchesToPassword, submitLabel, statusHint",
+		"src/components/settings/connected-accounts/connected-accounts-utils.ts",
+	],
 ]);
 
 const CLIENT_ID = "123456789012-abcdefghijklmnopqrstuvwxyz012345.apps.googleusercontent.com";
@@ -353,6 +357,12 @@ test("the dialog signs Gmail and Workspace in with Google when it is set up, unl
 	assert.equal(oauthSignInFor("microsoft", { authKind: "oauth_microsoft" }, none), "microsoft");
 	assert.equal(oauthSignInFor("microsoft", null, { microsoft: false, google: true }), null);
 	assert.equal(oauthSignInFor("icloud", null, both), null);
+	// A saved Google account shown with password fields is moving to an app password: that needs the password.
+	assert.equal(switchesToPassword({ authKind: "oauth_google" }, null), true);
+	assert.equal(switchesToPassword({ authKind: "oauth_google" }, "google"), false);
+	assert.equal(switchesToPassword({ authKind: "password" }, null), false);
+	assert.equal(switchesToPassword({ authKind: "oauth_microsoft" }, "microsoft"), false);
+	assert.equal(switchesToPassword(null, null), false);
 	assert.equal(submitLabel(null, false, "google"), "Sign in with Google");
 	assert.equal(submitLabel("oauth", false, "google"), "Opening Google…");
 	assert.equal(submitLabel(null, false, "microsoft"), "Sign in with Microsoft");

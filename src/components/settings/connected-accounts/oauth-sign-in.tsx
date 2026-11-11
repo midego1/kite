@@ -117,27 +117,31 @@ function OAuthSignInFields({
 }
 
 /**
- * Next to the password fields of a Gmail or Workspace account, when the owner set up Google sign-in: **Sign in with
- * Google** connects (or, for a saved account, switches) it without an app password.
+ * Next to the password fields of a Gmail or Workspace account: **Sign in with Google** switches a saved app-password
+ * account to Google sign-in (`startNow`); otherwise a link goes back to the Google view (a new account, or a saved
+ * Google account whose person had chosen an app password instead).
  */
 function GoogleSignInOffer({
-	editing,
+	startNow,
+	keepGoogle,
 	busy,
 	canStart,
 	onSignIn,
 	onChoose,
 }: {
-	editing: boolean;
+	startNow: boolean;
+	/** A saved Google sign-in account: the link keeps it rather than starting a new sign-in. */
+	keepGoogle: boolean;
 	busy: boolean;
 	canStart: boolean;
 	/** A saved account: start the sign-in right away (it needs the Kite password above). */
 	onSignIn?: () => void;
-	/** A new account: switch the dialog back to Sign in with Google. */
+	/** Back to the Google view, without starting a sign-in. */
 	onChoose?: () => void;
 }) {
 	return (
 		<div className="flex flex-wrap items-center gap-2 text-xs text-neutral-500" data-google-sign-in-offer>
-			{editing ? (
+			{startNow ? (
 				<>
 					<span>Or stop using an app password:</span>
 					<Button type="button" variant="outline" size="sm" disabled={busy || !canStart} onClick={onSignIn}>
@@ -147,7 +151,7 @@ function GoogleSignInOffer({
 				</>
 			) : (
 				<button type="button" className="font-medium underline underline-offset-2" onClick={onChoose}>
-					Sign in with Google instead
+					{keepGoogle ? "Keep signing in with Google" : "Sign in with Google instead"}
 				</button>
 			)}
 		</div>
@@ -193,10 +197,13 @@ export function OAuthChoice({
 			/>
 		);
 	}
-	if (!googleSetUp || (form.preset !== "gmail" && form.preset !== "google_workspace")) return null;
+	// A saved Google account can always go back to its sign-in; others need Google sign-in set up, at a Google preset.
+	const savedGoogle = account?.authKind === "oauth_google";
+	if (!savedGoogle && (!googleSetUp || (form.preset !== "gmail" && form.preset !== "google_workspace"))) return null;
 	return (
 		<GoogleSignInOffer
-			editing={!!account}
+			startNow={!!account && !savedGoogle}
+			keepGoogle={savedGoogle}
 			busy={busy}
 			canStart={!!form.kitePassword}
 			onSignIn={account ? () => onSignIn("google", account.id) : undefined}

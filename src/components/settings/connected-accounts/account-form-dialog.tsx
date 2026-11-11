@@ -27,6 +27,7 @@ import {
 	SYNC_INTERVAL_OPTIONS,
 	saveAccount,
 	startProviderSignIn,
+	switchesToPassword,
 } from "./connected-accounts-utils";
 import { OAuthChoice, ProviderLogo } from "./oauth-sign-in";
 
@@ -96,6 +97,8 @@ export function AccountFormDialog({
 	const preset = presets.find((entry) => entry.id === form.preset);
 	const editing = !!account;
 	const oauth = oauthSignInFor(form.preset, account, oauthProviders, preferPassword);
+	// A Google account moving to an app password needs that password, so the form checks it as a new sign-in.
+	const passwordEdit = editing && !switchesToPassword(account, oauth);
 	const { created } = fresh;
 	const mailbox = managed.find((entry) => entry.id === form.mailboxId);
 
@@ -237,7 +240,9 @@ export function AccountFormDialog({
 						</Button>
 						<Button
 							type="submit"
-							disabled={saving !== null || !!fresh.problem || !canSubmitAccountForm(form, editing, preset, !!oauth)}
+							disabled={
+								saving !== null || !!fresh.problem || !canSubmitAccountForm(form, passwordEdit, preset, !!oauth)
+							}
 						>
 							<SubmitLabel saving={saving} editing={editing} oauth={saving === "oauth" ? opening : oauth} />
 						</Button>
@@ -292,7 +297,7 @@ function SignInFields({
 	onPreferPassword: (prefer: boolean) => void;
 	onForwardInstead?: (provider: ForwardingProviderId) => void;
 }) {
-	const editing = !!account;
+	const editing = !!account && !switchesToPassword(account, oauth);
 	return (
 		<>
 			{preset?.passwordSignIn === false && !oauth && onForwardInstead && (

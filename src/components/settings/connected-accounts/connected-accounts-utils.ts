@@ -202,6 +202,17 @@ export function canSubmitAccountForm(
 	return true;
 }
 
+/**
+ * Whether the dialog moves a saved Google sign-in account to an app password (the person chose **Use an app
+ * password instead**): it then needs the new password, like a new account, and the form is not an ordinary edit.
+ */
+export function switchesToPassword(
+	account: Pick<ExternalAccountView, "authKind"> | null,
+	oauth: OAuthProviderId | null,
+): boolean {
+	return !!account && account.authKind !== "password" && !oauth;
+}
+
 /** The provider name on buttons and messages. */
 export const OAUTH_LABELS: Record<OAuthProviderId, string> = { microsoft: "Microsoft", google: "Google" };
 

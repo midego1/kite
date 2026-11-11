@@ -76,6 +76,7 @@ test("the Modules page lists the six modules with their dependencies, capabiliti
 		"mcp:finance-read",
 		"finance.subscription.detected",
 		"finance.subscription.renewal_due",
+		"finance.payment.recorded",
 		"finance.open",
 	])
 		await expect(finance.getByText(item, { exact: true })).toBeVisible();

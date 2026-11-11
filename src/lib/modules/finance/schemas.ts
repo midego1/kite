@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { chatTrackInputSchema, chatTrackOutputSchema } from "@/lib/finance/chat-track-schema";
+import { PAYMENT_CATEGORIES } from "@/lib/finance/category-utils";
 import { financeModelSchema } from "@/lib/finance/model-schema";
+import { listPaymentsInput } from "@/lib/finance/payment-tool-schema";
 import { subscriptionSuggestion } from "@/lib/finance/payload-schema";
 import { toModelExtensionSchema, type ModuleSchemas } from "../schema-utils";
 import {
@@ -16,7 +18,50 @@ const cycle = z.enum(["weekly", "monthly", "quarterly", "yearly"]);
 const status = z.enum(["active", "trial", "cancelled", "expired"]);
 const subscriptionRef = z.object({ kind: z.literal("finance:subscription"), id: z.string() });
 const messageRef = z.object({ kind: z.literal("mail:message"), id: z.string() });
+const paymentRef = z.object({ kind: z.literal("finance:payment"), id: z.string() });
 const money = z.object({ minor: z.number().int(), currency: z.string() });
+const category = z.enum(PAYMENT_CATEGORIES).nullable();
+const paymentDocType = z.enum(["invoice", "payment", "credit", "refund"]);
+const paymentStatus = z.enum(["open", "paid", "refunded", "credited", "failed"]);
+
+const paymentRecorded = z.object({
+	payment: z.object({
+		ref: paymentRef,
+		vendor: z.string(),
+		docType: paymentDocType,
+		status: paymentStatus,
+		amount: money,
+		documentOn: date,
+		category,
+	}),
+	message: messageRef,
+});
+
+const listPayments: ModuleSchemas[string] = {
+	input: listPaymentsInput,
+	output: z.object({
+		payments: z.array(
+			z.object({
+				ref: paymentRef,
+				vendor: z.string(),
+				docType: paymentDocType,
+				status: paymentStatus,
+				amount: money,
+				documentOn: date,
+				category,
+			}),
+		),
+		months: z.array(
+			z.object({
+				month: z.string().regex(/^\d{4}-\d{2}$/),
+				currency: z.string(),
+				paidMinor: z.number().int(),
+				refundedMinor: z.number().int(),
+				openMinor: z.number().int(),
+			}),
+		),
+	}),
+};
 
 const subscriptionPayload = z.object({
 	ref: subscriptionRef,
@@ -142,9 +187,11 @@ export const financeSchemas: ModuleSchemas = {
 		input: z.object({ scheduledTime: z.string().datetime({ offset: true }).optional() }),
 		output: z.object({ resumed: z.number().int().min(0) }),
 	},
-	resolveRefs: resolveRefsSchemas(["finance:subscription"]),
+	resolveRefs: resolveRefsSchemas(["finance:subscription", "finance:payment"]),
 	search: searchSchemas,
+	searchPayments: searchSchemas,
 	list_subscriptions: listSubscriptions,
+	list_payments: listPayments,
 	track_subscription: { input: chatTrackInputSchema, output: chatTrackOutputSchema },
 	previewTrackSubscription: {
 		input: z.object({ tool: z.literal("track_subscription"), input: z.record(z.string(), z.unknown()) }),
@@ -156,4 +203,5 @@ export const financeSchemas: ModuleSchemas = {
 	},
 	subscriptionDetected: { input: subscriptionDetected },
 	renewalDue: { input: renewalDue },
+	paymentRecorded: { input: paymentRecorded },
 };

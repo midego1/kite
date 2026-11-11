@@ -74,9 +74,16 @@ const jmapModule = {
 	],
 };
 
-test("mcp_tool lists Calendar's eight tools and list_subscriptions only while their modules are on", () => {
-	assert.deepEqual(names(listCapabilities("mcp_tool", enabledWith([]))), [...CALENDAR_TOOLS, "list_subscriptions"]);
-	assert.deepEqual(names(listCapabilities("mcp_tool", enabledWith(["calendar"]))), ["list_subscriptions"]);
+test("mcp_tool lists Calendar's eight tools and Money Watch's two only while their modules are on", () => {
+	assert.deepEqual(names(listCapabilities("mcp_tool", enabledWith([]))), [
+		...CALENDAR_TOOLS,
+		"list_payments",
+		"list_subscriptions",
+	]);
+	assert.deepEqual(names(listCapabilities("mcp_tool", enabledWith(["calendar"]))), [
+		"list_payments",
+		"list_subscriptions",
+	]);
 	assert.deepEqual(names(listCapabilities("mcp_tool", enabledWith(["finance"]))), CALENDAR_TOOLS);
 	assert.deepEqual(
 		names(listCapabilities("mcp_tool", enabledWith(["booking", "templates", "import", "finance"]))),
@@ -84,9 +91,10 @@ test("mcp_tool lists Calendar's eight tools and list_subscriptions only while th
 	);
 });
 
-test("assistant_tool lists Calendar's eight tools and Money Watch's two only while their modules are on", () => {
+test("assistant_tool lists Calendar's eight tools and Money Watch's three only while their modules are on", () => {
 	assert.deepEqual(names(listCapabilities("assistant_tool", enabledWith([]))), [
 		...CALENDAR_TOOLS,
+		"list_payments",
 		"list_subscriptions",
 		"track_subscription",
 	]);
@@ -103,7 +111,7 @@ test("jmap_capability and jmap_method list a test-only module's declarations onl
 	assert.deepEqual(names(listCapabilities("jmap_method", ALL)), []);
 });
 
-test("webhook_event lists the six module events, five with Booking off and Money Watch's two with Calendar off", () => {
+test("webhook_event lists the seven module events, six with Booking off and Money Watch's three with Calendar off", () => {
 	assert.deepEqual(names(listCapabilities("webhook_event", enabledWith([]))), [
 		"eventCreated",
 		"eventUpdated",
@@ -111,6 +119,7 @@ test("webhook_event lists the six module events, five with Booking off and Money
 		"appointmentCreated",
 		"subscriptionDetected",
 		"renewalDue",
+		"paymentRecorded",
 	]);
 	assert.deepEqual(names(listCapabilities("webhook_event", enabledWith(["booking"]))), [
 		"eventCreated",
@@ -118,18 +127,20 @@ test("webhook_event lists the six module events, five with Booking off and Money
 		"eventDeleted",
 		"subscriptionDetected",
 		"renewalDue",
+		"paymentRecorded",
 	]);
 	assert.deepEqual(names(listCapabilities("webhook_event", enabledWith(["calendar"]))), [
 		"subscriptionDetected",
 		"renewalDue",
+		"paymentRecorded",
 	]);
 	assert.deepEqual(names(listCapabilities("webhook_event", enabledWith(["calendar", "finance"]))), []);
 });
 
-test("search lists the events and subscriptions providers only while their modules are on", () => {
+test("search lists the events, subscriptions and payments providers only while their modules are on", () => {
 	const sections = (off) => listCapabilities("search", enabledWith(off)).map((item) => item.descriptor.search.section);
-	assert.deepEqual(sections([]), ["events", "subscriptions"]);
-	assert.deepEqual(sections(["calendar"]), ["subscriptions"]);
+	assert.deepEqual(sections([]), ["events", "subscriptions", "payments"]);
+	assert.deepEqual(sections(["calendar"]), ["subscriptions", "payments"]);
 	assert.deepEqual(sections(["finance"]), ["events"]);
 	assert.deepEqual(sections(["calendar", "finance"]), []);
 });
@@ -234,7 +245,7 @@ test("key form options are the core options followed by the declared options of 
 		...optionPairs(CORE_MCP_OPTIONS),
 		["mcp:calendar-read", "Read calendar", "List, search, and inspect events and free time."],
 		["mcp:calendar-write", "Manage calendar", "Create, update, and delete events."],
-		["mcp:finance-read", "Read subscriptions", "List tracked subscriptions and renewals"],
+		["mcp:finance-read", "Read subscriptions and payments", "List tracked subscriptions, renewals and payments"],
 	]);
 	assert.deepEqual(optionPairs(keyScopeOptions("api", CORE_API_OPTIONS, CLIENT_MODULES, on)), [
 		...optionPairs(CORE_API_OPTIONS),

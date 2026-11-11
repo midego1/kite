@@ -1,7 +1,8 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { getDb } from "@/db";
-import { financeSubscriptions } from "@/db/schema/finance";
+import { financePayments, financeSubscriptions } from "@/db/schema/finance";
 import { getEnv } from "@/lib/cloudflare";
+import { selectRows } from "@/lib/db/pending-columns";
 import {
 	forEachIdChunk,
 	idsOfKind,
@@ -15,22 +16,48 @@ import type { CapabilityHandler } from "@/lib/modules/module-types";
 import { isSameOriginPath } from "@/lib/modules/path-utils";
 import { isNoSuchTableError } from "@/lib/modules/state-utils";
 import { financeTablesReady } from "./errors";
+import { paymentTablesReady } from "./payments";
+import { paymentHref, paymentLabel } from "./payment-utils";
 import { subscriptionHref, subscriptionLabel } from "./record-utils";
 
 const KIND = "finance:subscription";
+const PAYMENT_KIND = "finance:payment";
+
+/** The viewer's own payment rows among `ids`, by `finance:payment` ref; a removed row reads as unavailable. */
+async function resolvePayments(ids: string[], userId: string, locale: string, found: Map<string, FoundRef>) {
+	if (ids.length === 0 || !(await paymentTablesReady())) return;
+	const db = getDb(getEnv());
+	await forEachIdChunk(ids, async (chunk) => {
+		const rows = await selectRows(
+			db,
+			financePayments,
+			and(eq(financePayments.userId, userId), isNull(financePayments.removedAt), inArray(financePayments.id, chunk)),
+		);
+		for (const row of rows) {
+			const href = paymentHref(row.id);
+			found.set(refKey(PAYMENT_KIND, row.id), {
+				href: isSameOriginPath(href) ? href : null,
+				label: paymentLabel(row, locale),
+			});
+		}
+	});
+}
 
 /**
- * A subscription is visible to its owner and to nobody else; before migration 0063 every ref reads as
- * unavailable.
+ * A subscription or a payment is visible to its owner and to nobody else; before migration 0063 (0094 for a
+ * payment) every ref reads as unavailable.
  */
 export const resolveFinanceRefs: CapabilityHandler = async (input, ctx) => {
 	const refs = refsOf(input);
 	const userId = viewerId(ctx);
 	const found = new Map<string, FoundRef>();
 	const ids = idsOfKind(refs, KIND);
-	if (!userId || ids.length === 0 || !(await financeTablesReady())) return refsOutput(refs, found);
+	const paymentIds = idsOfKind(refs, PAYMENT_KIND);
+	if (!userId || (ids.length === 0 && paymentIds.length === 0) || !(await financeTablesReady()))
+		return refsOutput(refs, found);
 	const db = getDb(getEnv());
 	try {
+		await resolvePayments(paymentIds, userId, ctx.locale, found);
 		await forEachIdChunk(ids, async (chunk) => {
 			const rows = await db
 				.select({

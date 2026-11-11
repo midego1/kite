@@ -25,6 +25,8 @@ export type PaymentListEntry = {
 	docRef?: string | null;
 	messageId: string | null;
 	subscriptionId: string | null;
+	/** A payment row's category; null for a ledger row and a row without one. */
+	category: string | null;
 };
 
 export type MonthTotal = {

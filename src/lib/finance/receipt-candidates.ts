@@ -178,7 +178,21 @@ async function paymentCandidates(limit: number, userId?: string, createdAfter?: 
 	const now = new Date();
 	const rows = await onReceiptTables(() =>
 		db()
-			.select({ row: financePayments, messageMailboxId: messages.mailboxId })
+			// Named columns, not the whole row: a database before migration 0109 has no `category` yet.
+			.select({
+				row: {
+					id: financePayments.id,
+					userId: financePayments.userId,
+					mailboxId: financePayments.mailboxId,
+					messageId: financePayments.messageId,
+					attachmentId: financePayments.attachmentId,
+					vendor: financePayments.vendor,
+					docType: financePayments.docType,
+					documentAt: financePayments.documentAt,
+					createdAt: financePayments.createdAt,
+				},
+				messageMailboxId: messages.mailboxId,
+			})
 			.from(financePayments)
 			.leftJoin(messages, eq(messages.id, financePayments.messageId))
 			.where(

@@ -26,7 +26,11 @@ type ColdEnv = StoragePlatformEnv & Pick<CloudflareEnv, "OUTBOUND_QUEUE">;
  * instead of scanning an unindexed column (`N3`); a key that does not parse as its class's shape can never be
  * live, so it is treated as unreferenced without a query.
  */
-async function stillReferenced(env: ColdEnv, objectClass: RoutableClass, key: string): Promise<boolean> {
+export async function stillReferenced(
+	env: Pick<ColdEnv, "DB">,
+	objectClass: RoutableClass,
+	key: string,
+): Promise<boolean> {
 	if (objectClass === "backups") {
 		const id = backupIdFromR2Key(key);
 		if (!id) return false;
@@ -55,6 +59,7 @@ async function stillReferenced(env: ColdEnv, objectClass: RoutableClass, key: st
 		.bind(key)
 		.first<{ found: number }>();
 	if (attachment) return true;
+	if (await queuedSendNames(env, key)) return true;
 	const messageId = messageIdFromHtmlBodyObjectKey(key);
 	if (!messageId) return false;
 	const body = await beforeBodyColumn(
@@ -67,12 +72,28 @@ async function stillReferenced(env: ColdEnv, objectClass: RoutableClass, key: st
 	return !!body;
 }
 
+/** Whether a send still queued (or being sent) names `key` in its payload: belt and braces for the leftover
+ * cleanup, since a queued send reads its attachments when it runs, not when it was queued. */
+async function queuedSendNames(env: Pick<ColdEnv, "DB">, key: string): Promise<boolean> {
+	try {
+		const row = await env.DB.prepare(
+			"SELECT 1 AS found FROM outbound_jobs WHERE status IN ('queued', 'sending') AND instr(payload, ?) > 0 LIMIT 1",
+		)
+			.bind(key)
+			.first<{ found: number }>();
+		return !!row;
+	} catch (error) {
+		if (isNoSuchTableError(error)) return false;
+		throw error;
+	}
+}
+
 const PRUNE_BATCH = 200;
 /** How long after a restore finishes (or while one is active) the sweep skips a run entirely: a restore's
  * "deletes" segment empties `messages`, `message_attachments`, `drive_items` and `backups` before writing them
  * back, possibly over several queue invocations, and the rollback path does the same; `object_locations` is a
  * merge table, so a sweep mid-restore would otherwise see every cold key as briefly unreferenced. */
-const RESTORE_COOLDOWN_MS = 60 * 60 * 1000;
+export const RESTORE_COOLDOWN_MS = 60 * 60 * 1000;
 
 /**
  * Whether a restore is running, needs recovery, or finished recently enough that the sweep should stay out of
@@ -81,7 +102,7 @@ const RESTORE_COOLDOWN_MS = 60 * 60 * 1000;
  * and until that completes (clearing the flag) a row this sweep would see as unreferenced may simply not be
  * written back yet, the same risk the active-restore and cooldown checks below exist for.
  */
-async function restoreRanRecently(env: ColdEnv, now: number): Promise<boolean> {
+async function restoreRanRecently(env: Pick<ColdEnv, "BUCKET">, now: number): Promise<boolean> {
 	const stored = await readRestoreJob(env.BUCKET);
 	if (!stored) return false;
 	if (isActiveRestore(stored.job) || stored.job.needsRecovery) return true;
@@ -174,7 +195,7 @@ async function scanForOrphanCandidates(env: ColdEnv, now: Date): Promise<{ check
 			if (await stillReferenced(env, row.objectClass, row.key)) continue;
 			await markOrphanCandidate(
 				env,
-				{ storeId: row.storeId, key: row.key, objectClass: row.objectClass, movedAt: row.movedAt },
+				{ storeId: row.storeId, key: row.key, objectClass: row.objectClass, movedAt: row.movedAt, unreferenced: true },
 				now,
 			);
 		} catch {
@@ -189,25 +210,19 @@ async function scanForOrphanCandidates(env: ColdEnv, now: Date): Promise<{ check
 }
 
 /**
- * Marks cold-moved copies nothing live references any more as orphan candidates (`N1`: never deletes anything
+ * Marks cold-moved copies nothing live references any more as leftover candidates (`N1`: never deletes anything
  * on first sighting). Skips the run entirely around a restore, active or recently finished, which could
- * otherwise make every cold key look briefly unreferenced. Called from the five-minute cron.
- *
- * This PR deletes no leftover copy at all, automatically or manually (round-9 review, foreman decision): an
- * earlier round added a manual, per-store "Delete leftovers" admin action running the grace-period, backup-
- * window and lease-fenced deletion the automatic cron used to run on its own, but the round-9 review found it
- * unfenced for a key with no `object_locations` row yet and reproduced the loss of every copy of a live
- * message through it (`B6`). Rather than extend the fencing further, that whole deletion path — the action,
- * its route and its button — was removed; only marking remains, and `countOrphanCandidates` below is read-only.
- * Cleanup of a tracked candidate is a follow-up for a later release. See the PR body.
+ * otherwise make every cold key look briefly unreferenced. Called from the five-minute cron. Deleting a candidate
+ * is the leftover cleanup's (`cold-leftovers.ts`), never this scan's: an earlier deleter here lost the last copy
+ * of a live message for a key with no location row (round-9 review, `B6`), and the cleanup that replaces it
+ * claims every key's lease, creating a row first when there is none.
  */
 export async function pruneOrphanedColdLocations(env: ColdEnv, now = new Date()): Promise<{ checked: number }> {
 	if (await restoreRanRecently(env, now.getTime())) return { checked: 0 };
 	return await scanForOrphanCandidates(env, now);
 }
 
-/** The read-only leftover count Admin → Storage shows next to a store: every orphan candidate currently
- * tracked for it, so an admin can see the backlog without anything in this PR offering to delete it. */
+/** The leftover count Admin → Storage shows next to a store: every candidate currently tracked for it. */
 export async function countOrphanCandidates(env: ColdEnv, storeId: string): Promise<number> {
 	try {
 		const [row] = await getDb(env)

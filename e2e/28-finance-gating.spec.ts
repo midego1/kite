@@ -91,6 +91,7 @@ const FINANCE_ROUTES = [
 	["DELETE", "/api/finance/documents/e2e_probe"],
 	["POST", "/api/finance/detect"],
 	["GET", "/api/finance/badge"],
+	["GET", "/api/finance/payments/export"],
 ] as const;
 const RENEWAL_DUE = "finance.subscription.renewal_due";
 const FINANCE_EVENTS = ["finance.subscription.detected", RENEWAL_DUE];

@@ -3,10 +3,19 @@
 import Link from "next/link";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { MoreHorizontal, Sparkles, WalletCards } from "lucide-react";
+import { paymentCategoryOf } from "@/lib/finance/category-utils";
 import { useT } from "@/lib/i18n/use-t";
 import { cn } from "@/lib/utils";
 import type { PaymentItem, PaymentListStatus } from "./payments-types";
-import { amountText, dayLabel, editable, mailHref, STATUS_LABELS, TYPE_LABELS } from "./payments-utils";
+import {
+	amountText,
+	CATEGORY_LABELS,
+	dayLabel,
+	editable,
+	mailHref,
+	STATUS_LABELS,
+	TYPE_LABELS,
+} from "./payments-utils";
 import { removeWithReceiptsCheck, writeWithUndo } from "./subscription-writes";
 
 const ITEM_CLASS =
@@ -103,6 +112,7 @@ export function PaymentRow({ item, locale, onCorrect, onChanged }: RowProps) {
 	const t = useT();
 	const amount = amountText(item, locale);
 	const assisted = item.modelFields.length > 0;
+	const category = paymentCategoryOf(item.category);
 	return (
 		<li className="flex items-center gap-3 px-4 py-3" data-payment-row={item.id} data-payment-status={item.status}>
 			<div className="min-w-0 flex-1">
@@ -144,6 +154,12 @@ export function PaymentRow({ item, locale, onCorrect, onChanged }: RowProps) {
 							<span dir="ltr" data-payment-sender>
 								{item.sender}
 							</span>
+						</>
+					)}
+					{category && (
+						<>
+							{" · "}
+							<span data-payment-category={category}>{t(CATEGORY_LABELS[category])}</span>
 						</>
 					)}
 					{!item.message || item.message.unavailable ? ` · ${t("Message deleted")}` : ""}

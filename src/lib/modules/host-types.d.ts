@@ -189,7 +189,14 @@ export type HostAiSource = {
 };
 
 export type ModuleHost = {
-	emitWebhook(ctx: CapabilityCallContext, moduleId: ModuleId, event: string, payload: JsonValue): Promise<void>;
+	emitWebhook(
+		ctx: CapabilityCallContext,
+		moduleId: ModuleId,
+		event: string,
+		payload: JsonValue,
+		/** `queued`: the first delivery attempt runs on the queue, so a slow endpoint cannot hold the caller up. */
+		options?: { queued?: boolean },
+	): Promise<void>;
 	invoke(ctx: CapabilityCallContext, moduleId: ModuleId, name: string, input: JsonValue): Promise<CapabilityResult>;
 	modules: { isEnabledFor(ctx: CapabilityCallContext, userId: string, moduleId: ModuleId): Promise<boolean> };
 	resolveRefs(ctx: CapabilityCallContext, refs: RecordRef[]): Promise<HostResolvedRef[]>;

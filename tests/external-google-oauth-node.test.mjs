@@ -63,7 +63,7 @@ const SUB = "110000000000000000001";
 const KITE_PASSWORD = "kite-password-1";
 const KEY = "test-only-invented-encryption-key-0123456789abcdef";
 const ORIGIN = "http://kite.test";
-const tls = createTestCertificate(["imap.gmail.com", "smtp.gmail.com"]);
+const tls = createTestCertificate(["imap.gmail.com", "smtp.gmail.com", "mail.other-provider.test"]);
 const CTX = { viewer: null, requestId: "r", locale: "en", timeZone: "UTC", grants: ["import.run"], trigger: "queue" };
 
 const previousEnv = globalThis.__kiteNodeEnv;
@@ -416,6 +416,32 @@ test("a revoked Google sign-in stops the account at Sign-in failed, and Reconnec
 		startOAuthSignIn(env, other, "google", { accountId: id, kitePassword: KITE_PASSWORD }, ORIGIN),
 	);
 	assert.equal(asOther.status, 404);
+});
+
+test("a reconnect whose account was edited to another provider meanwhile sends the token nowhere", async (t) => {
+	const { db, env, oauth, imap } = await setup(t);
+	await completeOAuthSignIn(env, owner, (await signIn(env)).params);
+	const id = accountRow(db).id;
+	// The reconnect starts; before Google sends the browser back, the account is edited to "Other" with its own server.
+	const { params } = await signIn(env, owner, { accountId: id });
+	await updateExternalAccount(env, owner, id, {
+		address: ADDRESS,
+		preset: "other",
+		mailboxId: "mailbox-a",
+		imap: { host: "mail.other-provider.test", port: 993, security: "tls" },
+		smtp: null,
+		password: "app-password",
+		kitePassword: KITE_PASSWORD,
+	});
+	const tokenRequests = oauth.requests.filter((entry) => entry.kind === "token").length;
+	const xoauth2 = imap.commands.filter((entry) => /AUTHENTICATE XOAUTH2/.test(entry.line)).length;
+	assert.deepEqual(await completeOAuthSignIn(env, owner, params), failed("account_changed"));
+	// The code was not even redeemed, and no IMAP server saw a Google access token.
+	assert.equal(oauth.requests.filter((entry) => entry.kind === "token").length, tokenRequests);
+	assert.equal(imap.commands.filter((entry) => /AUTHENTICATE XOAUTH2/.test(entry.line)).length, xoauth2);
+	const row = accountRow(db);
+	assert.equal(row.auth_kind, "password");
+	assert.equal(row.imap_host, "mail.other-provider.test");
 });
 
 test("a Gmail account switches from an app password to Google sign-in and back", async (t) => {

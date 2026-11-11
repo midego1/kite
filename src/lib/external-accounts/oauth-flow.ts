@@ -194,6 +194,7 @@ export type OAuthCallbackFailure =
 	| "no_refresh_token"
 	| "scopes"
 	| "different_account"
+	| "account_changed"
 	| "imap_refused"
 	| "not_allowed"
 	| "kite_domain"
@@ -412,6 +413,23 @@ const rowServers = (row: ExternalAccountRow, info: OAuthProviderInfo): ServerPai
 	},
 });
 
+/**
+ * The account a reconnect renews, or null for a new one. Its preset is checked again here, as at the start and before
+ * the code is redeemed: an account edited meanwhile to another provider (say "Other", with its own servers) must
+ * never get this provider's access token sent to those servers.
+ */
+async function reconnectTarget(
+	env: CloudflareEnv,
+	actor: AccountActor,
+	pending: PendingSignIn,
+	info: OAuthProviderInfo,
+): Promise<ExternalAccountRow | null> {
+	if (!pending.accountId) return null;
+	const row = await ownAccount(env, actor.id, pending.accountId);
+	if (!info.presets.includes(row.preset)) throw new CallbackFailure("account_changed");
+	return row;
+}
+
 async function complete(
 	env: CloudflareEnv,
 	actor: AccountActor,
@@ -426,8 +444,8 @@ async function complete(
 	await assertAllowed(env, actor.id);
 	const app = await resolveOAuthApp(env, provider);
 	if (!app) throw new CallbackFailure("not_configured");
+	const reconnecting = await reconnectTarget(env, actor, pending, info);
 	const { tokens, identity } = await redeemCode(env, app, pending, code);
-	const reconnecting = pending.accountId ? await ownAccount(env, actor.id, pending.accountId) : null;
 	if (reconnecting && !(await sameOAuthAccount(env, reconnecting, identity)))
 		throw new CallbackFailure("different_account");
 	if (!reconnecting) {

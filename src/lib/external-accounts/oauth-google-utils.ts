@@ -33,7 +33,7 @@ export const GOOGLE_SMTP = { host: "smtp.gmail.com", port: 465, security: "tls" 
  */
 const GOOGLE_ISSUERS = new Set(["https://accounts.google.com", "accounts.google.com"]);
 
-/** An ID token older than this past its `exp` is refused (clock skew between Google and this server). */
+/** Clock skew allowed between Google and this server: for `exp` in the past and `iat` in the future. */
 const ID_TOKEN_SKEW_MS = 5 * 60_000;
 
 /**
@@ -133,17 +133,14 @@ const audienceOf = (aud: unknown): string[] =>
 /**
  * The address and stable user id (`sub`) the ID token names. The token came straight from Google's token endpoint
  * over TLS, so its signature need not be checked (OpenID Connect Core §3.1.3.7); it must be Google's (`iss`), for this
- * client (`aud`, and `azp` when present), not expired, with a verified address (`email_verified`), and, when the owner
- * restricted sign-in to a Workspace domain, from that domain (`hd`, which only Workspace accounts carry). The IMAP
- * sign-in with that address is still the proof that it is the mailbox's.
+ * client (`aud`, and `azp` when present, which it must be when `aud` names several), issued now (`iat` not in the
+ * future) and not expired, with a verified address (`email_verified`), and, when the owner restricted sign-in to a
+ * Workspace domain, from that domain (`hd`, which only Workspace accounts carry). The IMAP sign-in with that address
+ * is still the proof that it is the mailbox's.
  */
 export function googleIdTokenClaims(idToken: string | null, client: GoogleClient, now: Date): GoogleIdentity {
 	const claims = decodeJwtPayload(idToken);
-	if (!claims || typeof claims.iss !== "string" || !GOOGLE_ISSUERS.has(claims.iss))
-		return { ok: false, reason: "no_address" };
-	if (!audienceOf(claims.aud).includes(client.clientId)) return { ok: false, reason: "no_address" };
-	if (claims.azp !== undefined && claims.azp !== client.clientId) return { ok: false, reason: "no_address" };
-	if (typeof claims.exp !== "number" || claims.exp * 1000 < now.getTime() - ID_TOKEN_SKEW_MS)
+	if (!claims || !issuedForClient(claims, client.clientId) || !current(claims, now))
 		return { ok: false, reason: "no_address" };
 	const sub = typeof claims.sub === "string" && /^[\x21-\x7e]{1,255}$/.test(claims.sub) ? claims.sub : null;
 	const verified = claims.email_verified === true || claims.email_verified === "true";
@@ -154,6 +151,24 @@ export function googleIdTokenClaims(idToken: string | null, client: GoogleClient
 		if (hd !== client.hostedDomain) return { ok: false, reason: "wrong_domain" };
 	}
 	return { ok: true, identity: { address, subject: sub } };
+}
+
+/**
+ * Google's token, for this client: a Google issuer, this client among the audiences, and the authorized party this
+ * client when there is one, which there must be when the audiences are several (OpenID Connect Core §2).
+ */
+function issuedForClient(claims: Record<string, unknown>, clientId: string): boolean {
+	if (typeof claims.iss !== "string" || !GOOGLE_ISSUERS.has(claims.iss)) return false;
+	const audience = audienceOf(claims.aud);
+	if (!audience.includes(clientId)) return false;
+	if (claims.azp === undefined) return audience.length === 1;
+	return claims.azp === clientId;
+}
+
+/** Issued now: not expired, and not issued in the future, both within the clock skew. */
+function current(claims: Record<string, unknown>, now: Date): boolean {
+	if (typeof claims.exp !== "number" || claims.exp * 1000 < now.getTime() - ID_TOKEN_SKEW_MS) return false;
+	return typeof claims.iat === "number" && claims.iat * 1000 <= now.getTime() + ID_TOKEN_SKEW_MS;
 }
 
 /** Google's own error on the redirect (`error`): cancelled, blocked by a Workspace policy, or refused. */

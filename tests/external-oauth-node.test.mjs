@@ -67,7 +67,7 @@ const ADDRESS = "someone@outlook.test";
 const KITE_PASSWORD = "kite-password-1";
 const KEY = "test-only-invented-encryption-key-0123456789abcdef";
 const ORIGIN = "http://kite.test";
-const tls = createTestCertificate(["outlook.office365.com", "smtp.office365.com"]);
+const tls = createTestCertificate(["outlook.office365.com", "smtp.office365.com", "mail.other-provider.test"]);
 const CTX = { viewer: null, requestId: "r", locale: "en", timeZone: "UTC", grants: ["import.run"], trigger: "queue" };
 
 const previousEnv = globalThis.__kiteNodeEnv;
@@ -455,6 +455,32 @@ test("an SMTP server that refuses the token answers 535 after its JSON challenge
 	assert.ok(error instanceof SmtpReplyError);
 	assert.equal(error.authFailed, true);
 	assert.ok(!error.message.includes("at-refused"));
+});
+
+test("a Microsoft reconnect whose account was edited to another provider meanwhile sends the token nowhere", async (t) => {
+	const { db, env, oauth, imap } = await setup(t);
+	await completeOAuthSignIn(env, owner, (await signIn(env)).params);
+	const id = accountRow(db).id;
+	const { params } = await signIn(env, owner, { accountId: id });
+	await updateExternalAccount(env, owner, id, {
+		address: ADDRESS,
+		preset: "other",
+		mailboxId: "mailbox-a",
+		imap: { host: "mail.other-provider.test", port: 993, security: "tls" },
+		smtp: null,
+		password: "app-password",
+		kitePassword: KITE_PASSWORD,
+	});
+	const tokenRequests = oauth.requests.filter((entry) => entry.kind === "token").length;
+	const xoauth2 = imap.commands.filter((entry) => /AUTHENTICATE XOAUTH2/.test(entry.line)).length;
+	assert.deepEqual(await completeOAuthSignIn(env, owner, params), {
+		ok: false,
+		reason: "account_changed",
+		provider: "microsoft",
+	});
+	assert.equal(oauth.requests.filter((entry) => entry.kind === "token").length, tokenRequests);
+	assert.equal(imap.commands.filter((entry) => /AUTHENTICATE XOAUTH2/.test(entry.line)).length, xoauth2);
+	assert.equal(accountRow(db).auth_kind, "password");
 });
 
 test("an account edited to sign in with a password at another provider stops being an OAuth account", async (t) => {

@@ -183,6 +183,10 @@ test("the ID token names the user only when it is Google's, for this client, cur
 	assert.deepEqual(refused({ azp: "999-other.apps.googleusercontent.com" }), { ok: false, reason: "no_address" });
 	assert.equal(refused({ aud: [CLIENT_ID, "other"] }).ok, true);
 	assert.deepEqual(refused({ aud: ["other"] }), { ok: false, reason: "no_address" });
+	// Several audiences need the authorized party to name this client; one audience does not.
+	assert.deepEqual(refused({ aud: [CLIENT_ID, "other"], azp: undefined }), { ok: false, reason: "no_address" });
+	assert.equal(refused({ aud: [CLIENT_ID], azp: undefined }).ok, true);
+	assert.equal(refused({ azp: undefined }).ok, true);
 	// An address Google has not verified is not an address Kite connects.
 	for (const email_verified of [false, "false", undefined, 1])
 		assert.deepEqual(refused({ email_verified }), { ok: false, reason: "no_address" }, `verified ${email_verified}`);
@@ -194,6 +198,11 @@ test("the ID token names the user only when it is Google's, for this client, cur
 	assert.deepEqual(refused({ exp: seconds(NOW) - 600 }), { ok: false, reason: "no_address" });
 	assert.equal(refused({ exp: seconds(NOW) - 60 }).ok, true);
 	assert.deepEqual(refused({ exp: undefined }), { ok: false, reason: "no_address" });
+	// Issued in the future (beyond the same skew), or without an issue time.
+	assert.deepEqual(refused({ iat: seconds(NOW) + 600 }), { ok: false, reason: "no_address" });
+	assert.equal(refused({ iat: seconds(NOW) + 60 }).ok, true);
+	assert.deepEqual(refused({ iat: undefined }), { ok: false, reason: "no_address" });
+	assert.deepEqual(refused({ iat: "now" }), { ok: false, reason: "no_address" });
 	// Not a JWT at all.
 	assert.deepEqual(googleIdTokenClaims(null, CLIENT, NOW), { ok: false, reason: "no_address" });
 	assert.deepEqual(googleIdTokenClaims("garbage", CLIENT, NOW), { ok: false, reason: "no_address" });
@@ -328,6 +337,7 @@ test("the page after a Google sign-in names Google, and every failure has its ow
 	assert.match(text("scopes"), /did not grant access to Gmail/);
 	assert.match(text("imap_refused"), /Gmail refused Kite's IMAP sign-in/);
 	assert.match(text("different_account"), /different Google account/);
+	assert.match(text("account_changed"), /changed to another provider while you were signing in/);
 	assert.match(text("address_taken"), /already connected/);
 	for (const reason of ["expired", "admin_consent", "denied", "token", "no_address", "no_refresh_token", "failed"])
 		assert.ok(!/Microsoft/.test(text(reason)), reason);

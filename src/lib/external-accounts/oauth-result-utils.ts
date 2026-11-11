@@ -30,6 +30,8 @@ const MICROSOFT_FAILURE_TEXT: Record<OAuthCallbackFailure, string> = {
 		"Microsoft did not allow Kite to stay signed in (offline access). Ask your admin to check the app's permissions.",
 	scopes: "Microsoft did not grant access to IMAP. Ask your admin to add the IMAP.AccessAsUser.All permission.",
 	different_account: "You signed in with a different Microsoft account than the one you are reconnecting.",
+	account_changed:
+		"The account was changed to another provider while you were signing in, so nothing was reconnected. Open it and try again.",
 	imap_refused:
 		"Microsoft signed you in, but Outlook refused Kite's IMAP sign-in. For a work or school account, an administrator may have to enable IMAP for the mailbox.",
 	not_allowed: "Connected accounts are not available to you right now.",
@@ -55,6 +57,8 @@ const GOOGLE_FAILURE_TEXT: Record<OAuthCallbackFailure, string> = {
 	scopes:
 		"Google did not grant access to Gmail. Connect again and allow Kite to read, compose, send and delete your Gmail mail.",
 	different_account: "You signed in with a different Google account than the one you are reconnecting.",
+	account_changed:
+		"The account was changed to another provider while you were signing in, so nothing was reconnected. Open it and try again.",
 	imap_refused:
 		"Google signed you in, but Gmail refused Kite's IMAP sign-in. For a Google Workspace account, an administrator may have to allow IMAP access.",
 	not_allowed: "Connected accounts are not available to you right now.",

@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { ManagedAccount } from "../types";
 import { fetchManagedAccount } from "../utils";
-import { saveAccountPassword } from "./utils";
+import { resetAccountSecondFactors, saveAccountPassword } from "./utils";
 import { PageHeader } from "@/components/ui/page";
 
 export default function AccountPasswordPage() {
@@ -16,6 +16,26 @@ export default function AccountPasswordPage() {
 	const [password, setPassword] = useState("");
 	const [saving, setSaving] = useState(false);
 	const [message, setMessage] = useState<string | null>(null);
+	const [confirmingReset, setConfirmingReset] = useState(false);
+	const [resetting, setResetting] = useState(false);
+	const [resetMessage, setResetMessage] = useState<string | null>(null);
+
+	async function resetSecondFactors() {
+		if (!account) return;
+		setResetting(true);
+		setResetMessage(null);
+		try {
+			const removed = await resetAccountSecondFactors(account.id);
+			setResetMessage(
+				`Two-factor sign-in reset${removed ? ` and ${removed} passkey${removed === 1 ? "" : "s"} removed` : ""}. This account has been signed out everywhere.`,
+			);
+		} catch (error) {
+			setResetMessage(error instanceof Error ? error.message : "Unable to reset two-factor sign-in");
+		} finally {
+			setResetting(false);
+			setConfirmingReset(false);
+		}
+	}
 
 	useEffect(() => {
 		void fetchManagedAccount(id)
@@ -62,6 +82,40 @@ export default function AccountPasswordPage() {
 				<p role="status" className="text-sm text-neutral-500">
 					{message}
 				</p>
+			)}
+			{account?.editable && (
+				<section
+					aria-labelledby="account-mfa-reset"
+					className="space-y-3 rounded-xl border border-neutral-200 bg-white p-5"
+				>
+					<h2 id="account-mfa-reset" className="text-sm font-semibold text-neutral-900">
+						Two-factor sign-in and passkeys
+					</h2>
+					<p className="text-sm text-neutral-500">
+						For someone who lost their phone or security key: turns off their authenticator app, deletes their recovery
+						codes and passkeys, and signs them out everywhere. They sign in with their password and can set things up
+						again.
+					</p>
+					{confirmingReset ? (
+						<div className="flex flex-wrap gap-3">
+							<Button variant="destructive" disabled={resetting} onClick={() => void resetSecondFactors()}>
+								{resetting ? "Resetting..." : "Confirm reset"}
+							</Button>
+							<Button variant="outline" disabled={resetting} onClick={() => setConfirmingReset(false)}>
+								Cancel
+							</Button>
+						</div>
+					) : (
+						<Button variant="outline" onClick={() => setConfirmingReset(true)}>
+							Reset two-factor and passkeys
+						</Button>
+					)}
+					{resetMessage && (
+						<p role="status" className="text-sm text-neutral-500">
+							{resetMessage}
+						</p>
+					)}
+				</section>
 			)}
 		</div>
 	);

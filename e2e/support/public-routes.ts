@@ -49,6 +49,18 @@ export const PUBLIC_ROUTES: PublicRoute[] = [
 	},
 	{
 		method: "POST",
+		path: "/api/auth/passkey/options",
+		status: 200,
+		reason: "Starts a passkey sign-in: a single-use challenge, bound to the browser by an httpOnly cookie",
+	},
+	{
+		method: "POST",
+		path: "/api/auth/passkey/verify",
+		status: 400,
+		reason: "Passkey sign-in, authenticated by the signed assertion; an empty body is a validation error",
+	},
+	{
+		method: "POST",
 		path: "/api/auth/password-reset/request",
 		status: 400,
 		reason: "Anonymous by definition; an empty body is a validation error",

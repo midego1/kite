@@ -4,6 +4,7 @@ import { getDb } from "@/db";
 import { mfaRecoveryCodes, users } from "@/db/schema";
 import { getBranding } from "@/lib/branding/service";
 import { consumeRecoveryCode, countUnusedRecoveryCodes, issueRecoveryCodes } from "@/lib/auth/recovery-codes";
+import { deleteUserPasskeys } from "@/lib/auth/passkeys";
 import { deleteUserSessions } from "@/lib/auth/session";
 import { buildOtpauthUrl, generateTotpSecret, verifyTotp } from "@/lib/auth/totp";
 import type { MfaEnrollment, MfaStatus } from "@/lib/auth/mfa-types";
@@ -66,6 +67,17 @@ export async function disableMfa(env: CloudflareEnv, userId: string): Promise<vo
 		.set({ totpSecret: null, totpEnabled: false, totpConfirmedAt: null })
 		.where(eq(users.id, userId));
 	await db.delete(mfaRecoveryCodes).where(eq(mfaRecoveryCodes.userId, userId));
+}
+
+/**
+ * An admin's reset for someone who lost their devices: turns TOTP off, deletes the recovery codes and every
+ * passkey, and signs the account out everywhere, so only the password opens it until they set things up again.
+ */
+export async function resetUserSecondFactors(env: CloudflareEnv, userId: string): Promise<{ passkeysRemoved: number }> {
+	await disableMfa(env, userId);
+	const passkeysRemoved = await deleteUserPasskeys(env, userId);
+	await deleteUserSessions(env, userId);
+	return { passkeysRemoved };
 }
 
 /** A login's second step: a TOTP code, or one of the recovery codes as a fallback. */

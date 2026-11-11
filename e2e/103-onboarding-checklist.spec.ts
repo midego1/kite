@@ -144,7 +144,7 @@ test.describe("reaching the checklist after first registration", () => {
 					await waitForHydration(page);
 					await page.getByLabel("Email").fill(`${username}@${domain}`);
 					await page.getByLabel("Password").fill(password);
-					await page.getByRole("button", { name: "Sign in" }).click();
+					await page.getByRole("button", { name: "Sign in", exact: true }).click();
 					await expect(page).toHaveURL(/\/admin$/);
 					await expect(page.getByTestId("onboarding-checklist")).toBeVisible();
 					await expect(page.getByTestId("onboarding-item-mailbox")).toHaveAttribute("data-done", "true");

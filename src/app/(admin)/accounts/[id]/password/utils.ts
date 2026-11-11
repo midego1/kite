@@ -1,3 +1,4 @@
+import { authFetch } from "@/lib/auth/client";
 import { saveManagedAccount } from "../utils";
 import type { PasswordSaveOptions } from "./types";
 
@@ -22,4 +23,12 @@ export async function saveAccountPassword({
 	} finally {
 		setSaving(false);
 	}
+}
+
+/** Turns off the account's two-factor authentication and removes its passkeys and recovery codes. */
+export async function resetAccountSecondFactors(accountId: string): Promise<number> {
+	const res = await authFetch(`/api/accounts/${encodeURIComponent(accountId)}/mfa`, { method: "DELETE" });
+	const data = (await res.json().catch(() => ({}))) as { passkeysRemoved?: number; error?: unknown };
+	if (!res.ok) throw new Error(typeof data.error === "string" ? data.error : "Unable to reset two-factor sign-in");
+	return data.passkeysRemoved ?? 0;
 }

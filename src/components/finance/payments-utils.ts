@@ -1,4 +1,6 @@
 import { formatDecimal, formatMoney } from "@/lib/finance/amount-utils";
+import { paymentCategoryOf, type PaymentCategory } from "@/lib/finance/category-utils";
+import { matchesPaymentFilter } from "@/lib/finance/payment-filter-utils";
 import { msg } from "@/lib/i18n/translator";
 import type { MessageKey, Translate } from "@/lib/i18n/i18n-types";
 import { isSameOriginPath } from "@/lib/modules/path-utils";
@@ -29,6 +31,21 @@ export const STATUS_LABELS: Record<PaymentListStatus, MessageKey> = {
 	credited: msg("payment status|Credited"),
 	failed: msg("payment status|Failed"),
 };
+
+export const CATEGORY_LABELS: Record<PaymentCategory, MessageKey> = {
+	software: msg("category|Software and online services"),
+	shopping: msg("category|Shopping"),
+	food: msg("category|Food and drink"),
+	travel: msg("category|Travel"),
+	utilities: msg("category|Utilities and telecom"),
+	health: msg("category|Health"),
+	entertainment: msg("category|Entertainment"),
+	education: msg("category|Education"),
+	other: msg("category|Other"),
+};
+
+/** The categories in the order the pickers list them. */
+export const CATEGORIES = Object.keys(CATEGORY_LABELS) as PaymentCategory[];
 
 /** The statuses the filter offers, in the order of a payment's life. */
 export const STATUS_FILTERS: readonly PaymentListStatus[] = ["open", "paid", "refunded", "credited", "failed"];
@@ -73,12 +90,18 @@ export function filterOptions(items: readonly PaymentItem[]): { vendors: string[
 }
 
 export function filterPayments(items: readonly PaymentItem[], filters: PaymentFilters): PaymentItem[] {
-	return items.filter(
-		(item) =>
-			(!filters.vendor || item.vendor === filters.vendor) &&
-			(!filters.month || item.documentOn.startsWith(filters.month)) &&
-			(!filters.status || item.status === filters.status),
-	);
+	return items.filter((item) => matchesPaymentFilter(item, filters));
+}
+
+/**
+ * Where the CSV of the rows the filters show comes from (spec §27.4): the export route narrows by the same filters,
+ * so the file holds what the list shows, without the list's 1,000-row cap.
+ */
+export function exportHref(filters: PaymentFilters): string {
+	const params = new URLSearchParams();
+	for (const [key, value] of Object.entries(filters)) if (value) params.set(key, value);
+	const query = params.toString();
+	return `/api/finance/payments/export${query ? `?${query}` : ""}`;
 }
 
 type Bucket = "paidMinor" | "refundedMinor" | "openMinor";
@@ -189,6 +212,7 @@ export function formFromPayment(item: PaymentItem): PaymentForm {
 		documentOn: item.documentOn,
 		docType,
 		status: item.storedStatus === "paid" ? "paid" : "open",
+		category: paymentCategoryOf(item.category) ?? "",
 	};
 }
 
@@ -211,5 +235,11 @@ export function correctionBody(
 	if (form.documentOn !== item.documentOn) fields.documentOn = form.documentOn;
 	if (form.docType !== item.docType) fields.docType = form.docType;
 	if (form.docType === "invoice" && form.status !== item.storedStatus) fields.status = form.status;
+	if (form.category !== (item.category ?? "")) fields.category = form.category || null;
 	return { fields };
+}
+
+/** Whether any filter narrows the list. */
+export function anyFilter(filters: PaymentFilters): boolean {
+	return Boolean(filters.vendor || filters.month || filters.status || filters.category);
 }

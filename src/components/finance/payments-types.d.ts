@@ -1,3 +1,4 @@
+import type { PaymentCategory } from "@/lib/finance/category-utils";
 import type { ResolvedRecordRef } from "@/lib/modules/record-ref-types";
 
 export type PaymentDocType = "invoice" | "payment" | "credit" | "refund" | "failed_payment";
@@ -19,6 +20,8 @@ export type PaymentItem = {
 	vendor: string;
 	amount: { minor: number; currency: string } | null;
 	documentOn: string;
+	/** A payment row's category; null for a subscription document and for a row without one. */
+	category: PaymentCategory | null;
 	subscriptionId: string | null;
 	messageId: string | null;
 	message: ResolvedRecordRef | null;
@@ -57,12 +60,15 @@ export type PaymentList = {
 	months: MonthCurrencyTotal[];
 	/** The list holds only the newest rows. */
 	truncated?: boolean;
+	/** Every payment row and subscription document, whatever the list holds. */
+	total?: number;
 	scan: ScanState | null;
 	scanCoverage: ScanCoverageGap[];
 	migrationPending?: true;
 };
 
-export type PaymentFilters = { vendor: string; month: string; status: PaymentListStatus | "" };
+/** `category` is `""` for all, `none` for rows without one, or a category. */
+export type PaymentFilters = { vendor: string; month: string; status: PaymentListStatus | ""; category: string };
 
 export type MonthCurrencyTotal = {
 	month: string;
@@ -80,4 +86,6 @@ export type PaymentForm = {
 	documentOn: string;
 	docType: "invoice" | "payment" | "credit" | "refund";
 	status: "open" | "paid";
+	/** `""` for no category. */
+	category: PaymentCategory | "";
 };

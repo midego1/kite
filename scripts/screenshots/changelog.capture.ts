@@ -11,10 +11,12 @@ import { apiContext, deliverInbound, postInbound, waitForMessage } from "../../e
 import { turnScreenerOff } from "../../e2e/support/screener";
 import { chooseOption } from "../../e2e/support/select";
 import {
+	RTL_ATTACHMENT_MAIL,
 	RTL_MAIL,
 	seedDemoData,
 	seedPagedMail,
 	seedPaymentsDemo,
+	seedRtlAttachmentMail,
 	seedRtlMail,
 	seedSenderAuthDemo,
 	seedThaiMail,
@@ -344,6 +346,19 @@ const SHOTS: Shot[] = [
 		theme: "light",
 		viewport: { width: 1000, height: 820 },
 		open: openDatabaseUpdateSidebar,
+	},
+	{
+		// RTL audit: an Arabic attachment name reads right to left on its card, like the subject and the sender above it.
+		name: "2026-11-10-rtl-attachment-name-light",
+		viewport: { width: 1280, height: 800 },
+		open: async (page) => {
+			await seedRtlAttachmentMail();
+			await page.goto("/inbox");
+			await page.getByRole("main").getByText(RTL_ATTACHMENT_MAIL.subject, { exact: true }).first().click();
+			await expect(page.getByRole("heading", { level: 1, name: RTL_ATTACHMENT_MAIL.subject })).toBeVisible();
+			await expect(page.locator('[dir="auto"]', { hasText: "فاتورة نوفمبر" }).first()).toBeVisible();
+			return page;
+		},
 	},
 	{
 		// A linked WebDAV folder in Drive: the folder in the Drive menu and its files, proxied from a demo server.
@@ -1346,6 +1361,34 @@ const SHOTS: Shot[] = [
 			await expect(page.locator("[data-payment-row]").first()).toBeVisible();
 			await expect(page.locator("[data-payment-month]").first()).toBeVisible();
 			return page.locator("[data-finance-page]");
+		},
+	},
+	{
+		// Payment categories and the CSV export on the Payments tab: a category beside obvious vendors, the category filter
+		// and the Export CSV button, over the same invented Payments demo data (desktop, then a 375px phone).
+		name: "2026-11-10-money-watch-payment-categories-light",
+		theme: "light",
+		viewport: { width: 1280, height: 900 },
+		open: async (page) => {
+			await seedPaymentsDemo();
+			await page.goto("/finance?tab=payments");
+			await expect(page.locator("[data-payment-row]").first()).toBeVisible();
+			await expect(page.locator("[data-payment-category]").first()).toBeVisible();
+			await expect(page.locator("[data-payment-export]")).toBeVisible();
+			return page.locator("[data-finance-page]");
+		},
+	},
+	{
+		name: "2026-11-10-money-watch-payment-categories-phone-light",
+		theme: "light",
+		viewport: { width: 375, height: 1250 },
+		open: async (page) => {
+			await seedPaymentsDemo();
+			await page.goto("/finance?tab=payments");
+			await expect(page.locator("[data-payment-row]").first()).toBeVisible();
+			await expect(page.locator("[data-payment-category]").first()).toBeVisible();
+			await expect(page.locator("[data-payment-export]")).toBeVisible();
+			return page;
 		},
 	},
 	{

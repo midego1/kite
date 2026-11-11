@@ -229,3 +229,43 @@ test("the whole width of a wide right-to-left mail can be scrolled to, with a de
 		expect(await leftEndReachable(frame.getByText("LEFTEND"))).toBe(true);
 	}
 });
+
+test("an Arabic attachment name, an Arabic search and the attachment viewer read right to left", async ({ page }) => {
+	const token = uniqueToken("rtl-file");
+	const subject = `Invoice attached ${token}`;
+	const filename = "فاتورة الشهر.txt";
+	await deliverInbound(api, {
+		from: `"Ann Lee" <ann-${token}@outside.test>`,
+		to: SUPPORT_ADDRESS,
+		subject,
+		text: "The invoice is attached.",
+		attachments: [
+			{
+				// An RFC 2047 encoded name, as mail clients send a non-ASCII one.
+				filename: `=?UTF-8?B?${Buffer.from(filename).toString("base64")}?=`,
+				contentType: "text/plain; charset=utf-8",
+				content: "invoice",
+			},
+		],
+	});
+
+	await page.goto("/inbox");
+	const row = listRow(page, token);
+	await expect(row).toBeVisible();
+	await row.click();
+	await expect(page).toHaveURL(/\/msg_[\w-]+/);
+	const name = page.locator('[dir="auto"]', { hasText: "فاتورة الشهر" }).first();
+	await expect(name).toBeVisible();
+	expect(await direction(name)).toBe("rtl");
+	await name.click();
+	const title = page.getByRole("dialog").getByRole("heading", { name: filename });
+	await expect(title).toBeVisible();
+	expect(await direction(title)).toBe("rtl");
+	await page.keyboard.press("Escape");
+
+	const search = page.getByRole("textbox", { name: /Search mail/ }).first();
+	await search.fill("فاتورة");
+	expect(await direction(search)).toBe("rtl");
+	await search.fill("invoice");
+	expect(await direction(search)).toBe("ltr");
+});

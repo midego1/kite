@@ -93,7 +93,11 @@ export async function deleteKeys(api: APIRequestContext, ids: { mcp?: string[]; 
 
 export const CALENDAR_EVENTS = ["calendar.event.created", "calendar.event.updated", "calendar.event.deleted"];
 
-export const FINANCE_EVENTS = ["finance.subscription.detected", "finance.subscription.renewal_due"];
+export const FINANCE_EVENTS = [
+	"finance.subscription.detected",
+	"finance.subscription.renewal_due",
+	"finance.payment.recorded",
+];
 
 export type SearchSection = {
 	id: string;

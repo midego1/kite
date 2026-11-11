@@ -801,5 +801,22 @@
 	"Found by meaning, not exact words": "عُثر عليه حسب المعنى، لا حسب الكلمات الحرفية",
 	"Show all {count} keyword matches": "إظهار كل التطابقات حسب الكلمات المفتاحية ({count})",
 	"Showing keyword matches only — search by meaning is unavailable right now.": "يتم عرض التطابقات حسب الكلمات المفتاحية فقط — البحث حسب المعنى غير متوفر حاليًا.",
-	"“Keep receipts” may already have saved a copy of this mail to Drive, under Money Watch/Receipts. Removing this entry does not remove those files.": "ربما حفظت ميزة \"الاحتفاظ بالإيصالات\" نسخة من هذه الرسالة في Drive، تحت Money Watch/Receipts. إزالة هذا العنصر لا تؤدي إلى إزالة تلك الملفات."
+	"“Keep receipts” may already have saved a copy of this mail to Drive, under Money Watch/Receipts. Removing this entry does not remove those files.": "ربما حفظت ميزة \"الاحتفاظ بالإيصالات\" نسخة من هذه الرسالة في Drive، تحت Money Watch/Receipts. إزالة هذا العنصر لا تؤدي إلى إزالة تلك الملفات.",
+	"Export CSV": "تصدير CSV",
+	"An export holds at most 20,000 payments; narrow it with the filters to get the rest.": "يحتوي التصدير على 20000 دفعة كحد أقصى؛ ضيّق النطاق بالمرشحات للحصول على الباقي.",
+	"Category": "الفئة",
+	"All categories": "كل الفئات",
+	"No category": "بلا فئة",
+	"That payment is not listed.": "هذه الدفعة غير مدرجة.",
+	"Showing one payment.": "تُعرض دفعة واحدة.",
+	"Show all payments": "عرض كل الدفعات",
+	"category|Software and online services": "البرمجيات والخدمات عبر الإنترنت",
+	"category|Shopping": "التسوق",
+	"category|Food and drink": "الطعام والشراب",
+	"category|Travel": "السفر",
+	"category|Utilities and telecom": "المرافق والاتصالات",
+	"category|Health": "الصحة",
+	"category|Entertainment": "الترفيه",
+	"category|Education": "التعليم",
+	"category|Other": "أخرى"
 }

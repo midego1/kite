@@ -40,25 +40,27 @@ A feature is done only when all three pass and it has a new or updated test: a `
 
 Make the app usable for Arabic, Hebrew, Persian and Urdu mail and users.
 
-1. **RTL message content**
+All five items have shipped: item 1 in [#352](https://github.com/midego1/kite/pull/352), item 2 in [#355](https://github.com/midego1/kite/pull/355), item 3 in [#359](https://github.com/midego1/kite/pull/359), item 4 in [#360](https://github.com/midego1/kite/pull/360) and item 5 in [#378](https://github.com/midego1/kite/pull/378) (Dutch, with Arabic as an opt-in draft; wording fixes in [#393](https://github.com/midego1/kite/pull/393)). An audit on 2026-11-10 checked every acceptance criterion below against the code and the tests and found them met; it added `dir="auto"` to the few places that still showed text from mail without it: attachment names on their cards and in the viewer, the subject in the undo-send bar, From, To and Subject in the message source dialog, template subjects, the assistant's recent requests by email, and the search fields and results. What is still English (Settings, Admin, the modules' own pages, signed-out pages) is listed in [Translations](docs/translations.md).
+
+1. **RTL message content (shipped in [#352](https://github.com/midego1/kite/pull/352))**
    - Message bodies, subjects, previews and sender names render with `dir="auto"`, so an Arabic email reads right to left inside an English UI.
    - The sandboxed email frame sets `dir="auto"` on its body and keeps the sender's own `dir` attributes.
    - Plain-text messages with RTL text align right.
    - Test: an e2e spec delivers an Arabic and a Hebrew message (inbound helper in `e2e/support/helpers.ts`) and asserts the computed `direction` in the list, the reader and the frame.
-2. **RTL composer**
+2. **RTL composer (shipped in [#355](https://github.com/midego1/kite/pull/355))**
    - The rich-text editor and subject field use `dir="auto"` per paragraph; a toolbar button switches the current paragraph's direction.
    - Sent HTML keeps the `dir` attributes; `htmlToPlainText` output is unchanged for LTR text.
    - Test: unit tests for the HTML helpers in `rich-text-utils.ts`, and an e2e spec that types Arabic, sends it and checks the sent HTML.
-3. **Logical CSS throughout**
+3. **Logical CSS throughout (shipped in [#359](https://github.com/midego1/kite/pull/359))**
    - Replace physical Tailwind utilities (`ml-`, `mr-`, `pl-`, `pr-`, `left-`, `right-`, `text-left`, `rounded-l-` and similar, in about 37 files) with logical ones (`ms-`, `me-`, `ps-`, `pe-`, `start-`, `end-`, `text-start`).
    - Directional icons (chevrons, arrows, the reply icon) flip with `rtl:` variants.
    - Test: a lint rule or unit test that fails on new physical utilities in `src/`.
-4. **RTL interface setting**
+4. **RTL interface setting (shipped in [#360](https://github.com/midego1/kite/pull/360))**
    - A setting in the account menu (next to Reading layout) for interface direction: Automatic (from the browser language), Left to right, Right to left. Stored like the reading layout.
    - The root `<html>` gets `dir` before first paint, with no layout flash.
    - The reading pane divider, sidebar, dropdowns, toasts and dialogs mirror correctly.
    - Test: e2e spec switches to RTL and checks the sidebar sits on the right, the divider still resizes, and the account menu opens in place.
-5. **Interface translations (foundation)** (see [Translations](docs/translations.md))
+5. **Interface translations (foundation) (shipped in [#378](https://github.com/midego1/kite/pull/378))** (see [Translations](docs/translations.md))
    - Introduce a small message catalog (no heavy dependency) with English as the source and one RTL language as the first translation.
    - Start with the shell: sidebar, account menu, message list, reader toolbar, composer.
    - Dates and times use `Intl` with the user's locale.
@@ -198,9 +200,10 @@ Shipped in [#50](https://github.com/midego1/kite/pull/50), specified in [docs/sp
    - A document ledger: one entry per invoice, payment, credit note, refund or failed payment, linked to its message and attachment (a reference, never a copy), with a "paid in the last 12 months" total per currency.
    - Renewal and trial reminders from a module cron task: a realtime notice, the Subscriptions sidebar count and, through a new Calendar service, a calendar event.
    - The `list_subscriptions` tool, a search section, the `finance:subscription` record kind and the webhook events `finance.subscription.detected` and `finance.subscription.renewal_due`. Migration 0063; both tables are in the backup lists.
+   - **Payments by mail**: one-off receipts, invoices, refunds and credit notes found in mail are recorded automatically on the Payments tab (no card, [§25 of the spec](docs/specs/money-watch.md#25-payments-by-mail-one-off-documents)), with a fixed set of categories set only where obvious and editable by hand, a filtered **Export CSV**, the `list_payments` tool (`mcp:finance-read`), the `finance:payment` record kind, a Payments search section and the `finance.payment.recorded` webhook event ([§27](docs/specs/money-watch.md#27-payment-categories-export-and-reach)). Migrations 0094 and 0109.
    - **Keep receipts**: a per-user setting (on by default) lets a background task, every few minutes, file a tracked subscription's, a document's or a payment's mail into the owner's Drive under `Money Watch/Receipts/<year>/` shortly after it is recorded (the mail must stay until the copy is in Drive), so the row keeps working after the mail is gone; a "Save receipts for existing payments" backfill covers rows recorded earlier. See [§26 of the Money Watch spec](docs/specs/money-watch.md#26-keep-receipts-shipped). Migration 0102.
 2. **Later**
-   - One-off purchases and general expense tracking (a receipt with no subscription records nothing today).
+   - Budgets, bank or card connections and currency conversion (general expense tracking beyond payments found in mail).
    - More events (`finance.subscription.updated`, `finance.document.recorded`), assistant write tools, `mailto:` cancel links and automatic updates from renewal invoices once an Act level exists.
 
 ## Milestone 19: Module platform (builtin modules first, sandboxed apps later)

@@ -4,6 +4,7 @@ import { mergeDetection, modelExtensionOf, parseModelExtraction } from "./model-
 import { detectPayment, paymentBlocked } from "./payment-utils";
 import { insertPayment, messageRecorded, paymentId, paymentTablesReady, tracksVendor } from "./payments";
 import { dayToDate } from "./record-utils";
+import { emitPaymentRecorded } from "./webhook-events";
 import type { DetectStepInput } from "./types";
 
 export type RecordOutcome = "recorded" | "skipped" | "migration_pending";
@@ -32,8 +33,9 @@ export async function recordPaymentFromInput(
 	if (await tracksVendor(userId, [finding.vendorKey, ...deterministic.vendorKeys])) return "skipped";
 	if (await messageRecorded(userId, input.message.id)) return "skipped";
 	const now = new Date();
+	const id = await paymentId(userId, input.message.id);
 	const recorded = await insertPayment({
-		id: await paymentId(userId, input.message.id),
+		id,
 		userId,
 		mailboxId: input.message.mailboxId,
 		messageId: input.message.id,
@@ -49,10 +51,18 @@ export async function recordPaymentFromInput(
 		docRef: finding.docRef,
 		mailRef: finding.mailRef,
 		modelFields: finding.modelFields.length > 0 ? JSON.stringify(finding.modelFields) : null,
+		category: finding.category,
 		createdAt: now,
 		updatedAt: now,
 	});
-	return recorded ? "recorded" : "skipped";
+	if (!recorded) return "skipped";
+	if (source === "auto")
+		await emitPaymentRecorded(ctx, {
+			id,
+			finding: { ...finding, category: recorded.category ?? null },
+			messageId: input.message.id,
+		});
+	return "recorded";
 }
 
 /**

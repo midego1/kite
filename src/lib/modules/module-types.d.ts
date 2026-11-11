@@ -17,6 +17,7 @@ export type RecordKind =
 	| "templates:template"
 	| "import:job"
 	| "finance:subscription"
+	| "finance:payment"
 	| "drive:file";
 
 export type RecordRef = { kind: RecordKind; id: string };
@@ -336,6 +337,8 @@ export type CapabilityCallContext = {
 	timeZone: string;
 	grants: string[];
 	mailboxIds?: string[];
+	/** An MCP key that names mailboxes: `mailboxIds` holds the readable ones, and an empty list means none. */
+	mailboxLimited?: boolean;
 	trigger: CapabilityTrigger;
 };
 

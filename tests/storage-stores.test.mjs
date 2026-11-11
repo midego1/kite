@@ -241,7 +241,9 @@ test("deleting a store is refused while a route, a Drive file or a running migra
 		.run();
 	const orphanCopy = await stores.deleteStore(env, actor, "sto_a");
 	assert.equal(orphanCopy.status, 409);
-	assert.match(orphanCopy.error, /later release/);
+	assert.match(orphanCopy.error, /1 leftover copy of cold storage moves/);
+	assert.equal(orphanCopy.code, "LEFTOVERS_ONLY", "leftovers are the only blocker, so the answer offers the cleanup");
+	assert.equal(orphanCopy.leftoverCount, 1);
 	env.DB.db.prepare("DELETE FROM storage_cold_orphans").run();
 	// A sweep already in flight keeps its rule as it was when it started (`cold.ts`'s cutoff snapshot), so a
 	// rule changed or disabled after that would not show up in the checks above; the job's own cursor must

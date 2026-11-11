@@ -199,8 +199,9 @@ const INTERNAL_TABLES = [
 	// The bookkeeping of "Save receipts for existing payments" (migration 0102): a cursor over this
 	// database's own finance rows, meaningless in another database.
 	"finance_receipt_backfills",
-	// The direct-uploads setup note and the dismissed reminder (migration 0085): the outcome of this deployment's own
-	// R2 setup, not user data, so a restore into another install must not carry it over.
+	// The direct-uploads setup note and the dismissed reminder (migration 0085), the orphan scan's cursor and the
+	// leftover cleanup's settings and last run (migration 0108): this deployment's own state, not user data, so a
+	// restore into another install must not carry it over.
 	"storage_state",
 	// Usage statistics: the install id identifies this deployment, so a restore into another one must not clone it,
 	// and the choice, the notice and its start day stay those of the deployment restored into.

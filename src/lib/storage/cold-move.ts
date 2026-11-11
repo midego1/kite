@@ -61,8 +61,8 @@ async function markRedundantChainCopy(
  * (`B4`): the refusal means someone else has held the lease since, and on this exact key and target that may
  * already be a second mover's own correctly recorded copy with its source already deleted; deleting it here
  * would leave nothing. Under a fresh claim, mark the target a candidate only while the live location does not
- * actually name it, so it is tracked rather than this mover destroying the only copy right now (nothing in
- * this PR deletes a tracked candidate; see `cold-orphans.ts`, round-9 review). Best effort: if the fresh claim
+ * actually name it, so it is tracked rather than this mover destroying the only copy right now (only the
+ * lease-holding leftover cleanup in `cold-leftovers.ts` deletes a tracked candidate). Best effort: if the fresh claim
  * itself loses the race, this mover leaves the target alone and lets whoever does hold it, or a later scan,
  * sort it out.
  */
@@ -179,8 +179,8 @@ export async function moveColdObject(
 		);
 	}
 	// The lease (held through the verify, the record and the delete below, renewed as needed for a long copy)
-	// fences this against a second concurrent mover of the exact same key (`B2`); nothing in this PR deletes a
-	// tracked candidate (round-9 review), but a reintroduced cleanup pass would need this same lease too. A
+	// fences this against a second concurrent mover of the exact same key (`B2`), the leftover cleanup
+	// (`cold-leftovers.ts`) and a storage-migration purge, which all hold this same lease to delete a copy. A
 	// lapsed lease aborts instead of silently losing the race that leaves (`B3`): the record below only lands
 	// while it is still held, fenced in the same statement.
 	// `initial` names the source, not the target (`B5`): nothing has been copied yet, so claiming by creating

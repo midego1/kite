@@ -9,7 +9,14 @@ import { Select } from "@/components/ui/select";
 import { useT } from "@/lib/i18n/use-t";
 import { paymentPath } from "./payment-row";
 import type { PaymentForm, PaymentItem } from "./payments-types";
-import { correctionBody, formFromPayment, STATUS_LABELS, TYPE_LABELS } from "./payments-utils";
+import {
+	CATEGORIES,
+	CATEGORY_LABELS,
+	correctionBody,
+	formFromPayment,
+	STATUS_LABELS,
+	TYPE_LABELS,
+} from "./payments-utils";
 import { announceWrite, financeWrite } from "./subscription-writes";
 
 const TYPES = ["payment", "invoice", "refund", "credit"] as const;
@@ -113,6 +120,22 @@ function CorrectionForm({ item, onDone, onChanged }: { item: PaymentItem; onDone
 						required
 					/>
 				</div>
+			</div>
+			<div className="space-y-1.5">
+				<Label htmlFor="payment-category">{t("Category")}</Label>
+				<Select
+					id="payment-category"
+					containerClassName="flex h-9 text-sm"
+					value={form.category}
+					onChange={(event) => set({ category: event.target.value as PaymentForm["category"] })}
+				>
+					<option value="">{t("No category")}</option>
+					{CATEGORIES.map((category) => (
+						<option key={category} value={category}>
+							{t(CATEGORY_LABELS[category])}
+						</option>
+					))}
+				</Select>
 			</div>
 			{form.docType === "invoice" && (
 				<div className="space-y-1.5">

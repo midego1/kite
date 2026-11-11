@@ -6,6 +6,7 @@ export function dispatchModuleWebhook(
 	userId: string,
 	event: string,
 	payload: Record<string, unknown>,
+	options?: { queued?: boolean },
 ): Promise<void> {
-	return dispatchWebhooks(env, userId, event, payload);
+	return dispatchWebhooks(env, userId, event, payload, options);
 }

@@ -1,9 +1,10 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { getDb } from "@/db";
-import { storageColdJobs, storageColdOrphans, storageColdRules } from "@/db/schema/storage";
+import { storageColdJobs, storageColdRules } from "@/db/schema/storage";
 import { createLogger } from "@/lib/logger.mjs";
 import { isNoSuchTableError } from "@/lib/modules/state-utils";
 import { countOrphanCandidates, pruneOrphanedColdLocations } from "./cold-orphans";
+import { runAutomaticLeftoverCleanup } from "./cold-leftovers";
 import { dropStrandedPurgeRows, storeHoldsLocatedObjects } from "./object-locations";
 import {
 	COLD_STORAGE_CLASS,
@@ -363,6 +364,8 @@ export async function runStorageColdMaintenance(env: ColdEnv, now = new Date()):
 	// Before the scan, so a purge's stranded claim row (`m2`) is never mistaken for a cold location.
 	await dropStrandedPurgeRows(env, now);
 	await pruneOrphanedColdLocations(env, now);
+	// Off unless the admin turned the automatic cleanup on (Admin → Storage).
+	await runAutomaticLeftoverCleanup(env, now);
 }
 
 /** The default store's current capability to hold a storage class, for the admin UI's target options. */
@@ -421,9 +424,10 @@ export async function coldUseBlockingPurge(env: ColdEnv, storeId: string): Promi
 	return null;
 }
 
-/** Why `id` cannot be deleted: a rule still targets it, an earlier sweep moved objects there, or a sweep still
- * in flight was started while it did (its cursor keeps the rule as it was when the sweep began, so a rule
- * changed or disabled after that would not otherwise show up here); null otherwise. */
+/** Why `id` cannot be deleted for cold storage's sake, besides leftovers (`coldOrphanCount`): a rule still
+ * targets it, an earlier sweep moved objects there, or a sweep still in flight was started while it did (its
+ * cursor keeps the rule as it was when the sweep began, so a rule changed or disabled after that would not
+ * otherwise show up here); null otherwise. */
 export async function coldReferenceBlocking(env: ColdEnv, id: string): Promise<string | null> {
 	// Each query answers "nothing" on its own before its table exists, rather than one shared catch skipping
 	// every later check (round-10 review, `n3`): between 0097 and 0104 the orphans table is missing while an
@@ -440,20 +444,11 @@ export async function coldReferenceBlocking(env: ColdEnv, id: string): Promise<s
 		return "Objects a cold storage sweep moved here are still on this store; move them back first";
 	const sweeping = await activeSweepTargeting(env, id);
 	if (sweeping) return `A cold storage sweep for ${sweeping} is still moving objects here; wait for it to finish first`;
-	const [orphan] = await rowsOrNone(() =>
-		getDb(env)
-			.select({ key: storageColdOrphans.key })
-			.from(storageColdOrphans)
-			.where(eq(storageColdOrphans.storeId, id))
-			.limit(1),
-	);
-	if (orphan)
-		return "A copy a cold storage sweep left behind is still on this store; cleanup for it arrives in a later release";
 	return null;
 }
 
-/** How many orphan candidates are currently tracked for `id`, for the read-only leftover count Admin → Storage
- * shows next to a store: this PR offers no action to delete any of them (round-9 review, `B6`). */
+/** How many leftover candidates are currently tracked for `id`, shown next to the store in Admin → Storage; deleting
+ * the store waits for them, since forgetting it would leave them behind for good. Zero before the orphans table. */
 export async function coldOrphanCount(env: ColdEnv, id: string): Promise<number> {
 	return await countOrphanCandidates(env, id);
 }

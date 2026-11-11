@@ -118,10 +118,10 @@ export function googleTokenRequestBody(
 
 /**
  * Whether the scopes granted cover Gmail. Google lets the user untick a scope on its consent screen, and a sign-in
- * without Gmail cannot sync.
+ * without Gmail cannot sync. Each space-separated scope is compared whole, never as a substring.
  */
 export function grantsGmail(scopes: string): boolean {
-	return scopes.split(/\s+/).includes(GMAIL_SCOPE);
+	return scopes.split(/\s+/).some((scope) => scope === GMAIL_SCOPE);
 }
 
 export type GoogleIdentity =

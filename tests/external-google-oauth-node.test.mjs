@@ -204,6 +204,13 @@ test("the owner's OAuth client is checked with Google, stored sealed, never answ
 		hostedDomain: "example.com",
 	});
 	assert.equal((await googleClientStatus(fromEnv, ORIGIN)).source, "env");
+	// Variables that are set but not valid turn sign-in off instead of falling back to the saved client, which would
+	// drop the domain restriction they meant.
+	const invalidEnv = { ...fromEnv, GOOGLE_OAUTH_HOSTED_DOMAIN: "not a domain" };
+	assert.equal(await resolveGoogleClient(invalidEnv), null);
+	const invalidStatus = await googleClientStatus(invalidEnv, ORIGIN);
+	assert.equal(invalidStatus.source, "env");
+	assert.equal(invalidStatus.clientId, null);
 	// A key that cannot open the saved client says so instead of failing.
 	const otherKey = await googleClientStatus(
 		{ ...env, APP_ENCRYPTION_KEY: "another-invented-key-0123456789abcdef" },

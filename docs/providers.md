@@ -222,10 +222,10 @@ Skip this for an **Internal** app.
 
 1. Open **Admin → General** in Kite (only the primary administrator can change this) and find **Google sign-in** in the **Connected accounts** card.
 2. Enter the **Client ID** and the **Client secret**.
-3. Optional: a **Workspace domain** such as `example.com`. Then only accounts of that Google Workspace domain can sign in (Kite checks the `hd` claim Google puts in a Workspace account's ID token), and Gmail addresses cannot. Use it with an Internal app.
+3. Optional: a **Workspace domain** such as `example.com`. Then only accounts of that Google Workspace domain can sign in (Kite checks the `hd` claim Google puts in a Workspace account's ID token), and Gmail addresses cannot. Use it with an Internal app. Setting or changing it applies to new sign-ins and reconnects; accounts connected before keep their access until they next have to reconnect.
 4. Choose **Save**. Kite checks the Client ID and secret with Google before saving: an unknown client or a wrong secret is refused with Google's reason. The secret is saved encrypted and never shown again; **Replace** and **Remove** are next to it.
 
-The client can also come from the `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET` and (optional) `GOOGLE_OAUTH_HOSTED_DOMAIN` secrets, which win over the saved one, as for Microsoft.
+The client can also come from the `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET` and (optional) `GOOGLE_OAUTH_HOSTED_DOMAIN` secrets, which win over the saved one, as for Microsoft. When they are set but not valid (a Client ID that does not end in `.apps.googleusercontent.com`, a malformed domain), Google sign-in is off and the card says so; Kite does not fall back to the saved client.
 
 ### 7. Google Workspace: allow IMAP and the app
 

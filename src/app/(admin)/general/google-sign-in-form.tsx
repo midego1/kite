@@ -6,6 +6,8 @@ import { OAuthClientForm, type OAuthClientFormConfig } from "./oauth-client-form
 function statusText(status: GoogleClientStatus): string {
 	if (status.migrationPending) return "Apply the pending database update to set up Google sign-in.";
 	const domain = status.hostedDomain ? `, Workspace domain ${status.hostedDomain} only` : ", any Google account";
+	if (status.source === "env" && !status.clientId)
+		return "Off: the GOOGLE_OAUTH_* variables are set but not valid. Check the Client ID and the Workspace domain.";
 	if (status.source === "env") return `On, from the GOOGLE_OAUTH_* variables: client ${status.clientId}${domain}.`;
 	if (status.source === "settings") return `On: client ${status.clientId}${domain}.`;
 	if (status.unreadable)

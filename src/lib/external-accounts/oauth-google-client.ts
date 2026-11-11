@@ -18,7 +18,7 @@ import {
 import { type ClientCheck, oauthRedirectUri } from "./oauth-utils";
 import type { GoogleClientStatus } from "./types";
 
-/** The OAuth client from the environment, when both its ID and secret are set (and well-formed). */
+/** The OAuth client from the environment, when both its ID and secret are set and well-formed (else null). */
 function envGoogleClient(env: ClientEnv): GoogleClient | null {
 	if (!env.GOOGLE_OAUTH_CLIENT_ID?.trim() || !env.GOOGLE_OAUTH_CLIENT_SECRET?.trim()) return null;
 	const parsed = parseGoogleClientInput({
@@ -36,22 +36,28 @@ export function googleClientFromEnv(env: ClientEnv): boolean {
 
 const readSavedGoogleClient = (env: ClientEnv) => readSavedClient(env, "google", parseStoredGoogleClient);
 
-/** The OAuth client sign-ins and refreshes use: the environment's, else the one saved in Admin → General. */
+/**
+ * The OAuth client sign-ins and refreshes use: the environment's, else the one saved in Admin → General. Variables
+ * that are set but not valid (a malformed Workspace domain, say) turn Google sign-in off rather than falling back to
+ * the saved client, which could drop the domain restriction they meant.
+ */
 export async function resolveGoogleClient(env: ClientEnv): Promise<GoogleClient | null> {
-	return envGoogleClient(env) ?? (await readSavedGoogleClient(env)).client;
+	if (googleClientFromEnv(env)) return envGoogleClient(env);
+	return (await readSavedGoogleClient(env)).client;
 }
 
 export async function googleClientStatus(env: ClientEnv, requestOrigin: string): Promise<GoogleClientStatus> {
-	const fromEnv = envGoogleClient(env);
+	const usesEnv = googleClientFromEnv(env);
 	const saved = await readSavedGoogleClient(env);
-	const client = fromEnv ?? saved.client;
+	const client = usesEnv ? envGoogleClient(env) : saved.client;
 	return {
-		source: fromEnv ? "env" : saved.client ? "settings" : null,
+		// With the variables set they win even when invalid; `clientId` null then says they are not usable.
+		source: usesEnv ? "env" : saved.client ? "settings" : null,
 		clientId: client?.clientId ?? null,
 		hostedDomain: client?.hostedDomain ?? null,
 		redirectUri: oauthRedirectUri(env.APP_URL, requestOrigin),
 		appUrlSet: !!env.APP_URL?.trim(),
-		unreadable: !fromEnv && saved.unreadable,
+		unreadable: !usesEnv && saved.unreadable,
 		keyConfigured: !!env.APP_ENCRYPTION_KEY?.trim(),
 		migrationPending: saved.migrationPending,
 	};

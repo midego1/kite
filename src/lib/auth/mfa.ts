@@ -1,10 +1,11 @@
 import { eq } from "drizzle-orm";
 import QRCode from "qrcode";
 import { getDb } from "@/db";
-import { mfaRecoveryCodes, users } from "@/db/schema";
+import { mfaRecoveryCodes, sessions, users } from "@/db/schema";
+import { passkeys } from "@/db/schema/passkeys";
+import { isNoSuchTableError } from "@/lib/modules/state-utils";
 import { getBranding } from "@/lib/branding/service";
 import { consumeRecoveryCode, countUnusedRecoveryCodes, issueRecoveryCodes } from "@/lib/auth/recovery-codes";
-import { deleteUserPasskeys } from "@/lib/auth/passkeys";
 import { deleteUserSessions } from "@/lib/auth/session";
 import { buildOtpauthUrl, generateTotpSecret, verifyTotp } from "@/lib/auth/totp";
 import type { MfaEnrollment, MfaStatus } from "@/lib/auth/mfa-types";
@@ -70,14 +71,28 @@ export async function disableMfa(env: CloudflareEnv, userId: string): Promise<vo
 }
 
 /**
- * An admin's reset for someone who lost their devices: turns TOTP off, deletes the recovery codes and every
- * passkey, and signs the account out everywhere, so only the password opens it until they set things up again.
+ * An admin's reset for someone who lost their devices: signs the account out everywhere, turns TOTP off and deletes
+ * the recovery codes and every passkey, in one batch, so either all of it happens or none does. Before migration
+ * 0112 there is no passkeys table and the batch runs without it.
  */
 export async function resetUserSecondFactors(env: CloudflareEnv, userId: string): Promise<{ passkeysRemoved: number }> {
-	await disableMfa(env, userId);
-	const passkeysRemoved = await deleteUserPasskeys(env, userId);
-	await deleteUserSessions(env, userId);
-	return { passkeysRemoved };
+	const db = getDb(env);
+	const core = [
+		db.delete(sessions).where(eq(sessions.userId, userId)),
+		db.update(users).set({ totpSecret: null, totpEnabled: false, totpConfirmedAt: null }).where(eq(users.id, userId)),
+		db.delete(mfaRecoveryCodes).where(eq(mfaRecoveryCodes.userId, userId)),
+	] as const;
+	try {
+		const results = await db.batch([
+			...core,
+			db.delete(passkeys).where(eq(passkeys.userId, userId)).returning({ id: passkeys.id }),
+		]);
+		return { passkeysRemoved: results[3].length };
+	} catch (error) {
+		if (!isNoSuchTableError(error)) throw error;
+		await db.batch([...core]);
+		return { passkeysRemoved: 0 };
+	}
 }
 
 /** A login's second step: a TOTP code, or one of the recovery codes as a fallback. */

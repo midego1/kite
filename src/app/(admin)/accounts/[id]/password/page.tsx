@@ -19,21 +19,23 @@ export default function AccountPasswordPage() {
 	const [confirmingReset, setConfirmingReset] = useState(false);
 	const [resetting, setResetting] = useState(false);
 	const [resetMessage, setResetMessage] = useState<string | null>(null);
+	const [adminPassword, setAdminPassword] = useState("");
 
 	async function resetSecondFactors() {
 		if (!account) return;
 		setResetting(true);
 		setResetMessage(null);
 		try {
-			const removed = await resetAccountSecondFactors(account.id);
+			const removed = await resetAccountSecondFactors(account.id, adminPassword);
 			setResetMessage(
 				`Two-factor sign-in reset${removed ? ` and ${removed} passkey${removed === 1 ? "" : "s"} removed` : ""}. This account has been signed out everywhere.`,
 			);
+			setConfirmingReset(false);
 		} catch (error) {
 			setResetMessage(error instanceof Error ? error.message : "Unable to reset two-factor sign-in");
 		} finally {
 			setResetting(false);
-			setConfirmingReset(false);
+			setAdminPassword("");
 		}
 	}
 
@@ -97,14 +99,45 @@ export default function AccountPasswordPage() {
 						again.
 					</p>
 					{confirmingReset ? (
-						<div className="flex flex-wrap gap-3">
-							<Button variant="destructive" disabled={resetting} onClick={() => void resetSecondFactors()}>
-								{resetting ? "Resetting..." : "Confirm reset"}
-							</Button>
-							<Button variant="outline" disabled={resetting} onClick={() => setConfirmingReset(false)}>
-								Cancel
-							</Button>
-						</div>
+						<form
+							className="space-y-3"
+							onSubmit={(event) => {
+								event.preventDefault();
+								void resetSecondFactors();
+							}}
+						>
+							<div className="space-y-2">
+								<Label htmlFor="account-mfa-reset-password">Your password</Label>
+								<Input
+									id="account-mfa-reset-password"
+									type="password"
+									autoComplete="current-password"
+									required
+									value={adminPassword}
+									disabled={resetting}
+									onChange={(event) => setAdminPassword(event.target.value)}
+								/>
+								<p className="text-xs leading-5 text-neutral-500">
+									Confirm with your own password. {account.name} gets an email about the reset.
+								</p>
+							</div>
+							<div className="flex flex-wrap gap-3">
+								<Button type="submit" variant="destructive" disabled={resetting || !adminPassword}>
+									{resetting ? "Resetting..." : "Confirm reset"}
+								</Button>
+								<Button
+									type="button"
+									variant="outline"
+									disabled={resetting}
+									onClick={() => {
+										setConfirmingReset(false);
+										setAdminPassword("");
+									}}
+								>
+									Cancel
+								</Button>
+							</div>
+						</form>
 					) : (
 						<Button variant="outline" onClick={() => setConfirmingReset(true)}>
 							Reset two-factor and passkeys

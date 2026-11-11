@@ -47,15 +47,24 @@ export async function requirePasskeyReauthentication(
 ): Promise<{ user: SignedInUser; error: null } | { user: null; error: Response }> {
 	const auth = await requireSessionUser(env, request);
 	if (auth.error) return { user: null, error: auth.error };
-	if (!hasValidSessionMutationOrigin(request))
-		return { user: null, error: NextResponse.json({ error: "Forbidden" }, { status: 403 }) };
-	if (!(await allowLoginAttempt(env, request))) return { user: null, error: tooManyAttempts() };
+	const error = await checkReauthentication(env, request, auth.user);
+	return error ? { user: null, error } : { user: auth.user, error: null };
+}
+
+/**
+ * For a signed-in user (the account holder, or an admin acting on someone else): a same-origin request, the login
+ * rate limit, then that user's password or authenticator code in the body. Null when it checks out.
+ */
+export async function checkReauthentication(
+	env: CloudflareEnv,
+	request: Request,
+	user: SignedInUser,
+): Promise<Response | null> {
+	if (!hasValidSessionMutationOrigin(request)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+	if (!(await allowLoginAttempt(env, request))) return tooManyAttempts();
 	const parsed = passkeyReauthSchema.safeParse(await readJsonBody(request, 16 * 1024).catch(() => null));
-	if (!parsed.success)
-		return { user: null, error: NextResponse.json({ error: "Enter your password" }, { status: 400 }) };
-	if (!(await verifyReauthentication(auth.user, parsed.data))) {
-		const error = parsed.data.password !== undefined ? "Password is incorrect" : "That code did not match";
-		return { user: null, error: NextResponse.json({ error }, { status: 400 }) };
-	}
-	return { user: auth.user, error: null };
+	if (!parsed.success) return NextResponse.json({ error: "Enter your password" }, { status: 400 });
+	if (await verifyReauthentication(env, user, parsed.data)) return null;
+	const error = parsed.data.password !== undefined ? "Password is incorrect" : "That code did not match";
+	return NextResponse.json({ error }, { status: 400 });
 }

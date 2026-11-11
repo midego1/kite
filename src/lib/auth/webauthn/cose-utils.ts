@@ -64,7 +64,10 @@ function parseCoseKey(input: Uint8Array | CborValue): ParsedCoseKey {
 		const start = modulus.findIndex((byte) => byte !== 0);
 		const bits = start < 0 ? 0 : (modulus.length - start - 1) * 8 + (32 - Math.clz32(modulus[start]));
 		if (bits < MIN_RSA_BITS) throw new CoseKeyError("RSA keys must have at least 2048 bits");
-		if (exponent.length === 0 || exponent.length > 8) throw new CoseKeyError("Invalid RSA exponent");
+		// An odd public exponent of at least 3 (65537 in practice); 1 or an even one makes the key useless or weak.
+		const e = exponent.reduce((value, byte) => value * 256 + byte, 0);
+		if (exponent.length === 0 || exponent.length > 4 || e < 3 || e % 2 === 0)
+			throw new CoseKeyError("Invalid RSA exponent");
 		return {
 			algorithm: COSE_ALG_RS256,
 			jwk: { kty: "RSA", n: bytesToBase64Url(modulus), e: bytesToBase64Url(exponent), alg: "RS256", ext: true },

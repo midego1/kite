@@ -83,12 +83,7 @@ export async function beginPasskeyRegistration(
 			.select({ credentialId: passkeys.credentialId, transports: passkeys.transports })
 			.from(passkeys)
 			.where(eq(passkeys.userId, user.id));
-		if (existing.length >= MAX_PASSKEYS_PER_USER)
-			return {
-				ok: false,
-				status: 400,
-				error: `You can have up to ${MAX_PASSKEYS_PER_USER} passkeys. Remove one first.`,
-			};
+		if (existing.length >= MAX_PASSKEYS_PER_USER) return { ok: false, status: 400, error: capMessage(), code: "limit" };
 		const rp = relyingParty(env.APP_URL, request.url);
 		const { appName } = await getBranding(env);
 		const { token, challenge } = await createPasskeyChallenge(env, {
@@ -162,22 +157,24 @@ export async function finishPasskeyRegistration(
 			.limit(1);
 		if (taken) return { ok: false, status: 409, error: "This passkey is already registered.", code: "duplicate" };
 		const transports = sanitizeTransports(input.credential.response.transports);
-		const [row] = await db
-			.insert(passkeys)
-			.values({
-				id: newId("pk"),
-				userId: user.id,
-				credentialId: verified.credentialId,
-				publicKey: verified.publicKey,
-				algorithm: verified.algorithm,
-				signCount: verified.signCount,
-				transports: transports.length ? JSON.stringify(transports) : null,
-				aaguid: verified.aaguid,
-				backupEligible: verified.backupEligible,
-				backedUp: verified.backedUp,
-				name: normalizePasskeyName(input.name) ?? defaultPasskeyName(request.headers.get("user-agent")),
-			})
-			.returning();
+		const id = newId("pk");
+		const inserted = await insertWithinCap(env, {
+			id,
+			userId: user.id,
+			credentialId: verified.credentialId,
+			publicKey: verified.publicKey,
+			algorithm: verified.algorithm,
+			signCount: verified.signCount,
+			transports: transports.length ? JSON.stringify(transports) : null,
+			aaguid: verified.aaguid,
+			backupEligible: verified.backupEligible,
+			backedUp: verified.backedUp,
+			name: normalizePasskeyName(input.name) ?? defaultPasskeyName(request.headers.get("user-agent")),
+		});
+		if (inserted === "duplicate")
+			return { ok: false, status: 409, error: "This passkey is already registered.", code: "duplicate" };
+		if (inserted === "cap") return { ok: false, status: 400, error: capMessage(), code: "limit" };
+		const [row] = await db.select().from(passkeys).where(eq(passkeys.id, id)).limit(1);
 		return { ok: true, value: summary(row) };
 	});
 }
@@ -262,6 +259,57 @@ export async function finishPasskeySignIn(
 			);
 		return { ok: true, value: { userId: user.id, passkeyId: stored.id, passkeyName: stored.name } };
 	});
+}
+
+function capMessage(): string {
+	return `You can have up to ${MAX_PASSKEYS_PER_USER} passkeys. Remove one first.`;
+}
+
+/**
+ * Inserts the passkey only while the user has fewer than the maximum, in one statement, so parallel registrations
+ * cannot pass the cap together. The unique credential id refuses the same passkey twice even under a race.
+ */
+async function insertWithinCap(
+	env: CloudflareEnv,
+	row: Omit<typeof passkeys.$inferInsert, "createdAt" | "lastUsedAt">,
+): Promise<"inserted" | "cap" | "duplicate"> {
+	try {
+		const result = await env.DB.prepare(
+			`INSERT INTO passkeys (id, user_id, credential_id, public_key, algorithm, sign_count, transports, aaguid,
+				backup_eligible, backed_up, name, created_at)
+			SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+			WHERE (SELECT count(*) FROM passkeys WHERE user_id = ?) < ?`,
+		)
+			.bind(
+				row.id,
+				row.userId,
+				row.credentialId,
+				row.publicKey,
+				row.algorithm,
+				row.signCount ?? 0,
+				row.transports ?? null,
+				row.aaguid ?? null,
+				row.backupEligible ? 1 : 0,
+				row.backedUp ? 1 : 0,
+				row.name,
+				Math.floor(Date.now() / 1000),
+				row.userId,
+				MAX_PASSKEYS_PER_USER,
+			)
+			.run();
+		return (result.meta.changes ?? 0) > 0 ? "inserted" : "cap";
+	} catch (error) {
+		if (hasUniqueCause(error)) return "duplicate";
+		throw error;
+	}
+}
+
+function hasUniqueCause(error: unknown): boolean {
+	for (let depth = 0; depth < 5 && error; depth++) {
+		if (/UNIQUE constraint failed/i.test(error instanceof Error ? error.message : String(error))) return true;
+		error = (error as { cause?: unknown }).cause;
+	}
+	return false;
 }
 
 function failure(

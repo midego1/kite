@@ -11,7 +11,11 @@ export async function loadPasskeys(): Promise<PasskeyList> {
 	const res = await authFetch("/api/settings/passkeys");
 	const data = (await res.json().catch(() => ({}))) as Partial<PasskeyList> & { error?: unknown };
 	if (!res.ok) throw new Error(errorMessage(data, "Failed to load passkeys"));
-	return { available: data.available !== false, passkeys: data.passkeys ?? [] };
+	return {
+		available: data.available !== false,
+		passkeys: data.passkeys ?? [],
+		appUrlWarning: data.appUrlWarning ?? null,
+	};
 }
 
 /**

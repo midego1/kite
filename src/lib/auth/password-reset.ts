@@ -3,6 +3,7 @@ import { getDb } from "@/db";
 import { passwordResetTokens, users } from "@/db/schema";
 import { newId } from "@/lib/ids";
 import { hashPassword } from "@/lib/auth/password";
+import { deleteUserPasskeys } from "@/lib/auth/passkeys";
 import { deleteUserSessions, hashSessionToken } from "@/lib/auth/session";
 import { getBranding } from "@/lib/branding/service";
 import { sendSystemEmail } from "@/lib/email/system-mail";
@@ -88,11 +89,14 @@ export async function completePasswordReset(
 		.where(eq(users.id, row.userId));
 	await db.update(passwordResetTokens).set({ usedAt: new Date() }).where(eq(passwordResetTokens.id, row.id));
 	await deleteUserSessions(env, row.userId);
+	// Someone who once had the password could have added a passkey; after a reset only the new password opens the
+	// account until the owner adds their passkeys again.
+	const passkeysRemoved = await deleteUserPasskeys(env, row.userId);
 	await createAuditLog(env, {
 		actorUserId: row.userId,
 		targetUserId: row.userId,
 		action: "auth.password_reset",
-		metadata: { ipAddress: request.headers.get("cf-connecting-ip") ?? "unknown" },
+		metadata: { ipAddress: request.headers.get("cf-connecting-ip") ?? "unknown", passkeysRemoved },
 	});
 	return { ok: true };
 }

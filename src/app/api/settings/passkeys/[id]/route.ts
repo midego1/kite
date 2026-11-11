@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getEnv } from "@/lib/cloudflare";
 import { recordAuthActivity } from "@/lib/auth/activity";
+import { noticeSignInChange } from "@/lib/auth/sign-in-notice";
 import { removePasskey } from "@/lib/auth/passkeys";
 import { noStoreJson, requirePasskeyReauthentication, withPasskeys } from "@/lib/auth/passkey-http";
 
@@ -19,6 +20,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
 			request,
 			details: { passkeyName: name },
 		});
+		await noticeSignInChange(env, auth.user, { kind: "passkey_removed", passkeyName: name });
 		return noStoreJson({ ok: true });
 	});
 }

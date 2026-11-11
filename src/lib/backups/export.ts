@@ -193,6 +193,8 @@ const INTERNAL_TABLES = [
 	"oauth_states",
 	// Passkey ceremonies in progress (migration 0112): single-use challenges that expire within minutes.
 	"passkey_challenges",
+	// The time step of each user's last re-authentication code (migration 0112): replay protection for this install.
+	"totp_used_steps",
 	// MCP over OAuth (migration 0106): client registrations, single-use codes, grants and token hashes. They are tied
 	// to this install's URL and sessions; a restore disconnects MCP apps (the grant's api_keys row comes back without
 	// them and the daily pruning removes it), and they reconnect with a new sign-in.

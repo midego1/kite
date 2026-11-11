@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { BASE_URL, DOMAIN, STORAGE_STATE } from "./support/constants";
+import { ADMIN, BASE_URL, DOMAIN, STORAGE_STATE } from "./support/constants";
 import { apiContext, signIn, uniqueToken, waitForHydration } from "./support/helpers";
 import { addVirtualAuthenticator, storedCredentials, totpCode } from "./support/passkeys";
 
@@ -116,7 +116,12 @@ test("register a passkey, sign in with it instead of password and code, remove i
 	await signIn(page, user.email, PASSWORD);
 	await expect(page.getByRole("heading", { name: "Two-factor authentication" })).toBeVisible();
 	const admin = await apiContext(STORAGE_STATE);
-	const firstReset = await admin.delete(`/api/accounts/${user.id}/mfa`);
+	// The admin confirms with their own password: none, or a wrong one, changes nothing.
+	const unconfirmed = await admin.delete(`/api/accounts/${user.id}/mfa`);
+	expect(unconfirmed.status()).toBe(400);
+	const wrong = await admin.delete(`/api/accounts/${user.id}/mfa`, { data: { password: "not-the-password" } });
+	expect(await wrong.json()).toMatchObject({ error: "Password is incorrect" });
+	const firstReset = await admin.delete(`/api/accounts/${user.id}/mfa`, { data: { password: ADMIN.password } });
 	expect(firstReset.ok(), await firstReset.text()).toBe(true);
 	expect(await firstReset.json()).toMatchObject({ ok: true, passkeysRemoved: 0 });
 	await admin.dispose();
@@ -125,13 +130,17 @@ test("register a passkey, sign in with it instead of password and code, remove i
 	await expect(page).toHaveURL(/\/inbox/);
 	await addPasskeyWithoutTotp(page, "Second laptop");
 	const resetAdmin = await apiContext(STORAGE_STATE);
-	const reset = await resetAdmin.delete(`/api/accounts/${user.id}/mfa`);
+	const reset = await resetAdmin.delete(`/api/accounts/${user.id}/mfa`, { data: { password: ADMIN.password } });
 	expect(await reset.json()).toMatchObject({ ok: true, passkeysRemoved: 1 });
 	await resetAdmin.dispose();
 	await page.goto("/login");
 	await waitForHydration(page);
 	await page.getByRole("button", { name: "Sign in with a passkey" }).click();
 	await expect(page.getByRole("alert")).toContainText("This passkey is not registered here");
+
+	// Another site cannot start a ceremony and replace this browser's ceremony cookie.
+	const foreign = await page.request.post("/api/auth/passkey/options", { headers: { Origin: "https://evil.test" } });
+	expect(foreign.status()).toBe(403);
 });
 
 async function addPasskeyWithoutTotp(page: Page, name: string): Promise<void> {

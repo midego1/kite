@@ -81,13 +81,18 @@ export async function totp(secret: string, at: number = Date.now()): Promise<str
  * few seconds off still works. Comparison is constant-time.
  */
 export async function verifyTotp(secret: string, code: string, at: number = Date.now()): Promise<boolean> {
+	return (await matchTotpStep(secret, code, at)) !== null;
+}
+
+/** The time step the code belongs to (one either side of now), or null; lets a caller refuse a code used before. */
+export async function matchTotpStep(secret: string, code: string, at: number = Date.now()): Promise<number | null> {
 	const candidate = code.replace(/\s+/g, "");
-	if (!/^\d{6}$/.test(candidate)) return false;
+	if (!/^\d{6}$/.test(candidate)) return null;
 	const counter = totpCounter(at);
-	let matched = false;
+	let matched: number | null = null;
 	for (const delta of [-1, 0, 1]) {
 		const expected = await hotp(secret, counter + delta);
-		if (timingSafeEqual(expected, candidate)) matched = true;
+		if (timingSafeEqual(expected, candidate)) matched = counter + delta;
 	}
 	return matched;
 }

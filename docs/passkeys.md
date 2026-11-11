@@ -10,7 +10,7 @@ A passkey counts as both steps of a sign-in. Your device always checks it is you
 2. Click **Add a passkey**, give it a name if you like (for example "Work laptop"), and confirm your password. When two-factor authentication is on you can enter a code from your authenticator app instead.
 3. Follow your browser's prompt. It saves the passkey on this device, in your password manager, or on a security key you plug in or tap.
 
-You can add up to 20 passkeys, for example one per device. Passkeys saved in iCloud Keychain, Google Password Manager or a password manager are synced to your other devices and are marked **Synced** in the list.
+You can add up to 20 passkeys, for example one per device. Kite emails you whenever a passkey is added or removed (to your recovery address when you set one), so a change you did not make stands out. Passkeys saved in iCloud Keychain, Google Password Manager or a password manager are synced to your other devices and are marked **Synced** in the list.
 
 ## Signing in with a passkey
 
@@ -26,10 +26,11 @@ The list shows when each passkey was added and last used, so you can spot and re
 
 ## Lost your devices?
 
-Sign in with your password. If two-factor authentication is on and you lost your authenticator app and recovery codes as well, ask an administrator: under **Accounts → (your account) → Password**, **Reset two-factor and passkeys** turns off your authenticator app, deletes your recovery codes and passkeys, and signs you out everywhere. You then sign in with your password and set things up again.
+Sign in with your password. Resetting your password with a reset link also removes all your passkeys, so only the new password opens your account; add your passkeys again afterwards. If two-factor authentication is on and you lost your authenticator app and recovery codes as well, ask an administrator: under **Accounts → (your account) → Password**, **Reset two-factor and passkeys** turns off your authenticator app, deletes your recovery codes and passkeys, and signs you out everywhere. The administrator confirms with their own password, and you get an email about it. You then sign in with your password and set things up again.
 
 ## For administrators
 
+- **Set `APP_URL` before people add passkeys.** Without it, passkeys are tied to the address each request arrives at; behind a proxy that terminates TLS that is not the address the browser shows, and passkeys fail. Settings → Security shows admins a warning while `APP_URL` is missing or invalid. Changing `APP_URL` to another host later makes existing passkeys stop working.
 - Passkeys need the database update with migration 0112, applied from the Admin overview like other updates. Until then the Security page says passkeys become available after the update, and signing in with a password works as before.
 - Kite checks every passkey sign-in itself, on Workers and when self-hosted, with no outside service: the challenge is single use and expires after five minutes, the browser must be on Kite's own address, and the device must have verified the user. Passkey sign-ins have their own limit of 20 attempts per minute per IP address, next to the password sign-in limit.
 - Adding, removing and resetting passkeys are recorded in **Admin → Activity**. Backups include the passkeys (public keys only), so a restored account signs in with the same passkeys.

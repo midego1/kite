@@ -298,6 +298,12 @@ async function connectDemoMcpApp(name: string): Promise<void> {
 /** Adds a demo passkey for the demo admin through the Security page, with Chromium's virtual authenticator. */
 async function openPasskeySettings(page: Page): Promise<Locator> {
 	await addVirtualAuthenticator(page);
+	// The demo server runs without APP_URL; the admin-only note about it is not what the shot is about.
+	await page.route("**/api/settings/passkeys", async (route) => {
+		if (route.request().method() !== "GET") return route.continue();
+		const response = await route.fetch();
+		await route.fulfill({ response, json: { ...(await response.json()), appUrlWarning: null } });
+	});
 	await page.goto("/settings/security");
 	const heading = page.getByRole("heading", { level: 2, name: "Passkeys" });
 	await expect(heading).toBeVisible();

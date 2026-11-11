@@ -19,6 +19,24 @@ export function relyingParty(appUrl: string | undefined, requestUrl: string): { 
 	return { id: url.hostname, origin: url.origin };
 }
 
+/**
+ * What an admin should know about the relying party: without a valid APP_URL, passkeys are bound to whatever address
+ * each request arrives at, which behind a proxy that terminates TLS is not the address the browser shows, so passkeys
+ * fail. Null when APP_URL is a usable address.
+ */
+export function appUrlPasskeyWarning(appUrl: string | undefined): string | null {
+	const configured = appUrl?.trim();
+	if (!configured)
+		return "APP_URL is not set, so passkeys use the address each request arrives at. Set APP_URL to Kite's public address, or passkeys may fail behind a proxy and stop working if the address changes.";
+	try {
+		const url = new URL(configured);
+		if (url.protocol === "https:" || url.protocol === "http:") return null;
+	} catch {
+		// Falls through to the warning below.
+	}
+	return `APP_URL (${configured}) is not a valid http or https address, so passkeys use the address each request arrives at. Fix APP_URL before people add passkeys.`;
+}
+
 /** Five minutes for the browser prompt; the stored challenge lives as long, plus a little for the round trip. */
 export const PASSKEY_CEREMONY_TIMEOUT_MS = 5 * 60 * 1000;
 export const PASSKEY_CHALLENGE_TTL_MS = PASSKEY_CEREMONY_TIMEOUT_MS + 30 * 1000;
@@ -77,4 +95,34 @@ export function sanitizeTransports(value: unknown): string[] {
 /** The WebAuthn user handle: the user id's bytes, opaque and never an email address (§14.6.1). */
 export function userHandleFor(userId: string): string {
 	return bytesToBase64Url(new TextEncoder().encode(userId));
+}
+
+export type SignInChange =
+	| { kind: "passkey_added"; passkeyName: string }
+	| { kind: "passkey_removed"; passkeyName: string }
+	| { kind: "second_factors_reset"; passkeysRemoved: number };
+
+/** The notice mailed to the account holder when a way to sign in changes, so a change they did not make stands out. */
+export function signInChangeMail(change: SignInChange, appName: string): { subject: string; text: string } {
+	const unexpected = `If this was not you, change your ${appName} password now and remove any passkey you do not recognise in Settings → Security.`;
+	switch (change.kind) {
+		case "passkey_added":
+			return {
+				subject: `A passkey was added to your ${appName} account`,
+				text: `The passkey "${change.passkeyName}" can now sign in to your ${appName} account.\n\n${unexpected}`,
+			};
+		case "passkey_removed":
+			return {
+				subject: `A passkey was removed from your ${appName} account`,
+				text: `The passkey "${change.passkeyName}" no longer signs in to your ${appName} account.\n\n${unexpected}`,
+			};
+		case "second_factors_reset": {
+			const count = change.passkeysRemoved;
+			const passkeys = count ? `, ${count} passkey${count === 1 ? " was" : "s were"} removed` : "";
+			return {
+				subject: `Two-factor sign-in was reset on your ${appName} account`,
+				text: `An administrator reset two-factor sign-in on your ${appName} account: the authenticator app was turned off, the recovery codes were deleted${passkeys}, and you were signed out everywhere. Sign in with your password to set it up again.\n\nIf you did not ask for this, contact your administrator.`,
+			};
+		}
+	}
 }

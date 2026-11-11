@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server";
 import { getEnv } from "@/lib/cloudflare";
+import { isAdmin } from "@/lib/auth/admin";
+import { appUrlPasskeyWarning } from "@/lib/auth/passkey-utils";
 import { requireSessionUser } from "@/lib/api/auth";
 import { hasValidSessionMutationOrigin } from "@/lib/auth/origin";
 import { allowPasskeyAttempt } from "@/lib/auth/rate-limit";
 import { recordAuthActivity } from "@/lib/auth/activity";
+import { noticeSignInChange } from "@/lib/auth/sign-in-notice";
 import { getSessionTokenFromRequestHeaders } from "@/lib/auth/session";
 import { finishPasskeyRegistration, listPasskeys, PasskeysUnavailableError } from "@/lib/auth/passkeys";
 import { noStoreJson, passkeyFailure, tooManyAttempts, withPasskeys } from "@/lib/auth/passkey-http";
@@ -16,7 +19,9 @@ export async function GET(request: Request) {
 	const auth = await requireSessionUser(env, request);
 	if (auth.error) return auth.error;
 	try {
-		return noStoreJson({ available: true, passkeys: await listPasskeys(env, auth.user.id) });
+		// Only admins can set APP_URL, so only they are told it is missing.
+		const appUrlWarning = isAdmin(auth.user) ? appUrlPasskeyWarning(env.APP_URL) : null;
+		return noStoreJson({ available: true, passkeys: await listPasskeys(env, auth.user.id), appUrlWarning });
 	} catch (error) {
 		if (error instanceof PasskeysUnavailableError) return noStoreJson({ available: false, passkeys: [] });
 		throw error;
@@ -50,6 +55,7 @@ export async function POST(request: Request) {
 			request,
 			details: { passkeyName: result.value.name },
 		});
+		await noticeSignInChange(env, auth.user, { kind: "passkey_added", passkeyName: result.value.name });
 		return noStoreJson({ ok: true, passkey: result.value });
 	});
 }

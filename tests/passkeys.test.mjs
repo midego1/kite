@@ -24,6 +24,8 @@ await build({
 				relyingParty,
 				sanitizeTransports,
 				userHandleFor,
+				appUrlPasskeyWarning,
+				signInChangeMail,
 			} from "./src/lib/auth/passkey-utils.ts";
 			export { consumePasskeyChallenge, createPasskeyChallenge } from "./src/lib/auth/passkey-challenges.ts";
 			export {
@@ -40,6 +42,10 @@ await build({
 			export { verifyReauthentication } from "./src/lib/auth/reauth.ts";
 			export { hashPassword } from "./src/lib/auth/password.ts";
 			export { totp } from "./src/lib/auth/totp.ts";
+			export { completePasswordReset } from "./src/lib/auth/password-reset.ts";
+			export { hashSessionToken } from "./src/lib/auth/session.ts";
+			export { noticeSignInChange } from "./src/lib/auth/sign-in-notice.ts";
+			export { POST as signInOptions } from "./src/app/api/auth/passkey/options/route.ts";
 			export { assertBackupTablesCoverDatabase } from "./src/lib/backups/export.ts";
 			export { BACKUP_TABLE_GROUPS } from "./src/lib/backups/table-groups.ts";
 		`,
@@ -540,6 +546,12 @@ test("COSE keys: RSA under 2048 bits, other curves, missing coordinates and unkn
 	};
 	assert.equal((await register(await rsaKey(2048))).algorithm, -257);
 	await rejectsWith(register(await rsaKey(1024)), "unsupported_algorithm");
+	// The exponent must be odd and at least 3: 1 makes the "signature" the message itself, an even one is not RSA.
+	for (const exponent of [Uint8Array.of(1), Uint8Array.of(2), Uint8Array.of(1, 0, 0), new Uint8Array(5).fill(1)]) {
+		const key = await rsaKey(2048);
+		key.set(-2, exponent);
+		await rejectsWith(register(key), "unsupported_algorithm");
+	}
 	const xy = new Uint8Array(32).fill(1);
 	await rejectsWith(
 		register(
@@ -653,7 +665,7 @@ async function database(t, { migrated = true } = {}) {
 	const db = new kite.SqliteDatabase(":memory:");
 	t.after(() => db.db.close());
 	await kite.applyMigrations(db, join(root, "drizzle/migrations"));
-	if (!migrated) db.db.exec("DROP TABLE passkeys; DROP TABLE passkey_challenges;");
+	if (!migrated) db.db.exec("DROP TABLE passkeys; DROP TABLE passkey_challenges; DROP TABLE totp_used_steps;");
 	db.db.exec(`
 		INSERT INTO users (id, email, password_hash, name, created_at) VALUES
 			('usr_a', 'a@example.com', '${kite.hashPassword("correct horse")}', 'A', 1),
@@ -833,20 +845,163 @@ test("an admin reset removes passkeys, TOTP and sessions", async (t) => {
 	assert.equal(db.prepare("SELECT count(*) AS n FROM sessions").get().n, 0);
 });
 
-test("re-authentication takes the password or a TOTP code, never a recovery code", async () => {
-	const user = { passwordHash: kite.hashPassword("correct horse"), totpEnabled: false, totpSecret: null };
-	assert.equal(await kite.verifyReauthentication(user, { password: "correct horse" }), true);
-	assert.equal(await kite.verifyReauthentication(user, { password: "wrong" }), false);
-	assert.equal(await kite.verifyReauthentication(user, { code: "123456" }), false);
+test("re-authentication takes the password or a TOTP code once, never a recovery code", async (t) => {
+	const { env } = await database(t);
+	const user = { id: "usr_a", passwordHash: kite.hashPassword("correct horse"), totpEnabled: false, totpSecret: null };
+	assert.equal(await kite.verifyReauthentication(env, user, { password: "correct horse" }), true);
+	assert.equal(await kite.verifyReauthentication(env, user, { password: "wrong" }), false);
+	assert.equal(await kite.verifyReauthentication(env, user, { code: "123456" }), false);
 	const secret = "JBSWY3DPEHPK3PXP";
 	const withTotp = { ...user, totpEnabled: true, totpSecret: secret };
-	assert.equal(await kite.verifyReauthentication(withTotp, { code: await kite.totp(secret) }), true);
-	assert.equal(await kite.verifyReauthentication(withTotp, { code: "abcd-efgh" }), false);
-	// A secret that was never confirmed does not count.
+	const now = Date.now();
+	const code = await kite.totp(secret, now);
+	assert.equal(await kite.verifyReauthentication(env, withTotp, { code }), true);
+	// The same code again, or the previous step's code (still inside the window), is a replay.
+	assert.equal(await kite.verifyReauthentication(env, withTotp, { code }), false);
 	assert.equal(
-		await kite.verifyReauthentication({ ...withTotp, totpEnabled: false }, { code: await kite.totp(secret) }),
+		await kite.verifyReauthentication(env, withTotp, { code: await kite.totp(secret, now - 30_000) }),
 		false,
 	);
+	assert.equal(await kite.verifyReauthentication(env, withTotp, { code: "abcd-efgh" }), false);
+	// Another user's steps are their own.
+	const other = { ...withTotp, id: "usr_b" };
+	assert.equal(await kite.verifyReauthentication(env, other, { code }), true);
+	// A secret that was never confirmed does not count.
+	assert.equal(await kite.verifyReauthentication(env, { ...withTotp, totpEnabled: false }, { code }), false);
+	// Before migration 0112 there is nowhere to record the step, and a right code is accepted as before.
+	const { env: before } = await database(t, { migrated: false });
+	assert.equal(await kite.verifyReauthentication(before, withTotp, { code }), true);
+});
+
+test("redeeming a password reset link removes the account's passkeys", async (t) => {
+	const { env, db } = await database(t);
+	const token = "reset_token_for_test";
+	db.exec(`
+		INSERT INTO passkeys (id, user_id, credential_id, public_key, algorithm, name, created_at) VALUES
+			('pk_1', 'usr_a', 'cred1', 'key', -7, 'Phone', 1), ('pk_2', 'usr_b', 'cred2', 'key', -7, 'Other', 1);
+	`);
+	db.prepare(
+		"INSERT INTO password_reset_tokens (id, user_id, token_hash, expires_at, created_at) VALUES ('t1', 'usr_a', ?, ?, 1)",
+	).run(await kite.hashSessionToken(token), Math.floor(Date.now() / 1000) + 600);
+	assert.deepEqual(await kite.completePasswordReset(env, token, "a new password", request()), { ok: true });
+	assert.deepEqual(
+		db
+			.prepare("SELECT id FROM passkeys")
+			.all()
+			.map((row) => row.id),
+		["pk_2"],
+	);
+	const audit = db.prepare("SELECT metadata FROM audit_logs WHERE action = 'auth.password_reset'").get();
+	assert.equal(JSON.parse(audit.metadata).passkeysRemoved, 1);
+});
+
+test("the passkey cap holds even when registrations race", async (t) => {
+	const { env, db } = await database(t);
+	const user = { id: "usr_a", email: "a@example.com", name: "A" };
+	const insert = db.prepare(
+		"INSERT INTO passkeys (id, user_id, credential_id, public_key, algorithm, name, created_at) VALUES (?, 'usr_a', ?, 'key', -7, 'Old', 1)",
+	);
+	for (let index = 0; index < 19; index++) insert.run(`pk_old_${index}`, `cred_old_${index}`);
+	const site = { origin: "http://localhost:3200", rpId: "localhost" };
+	const ceremonies = [];
+	for (let index = 0; index < 3; index++) {
+		const started = await kite.beginPasskeyRegistration(env, request(), user, "sess_1");
+		const authenticator = await softwareAuthenticator();
+		ceremonies.push({
+			ceremonyId: started.value.ceremonyId,
+			credential: await authenticator.register({ ...site, challenge: started.value.options.challenge }),
+		});
+	}
+	const results = await Promise.all(
+		ceremonies.map(({ ceremonyId, credential }) =>
+			kite.finishPasskeyRegistration(env, request(), user, "sess_1", { ceremonyId, name: "New", credential }),
+		),
+	);
+	assert.equal(results.filter((result) => result.ok).length, 1);
+	assert.deepEqual(
+		results.filter((result) => !result.ok).map((result) => result.code),
+		["limit", "limit"],
+	);
+	assert.equal(db.prepare("SELECT count(*) AS n FROM passkeys WHERE user_id = 'usr_a'").get().n, 20);
+	assert.equal((await kite.beginPasskeyRegistration(env, request(), user, "sess_1")).code, "limit");
+});
+
+test("an admin reset is one batch: if any part fails, sessions and TOTP are left as they were", async (t) => {
+	const { env, db } = await database(t);
+	db.exec(`
+		UPDATE users SET totp_secret = 'JBSWY3DPEHPK3PXP', totp_enabled = 1 WHERE id = 'usr_a';
+		INSERT INTO passkeys (id, user_id, credential_id, public_key, algorithm, name, created_at) VALUES
+			('pk_1', 'usr_a', 'cred1', 'key', -7, 'Phone', 1);
+		INSERT INTO sessions (id, user_id, token_hash, expires_at, created_at) VALUES ('s1', 'usr_a', 'h', 9999999999, 1);
+		CREATE TRIGGER passkeys_refuse_delete BEFORE DELETE ON passkeys BEGIN SELECT RAISE(ABORT, 'refused'); END;
+	`);
+	await assert.rejects(kite.resetUserSecondFactors(env, "usr_a"));
+	assert.equal(db.prepare("SELECT count(*) AS n FROM sessions").get().n, 1);
+	assert.equal(db.prepare("SELECT totp_enabled FROM users WHERE id = 'usr_a'").get().totp_enabled, 1);
+	db.exec("DROP TRIGGER passkeys_refuse_delete");
+	assert.deepEqual(await kite.resetUserSecondFactors(env, "usr_a"), { passkeysRemoved: 1 });
+	assert.equal(db.prepare("SELECT count(*) AS n FROM sessions").get().n, 0);
+});
+
+test("sign-in change notices: the mail text, and a failure never reaches the caller", async (t) => {
+	const added = kite.signInChangeMail({ kind: "passkey_added", passkeyName: "Work laptop" }, "Kite");
+	assert.equal(added.subject, "A passkey was added to your Kite account");
+	assert.match(added.text, /"Work laptop" can now sign in/);
+	assert.match(added.text, /If this was not you/);
+	const removed = kite.signInChangeMail({ kind: "passkey_removed", passkeyName: "Phone" }, "Kite");
+	assert.match(removed.subject, /removed from your Kite account/);
+	assert.match(
+		kite.signInChangeMail({ kind: "second_factors_reset", passkeysRemoved: 2 }, "Kite").text,
+		/2 passkeys were removed/,
+	);
+	assert.match(
+		kite.signInChangeMail({ kind: "second_factors_reset", passkeysRemoved: 1 }, "Kite").text,
+		/1 passkey was removed/,
+	);
+	assert.doesNotMatch(
+		kite.signInChangeMail({ kind: "second_factors_reset", passkeysRemoved: 0 }, "Kite").text,
+		/passkey/,
+	);
+	// No domain can send in this database, and a broken one throws: either way the change itself goes through.
+	const { env } = await database(t);
+	await kite.noticeSignInChange(
+		env,
+		{ email: "a@example.com", resetEmail: null },
+		{ kind: "passkey_added", passkeyName: "x" },
+	);
+	const broken = {
+		DB: {
+			prepare: () => {
+				throw new Error("database down");
+			},
+		},
+	};
+	await kite.noticeSignInChange(
+		broken,
+		{ email: "a@example.com", resetEmail: "r@example.org" },
+		{ kind: "passkey_removed", passkeyName: "x" },
+	);
+});
+
+test("the sign-in options route refuses another site and sets the ceremony cookie for this one", async (t) => {
+	const { env } = await database(t);
+	globalThis.__kiteNodeEnv = env;
+	t.after(() => delete globalThis.__kiteNodeEnv);
+	const call = (headers) =>
+		kite.signInOptions(new Request("http://localhost:3200/api/auth/passkey/options", { method: "POST", headers }));
+	assert.equal((await call({ Origin: "https://evil.test" })).status, 403);
+	assert.equal((await call({ "Sec-Fetch-Site": "cross-site" })).status, 403);
+	const allowed = await call({ Origin: "http://localhost:3200" });
+	assert.equal(allowed.status, 200);
+	assert.match(allowed.headers.get("set-cookie") ?? "", /kite_passkey_ceremony=.*HttpOnly/i);
+});
+
+test("admins are warned when APP_URL cannot anchor passkeys", () => {
+	assert.equal(kite.appUrlPasskeyWarning("https://mail.example.com"), null);
+	assert.match(kite.appUrlPasskeyWarning(undefined), /APP_URL is not set/);
+	assert.match(kite.appUrlPasskeyWarning("  "), /APP_URL is not set/);
+	assert.match(kite.appUrlPasskeyWarning("mail.example.com"), /not a valid http or https address/);
+	assert.match(kite.appUrlPasskeyWarning("ftp://mail.example.com"), /not a valid http or https address/);
 });
 
 test("before migration 0112 passkeys report unavailable and resets still work", async (t) => {

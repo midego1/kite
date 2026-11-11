@@ -159,7 +159,7 @@ export async function finishPasskeyRegistration(
 		if (taken) return { ok: false, status: 409, error: "This passkey is already registered.", code: "duplicate" };
 		const transports = sanitizeTransports(input.credential.response.transports);
 		const id = newId("pk");
-		const inserted = await insertWithinCap(env, sessionToken, {
+		const record = {
 			id,
 			userId: user.id,
 			credentialId: verified.credentialId,
@@ -171,7 +171,8 @@ export async function finishPasskeyRegistration(
 			backupEligible: verified.backupEligible,
 			backedUp: verified.backedUp,
 			name: normalizePasskeyName(input.name) ?? defaultPasskeyName(request.headers.get("user-agent")),
-		});
+		};
+		const inserted = await insertWithinCap(env, sessionToken, record);
 		if (inserted === "duplicate")
 			return { ok: false, status: 409, error: "This passkey is already registered.", code: "duplicate" };
 		if (inserted === "cap") return { ok: false, status: 400, error: capMessage(), code: "limit" };
@@ -182,8 +183,17 @@ export async function finishPasskeyRegistration(
 				error: "Your session ended. Sign in again to add a passkey.",
 				code: "session_ended",
 			};
-		const [row] = await db.select().from(passkeys).where(eq(passkeys.id, id)).limit(1);
-		return { ok: true, value: summary(row) };
+		// Built from what was inserted: a reset deleting the passkey right after must not turn success into a 500.
+		return {
+			ok: true,
+			value: {
+				id,
+				name: record.name,
+				createdAt: new Date().toISOString(),
+				lastUsedAt: null,
+				backedUp: record.backedUp,
+			},
+		};
 	});
 }
 

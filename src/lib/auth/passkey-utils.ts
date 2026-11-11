@@ -30,7 +30,12 @@ export function appUrlPasskeyWarning(appUrl: string | undefined): string | null 
 		return "APP_URL is not set, so passkeys use the address each request arrives at. Set APP_URL to Kite's public address, or passkeys may fail behind a proxy and stop working if the address changes.";
 	try {
 		const url = new URL(configured);
-		if (url.protocol === "https:" || url.protocol === "http:") return null;
+		if (url.protocol === "https:") return null;
+		if (url.protocol === "http:") {
+			// Browsers allow passkeys over plain http only on localhost.
+			if (["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)) return null;
+			return `APP_URL (${url.origin}) is plain http. Browsers only allow passkeys over https (or on localhost), so serve Kite over https and set APP_URL to that address.`;
+		}
 	} catch {
 		// Falls through to the warning below.
 	}

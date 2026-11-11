@@ -62,8 +62,14 @@ export async function checkReauthentication(
 ): Promise<Response | null> {
 	if (!hasValidSessionMutationOrigin(request)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 	if (!(await allowLoginAttempt(env, request))) return tooManyAttempts();
-	const parsed = passkeyReauthSchema.safeParse(await readJsonBody(request, 16 * 1024).catch(() => null));
-	if (!parsed.success) return NextResponse.json({ error: "Enter your password" }, { status: 400 });
+	const body = await readJsonBody(request, 16 * 1024).catch(() => null);
+	const parsed = passkeyReauthSchema.safeParse(body);
+	if (!parsed.success) {
+		// Answer about the field the person used: a too-short code is not a missing password.
+		const usedCode = !!body && typeof body === "object" && "code" in body && !("password" in body);
+		const error = usedCode ? "Enter the 6-digit code from your authenticator app" : "Enter your password";
+		return NextResponse.json({ error }, { status: 400 });
+	}
 	if (await verifyReauthentication(env, user, parsed.data)) return null;
 	const error = parsed.data.password !== undefined ? "Password is incorrect" : "That code did not match";
 	return NextResponse.json({ error }, { status: 400 });

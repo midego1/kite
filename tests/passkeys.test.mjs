@@ -45,6 +45,7 @@ await build({
 			export { hashSessionToken } from "./src/lib/auth/session.ts";
 			export { noticeSignInChange } from "./src/lib/auth/sign-in-notice.ts";
 			export { POST as signInOptions } from "./src/app/api/auth/passkey/options/route.ts";
+			export { checkReauthentication } from "./src/lib/auth/passkey-http.ts";
 			export { assertBackupTablesCoverDatabase } from "./src/lib/backups/export.ts";
 			export { BACKUP_TABLE_GROUPS } from "./src/lib/backups/table-groups.ts";
 		`,
@@ -1096,8 +1097,37 @@ test("the sign-in options route refuses another site and sets the ceremony cooki
 	assert.match(allowed.headers.get("set-cookie") ?? "", /kite_passkey_ceremony=.*HttpOnly/i);
 });
 
+test("re-authentication errors name the field that was used", async (t) => {
+	const { env } = await database(t);
+	const user = {
+		id: "usr_a",
+		passwordHash: kite.hashPassword("correct horse"),
+		totpEnabled: true,
+		totpSecret: "JBSWY3DPEHPK3PXP",
+	};
+	const call = async (body) => {
+		const response = await kite.checkReauthentication(
+			env,
+			new Request("http://localhost:3200/api/settings/passkeys/options", {
+				method: "POST",
+				headers: { Origin: "http://localhost:3200", "Content-Type": "application/json" },
+				body: JSON.stringify(body),
+			}),
+			user,
+		);
+		return response ? (await response.json()).error : null;
+	};
+	assert.equal(await call({ code: "123" }), "Enter the 6-digit code from your authenticator app");
+	assert.equal(await call({}), "Enter your password");
+	assert.equal(await call({ password: "wrong" }), "Password is incorrect");
+	assert.equal(await call({ code: "abcdef" }), "That code did not match");
+	assert.equal(await call({ password: "correct horse" }), null);
+});
+
 test("admins are warned when APP_URL cannot anchor passkeys", () => {
 	assert.equal(kite.appUrlPasskeyWarning("https://mail.example.com"), null);
+	assert.equal(kite.appUrlPasskeyWarning("http://localhost:3000"), null);
+	assert.match(kite.appUrlPasskeyWarning("http://mail.example.com"), /plain http/);
 	assert.match(kite.appUrlPasskeyWarning(undefined), /APP_URL is not set/);
 	assert.match(kite.appUrlPasskeyWarning("  "), /APP_URL is not set/);
 	assert.match(kite.appUrlPasskeyWarning("mail.example.com"), /not a valid http or https address/);

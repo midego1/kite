@@ -10,7 +10,7 @@ Status: built (November 2026, migration 0112). User docs: [Passkeys](../passkeys
 
 ## Relying party
 
-`relyingParty(env.APP_URL, request.url)` (`src/lib/auth/passkey-utils.ts`): the origin and host name of `APP_URL` when it is set and valid, otherwise the request's own. Behind a proxy that terminates TLS (common for the Node runtime) the request's own origin is not the one the browser shows, so passkeys fail closed: **set `APP_URL` before people add passkeys**. Settings → Security shows admins a warning while `APP_URL` is missing or not an http(s) address (`appUrlPasskeyWarning`). The RP ID is the host name (no port), the expected origin is exact (scheme, host and port). Changing `APP_URL` to another host makes existing passkeys unusable there, as it would in any WebAuthn deployment.
+`relyingParty(env.APP_URL, request.url)` (`src/lib/auth/passkey-utils.ts`): the origin and host name of `APP_URL` when it is set and valid, otherwise the request's own. Behind a proxy that terminates TLS (common for the Node runtime) the request's own origin is not the one the browser shows, so passkeys fail closed: **set `APP_URL` before people add passkeys**. Settings → Security shows admins a warning while `APP_URL` is missing, invalid, or plain http on a host other than localhost, where browsers refuse WebAuthn (`appUrlPasskeyWarning`). The RP ID is the host name (no port), the expected origin is exact (scheme, host and port). Changing `APP_URL` to another host makes existing passkeys unusable there, as it would in any WebAuthn deployment.
 
 ## Ceremonies
 

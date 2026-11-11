@@ -59,6 +59,12 @@ test("the wrapper's bound values never count as the database's own message", () 
 		"can_connect_accounts",
 	);
 	assert.equal(m.missingColumnFromError(new Error("no such column: agent_max_steps")), "agent_max_steps");
+	// A thrown string is read the same way, and anything else names no column.
+	assert.equal(m.missingColumnFromError("no such column: dns_skipped"), "dns_skipped");
+	assert.equal(m.missingColumnFromError("Failed query: update x\nparams: no such column: evil"), null);
+	assert.equal(m.missingColumnFromError("params: no such column: evil"), null);
+	assert.equal(m.missingColumnFromError({ message: "no such column: evil" }), null);
+	assert.equal(m.missingColumnFromError(null), null);
 });
 
 async function database(t, dir = migrationsDir) {

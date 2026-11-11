@@ -760,6 +760,22 @@ test("a compressed part of a file is refused, a compressed whole file loses its 
 	assert.equal(head.headers.get("etag"), '"e2"');
 	await new Promise((resolve) => setTimeout(resolve, 10));
 	assert.ok(cancelled, "the upstream body was cancelled for HEAD");
+	// A body whose cancel fails is let go of all the same, for HEAD and for a refused compressed part.
+	const failingCancel = () =>
+		new ReadableStream({
+			cancel() {
+				throw new Error("already gone");
+			},
+		});
+	assert.equal(dav.proxiedFile(new Response(failingCancel()), "a.txt", false, "HEAD").body, null);
+	const refused = dav.proxiedFile(
+		new Response(failingCancel(), { status: 206, headers: { "content-encoding": "br" } }),
+		"a.txt",
+		false,
+		"GET",
+	);
+	assert.equal(refused.status, 502);
+	await new Promise((resolve) => setTimeout(resolve, 10));
 	const empty = dav.proxiedFile(new Response(null, { status: 200 }), "a.txt", false, "GET");
 	assert.equal(empty.headers.get("etag"), null);
 	assert.equal(empty.headers.get("accept-ranges"), null);

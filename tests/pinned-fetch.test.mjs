@@ -9,7 +9,7 @@ import { bundleModules } from "./support/modules-bundle.mjs";
  * the original Host header, so a name that rebinds to a private address after the caller's own check gets nowhere.
  */
 const m = await bundleModules("kite-pinned-fetch-", [
-	["createPinnedFetch, OutboundAddressRefusedError", "server/runtime/pinned-fetch.ts"],
+	["createPinnedFetch", "server/runtime/pinned-fetch.ts"],
 	["outboundFetch, isAllowedOutboundAddress", "src/lib/security/outbound-fetch.ts"],
 	["assertPublicHttpUrl", "src/lib/security/outbound-url.ts"],
 ]);

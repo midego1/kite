@@ -8,7 +8,7 @@ import {
 } from "../../src/lib/security/outbound-fetch";
 
 /** A connection refused because the host is, or resolves to, an address the caller's policy does not allow. */
-export class OutboundAddressRefusedError extends Error {
+class OutboundAddressRefusedError extends Error {
 	readonly code = "ERR_OUTBOUND_ADDRESS_REFUSED";
 	constructor() {
 		super("Private and local addresses are not allowed");

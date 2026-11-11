@@ -305,8 +305,11 @@ test("providers: the account's preset follows its address, the sign-in kind name
 	assert.equal(oauthProviderOf("oauth_google"), "google");
 	assert.equal(oauthProviderOf("oauth_microsoft"), "microsoft");
 	assert.equal(oauthProviderOf("password"), null);
+	assert.equal(oauthAccountPreset("google", "not an address"), "google_workspace");
 	assert.equal(isOAuthProvider("google"), true);
+	assert.equal(isOAuthProvider("microsoft"), true);
 	assert.equal(isOAuthProvider("github"), false);
+	assert.equal(isOAuthProvider(undefined), false);
 });
 
 test("the page after a Google sign-in names Google, and every failure has its own words", () => {

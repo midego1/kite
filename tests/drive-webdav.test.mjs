@@ -747,4 +747,21 @@ test("a compressed part of a file is refused, a compressed whole file loses its 
 	assert.equal(ranged.status, 206);
 	assert.equal(ranged.headers.get("content-range"), "bytes 0-4/10");
 	assert.equal(await ranged.text(), "hello");
+
+	// HEAD sends no body and lets go of the server's; a server that sends none, no ETag and no ranges is passed on.
+	cancelled = false;
+	const head = dav.proxiedFile(
+		new Response(body(), { status: 200, headers: { etag: '"e2"' } }),
+		"a.txt",
+		false,
+		"HEAD",
+	);
+	assert.equal(head.body, null);
+	assert.equal(head.headers.get("etag"), '"e2"');
+	await new Promise((resolve) => setTimeout(resolve, 10));
+	assert.ok(cancelled, "the upstream body was cancelled for HEAD");
+	const empty = dav.proxiedFile(new Response(null, { status: 200 }), "a.txt", false, "GET");
+	assert.equal(empty.headers.get("etag"), null);
+	assert.equal(empty.headers.get("accept-ranges"), null);
+	assert.equal(await empty.text(), "");
 });

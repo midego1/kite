@@ -5,9 +5,7 @@
  * database's error), and any other message is read only up to a `params:` list.
  */
 function databaseMessage(message: string): string {
-	if (message.startsWith("Failed query:")) return "";
-	const params = message.search(/(?:^|\n)\s*params:/);
-	return params === -1 ? message : message.slice(0, params);
+	return message.replace(/^Failed query:[\s\S]*|(?:^|\n)\s*params:[\s\S]*/, "");
 }
 
 /**

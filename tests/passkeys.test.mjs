@@ -15,9 +15,16 @@ await build({
 			export { SqliteDatabase } from "./server/runtime/sqlite-database.ts";
 			export { applyMigrations } from "./server/runtime/migrate.ts";
 			export { decodeCbor, decodeCborItem } from "./src/lib/auth/webauthn/cbor-utils.ts";
-			export { base64UrlToBytes, bytesToBase64Url } from "./src/lib/auth/webauthn/base64url-utils.ts";
+			export { base64UrlToBytes, bytesToBase64Url, timingSafeEqualStrings } from "./src/lib/auth/webauthn/base64url-utils.ts";
 			export { verifyAssertion, verifyRegistration, WebAuthnError } from "./src/lib/auth/webauthn/verify-utils.ts";
-			export { relyingParty, sanitizeTransports, userHandleFor, normalizePasskeyName } from "./src/lib/auth/passkey-utils.ts";
+			export {
+				defaultPasskeyName,
+				normalizePasskeyName,
+				passkeyErrorMessage,
+				relyingParty,
+				sanitizeTransports,
+				userHandleFor,
+			} from "./src/lib/auth/passkey-utils.ts";
 			export { consumePasskeyChallenge, createPasskeyChallenge } from "./src/lib/auth/passkey-challenges.ts";
 			export {
 				beginPasskeyRegistration,
@@ -600,6 +607,44 @@ test("the relying party is APP_URL's host, else the request's; transports and na
 	assert.deepEqual(kite.sanitizeTransports(["internal", "bogus", "hybrid", "internal", 3]), ["internal", "hybrid"]);
 	assert.equal(kite.normalizePasskeyName("  Work \n laptop  "), "Work laptop");
 	assert.equal(kite.normalizePasskeyName("   "), null);
+});
+
+test("passkey names, error messages and base64url decoding", () => {
+	const names = [
+		["Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)", "iPhone or iPad passkey"],
+		["Mozilla/5.0 (Linux; Android 15; Pixel 9)", "Android passkey"],
+		["Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0)", "Mac passkey"],
+		["Mozilla/5.0 (Windows NT 10.0; Win64; x64)", "Windows passkey"],
+		["Mozilla/5.0 (X11; Linux x86_64)", "Linux passkey"],
+		["curl/8.0", "Passkey"],
+		[null, "Passkey"],
+	];
+	for (const [agent, name] of names) assert.equal(kite.defaultPasskeyName(agent), name);
+	assert.equal(kite.normalizePasskeyName(42), null);
+	assert.equal(kite.normalizePasskeyName("x".repeat(100)).length, 64);
+	const messages = new Set(
+		[
+			"challenge_mismatch",
+			"origin_mismatch",
+			"rp_id_mismatch",
+			"user_not_verified",
+			"user_not_present",
+			"unsupported_algorithm",
+			"counter_regression",
+			"bad_signature",
+		].map((code) => kite.passkeyErrorMessage(code)),
+	);
+	assert.equal(messages.size, 6);
+	assert.deepEqual(kite.sanitizeTransports("usb"), []);
+
+	assert.deepEqual(fromB64u("AQID"), Uint8Array.of(1, 2, 3));
+	assert.deepEqual(fromB64u("_-8"), Uint8Array.of(0xff, 0xef));
+	assert.equal(b64u(Uint8Array.of(0xff, 0xef)), "_-8");
+	assert.equal(b64u(new Uint8Array(70_000)).length, 93_334);
+	for (const bad of ["AQ==", "A", "AQ+/", "a b"]) assert.throws(() => fromB64u(bad), TypeError);
+	assert.equal(kite.timingSafeEqualStrings("abc", "abc"), true);
+	assert.equal(kite.timingSafeEqualStrings("abc", "abd"), false);
+	assert.equal(kite.timingSafeEqualStrings("abc", "abcd"), false);
 });
 
 // --- Database: challenges, the full ceremony, pre-migration behaviour ---

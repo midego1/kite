@@ -38,7 +38,9 @@ async function turnOnTotp(page: Page): Promise<void> {
 
 async function signOut(page: Page): Promise<void> {
 	await page.request.post("/api/auth/logout", { headers: { Origin: BASE_URL } });
-	await page.goto("/login");
+	// The open page notices the session is gone and may go to /login on its own, which aborts this navigation.
+	await page.goto("/login").catch(() => undefined);
+	await expect(page).toHaveURL(/\/login/);
 	await waitForHydration(page);
 }
 
@@ -72,7 +74,18 @@ test("register a passkey, sign in with it instead of password and code, remove i
 	expect(credential.isResidentCredential).toBe(true);
 	expect(credential.rpId).toBe("localhost");
 
-	// Sign out, then in with the passkey: no password and, although TOTP is on, no code.
+	// Signed out, the login page offers the passkey as autofill on the email field (conditional mediation), which
+	// Chromium's virtual authenticator answers on its own: signed in, without the password and, although TOTP is on,
+	// without a code.
+	await page.request.post("/api/auth/logout", { headers: { Origin: BASE_URL } });
+	await page.goto("/login").catch(() => undefined);
+	await expect(page).toHaveURL(/\/inbox/);
+	await expect(page.getByRole("heading", { name: "Two-factor authentication" })).toHaveCount(0);
+
+	// From here on the browser offers no autofill, so the button's own dialog is what signs in.
+	await page.addInitScript(() => {
+		Object.defineProperty(PublicKeyCredential, "isConditionalMediationAvailable", { value: async () => false });
+	});
 	await signOut(page);
 	await expect(page.getByLabel("Email")).toHaveAttribute("autocomplete", "username webauthn");
 	await page.getByRole("button", { name: "Sign in with a passkey" }).click();

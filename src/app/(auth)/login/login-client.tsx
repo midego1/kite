@@ -45,29 +45,25 @@ export function LoginClient({
 		[router, justFinishedSetup, next],
 	);
 
-	/** Offers the browser's passkeys in the email field's autofill until one is picked or the page changes. */
+	/**
+	 * Offers the browser's passkeys in the email field's autofill. One attempt per visit: after a refused passkey the
+	 * button is the way to try again, so a browser that answers on its own can never loop against the server.
+	 */
 	const offerPasskeyAutofill = useCallback(() => {
 		passkeyRequest.current?.abort();
 		const controller = new AbortController();
 		passkeyRequest.current = controller;
 		void (async () => {
 			if (!(await conditionalMediationAvailable())) return;
-			// A refused passkey used its challenge up, so the autofill is offered again with a fresh one.
-			while (!controller.signal.aborted) {
-				try {
-					const result = await signInWithPasskey({ conditional: true, signal: controller.signal });
-					if (!result || controller.signal.aborted) return;
-					if (result.ok) {
-						finish(result.data.redirect);
-						return;
-					}
-					setError(result.data.error ?? "Passkey sign-in failed");
-				} catch (error) {
-					if (controller.signal.aborted || isPasskeyCancel(error)) return;
-					if (!(error instanceof PasskeySignInUnavailableError))
-						setError(error instanceof Error ? error.message : "Passkey sign-in failed");
-					return;
-				}
+			try {
+				const result = await signInWithPasskey({ conditional: true, signal: controller.signal });
+				if (!result || controller.signal.aborted) return;
+				if (result.ok) finish(result.data.redirect);
+				else setError(result.data.error ?? "Passkey sign-in failed");
+			} catch (error) {
+				if (controller.signal.aborted || isPasskeyCancel(error)) return;
+				if (!(error instanceof PasskeySignInUnavailableError))
+					setError(error instanceof Error ? error.message : "Passkey sign-in failed");
 			}
 		})();
 	}, [finish]);
@@ -84,6 +80,7 @@ export function LoginClient({
 		passkeyRequest.current = controller;
 		setPasskeyLoading(true);
 		setError(null);
+		let cancelled = false;
 		try {
 			const result = await signInWithPasskey({ conditional: false, signal: controller.signal });
 			if (result?.ok) {
@@ -91,12 +88,15 @@ export function LoginClient({
 				return;
 			}
 			if (result) setError(result.data.error ?? "Passkey sign-in failed");
+			else cancelled = true;
 		} catch (error) {
-			if (!isPasskeyCancel(error)) setError(error instanceof Error ? error.message : "Passkey sign-in failed");
+			if (isPasskeyCancel(error)) cancelled = true;
+			else setError(error instanceof Error ? error.message : "Passkey sign-in failed");
 		} finally {
 			setPasskeyLoading(false);
 		}
-		if (passkeyRequest.current === controller) offerPasskeyAutofill();
+		// Closing the dialog brings the autofill back; a refused passkey does not, so nothing retries on its own.
+		if (cancelled && passkeyRequest.current === controller) offerPasskeyAutofill();
 	}
 
 	async function onSubmit(e: React.FormEvent<HTMLFormElement>) {

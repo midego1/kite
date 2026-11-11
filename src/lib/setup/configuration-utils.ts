@@ -51,7 +51,7 @@ export function checkAppUrl({ env, origin }: Pick<CheckInput, "env" | "origin">)
 			key: name,
 			configured: false,
 			severity: "recommended",
-			message: `Not set. Password reset emails, and receiving through Resend or Amazon SES, need it. Add the variable APP_URL=${suggestion} under the Worker's Settings → Variables and secrets.`,
+			message: `Not set. Password reset emails, passkeys behind a proxy, and receiving through Resend or Amazon SES, need it. Add the variable APP_URL=${suggestion} under the Worker's Settings → Variables and secrets.`,
 		};
 	}
 	let parsed: URL;

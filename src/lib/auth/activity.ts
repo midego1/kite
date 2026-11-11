@@ -7,14 +7,18 @@ export async function recordAuthActivity(
 		action: AuthActivityAction;
 		userId: string;
 		request: Request;
+		/** Who acted, when not the account itself (an admin resetting its second factors). */
+		actorUserId?: string;
+		/** Extra details for the entry, such as the passkey's name. */
+		details?: Record<string, unknown>;
 	},
 ): Promise<void> {
 	try {
 		await createAuditLog(env, {
-			actorUserId: input.userId,
+			actorUserId: input.actorUserId ?? input.userId,
 			targetUserId: input.userId,
 			action: input.action,
-			metadata: getAuthActivityMetadata(input.request),
+			metadata: { ...getAuthActivityMetadata(input.request), ...input.details },
 		});
 	} catch {
 		// Authentication should not fail because activity logging is unavailable.

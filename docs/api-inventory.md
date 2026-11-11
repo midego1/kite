@@ -15,6 +15,7 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/accounts/[id]/avatar`                                  | GET, POST              | [source](../src/app/api/accounts/[id]/avatar/route.ts)                                  |
 | `/api/accounts/[id]/mailbox-access`                          | DELETE, GET, POST      | [source](../src/app/api/accounts/[id]/mailbox-access/route.ts)                          |
 | `/api/accounts/[id]/mailboxes`                               | GET                    | [source](../src/app/api/accounts/[id]/mailboxes/route.ts)                               |
+| `/api/accounts/[id]/mfa`                                     | DELETE                 | [source](../src/app/api/accounts/[id]/mfa/route.ts)                                     |
 | `/api/accounts/[id]`                                         | GET, PATCH             | [source](../src/app/api/accounts/[id]/route.ts)                                         |
 | `/api/accounts/[id]/transfer-primary`                        | POST                   | [source](../src/app/api/accounts/[id]/transfer-primary/route.ts)                        |
 | `/api/accounts`                                              | GET, POST              | [source](../src/app/api/accounts/route.ts)                                              |
@@ -101,6 +102,8 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/auth/logout`                                           | POST                   | [source](../src/app/api/auth/logout/route.ts)                                           |
 | `/api/auth/me`                                               | GET                    | [source](../src/app/api/auth/me/route.ts)                                               |
 | `/api/auth/mfa/verify`                                       | POST                   | [source](../src/app/api/auth/mfa/verify/route.ts)                                       |
+| `/api/auth/passkey/options`                                  | POST                   | [source](../src/app/api/auth/passkey/options/route.ts)                                  |
+| `/api/auth/passkey/verify`                                   | POST                   | [source](../src/app/api/auth/passkey/verify/route.ts)                                   |
 | `/api/auth/password-reset/confirm`                           | POST                   | [source](../src/app/api/auth/password-reset/confirm/route.ts)                           |
 | `/api/auth/password-reset/request`                           | POST                   | [source](../src/app/api/auth/password-reset/request/route.ts)                           |
 | `/api/auth/register`                                         | POST                   | [source](../src/app/api/auth/register/route.ts)                                         |
@@ -268,6 +271,9 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/settings/mfa/enroll`                                   | POST                   | [source](../src/app/api/settings/mfa/enroll/route.ts)                                   |
 | `/api/settings/mfa/recovery-codes`                           | POST                   | [source](../src/app/api/settings/mfa/recovery-codes/route.ts)                           |
 | `/api/settings/mfa`                                          | GET                    | [source](../src/app/api/settings/mfa/route.ts)                                          |
+| `/api/settings/passkeys/[id]`                                | DELETE                 | [source](../src/app/api/settings/passkeys/[id]/route.ts)                                |
+| `/api/settings/passkeys/options`                             | POST                   | [source](../src/app/api/settings/passkeys/options/route.ts)                             |
+| `/api/settings/passkeys`                                     | GET, POST              | [source](../src/app/api/settings/passkeys/route.ts)                                     |
 | `/api/settings/password`                                     | PATCH                  | [source](../src/app/api/settings/password/route.ts)                                     |
 | `/api/settings/profile`                                      | PATCH                  | [source](../src/app/api/settings/profile/route.ts)                                      |
 | `/api/settings/recipient-addresses`                          | GET, PATCH             | [source](../src/app/api/settings/recipient-addresses/route.ts)                          |

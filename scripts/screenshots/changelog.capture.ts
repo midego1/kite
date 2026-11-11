@@ -10,6 +10,7 @@ import type { FakeModel } from "../../e2e/support/fake-model-types";
 import { apiContext, deliverInbound, postInbound, waitForMessage } from "../../e2e/support/helpers";
 import { turnScreenerOff } from "../../e2e/support/screener";
 import { chooseOption } from "../../e2e/support/select";
+import { addVirtualAuthenticator } from "../../e2e/support/passkeys";
 import {
 	RTL_ATTACHMENT_MAIL,
 	RTL_MAIL,
@@ -335,7 +336,70 @@ async function connectDemoMcpApp(name: string): Promise<void> {
 	await session.dispose();
 }
 
+/** Adds a demo passkey for the demo admin through the Security page, with Chromium's virtual authenticator. */
+async function openPasskeySettings(page: Page): Promise<Locator> {
+	await addVirtualAuthenticator(page);
+	// The demo server runs without APP_URL; the admin-only note about it is not what the shot is about.
+	await page.route("**/api/settings/passkeys", async (route) => {
+		if (route.request().method() !== "GET") return route.continue();
+		const response = await route.fetch();
+		await route.fulfill({ response, json: { ...(await response.json()), appUrlWarning: null } });
+	});
+	await page.goto("/settings/security");
+	const heading = page.getByRole("heading", { level: 2, name: "Passkeys" });
+	await expect(heading).toBeVisible();
+	const list = page.getByRole("list", { name: "Your passkeys" });
+	// The button appears once the list has loaded, so a passkey from an earlier shot is seen and not added twice.
+	await expect(page.getByRole("button", { name: "Add a passkey" })).toBeVisible();
+	if ((await list.getByText("MacBook Pro").count()) === 0) {
+		await page.getByRole("button", { name: "Add a passkey" }).click();
+		const dialog = page.getByRole("dialog", { name: "Add a passkey" });
+		await dialog.getByLabel("Name (optional)").fill("MacBook Pro");
+		await dialog.getByLabel("Password").fill(ADMIN.password);
+		await dialog.getByRole("button", { name: "Continue" }).click();
+		await expect(dialog).toBeHidden();
+	}
+	await expect(list.getByText("MacBook Pro").first()).toBeVisible();
+	return heading.locator("xpath=../..");
+}
+
+/** The sign-in page as a signed-out visitor sees it, with the passkey button. */
+async function openPasskeySignIn(page: Page): Promise<Page> {
+	await page.context().clearCookies();
+	await page.goto("/login");
+	await expect(page.getByRole("button", { name: "Sign in with a passkey" })).toBeVisible();
+	return page;
+}
+
 const SHOTS: Shot[] = [
+	{
+		// Passkeys in Settings → Security: one passkey with when it was added and last used, and Add a passkey.
+		name: "2026-11-10-passkeys-security-light",
+		theme: "light",
+		viewport: { width: 1280, height: 900 },
+		open: openPasskeySettings,
+	},
+	{
+		// The same section on a phone (375 px).
+		name: "2026-11-10-passkeys-security-mobile-light",
+		theme: "light",
+		viewport: { width: 375, height: 812 },
+		open: openPasskeySettings,
+	},
+	{
+		// The sign-in page with Sign in with a passkey under the password form.
+		name: "2026-11-10-passkey-sign-in-light",
+		theme: "light",
+		viewport: { width: 1280, height: 800 },
+		open: openPasskeySignIn,
+	},
+	{
+		// The sign-in page on a phone (375 px).
+		name: "2026-11-10-passkey-sign-in-mobile-light",
+		theme: "light",
+		viewport: { width: 375, height: 812 },
+		open: openPasskeySignIn,
+	},
 	{
 		// RTL audit: an Arabic attachment name reads right to left on its card, like the subject and the sender above it.
 		name: "2026-11-10-rtl-attachment-name-light",

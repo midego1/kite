@@ -11,3 +11,7 @@ paths = ['''^scripts/quality/baseline\.json$''']
 [[allowlists]]
 description = "The public label that derives the relay's header signature key from INBOUND_WEBHOOK_SECRET (src/lib/email/inbound-signature.mjs). It is a fixed domain-separation string, not a credential."
 regexes = ['''^kite-relay-headers-signature-key-v1$''']
+
+[[allowlists]]
+description = "WebAuthn test vectors: public navigator.credentials output (challenges, client data, authenticator data, public keys and signatures) from Chromium's throwaway virtual authenticator, for tests/passkeys.test.mjs. No private key or credential is in them."
+paths = ['''^tests/fixtures/webauthn/[^/]+\.json$''']

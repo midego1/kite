@@ -1,19 +1,28 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import toast from "react-hot-toast";
-import { Receipt, ScanSearch } from "lucide-react";
+import { Download, Receipt, ScanSearch } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/page";
 import { CARD_CLASS } from "@/components/ui/page-utils";
 import { Select } from "@/components/ui/select";
 import { formatMoney } from "@/lib/finance/amount-utils";
+import { MAX_EXPORT_ROWS } from "@/lib/finance/payment-export-utils";
+import { NO_CATEGORY } from "@/lib/finance/payment-filter-utils";
 import { currentLocale } from "@/lib/i18n/translator";
 import { useT } from "@/lib/i18n/use-t";
+import { cn } from "@/lib/utils";
 import { PaymentDialog } from "./payment-dialog";
 import { PaymentRow } from "./payment-row";
 import type { MonthCurrencyTotal, PaymentFilters, PaymentItem, ScanCoverageGap, ScanState } from "./payments-types";
 import {
+	CATEGORIES,
+	CATEGORY_LABELS,
+	anyFilter,
+	exportHref,
 	filterOptions,
 	filterPayments,
 	monthLabel,
@@ -101,6 +110,37 @@ function ScanButton({ scan, onStarted }: { scan: ScanState | null; onStarted: ()
 	);
 }
 
+/** Downloads the rows the filters show as CSV; a link, so the browser saves the file the server builds. */
+function ExportButton({ filters, disabled }: { filters: PaymentFilters; disabled: boolean }) {
+	const t = useT();
+	return (
+		<Button
+			asChild
+			size="sm"
+			variant="outline"
+			className={cn("h-8 text-sm", disabled && "pointer-events-none opacity-50")}
+		>
+			<a href={exportHref(filters)} download aria-disabled={disabled} data-payment-export>
+				<Download aria-hidden className="h-4 w-4" />
+				{t("Export CSV")}
+			</a>
+		</Button>
+	);
+}
+
+/** The line over the one payment a search result or a record link opened, with the way back to the whole list. */
+function FocusNote({ found }: { found: boolean }) {
+	const t = useT();
+	return (
+		<p className="text-sm text-neutral-600" data-payment-focus>
+			{found ? t("Showing one payment.") : t("That payment is not listed.")}{" "}
+			<Link href="/finance?tab=payments" className="font-medium text-blue-700 hover:underline">
+				{t("Show all payments")}
+			</Link>
+		</p>
+	);
+}
+
 function ScanCoverageNote({ gaps }: { gaps: ScanCoverageGap[] }) {
 	const t = useT();
 	const texts = scanCoverageTexts(gaps, t);
@@ -158,6 +198,21 @@ function Filters({
 				))}
 			</Select>
 			<Select
+				aria-label={t("Category")}
+				containerClassName="flex h-8 text-sm"
+				value={filters.category}
+				onChange={(event) => onChange({ ...filters, category: event.target.value })}
+				data-payment-category-filter
+			>
+				<option value="">{t("All categories")}</option>
+				<option value={NO_CATEGORY}>{t("No category")}</option>
+				{CATEGORIES.map((category) => (
+					<option key={category} value={category}>
+						{t(CATEGORY_LABELS[category])}
+					</option>
+				))}
+			</Select>
+			<Select
 				aria-label={t("Status")}
 				containerClassName="flex h-8 text-sm"
 				value={filters.status}
@@ -181,13 +236,15 @@ function Filters({
 export function PaymentsView() {
 	const t = useT();
 	const { list, failed, reload } = usePaymentList();
-	const [filters, setFilters] = useState<PaymentFilters>({ vendor: "", month: "", status: "" });
+	const [filters, setFilters] = useState<PaymentFilters>({ vendor: "", month: "", status: "", category: "" });
 	const [correcting, setCorrecting] = useState<PaymentItem | null>(null);
+	// A search result or a record link opens the tab on one payment (`?payment=<id>`).
+	const focusId = useSearchParams().get("payment");
 	const locale = currentLocale();
 	const items = list?.payments ?? [];
-	const shown = filterPayments(items, filters);
+	const shown = focusId ? items.filter((item) => item.id === focusId) : filterPayments(items, filters);
 	// Unfiltered, the server's totals also cover rows past the list's cap.
-	const unfiltered = !filters.vendor && !filters.month && !filters.status;
+	const unfiltered = !focusId && !anyFilter(filters);
 	return (
 		<div className="space-y-6" data-payments-view>
 			{failed && (
@@ -206,8 +263,16 @@ export function PaymentsView() {
 						<p className="text-sm text-neutral-600" data-payment-scan-status>
 							{list.scan ? scanText(list.scan, t) : t("Payments that arrive by mail are added here on their own.")}
 						</p>
-						<ScanButton scan={list.scan} onStarted={reload} />
+						<div className="flex flex-wrap items-center gap-2">
+							{!focusId && <ExportButton filters={filters} disabled={items.length === 0} />}
+							<ScanButton scan={list.scan} onStarted={reload} />
+						</div>
 					</div>
+					{(list.total ?? 0) > MAX_EXPORT_ROWS && (
+						<p className="text-xs text-neutral-500" data-payment-export-limit>
+							{t("An export holds at most 20,000 payments; narrow it with the filters to get the rest.")}
+						</p>
+					)}
 					<ScanCoverageNote gaps={list.scanCoverage} />
 					{items.length === 0 ? (
 						<EmptyState
@@ -220,9 +285,13 @@ export function PaymentsView() {
 					) : (
 						<>
 							<MonthTotals totals={unfiltered ? list.months : monthTotals(shown)} locale={locale} />
-							<Filters items={items} filters={filters} onChange={setFilters} locale={locale} />
+							{focusId ? (
+								<FocusNote found={shown.length > 0} />
+							) : (
+								<Filters items={items} filters={filters} onChange={setFilters} locale={locale} />
+							)}
 							{shown.length === 0 ? (
-								<p className="text-sm text-neutral-600">{t("No payments match these filters.")}</p>
+								!focusId && <p className="text-sm text-neutral-600">{t("No payments match these filters.")}</p>
 							) : (
 								<>
 									<ul className={`divide-y divide-neutral-200 overflow-hidden ${CARD_CLASS}`} data-payment-list>

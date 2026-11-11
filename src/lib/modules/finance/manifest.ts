@@ -16,7 +16,10 @@ export const financeManifest: ModuleManifest = {
 	composerSlots: [],
 	messageSlots: financeClientData.messageSlots,
 	readingPaneSlots: financeClientData.readingPaneSlots,
-	recordKinds: [{ kind: "finance:subscription", label: "Subscription", unavailableLabel: "Subscription" }],
+	recordKinds: [
+		{ kind: "finance:subscription", label: "Subscription", unavailableLabel: "Subscription" },
+		{ kind: "finance:payment", label: "Payment", unavailableLabel: "Payment" },
+	],
 	webhookEvents: [
 		{
 			value: "finance.subscription.detected",
@@ -28,13 +31,23 @@ export const financeManifest: ModuleManifest = {
 			label: "Subscription renewal due",
 			hint: "A tracked subscription renews or its trial ends soon",
 		},
+		{
+			value: "finance.payment.recorded",
+			label: "Payment recorded",
+			hint: "A receipt, invoice, refund or credit note was added to the Payments tab",
+		},
 	],
 	grants: [
-		{ grant: "finance.read", label: "Read subscriptions" },
+		{ grant: "finance.read", label: "Read subscriptions and payments" },
 		{ grant: "finance.write", label: "Add, change and remove subscriptions and their documents" },
 	],
 	mcpScopes: [
-		{ scope: "mcp:finance-read", label: "Read subscriptions", grants: ["finance.read"], mailboxBound: false },
+		{
+			scope: "mcp:finance-read",
+			label: "Read subscriptions and payments",
+			grants: ["finance.read"],
+			mailboxBound: false,
+		},
 	],
 	apiKeyScopes: [],
 	jmapCapabilities: [],

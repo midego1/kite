@@ -86,7 +86,7 @@ const emitWebhook = createWebhookEmitter({
 		return name && payloadSchemaReader ? payloadSchemaReader(moduleId, name) : null;
 	},
 	isEnabledFor: (viewer, moduleId) => isModuleEnabledFor(getEnv(), viewer, moduleId),
-	dispatch: (userId, event, payload) => dispatchModuleWebhook(getEnv(), userId, event, payload),
+	dispatch: (userId, event, payload, options) => dispatchModuleWebhook(getEnv(), userId, event, payload, options),
 });
 
 /** The only door from module code into core services. */

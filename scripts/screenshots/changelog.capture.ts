@@ -1349,6 +1349,34 @@ const SHOTS: Shot[] = [
 		},
 	},
 	{
+		// Payment categories and the CSV export on the Payments tab: a category beside obvious vendors, the category filter
+		// and the Export CSV button, over the same invented Payments demo data (desktop, then a 375px phone).
+		name: "2026-11-10-money-watch-payment-categories-light",
+		theme: "light",
+		viewport: { width: 1280, height: 900 },
+		open: async (page) => {
+			await seedPaymentsDemo();
+			await page.goto("/finance?tab=payments");
+			await expect(page.locator("[data-payment-row]").first()).toBeVisible();
+			await expect(page.locator("[data-payment-category]").first()).toBeVisible();
+			await expect(page.locator("[data-payment-export]")).toBeVisible();
+			return page.locator("[data-finance-page]");
+		},
+	},
+	{
+		name: "2026-11-10-money-watch-payment-categories-phone-light",
+		theme: "light",
+		viewport: { width: 375, height: 1250 },
+		open: async (page) => {
+			await seedPaymentsDemo();
+			await page.goto("/finance?tab=payments");
+			await expect(page.locator("[data-payment-row]").first()).toBeVisible();
+			await expect(page.locator("[data-payment-category]").first()).toBeVisible();
+			await expect(page.locator("[data-payment-export]")).toBeVisible();
+			return page;
+		},
+	},
+	{
 		// "Keep receipts": the per-user setting and the "Save receipts for existing payments" backfill, open over the
 		// same invented Payments demo data.
 		name: "2026-11-08-money-watch-keep-receipts",

@@ -46,6 +46,7 @@ export async function dispatchWebhooks(
 	userId: string,
 	eventType: WebhookEventType,
 	payload: Record<string, unknown>,
+	options?: { queued?: boolean },
 ): Promise<void> {
 	const db = getDb(env);
 	const hooks = await db.select().from(webhooks).where(eq(webhooks.userId, userId));
@@ -57,6 +58,8 @@ export async function dispatchWebhooks(
 		try {
 			const body = JSON.stringify({ type: eventType, data: payload });
 			const delivery = await createDelivery(db, hook.id, eventType, body);
+			// A queued first attempt leaves the caller's request: a slow endpoint never holds it up.
+			if (options?.queued && (await enqueueFirstAttempt(env, delivery.id))) continue;
 			await attemptDelivery(env, db, hook, delivery);
 		} catch (error) {
 			console.error(`Webhook dispatch failed for ${hook.id}`, error);
@@ -179,6 +182,18 @@ async function dropForDisabledModule(db: AppDatabase, delivery: PendingDelivery,
 		})
 		.where(eq(webhookDeliveries.id, delivery.id));
 	return true;
+}
+
+/** Hands a new delivery to the queue; false when it could not, and the caller then sends it itself. */
+async function enqueueFirstAttempt(env: CloudflareEnv, deliveryId: string): Promise<boolean> {
+	const message: WebhookRetryMessage = { kind: "webhook.retry", deliveryId };
+	try {
+		await env.OUTBOUND_QUEUE.send(message);
+		return true;
+	} catch (error) {
+		console.error(`Failed to queue webhook delivery ${deliveryId}`, error);
+		return false;
+	}
 }
 
 async function scheduleRetry(env: CloudflareEnv, deliveryId: string, delaySeconds: number): Promise<void> {

@@ -68,7 +68,11 @@ const ids = (events) => events.map((event) => event.value);
 const MESSAGE_EVENTS = ["message.inbound", "message.outbound", "message.failed"];
 const CALENDAR_EVENTS = ["calendar.event.created", "calendar.event.updated", "calendar.event.deleted"];
 const BOOKING_EVENT = "booking.appointment.created";
-const FINANCE_EVENTS = ["finance.subscription.detected", "finance.subscription.renewal_due"];
+const FINANCE_EVENTS = [
+	"finance.subscription.detected",
+	"finance.subscription.renewal_due",
+	"finance.payment.recorded",
+];
 const ALL_EVENTS = [...MESSAGE_EVENTS, ...CALENDAR_EVENTS, BOOKING_EVENT, ...FINANCE_EVENTS];
 
 const OWNER = { userId: "owner", role: "admin", isPrimaryAdmin: true };

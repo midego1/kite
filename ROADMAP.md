@@ -40,25 +40,27 @@ A feature is done only when all three pass and it has a new or updated test: a `
 
 Make the app usable for Arabic, Hebrew, Persian and Urdu mail and users.
 
-1. **RTL message content**
+All five items have shipped: item 1 in [#352](https://github.com/midego1/kite/pull/352), item 2 in [#355](https://github.com/midego1/kite/pull/355), item 3 in [#359](https://github.com/midego1/kite/pull/359), item 4 in [#360](https://github.com/midego1/kite/pull/360) and item 5 in [#378](https://github.com/midego1/kite/pull/378) (Dutch, with Arabic as an opt-in draft; wording fixes in [#393](https://github.com/midego1/kite/pull/393)). An audit on 2026-11-10 checked every acceptance criterion below against the code and the tests and found them met; it added `dir="auto"` to the few places that still showed text from mail without it: attachment names on their cards and in the viewer, the subject in the undo-send bar, From, To and Subject in the message source dialog, template subjects, the assistant's recent requests by email, and the search fields and results. What is still English (Settings, Admin, the modules' own pages, signed-out pages) is listed in [Translations](docs/translations.md).
+
+1. **RTL message content (shipped in [#352](https://github.com/midego1/kite/pull/352))**
    - Message bodies, subjects, previews and sender names render with `dir="auto"`, so an Arabic email reads right to left inside an English UI.
    - The sandboxed email frame sets `dir="auto"` on its body and keeps the sender's own `dir` attributes.
    - Plain-text messages with RTL text align right.
    - Test: an e2e spec delivers an Arabic and a Hebrew message (inbound helper in `e2e/support/helpers.ts`) and asserts the computed `direction` in the list, the reader and the frame.
-2. **RTL composer**
+2. **RTL composer (shipped in [#355](https://github.com/midego1/kite/pull/355))**
    - The rich-text editor and subject field use `dir="auto"` per paragraph; a toolbar button switches the current paragraph's direction.
    - Sent HTML keeps the `dir` attributes; `htmlToPlainText` output is unchanged for LTR text.
    - Test: unit tests for the HTML helpers in `rich-text-utils.ts`, and an e2e spec that types Arabic, sends it and checks the sent HTML.
-3. **Logical CSS throughout**
+3. **Logical CSS throughout (shipped in [#359](https://github.com/midego1/kite/pull/359))**
    - Replace physical Tailwind utilities (`ml-`, `mr-`, `pl-`, `pr-`, `left-`, `right-`, `text-left`, `rounded-l-` and similar, in about 37 files) with logical ones (`ms-`, `me-`, `ps-`, `pe-`, `start-`, `end-`, `text-start`).
    - Directional icons (chevrons, arrows, the reply icon) flip with `rtl:` variants.
    - Test: a lint rule or unit test that fails on new physical utilities in `src/`.
-4. **RTL interface setting**
+4. **RTL interface setting (shipped in [#360](https://github.com/midego1/kite/pull/360))**
    - A setting in the account menu (next to Reading layout) for interface direction: Automatic (from the browser language), Left to right, Right to left. Stored like the reading layout.
    - The root `<html>` gets `dir` before first paint, with no layout flash.
    - The reading pane divider, sidebar, dropdowns, toasts and dialogs mirror correctly.
    - Test: e2e spec switches to RTL and checks the sidebar sits on the right, the divider still resizes, and the account menu opens in place.
-5. **Interface translations (foundation)** (see [Translations](docs/translations.md))
+5. **Interface translations (foundation) (shipped in [#378](https://github.com/midego1/kite/pull/378))** (see [Translations](docs/translations.md))
    - Introduce a small message catalog (no heavy dependency) with English as the source and one RTL language as the first translation.
    - Start with the shell: sidebar, account menu, message list, reader toolbar, composer.
    - Dates and times use `Intl` with the user's locale.

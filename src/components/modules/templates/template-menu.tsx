@@ -54,7 +54,9 @@ export function TemplateMenu({ applyContent, openOverlay }: ComposerSlotContext 
 								}
 								className={`${itemClass} group justify-between gap-2`}
 							>
-								<span className="whitespace-normal break-words">{template.subject || "Untitled"}</span>
+								<span dir="auto" className="whitespace-normal break-words">
+									{template.subject || "Untitled"}
+								</span>
 								<button
 									type="button"
 									aria-label="Delete template"

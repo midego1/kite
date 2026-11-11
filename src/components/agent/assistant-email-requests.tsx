@@ -28,7 +28,9 @@ export function AssistantEmailRequests() {
 			<ul className="space-y-1.5 text-xs">
 				{requests.map((request) => (
 					<li key={request.id} className="space-y-0.5">
-						<p className="truncate font-medium text-neutral-700">{request.subject || "(no subject)"}</p>
+						<p dir="auto" className="truncate font-medium text-neutral-700">
+							{request.subject || "(no subject)"}
+						</p>
 						<p className="text-neutral-500">
 							{statusText(request.status)}
 							{request.reason ? ` — ${request.reason}` : ""}

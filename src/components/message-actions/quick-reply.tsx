@@ -23,7 +23,7 @@ type QuickReplyProps = {
  */
 export function QuickReply({ name, message, body, ownAddress, ownAddresses }: QuickReplyProps) {
 	const t = useT();
-	const { reply, pending, error } = useMessageReply({
+	const { reply, pending, error, cannotAnswer } = useMessageReply({
 		mailboxId: message.mailboxId,
 		senderAddress: message.fromAddr,
 		direction: message.direction,
@@ -46,6 +46,13 @@ export function QuickReply({ name, message, body, ownAddress, ownAddresses }: Qu
 			? collapsed
 			: null;
 	if (message.status === "draft") return null;
+	if (cannotAnswer) {
+		return (
+			<p className="shrink-0 border-t border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-500 sm:px-6">
+				{t("You can read this shared mailbox but not reply or forward from it.")}
+			</p>
+		);
+	}
 	return (
 		<div className="shrink-0 border-t border-neutral-200 bg-white px-3 py-3 sm:px-6">
 			<button

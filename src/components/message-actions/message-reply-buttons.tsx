@@ -15,8 +15,9 @@ export function MessageReplyButtons(props: MessageReplyInput) {
 	const t = useT();
 	const isMobile = useIsMobile();
 	const { shortcutsEnabled } = useShortcuts();
-	const { reply, forward, canForward } = useMessageReply(props);
-	if (isMobile) return null;
+	const { reply, forward, canForward, cannotAnswer } = useMessageReply(props);
+	// Read-only mail: the quick reply box below says why there is nothing to answer with.
+	if (isMobile || cannotAnswer) return null;
 	const buttonClass =
 		"h-8 gap-1.5 rounded-lg bg-neutral-100 px-3 text-sm font-medium text-neutral-900 hover:bg-neutral-200";
 	return (

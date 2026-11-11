@@ -5,8 +5,6 @@ import { useRouter } from "next/navigation";
 import * as Popover from "@radix-ui/react-popover";
 import {
 	Archive,
-	Ban,
-	BellOff,
 	FileCode2,
 	Sparkles,
 	Mail,
@@ -26,7 +24,6 @@ import { SnoozeMenuItem } from "@/components/messages/snooze-picker";
 import { printShortcutAction } from "@/components/messages/print/print-actions";
 import { PrintMenuItems } from "@/components/messages/print/print-menu-items";
 import { useMessageMenuSlots } from "./message-menu-slots";
-import { ReportPhishingItem } from "./report-phishing-item";
 import { confirmReportPhishing } from "@/components/messages/phishing-report";
 import { confirmReportSpam } from "@/components/messages/spam-report";
 import { messageShortcuts, reachableMessageShortcuts } from "./message-shortcuts";
@@ -35,7 +32,7 @@ import { useReadOnlyMail } from "./use-read-only-mail";
 import { MoveToolbarMenu, SnoozeToolbarButton, ToolbarFolderButtons } from "./message-toolbar-menus";
 import { readerInlineActionIds } from "./reader-toolbar-overflow-utils";
 import { useReaderToolbarOverflow } from "./use-reader-toolbar-overflow";
-import { MORE_ITEM_CLASS, ReaderMoreLeadItems, ToolbarSlot } from "./reader-toolbar-parts";
+import { MORE_ITEM_CLASS, ReaderMoreLeadItems, ReaderSenderItems, ToolbarSlot } from "./reader-toolbar-parts";
 import { useIsMobile } from "@/components/sidebar-mobile-utils";
 import { useHotkeys, useShortcuts } from "@/components/shortcuts";
 import { Button } from "@/components/ui/button";
@@ -162,6 +159,8 @@ export function MessageActions({
 	const handleReply = replyActions.reply;
 	const handleForward = replyActions.forward;
 	const disabled = pendingAction !== null || replyActions.pending !== null;
+	// Mail the user may only read is never answered or forwarded; useMessageReply says so if a key asks.
+	const answerDisabled = disabled || replyActions.cannotAnswer;
 	// Read-only shared mail can be read and marked read, never moved or deleted; the server agrees.
 	const { manageDisabled, archiveDisabled, guard } = useReadOnlyMail(mailboxId, { disabled, status });
 	const runAction = guard(runUnguarded);
@@ -278,7 +277,7 @@ export function MessageActions({
 							variant="ghost"
 							size="roundedSM"
 							aria-label={t("Reply")}
-							disabled={disabled}
+							disabled={answerDisabled}
 							onClick={() => handleReply("reply")}
 						>
 							<Reply size={iconSize} className="rtl:-scale-x-100" />
@@ -320,7 +319,7 @@ export function MessageActions({
 								variant="ghost"
 								size="roundedSM"
 								data-labelled
-								disabled={disabled}
+								disabled={answerDisabled}
 								onClick={() => handleReply("replyAll")}
 							>
 								<ReplyAll size={iconSize} className="rtl:-scale-x-100" />
@@ -417,6 +416,7 @@ export function MessageActions({
 							canForward={canForward}
 							read={read}
 							disabled={disabled}
+							answerDisabled={answerDisabled}
 							archiveDisabled={archiveDisabled}
 							spamDisabled={manageDisabled || status === "spam" || direction !== "inbound"}
 							onReply={(mode) => {
@@ -438,27 +438,14 @@ export function MessageActions({
 							/>
 						)}
 						{direction === "inbound" && (
-							<>
-								<button
-									type="button"
-									className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm text-neutral-700 hover:bg-neutral-100 pointer-coarse:py-3 disabled:cursor-not-allowed disabled:text-neutral-400"
-									disabled={!unsubscribeUrl && status === "trash"}
-									onClick={() => void onUnsubscribe()}
-								>
-									<BellOff className="h-4 w-4 shrink-0" />
-									{t("Unsubscribe")}
-								</button>
-								<button
-									type="button"
-									className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm text-neutral-700 hover:bg-neutral-100 pointer-coarse:py-3"
-									onClick={() => void onBlockContact()}
-								>
-									<Ban className="h-4 w-4" />
-									{t("Block contact")}
-								</button>
-								<ReportPhishingItem onSelect={() => void reportPhishing()} />
-								<hr className="my-1 border-neutral-100" />
-							</>
+							<ReaderSenderItems
+								manageDisabled={manageDisabled}
+								hasUnsubscribeUrl={!!unsubscribeUrl}
+								trashed={status === "trash"}
+								onUnsubscribe={() => void onUnsubscribe()}
+								onBlock={() => void onBlockContact()}
+								onReportPhishing={() => void reportPhishing()}
+							/>
 						)}
 						{onSummarizeMessage && (
 							<button

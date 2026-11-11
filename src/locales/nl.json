@@ -779,5 +779,7 @@
 	"Found by meaning, not exact words": "Gevonden op betekenis, niet op exacte woorden",
 	"Show all {count} keyword matches": "Alle {count} zoekwoordtreffers tonen",
 	"Showing keyword matches only — search by meaning is unavailable right now.": "Er worden alleen zoekwoorden getoond — zoeken op betekenis is nu niet beschikbaar.",
-	"“Keep receipts” may already have saved a copy of this mail to Drive, under Money Watch/Receipts. Removing this entry does not remove those files.": "'Bonnen bewaren' heeft mogelijk al een kopie van deze e-mail opgeslagen in Drive, onder Money Watch/Receipts. Dit item verwijderen verwijdert die bestanden niet."
+	"“Keep receipts” may already have saved a copy of this mail to Drive, under Money Watch/Receipts. Removing this entry does not remove those files.": "'Bonnen bewaren' heeft mogelijk al een kopie van deze e-mail opgeslagen in Drive, onder Money Watch/Receipts. Dit item verwijderen verwijdert die bestanden niet.",
+	"Read-only mail can't be answered or forwarded.": "Op alleen-lezen mail kun je niet antwoorden en je kunt die niet doorsturen.",
+	"You can read this shared mailbox but not reply or forward from it.": "Je kunt deze gedeelde mailbox lezen, maar er niet vanuit antwoorden of doorsturen."
 }

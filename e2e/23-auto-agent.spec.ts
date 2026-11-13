@@ -1124,7 +1124,9 @@ test.describe("triage scheduling", () => {
 			const job = await waitForFinishedJob(account.api, account.mailboxId, first.id, "triage");
 			expect(job.status).toBe("completed");
 
-			await postInbound(account.api, mail);
+			// The same Message-ID again with another body: a byte-identical repeat would be recognised as a sender's retry
+			// and not stored at all, while this second row must still get no triage job of its own.
+			await postInbound(account.api, { ...mail, text: "Could you confirm the order? Sent again." });
 			await expect
 				.poll(async () => {
 					const response = await account.api.get(`/api/messages?q=${subject}&limit=20`);

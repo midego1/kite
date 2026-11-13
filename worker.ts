@@ -4,7 +4,17 @@ import { routeTemplate } from "./src/lib/metrics-route-utils";
 import { createLogger } from "./src/lib/logger.mjs";
 
 import vinextHandler from "vinext/server/fetch-handler";
-import { processInboundMessage, storeRawToR2, type InboundQueueMessage } from "./src/lib/email/inbound";
+import {
+	newInboundRawKey,
+	processInboundMessage,
+	storeRawToR2,
+	type InboundQueueMessage,
+} from "./src/lib/email/inbound";
+import { enqueueOrDiscard } from "./src/lib/email/inbound-enqueue";
+import {
+	INBOUND_QUEUE_PAYLOAD_TOO_LARGE_REASON,
+	inboundQueuePayloadTooLarge,
+} from "./src/lib/email/inbound-queue-utils";
 import { processOutboundQueue, type OutboundQueueMessage } from "./src/lib/email/send";
 import {
 	describeQueueMessage,
@@ -65,6 +75,25 @@ import { fetchWithD1Session } from "./src/lib/d1-session";
 export { RealtimeHub } from "./src/lib/realtime/hub";
 
 const logger = createLogger("worker");
+
+/**
+ * The forwards that keep a copy (a forward rule with a copy, account forwarding), once the message is stored and
+ * queued. They never throw: the message is already Kite's, and a thrown error would make the sender deliver it again.
+ */
+async function forwardCopies(
+	env: CloudflareEnv,
+	message: ForwardableEmailMessage,
+	ruleDestination: string | null,
+): Promise<void> {
+	try {
+		if (ruleDestination) await forwardMessage(env, message, ruleDestination);
+		if (await wasForwardedByKite(env, (name) => message.headers.get(name))) return;
+		const destination = await getAccountForwardingDestination(env, message.to);
+		if (destination) await forwardMessage(env, message, destination);
+	} catch (error) {
+		logger.error("inbound.copy_forward_failed", { rawSize: message.rawSize, error });
+	}
+}
 
 /**
  * vinext reads the nonce from the request's Content-Security-Policy header and
@@ -173,43 +202,49 @@ export default {
 			}
 			stage = "read_raw";
 			const raw = await new Response(message.raw).arrayBuffer();
+			// Limits and unreadable MIME fail the same way on every retry, so they are refused at once.
 			const attachmentLimitReason = await inboundAttachmentLimitReasonFromRaw(raw);
 			if (attachmentLimitReason) {
 				message.setReject(attachmentLimitReason);
 				return;
 			}
 
+			// A forward rule without a copy forwards first: once it went out there is nothing to store. A failed forward
+			// is stored, so mail is never silently lost.
 			stage = "forward";
-			if (decision?.action === "forward" && decision.forwardTo) {
-				const forwarded = await forwardMessage(env, message, decision.forwardTo);
-				// A forward rule drops the message unless it was explicitly asked to keep a copy.
-				// If the forward itself failed we still store it, so mail is never silently lost.
-				if (forwarded && !decision.keepCopy) return;
-			}
+			const forwardTo = decision?.action === "forward" ? (decision.forwardTo ?? null) : null;
+			const keepCopy = decision?.action === "forward" && decision.keepCopy;
+			if (forwardTo && !keepCopy && (await forwardMessage(env, message, forwardTo))) return;
 
-			if (!(await wasForwardedByKite(env, (name) => message.headers.get(name)))) {
-				const forwardingDestination = await getAccountForwardingDestination(env, message.to);
-				if (forwardingDestination) {
-					await forwardMessage(env, message, forwardingDestination);
-				}
-			}
-			stage = "store";
-			rawR2Key = await storeRawToR2(env, message.from, message.to, raw);
+			const key = newInboundRawKey();
 			const payload: InboundQueueMessage = {
 				from: message.from,
 				to: message.to,
-				rawR2Key,
+				rawR2Key: key,
 				headers: Object.fromEntries(message.headers),
 				authenticationResults: trustedCloudflareAuthenticationResults(
 					message.headers.get("authentication-results"),
 					completeRawHeaderValues(raw, "authentication-results"),
 				),
 			};
+			if (inboundQueuePayloadTooLarge(payload)) {
+				message.setReject(INBOUND_QUEUE_PAYLOAD_TOO_LARGE_REASON);
+				return;
+			}
+			stage = "store";
+			await storeRawToR2(env, message.from, message.to, raw, key);
+			// Only a key that was written is logged on failure.
+			rawR2Key = key;
 			stage = "enqueue";
-			await env.INBOUND_QUEUE.send(payload);
+			await enqueueOrDiscard(env, payload);
+			// Stored and queued: from here on nothing may throw, or the sender would retry a message Kite already has.
+			// So copies are forwarded only now, and a retry never forwards a message twice.
+			await forwardCopies(env, message, keepCopy ? forwardTo : null);
 		} catch (err) {
 			logger.error("inbound.enqueue_failed", { stage, rawSize: message.rawSize, rawR2Key, error: err });
-			message.setReject("Processing failed");
+			// setReject bounces permanently. A throw is taken as a temporary failure, so the sender retries: Cloudflare
+			// does not document the reply, this follows what upstream Mailflare observed (docs/operations.md).
+			throw err;
 		}
 	},
 

@@ -22,7 +22,7 @@ await build({
 	logLevel: "silent",
 });
 
-const { readerInlineActionIds } = await import(pathToFileURL(join(outDir, "entry.mjs")).href);
+const { readerInlineActionIds, toolbarNotesLabel } = await import(pathToFileURL(join(outDir, "entry.mjs")).href);
 
 test("a phone's row holds Reply and Report spam only", () => {
 	assert.deepEqual(readerInlineActionIds({ isMobile: true, canReplyAll: true, snoozable: true }), ["reply", "spam"]);
@@ -61,4 +61,9 @@ test("Notes, where the conversation offers them, is the first action to move int
 		"mark",
 		"notes",
 	]);
+});
+
+test("the Notes label is part of the measure key, empty without notes", () => {
+	assert.equal(toolbarNotesLabel({ label: "2 notes" }), "2 notes");
+	assert.equal(toolbarNotesLabel(undefined), "");
 });

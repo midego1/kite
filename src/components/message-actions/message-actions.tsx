@@ -15,7 +15,6 @@ import {
 	Reply,
 	ReplyAll,
 	ShieldAlert,
-	StickyNote,
 	Trash2,
 } from "lucide-react";
 import { MessageTranslateItem } from "@/components/messages/message-translate-item";
@@ -34,9 +33,15 @@ import { messageShortcuts, reachableMessageShortcuts } from "./message-shortcuts
 import { useMessageReply } from "./use-message-reply";
 import { useReadOnlyMail } from "./use-read-only-mail";
 import { MoveToolbarMenu, SnoozeToolbarButton, ToolbarFolderButtons } from "./message-toolbar-menus";
-import { readerInlineActionIds } from "./reader-toolbar-overflow-utils";
+import { readerInlineActionIds, toolbarNotesLabel } from "./reader-toolbar-overflow-utils";
 import { useReaderToolbarOverflow } from "./use-reader-toolbar-overflow";
-import { MORE_ITEM_CLASS, ReaderMoreLeadItems, ToolbarSlot } from "./reader-toolbar-parts";
+import {
+	MORE_ITEM_CLASS,
+	NotesMoreItem,
+	NotesToolbarSlot,
+	ReaderMoreLeadItems,
+	ToolbarSlot,
+} from "./reader-toolbar-parts";
 import { useIsMobile } from "@/components/sidebar-mobile-utils";
 import { useHotkeys, useShortcuts } from "@/components/shortcuts";
 import { Button } from "@/components/ui/button";
@@ -240,7 +245,7 @@ export function MessageActions({
 	const inlineIds = readerInlineActionIds({ isMobile, canReplyAll, snoozable, notes: !!notes });
 	const { rootRef, visibleIds } = useReaderToolbarOverflow(
 		inlineIds,
-		[isMobile, inlineIds.join(), replyAllLabel, read, shownError ?? "", notes?.label ?? ""].join("|"),
+		[isMobile, inlineIds.join(), replyAllLabel, read, shownError ?? "", toolbarNotesLabel(notes)].join("|"),
 	);
 	const overflowed = (id: string) => inlineIds.includes(id) && !visibleIds.has(id);
 	const slot = (id: string, node: ReactNode) => (
@@ -271,7 +276,7 @@ export function MessageActions({
 				</span>
 			)}
 
-			{notes && slot("notes", notes.button)}
+			<NotesToolbarSlot notes={notes} visible={visibleIds.has("notes")} />
 			{isMobile && (
 				<>
 					{slot(
@@ -432,19 +437,7 @@ export function MessageActions({
 							}}
 							onAction={(action) => void runAction(action)}
 						/>
-						{notes && overflowed("notes") && (
-							<button
-								type="button"
-								className={MORE_ITEM_CLASS}
-								onClick={() => {
-									setMoreOpen(false);
-									notes.onOpen();
-								}}
-							>
-								<StickyNote className="h-4 w-4" />
-								{notes.label}
-							</button>
-						)}
+						<NotesMoreItem notes={notes} overflowed={overflowed("notes")} onSelect={() => setMoreOpen(false)} />
 						{direction === "inbound" && status === "received" && (
 							<SnoozeMenuItem
 								messageId={messageId}

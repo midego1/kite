@@ -15,3 +15,8 @@ export function readerInlineActionIds(options: {
 	if (options.snoozable) ids.push("snooze");
 	return [...ids, "move", "spam", "mark", ...notes];
 }
+
+/** The Notes button's name, part of the toolbar's measure key: the count changes its width. */
+export function toolbarNotesLabel(notes?: { label: string }): string {
+	return notes ? notes.label : "";
+}

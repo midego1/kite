@@ -21,11 +21,19 @@ export function parseRawHeaders(raw: ArrayBuffer): Map<string, string[]> {
  * read a field there).
  */
 export function completeRawHeaderValues(raw: ArrayBuffer, name: string): string[] | null {
+	return completeRawHeaderValueLists(raw, [name])[0]!;
+}
+
+/** `completeRawHeaderValues` for several fields, reading the header block once. */
+export function completeRawHeaderValueLists(raw: ArrayBuffer, names: readonly string[]): (string[] | null)[] {
 	const block = getHeaderBlock(raw, MAX_COMPLETE_HEADER_BYTES);
-	if (!block.complete) return null;
-	const values = parseHeaderBlock(block.text).get(name.toLowerCase()) ?? [];
-	if (values.length === 0 && block.text.toLowerCase().includes(name.toLowerCase())) return null;
-	return values;
+	if (!block.complete) return names.map(() => null);
+	const headers = parseHeaderBlock(block.text);
+	const text = block.text.toLowerCase();
+	return names.map((name) => {
+		const values = headers.get(name.toLowerCase()) ?? [];
+		return values.length === 0 && text.includes(name.toLowerCase()) ? null : values;
+	});
 }
 
 const MAX_COMPLETE_HEADER_BYTES = 1024 * 1024;

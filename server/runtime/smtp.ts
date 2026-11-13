@@ -5,7 +5,7 @@ import type { DNSResolver } from "mailauth";
 import { getDb } from "@/db";
 import { intakeIncomingMail } from "@/lib/email/intake";
 import { resolveInboundAddress } from "@/lib/email/routing";
-import { inboundAttachmentLimitReasonFromRaw } from "@/lib/email/inbound-attachments";
+import { inboundAttachmentLimitReasonFromRaw, UNREADABLE_MIME_REASON } from "@/lib/email/inbound-attachments";
 import type { Mailer } from "./mailer";
 import { verifyPrivateClientAuthentication, verifySmtpAuthentication } from "./smtp-auth";
 import {
@@ -92,7 +92,9 @@ export function startSmtpListener(
 					return;
 				}
 				if (attachmentLimitReason) {
-					callback(Object.assign(new Error(attachmentLimitReason), { responseCode: 552 }));
+					// Both repeat on every retry: 552 for a limit, 554 for a message the parser cannot read.
+					const code = attachmentLimitReason === UNREADABLE_MIME_REASON ? 554 : 552;
+					callback(Object.assign(new Error(attachmentLimitReason), { responseCode: code }));
 					return;
 				}
 				const from = session.envelope.mailFrom ? session.envelope.mailFrom.address : "";
@@ -124,8 +126,10 @@ export function startSmtpListener(
 				]);
 				const headers = parseHeaders(raw);
 				let rejectReason: string | null = null;
+				// Intake throws only on a failure a retry can fix; the wrapper below answers 451 for it. A message stored for
+				// an earlier recipient is not stored twice when the sender retries (`redeliveryOf`).
 				for (const recipient of session.envelope.rcptTo) {
-					const result = await intakeIncomingMail(
+					await intakeIncomingMail(
 						env,
 						{
 							from,
@@ -141,14 +145,7 @@ export function startSmtpListener(
 							},
 							forward: async (destination) => mailer.sendRaw(from, destination, raw),
 						},
-					).catch((error) => {
-						console.error(`SMTP intake failed for ${recipient.address}`, error);
-						return null;
-					});
-					if (!result) {
-						callback(Object.assign(new Error("Temporary failure, try again later"), { responseCode: 451 }));
-						return;
-					}
+					);
 				}
 				if (rejectReason) {
 					callback(Object.assign(new Error(rejectReason), { responseCode: 550 }));

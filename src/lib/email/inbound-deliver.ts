@@ -21,6 +21,7 @@ import { exceedsOneTimeCodeRawLength, extractOneTimeCode } from "@/lib/email/one
 import { getLatestEmailContent, htmlToReadableText } from "@/lib/email/reply-content-utils";
 import { resolveThreadId } from "@/lib/email/threading";
 import { normalizeMessageId } from "@/lib/email/thread-lookup";
+import { redeliveryOf } from "@/lib/email/redelivery";
 import { senderDmarc } from "@/lib/email/thread-join-utils";
 import { analyzeSpam } from "@/lib/spam/engine";
 import { configuredSpamIntelligenceProvider } from "@/lib/spam/providers/abuse-ch-key";
@@ -519,8 +520,14 @@ export async function deliverInboundMessage(env: CloudflareEnv, input: InboundDe
 		await env.BUCKET.delete(input.rawR2Key);
 		return { delivered: false, reason: "attachment_limit", detail: attachmentLimitReason };
 	}
-	const duplicate = external ? await duplicateOf(env, target.mailboxId, external.accountId, parsed.messageId) : null;
+	// A synced message is matched against its account's copies, a received one against an earlier attempt of the same
+	// delivery that the sender retried.
+	const duplicate = external
+		? await duplicateOf(env, target.mailboxId, external.accountId, parsed.messageId)
+		: await redeliveryOf(env, { ...input, mailboxId: target.mailboxId }, parsed.messageId);
 	if (duplicate) {
+		if (!external)
+			console.warn(`Inbound message for mailbox ${target.mailboxId} repeats ${duplicate}; not stored again`);
 		await env.BUCKET.delete(input.rawR2Key);
 		return { delivered: false, reason: "duplicate", duplicateOf: duplicate };
 	}

@@ -103,7 +103,9 @@ export default {
 				error,
 			});
 			record("upstream_error");
-			// setReject bounces permanently; throwing is a temporary SMTP failure, so the sender retries.
+			// setReject bounces permanently. A throw is taken as a temporary failure, so the sender retries: Cloudflare
+			// does not document the reply, this follows what upstream Mailflare observed. Kite may already have stored
+			// the message (a timeout while it finished); it recognises the retry and does not store it twice.
 			throw error;
 		}
 
@@ -119,6 +121,9 @@ export default {
 			} catch (error) {
 				record("forward_failed", 200);
 				logger.error("relay.forward_failed", { traceId: trace.traceId, spanId: trace.spanId, error });
+				// A forward rule without a copy stored nothing, so the message would be lost: throw, so the sender retries.
+				// With a stored copy ("store") the message is safe and the failure is only logged.
+				if (decision.action === "forward") throw error;
 			}
 			return;
 		}

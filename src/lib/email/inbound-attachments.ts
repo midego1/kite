@@ -26,10 +26,14 @@ export function inboundAttachmentLimitReason(attachments: AttachmentContent[]): 
 	return null;
 }
 
+/** The refusal for a message the parser cannot read; the same bytes fail the same way on every retry. */
+export const UNREADABLE_MIME_REASON = "Message rejected: the message could not be read as MIME.";
+
 /**
  * Why intake refuses a raw message (its limits or its MIME structure), or null. Every intake path runs this before the
- * message is stored, so mail that can never be delivered is refused at the edge. Any other parse error is thrown, so
- * the sender or provider tries again later (the SMTP listener answers 451).
+ * message is stored, so mail that can never be delivered is refused at the edge. A parse failure is a property of the
+ * bytes and would repeat on every retry, so it is refused too (`UNREADABLE_MIME_REASON`); only a `RangeError` (out of
+ * memory, which a fresh isolate may not hit) is thrown, so the sender tries again later (the SMTP listener answers 451).
  */
 export async function inboundAttachmentLimitReasonFromRaw(raw: ArrayBuffer): Promise<string | null> {
 	try {
@@ -37,6 +41,8 @@ export async function inboundAttachmentLimitReasonFromRaw(raw: ArrayBuffer): Pro
 		return inboundAttachmentLimitReason(parsed.attachments);
 	} catch (error) {
 		if (error instanceof MimeLimitError) return error.message;
-		throw error;
+		if (error instanceof RangeError) throw error;
+		console.warn("Inbound message could not be parsed", error instanceof Error ? error.name : "unknown error");
+		return UNREADABLE_MIME_REASON;
 	}
 }

@@ -28,9 +28,14 @@ as unverified. A relay that still signs with the secret itself (the first form)
 is accepted until the first release on or after 2027-01-31
 ([#118](https://github.com/midego1/kite/issues/118)). The server stores it and replies with the routing decision, so
 reject rules and forwarding rules still act at Cloudflare's edge. If the server
-is unreachable or answers with an error, the Worker throws, so Email Routing
-returns a temporary failure and the sender's mail server retries later; only
-oversized mail and reject rules bounce.
+is unreachable, times out or answers with an error, the Worker throws instead
+of bouncing the message, and so does a failed forward for a rule that keeps no
+copy. Cloudflare does not document the SMTP reply for a throwing Email Worker;
+upstream Mailflare observed a temporary failure, so the sender's mail server
+retries later. Only oversized mail and reject decisions bounce. When the server
+had already stored the message (a timeout while it finished), it recognises the
+retry and stores it once. See
+[Temporary failures and retries](../../docs/operations.md#temporary-failures-and-retries).
 
 ## Local validation
 

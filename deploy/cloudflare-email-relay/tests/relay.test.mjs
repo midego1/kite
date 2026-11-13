@@ -153,6 +153,23 @@ test("a forwarding failure is logged without rejecting already stored mail", asy
 	assert.doesNotMatch(JSON.stringify(lines), /private@example/);
 });
 
+test("a failed forward without a stored copy fails temporarily, so the message is not lost", async (t) => {
+	const lines = [];
+	t.mock.method(console, "error", (line) => lines.push(JSON.parse(line)));
+	t.mock.method(globalThis, "fetch", async () =>
+		Response.json({ action: "forward", forwardTo: "private@example.com" }),
+	);
+	const msg = message({
+		forward: async () => {
+			throw new Error("private@example.com failed");
+		},
+	});
+	await assert.rejects(relay.email(msg, env), /failed/);
+	assert.deepEqual(msg.rejections, []);
+	assert.equal(lines[0].event, "relay.forward_failed");
+	assert.doesNotMatch(JSON.stringify(lines), /private@example/);
+});
+
 test("relay health is a side-effect-free liveness check and other methods/paths are rejected", async (t) => {
 	const fetch = t.mock.method(globalThis, "fetch", () => {
 		throw new Error("must not contact receiver");
@@ -192,28 +209,32 @@ async function relayOutcome(t, { rawSize, fetchResult, forward }) {
 		if (fetchResult instanceof Error) throw fetchResult;
 		return fetchResult;
 	});
-	await relay.email(msg, { ...env, METRICS: dataset }).catch((error) => {
-		if (!(fetchResult instanceof Error)) throw error;
-	});
+	// Failures the sender should retry are thrown after the metric is written; the metric is what is checked here.
+	await relay.email(msg, { ...env, METRICS: dataset }).catch(() => {});
 	return dataset.points;
 }
 
 test("each relay outcome records exactly one metric without personal data", async (t) => {
-	const cases = {
-		too_large: { rawSize: 25 * 1024 * 1024 + 1 },
-		upstream_too_large: { fetchResult: new Response("", { status: 413 }) },
-		upstream_error: { fetchResult: new Error("down for alice@example.com") },
-		reject: { fetchResult: Response.json({ action: "reject", reason: "no" }) },
-		store: { fetchResult: Response.json({ action: "store", forwardTo: null }) },
-		forward: { fetchResult: Response.json({ action: "forward", forwardTo: "x@example.com" }) },
-		forward_failed: {
-			fetchResult: Response.json({ action: "forward", forwardTo: "x@example.com" }),
-			forward: async () => {
-				throw new Error("nope");
+	const cases = [
+		["too_large", { rawSize: 25 * 1024 * 1024 + 1 }],
+		["upstream_too_large", { fetchResult: new Response("", { status: 413 }) }],
+		["upstream_error", { fetchResult: new Error("down for alice@example.com") }],
+		["upstream_error", { fetchResult: new Response(null, { status: 500 }) }],
+		["upstream_error", { fetchResult: new Response(null, { status: 401 }) }],
+		["reject", { fetchResult: Response.json({ action: "reject", reason: "no" }) }],
+		["store", { fetchResult: Response.json({ action: "store", forwardTo: null }) }],
+		["forward", { fetchResult: Response.json({ action: "forward", forwardTo: "x@example.com" }) }],
+		[
+			"forward_failed",
+			{
+				fetchResult: Response.json({ action: "forward", forwardTo: "x@example.com" }),
+				forward: async () => {
+					throw new Error("nope");
+				},
 			},
-		},
-	};
-	for (const [outcome, options] of Object.entries(cases)) {
+		],
+	];
+	for (const [outcome, options] of cases) {
 		const points = await relayOutcome(t, options);
 		assert.equal(points.length, 1, outcome);
 		assert.deepEqual(points[0].indexes, ["relay"]);

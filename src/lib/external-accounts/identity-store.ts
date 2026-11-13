@@ -1,6 +1,7 @@
 import { getDb } from "@/db";
 import { inJsonArray } from "@/db/chunk-utils";
 import { externalIdentities } from "@/db/schema/external-accounts";
+import { databaseKey } from "@/lib/d1-session-utils";
 
 type StoreEnv = Pick<CloudflareEnv, "DB">;
 
@@ -14,12 +15,12 @@ const readyDatabases = new WeakSet<object>();
  * before it, no address has a code, every send-as check answers as it did without codes, and writes are refused.
  */
 export async function externalIdentitiesReady(env: StoreEnv): Promise<boolean> {
-	if (readyDatabases.has(env.DB)) return true;
+	if (readyDatabases.has(databaseKey(env.DB))) return true;
 	const row = await env.DB.prepare("SELECT count(*) AS present FROM sqlite_master WHERE type = 'table' AND name = ?")
 		.bind("external_identities")
 		.first<{ present: number }>();
 	const ready = Number(row?.present ?? 0) === 1;
-	if (ready) readyDatabases.add(env.DB);
+	if (ready) readyDatabases.add(databaseKey(env.DB));
 	return ready;
 }
 

@@ -36,13 +36,17 @@ export async function issueRecoveryCodes(env: CloudflareEnv, userId: string): Pr
 	return codes;
 }
 
-/** Burn a code if it is one of the user's unused ones. */
+/**
+ * Burn a code if it is one of the user's unused ones. One conditional UPDATE on the primary (writes never go to a
+ * replica), so two requests racing with the same code, or one reading a replica that has not seen the first use,
+ * cannot both succeed.
+ */
 export async function consumeRecoveryCode(env: CloudflareEnv, userId: string, code: string): Promise<boolean> {
 	const db = getDb(env);
 	const codeHash = await hashSessionToken(normalizeRecoveryCode(code));
-	const [row] = await db
-		.select({ id: mfaRecoveryCodes.id })
-		.from(mfaRecoveryCodes)
+	const burnt = await db
+		.update(mfaRecoveryCodes)
+		.set({ usedAt: new Date() })
 		.where(
 			and(
 				eq(mfaRecoveryCodes.userId, userId),
@@ -50,10 +54,8 @@ export async function consumeRecoveryCode(env: CloudflareEnv, userId: string, co
 				isNull(mfaRecoveryCodes.usedAt),
 			),
 		)
-		.limit(1);
-	if (!row) return false;
-	await db.update(mfaRecoveryCodes).set({ usedAt: new Date() }).where(eq(mfaRecoveryCodes.id, row.id));
-	return true;
+		.returning({ id: mfaRecoveryCodes.id });
+	return burnt.length > 0;
 }
 
 export async function countUnusedRecoveryCodes(env: CloudflareEnv, userId: string): Promise<number> {

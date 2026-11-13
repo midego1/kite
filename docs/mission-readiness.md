@@ -77,7 +77,8 @@ the message `kind` (`inbound`, `webhook_retry`, `outbound`, `agent_draft`,
 `rawR2Key` of the stored MIME (`inbound/<timestamp>-<id>.eml`).
 `inbound.enqueue_failed` carries the `stage` the email handler reached
 (`route`, `read_raw`, `forward`, `store`, `enqueue`), `rawSize` and the
-`rawR2Key` once written. None of these contain addresses.
+`rawR2Key` once written (deleted again when the queue send failed);
+`inbound.copy_forward_failed` carries `rawSize`. None of these contain addresses.
 
 `http.request_completed` is written only when a request needs attention:
 `error` for status 500 and above, `warn` with `slow: true` for requests over

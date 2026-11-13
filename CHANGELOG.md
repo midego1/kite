@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.11.13.2] - 2026-11-13
+
+### Fixed
+
+- Mail that arrives while Kite briefly cannot store it, or while a self-hosted server is unreachable from the email relay, is now deferred so the sender's server tries again later, instead of being bounced. A retried message is stored once, and a kept copy is forwarded once (ported from upstream Mailflare #281).
+
 ## [2026.11.13.1] - 2026-11-13
 
 ### Changed

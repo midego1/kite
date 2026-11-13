@@ -3,6 +3,7 @@ import { getContentDisposition } from "@/lib/http/content-disposition-utils";
 import { createLogger } from "@/lib/logger.mjs";
 import { createZipStream, zipArchiveBytes } from "@/lib/zip/zip-stream-utils";
 import type { ZipEntrySource } from "@/lib/zip/zip-stream-types";
+import { stripHiddenCharacters } from "./attachment-risk";
 import { assessStoredAttachment } from "./attachment-risk-store";
 import { isAttachmentStored } from "./attachment-storage";
 import { attachmentsArchiveName, uniqueZipEntryNames } from "./attachment-zip-utils";
@@ -20,6 +21,12 @@ async function inBatches<T, R>(items: readonly T[], run: (item: T) => Promise<R>
 	return results;
 }
 
+/** The archive's entries: each file's safe, unique name inside it and its stored size. */
+function archiveEntries(attachments: readonly AttachmentRow[]) {
+	const names = uniqueZipEntryNames(attachments.map((row) => row.filename));
+	return attachments.map((row, index) => ({ row, name: names[index], size: row.size }));
+}
+
 function refusal(status: number, body: Record<string, unknown>): Response {
 	return Response.json(body, { status, headers: NO_STORE });
 }
@@ -35,23 +42,28 @@ export async function attachmentArchiveRefusal(
 	attachments: readonly AttachmentRow[],
 	acknowledged: boolean,
 ): Promise<Response | null> {
-	const names = uniqueZipEntryNames(attachments.map((row) => row.filename));
-	if (zipArchiveBytes(attachments.map((row, index) => ({ name: names[index], size: row.size }))) === null)
+	// Files are named as they will be in the archive, so an older row's bidi override cannot disguise a name here.
+	const entries = archiveEntries(attachments);
+	if (zipArchiveBytes(entries) === null)
 		return refusal(413, { error: "These attachments are too large to download as one archive.", code: "TOO_LARGE" });
 
-	const stored = await inBatches(attachments, (row) => isAttachmentStored(env, row));
-	const missing = attachments.filter((_, index) => !stored[index]);
+	const stored = await inBatches(entries, (entry) => isAttachmentStored(env, entry.row));
+	const missing = entries.filter((_, index) => !stored[index]);
 	if (missing.length)
 		return refusal(404, {
 			error: "Some attachments are missing from storage.",
 			code: "ATTACHMENT_MISSING",
-			missing: missing.map((row) => ({ id: row.id, filename: row.filename })),
+			missing: missing.map((entry) => ({ id: entry.row.id, filename: entry.name })),
 		});
 
 	if (acknowledged) return null;
-	const risks = await inBatches(attachments, (row) => assessStoredAttachment(env, row));
-	const flagged = attachments
-		.map((row, index) => ({ id: row.id, filename: row.filename, risk: risks[index] }))
+	const risks = await inBatches(entries, (entry) => assessStoredAttachment(env, entry.row));
+	const flagged = entries
+		.map((entry, index) => ({
+			id: entry.row.id,
+			filename: entry.name,
+			risk: { ...risks[index], reasons: risks[index].reasons.map(stripHiddenCharacters) },
+		}))
 		.filter((entry) => entry.risk.level !== "ok");
 	if (!flagged.length) return null;
 	return refusal(409, {
@@ -62,8 +74,18 @@ export async function attachmentArchiveRefusal(
 }
 
 /**
- * The archive of `attachments` as a streamed download named after `subject`. Each file is opened from its current row
- * when the archive reaches it; one that went missing since the check aborts the download instead of being left out.
+ * `stream` with its exact length: on Workers through a `FixedLengthStream`, without which the Content-Length header
+ * is dropped for a streamed body (it also errors the response if the count is off); Node sends the header as it is.
+ */
+function withLength(stream: ReadableStream<Uint8Array>, length: number): ReadableStream<Uint8Array> {
+	if (typeof FixedLengthStream !== "function") return stream;
+	return stream.pipeThrough(new FixedLengthStream(length) as unknown as TransformStream<Uint8Array, Uint8Array>);
+}
+
+/**
+ * The archive of `attachments` as a streamed download named after `subject`, with its exact Content-Length. Each file is
+ * opened from its current row when the archive reaches it; one that went missing since the check, or whose content is
+ * not its stored size, aborts the download instead of being left out or cut short.
  */
 export function attachmentArchiveResponse(
 	env: CloudflareEnv,
@@ -71,20 +93,28 @@ export function attachmentArchiveResponse(
 	subject: string | null,
 	attachments: readonly AttachmentRow[],
 ): Response {
-	const names = uniqueZipEntryNames(attachments.map((row) => row.filename));
-	const entries: ZipEntrySource[] = attachments.map((row, index) => ({
-		name: names[index],
+	const planned = archiveEntries(attachments);
+	const length = zipArchiveBytes(planned);
+	if (length === null) throw new Error("The attachments are too large for one archive");
+	const entries: ZipEntrySource[] = planned.map(({ row, name, size }) => ({
+		name,
+		size,
 		modified: row.createdAt,
 		open: async () => {
 			const opened = await openMessageAttachment(env, messageId, row.id);
-			if (opened) return opened.body;
-			log.warn("attachment.archive_entry_missing", { messageId, attachmentId: row.id });
-			throw new Error("An attachment went missing while the archive was written");
+			if (opened && opened.size === size) return opened.body;
+			await opened?.body.cancel().catch(() => undefined);
+			log.warn(opened ? "attachment.archive_entry_size_mismatch" : "attachment.archive_entry_missing", {
+				messageId,
+				attachmentId: row.id,
+			});
+			throw new Error("An attachment went missing or changed while the archive was written");
 		},
 	}));
-	return new Response(createZipStream(entries), {
+	return new Response(withLength(createZipStream(entries), length), {
 		headers: {
 			"Content-Type": "application/zip",
+			"Content-Length": String(length),
 			"Content-Disposition": getContentDisposition(attachmentsArchiveName(subject), false),
 			"X-Content-Type-Options": "nosniff",
 			...NO_STORE,

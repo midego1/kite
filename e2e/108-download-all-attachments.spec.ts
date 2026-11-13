@@ -61,6 +61,7 @@ test("Download all saves one ZIP of the message's attachments", async ({ browser
 		expect(download.suggestedFilename()).toBe(`${subject}.zip`);
 		expect(await download.failure()).toBeNull();
 		expect(zipNames(readFileSync(await download.path()))).toEqual(["slides.pdf", "slides (2).pdf", "minutes.txt"]);
+		await expect(page.getByText("The attachments could not be downloaded.")).toHaveCount(0);
 	} finally {
 		await context.close();
 		await api.dispose();
@@ -92,6 +93,7 @@ test("Download all asks before zipping a flagged file, and the server refuses wi
 	const allowed = await api.get(`${route}?acknowledge=1`);
 	expect(allowed.status()).toBe(200);
 	expect(allowed.headers()["content-type"]).toBe("application/zip");
+	// Content-Length is checked in tests/attachments-zip.test.mjs: the dev server answers every body chunked.
 	expect(zipNames(await allowed.body())).toEqual(["setup.exe", "notes.txt"]);
 
 	const context = await browser.newContext({ storageState: STORAGE_STATE, acceptDownloads: true });
@@ -113,6 +115,42 @@ test("Download all asks before zipping a flagged file, and the server refuses wi
 		]);
 		expect(download.url()).toContain("acknowledge=1");
 		expect(await download.failure()).toBeNull();
+	} finally {
+		await context.close();
+		await api.dispose();
+	}
+});
+
+test("a refusal between the check and the download shows why instead of saving a file", async ({ browser }) => {
+	const api = await apiContext(STORAGE_STATE);
+	const subject = `Gone meanwhile ${uniqueToken("zip")}`;
+	const message = await deliverInbound(api, {
+		from: "Ana <ana@outside.test>",
+		to: SUPPORT_ADDRESS,
+		subject,
+		text: "Two files.",
+		attachments: [
+			{ filename: "a.txt", contentType: "text/plain", content: "A" },
+			{ filename: "b.txt", contentType: "text/plain", content: "B" },
+		],
+	});
+	const context = await browser.newContext({ storageState: STORAGE_STATE, acceptDownloads: true });
+	const page = await context.newPage();
+	const downloads: string[] = [];
+	page.on("download", (download) => downloads.push(download.suggestedFilename()));
+	try {
+		// The check passes; the download itself finds a file gone, as if it was removed in between.
+		await page.route(/\/attachments\/zip\?acknowledge=1$/, (route) =>
+			route.fulfill({
+				status: 404,
+				contentType: "application/json",
+				body: JSON.stringify({ code: "ATTACHMENT_MISSING", missing: [{ id: "x", filename: "b.txt" }] }),
+			}),
+		);
+		await openReader(page, message.id);
+		await page.getByRole("button", { name: "Download all" }).click();
+		await expect(page.getByText("Some attachments are missing from storage: b.txt")).toBeVisible();
+		expect(downloads).toEqual([]);
 	} finally {
 		await context.close();
 		await api.dispose();

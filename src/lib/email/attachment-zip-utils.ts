@@ -4,8 +4,11 @@ import { truncateUtf8 } from "./inbound-limits";
 
 /** Characters Windows refuses in a file name; extraction there would fail or rename the file. */
 const WINDOWS_RESERVED = /[<>:"|?*]/g;
-/** Device names Windows reserves whatever the extension (`CON.txt`, `com1.pdf`). */
-const WINDOWS_DEVICE = /^(con|prn|aux|nul|com\d|lpt\d)(\.|$)/i;
+/**
+ * Device names Windows reserves whatever the extension (`CON.txt`, `com1.pdf`), including the superscript ports
+ * (`COM¹`) and with the spaces or dots Windows trims before the extension (`CON .txt`).
+ */
+const WINDOWS_DEVICE = /^(con|prn|aux|nul|com[\d¹²³]|lpt[\d¹²³])[ .]*(\.|$)/i;
 const MAX_ARCHIVE_NAME_BYTES = 80;
 
 /**

@@ -36,6 +36,7 @@ await build({
 			export { inspectZipDirectory, locateZipDirectory } from "./src/lib/email/attachment-risk.ts";
 			export {
 				archiveCheckOutcome,
+				archiveFrameOutcome,
 				attachmentsZipUrl,
 				flaggedArchiveLines,
 			} from "./src/components/download-all-attachments-utils.ts";
@@ -85,6 +86,7 @@ function readZip(bytes) {
 	while (at < located.offset + located.size) {
 		assert.equal(view.getUint32(at, true), 0x02014b50, "central header signature");
 		const nameLength = view.getUint16(at + 28, true);
+		const extraLength = view.getUint16(at + 30, true);
 		const entry = {
 			name: new TextDecoder().decode(bytes.subarray(at + 46, at + 46 + nameLength)),
 			flags: view.getUint16(at + 8, true),
@@ -92,16 +94,24 @@ function readZip(bytes) {
 			crc: view.getUint32(at + 16, true),
 			size: view.getUint32(at + 24, true),
 			offset: view.getUint32(at + 42, true),
+			extra: bytes.subarray(at + 46 + nameLength, at + 46 + nameLength + extraLength),
 		};
 		assert.equal(view.getUint32(entry.offset, true), 0x04034b50, "local header signature");
-		const start = entry.offset + 30 + view.getUint16(entry.offset + 26, true);
+		const localName = view.getUint16(entry.offset + 26, true);
+		const localExtra = view.getUint16(entry.offset + 28, true);
+		assert.deepEqual(
+			[...bytes.subarray(entry.offset + 30 + localName, entry.offset + 30 + localName + localExtra)],
+			[...entry.extra],
+			"the same extra field in both headers",
+		);
+		const start = entry.offset + 30 + localName + localExtra;
 		entry.data = bytes.subarray(start, start + entry.size);
 		assert.equal(view.getUint32(start + entry.size, true), 0x08074b50, "data descriptor signature");
 		assert.equal(view.getUint32(start + entry.size + 4, true), entry.crc, "descriptor CRC");
 		assert.equal(view.getUint32(start + entry.size + 8, true), entry.size, "descriptor size");
 		assert.equal(nodeCrc32(entry.data), entry.crc, `${entry.name} CRC`);
 		entries.push(entry);
-		at += 46 + nameLength;
+		at += 46 + nameLength + extraLength;
 	}
 	assert.equal(located.entries, entries.length);
 	return entries;
@@ -123,11 +133,13 @@ test("the ZIP writer streams entries that outside readers verify", async () => {
 	const stream = m.createZipStream([
 		{
 			name: "hello.txt",
+			size: 11,
 			modified: new Date(Date.UTC(2026, 10, 13, 9, 30, 10)),
 			open: async () => streamOf(encoder.encode("hello world")),
 		},
 		{
 			name: "résumé.pdf",
+			size: pdf.byteLength,
 			modified: new Date(0),
 			open: async () => {
 				opened.push("résumé.pdf");
@@ -135,7 +147,7 @@ test("the ZIP writer streams entries that outside readers verify", async () => {
 				return streamOf(pdf.subarray(0, 2), new Uint8Array(0), pdf.subarray(2));
 			},
 		},
-		{ name: "empty.bin", modified: new Date(), open: async () => streamOf() },
+		{ name: "empty.bin", size: 0, modified: new Date(), open: async () => streamOf() },
 	]);
 	assert.deepEqual(opened, [], "nothing is opened before the archive is read");
 	const bytes = await collect(stream);
@@ -147,6 +159,13 @@ test("the ZIP writer streams entries that outside readers verify", async () => {
 	assert.equal(new TextDecoder().decode(entries[0].data), "hello world");
 	assert.deepEqual([...entries[1].data], [...pdf]);
 	assert.equal(entries[2].size, 0);
+	// The extended timestamp: "UT", 5 bytes, modification time set, the Unix seconds.
+	const ut = new DataView(entries[0].extra.buffer, entries[0].extra.byteOffset, entries[0].extra.byteLength);
+	assert.equal(entries[0].extra.byteLength, 9);
+	assert.equal(ut.getUint16(0, true), 0x5455);
+	assert.equal(ut.getUint16(2, true), 5);
+	assert.equal(ut.getUint8(4), 1);
+	assert.equal(ut.getUint32(5, true), Date.UTC(2026, 10, 13, 9, 30, 10) / 1000);
 	for (const entry of entries) {
 		assert.equal(entry.method, 0, "stored");
 		assert.equal(entry.flags, 0x0808, "data descriptor and UTF-8 names");
@@ -172,22 +191,50 @@ test("the ZIP writer writes an empty archive, refuses what plain ZIP cannot hold
 	assert.equal(m.zipArchiveBytes([]), 22);
 
 	const failing = m.createZipStream([
-		{ name: "a.txt", modified: new Date(), open: async () => streamOf(encoder.encode("a")) },
-		{ name: "gone.txt", modified: new Date(), open: async () => Promise.reject(new Error("gone")) },
+		{ name: "a.txt", size: 1, modified: new Date(), open: async () => streamOf(encoder.encode("a")) },
+		{ name: "gone.txt", size: 1, modified: new Date(), open: async () => Promise.reject(new Error("gone")) },
 	]);
 	await assert.rejects(collect(failing), /gone/);
 	await assert.rejects(
-		collect(m.createZipStream([{ name: "", modified: new Date(), open: async () => streamOf() }])),
+		collect(m.createZipStream([{ name: "", size: 0, modified: new Date(), open: async () => streamOf() }])),
 		/Invalid file name/,
+	);
+	await assert.rejects(
+		collect(m.createZipStream([{ name: "a", size: -1, modified: new Date(), open: async () => streamOf() }])),
+		/Invalid file size/,
 	);
 	await assert.rejects(
 		collect(
 			m.createZipStream(
-				Array.from({ length: 65_536 }, () => ({ name: "a", modified: new Date(), open: async () => streamOf() })),
+				Array.from({ length: 65_536 }, () => ({
+					name: "a",
+					size: 0,
+					modified: new Date(),
+					open: async () => streamOf(),
+				})),
 			),
 		),
 		/Too many files/,
 	);
+});
+
+test("a file shorter or longer than its stored size, or failing partway, fails the archive", async () => {
+	const archive = (size, body) =>
+		collect(m.createZipStream([{ name: "report.pdf", size, modified: new Date(), open: async () => body }]));
+	// One byte short: without the check this would be a valid archive holding a truncated file.
+	await assert.rejects(archive(5, streamOf(encoder.encode("%PDF"))), /not the size it was stored with/);
+	await assert.rejects(archive(3, streamOf(encoder.encode("%P"), encoder.encode("DF"))), /not the size/);
+	let sent = false;
+	const breaking = new ReadableStream({
+		pull(controller) {
+			if (sent) return controller.error(new Error("storage read failed"));
+			sent = true;
+			controller.enqueue(encoder.encode("%P"));
+		},
+	});
+	await assert.rejects(archive(4, breaking), /storage read failed/);
+	// The exact size still works.
+	assert.equal(readZip(await archive(4, streamOf(encoder.encode("%PDF"))))[0].size, 4);
 });
 
 test("cancelling the download stops reading the open attachment", async () => {
@@ -200,7 +247,9 @@ test("cancelling the download stops reading the open attachment", async () => {
 			cancelled = true;
 		},
 	});
-	const reader = m.createZipStream([{ name: "endless.bin", modified: new Date(), open: async () => body }]).getReader();
+	const reader = m
+		.createZipStream([{ name: "endless.bin", size: 2 ** 31, modified: new Date(), open: async () => body }])
+		.getReader();
 	for (let index = 0; index < 4; index += 1) await reader.read();
 	await reader.cancel();
 	assert.equal(cancelled, true);
@@ -227,6 +276,11 @@ test("names inside the archive cannot leave its folder, collide or break extract
 	assert.equal(m.zipEntryName("CON.txt"), "_CON.txt");
 	assert.equal(m.zipEntryName("lpt1"), "_lpt1");
 	assert.equal(m.zipEntryName("console.txt"), "console.txt");
+	assert.equal(m.zipEntryName("CON .txt"), "_CON .txt");
+	assert.equal(m.zipEntryName("nul. .log"), "_nul. .log");
+	assert.equal(m.zipEntryName("COM¹.txt"), "_COM¹.txt");
+	assert.equal(m.zipEntryName("lpt³"), "_lpt³");
+	assert.equal(m.zipEntryName("com10.txt"), "com10.txt");
 	assert.equal(m.zipEntryName("re\u0301sume\u0301.pdf"), "résumé.pdf", "NFC");
 	assert.ok(encoder.encode(m.zipEntryName(`${"é".repeat(200)}.pdf`)).byteLength <= 180);
 
@@ -257,6 +311,31 @@ test("the reader's button reads the check's answer and builds its links", () => 
 		{ id: "2", filename: "page.html", risk: { level: "warning", reasons: [] } },
 	];
 	assert.equal(m.flaggedArchiveLines(flagged), "• setup.exe: It is a program.\n• page.html");
+	const RLO = String.fromCharCode(0x202e);
+	assert.equal(
+		m.flaggedArchiveLines([
+			{ id: "3", filename: `inv${RLO}fdp.exe`, risk: { level: "danger", reasons: [`x${RLO}y`] } },
+		]),
+		"• invfdp.exe: xy",
+		"no bidi characters in the warning",
+	);
+	assert.deepEqual(m.archiveCheckOutcome(404, { missing: [{ id: "1", filename: `a${RLO}b.pdf` }] }), {
+		kind: "missing",
+		filenames: ["ab.pdf"],
+	});
+	// The hidden download frame sees the refusal's body only.
+	assert.deepEqual(
+		m.archiveFrameOutcome(JSON.stringify({ code: "ATTACHMENT_MISSING", missing: [{ filename: "a.pdf" }] })),
+		{
+			kind: "missing",
+			filenames: ["a.pdf"],
+		},
+	);
+	assert.deepEqual(m.archiveFrameOutcome(JSON.stringify({ code: "TOO_LARGE" })), { kind: "too-large" });
+	assert.deepEqual(m.archiveFrameOutcome(JSON.stringify({ code: "ATTACHMENT_RISK", flagged })), { kind: "failed" });
+	assert.deepEqual(m.archiveFrameOutcome(JSON.stringify({ error: "Unauthorized" })), { kind: "failed" });
+	assert.deepEqual(m.archiveFrameOutcome(JSON.stringify(null)), { kind: "failed" });
+	assert.deepEqual(m.archiveFrameOutcome("<html>Bad gateway</html>"), { kind: "failed" });
 	assert.deepEqual(m.archiveCheckOutcome(200, { count: 2 }), { kind: "download" });
 	assert.deepEqual(m.archiveCheckOutcome(409, { flagged }), { kind: "confirm", flagged });
 	assert.deepEqual(m.archiveCheckOutcome(409, { flagged: [] }), { kind: "failed" });
@@ -289,7 +368,8 @@ async function setup() {
 async function archiveOf(env, messageId) {
 	const found = await m.findMessageAttachmentsForUser(env, OWNER, messageId);
 	const response = m.attachmentArchiveResponse(env, messageId, found.subject, found.attachments);
-	return { response, entries: readZip(await collect(response.body)) };
+	const bytes = await collect(response.body);
+	return { response, entries: readZip(bytes), archiveBytes: bytes.byteLength };
 }
 
 test("Download all zips a message's stored attachments for a reader, and nobody else", async () => {
@@ -306,9 +386,10 @@ test("Download all zips a message's stored attachments for a reader, and nobody 
 	const found = await m.findMessageAttachmentsForUser(env, OWNER, "msg-in");
 	assert.equal(found.subject, "Quarterly files");
 	assert.equal(await m.attachmentArchiveRefusal(env, found.attachments, false), null);
-	const { response, entries } = await archiveOf(env, "msg-in");
+	const { response, entries, archiveBytes } = await archiveOf(env, "msg-in");
 	assert.equal(response.headers.get("content-type"), "application/zip");
 	assert.equal(response.headers.get("cache-control"), "private, no-store");
+	assert.equal(Number(response.headers.get("content-length")), archiveBytes, "the exact archive size up front");
 	assert.match(response.headers.get("content-disposition"), /^attachment; filename="Quarterly files\.zip"/);
 	assert.deepEqual(
 		entries.map((entry) => [entry.name, new TextDecoder().decode(entry.data)]),
@@ -354,7 +435,31 @@ test("a missing file fails the check with 404 and a flagged one asks for the ack
 	// Gone after the check: the download errors rather than leaving the file out.
 	const response = m.attachmentArchiveResponse(env, "msg-in", null, attachments);
 	assert.match(response.headers.get("content-disposition"), /filename="attachments\.zip"/);
-	await assert.rejects(collect(response.body), /went missing/);
+	await assert.rejects(collect(response.body), /went missing or changed/);
+});
+
+test("an older row's hidden characters never reach the refusal, and a file replaced by a shorter one fails", async () => {
+	const { env, database, bucket } = await setup();
+	const RLO = String.fromCharCode(0x202e);
+	const [program, notes] = await m.storeMessageAttachments(env, "msg-in", [
+		{ filename: "invoice.exe", type: "application/octet-stream", content: encoder.encode("MZ").buffer },
+		{ filename: "notes.txt", type: "text/plain", content: encoder.encode("notes").buffer },
+	]);
+	// Stored before names were cleaned at ingest.
+	database.db
+		.prepare("UPDATE message_attachments SET filename = ? WHERE id = ?")
+		.run(`invoice${RLO}fdp.exe`, program.id);
+	const { attachments } = await m.findMessageAttachmentsForUser(env, OWNER, "msg-in");
+	const body = await (await m.attachmentArchiveRefusal(env, attachments, false)).json();
+	assert.deepEqual(
+		body.flagged.map((file) => file.filename),
+		["invoicefdp.exe"],
+	);
+	assert.ok(!JSON.stringify(body).includes(RLO), "no bidi override anywhere in the answer");
+
+	await bucket.put(notes.r2Key, encoder.encode("note"));
+	const response = m.attachmentArchiveResponse(env, "msg-in", null, attachments);
+	await assert.rejects(collect(response.body), /went missing or changed/);
 });
 
 test("attachments kept inside the raw message are checked and zipped from it", async () => {

@@ -1,3 +1,4 @@
+import { stripHiddenCharacters } from "@/lib/email/attachment-risk";
 import type { AttachmentRisk } from "@/lib/email/attachment-risk-types";
 
 /** A flagged file as the archive route lists it in its 409 answer. */
@@ -12,10 +13,16 @@ export function attachmentsZipUrl(messageId: string, options: { check?: boolean;
 	return `/api/messages/${encodeURIComponent(messageId)}/attachments/zip${query ? `?${query}` : ""}`;
 }
 
-/** One line per flagged file for the confirmation: its name and the first reason it was flagged. */
+/**
+ * One line per flagged file for the confirmation: its name and the first reason it was flagged, without control or
+ * bidi characters, so a name cannot reorder itself in the very warning about it.
+ */
 export function flaggedArchiveLines(flagged: readonly FlaggedArchiveFile[]): string {
 	return flagged
-		.map((file) => (file.risk.reasons[0] ? `• ${file.filename}: ${file.risk.reasons[0]}` : `• ${file.filename}`))
+		.map((file) => {
+			const reason = file.risk.reasons[0];
+			return stripHiddenCharacters(reason ? `• ${file.filename}: ${reason}` : `• ${file.filename}`);
+		})
 		.join("\n");
 }
 
@@ -37,7 +44,26 @@ export function archiveCheckOutcome(status: number, body: unknown): ArchiveCheck
 	if (status === 409 && Array.isArray(data.flagged) && data.flagged.length)
 		return { kind: "confirm", flagged: data.flagged };
 	if (status === 404 && Array.isArray(data.missing))
-		return { kind: "missing", filenames: data.missing.map((file) => file.filename) };
+		return { kind: "missing", filenames: data.missing.map((file) => stripHiddenCharacters(String(file.filename))) };
 	if (status === 413) return { kind: "too-large" };
 	return { kind: "failed" };
+}
+
+const REFUSAL_STATUS: Record<string, number> = { ATTACHMENT_MISSING: 404, ATTACHMENT_RISK: 409, TOO_LARGE: 413 };
+
+/**
+ * What a refused download says, read from the error the hidden download frame loaded instead of starting a download
+ * (the frame cannot see the status, so the route's `code` stands in for it). Anything else is a plain failure.
+ */
+export function archiveFrameOutcome(text: string): ArchiveCheckOutcome {
+	let body: unknown = null;
+	try {
+		body = JSON.parse(text);
+	} catch {
+		return { kind: "failed" };
+	}
+	const code = body && typeof body === "object" ? (body as { code?: unknown }).code : undefined;
+	const status = typeof code === "string" ? REFUSAL_STATUS[code] : undefined;
+	if (!status || status === 409) return { kind: "failed" };
+	return archiveCheckOutcome(status, body);
 }

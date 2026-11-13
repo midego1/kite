@@ -7,6 +7,14 @@ import type { ZipEntrySource } from "./zip-stream-types";
  * `createZipStream` pulls one chunk at a time, so memory stays at one chunk whatever the archive's size, on Workers and
  * on Node. The CRC is `zlib.crc32` (native on both runtimes, which keeps the Worker's CPU time down). Plain ZIP, no
  * ZIP64: an archive whose offsets would pass 4 GiB fails instead of writing a corrupt file.
+ *
+ * Every entry declares its size up front and its body must deliver exactly that many bytes, or the archive fails: a
+ * file cut short in storage never becomes a valid-looking archive with a truncated file, and the whole archive's size is
+ * known before it streams (`zipArchiveBytes`, sent as Content-Length). The CRC is still only known after the data, so
+ * the entries keep their data descriptor. Readers that use the central directory (Windows, macOS, 7-Zip, Info-ZIP,
+ * Python) are fine with that; pure streaming readers such as Java's `ZipInputStream` refuse STORED entries with one.
+ * Times are DOS fields in UTC plus an extended-timestamp field ("UT", 0x5455) with the Unix time, which Info-ZIP and
+ * 7-Zip prefer and show in the reader's own time zone.
  */
 
 /** Bit 3: CRC and sizes follow the data. Bit 11: the name is UTF-8. */
@@ -16,10 +24,13 @@ const LOCAL_HEADER_BYTES = 30;
 const DATA_DESCRIPTOR_BYTES = 16;
 const CENTRAL_HEADER_BYTES = 46;
 const END_RECORD_BYTES = 22;
+/** The "UT" extra field: tag, length 5, flags (bit 0: modification time) and the Unix time, in both headers. */
+const TIMESTAMP_FIELD_BYTES = 9;
 const MAX_UINT32 = 0xffff_ffff;
 const MAX_ENTRIES = 0xffff;
 
-type CentralEntry = { name: Uint8Array; crc: number; size: number; offset: number; dosTime: number; dosDate: number };
+type EntryHeader = { name: Uint8Array; dosTime: number; dosDate: number; extra: Uint8Array };
+type CentralEntry = EntryHeader & { crc: number; size: number; offset: number };
 
 /**
  * MS-DOS date and time fields, in UTC so both runtimes write the same bytes; years clamp to 1980-2107.
@@ -39,15 +50,27 @@ function record(length: number, fill: (view: DataView) => void): Uint8Array {
 	return bytes;
 }
 
-function localHeader(name: Uint8Array, dosTime: number, dosDate: number): Uint8Array {
+/** The extended-timestamp extra field with the Unix modification time, clamped to what 32 bits hold. */
+function timestampField(date: Date): Uint8Array {
+	const seconds = Math.min(Math.max(Math.floor(date.getTime() / 1000), 0), MAX_UINT32);
+	return record(TIMESTAMP_FIELD_BYTES, (view) => {
+		view.setUint16(0, 0x5455, true);
+		view.setUint16(2, 5, true);
+		view.setUint8(4, 1);
+		view.setUint32(5, seconds, true);
+	});
+}
+
+function localHeader(entry: EntryHeader): Uint8Array {
 	// CRC-32 and both sizes stay zero: the data descriptor after the data carries them.
 	return record(LOCAL_HEADER_BYTES, (view) => {
 		view.setUint32(0, 0x04034b50, true);
 		view.setUint16(4, VERSION_NEEDED, true);
 		view.setUint16(6, ENTRY_FLAGS, true);
-		view.setUint16(10, dosTime, true);
-		view.setUint16(12, dosDate, true);
-		view.setUint16(26, name.byteLength, true);
+		view.setUint16(10, entry.dosTime, true);
+		view.setUint16(12, entry.dosDate, true);
+		view.setUint16(26, entry.name.byteLength, true);
+		view.setUint16(28, entry.extra.byteLength, true);
 	});
 }
 
@@ -72,6 +95,7 @@ function centralHeader(entry: CentralEntry): Uint8Array {
 		view.setUint32(20, entry.size, true);
 		view.setUint32(24, entry.size, true);
 		view.setUint16(28, entry.name.byteLength, true);
+		view.setUint16(30, entry.extra.byteLength, true);
 		view.setUint32(42, entry.offset, true);
 	});
 }
@@ -96,7 +120,12 @@ export function zipArchiveBytes(entries: readonly { name: string; size: number }
 	let total = END_RECORD_BYTES;
 	for (const entry of entries) {
 		const nameBytes = encoder.encode(entry.name).byteLength;
-		total += LOCAL_HEADER_BYTES + DATA_DESCRIPTOR_BYTES + CENTRAL_HEADER_BYTES + 2 * nameBytes + entry.size;
+		total +=
+			LOCAL_HEADER_BYTES +
+			DATA_DESCRIPTOR_BYTES +
+			CENTRAL_HEADER_BYTES +
+			2 * (nameBytes + TIMESTAMP_FIELD_BYTES) +
+			entry.size;
 	}
 	return total > MAX_UINT32 ? null : total;
 }
@@ -106,16 +135,22 @@ function checkedOffset(offset: number): number {
 	return offset;
 }
 
-async function* entryBody(body: ReadableStream<Uint8Array>, totals: { crc: number; size: number }) {
+/** Thrown when a body delivers more or fewer bytes than its entry declared. */
+const SIZE_MISMATCH = "A file in the archive is not the size it was stored with";
+
+async function* entryBody(body: ReadableStream<Uint8Array>, expected: number, totals: { crc: number; size: number }) {
 	const reader = body.getReader();
 	try {
 		for (;;) {
 			const { done, value } = await reader.read();
-			if (done) return;
+			if (done) {
+				if (totals.size !== expected) throw new Error(SIZE_MISMATCH);
+				return;
+			}
 			if (!value.byteLength) continue;
-			totals.crc = crc32(value, totals.crc);
 			totals.size += value.byteLength;
-			checkedOffset(totals.size);
+			if (totals.size > expected) throw new Error(SIZE_MISMATCH);
+			totals.crc = crc32(value, totals.crc);
 			yield value;
 		}
 	} finally {
@@ -132,28 +167,35 @@ async function* generateZip(entries: readonly ZipEntrySource[]): AsyncGenerator<
 	for (const entry of entries) {
 		const name = encoder.encode(entry.name);
 		if (!name.byteLength || name.byteLength > 0xffff) throw new Error("Invalid file name in archive");
-		const { dosTime, dosDate } = toDosDateTime(entry.modified);
+		if (!Number.isSafeInteger(entry.size) || entry.size < 0 || entry.size > MAX_UINT32)
+			throw new Error("Invalid file size in archive");
+		const header: EntryHeader = { name, ...toDosDateTime(entry.modified), extra: timestampField(entry.modified) };
 		const body = await entry.open();
-		yield localHeader(name, dosTime, dosDate);
+		yield localHeader(header);
 		yield name;
+		yield header.extra;
 		const totals = { crc: 0, size: 0 };
-		yield* entryBody(body, totals);
+		yield* entryBody(body, entry.size, totals);
 		yield dataDescriptor(totals.crc, totals.size);
-		central.push({ name, crc: totals.crc, size: totals.size, offset, dosTime, dosDate });
-		offset = checkedOffset(offset + LOCAL_HEADER_BYTES + name.byteLength + totals.size + DATA_DESCRIPTOR_BYTES);
+		central.push({ ...header, crc: totals.crc, size: totals.size, offset });
+		offset = checkedOffset(
+			offset + LOCAL_HEADER_BYTES + name.byteLength + header.extra.byteLength + totals.size + DATA_DESCRIPTOR_BYTES,
+		);
 	}
 	const directoryOffset = offset;
 	for (const entry of central) {
 		yield centralHeader(entry);
 		yield entry.name;
-		offset = checkedOffset(offset + CENTRAL_HEADER_BYTES + entry.name.byteLength);
+		yield entry.extra;
+		offset = checkedOffset(offset + CENTRAL_HEADER_BYTES + entry.name.byteLength + entry.extra.byteLength);
 	}
 	yield endRecord(central.length, offset - directoryOffset, directoryOffset);
 }
 
 /**
  * Streams `entries` into a ZIP archive in order, opening each only when the previous one is written. An entry whose
- * `open` throws, or whose body fails, errors the stream, so a download is never a silently partial archive.
+ * `open` throws, whose body fails or whose body is not its declared size errors the stream, so a download is never a
+ * silently partial archive.
  */
 export function createZipStream(entries: readonly ZipEntrySource[]): ReadableStream<Uint8Array> {
 	const iterator = generateZip(entries);

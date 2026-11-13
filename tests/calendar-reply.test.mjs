@@ -135,7 +135,7 @@ test("outgoing invitations fold long lines at 75 octets and keep event text on i
 		"the description is folded",
 	);
 	const unfolded = unfold(body).split("\r\n");
-	assert.ok(unfolded.includes(`DESCRIPTION:${description.replace(/,/g, "\\,")}`));
+	assert.ok(unfolded.includes(`DESCRIPTION:Agenda: ${"Überblick und nächste Schritte\\, ".repeat(8)}🙂 end`));
 	assert.ok(unfolded.includes("SUMMARY:Planning\\nATTENDEE:mailto:evil@example.com"));
 	assert.ok(unfolded.includes("LOCATION:Room 1\\; floor 2"));
 	assert.equal(unfolded.filter((line) => line.startsWith("ATTENDEE")).length, 0);

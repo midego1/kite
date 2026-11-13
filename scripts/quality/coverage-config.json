@@ -37,6 +37,8 @@
 		"src/lib/email/provider-headers-utils.ts",
 		"src/lib/email/provider-intake-utils.ts",
 		"src/lib/email/raw-sweeper-utils.ts",
+		"src/lib/email/redelivery-utils.ts",
+		"src/lib/email/inbound-queue-utils.ts",
 		"src/lib/email/thread-join-utils.ts",
 		"src/lib/ai/usage-report-utils.ts",
 		"src/lib/http/content-type-utils.ts",

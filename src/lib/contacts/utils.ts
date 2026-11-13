@@ -16,12 +16,12 @@ export function getDisplayNameForAddress(address: string, contactName?: string |
 }
 
 /**
- * The sender label of one message (upstream Mailflare #226): a name the user set on the contact wins, then the
- * message's own From name, then a name learned from earlier mail, else null (the caller shows the address). A shared
- * address such as a recruiting no-reply carries a different name on every message, so the From header must beat
- * whatever name the contact last learned.
+ * The label of one party of a message, sender or recipient (upstream Mailflare #226, #266): a name the user set on
+ * the contact wins, then the message's own header name, then a name learned from earlier mail, else null (the caller
+ * shows the address). A shared address such as a recruiting no-reply carries a different name on every message, so
+ * the header must beat whatever name the contact last learned.
  */
-export function getSenderDisplayName(address: string, contact?: ContactDisplayName | null): string | null {
+export function getPartyDisplayName(address: string, contact?: ContactDisplayName | null): string | null {
 	const contactName = contact?.displayName.trim() || null;
 	if (contact?.source === "manual" && contactName) return contactName;
 	return getContactNameFromAddress(address) ?? contactName;

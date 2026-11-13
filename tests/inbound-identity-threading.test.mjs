@@ -64,7 +64,7 @@ await build({
 const load = (name) => import(pathToFileURL(join(outDir, `${name}.mjs`)).href);
 const { deliverInboundMessage } = await load("deliver");
 const { upsertContactFromAddress, getMessageContactNames, blockContact } = await load("contacts");
-const { getSenderDisplayName } = await load("contactUtils");
+const { getPartyDisplayName } = await load("contactUtils");
 const { resolveThreadId } = await load("threading");
 const { senderDmarc, isThreadParticipant } = await load("joinUtils");
 const { getMessageThreadForUser } = await load("threadView");
@@ -334,25 +334,25 @@ test("inbound mail names a contact but never renames one; outbound and manual na
 
 test("each message keeps its own sender name: manual contact name, then From name, then learned name", async (t) => {
 	const shared = { displayName: "LiveKit Hiring Team", source: "inbound" };
-	assert.equal(getSenderDisplayName('"PostHog Team" <no-reply@ashbyhq.com>', shared), "PostHog Team");
+	assert.equal(getPartyDisplayName('"PostHog Team" <no-reply@ashbyhq.com>', shared), "PostHog Team");
 	assert.equal(
-		getSenderDisplayName('"LiveKit Hiring Team" <no-reply@ashbyhq.com>', {
+		getPartyDisplayName('"LiveKit Hiring Team" <no-reply@ashbyhq.com>', {
 			displayName: "PostHog Team",
 			source: "outbound",
 		}),
 		"LiveKit Hiring Team",
 	);
 	assert.equal(
-		getSenderDisplayName('"PostHog Team" <no-reply@ashbyhq.com>', {
+		getPartyDisplayName('"PostHog Team" <no-reply@ashbyhq.com>', {
 			displayName: "Ashby Recruiting",
 			source: "manual",
 		}),
 		"Ashby Recruiting",
 	);
-	assert.equal(getSenderDisplayName("no-reply@ashbyhq.com", shared), "LiveKit Hiring Team");
-	assert.equal(getSenderDisplayName("no-reply@ashbyhq.com", null), null);
+	assert.equal(getPartyDisplayName("no-reply@ashbyhq.com", shared), "LiveKit Hiring Team");
+	assert.equal(getPartyDisplayName("no-reply@ashbyhq.com", null), null);
 	// A From name that is only the address is no name.
-	assert.equal(getSenderDisplayName('"no-reply@ashbyhq.com" <no-reply@ashbyhq.com>', shared), "LiveKit Hiring Team");
+	assert.equal(getPartyDisplayName('"no-reply@ashbyhq.com" <no-reply@ashbyhq.com>', shared), "LiveKit Hiring Team");
 
 	const f = await setup(t);
 	const posthog = await deliver(f, { from: '"PostHog Team" <no-reply@ashbyhq.com>', id: "p@ashbyhq.com" });
@@ -373,6 +373,17 @@ test("each message keeps its own sender name: manual contact name, then From nam
 		"UPDATE contacts SET display_name = 'Ashby', source = 'manual' WHERE email = 'no-reply@ashbyhq.com'",
 	);
 	assert.deepEqual(await shown(), ["Ashby", "Ashby"]);
+});
+
+test("each message keeps the recipient name it was sent to: manual contact name, then To name, then learned name", async () => {
+	const learned = { displayName: "PostHog Team", source: "outbound" };
+	assert.equal(getPartyDisplayName('"LiveKit Hiring Team" <no-reply@ashbyhq.com>', learned), "LiveKit Hiring Team");
+	assert.equal(
+		getPartyDisplayName('"LiveKit Hiring Team" <no-reply@ashbyhq.com>', { ...learned, source: "manual" }),
+		"PostHog Team",
+	);
+	assert.equal(getPartyDisplayName("no-reply@ashbyhq.com", learned), "PostHog Team");
+	assert.equal(getPartyDisplayName("no-reply@ashbyhq.com", null), null);
 });
 
 test("spam stays out of a conversation unless it is the message being opened", async (t) => {

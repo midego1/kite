@@ -272,3 +272,27 @@ test("authentication and the migration status read the primary, not the session"
 	const status = await getMigrationStatus(database);
 	assert.deepEqual(status.pending, []);
 });
+
+test("exec, dump and withSession on the session database go to the primary binding", async () => {
+	const { binding, session } = fakeBinding();
+	const database = sessionDatabase(binding, session);
+	assert.deepEqual(await database.exec("PRAGMA x"), { count: 0, duration: 0 });
+	assert.equal((await database.dump()).byteLength, 0);
+	assert.equal(database.withSession("first-primary"), session);
+	assert.deepEqual(binding.constraints, ["first-primary"]);
+	assert.deepEqual(await database.batch([{}, {}]), [{ results: [] }, { results: [] }]);
+	assert.equal("DB" in withD1Session({ BUCKET: 1 }, database), true);
+	assert.equal("BUCKET" in withD1Session({ BUCKET: 1 }, database), true);
+	assert.equal("QUEUE" in withD1Session({ BUCKET: 1 }, database), false);
+});
+
+test("openD1Session refuses a binding whose withSession returns no usable session", () => {
+	assert.equal(openD1Session({ DB: { withSession: () => null } }, get("/inbox")), null);
+	assert.equal(openD1Session({ DB: { withSession: () => ({}) } }, get("/inbox")), null);
+});
+
+test("a WebSocket upgrade response is never copied", () => {
+	const { binding, session } = fakeBinding();
+	const upgrade = { status: 101, webSocket: {}, headers: new Headers() };
+	assert.equal(withD1BookmarkCookie(get("/inbox"), upgrade, sessionDatabase(binding, session)), upgrade);
+});

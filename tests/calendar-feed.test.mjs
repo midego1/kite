@@ -15,6 +15,7 @@ await build({
 		feed: join(root, "src/lib/calendar/feed-utils.ts"),
 		ics: join(root, "src/lib/calendar/ics-utils.ts"),
 		token: join(root, "src/lib/calendar/feed-token-utils.ts"),
+		vtimezone: join(root, "src/lib/calendar/vtimezone-utils.ts"),
 	},
 	outdir: outDir,
 	outExtension: { ".js": ".mjs" },
@@ -29,6 +30,7 @@ await build({
 const load = (name) => import(pathToFileURL(join(outDir, `${name}.mjs`)).href);
 const { buildCalendarFeed } = await load("feed");
 const { escapeIcsText, foldIcsLine, formatIcsLocal } = await load("ics");
+const { buildVtimezone } = await load("vtimezone");
 const { calendarFeedPath, feedTokenPrefix, generateFeedToken, hashFeedToken, parseFeedTokenSegment } =
 	await load("token");
 
@@ -233,4 +235,55 @@ test("feed tokens are long, distinct from API keys and parsed strictly from the 
 	assert.match(hash, /^[0-9a-f]{64}$/);
 	assert.equal(await hashFeedToken(token), hash);
 	assert.notEqual(await hashFeedToken(generateFeedToken()), hash);
+});
+
+test("a VTIMEZONE lists every offset change with the local time it happens at", () => {
+	const start = Date.UTC(2026, 0, 1);
+	const end = Date.UTC(2027, 0, 1);
+	assert.deepEqual(buildVtimezone("Europe/Amsterdam", start, end), [
+		"BEGIN:VTIMEZONE",
+		"TZID:Europe/Amsterdam",
+		"BEGIN:STANDARD",
+		"DTSTART:20260101T010000",
+		"TZOFFSETFROM:+0100",
+		"TZOFFSETTO:+0100",
+		"END:STANDARD",
+		"BEGIN:DAYLIGHT",
+		"DTSTART:20260329T020000",
+		"TZOFFSETFROM:+0100",
+		"TZOFFSETTO:+0200",
+		"END:DAYLIGHT",
+		"BEGIN:STANDARD",
+		"DTSTART:20261025T030000",
+		"TZOFFSETFROM:+0200",
+		"TZOFFSETTO:+0100",
+		"END:STANDARD",
+		"END:VTIMEZONE",
+	]);
+	// A zone without daylight saving has one STANDARD observance; negative and half-hour offsets are written in full.
+	const tokyo = buildVtimezone("Asia/Tokyo", start, end);
+	assert.equal(tokyo.filter((line) => line.startsWith("BEGIN:")).length, 2);
+	assert.ok(tokyo.includes("TZOFFSETTO:+0900"));
+	assert.ok(buildVtimezone("Asia/Kathmandu", start, end).includes("TZOFFSETTO:+0545"));
+	const stJohns = buildVtimezone("America/St_Johns", start, end);
+	assert.ok(stJohns.includes("TZOFFSETFROM:-0330") && stJohns.includes("TZOFFSETTO:-0230"));
+	// The southern hemisphere moves the clock forward in spring there, which is still DAYLIGHT.
+	const sydney = buildVtimezone("Australia/Sydney", start, end);
+	assert.equal(sydney[2], "BEGIN:DAYLIGHT");
+	assert.ok(sydney.includes("DTSTART:20261004T020000"));
+});
+
+test("every TZID in the feed has its VTIMEZONE, once, before the events", () => {
+	const series = (id, timeZone) => ({ ...base, id, repeat: "weekly", timeZone });
+	const ics = feed([series("a", "Europe/Amsterdam"), series("b", "Europe/Amsterdam"), series("c", "Asia/Tokyo"), base]);
+	const all = lines(ics);
+	const used = new Set(all.flatMap((line) => line.match(/;TZID=([^:;]+)/)?.[1] ?? []));
+	const defined = all.filter((line) => line.startsWith("TZID:")).map((line) => line.slice(5));
+	assert.deepEqual([...used].sort(), ["Asia/Tokyo", "Europe/Amsterdam"]);
+	assert.deepEqual([...defined].sort(), ["Asia/Tokyo", "Europe/Amsterdam"]);
+	assert.ok(all.lastIndexOf("END:VTIMEZONE") < all.indexOf("BEGIN:VEVENT"));
+	// Ten years ahead of now, so a series running on is still described.
+	assert.ok(all.includes("DTSTART:20351028T030000"), "the last Amsterdam change inside the window");
+	// UTC events and whole dates name no zone and need none.
+	assert.equal(lines(feed([base])).includes("BEGIN:VTIMEZONE"), false);
 });

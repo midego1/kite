@@ -187,6 +187,7 @@
 		"src/lib/calendar/ics-utils.ts",
 		"src/lib/calendar/feed-utils.ts",
 		"src/lib/calendar/feed-token-utils.ts",
+		"src/lib/calendar/vtimezone-utils.ts",
 		"src/lib/calendar/utils.ts",
 		"src/lib/calendar/webhook-event-utils.ts",
 		"src/lib/contacts/spoofed-sender-utils.ts",

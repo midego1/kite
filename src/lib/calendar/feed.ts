@@ -1,7 +1,8 @@
-import { and, asc, eq, gte, isNull, ne, or } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, ne, or, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { apiKeys, calendarEvents, users } from "@/db/schema";
 import { timingSafeEqual } from "@/lib/auth/totp";
+import { createLogger } from "@/lib/logger.mjs";
 import { newId } from "@/lib/ids";
 import { normalizeTimeZone } from "@/lib/time/utils";
 import { buildCalendarFeed } from "./feed-utils";
@@ -19,7 +20,9 @@ const FEED_NAME = "Calendar subscription";
 const LAST_USED_WRITE_INTERVAL_MS = 60_000;
 /** Older events are left out of the feed so a long-lived calendar stays a reasonable download. */
 const FEED_HISTORY_MS = 365 * 86_400_000;
+/** A bound on one response; past it the oldest one-off events are the ones left out (`calendar.feed_truncated`). */
 const FEED_MAX_EVENTS = 5000;
+const log = createLogger("calendar");
 
 export async function getCalendarFeedStatus(env: CloudflareEnv, userId: string): Promise<CalendarFeedStatus> {
 	const [row] = await getDb(env)
@@ -116,18 +119,36 @@ export async function renderCalendarFeed(
 				),
 			),
 		)
-		.orderBy(asc(calendarEvents.startsAt))
-		.limit(FEED_MAX_EVENTS);
+		// Running series first, then one-off events newest first, so a cap never drops what is coming up.
+		.orderBy(sql`case when ${calendarEvents.repeat} = 'none' then 1 else 0 end`, desc(calendarEvents.startsAt))
+		.limit(FEED_MAX_EVENTS + 1);
+	if (events.length > FEED_MAX_EVENTS) {
+		log.warn("calendar.feed_truncated", { userId: owner.userId, limit: FEED_MAX_EVENTS });
+		events.length = FEED_MAX_EVENTS;
+	}
 	return buildCalendarFeed(events, { name: "Kite calendar", timeZone: owner.timeZone, now });
 }
 
-/** Calendar apps poll from shared addresses, so the budget is per link rather than per IP. */
-export async function allowCalendarFeedRequest(env: CloudflareEnv, token: string): Promise<boolean> {
-	if (!env.LOGIN_RATE_LIMIT) return true;
+async function allow(limiter: RateLimit | undefined, key: string): Promise<boolean> {
+	if (!limiter) return true;
 	try {
-		return (await env.LOGIN_RATE_LIMIT.limit({ key: `calendar-feed:${feedTokenPrefix(token)}` })).success;
+		return (await limiter.limit({ key })).success;
 	} catch (error) {
 		console.warn("Calendar feed rate limiter unavailable", error);
 		return true;
 	}
+}
+
+/**
+ * Two budgets. Per address, on the public-link limiter (60 a minute, the budget Drive's public links have): it bounds
+ * all traffic to the route, since the token in the path is the caller's choice. Per link, on the login limiter (20 a
+ * minute): one link polled too often is stopped without blocking the others a calendar service fetches from the
+ * same address.
+ */
+export async function allowCalendarFeedRequest(env: CloudflareEnv, request: Request, token: string): Promise<boolean> {
+	const ip = request.headers.get("cf-connecting-ip")?.trim() || "unknown";
+	return (
+		(await allow(env.DRIVE_LINK_RATE_LIMIT, `calendar-feed:${ip}`)) &&
+		(await allow(env.LOGIN_RATE_LIMIT, `calendar-feed:${feedTokenPrefix(token)}`))
+	);
 }

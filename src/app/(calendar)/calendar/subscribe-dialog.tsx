@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { Check, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -49,27 +49,29 @@ export function CalendarSubscribeDialog({ open, onOpenChange }: CalendarSubscrib
 	const [url, setUrl] = useState("");
 	const [copied, setCopied] = useState(false);
 	const [pending, setPending] = useState(false);
+	// Bumped when the dialog closes and when a change starts, so an answer that arrives later (a status read
+	// overtaken by a change, or a new link after the dialog closed) is dropped instead of shown.
+	const generation = useRef(0);
 
 	useEffect(() => {
 		if (!open) return;
-		let cancelled = false;
+		const started = generation.current;
 		feedRequest("GET")
 			.then((data) => {
-				if (!cancelled) setFeed(data.feed ?? null);
+				if (generation.current === started) setFeed(data.feed ?? null);
 			})
 			.catch((error: unknown) => {
-				if (!cancelled)
+				if (generation.current === started)
 					toast.error(error instanceof Error ? error.message : "The subscription link could not be loaded");
 			});
-		return () => {
-			cancelled = true;
-		};
 	}, [open]);
 
 	async function run(method: "POST" | "DELETE") {
+		const started = ++generation.current;
 		setPending(true);
 		try {
 			const data = await feedRequest(method);
+			if (generation.current !== started) return;
 			setFeed(data.feed ?? null);
 			setCopied(false);
 			setUrl(data.path ? `${window.location.origin}${data.path}` : "");
@@ -114,6 +116,8 @@ export function CalendarSubscribeDialog({ open, onOpenChange }: CalendarSubscrib
 			open={open}
 			onOpenChange={(next) => {
 				if (!next) {
+					generation.current += 1;
+					setFeed(null);
 					setUrl("");
 					setCopied(false);
 				}
@@ -150,7 +154,9 @@ export function CalendarSubscribeDialog({ open, onOpenChange }: CalendarSubscrib
 							</Notice>
 							<SubscribeSteps />
 						</>
-					) : feed?.active ? (
+					) : !feed ? (
+						<p className="text-neutral-500">Checking for a subscription link…</p>
+					) : feed.active ? (
 						<>
 							<p>
 								A subscription link is on, created {formatUserDate(feed.createdAt ?? "", { dateStyle: "medium" })}
@@ -174,7 +180,7 @@ export function CalendarSubscribeDialog({ open, onOpenChange }: CalendarSubscrib
 								Kite makes a private link to a read-only copy of your calendar. It works until you replace it or turn it
 								off here.
 							</p>
-							<Button type="button" disabled={pending || !feed} onClick={() => void run("POST")}>
+							<Button type="button" disabled={pending} onClick={() => void run("POST")}>
 								Create subscription link
 							</Button>
 						</>

@@ -1,8 +1,11 @@
 import { escapeIcsText, formatIcsLocal, formatIcsUtc, joinIcsLines } from "./ics-utils";
 import { parseCalendarRepeatDays, parseExcludedOccurrences } from "./recurrence";
+import { buildVtimezone } from "./vtimezone-utils";
 import type { FeedEvent, FeedOptions } from "./feed-types";
 
 const BYDAY = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"];
+/** How far ahead each VTIMEZONE describes the zone's offset changes. */
+const VTIMEZONE_YEARS_AHEAD = 10;
 const WEEKDAY_INDEX: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
 
 /** How the event's times are written: in UTC, as wall-clock times in a zone, or as whole dates. */
@@ -84,8 +87,7 @@ function recurrenceLines(event: FeedEvent, timing: Timing): string[] | null {
 	];
 }
 
-function eventLines(event: FeedEvent, ownerZone: string, stamp: string): string[] {
-	const timing = timingFor(event, ownerZone);
+function eventLines(event: FeedEvent, timing: Timing, stamp: string): string[] {
 	const recurrence = recurrenceLines(event, timing);
 	if (!recurrence) return [];
 	const lines = [
@@ -105,10 +107,28 @@ function eventLines(event: FeedEvent, ownerZone: string, stamp: string): string[
 	return lines;
 }
 
+/**
+ * One VTIMEZONE per zone a TZID names, from the start of the year of the zone's earliest event to
+ * VTIMEZONE_YEARS_AHEAD years after now. Subscribers refetch the feed, so the window moves with it.
+ */
+function timeZoneLines(planned: { event: FeedEvent; timing: Timing }[], now: Date): string[] {
+	const earliest = new Map<string, number>();
+	for (const { event, timing } of planned) {
+		if (timing.kind !== "zoned") continue;
+		earliest.set(timing.zone, Math.min(earliest.get(timing.zone) ?? Infinity, event.startsAt.getTime()));
+	}
+	const end = Date.UTC(now.getUTCFullYear() + VTIMEZONE_YEARS_AHEAD, 0, 1);
+	return [...earliest].flatMap(([zone, first]) =>
+		buildVtimezone(zone, Date.UTC(new Date(first).getUTCFullYear(), 0, 1), end),
+	);
+}
+
 /** A read-only iCalendar document (METHOD:PUBLISH) of the owner's events, for subscribing from another calendar app. */
 export function buildCalendarFeed(events: FeedEvent[], options: FeedOptions): string {
 	const ownerZone = validTimeZone(options.timeZone) ?? "UTC";
-	const stamp = formatIcsUtc(options.now ?? new Date());
+	const now = options.now ?? new Date();
+	const stamp = formatIcsUtc(now);
+	const planned = events.map((event) => ({ event, timing: timingFor(event, ownerZone) }));
 	const lines = [
 		"BEGIN:VCALENDAR",
 		"VERSION:2.0",
@@ -119,8 +139,9 @@ export function buildCalendarFeed(events: FeedEvent[], options: FeedOptions): st
 		`X-WR-TIMEZONE:${ownerZone}`,
 		"REFRESH-INTERVAL;VALUE=DURATION:PT1H",
 		"X-PUBLISHED-TTL:PT1H",
+		...timeZoneLines(planned, now),
 	];
-	for (const event of events) lines.push(...eventLines(event, ownerZone, stamp));
+	for (const { event, timing } of planned) lines.push(...eventLines(event, timing, stamp));
 	lines.push("END:VCALENDAR");
 	return joinIcsLines(lines);
 }

@@ -368,6 +368,7 @@ CI runs on every pull request and on pushes to `main`, with the browser tests sp
 - [Modules: turning Calendar, Booking, templates, import, Money Watch and Drive off](docs/modules.md)
 - [Drive: files, sharing and public links](docs/drive.md)
 - [Passkeys: signing in without a password](docs/passkeys.md)
+- [Notes on conversations: internal notes in shared mailboxes](docs/conversation-notes.md)
 - [Object storage: S3-compatible stores for mail, Drive and backups](docs/deployment.md#object-storage-optional) and [how to operate it](docs/operations.md#object-storage)
 - [Operations](docs/operations.md), including [after a deploy](docs/operations.md#after-a-deploy)
 - [Troubleshooting](docs/troubleshooting.md)

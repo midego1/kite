@@ -59,6 +59,8 @@ import { MessageTranslationBar } from "@/components/messages/message-translation
 import { translationAvailability } from "@/components/messages/message-translation-utils";
 import { useMessageTranslation } from "@/components/messages/use-message-translation";
 import { SummarizeButton, ThreadSummaryCard } from "@/components/messages/thread-summary-card";
+import { ConversationNotes, ConversationNotesButton } from "@/components/messages/conversation-notes";
+import { useConversationNotes } from "@/components/messages/use-conversation-notes";
 import { useThreadSummary } from "@/components/messages/use-thread-summary";
 import { showsCurrentSummary } from "@/components/messages/thread-summary-utils";
 import { useT } from "@/lib/i18n/use-t";
@@ -86,6 +88,7 @@ export default function MessageDetailPage() {
 	const isAnyPanelVisible = messageListVisible || assistantVisible;
 	const { scrollRef, handleScroll } = useMessageContentScroll(messageId, loading);
 	const summary = useThreadSummary(messageId, "thread");
+	const notes = useConversationNotes(messageId);
 	const hideTriageSummary = showsCurrentSummary(summary.state, summary.hidden);
 	const threadTranslationState = translationAvailability(summary.state);
 	const translation = useMessageTranslation({
@@ -196,6 +199,7 @@ export default function MessageDetailPage() {
 				{/* On a phone this space goes to the reader toolbar instead (message-actions.tsx is `max-md:flex-1`
 				there). On desktop its width is the room the toolbar may still use (use-reader-toolbar-overflow.ts). */}
 				<span {...{ [READER_TOOLBAR_SPACER_ATTR]: "" }} className="min-w-0 flex-1 max-md:hidden" />
+				<ConversationNotesButton controller={notes} />
 				<SummarizeButton controller={summary} />
 				<MessageActions
 					messageId={message.id}
@@ -250,6 +254,17 @@ export default function MessageDetailPage() {
 				<ScreenerBanner message={message} mailbox={messageMailbox} alignWide={!isAnyPanelVisible} />
 				<SendStateBanner message={message} alignWide={!isAnyPanelVisible} />
 				<ThreadSummaryCard key={message.id} controller={summary} />
+				<ConversationNotes
+					controller={notes}
+					emails={[
+						...thread.messages.map((threadMessage) => ({
+							id: threadMessage.id,
+							sender: getConversationSender(threadMessage, currentAccountName),
+							createdAt: threadMessage.createdAt,
+						})),
+						{ id: message.id, sender: fromName, createdAt: message.createdAt },
+					]}
+				/>
 				<SenderAuthWarningNotice warning={senderAuthWarning} alignWide={!isAnyPanelVisible} />
 				<ConversationThread
 					currentMessageId={message.id}
@@ -270,7 +285,7 @@ export default function MessageDetailPage() {
 					translationAvailability={threadTranslationState}
 				/>
 				{/* Every message of the conversation is a section under a hairline, as in Zero's reader. */}
-				<article className="border-t border-neutral-200 px-4 py-6 sm:px-7">
+				<article data-message-id={message.id} className="border-t border-neutral-200 px-4 py-6 sm:px-7">
 					<div className="w-full">
 						<div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1 pb-5">
 							<div className="flex min-w-0 items-start gap-3">

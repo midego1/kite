@@ -24,6 +24,7 @@ import { isNodeRuntime } from "@/lib/runtime";
 import { assertWithinProviderLimit } from "@/lib/external-accounts/submit-utils";
 import { recordConnectedSend, requeueAfterRefusal, submissionFor } from "@/lib/email/send-connected";
 import { triggerEmbeddingDrain } from "@/lib/semantic/indexer";
+import { rekeyConversationNotes } from "@/lib/notes/service";
 
 export type SendEmailInput = {
 	userId: string;
@@ -329,6 +330,7 @@ async function deliverEmail(
 	// The provider has accepted the message from here on. Nothing below may mark it
 	// failed or rethrow, or a retry would deliver it a second time.
 	let markedSent = false;
+	const threadId = input.threadId ?? normalizeMessageId(response.messageId) ?? messageId;
 	const statusWritten = await runPostDeliveryStep(`sent status for ${messageId}`, async () => {
 		// A fresh message starts its own conversation; Cloudflare's Message-ID is what
 		// any reply will name in In-Reply-To, so key the thread by it. Only a message still queued becomes
@@ -338,7 +340,7 @@ async function deliverEmail(
 			.set({
 				status: "sent",
 				providerMessageId: response.messageId,
-				threadId: input.threadId ?? normalizeMessageId(response.messageId) ?? messageId,
+				threadId,
 				// A send through a connected account keeps the exact bytes that went out (spec §7.3).
 				...(response.rawR2Key ? { rawR2Key: response.rawR2Key } : {}),
 			})
@@ -363,6 +365,10 @@ async function deliverEmail(
 		return "sent";
 	}
 	await recordConnectedSend(env, delivery, response);
+	// Notes written while the message was its own conversation follow it onto the thread key the send just set.
+	await runPostDeliveryStep(`conversation notes for ${messageId}`, () =>
+		rekeyConversationNotes(db, mailboxId, messageId, threadId),
+	);
 	// Search by meaning: the status trigger already queued the message, so it is searchable before the next cron tick.
 	await runPostDeliveryStep(`search embedding drain for ${messageId}`, () => triggerEmbeddingDrain(env));
 	await runPostDeliveryStep(`agent reply suggestions for ${messageId}`, () => supersedeOlderReplies(env, messageId));

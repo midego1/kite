@@ -201,6 +201,54 @@
 				}
 			}
 		},
+		"/api/v1/messages/{id}/notes/{noteId}": {
+			"delete": {
+				"operationId": "deleteMessagesIdNotesNoteId",
+				"security": [{ "bearerAuth": ["notes"] }],
+				"parameters": [
+					{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } },
+					{ "name": "noteId", "in": "path", "required": true, "schema": { "type": "string" } }
+				],
+				"responses": {
+					"200": { "description": "Success", "content": { "application/json": { "schema": { "type": "object" } } } },
+					"401": { "$ref": "#/components/responses/Error" }
+				}
+			},
+			"patch": {
+				"operationId": "patchMessagesIdNotesNoteId",
+				"security": [{ "bearerAuth": ["notes"] }],
+				"parameters": [
+					{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } },
+					{ "name": "noteId", "in": "path", "required": true, "schema": { "type": "string" } }
+				],
+				"requestBody": { "content": { "application/json": { "schema": { "type": "object" } } } },
+				"responses": {
+					"200": { "description": "Success", "content": { "application/json": { "schema": { "type": "object" } } } },
+					"401": { "$ref": "#/components/responses/Error" }
+				}
+			}
+		},
+		"/api/v1/messages/{id}/notes": {
+			"get": {
+				"operationId": "getMessagesIdNotes",
+				"security": [{ "bearerAuth": ["read"] }],
+				"parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+				"responses": {
+					"200": { "description": "Success", "content": { "application/json": { "schema": { "type": "object" } } } },
+					"401": { "$ref": "#/components/responses/Error" }
+				}
+			},
+			"post": {
+				"operationId": "postMessagesIdNotes",
+				"security": [{ "bearerAuth": ["notes"] }],
+				"parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+				"requestBody": { "content": { "application/json": { "schema": { "type": "object" } } } },
+				"responses": {
+					"200": { "description": "Success", "content": { "application/json": { "schema": { "type": "object" } } } },
+					"401": { "$ref": "#/components/responses/Error" }
+				}
+			}
+		},
 		"/api/v1/messages": {
 			"get": {
 				"operationId": "getMessages",
@@ -232,7 +280,7 @@
 			"bearerAuth": {
 				"type": "http",
 				"scheme": "bearer",
-				"description": "API key from Settings → API keys (personal scopes: send, read, jmap, calendar:read, calendar:write) or Admin → API keys (admin scopes: domains, accounts, mailboxes; owner must keep the admin role). Scope lists: src/lib/api/scopes.ts."
+				"description": "API key from Settings → API keys (personal scopes: send, read, jmap, notes, calendar:read, calendar:write) or Admin → API keys (admin scopes: domains, accounts, mailboxes; owner must keep the admin role). Scope lists: src/lib/api/scopes.ts."
 			}
 		},
 		"responses": {

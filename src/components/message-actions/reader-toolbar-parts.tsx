@@ -1,11 +1,11 @@
 "use client";
 
 import clsx from "clsx";
-import { Archive, Forward, Mail, MailOpen, Reply, ReplyAll, ShieldAlert } from "lucide-react";
+import { Archive, Forward, Mail, MailOpen, Reply, ReplyAll, ShieldAlert, StickyNote } from "lucide-react";
 import type { ReactNode } from "react";
 import type { BulkMessageAction } from "@/app/api/messages/bulk/types";
 import { OVERFLOW_FIXED_ATTR, OVERFLOW_ID_ATTR } from "./use-reader-toolbar-overflow";
-import type { ReplyMode } from "./types";
+import type { ReaderToolbarNotes, ReplyMode } from "./types";
 import { useT } from "@/lib/i18n/use-t";
 
 export const MORE_ITEM_CLASS =
@@ -31,6 +31,42 @@ export function ToolbarSlot({
 		<span {...marker} className={clsx("inline-flex shrink-0", !visible && "pointer-events-none invisible absolute")}>
 			{children}
 		</span>
+	);
+}
+
+/** The conversation's Notes button as an overflowable action; nothing where the conversation offers no notes. */
+export function NotesToolbarSlot({ notes, visible }: { notes?: ReaderToolbarNotes; visible: boolean }) {
+	if (!notes) return null;
+	return (
+		<ToolbarSlot id="notes" visible={visible}>
+			{notes.button}
+		</ToolbarSlot>
+	);
+}
+
+/** Notes in "More actions", once the button has moved there; `onSelect` closes the menu first. */
+export function NotesMoreItem({
+	notes,
+	overflowed,
+	onSelect,
+}: {
+	notes?: ReaderToolbarNotes;
+	overflowed: boolean;
+	onSelect: () => void;
+}) {
+	if (!notes || !overflowed) return null;
+	return (
+		<button
+			type="button"
+			className={MORE_ITEM_CLASS}
+			onClick={() => {
+				onSelect();
+				notes.onOpen();
+			}}
+		>
+			<StickyNote className="h-4 w-4" />
+			{notes.label}
+		</button>
 	);
 }
 

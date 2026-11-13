@@ -10,6 +10,7 @@ import { requestAgentSend, getAgentSendRequest } from "@/lib/agent/approvals/uti
 import type { EmailToolName } from "@/lib/agent/types";
 import type { McpPrincipal } from "./types";
 import { registerAdminMcpTools } from "./admin-tools";
+import { NOTE_TOOL_NAMES, registerNoteMcpTools } from "./note-tools";
 import { audited } from "./audit";
 import { coreToolAnnotations, markUntrusted, MCP_INSTRUCTIONS, moduleToolAnnotations } from "./server-utils";
 import { BUILD_VERSION } from "@/lib/build-version";
@@ -52,6 +53,7 @@ const CORE_TOOL_NAMES = new Set<string>([
 	"manage_domains",
 	"manage_accounts",
 	"manage_mailboxes",
+	...NOTE_TOOL_NAMES,
 ]);
 
 function output(value: unknown, isError = false) {
@@ -170,6 +172,7 @@ export async function createKiteMcpHandler(
 						),
 					);
 				}
+				registerNoteMcpTools(server, env, principal, { output, untrustedOutput });
 				if (has("mcp:draft"))
 					server.registerTool(
 						"update_draft",

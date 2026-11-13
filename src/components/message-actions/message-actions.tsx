@@ -33,9 +33,15 @@ import { messageShortcuts, reachableMessageShortcuts } from "./message-shortcuts
 import { useMessageReply } from "./use-message-reply";
 import { useReadOnlyMail } from "./use-read-only-mail";
 import { MoveToolbarMenu, SnoozeToolbarButton, ToolbarFolderButtons } from "./message-toolbar-menus";
-import { readerInlineActionIds } from "./reader-toolbar-overflow-utils";
+import { readerInlineActionIds, toolbarNotesLabel } from "./reader-toolbar-overflow-utils";
 import { useReaderToolbarOverflow } from "./use-reader-toolbar-overflow";
-import { MORE_ITEM_CLASS, ReaderMoreLeadItems, ToolbarSlot } from "./reader-toolbar-parts";
+import {
+	MORE_ITEM_CLASS,
+	NotesMoreItem,
+	NotesToolbarSlot,
+	ReaderMoreLeadItems,
+	ToolbarSlot,
+} from "./reader-toolbar-parts";
 import { useIsMobile } from "@/components/sidebar-mobile-utils";
 import { useHotkeys, useShortcuts } from "@/components/shortcuts";
 import { Button } from "@/components/ui/button";
@@ -78,6 +84,7 @@ export function MessageActions({
 	onSummarizeMessage,
 	translate,
 	print,
+	notes,
 }: MessageActionsProps) {
 	const t = useT();
 	const router = useRouter();
@@ -235,10 +242,10 @@ export function MessageActions({
 	const snoozable = direction === "inbound" && status === "received";
 	const replyAllLabel = t("Reply all");
 	// Priority order: what is dropped first is last. Whatever does not fit moves into "More actions".
-	const inlineIds = readerInlineActionIds({ isMobile, canReplyAll, snoozable });
+	const inlineIds = readerInlineActionIds({ isMobile, canReplyAll, snoozable, notes: !!notes });
 	const { rootRef, visibleIds } = useReaderToolbarOverflow(
 		inlineIds,
-		[isMobile, inlineIds.join(), replyAllLabel, read, shownError ?? ""].join("|"),
+		[isMobile, inlineIds.join(), replyAllLabel, read, shownError ?? "", toolbarNotesLabel(notes)].join("|"),
 	);
 	const overflowed = (id: string) => inlineIds.includes(id) && !visibleIds.has(id);
 	const slot = (id: string, node: ReactNode) => (
@@ -269,6 +276,7 @@ export function MessageActions({
 				</span>
 			)}
 
+			<NotesToolbarSlot notes={notes} visible={visibleIds.has("notes")} />
 			{isMobile && (
 				<>
 					{slot(
@@ -429,6 +437,7 @@ export function MessageActions({
 							}}
 							onAction={(action) => void runAction(action)}
 						/>
+						<NotesMoreItem notes={notes} overflowed={overflowed("notes")} onSelect={() => setMoreOpen(false)} />
 						{direction === "inbound" && status === "received" && (
 							<SnoozeMenuItem
 								messageId={messageId}

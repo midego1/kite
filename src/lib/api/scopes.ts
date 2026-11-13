@@ -4,7 +4,7 @@
  * Administrative scopes are issued separately from personal mail keys.
  * Modules add their own scopes through their manifests (`apiKeyScopes`, `mcpScopes`).
  */
-export const CORE_API_KEY_SCOPES = ["send", "read", "jmap"] as const;
+export const CORE_API_KEY_SCOPES = ["send", "read", "jmap", "notes"] as const;
 
 /** A core scope or one a module declares, such as `calendar:read`. */
 export type ApiKeyScope = string;

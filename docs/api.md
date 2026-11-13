@@ -247,6 +247,21 @@ A hybrid page is capped at 50 results, ranked by relevance rather than date, so 
 
 A result found only through meaning carries `"match": "meaning"` (keyword hits carry `"keyword"`, a hit from both carries `"both"`). The response's `"semantic"` field, present only once hybrid search genuinely ran, is `"on"`, or `"unavailable"` with a `"semanticReason"` code when a real runtime problem — the install has no external-provider opt-in or no provider configured, the vector store is unavailable, the query timed out, or a provider error — meant only the keyword half could answer. Meaning is not even attempted, and the plain keyword path answers exactly as it would without this feature (`total`, order and paging all unaffected), while the feature is off, the assistant is off, or the query is too short to embed; `GET /api/messages` does not set `"semantic"` in the response for any of these quiet cases, but `GET /api/v1/messages?mode=hybrid` does, as `"off"` — it was asked for explicitly, unlike the UI's ambient default. (Every searched mailbox having the feature excluded is different: meaning is attempted and finds nothing, which still answers `"on"`.) The assistant's `search_emails` tool takes the same idea as a `mode` parameter: `keyword`, `meaning` or `both` (default). Whenever hybrid search genuinely ran, the result carries a `note` that it is relevance-ranked and capped, with `mode: "keyword"` as the way to page through every keyword match; asking for `mode: "meaning"` explicitly and getting no meaning results (whether it was tried and did not run, or it failed) carries a `note` saying so instead. Neither note appears when hybrid is not even tried (a cursor is given, or the free text is empty once operators are split out).
 
+## Notes on conversations
+
+Internal notes on a conversation (see [Notes on conversations](conversation-notes.md)) are plain text, at most 10,000 characters, and never sent. `messageId` may be any email of the conversation; the notes are the same for each.
+
+| Route | Auth | What it does |
+| ----- | ---- | ------------ |
+| `GET /api/messages/{messageId}/notes` | session | `{ notes, canWrite, canPin }`, oldest first; `migrationPending: true` with an empty list before migration 0115 |
+| `POST /api/messages/{messageId}/notes` | session | `{ body, aboutMessage? }` adds a note (201 `{ note }`); `aboutMessage: true` pins it to that email (400 for a draft, see `canPin`) |
+| `PATCH /api/messages/{messageId}/notes/{noteId}` | session | `{ body }` replaces the text of your own note |
+| `DELETE /api/messages/{messageId}/notes/{noteId}` | session | deletes your note (also after your access was lowered to read-only), or anyone's with full access to the mailbox |
+| `GET /api/v1/messages/{id}/notes` | API key, `read` | as above |
+| `POST`, `PATCH`, `DELETE` under `/api/v1/messages/{id}/notes` | API key, `notes` | as above, as the key's user |
+
+A note is `{ id, body, messageId, author: { id, name } | null, createdAt, updatedAt, edited, canEdit, canDelete }`; `author` is null once the account is deleted and `messageId` null for a note about the whole conversation. Errors: 404 for a message the caller cannot read (another user's draft, a mailbox a key does not name, and for API keys mail the Screener holds) and for a note id of another conversation or mailbox; 403 `READ_ONLY` for read-only access to the mailbox; 403 `FORBIDDEN` for someone else's note; 400 for an empty or too long note; 409 `NOTE_LIMIT` once a conversation holds 200 notes (checked in the same statement as the insert); 429 `RATE_LIMITED` past the per-user write allowance (`AGENT_RATE_LIMIT`, key `notes:<user id>`); 409 `MIGRATION_PENDING` before migration 0115. A pin to an email that is a draft the caller cannot open comes back as `messageId: null`. Every write leaves a `note.added`, `note.edited` or `note.deleted` audit row; a conversation's notes are deleted with its last email.
+
 ## Webhooks
 
 **Admin → Webhooks** (`/webhooks`, primary admin; API `/api/webhooks`) posts events as JSON to an `http` or `https` URL on a public host, signed with the webhook's secret (`X-Email-Platform-Signature`), with failed deliveries retried with backoff.

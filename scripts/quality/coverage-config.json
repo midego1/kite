@@ -1,5 +1,7 @@
 {
 	"gated": [
+		"src/lib/notes/note-utils.ts",
+		"src/components/messages/conversation-notes-utils.ts",
 		"src/lib/auth/passkey-utils.ts",
 		"src/lib/auth/webauthn/base64url-utils.ts",
 		"src/lib/auth/webauthn/cbor-utils.ts",

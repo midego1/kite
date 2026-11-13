@@ -42,6 +42,8 @@ Drafts are private to the person who wrote them, in a shared mailbox too. Drafts
 
 Mail in a mailbox shared with you as read-only can be read and marked read or unread, never archived, moved or deleted, in the combined view as anywhere else. Its rows have no archive or delete buttons, the reader's buttons for those are off, and `e` or `#` say that read-only mail can't be moved or deleted. When a bulk action includes read-only mail, the rest is done and a notice says how many read-only emails were left as they were. The server checks this on every request.
 
+Read-only members read the [notes on a conversation](conversation-notes.md) but cannot add, edit or delete them.
+
 ## Everything else stays per mailbox
 
 Live updates, notifications, the For you page, automatic reading suggestions, rules, signatures, auto-replies and Settings work per mailbox, as before. Settings pages use the mailbox you chose last.

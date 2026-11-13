@@ -3,6 +3,7 @@ import * as coreTables from "@/db/schema";
 import * as assistantEmailTables from "@/db/schema/assistant-email";
 import * as autoReadTables from "@/db/schema/agent-auto-read";
 import * as backupTables from "@/db/schema/backups";
+import * as conversationNoteTables from "@/db/schema/conversation-notes";
 import * as agentProviderTables from "@/db/schema/agent-providers";
 import * as summaryTables from "@/db/schema/agent-summaries";
 import * as writingTables from "@/db/schema/agent-writing";
@@ -42,6 +43,7 @@ const schema = {
 	...spamReportTables,
 	...moduleTables,
 	...passkeyTables,
+	...conversationNoteTables,
 	...financeTables,
 	...driveSchemaTables,
 	...storageTables,

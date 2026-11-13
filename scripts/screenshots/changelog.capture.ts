@@ -297,6 +297,29 @@ async function connectDemoMcpApp(name: string): Promise<void> {
 	await session.dispose();
 }
 
+/** Two demo notes on the launch-plan thread (added once), then that thread open in the reader. */
+async function openConversationNotes(page: Page): Promise<Page> {
+	const api = await apiContext(STORAGE_STATE);
+	const found = await api.get(`/api/messages?${new URLSearchParams({ q: THREAD[0]!.subject, limit: "10" })}`);
+	const { messages } = (await found.json()) as { messages: { id: string; subject: string | null }[] };
+	const first = messages.find((message) => message.subject === THREAD[0]!.subject);
+	expect(first, "the demo launch-plan thread").toBeDefined();
+	const notesUrl = `/api/messages/${first!.id}/notes`;
+	const { notes } = (await (await api.get(notesUrl)).json()) as { notes: unknown[] };
+	if (notes.length === 0) {
+		for (const data of [
+			{ body: "Legal signed off on the beta date. Reply to Sofia by Friday with the final list of 200 accounts." },
+			{ body: "The waitlist numbers here are from the old plan; use Daniel's sheet from Tuesday.", aboutMessage: true },
+		])
+			expect((await api.post(notesUrl, { data })).status()).toBe(201);
+	}
+	await api.dispose();
+	await page.goto(`/inbox/${first!.id}`);
+	await expect(page.getByRole("heading", { level: 1, name: THREAD[0]!.subject })).toBeVisible();
+	await expect(page.getByRole("region", { name: "Notes" }).getByText("Legal signed off")).toBeVisible();
+	return page;
+}
+
 /** Adds a demo passkey for the demo admin through the Security page, with Chromium's virtual authenticator. */
 async function openPasskeySettings(page: Page): Promise<Locator> {
 	await addVirtualAuthenticator(page);
@@ -1617,6 +1640,23 @@ const SHOTS: Shot[] = [
 			return dialog;
 		},
 	},
+	...(["light", "dark"] as const).flatMap((theme): Shot[] => [
+		{
+			// Notes on a conversation: the toolbar's Notes button with its count and the notes band above the thread,
+			// one note about the whole conversation and one pinned to the first email.
+			name: `2026-11-13-conversation-notes-${theme}`,
+			theme,
+			viewport: { width: 1280, height: 800 },
+			open: openConversationNotes,
+		},
+		{
+			// The same on a phone (375 px).
+			name: `2026-11-13-conversation-notes-mobile-${theme}`,
+			theme,
+			viewport: { width: 375, height: 812 },
+			open: openConversationNotes,
+		},
+	]),
 ];
 
 async function openPage(browser: Browser, { theme = "light", viewport }: Shot) {

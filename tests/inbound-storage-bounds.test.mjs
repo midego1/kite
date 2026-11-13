@@ -603,27 +603,90 @@ test("mail that would fail the same way on every retry is refused at once", asyn
 	assert.equal((await bucket.list({ prefix: "inbound/" })).objects.length, 0, "nothing was stored");
 });
 
-test("a sender's retry of a message already stored is not stored twice", async (t) => {
-	const { env, exists, row } = await setup(t);
+/** Delivers raw text to mailbox-a through the queue, as intake stored it, and counts the mailbox's rows. */
+async function redeliveries(t) {
+	const context = await setup(t);
+	const { env, row } = context;
 	const count = () => row("SELECT count(*) AS count FROM messages WHERE mailbox_id = 'mailbox-a'").count;
-	const deliver = async (key, text, from = "x@partner.test") => {
-		const rawR2Key = `inbound/${Date.now()}-${key}.eml`;
+	let next = 0;
+	const deliver = async (text, from = "x@partner.test") => {
+		next += 1;
+		const rawR2Key = `inbound/${Date.now()}-${next}.eml`;
+		// Without a fingerprint in the metadata, as raw objects stored before fingerprints were kept.
 		await env.BUCKET.put(rawR2Key, encoder.encode(text), { customMetadata: { from, to: "a@example.com" } });
 		await processInboundMessage(env, { from, to: "a@example.com", rawR2Key });
 		return rawR2Key;
 	};
-	const original = message("Message-ID: <retry-1@partner.test>\r\n", "The quarterly report");
-	await deliver("first", original);
+	return { ...context, count, deliver };
+}
+
+const dated = (id, date, body = "The quarterly report") =>
+	message(`Message-ID: <${id}@partner.test>\r\nDate: ${date}\r\n`, body);
+const DATE = "Mon, 2 Nov 2026 10:00:00 +0000";
+
+test("a sender's retry of a message already stored is not stored twice", async (t) => {
+	const { count, deliver, exists } = await redeliveries(t);
+	const original = dated("retry-1", DATE);
+	await deliver(original);
 	assert.equal(count(), 1);
 	// The retry passed the edge again, which added its own header fields at the top: the same message all the same.
-	const retried = await deliver("retry", `Received: from mx.partner.test by mx.example.com\r\n${original}`);
+	const retried = await deliver(`Received: from mx.partner.test by mx.example.com\r\n${original}`);
 	assert.equal(count(), 1, "the retry is recognised");
 	assert.equal(await exists(retried), false, "and its raw object deleted");
 	// The same Message-ID with another body, or from another envelope sender, is a message of its own.
-	await deliver("other-body", message("Message-ID: <retry-1@partner.test>\r\n", "Something else"));
+	await deliver(dated("retry-1", DATE, "Something else"));
 	assert.equal(count(), 2);
-	await deliver("other-sender", original, "y@elsewhere.test");
+	await deliver(original, "y@elsewhere.test");
 	assert.equal(count(), 3);
+	// A sender that reuses a fixed Message-ID and body (a NAS alert, a cron job) sends each with a new Date.
+	await deliver(dated("retry-1", "Mon, 2 Nov 2026 11:00:00 +0000"));
+	assert.equal(count(), 4);
+});
+
+test("only an earlier copy received through intake in the last six days, and not suspect, hides a retry", async (t) => {
+	const { database, count, deliver } = await redeliveries(t);
+	const update = (sql, id) =>
+		database.db.prepare(`UPDATE messages SET ${sql} WHERE provider_message_id = ?`).run(`<${id}@partner.test>`);
+	const sixDays = 6 * 24 * 60 * 60;
+	const now = Math.floor(Date.now() / 1000);
+	const cases = [
+		// A self-send: the Sent row carries the same Message-ID and must never hide the copy that comes back in.
+		["sent", "direction = 'outbound', status = 'sent'", 2],
+		["old", `created_at = ${now - sixDays - 60}`, 2],
+		["recent", `created_at = ${now - sixDays + 60}`, 1],
+		["imported", "raw_r2_key = 'imports/1-x.eml'", 2],
+		// A forged copy sent ahead of the real message is filed as spam or fails DMARC; the real one still arrives.
+		["spam", "status = 'spam'", 2],
+		["suspicious", "spam_verdict = 'suspicious'", 2],
+		["dmarc", `spam_signals = '[{"id":"dmarc_failed","score":3}]'`, 2],
+	];
+	let expected = 0;
+	for (const [id, change, rows] of cases) {
+		await deliver(dated(id, DATE));
+		update(change, id);
+		await deliver(dated(id, DATE));
+		expected += rows;
+		assert.equal(count(), expected, id);
+	}
+});
+
+test("intake stores the fingerprint, so a retry is recognised without reading the earlier message", async (t) => {
+	const { env, bucket, count } = await redeliveries(t);
+	const sent = [];
+	const queue = { send: async (body) => sent.push(body) };
+	const text = dated("live-1", DATE);
+	await worker.email(liveMessage("a@example.com", text).message, { ...env, INBOUND_QUEUE: queue }, {});
+	await worker.email(
+		liveMessage("a@example.com", `Received: from relay.partner.test\r\n${text}`).message,
+		{ ...env, INBOUND_QUEUE: queue },
+		{},
+	);
+	assert.equal(sent.length, 2);
+	const heads = await Promise.all(sent.map((payload) => bucket.head(payload.rawR2Key)));
+	assert.match(heads[0].customMetadata.fingerprint, /^[0-9a-f]{64}$/);
+	assert.equal(heads[0].customMetadata.fingerprint, heads[1].customMetadata.fingerprint);
+	for (const payload of sent) await processInboundMessage(env, payload);
+	assert.equal(count(), 1);
 });
 
 test("a forward without a copy that failed is kept: in the rule's mailbox, or as its raw object", async (t) => {

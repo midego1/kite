@@ -207,11 +207,11 @@ export default {
 			const keepCopy = decision?.action === "forward" && decision.keepCopy;
 			if (forwardTo && !keepCopy && (await forwardMessage(env, message, forwardTo))) return;
 
-			rawR2Key = newInboundRawKey();
+			const key = newInboundRawKey();
 			const payload: InboundQueueMessage = {
 				from: message.from,
 				to: message.to,
-				rawR2Key,
+				rawR2Key: key,
 				headers: Object.fromEntries(message.headers),
 				authenticationResults: trustedCloudflareAuthenticationResults(
 					message.headers.get("authentication-results"),
@@ -223,7 +223,9 @@ export default {
 				return;
 			}
 			stage = "store";
-			await storeRawToR2(env, message.from, message.to, raw, rawR2Key);
+			await storeRawToR2(env, message.from, message.to, raw, key);
+			// Only a key that was written is logged on failure.
+			rawR2Key = key;
 			stage = "enqueue";
 			await enqueueOrDiscard(env, payload);
 			// Stored and queued: from here on nothing may throw, or the sender would retry a message Kite already has.

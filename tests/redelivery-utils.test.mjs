@@ -7,12 +7,13 @@ import { bundleModules } from "./support/modules-bundle.mjs";
 
 const {
 	messageBody,
-	sameBytes,
+	toHex,
+	fingerprintInput,
 	REDELIVERY_WINDOW_MS,
 	INBOUND_QUEUE_PAYLOAD_TOO_LARGE_REASON,
 	inboundQueuePayloadTooLarge,
 } = await bundleModules("kite-redelivery-utils-", [
-	["messageBody, sameBytes, REDELIVERY_WINDOW_MS", "src/lib/email/redelivery-utils.ts"],
+	["messageBody, toHex, fingerprintInput, REDELIVERY_WINDOW_MS", "src/lib/email/redelivery-utils.ts"],
 	["INBOUND_QUEUE_PAYLOAD_TOO_LARGE_REASON, inboundQueuePayloadTooLarge", "src/lib/email/inbound-queue-utils.ts"],
 ]);
 
@@ -29,10 +30,14 @@ test("the body starts after the first empty line, whichever line ends the messag
 	assert.equal(body(""), "");
 });
 
-test("sameBytes compares length and every byte", () => {
-	assert.equal(sameBytes(encoder.encode("abc"), encoder.encode("abc")), true);
-	assert.equal(sameBytes(encoder.encode("abc"), encoder.encode("abd")), false);
-	assert.equal(sameBytes(encoder.encode("abc"), encoder.encode("ab")), false);
+test("the fingerprint input keeps Date, Subject and the body digest apart", () => {
+	assert.equal(toHex(new Uint8Array([0, 15, 255])), "000fff");
+	const base = fingerprintInput(["Mon, 2 Nov 2026 10:00:00 +0000"], ["Backup done"], "ab");
+	assert.notEqual(base, fingerprintInput(["Mon, 2 Nov 2026 11:00:00 +0000"], ["Backup done"], "ab"));
+	assert.notEqual(base, fingerprintInput(["Mon, 2 Nov 2026 10:00:00 +0000"], ["Backup failed"], "ab"));
+	assert.notEqual(base, fingerprintInput(["Mon, 2 Nov 2026 10:00:00 +0000"], ["Backup done"], "cd"));
+	// A header block that could not be read whole is not the same as one without the field.
+	assert.notEqual(fingerprintInput(null, [], "ab"), fingerprintInput([], [], "ab"));
 });
 
 test("retries are recognised for longer than senders keep retrying", () => {
@@ -50,5 +55,8 @@ test("a queue message over the limit is refused, one within it is not", () => {
 	assert.equal(inboundQueuePayloadTooLarge(payload("x".repeat(120 * 1024))), true);
 	// Bytes count, not characters: a multi-byte header value fills the limit sooner.
 	assert.equal(inboundQueuePayloadTooLarge(payload("é".repeat(60 * 1024))), true);
+	// One character above U+00FF may make the queue store the whole string as UTF-16, two bytes per character.
+	assert.equal(inboundQueuePayloadTooLarge(payload("x".repeat(70 * 1024))), false);
+	assert.equal(inboundQueuePayloadTooLarge(payload(`${"x".repeat(70 * 1024)}€`)), true);
 	assert.match(INBOUND_QUEUE_PAYLOAD_TOO_LARGE_REASON, /^Message rejected:/);
 });

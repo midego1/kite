@@ -8,6 +8,7 @@ import {
 import { NO_ROUTE, NO_ROUTE_REJECT_REASON, resolveIncomingMail } from "@/lib/email/incoming";
 import type { InboundQueueMessage } from "@/lib/email/inbound";
 import { enqueueOrDiscard } from "@/lib/email/inbound-enqueue";
+import { receivedRawMetadata } from "@/lib/email/redelivery";
 import { INBOUND_QUEUE_PAYLOAD_TOO_LARGE_REASON, inboundQueuePayloadTooLarge } from "@/lib/email/inbound-queue-utils";
 import type { IntakeActions, IntakeInput, IntakeResult } from "@/lib/email/intake-types";
 
@@ -98,7 +99,7 @@ export async function intakeIncomingMail(
 	}
 	await env.BUCKET.put(rawR2Key, input.raw, {
 		httpMetadata: { contentType: "message/rfc822" },
-		customMetadata: { from: input.from, to: input.to },
+		customMetadata: await receivedRawMetadata(input.from, input.to, input.raw),
 	});
 	await enqueueOrDiscard(env, payload);
 	const forwardedTo = await forwardCopies(env, actions, routed.copyTo, header, input, marker);

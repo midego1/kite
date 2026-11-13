@@ -19,6 +19,7 @@ import { isHiddenDraft } from "@/lib/messages/draft-privacy-utils";
 import { loadSendStates } from "@/lib/messages/send-state";
 import { loadMessageVia } from "@/lib/external-accounts/via";
 import { triggerEmbeddingDrain } from "@/lib/semantic/indexer";
+import { receivedRawMetadata } from "@/lib/email/redelivery";
 
 /** Mail a connected account's sync fetched (spec §6.4), with the flags it had at the source. */
 export type InboundQueueSource = { kind: "external"; accountId: string; read: boolean; starred: boolean };
@@ -163,7 +164,7 @@ export async function storeRawToR2(
 ): Promise<string> {
 	await env.BUCKET.put(key, raw, {
 		httpMetadata: { contentType: "message/rfc822" },
-		customMetadata: { from, to },
+		customMetadata: await receivedRawMetadata(from, to, raw),
 	});
 	return key;
 }

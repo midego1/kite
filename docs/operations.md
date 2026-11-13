@@ -329,7 +329,17 @@ Kite refuses a message permanently only when every retry would fail the same way
 
 The handler deletes the raw object it wrote when the queue send fails, so a retried message does not leave a 25 MiB object behind for each attempt.
 
-**Repeats are stored once.** An attempt can fail after the message was already stored: the relay timing out while the server finished, an unreadable answer or a proxy error after intake, or one recipient of several failing at the SMTP listener. The sender then delivers the message again with a new raw object. Before storing, the queue looks for a message of the same mailbox received in the last six days with the same Message-ID (the `messages_provider_message_idx` index), from the same envelope sender to the same envelope recipient (the stored raw object's metadata), with the same body bytes (`redeliveryOf`, `src/lib/email/redelivery.ts`; hops add header fields, so headers are not compared). A match is logged (`Inbound message for mailbox … repeats …; not stored again`) and the new raw object is deleted. A message that only shares the Message-ID is still delivered, since anyone can make one up. Mail without a Message-ID is not compared.
+**Repeats are stored once.** An attempt can fail after the message was already stored: the relay timing out while the server finished, an unreadable answer or a proxy error after intake, or one recipient of several failing at the SMTP listener. The sender then delivers the message again with a new raw object. Before storing, the queue (`redeliveryOf`, `src/lib/email/redelivery.ts`) looks at the five newest messages of the same mailbox that match all of these:
+
+- received through intake (`inbound/` raw objects) in the last six days;
+- the same Message-ID, found through the `messages_provider_message_idx` index;
+- not filed as spam, not suspicious, and with no phishing or failed-DMARC signal. A forged copy sent ahead of the real message must not hide it.
+
+A repeat is one of them with the same envelope sender and recipient and the same fingerprint, both read from the raw object's metadata. The fingerprint is a digest of the Date and Subject fields and the body; the rest of the header block is left out because hops add fields to it. Intake stores the fingerprint with every raw object; for objects stored before that, the earlier message is read and fingerprinted. A match is logged (`Inbound message for mailbox … repeats …; not stored again`) and the new raw object is deleted. Some messages are never taken for a repeat:
+
+- one that only shares the Message-ID, since anyone can make one up;
+- one from a sender that reuses a fixed Message-ID and body (a NAS alert, a cron job), because each copy has a new Date;
+- mail without a Message-ID, which is not compared.
 
 **Forwards.** A forward rule without a copy forwards first and stores nothing once the forward went out. Kept copies (a forward rule with a copy, account forwarding) are forwarded only after the message is stored and queued, and a failure from then on is logged but never thrown. A failed attempt therefore never forwarded, and its retry forwards once. The relay forwards only after the server answered, so the same holds there. Duplicate forwards can still happen:
 

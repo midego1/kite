@@ -1,3 +1,5 @@
+import { databaseKey } from "@/lib/d1-session-utils";
+
 /** Every column migration 0069 adds, by table; `user_ai_settings` is created by it and checked by one column. */
 const MIGRATION_0069_COLUMNS: Record<string, readonly string[]> = {
 	mailbox_agent_settings: ["chat_instructions", "draft_instructions", "summary_instructions"],
@@ -13,12 +15,12 @@ const appliedDatabases = new WeakSet<object>();
  * lists (`PRAGMA table_info` returns no rows for a missing table), never a column that may be missing.
  */
 export async function aiWritingMigrationApplied(env: CloudflareEnv): Promise<boolean> {
-	if (appliedDatabases.has(env.DB)) return true;
+	if (appliedDatabases.has(databaseKey(env.DB))) return true;
 	for (const [table, columns] of Object.entries(MIGRATION_0069_COLUMNS)) {
 		const { results } = await env.DB.prepare(`PRAGMA table_info(${table})`).all<{ name: string }>();
 		const names = new Set(results.map((column) => column.name));
 		if (!columns.every((column) => names.has(column))) return false;
 	}
-	appliedDatabases.add(env.DB);
+	appliedDatabases.add(databaseKey(env.DB));
 	return true;
 }

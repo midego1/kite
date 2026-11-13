@@ -145,8 +145,13 @@ export class SqliteDatabase {
 		return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer;
 	}
 
-	withSession() {
+	/** One local database has no replicas: a session is the database itself and never has a bookmark. */
+	withSession(_constraintOrBookmark?: string) {
 		return this;
+	}
+
+	getBookmark(): string | null {
+		return null;
 	}
 }
 

@@ -1,6 +1,7 @@
 import { and, eq, gt, ne } from "drizzle-orm";
 import { newId } from "@/lib/ids";
 import { getDb } from "@/db";
+import { primaryDatabase } from "@/lib/d1-session-utils";
 import { sessions, users } from "@/db/schema";
 import { findUser } from "./user-lookup";
 
@@ -39,7 +40,9 @@ export async function getUserFromSession(
 	token: string | undefined,
 ): Promise<typeof users.$inferSelect | null> {
 	if (!token) return null;
-	const db = getDb(env);
+	// Always the primary: a read replica could still accept a session another device just revoked, or an account
+	// an admin just disabled; no bookmark of this browser covers those writes.
+	const db = getDb({ DB: primaryDatabase(env.DB) });
 	const tokenHash = await hashSessionToken(token);
 	const [session] = await db
 		.select()

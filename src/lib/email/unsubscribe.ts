@@ -1,6 +1,7 @@
 import type { UnsubscribeUrl } from "@/lib/email/unsubscribe-types";
 import type { MailingListHeaders } from "@/lib/email/mailing-list-types";
 import { pickUnsubscribeUrl, readMailingListHeaders } from "@/lib/email/mailing-list-utils";
+import { isUnsubscribeLoopbackAllowed } from "@/lib/email/one-click-unsubscribe-utils";
 import { MAX_RAW_HEADER_BYTES, parseRawHeaders } from "@/lib/email/raw-headers";
 
 export function extractUnsubscribeUrlFromRaw(raw: ArrayBuffer): UnsubscribeUrl {
@@ -15,7 +16,9 @@ export async function getMailingListHeadersFromRawR2Key(
 	if (!rawR2Key) return null;
 	const raw = await env.BUCKET.get(rawR2Key, { range: { offset: 0, length: MAX_RAW_HEADER_BYTES } });
 	if (!raw) return null;
-	return readMailingListHeaders(parseRawHeaders(await raw.arrayBuffer()));
+	return readMailingListHeaders(parseRawHeaders(await raw.arrayBuffer()), {
+		allowLoopback: isUnsubscribeLoopbackAllowed(env.UNSUBSCRIBE_ALLOW_LOOPBACK, process.env.NODE_ENV),
+	});
 }
 
 export async function getUnsubscribeUrlFromRawR2Key(

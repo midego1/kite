@@ -43,14 +43,25 @@ export function pickUnsubscribeUrl(values: readonly string[]): string | null {
 	);
 }
 
+/** Dev and test only: the e2e receiver, which listens on plain http at 127.0.0.1. */
+const LOOPBACK_HTTP = /^http:\/\/127\.0\.0\.1(?::\d+)?\//i;
+
 /**
  * The `https` URL for an RFC 8058 one-click POST, or null: `List-Unsubscribe-Post` must be exactly
  * `List-Unsubscribe=One-Click` (one field, as §3.1 requires) and `List-Unsubscribe` must name an `https` URI.
  */
-function pickOneClickUrl(unsubscribeValues: readonly string[], postValues: readonly string[]): string | null {
+function pickOneClickUrl(
+	unsubscribeValues: readonly string[],
+	postValues: readonly string[],
+	allowLoopback: boolean,
+): string | null {
 	if (postValues.length !== 1) return null;
 	if (postValues[0]!.trim().toLowerCase() !== "list-unsubscribe=one-click") return null;
-	return unsubscribeCandidates(unsubscribeValues).find((candidate) => /^https:\/\//i.test(candidate)) ?? null;
+	return (
+		unsubscribeCandidates(unsubscribeValues).find(
+			(candidate) => /^https:\/\//i.test(candidate) || (allowLoopback && LOOPBACK_HTTP.test(candidate)),
+		) ?? null
+	);
 }
 
 /** The header names one `DKIM-Signature` signs (its `h=` tag), lower-case; empty when it has none. */
@@ -131,15 +142,21 @@ function parseListId(value: string | undefined): { id: string | null; name: stri
 	return { id, name: id ? name : null };
 }
 
-/** What a message's list headers say, from its parsed header block (lower-case names, every value). */
-export function readMailingListHeaders(headers: ReadonlyMap<string, readonly string[]>): MailingListHeaders {
+/**
+ * What a message's list headers say, from its parsed header block (lower-case names, every value). `allowLoopback`
+ * (`UNSUBSCRIBE_ALLOW_LOOPBACK`, never in production) also takes a plain-http one-click link on 127.0.0.1.
+ */
+export function readMailingListHeaders(
+	headers: ReadonlyMap<string, readonly string[]>,
+	{ allowLoopback = false }: { allowLoopback?: boolean } = {},
+): MailingListHeaders {
 	const unsubscribe = headers.get("list-unsubscribe") ?? [];
 	const { id, name } = parseListId(headers.get("list-id")?.[0]);
 	return {
 		listId: id,
 		listName: name,
 		unsubscribeUrl: pickUnsubscribeUrl(unsubscribe),
-		oneClickUrl: pickOneClickUrl(unsubscribe, headers.get("list-unsubscribe-post") ?? []),
+		oneClickUrl: pickOneClickUrl(unsubscribe, headers.get("list-unsubscribe-post") ?? [], allowLoopback),
 		dkimCoversUnsubscribe: dkimCoversListUnsubscribe(headers.get("dkim-signature") ?? []),
 	};
 }

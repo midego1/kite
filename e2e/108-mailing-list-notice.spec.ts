@@ -218,11 +218,12 @@ test("spam and Trash never show the notice, and one-click is refused for spam", 
 	expect((await api.post(`/api/messages/${spam.id}/unsubscribe`)).status()).toBe(409);
 	expect(received.some((request) => request.path === `/u/${token}`)).toBe(false);
 
+	// The reader shows the sender line once the message is loaded; the notice would render in the same pass.
 	await page.goto(`/spam/${spam.id}`);
-	await expect(page.locator(`[data-message-id="${spam.id}"]`).first()).toBeVisible();
+	await expect(page.locator("[data-reader-scroll]").getByText(`news@${token}.invalid`).first()).toBeVisible();
 	await expect(notice(page)).toHaveCount(0);
 	await page.goto(`/trash/${trash.id}`);
-	await expect(page.locator(`[data-message-id="${trash.id}"]`).first()).toBeVisible();
+	await expect(page.locator("[data-reader-scroll]").getByText(`news@${trashToken}.invalid`).first()).toBeVisible();
 	await expect(notice(page)).toHaveCount(0);
 });
 
@@ -235,7 +236,7 @@ test("a delegate with read-only access sees the notice but cannot have Kite unsu
 	const message = await deliverList(token, `Weekly digest ${token}`, { oneClick: true }, `${localPart}@${DOMAIN}`);
 
 	const ownerView = await (await api.get(`/api/messages/${message.id}`)).json();
-	expect(ownerView.mailingList.oneClick).toBe(true);
+	expect(ownerView.mailingList?.oneClick, JSON.stringify(ownerView.mailingList)).toBe(true);
 	const delegateView = await (await delegate.api.get(`/api/messages/${message.id}`)).json();
 	expect(delegateView.mailingList.oneClick).toBe(false);
 	expect((await delegate.api.post(`/api/messages/${message.id}/unsubscribe`)).status()).toBe(403);

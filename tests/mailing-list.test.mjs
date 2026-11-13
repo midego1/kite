@@ -93,6 +93,16 @@ test("one-click needs exactly List-Unsubscribe=One-Click and an https URI", () =
 	assert.equal(oneClick(unsubscribe, ["List-Unsubscribe=One-Click", "List-Unsubscribe=One-Click"]), null);
 	assert.equal(oneClick(unsubscribe, ["List-Unsubscribe=Yes"]), null);
 	assert.equal(oneClick(["<http://x.example/plain>"], ["List-Unsubscribe=One-Click"]), null);
+	const loopback = (allowLoopback) =>
+		lists.readMailingListHeaders(
+			new Map([
+				["list-unsubscribe", ["<http://127.0.0.1:4555/u>"]],
+				["list-unsubscribe-post", ["List-Unsubscribe=One-Click"]],
+			]),
+			{ allowLoopback },
+		).oneClickUrl;
+	assert.equal(loopback(false), null);
+	assert.equal(loopback(true), "http://127.0.0.1:4555/u");
 });
 
 test("a DKIM signature must sign both List-Unsubscribe headers", () => {
@@ -236,6 +246,16 @@ test("the POST is RFC 8058's, never follows a redirect, and only a 2xx counts", 
 	assert.deepEqual(await lists.postOneClickUnsubscribe("https://news.example/u", { fetch: timedOut }), {
 		ok: false,
 		reason: "timeout",
+	});
+	// A body that cannot be cancelled does not change the outcome.
+	const stubborn = async () => ({ status: 202, body: { cancel: () => Promise.reject(new Error("locked")) } });
+	assert.deepEqual(await lists.postOneClickUnsubscribe("https://news.example/u", { fetch: stubborn }), {
+		ok: true,
+		status: 202,
+	});
+	assert.deepEqual(await lists.postOneClickUnsubscribe("not a url", { fetch: stubborn, allowLoopback: true }), {
+		ok: false,
+		reason: "refused_url",
 	});
 	const broken = async () => {
 		throw new TypeError("fetch failed");

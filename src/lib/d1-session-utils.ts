@@ -11,13 +11,14 @@
  * the realtime Durable Object and the Node runtime keep the raw binding (the primary).
  */
 
+/** @public Exercised by the unit tests. */
 export const D1_BOOKMARK_COOKIE = "kite_d1_bm";
 
 /**
  * `off`: no session and no cookie, the raw binding answers. `primary`: a session whose first query goes to the
  * primary, for paths whose reads must be current. `replica`: a session anchored at the browser's bookmark.
  */
-export type D1SessionMode = "off" | "primary" | "replica";
+type D1SessionMode = "off" | "primary" | "replica";
 
 /**
  * Surfaces without a browser that keeps our cookies, or that promise to set none: webhooks and inbound mail, public
@@ -49,7 +50,10 @@ function isReadRequest(request: Request): boolean {
 	return request.method === "GET" || request.method === "HEAD";
 }
 
-/** The bookmark the browser's last response left on it, if any. */
+/**
+ * The bookmark the browser's last response left on it, if any.
+ * @public Exercised by the unit tests.
+ */
 export function readD1Bookmark(request: Request): string | undefined {
 	const cookie = request.headers.get("cookie");
 	if (!cookie) return undefined;
@@ -67,6 +71,7 @@ export function readD1Bookmark(request: Request): string | undefined {
 	return undefined;
 }
 
+/** @public Exercised by the unit tests. */
 export function d1SessionMode(request: Request): D1SessionMode {
 	const { pathname } = new URL(request.url);
 	if (request.headers.has("authorization") || hasPrefix(pathname, OFF_PREFIXES)) return "off";
@@ -77,6 +82,7 @@ export function d1SessionMode(request: Request): D1SessionMode {
 /**
  * Where the session starts: the primary for `primary` paths and for a write without a bookmark, otherwise the
  * browser's bookmark, or anywhere on a first visit.
+ * @public Exercised by the unit tests.
  */
 export function d1SessionConstraint(request: Request, mode: Exclude<D1SessionMode, "off">): string {
 	if (mode === "primary") return "first-primary";
@@ -91,6 +97,7 @@ export type SessionDatabase = D1Database & Pick<D1DatabaseSession, "getBookmark"
 /**
  * A `D1Database` whose queries run on the session. `exec`, `dump` and `withSession` exist only on the binding, so
  * they go to the primary; nothing in the request path uses them.
+ * @public Exercised by the unit tests.
  */
 export function sessionDatabase(primary: D1Database, session: D1DatabaseSession): SessionDatabase {
 	const database = {
@@ -153,6 +160,7 @@ export function withD1Session<T extends { DB?: D1Database }>(env: T, database: S
  * The `Set-Cookie` value storing the session's newest bookmark, or null. Only writes and a first visit store it: a
  * slow read finishing after a write would otherwise replace the newer bookmark with an older one and break
  * read-your-writes. `getBookmark()` is null until a query ran on the session.
+ * @public Exercised by the unit tests.
  */
 export function d1BookmarkCookie(request: Request, bookmark: string | null | undefined): string | null {
 	if (!bookmark) return null;

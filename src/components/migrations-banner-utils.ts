@@ -23,12 +23,18 @@ export function parsePendingMigrations(value: unknown): PendingMigrationsRespons
 	return { pending, ...(names.length ? { names } : {}), ...(appliedBy ? { appliedBy } : {}) };
 }
 
+/** The primary admin as "Name (email)", or just the address when there is no distinct name. */
+export function migrationApplierWho(appliedBy: PendingMigrationsResponse["appliedBy"]): string | null {
+	if (!appliedBy) return null;
+	return appliedBy.name && appliedBy.name !== appliedBy.email
+		? `${appliedBy.name} (${appliedBy.email})`
+		: appliedBy.email;
+}
+
 /** Who to ask, for an account that cannot apply the updates itself. */
 export function migrationApplierText(appliedBy: PendingMigrationsResponse["appliedBy"]): string {
-	if (!appliedBy) return "Ask an administrator to apply them.";
-	const who =
-		appliedBy.name && appliedBy.name !== appliedBy.email ? `${appliedBy.name} (${appliedBy.email})` : appliedBy.email;
-	return `Only the primary admin, ${who}, can apply them.`;
+	const who = migrationApplierWho(appliedBy);
+	return who ? `Only the primary admin, ${who}, can apply them.` : "Ask an administrator to apply them.";
 }
 
 /**
@@ -37,14 +43,6 @@ export function migrationApplierText(appliedBy: PendingMigrationsResponse["appli
  */
 export function shouldShowMigrationsBanner(status: PendingMigrationsResponse | undefined): boolean {
 	return (status?.pending ?? 0) > 0;
-}
-
-/** The wording from the deploy notes: what changed and what is wrong until it is applied. */
-export function migrationsBannerContent(pending: number): { title: string; body: string } {
-	return {
-		title: `Kite was updated, but the database still needs ${pending} ${pending === 1 ? "update" : "updates"}`,
-		body: "Until they are applied, new email may not appear and some pages may fail.",
-	};
 }
 
 /** What to show after the primary admin presses Apply now. */

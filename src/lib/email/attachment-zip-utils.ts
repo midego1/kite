@@ -13,6 +13,7 @@ const MAX_ARCHIVE_NAME_BYTES = 80;
  * every entry lands in the archive's top folder and none can climb out with `..`, no control or bidi characters, at
  * most 180 UTF-8 bytes) plus the characters, trailing dots and device names Windows cannot extract. NFC, so a name
  * reads the same on every file system.
+ * @public Exercised by the unit tests; `uniqueZipEntryNames` is the way in.
  */
 export function zipEntryName(filename: string): string {
 	const name = sanitizeFilename(filename.normalize("NFC"))

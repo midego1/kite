@@ -1,7 +1,7 @@
 import type { AttachmentRisk } from "@/lib/email/attachment-risk-types";
 
 /** A flagged file as the archive route lists it in its 409 answer. */
-export type FlaggedArchiveFile = { id: string; filename: string; risk: AttachmentRisk };
+type FlaggedArchiveFile = { id: string; filename: string; risk: AttachmentRisk };
 
 /** The "Download all" archive route of a message, with `check=1` (checks only) or `acknowledge=1` when asked. */
 export function attachmentsZipUrl(messageId: string, options: { check?: boolean; acknowledge?: boolean } = {}): string {
@@ -20,7 +20,7 @@ export function flaggedArchiveLines(flagged: readonly FlaggedArchiveFile[]): str
 }
 
 /** Where the archive's check leads: download it, confirm the flagged files first, or explain why it cannot. */
-export type ArchiveCheckOutcome =
+type ArchiveCheckOutcome =
 	| { kind: "download" }
 	| { kind: "confirm"; flagged: FlaggedArchiveFile[] }
 	| { kind: "missing"; filenames: string[] }

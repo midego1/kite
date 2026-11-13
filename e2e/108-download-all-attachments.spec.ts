@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { expect, test, type APIResponse } from "@playwright/test";
+import { expect, test, type APIResponse, type Page } from "@playwright/test";
 import { STORAGE_STATE, SUPPORT_ADDRESS } from "./support/constants";
 import { apiContext, deliverInbound, uniqueToken } from "./support/helpers";
 
@@ -11,6 +11,12 @@ type Detail = { attachments: { id: string; filename: string }[] };
 async function json<T>(response: APIResponse): Promise<T> {
 	expect(response.ok(), `${response.url()} -> ${response.status()} ${await response.text()}`).toBe(true);
 	return (await response.json()) as T;
+}
+
+/** Opens a message in the reader and waits until the startup overlay has faded, so clicks reach the page. */
+async function openReader(page: Page, messageId: string) {
+	await page.goto(`/inbox/${messageId}`);
+	await expect(page.locator("[data-loading-overlay]")).not.toHaveClass(/opacity-100/, { timeout: 60_000 });
 }
 
 /** The names in a ZIP's central directory. */
@@ -46,7 +52,7 @@ test("Download all saves one ZIP of the message's attachments", async ({ browser
 	const context = await browser.newContext({ storageState: STORAGE_STATE, acceptDownloads: true });
 	const page = await context.newPage();
 	try {
-		await page.goto(`/inbox/${message.id}`);
+		await openReader(page, message.id);
 		await expect(page.getByRole("heading", { level: 2, name: "Attachments (3)" })).toBeVisible();
 		const [download] = await Promise.all([
 			page.waitForEvent("download"),
@@ -91,7 +97,7 @@ test("Download all asks before zipping a flagged file, and the server refuses wi
 	const context = await browser.newContext({ storageState: STORAGE_STATE, acceptDownloads: true });
 	const page = await context.newPage();
 	try {
-		await page.goto(`/inbox/${message.id}`);
+		await openReader(page, message.id);
 		const button = page.getByRole("button", { name: "Download all" });
 		await button.click();
 		const dialog = page.getByRole("alertdialog", { name: "Download flagged files?" });
@@ -124,7 +130,7 @@ test("Download all is offered only from two attachments, and only to readers of 
 		attachments: [{ filename: "only.txt", contentType: "text/plain", content: "Only" }],
 	});
 	try {
-		await page.goto(`/inbox/${message.id}`);
+		await openReader(page, message.id);
 		await expect(page.getByRole("heading", { level: 2, name: "Attachments (1)" })).toBeVisible();
 		await expect(page.getByRole("button", { name: "Download all" })).toHaveCount(0);
 		// The route still zips a single file for whoever may read it.

@@ -1661,7 +1661,10 @@ async function openAttachmentsSection(page: Page, subject: string): Promise<Loca
 	await page.goto("/inbox");
 	await page.getByRole("main").getByText(subject, { exact: true }).first().click();
 	await expect(page.getByRole("heading", { level: 1, name: subject })).toBeVisible();
-	const section = page.locator("section", { has: page.getByRole("button", { name: "Download all" }) });
+	const section = page
+		.getByRole("heading", { level: 2, name: /^Attachments \(/ })
+		.locator("xpath=ancestor::section[1]");
+	await expect(section.getByRole("button", { name: "Download all" })).toBeVisible();
 	await expect(section).toBeVisible();
 	return section;
 }

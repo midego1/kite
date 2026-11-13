@@ -21,7 +21,10 @@ const MAX_ENTRIES = 0xffff;
 
 type CentralEntry = { name: Uint8Array; crc: number; size: number; offset: number; dosTime: number; dosDate: number };
 
-/** MS-DOS date and time fields, in UTC so both runtimes write the same bytes; years before 1980 clamp to 1980. */
+/**
+ * MS-DOS date and time fields, in UTC so both runtimes write the same bytes; years clamp to 1980-2107.
+ * @public Exercised by the unit tests.
+ */
 export function toDosDateTime(date: Date): { dosTime: number; dosDate: number } {
 	const year = Math.min(Math.max(date.getUTCFullYear(), 1980), 2107);
 	return {

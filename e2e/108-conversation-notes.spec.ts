@@ -85,6 +85,10 @@ test("a colleague writes notes, a read-only member reads them, and the owner del
 			await band(page).getByRole("button", { name: "Add note" }).click();
 			await expect(band(page).locator("[data-note-id]")).toHaveCount(1);
 			await expect(composer).toHaveValue("");
+			// The options stay while focus moves from the empty composer to them by keyboard.
+			await composer.focus();
+			await page.keyboard.press("Tab");
+			await expect(band(page).getByRole("checkbox", { name: "About this email only" })).toBeFocused();
 
 			await composer.fill("Refund approved, see the order from last week.");
 			await band(page).getByText("About this email only").click();

@@ -206,10 +206,16 @@ function Composer({ controller }: { controller: ConversationNotesController }) {
 			setAboutMessage(false);
 		}
 	};
-	// One line until someone writes; then room for a few lines and the options.
+	// One line until someone writes; then room for a few lines and the options, kept while focus stays in the composer.
 	const expanded = focused || body.length > 0;
 	return (
-		<div className="pt-2">
+		<div
+			className="pt-2"
+			onFocus={() => setFocused(true)}
+			onBlur={(event) => {
+				if (!event.currentTarget.contains(event.relatedTarget)) setFocused(false);
+			}}
+		>
 			<Textarea
 				ref={field}
 				aria-label={t("Write a note")}
@@ -217,15 +223,17 @@ function Composer({ controller }: { controller: ConversationNotesController }) {
 				value={body}
 				maxLength={NOTE_MAX_LENGTH}
 				rows={expanded ? 3 : 1}
-				onFocus={() => setFocused(true)}
-				onBlur={() => setFocused(false)}
 				onChange={(event) => setBody(event.target.value)}
 				onKeyDown={editorKeys(() => void add())}
 				className={expanded ? "min-h-[72px] bg-white" : "min-h-0 resize-none bg-white"}
 			/>
 			{expanded && (
 				<div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2">
-					<label htmlFor={pinId} className="flex items-center gap-2 text-xs text-neutral-700">
+					<label
+						htmlFor={pinId}
+						onMouseDown={(event) => event.preventDefault()}
+						className="flex items-center gap-2 text-xs text-neutral-700"
+					>
 						<Checkbox id={pinId} checked={aboutMessage} onChange={(event) => setAboutMessage(event.target.checked)} />
 						{t("About this email only")}
 					</label>

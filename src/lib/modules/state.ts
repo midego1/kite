@@ -6,7 +6,7 @@ import type { ModuleId } from "./module-types";
 import { MODULE_IDS, MODULE_MANIFESTS } from "./registry";
 import type { ModuleFlagRow, ModuleFlags, ModuleViewer } from "./state-types";
 import { effectiveModules, flagsFromRows, isNoSuchTableError } from "./state-utils";
-import { databaseKey } from "@/lib/d1-session-utils";
+import { databaseKey, primaryDatabase } from "@/lib/d1-session-utils";
 
 type Binding = CloudflareEnv["DB"];
 type StateEnv = Pick<CloudflareEnv, "DB">;
@@ -83,12 +83,14 @@ const accessRows = (db: Binding, userId: string) =>
 		.from(userModuleAccess)
 		.where(eq(userModuleAccess.userId, userId));
 
+// The isolate cache is shared by every request, so it fills from the primary: a lagging read replica would otherwise
+// serve a toggle's old value to everyone in the isolate, the admin who just saved it included, for the whole TTL.
 function loadInstall(db: Binding): Promise<ModuleFlags> {
-	return readFlags(() => installRows(db), installFallback);
+	return readFlags(() => installRows(primaryDatabase(db)), installFallback);
 }
 
 function loadAccess(db: Binding, userId: string): Promise<ModuleFlags> {
-	return readFlags(() => accessRows(db, userId), accessFallback);
+	return readFlags(() => accessRows(primaryDatabase(db), userId), accessFallback);
 }
 
 function installFromIsolate(db: Binding): Promise<ModuleFlags> {

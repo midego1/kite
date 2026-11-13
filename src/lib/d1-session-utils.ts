@@ -187,17 +187,28 @@ function noteResult(state: SessionState, result: unknown): void {
 	}
 }
 
-/** Runs a query; when D1 refuses the browser's bookmark, restarts the session on the primary and runs it again. */
+/**
+ * Runs a query; when D1 refuses the browser's bookmark, restarts the session on the primary and runs it again. The
+ * restart is allowed only until the anchored session first answers (an answer proves D1 accepts the bookmark), and
+ * it happens once: a statement that was already in flight on the refused session (a `Promise.all` of first queries)
+ * sees the session replaced and simply re-runs on the new one. Only the refused statement re-runs, never the handler,
+ * and writes always reach the primary, which cannot refuse a bookmark.
+ */
 async function execute<T>(state: SessionState, run: () => Promise<T>): Promise<T> {
+	const ranOn = state.session;
 	try {
 		const result = await run();
+		if (state.session === ranOn) state.recoverable = false;
 		noteResult(state, result);
 		return result;
 	} catch (error) {
-		if (!state.recoverable || !isBookmarkRefusal(error)) throw error;
-		state.recoverable = false;
-		state.resetCookie = true;
-		state.session = state.primary.withSession("first-primary");
+		if (!isBookmarkRefusal(error)) throw error;
+		if (state.session === ranOn) {
+			if (!state.recoverable) throw error;
+			state.recoverable = false;
+			state.resetCookie = true;
+			state.session = state.primary.withSession("first-primary");
+		}
 		const result = await run();
 		noteResult(state, result);
 		return result;
@@ -329,16 +340,16 @@ export function openD1Session(
 	return sessionDatabase(binding, session, { recoverable: anchored && !resetCookie, resetCookie });
 }
 
-const sessionEnvs = new WeakMap<object, WeakMap<object, object>>();
+const swappedEnvs = new WeakMap<object, WeakMap<object, object>>();
 
 /**
- * The env with `DB` swapped for the session, cached per pair. Worker bindings are not enumerable, so the env cannot
+ * The env with `DB` swapped for `database`, cached per pair. Worker bindings are not enumerable, so the env cannot
  * be spread; a proxy reads every other binding from the env itself (as its own receiver). Its target is a blank
  * object, so a binding defined as non-configurable on the env cannot trip the proxy invariants.
  */
-export function withD1Session<T extends { DB?: D1Database }>(env: T, database: SessionDatabase): T {
-	let byEnv = sessionEnvs.get(database);
-	if (!byEnv) sessionEnvs.set(database, (byEnv = new WeakMap()));
+function withDatabase<T extends { DB?: D1Database }>(env: T, database: D1Database): T {
+	let byEnv = swappedEnvs.get(database);
+	if (!byEnv) swappedEnvs.set(database, (byEnv = new WeakMap()));
 	const cached = byEnv.get(env);
 	if (cached) return cached as T;
 	const proxy = new Proxy({} as T, {
@@ -354,6 +365,21 @@ export function withD1Session<T extends { DB?: D1Database }>(env: T, database: S
 	});
 	byEnv.set(env, proxy);
 	return proxy;
+}
+
+/** The env with `DB` swapped for the request's session. */
+export function withD1Session<T extends { DB?: D1Database }>(env: T, database: SessionDatabase): T {
+	return withDatabase(env, database);
+}
+
+/**
+ * The env with `DB` back on the raw binding when it is a session, or the env itself. Isolate caches that every
+ * request shares (module state, the storage config) fill through it: a value read from a lagging replica would
+ * otherwise be served to everyone in the isolate, including the admin who just saved the change, for the whole TTL.
+ */
+export function withPrimaryDatabase<T extends { DB?: D1Database }>(env: T): T {
+	const primary = primaryDatabase(env.DB);
+	return primary && primary !== env.DB ? withDatabase(env, primary) : env;
 }
 
 /** What the response learned about the session, for `d1BookmarkCookie`. */

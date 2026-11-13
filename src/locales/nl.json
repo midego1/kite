@@ -796,5 +796,12 @@
 	"category|Health": "Gezondheid",
 	"category|Entertainment": "Entertainment",
 	"category|Education": "Onderwijs",
-	"category|Other": "Overig"
+	"category|Other": "Overig",
+	"Download flagged files?": "Gemarkeerde bestanden downloaden?",
+	"{count, plural, one {# file is} other {# files are}} flagged as risky:": "{count, plural, one {# bestand is} other {# bestanden zijn}} gemarkeerd als riskant:",
+	"Open them only if you expected them from someone you trust.": "Open ze alleen als je ze verwachtte van iemand die je vertrouwt.",
+	"Download all": "Alles downloaden",
+	"Some attachments are missing from storage: {names}": "Sommige bijlagen ontbreken in de opslag: {names}",
+	"These attachments are too large to download together.": "Deze bijlagen zijn te groot om samen te downloaden.",
+	"The attachments could not be downloaded.": "De bijlagen konden niet worden gedownload."
 }

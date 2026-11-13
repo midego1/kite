@@ -216,6 +216,7 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/mailboxes/[id]`                                        | DELETE, GET, PATCH     | [source](../src/app/api/mailboxes/[id]/route.ts)                                        |
 | `/api/mailboxes`                                             | GET, POST              | [source](../src/app/api/mailboxes/route.ts)                                             |
 | `/api/messages/[messageId]/attachments/[attachmentId]`       | GET                    | [source](../src/app/api/messages/[messageId]/attachments/[attachmentId]/route.ts)       |
+| `/api/messages/[messageId]/attachments/zip`                  | GET                    | [source](../src/app/api/messages/[messageId]/attachments/zip/route.ts)                  |
 | `/api/messages/[messageId]/metadata`                         | GET                    | [source](../src/app/api/messages/[messageId]/metadata/route.ts)                         |
 | `/api/messages/[messageId]/original`                         | GET                    | [source](../src/app/api/messages/[messageId]/original/route.ts)                         |
 | `/api/messages/[messageId]/read`                             | POST                   | [source](../src/app/api/messages/[messageId]/read/route.ts)                             |

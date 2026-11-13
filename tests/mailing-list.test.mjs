@@ -340,8 +340,10 @@ test("the POST is RFC 8058's, never follows a redirect, and only a 2xx counts", 
 
 test("one request per message goes out: retries after a failure do, parallel twins and refused clicks do not hold", () => {
 	const now = Date.parse("2026-11-13T10:00:00Z");
+	let seq = 0;
 	const row = (id, messageId, secondsAgo, outcome = "pending") => ({
 		id,
+		seq: ++seq,
 		messageId,
 		createdAt: now - secondsAgo * 1000,
 		outcome,
@@ -355,11 +357,11 @@ test("one request per message goes out: retries after a failure do, parallel twi
 	// A failed one does not: the retry goes out.
 	for (const failed of ["timeout", "network", "http_error", "redirect", "refused_url"])
 		assert.equal(decide([row("a", "m1", 60, failed), row("b", "m1", 0)], "b"), null, failed);
-	// Two parallel requests: the earliest goes out, ties broken by id, the same answer for both.
-	assert.equal(decide([row("a", "m1", 1), row("b", "m1", 0)], "a"), null);
-	assert.equal(decide([row("a", "m1", 1), row("b", "m1", 0)], "b"), "duplicate");
-	assert.equal(decide([row("x", "m1", 0), row("y", "m1", 0)], "x"), null);
-	assert.equal(decide([row("x", "m1", 0), row("y", "m1", 0)], "y"), "duplicate");
+	// Two requests: the one inserted first goes out, whatever their ids or the second they share.
+	assert.equal(decide([row("b", "m1", 0), row("a", "m1", 0)], "b"), null);
+	assert.equal(decide([row("b", "m1", 0), row("a", "m1", 0)], "a"), "duplicate");
+	// A request that reached the sender in the same second still holds the message (whole-second created_at).
+	assert.equal(decide([row("z", "m1", 0, "done"), row("a", "m1", 0)], "a"), "duplicate");
 	// Refused clicks never stretch the window or count toward the rate.
 	const refused = Array.from({ length: 20 }, (_, index) => row(`r${index}`, "m1", 30, "duplicate"));
 	assert.equal(decide([row("a", "m1", 11 * 60, "done"), ...refused, row("b", "m1", 0)], "b"), null);

@@ -1,4 +1,4 @@
-import { and, eq, gt } from "drizzle-orm";
+import { and, eq, gt, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { auditLogs } from "@/db/schema";
 import { newId } from "@/lib/ids";
@@ -16,7 +16,7 @@ type OneClickAttempt =
  * Claims one one-click request with a `pending` audit row and answers whether it may go out (`decideOneClickAttempt`):
  * not while an earlier request by the same user for the same message is pending or reached the sender within ten
  * minutes, nor past ten requests a minute. The row is written first and the user's recent rows read afterwards,
- * including it, so of parallel requests exactly the earliest goes out. It needs no rate-limit binding and fails
+ * including it, so of parallel requests exactly the first inserted (lowest `rowid`) goes out. It needs no rate-limit binding and fails
  * closed: when the row cannot be written or read this throws and the caller refuses. A refused request keeps its row,
  * marked with the reason, which then counts against nothing; the metadata never holds the link.
  */
@@ -38,6 +38,7 @@ export async function recordOneClickAttempt(
 	const rows = await db
 		.select({
 			id: auditLogs.id,
+			seq: sql<number>`${auditLogs}.rowid`,
 			messageId: auditLogs.messageId,
 			createdAt: auditLogs.createdAt,
 			metadata: auditLogs.metadata,
@@ -54,6 +55,7 @@ export async function recordOneClickAttempt(
 	const reason = decideOneClickAttempt(
 		rows.map((row) => ({
 			id: row.id,
+			seq: Number(row.seq),
 			messageId: row.messageId,
 			createdAt: row.createdAt.getTime(),
 			outcome: attemptOutcome(row.metadata),

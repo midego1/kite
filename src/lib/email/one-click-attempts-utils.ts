@@ -14,6 +14,8 @@ const SENT_OUTCOMES = new Set(["pending", "done"]);
 
 export type OneClickAttemptRow = {
 	id: string;
+	/** Insertion order (SQLite `rowid`): `created_at` holds whole seconds, too coarse to order requests. */
+	seq: number;
 	messageId: string | null;
 	createdAt: number;
 	/** `metadata.outcome`; a row without one is still pending. */
@@ -23,8 +25,8 @@ export type OneClickAttemptRow = {
 /**
  * Whether the request `self` (its own row already among `rows`, the user's rows of the last ten minutes) may go out.
  * Refused requests are ignored, so clicking again never stretches a window. Per message only requests that are
- * pending or reached the sender count, so a retry after a failure goes out; of two racing requests the earliest
- * (oldest row, ties by id, the same answer for both) goes out and the other is a duplicate. Per user every request
+ * pending or reached the sender count, so a retry after a failure goes out; of any two the one inserted first goes out
+ * and the other is a duplicate, the same answer whichever of them asks. Per user every request
  * that went out in the last minute counts, failed or not.
  */
 export function decideOneClickAttempt(
@@ -40,7 +42,7 @@ export function decideOneClickAttempt(
 				row.createdAt > now - MESSAGE_COOLDOWN_MS &&
 				SENT_OUTCOMES.has(row.outcome ?? "pending"),
 		)
-		.sort((a, b) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+		.sort((a, b) => a.seq - b.seq);
 	if (holding.length && holding[0]!.id !== self.id) return "duplicate";
 	const lastMinute = live.filter((row) => row.createdAt > now - MINUTE_MS).length;
 	return lastMinute > USER_ATTEMPTS_PER_MINUTE ? "rate_limited" : null;

@@ -796,5 +796,7 @@
 	"category|Health": "Gezondheid",
 	"category|Entertainment": "Entertainment",
 	"category|Education": "Onderwijs",
-	"category|Other": "Overig"
+	"category|Other": "Overig",
+	"Read-only mail can't be answered or forwarded.": "Op alleen-lezen mail kun je niet antwoorden en je kunt die niet doorsturen.",
+	"You can read this shared mailbox but not reply or forward from it.": "Je kunt deze gedeelde mailbox lezen, maar er niet vanuit antwoorden of doorsturen."
 }

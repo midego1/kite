@@ -796,5 +796,7 @@
 	"category|Health": "الصحة",
 	"category|Entertainment": "الترفيه",
 	"category|Education": "التعليم",
-	"category|Other": "أخرى"
+	"category|Other": "أخرى",
+	"Read-only mail can't be answered or forwarded.": "لا يمكن الرد على البريد المخصص للقراءة فقط أو إعادة توجيهه.",
+	"You can read this shared mailbox but not reply or forward from it.": "يمكنك قراءة صندوق البريد المشترك هذا، لكن لا يمكنك الرد أو إعادة التوجيه منه."
 }

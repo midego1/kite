@@ -1617,7 +1617,66 @@ const SHOTS: Shot[] = [
 			return dialog;
 		},
 	},
+	{
+		// Read-only shared mail in All mailboxes: the note instead of the reply box, Reply and Move turned off.
+		name: "2026-11-10-read-only-shared-mail-light",
+		theme: "light",
+		viewport: { width: 1280, height: 800 },
+		open: async (page) => {
+			await openReadOnlyMessage(page);
+			return page;
+		},
+	},
+	{
+		name: "2026-11-10-read-only-shared-mail-phone-light",
+		theme: "light",
+		viewport: { width: 375, height: 812 },
+		open: async (page) => {
+			await openReadOnlyMessage(page);
+			return page;
+		},
+	},
 ];
+
+/** A message in the demo Team mailbox, delivered once, that the read-only shots open. */
+const READ_ONLY_SUBJECT = "Shift handover for the weekend";
+
+/**
+ * Opens the read-only shot's message in All mailboxes. Demo data has one account, the owner, who has full access
+ * to every mailbox: the shot borrows that session and only marks the Team mailbox read-only in the mailbox list,
+ * which is all the reader's buttons look at (the server refuses the same actions for a real read-only share).
+ */
+async function openReadOnlyMessage(page: Page): Promise<void> {
+	const api = await apiContext(STORAGE_STATE);
+	const found = await api.get(`/api/messages?${new URLSearchParams({ q: READ_ONLY_SUBJECT, limit: "1" })}`);
+	const { messages } = (await found.json()) as { messages: { id: string }[] };
+	if (!messages[0]) {
+		const { mailboxes } = (await (await api.get("/api/mailboxes")).json()) as {
+			mailboxes: { id: string; localPart: string }[];
+		};
+		// A new sender would wait in the Team mailbox's Screener instead of reaching its Inbox.
+		await turnScreenerOff(api, mailboxes.find((mailbox) => mailbox.localPart === "team")!.id);
+	}
+	const message =
+		messages[0] ??
+		(await deliverInbound(api, {
+			from: `"Priya Raman" <priya@acme.test>`,
+			to: `"Team" <team@${SUPPORT_ADDRESS.split("@")[1]}>`,
+			subject: READ_ONLY_SUBJECT,
+			text: "Hi team, Tom covers the queue on Saturday and I take Sunday. The two open escalations are in the shared notes.",
+		}));
+	await api.dispose();
+	await page.route("**/api/mailboxes", async (route) => {
+		const response = await route.fetch();
+		const body = (await response.json()) as { mailboxes: { localPart: string; permission?: string }[] };
+		for (const mailbox of body.mailboxes) if (mailbox.localPart === "team") mailbox.permission = "read_only";
+		await route.fulfill({ response, json: body });
+	});
+	await page.addInitScript(() => localStorage.setItem("kite-all-mailboxes", "true"));
+	await page.goto(`/inbox/${message.id}`);
+	await expect(page.getByRole("heading", { level: 1, name: READ_ONLY_SUBJECT })).toBeVisible();
+	await expect(page.getByText("You can read this shared mailbox but not reply or forward from it.")).toBeVisible();
+}
 
 async function openPage(browser: Browser, { theme = "light", viewport }: Shot) {
 	const context = await browser.newContext({

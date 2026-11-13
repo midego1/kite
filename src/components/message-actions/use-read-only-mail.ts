@@ -10,11 +10,12 @@ type ActionRunner = (action: BulkMessageAction, folderId?: string) => Promise<vo
 
 /**
  * The reader's view of a message's mailbox access: read-only shared mail can be read and marked
- * read, never moved or deleted, and `guard` refuses those actions (keys included) with a notice.
+ * read, never moved or deleted, and `guard` refuses those actions (keys included) with a notice. Answering
+ * is `useMessageReply`'s own check, since Send as access answers mail it cannot move.
  */
 export function useReadOnlyMail(mailboxId: string | null, { disabled, status }: { disabled: boolean; status: string }) {
 	const access = useMessageAccess();
-	const readOnly = !!access.mailboxOf(mailboxId) && !access.canManage(mailboxId);
+	const readOnly = access.cannotManage(mailboxId);
 	const guard = useCallback(
 		(run: ActionRunner): ActionRunner =>
 			async (action, folderId) => {

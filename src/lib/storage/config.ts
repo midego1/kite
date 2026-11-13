@@ -25,7 +25,7 @@ import {
 } from "./endpoint-utils";
 import { bucketHost } from "./s3-utils";
 import type { RoutableClass, S3Credentials, S3Location } from "./types";
-import { databaseKey } from "@/lib/d1-session-utils";
+import { databaseKey, withPrimaryDatabase } from "@/lib/d1-session-utils";
 
 const log = createLogger("storage");
 
@@ -169,7 +169,7 @@ export async function readStorageConfig(env: StorageEnv): Promise<StorageConfig>
 }
 
 /**
- * The storage config, cached for 30 s per isolate (one batched D1 read). When a read fails the last config this
+ * The storage config, cached for 30 s per isolate (one batched D1 read on the primary). When a read fails the last config this
  * isolate saw is used; with none, every class is on the default store, so inbound mail is never bounced by a
  * transient D1 error.
  */
@@ -183,7 +183,8 @@ export function loadStorageConfig(env: StorageEnv): Promise<StorageConfig> {
 		value: Promise.resolve(EMPTY_STORAGE_CONFIG),
 		known: entry?.known,
 	};
-	next.value = readStorageConfig(env).then(
+	// Every request in the isolate shares this entry, so it is filled from the primary, not a lagging read replica.
+	next.value = readStorageConfig(withPrimaryDatabase(env)).then(
 		(config) => {
 			next.known = config;
 			return config;

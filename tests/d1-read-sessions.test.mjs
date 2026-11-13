@@ -27,6 +27,7 @@ await build({
 			export { createSession, getUserFromSession } from "./src/lib/auth/session.ts";
 			export { getMigrationStatus, applyPendingMigrations } from "./src/lib/migrations/service.ts";
 			export { loadStorageConfig, clearStorageConfigCache } from "./src/lib/storage/config.ts";
+			export { getInstallModuleState, getUserModuleAccess } from "./src/lib/modules/state.ts";
 			export { issueRecoveryCodes, consumeRecoveryCode, countUnusedRecoveryCodes } from "./src/lib/auth/recovery-codes.ts";
 		`,
 		resolveDir: root,
@@ -72,6 +73,9 @@ const {
 	applyPendingMigrations,
 	loadStorageConfig,
 	clearStorageConfigCache,
+	getInstallModuleState,
+	getUserModuleAccess,
+	withPrimaryDatabase,
 	issueRecoveryCodes,
 	consumeRecoveryCode,
 	countUnusedRecoveryCodes,
@@ -312,6 +316,45 @@ test("a bookmark refused on the first query restarts the session on the primary 
 	await assert.rejects(unanchored.prepare("SELECT 1").run(), /bookmark/);
 });
 
+test("queries in flight on a refused session all re-run on the one replacement", async () => {
+	const refusing = fakeSession(OLD, { fail: new Error("D1_ERROR: bookmark not available") });
+	const binding = fakeBinding(refusing);
+	const database = openD1Session({ DB: binding }, get("/inbox", withBookmark(OLD)));
+	const results = await Promise.allSettled([
+		database.prepare("SELECT 1").all(),
+		database.prepare("SELECT 2").first(),
+		database.batch([database.prepare("SELECT 3")]),
+	]);
+	assert.deepEqual(
+		results.map((result) => result.status),
+		["fulfilled", "fulfilled", "fulfilled"],
+	);
+	assert.deepEqual(binding.constraints, [OLD, "first-primary"], "one restart for all of them");
+	assert.deepEqual(binding.sessions[1].prepared, ["SELECT 1", "SELECT 2", "SELECT 3"]);
+});
+
+test("once the anchored session has answered, a later refusal is not retried", async () => {
+	let refuse = false;
+	const session = fakeSession(OLD);
+	const prepare = session.prepare;
+	session.prepare = (query) => {
+		const statement = prepare(query);
+		return {
+			...statement,
+			all: async () => {
+				if (refuse) throw new Error("D1_ERROR: bookmark not available");
+				return statement.all();
+			},
+		};
+	};
+	const binding = fakeBinding(session);
+	const database = openD1Session({ DB: binding }, get("/inbox", withBookmark(OLD)));
+	await database.prepare("SELECT 1").all();
+	refuse = true;
+	await assert.rejects(database.prepare("SELECT 2").all(), /bookmark/);
+	assert.deepEqual(binding.constraints, [OLD]);
+});
+
 test("batch runs the session's statements and reports writes", async () => {
 	const session = fakeSession(NEW, { changed: true });
 	const database = sessionDatabase(fakeBinding(session), session);
@@ -521,10 +564,32 @@ test("isolate caches over the database are shared by every request's session", a
 	const second = sessionDatabase(sqlite, secondSession);
 	assert.equal(databaseKey(first), databaseKey(second));
 	const config = await loadStorageConfig({ DB: first });
-	assert.ok(firstSession.queries > 0);
+	assert.equal(firstSession.queries, 0, "the shared cache fills from the primary, not the request's session");
 	assert.equal(await loadStorageConfig({ DB: second }), config);
 	assert.equal(secondSession.queries, 0, "the second request's session reused the cached config");
 	clearStorageConfigCache();
+});
+
+test("module state fills its isolate cache from the primary even when the replica fails", async () => {
+	const sqlite = await migratedDatabase();
+	const database = sessionDatabase(sqlite, fakeSession(null, { fail: new Error("read a replica") }));
+	const install = await getInstallModuleState({ DB: database });
+	assert.equal(install.get("drive"), true);
+	const access = await getUserModuleAccess({ DB: database }, { userId: "user_x", isPrimaryAdmin: false });
+	assert.equal(access.get("drive"), true);
+});
+
+test("withPrimaryDatabase swaps a session back to the raw binding and leaves a raw env alone", () => {
+	const binding = fakeBinding();
+	const env = { DB: binding, APP_URL: "https://mail.example.com" };
+	assert.equal(withPrimaryDatabase(env), env);
+	const database = sessionDatabase(binding, fakeSession());
+	const sessionEnv = withD1Session(env, database);
+	const primaryEnv = withPrimaryDatabase(sessionEnv);
+	assert.equal(primaryEnv.DB, binding);
+	assert.equal(primaryEnv.APP_URL, "https://mail.example.com");
+	assert.equal(withPrimaryDatabase(sessionEnv), primaryEnv, "cached per env");
+	assert.equal(withPrimaryDatabase({}).DB, undefined);
 });
 
 test("authentication and the migration status read the primary, not the session", async () => {

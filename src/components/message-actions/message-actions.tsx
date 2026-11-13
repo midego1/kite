@@ -15,6 +15,7 @@ import {
 	Reply,
 	ReplyAll,
 	ShieldAlert,
+	StickyNote,
 	Trash2,
 } from "lucide-react";
 import { MessageTranslateItem } from "@/components/messages/message-translate-item";
@@ -78,6 +79,7 @@ export function MessageActions({
 	onSummarizeMessage,
 	translate,
 	print,
+	notes,
 }: MessageActionsProps) {
 	const t = useT();
 	const router = useRouter();
@@ -235,10 +237,10 @@ export function MessageActions({
 	const snoozable = direction === "inbound" && status === "received";
 	const replyAllLabel = t("Reply all");
 	// Priority order: what is dropped first is last. Whatever does not fit moves into "More actions".
-	const inlineIds = readerInlineActionIds({ isMobile, canReplyAll, snoozable });
+	const inlineIds = readerInlineActionIds({ isMobile, canReplyAll, snoozable, notes: !!notes });
 	const { rootRef, visibleIds } = useReaderToolbarOverflow(
 		inlineIds,
-		[isMobile, inlineIds.join(), replyAllLabel, read, shownError ?? ""].join("|"),
+		[isMobile, inlineIds.join(), replyAllLabel, read, shownError ?? "", notes?.label ?? ""].join("|"),
 	);
 	const overflowed = (id: string) => inlineIds.includes(id) && !visibleIds.has(id);
 	const slot = (id: string, node: ReactNode) => (
@@ -269,6 +271,7 @@ export function MessageActions({
 				</span>
 			)}
 
+			{notes && slot("notes", notes.button)}
 			{isMobile && (
 				<>
 					{slot(
@@ -429,6 +432,19 @@ export function MessageActions({
 							}}
 							onAction={(action) => void runAction(action)}
 						/>
+						{notes && overflowed("notes") && (
+							<button
+								type="button"
+								className={MORE_ITEM_CLASS}
+								onClick={() => {
+									setMoreOpen(false);
+									notes.onOpen();
+								}}
+							>
+								<StickyNote className="h-4 w-4" />
+								{notes.label}
+							</button>
+						)}
 						{direction === "inbound" && status === "received" && (
 							<SnoozeMenuItem
 								messageId={messageId}

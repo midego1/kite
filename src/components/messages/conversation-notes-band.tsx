@@ -191,7 +191,10 @@ function Composer({ controller }: { controller: ConversationNotesController }) {
 	const pinId = useId();
 
 	useEffect(() => {
-		if (controller.composeRequest > 0) field.current?.focus();
+		if (controller.composeRequest === 0) return;
+		// After a "More actions" menu that opened the band has handed focus back to its trigger.
+		const timer = setTimeout(() => field.current?.focus(), 0);
+		return () => clearTimeout(timer);
 	}, [controller.composeRequest]);
 
 	const add = async () => {

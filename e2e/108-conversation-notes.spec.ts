@@ -162,7 +162,9 @@ test("a colleague writes notes, a read-only member reads them, and the owner del
 	}
 });
 
-test("on a phone the Notes button stays in the toolbar and the band fits the screen", async ({ browser }) => {
+test("on a phone the notes fit the screen, and Notes is reachable from More actions when the row is full", async ({
+	browser,
+}) => {
 	const localPart = uniqueToken("notesphone");
 	const mailboxId = await createSharedMailbox(api, localPart);
 	const { first } = await deliverConversation(`${localPart}@${DOMAIN}`);
@@ -170,13 +172,26 @@ test("on a phone the Notes button stays in the toolbar and the band fits the scr
 	const { context, page } = await signedInPage(browser, api, mailboxId, { width: 375, height: 812 });
 	try {
 		await page.goto(`/inbox/${first.id}`);
-		await expect(notesButton(page)).toBeVisible();
-		await expect(notesButton(page)).toHaveAccessibleName("1 note");
 		await expect(band(page)).toContainText("Call Maya back after 3 pm.");
 		const box = await band(page).boundingBox();
 		expect(box!.x).toBeGreaterThanOrEqual(0);
 		expect(box!.x + box!.width).toBeLessThanOrEqual(375);
 		expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
+
+		// On the smallest phone the row keeps Delete and More actions; Notes moves into the menu and opens the band.
+		await page.setViewportSize({ width: 320, height: 640 });
+		await band(page).getByRole("button", { name: "Hide notes" }).click();
+		await expect(band(page)).toHaveCount(0);
+		const more = page.locator(".reader-toolbar").getByRole("button", { name: "More actions" });
+		if (await notesButton(page).isVisible()) {
+			await notesButton(page).click();
+		} else {
+			await more.click();
+			await page.getByRole("dialog", { name: "More actions" }).getByRole("button", { name: "1 note" }).click();
+		}
+		await expect(band(page)).toContainText("Call Maya back after 3 pm.");
+		const moreBox = await more.boundingBox();
+		expect(moreBox!.x + moreBox!.width).toBeLessThanOrEqual(320);
 	} finally {
 		await context.close();
 	}

@@ -1,11 +1,17 @@
 /**
  * The reader toolbar's overflowable actions in priority order (index 0 stays longest). A phone's row holds Reply
  * and Report spam beside the fixed Delete and More actions; a wider row holds the rest, and Reply all and Snooze
- * only exist when the message can use them.
+ * only exist when the message can use them. Notes, where the conversation offers them, is the first to move.
  */
-export function readerInlineActionIds(options: { isMobile: boolean; canReplyAll: boolean; snoozable: boolean }) {
-	if (options.isMobile) return ["reply", "spam"];
+export function readerInlineActionIds(options: {
+	isMobile: boolean;
+	canReplyAll: boolean;
+	snoozable: boolean;
+	notes?: boolean;
+}) {
+	const notes = options.notes ? ["notes"] : [];
+	if (options.isMobile) return ["reply", "spam", ...notes];
 	const ids = options.canReplyAll ? ["replyAll", "archive"] : ["archive"];
 	if (options.snoozable) ids.push("snooze");
-	return [...ids, "move", "spam", "mark"];
+	return [...ids, "move", "spam", "mark", ...notes];
 }

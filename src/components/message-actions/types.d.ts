@@ -1,6 +1,7 @@
 import type { BulkMessageAction } from "@/app/api/messages/bulk/types";
 import type { Message, MessageDirection } from "@/hooks/types";
 import type { LucideIcon } from "lucide-react";
+import type { ReactNode } from "react";
 import type { ReaderPrint } from "@/components/messages/print/print-menu-types";
 import type { MessageTranslateMenu } from "@/components/messages/message-translation-types";
 
@@ -28,6 +29,15 @@ export type MessageActionsProps = {
 	translate?: MessageTranslateMenu;
 	/** Print and Download PDF in the overflow menu, and Ctrl/Cmd+P. */
 	print?: ReaderPrint;
+	/** The conversation's Notes button: the toolbar's least important action, in "More actions" when it has no room. */
+	notes?: ReaderToolbarNotes;
+};
+
+export type ReaderToolbarNotes = {
+	button: ReactNode;
+	/** The button's name ("2 notes", "Add a note"), also the "More actions" item. */
+	label: string;
+	onOpen: () => void;
 };
 
 export type ForwardDraftInput = {

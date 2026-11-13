@@ -59,7 +59,7 @@ import { MessageTranslationBar } from "@/components/messages/message-translation
 import { translationAvailability } from "@/components/messages/message-translation-utils";
 import { useMessageTranslation } from "@/components/messages/use-message-translation";
 import { SummarizeButton, ThreadSummaryCard } from "@/components/messages/thread-summary-card";
-import { ConversationNotes, ConversationNotesButton } from "@/components/messages/conversation-notes";
+import { ConversationNotes, useReaderNotesAction } from "@/components/messages/conversation-notes";
 import { useConversationNotes } from "@/components/messages/use-conversation-notes";
 import { useThreadSummary } from "@/components/messages/use-thread-summary";
 import { showsCurrentSummary } from "@/components/messages/thread-summary-utils";
@@ -89,6 +89,7 @@ export default function MessageDetailPage() {
 	const { scrollRef, handleScroll } = useMessageContentScroll(messageId, loading);
 	const summary = useThreadSummary(messageId, "thread");
 	const notes = useConversationNotes(messageId);
+	const notesAction = useReaderNotesAction(notes);
 	const hideTriageSummary = showsCurrentSummary(summary.state, summary.hidden);
 	const threadTranslationState = translationAvailability(summary.state);
 	const translation = useMessageTranslation({
@@ -199,7 +200,6 @@ export default function MessageDetailPage() {
 				{/* On a phone this space goes to the reader toolbar instead (message-actions.tsx is `max-md:flex-1`
 				there). On desktop its width is the room the toolbar may still use (use-reader-toolbar-overflow.ts). */}
 				<span {...{ [READER_TOOLBAR_SPACER_ATTR]: "" }} className="min-w-0 flex-1 max-md:hidden" />
-				<ConversationNotesButton controller={notes} />
 				<SummarizeButton controller={summary} />
 				<MessageActions
 					messageId={message.id}
@@ -219,6 +219,7 @@ export default function MessageDetailPage() {
 					onSummarizeMessage={summary.summarizeMessage}
 					translate={translation.menu}
 					print={print}
+					notes={notesAction}
 				/>
 				<AssistantButton testId="assistant-button-reader" />
 			</div>

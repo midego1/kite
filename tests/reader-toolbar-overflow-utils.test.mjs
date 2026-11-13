@@ -47,3 +47,18 @@ test("Reply all and Snooze only exist when the message can use them", () => {
 		"mark",
 	]);
 });
+
+test("Notes, where the conversation offers them, is the first action to move into More actions", () => {
+	assert.deepEqual(readerInlineActionIds({ isMobile: true, canReplyAll: true, snoozable: true, notes: true }), [
+		"reply",
+		"spam",
+		"notes",
+	]);
+	assert.deepEqual(readerInlineActionIds({ isMobile: false, canReplyAll: false, snoozable: false, notes: true }), [
+		"archive",
+		"move",
+		"spam",
+		"mark",
+		"notes",
+	]);
+});

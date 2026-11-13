@@ -1,3 +1,5 @@
+import { databaseKey } from "@/lib/d1-session-utils";
+
 /** A request connected accounts refuse, answered with its status (and a code) instead of failing the call. */
 export class ExternalAccountRefusal extends Error {
 	constructor(
@@ -29,13 +31,13 @@ const readyDatabases = new WeakSet<object>();
  * names a table that may be missing.
  */
 export async function externalAccountTablesReady(env: Pick<CloudflareEnv, "DB">): Promise<boolean> {
-	if (readyDatabases.has(env.DB)) return true;
+	if (readyDatabases.has(databaseKey(env.DB))) return true;
 	const row = await env.DB.prepare(
 		`SELECT count(*) AS present FROM sqlite_master WHERE type = 'table' AND name IN (${TABLES.map(() => "?").join(", ")})`,
 	)
 		.bind(...TABLES)
 		.first<{ present: number }>();
 	const ready = Number(row?.present ?? 0) === TABLES.length;
-	if (ready) readyDatabases.add(env.DB);
+	if (ready) readyDatabases.add(databaseKey(env.DB));
 	return ready;
 }

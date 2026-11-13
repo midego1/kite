@@ -2,6 +2,7 @@ import { and, desc, eq, gte, isNull, ne, or, sql } from "drizzle-orm";
 import { getDb } from "@/db";
 import { apiKeys, calendarEvents, users } from "@/db/schema";
 import { timingSafeEqual } from "@/lib/auth/totp";
+import { primaryDatabase } from "@/lib/d1-session-utils";
 import { createLogger } from "@/lib/logger.mjs";
 import { newId } from "@/lib/ids";
 import { normalizeTimeZone } from "@/lib/time/utils";
@@ -68,7 +69,8 @@ export async function resolveCalendarFeed(
 	env: CloudflareEnv,
 	token: string,
 ): Promise<{ userId: string; role: string; isPrimaryAdmin: boolean; timeZone: string } | null> {
-	const db = getDb(env);
+	// The primary, as for API keys: a read replica could still accept a link that was just replaced or turned off.
+	const db = getDb({ DB: primaryDatabase(env.DB) });
 	const hash = await hashFeedToken(token);
 	const candidates = await db
 		.select({ id: apiKeys.id, userId: apiKeys.userId, keyHash: apiKeys.keyHash, lastUsedAt: apiKeys.lastUsedAt })

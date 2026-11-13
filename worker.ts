@@ -61,6 +61,7 @@ import { storageConnectOrigins } from "./src/lib/storage";
 import { withStorage } from "./src/lib/storage/router";
 import { trustedCloudflareAuthenticationResults } from "./src/lib/spam/authentication-results-utils";
 import { completeRawHeaderValues } from "./src/lib/email/raw-headers";
+import { fetchWithD1Session } from "./src/lib/d1-session";
 export { RealtimeHub } from "./src/lib/realtime/hub";
 
 const logger = createLogger("worker");
@@ -114,13 +115,21 @@ async function handleFetch(request: Request, env: CloudflareEnv, ctx: ExecutionC
 	return renderDocumentWithCsp(request, withStorage(env), ctx);
 }
 
+/**
+ * Browser requests run on a D1 session so D1 can serve their reads from read replicas (src/lib/d1-session.ts); the
+ * email, queue and scheduled handlers below keep the raw binding (the primary) on purpose.
+ */
+function handleFetchWithD1Session(request: Request, env: CloudflareEnv, ctx: ExecutionContext): Promise<Response> {
+	return fetchWithD1Session(request, env, (sessionRequest, sessionEnv) => handleFetch(sessionRequest, sessionEnv, ctx));
+}
+
 export default {
 	async fetch(request: Request, env: CloudflareEnv, ctx: ExecutionContext) {
-		if (!new URL(request.url).pathname.startsWith("/api/")) return handleFetch(request, env, ctx);
+		if (!new URL(request.url).pathname.startsWith("/api/")) return handleFetchWithD1Session(request, env, ctx);
 		const name = routeTemplate(new URL(request.url).pathname);
 		return traceHttp(
 			request,
-			(traced) => handleFetch(traced, env, ctx),
+			(traced) => handleFetchWithD1Session(traced, env, ctx),
 			logger,
 			({ status, durationMs, failed }) =>
 				recordMetric(env.METRICS, {

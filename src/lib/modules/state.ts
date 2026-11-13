@@ -6,6 +6,7 @@ import type { ModuleId } from "./module-types";
 import { MODULE_IDS, MODULE_MANIFESTS } from "./registry";
 import type { ModuleFlagRow, ModuleFlags, ModuleViewer } from "./state-types";
 import { effectiveModules, flagsFromRows, isNoSuchTableError } from "./state-utils";
+import { databaseKey } from "@/lib/d1-session-utils";
 
 type Binding = CloudflareEnv["DB"];
 type StateEnv = Pick<CloudflareEnv, "DB">;
@@ -35,8 +36,9 @@ function sharedCache(): SharedCache {
 
 function entryFor(db: Binding): IsolateEntry {
 	const { entries } = sharedCache();
-	let entry = entries.get(db);
-	if (!entry) entries.set(db, (entry = { access: new Map() }));
+	const key = databaseKey(db);
+	let entry = entries.get(key);
+	if (!entry) entries.set(key, (entry = { access: new Map() }));
 	return entry;
 }
 

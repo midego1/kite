@@ -64,7 +64,7 @@ await build({
 const load = (name) => import(pathToFileURL(join(outDir, `${name}.mjs`)).href);
 const { deliverInboundMessage } = await load("deliver");
 const { upsertContactFromAddress, getMessageContactNames, blockContact } = await load("contacts");
-const { getSenderDisplayName } = await load("contactUtils");
+const { getPartyDisplayName, getContactNameFromAddress } = await load("contactUtils");
 const { resolveThreadId } = await load("threading");
 const { senderDmarc, isThreadParticipant } = await load("joinUtils");
 const { getMessageThreadForUser } = await load("threadView");
@@ -334,25 +334,25 @@ test("inbound mail names a contact but never renames one; outbound and manual na
 
 test("each message keeps its own sender name: manual contact name, then From name, then learned name", async (t) => {
 	const shared = { displayName: "LiveKit Hiring Team", source: "inbound" };
-	assert.equal(getSenderDisplayName('"PostHog Team" <no-reply@ashbyhq.com>', shared), "PostHog Team");
+	assert.equal(getPartyDisplayName('"PostHog Team" <no-reply@ashbyhq.com>', shared), "PostHog Team");
 	assert.equal(
-		getSenderDisplayName('"LiveKit Hiring Team" <no-reply@ashbyhq.com>', {
+		getPartyDisplayName('"LiveKit Hiring Team" <no-reply@ashbyhq.com>', {
 			displayName: "PostHog Team",
 			source: "outbound",
 		}),
 		"LiveKit Hiring Team",
 	);
 	assert.equal(
-		getSenderDisplayName('"PostHog Team" <no-reply@ashbyhq.com>', {
+		getPartyDisplayName('"PostHog Team" <no-reply@ashbyhq.com>', {
 			displayName: "Ashby Recruiting",
 			source: "manual",
 		}),
 		"Ashby Recruiting",
 	);
-	assert.equal(getSenderDisplayName("no-reply@ashbyhq.com", shared), "LiveKit Hiring Team");
-	assert.equal(getSenderDisplayName("no-reply@ashbyhq.com", null), null);
+	assert.equal(getPartyDisplayName("no-reply@ashbyhq.com", shared), "LiveKit Hiring Team");
+	assert.equal(getPartyDisplayName("no-reply@ashbyhq.com", null), null);
 	// A From name that is only the address is no name.
-	assert.equal(getSenderDisplayName('"no-reply@ashbyhq.com" <no-reply@ashbyhq.com>', shared), "LiveKit Hiring Team");
+	assert.equal(getPartyDisplayName('"no-reply@ashbyhq.com" <no-reply@ashbyhq.com>', shared), "LiveKit Hiring Team");
 
 	const f = await setup(t);
 	const posthog = await deliver(f, { from: '"PostHog Team" <no-reply@ashbyhq.com>', id: "p@ashbyhq.com" });
@@ -373,6 +373,52 @@ test("each message keeps its own sender name: manual contact name, then From nam
 		"UPDATE contacts SET display_name = 'Ashby', source = 'manual' WHERE email = 'no-reply@ashbyhq.com'",
 	);
 	assert.deepEqual(await shown(), ["Ashby", "Ashby"]);
+});
+
+test("a header name that only repeats the address is no name, in any case or quoting", () => {
+	assert.equal(getContactNameFromAddress("John@Example.com <john@example.com>"), null);
+	assert.equal(getContactNameFromAddress("'john@example.com' <john@example.com>"), null);
+	assert.equal(getContactNameFromAddress("'JOHN@example.com' <john@example.com>"), null);
+	assert.equal(getContactNameFromAddress("'John Doe' <john@example.com>"), "'John Doe'");
+	assert.equal(getContactNameFromAddress("John Doe <john@example.com>"), "John Doe");
+});
+
+test("each message keeps the recipient name it was sent to: manual contact name, then To name, then learned name", async () => {
+	const learned = { displayName: "PostHog Team", source: "outbound" };
+	assert.equal(getPartyDisplayName('"LiveKit Hiring Team" <no-reply@ashbyhq.com>', learned), "LiveKit Hiring Team");
+	assert.equal(
+		getPartyDisplayName('"LiveKit Hiring Team" <no-reply@ashbyhq.com>', { ...learned, source: "manual" }),
+		"PostHog Team",
+	);
+	assert.equal(getPartyDisplayName("no-reply@ashbyhq.com", learned), "PostHog Team");
+	assert.equal(getPartyDisplayName("no-reply@ashbyhq.com", null), null);
+});
+
+test("sent messages to a shared address keep their own To name in the thread view and the contact names", async (t) => {
+	const f = await setup(t);
+	f.database.db.exec(`
+		INSERT INTO contacts (id, user_id, email, display_name, source, blocked, created_at) VALUES ('c1', 'owner', 'no-reply@ashbyhq.com', 'PostHog Team', 'outbound', 0, 1);
+		INSERT INTO messages (id, user_id, mailbox_id, direction, from_addr, to_addr, status, thread_id, created_at) VALUES
+			('s1', 'owner', 'mailbox-a', 'outbound', 'a@example.com', '"PostHog Team" <no-reply@ashbyhq.com>', 'sent', 't', 1),
+			('s2', 'owner', 'mailbox-a', 'outbound', 'a@example.com', '"LiveKit Hiring Team" <no-reply@ashbyhq.com>', 'sent', 't', 2),
+			('s3', 'owner', 'mailbox-a', 'outbound', 'a@example.com', '"LiveKit Hiring Team" <no-reply@ashbyhq.com>, bob@partner.test', 'sent', 't', 3),
+			('s4', 'owner', 'mailbox-a', 'outbound', 'a@example.com', 'bob@partner.test, "LiveKit Hiring Team" <no-reply@ashbyhq.com>', 'sent', 't', 4);
+	`);
+	const names = async () =>
+		(await getMessageThreadForUser(f.env, OWNER, "s1")).messages.map((message) => message.toContactName);
+	// The contact learned the first recipient name; every message still shows the name it was sent to. Only the
+	// first recipient names a multi-recipient To.
+	assert.deepEqual(await names(), ["PostHog Team", "LiveKit Hiring Team", "LiveKit Hiring Team", null]);
+	const contactNames = (id) => {
+		const m = f.row("SELECT from_addr, to_addr FROM messages WHERE id = ?", id);
+		return getMessageContactNames(f.env, "owner", m.from_addr, m.to_addr);
+	};
+	assert.equal((await contactNames("s2")).toContactName, "LiveKit Hiring Team");
+	assert.equal((await contactNames("s3")).toContactName, "LiveKit Hiring Team");
+	// A name the user set on the contact is deliberate and wins for every message.
+	f.database.db.exec("UPDATE contacts SET display_name = 'Ashby', source = 'manual' WHERE id = 'c1'");
+	assert.deepEqual(await names(), ["Ashby", "Ashby", "Ashby", null]);
+	assert.equal((await contactNames("s2")).toContactName, "Ashby");
 });
 
 test("spam stays out of a conversation unless it is the message being opened", async (t) => {

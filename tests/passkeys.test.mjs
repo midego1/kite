@@ -42,7 +42,7 @@ await build({
 			export { hashPassword } from "./src/lib/auth/password.ts";
 			export { totp } from "./src/lib/auth/totp.ts";
 			export { completePasswordReset } from "./src/lib/auth/password-reset.ts";
-			export { endAccessAfterPasswordChange, hashSessionToken } from "./src/lib/auth/session.ts";
+			export { hashSessionToken, setPasswordAndEndAccess } from "./src/lib/auth/session.ts";
 			export { noticeSignInChange } from "./src/lib/auth/sign-in-notice.ts";
 			export { POST as signInOptions } from "./src/app/api/auth/passkey/options/route.ts";
 			export { checkReauthentication } from "./src/lib/auth/passkey-http.ts";
@@ -1169,20 +1169,32 @@ test("backups carry passkeys with the accounts, never the ceremonies", async (t)
 	assert.ok(accounts.tables.includes("passkeys"));
 });
 
-test("a password change ends the other sessions and the account's calendar subscription link", async (t) => {
+test("a password change is one batch with ending the other sessions and the calendar subscription link", async (t) => {
 	const { env, db } = await database(t);
 	const keep = "sess_keep";
 	db.prepare(
 		"INSERT INTO sessions (id, user_id, token_hash, expires_at, created_at) VALUES ('s1', 'usr_a', ?, 9999999999, 1), ('s2', 'usr_a', 'other', 9999999999, 1)",
 	).run(await kite.hashSessionToken(keep));
 	const keysLeft = seedSubscriptionLinks(db);
-	await kite.endAccessAfterPasswordChange(env, "usr_a", keep);
-	assert.deepEqual(
+	const sessionsLeft = () =>
 		db
-			.prepare("SELECT id FROM sessions WHERE user_id = 'usr_a'")
+			.prepare("SELECT id FROM sessions WHERE user_id = 'usr_a' ORDER BY id")
 			.all()
-			.map((row) => row.id),
-		["s1"],
-	);
+			.map((row) => row.id);
+	const passwordHash = () => db.prepare("SELECT password_hash FROM users WHERE id = 'usr_a'").get().password_hash;
+	const before = passwordHash();
+	const sessionsBefore = sessionsLeft();
+
+	// If ending the link fails, nothing changes: the old password, the sessions and the link all stay.
+	db.exec("CREATE TRIGGER api_keys_refuse_delete BEFORE DELETE ON api_keys BEGIN SELECT RAISE(ABORT, 'refused'); END;");
+	await assert.rejects(kite.setPasswordAndEndAccess(env, "usr_a", "new-hash", keep));
+	assert.equal(passwordHash(), before);
+	assert.deepEqual(sessionsLeft(), sessionsBefore);
+	assert.deepEqual(keysLeft(), ["feed_a", "feed_b", "key_a"]);
+
+	db.exec("DROP TRIGGER api_keys_refuse_delete");
+	await kite.setPasswordAndEndAccess(env, "usr_a", "new-hash", keep);
+	assert.equal(passwordHash(), "new-hash");
+	assert.deepEqual(sessionsLeft(), ["s1"]);
 	assert.deepEqual(keysLeft(), ["feed_b", "key_a"]);
 });

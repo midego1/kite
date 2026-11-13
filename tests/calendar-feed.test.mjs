@@ -288,7 +288,47 @@ test("every TZID in the feed has its VTIMEZONE, once, before the events", () => 
 	assert.equal(lines(feed([base])).includes("BEGIN:VTIMEZONE"), false);
 });
 
-test("a 5,000-event feed builds well inside a Worker's CPU budget", () => {
+/** Counts Intl date formatters made and formatting calls while `run` runs, then restores Intl. */
+function countIntl(run) {
+	const Original = Intl.DateTimeFormat;
+	const { formatToParts } = Original.prototype;
+	const counts = { constructed: 0, calls: 0 };
+	Intl.DateTimeFormat = new Proxy(Original, {
+		construct(target, args) {
+			counts.constructed += 1;
+			return Reflect.construct(target, args);
+		},
+		apply(target, self, args) {
+			counts.constructed += 1;
+			return Reflect.apply(target, self, args);
+		},
+	});
+	Original.prototype.formatToParts = function (...args) {
+		counts.calls += 1;
+		return formatToParts.apply(this, args);
+	};
+	// `format` is a getter that returns a bound function.
+	const formatDescriptor = Object.getOwnPropertyDescriptor(Original.prototype, "format");
+	Object.defineProperty(Original.prototype, "format", {
+		configurable: true,
+		get() {
+			const bound = formatDescriptor.get.call(this);
+			return (...args) => {
+				counts.calls += 1;
+				return bound(...args);
+			};
+		},
+	});
+	try {
+		return { result: run(), ...counts };
+	} finally {
+		Intl.DateTimeFormat = Original;
+		Original.prototype.formatToParts = formatToParts;
+		Object.defineProperty(Original.prototype, "format", formatDescriptor);
+	}
+}
+
+test("a 5,000-event feed reuses its zone tables instead of formatting every time", () => {
 	const start = Date.parse("2026-01-05T08:00:00Z");
 	const events = Array.from({ length: 5000 }, (_, index) => {
 		const startsAt = new Date(start + index * 3_600_000);
@@ -310,11 +350,15 @@ test("a 5,000-event feed builds well inside a Worker's CPU budget", () => {
 		};
 	});
 	const build = () => feed(events, { timeZone: "Europe/Amsterdam" });
-	build(); // the zone tables and VTIMEZONEs are built once per isolate
-	const started = performance.now();
-	const ics = build();
-	const elapsed = performance.now() - started;
-	assert.equal(lines(ics).filter((line) => line === "BEGIN:VEVENT").length, 5000);
-	// About 75 ms on a developer machine; a formatter per call took over a second.
-	assert.ok(elapsed < 750, `building took ${Math.round(elapsed)} ms`);
+	// Cold: a handful of formatters per zone and a bounded scan per zone and year, not one per event.
+	const cold = countIntl(build);
+	assert.equal(lines(cold.result).filter((line) => line === "BEGIN:VEVENT").length, 5000);
+	assert.ok(cold.constructed <= 10, `${cold.constructed} formatters made`);
+	assert.ok(cold.calls < 5000, `${cold.calls} formatting calls for 5,000 events`);
+	// Warm (the next poll in the same isolate): no formatter and no formatting call at all. A formatter per call
+	// made about 20,000 of each and took over a second for this feed.
+	const warm = countIntl(build);
+	assert.equal(warm.result, cold.result);
+	assert.equal(warm.constructed, 0);
+	assert.equal(warm.calls, 0);
 });

@@ -82,14 +82,30 @@ export function revokeSubscriptionLinks(db: ReturnType<typeof getDb>, userId: st
 	return db.delete(apiKeys).where(and(eq(apiKeys.userId, userId), eq(apiKeys.kind, "calendar_feed"), condition));
 }
 
-/** After a new password: ends every session (except `keepToken`, the one that made the change) and every subscription link. */
-export async function endAccessAfterPasswordChange(
+/**
+ * The statements that end access after a new password: every session except `keepToken` (the one that made the
+ * change) and every subscription link. Callers put them in the batch that sets the password, so a failure leaves
+ * the old password, the sessions and the links as they were.
+ */
+export async function endAccessStatements(db: ReturnType<typeof getDb>, userId: string, keepToken?: string) {
+	const ended = keepToken
+		? and(eq(sessions.userId, userId), ne(sessions.tokenHash, await hashSessionToken(keepToken)))
+		: eq(sessions.userId, userId);
+	return [db.delete(sessions).where(ended), revokeSubscriptionLinks(db, userId)] as const;
+}
+
+/** Sets a new password hash and ends access (see endAccessStatements) in one batch. */
+export async function setPasswordAndEndAccess(
 	env: CloudflareEnv,
 	userId: string,
+	passwordHash: string,
 	keepToken?: string,
 ): Promise<void> {
-	await deleteUserSessions(env, userId, keepToken);
-	await revokeSubscriptionLinks(getDb(env), userId);
+	const db = getDb(env);
+	await db.batch([
+		db.update(users).set({ passwordHash }).where(eq(users.id, userId)),
+		...(await endAccessStatements(db, userId, keepToken)),
+	]);
 }
 
 /** The session token a request carries, from the Bearer header or the cookie. */

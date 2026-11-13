@@ -16,7 +16,6 @@ export function escapeIcsText(value: string): string {
 		.replace(/\r\n|\r|\n/g, "\\n");
 }
 
-/** Folds a content line at 75 octets with CRLF + space (RFC 5545 section 3.1), never splitting a UTF-8 sequence. */
 const encoder = new TextEncoder();
 const NON_ASCII = /[^\u0000-\u007f]/;
 
@@ -25,6 +24,7 @@ function octets(line: string): number {
 	return NON_ASCII.test(line) ? encoder.encode(line).length : line.length;
 }
 
+/** Folds a content line at 75 octets with CRLF + space (RFC 5545 section 3.1), never splitting a UTF-8 sequence. */
 export function foldIcsLine(line: string): string {
 	if (octets(line) <= 75) return line;
 	const parts: string[] = [];

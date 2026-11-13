@@ -1,5 +1,5 @@
 import { expect, request, test, type APIRequestContext, type Page } from "@playwright/test";
-import { createSignedInAccount, okJson } from "./support/auto-read";
+import { AUTO_READ_ACCOUNT_PASSWORD, createSignedInAccount, okJson } from "./support/auto-read";
 import { BASE_URL, STORAGE_STATE } from "./support/constants";
 import { apiContext, uniqueToken } from "./support/helpers";
 
@@ -146,4 +146,40 @@ test("the feed answers 404 while Calendar is off for its owner, and malformed li
 	}
 	for (const bad of ["kcf_short.ics", "ep_0123456789abcdefghijklmnopqrstuv.ics", "..%2F..%2Fapi%2Fauth%2Fme"])
 		expect((await calendarApp.get(`/api/public/calendar/feed/${bad}`)).status()).toBe(404);
+});
+
+test("a new password ends the subscription link, whether the owner or an admin sets it", async () => {
+	const username = uniqueToken("feedpw");
+	const account = await createSignedInAccount(admin, username);
+	try {
+		// The owner changes their password: their own session stays, the link ends.
+		const first = (await okJson<{ path: string }>(await account.api.post("/api/calendar/feed"))).path;
+		expect((await calendarApp.get(first)).status()).toBe(200);
+		await okJson(
+			await account.api.patch("/api/settings/password", {
+				data: { currentPassword: AUTO_READ_ACCOUNT_PASSWORD, newPassword: "feed-owner-new-password" },
+			}),
+		);
+		expect((await calendarApp.get(first)).status()).toBe(404);
+		expect((await account.api.get("/api/calendar/feed")).ok()).toBe(true);
+
+		// An admin sets a password: the account is signed out everywhere and the new link ends too.
+		const second = (await okJson<{ path: string }>(await account.api.post("/api/calendar/feed"))).path;
+		expect((await calendarApp.get(second)).status()).toBe(200);
+		await okJson(
+			await admin.patch(`/api/accounts/${account.id}`, {
+				data: {
+					name: username,
+					role: "user",
+					disabled: false,
+					canManageMailboxes: false,
+					password: "feed-admin-set-password",
+				},
+			}),
+		);
+		expect((await calendarApp.get(second)).status()).toBe(404);
+		expect((await account.api.get("/api/calendar/feed")).status()).toBe(401);
+	} finally {
+		await account.api.dispose();
+	}
 });

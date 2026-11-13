@@ -14,6 +14,7 @@ await build({
 		contents: `
 			export * from "./src/lib/email/mailing-list-utils.ts";
 			export * from "./src/lib/email/one-click-unsubscribe-utils.ts";
+			export { OutboundUrlError } from "./src/lib/security/outbound-url.ts";
 			export { parseRawHeaders } from "./src/lib/email/raw-headers.ts";
 			export { extractUnsubscribeUrlFromRaw } from "./src/lib/email/unsubscribe.ts";
 			export * from "./src/components/messages/mailing-list-notice-utils.ts";
@@ -107,6 +108,37 @@ test("one-click needs exactly List-Unsubscribe=One-Click and an https URI", () =
 	assert.equal(loopback(true), "http://127.0.0.1:4555/u");
 });
 
+test("a folded List-Unsubscribe URL loses the whitespace inside its brackets (RFC 2369)", () => {
+	const headers = headersOf(
+		"List-Unsubscribe: <mailto:u@x.example>,\r\n <https://x.example/unsub/abcdefgh\r\n ijkl>",
+		"List-Unsubscribe-Post: List-Unsubscribe=One-Click",
+	);
+	assert.equal(headers.oneClickUrl, "https://x.example/unsub/abcdefghijkl");
+	assert.equal(headers.unsubscribeUrl, "https://x.example/unsub/abcdefghijkl");
+	assert.equal(
+		lists.extractUnsubscribeUrlFromRaw(raw("List-Unsubscribe: <https://x.example/a\r\n\tb?c=1>")),
+		"https://x.example/ab?c=1",
+	);
+});
+
+test("a value with brackets never falls back to comma fragments, and one-click takes only bracketed URLs", () => {
+	const fragment = `<https://good.example/?a=${"x".repeat(2100)},https://evil.example/p>`;
+	const headers = read({ "list-unsubscribe": [fragment], "list-unsubscribe-post": ["List-Unsubscribe=One-Click"] });
+	assert.equal(headers.oneClickUrl, null);
+	assert.equal(headers.unsubscribeUrl, null);
+	// Some senders leave the brackets out: the reader still gets the link, one-click does not.
+	const bare = read({
+		"list-unsubscribe": ["https://x.example/u"],
+		"list-unsubscribe-post": ["List-Unsubscribe=One-Click"],
+	});
+	assert.equal(bare.unsubscribeUrl, "https://x.example/u");
+	assert.equal(bare.oneClickUrl, null);
+	assert.equal(
+		read({ "list-unsubscribe": ["<mailto:a@x.example>, https://x.example/u"] }).unsubscribeUrl,
+		"mailto:a@x.example",
+	);
+});
+
 test("a DKIM signature must sign both List-Unsubscribe headers", () => {
 	assert.equal(covered("v=1; h=From : To:\r\n List-Unsubscribe :list-unsubscribe-post; b=x"), true);
 	assert.equal(covered(SIGNED.slice("DKIM-Signature: ".length)), true);
@@ -192,15 +224,27 @@ test("the one-click target is public https only, through the shared outbound gua
 		"not a url",
 	])
 		assert.deepEqual(await post(url), { ok: false, reason: "refused_url" }, url);
-	const resolveHost = async () => ["10.1.2.3"];
-	assert.deepEqual(await post("https://rebind.example/u", { resolveHost }), { ok: false, reason: "refused_url" });
-	const failing = async () => {
-		throw new Error("NXDOMAIN");
+	// On Node the pinned POST resolves the name; a private answer comes back as OutboundUrlError, never a request.
+	const refusing = async () => {
+		throw new lists.OutboundUrlError("Private and local addresses are not allowed");
 	};
-	assert.deepEqual(await post("https://gone.example/u", { resolveHost: failing }), {
+	assert.deepEqual(await post("https://rebind.example/u", { pinnedPost: refusing }), {
 		ok: false,
 		reason: "refused_url",
 	});
+	// With the pinned POST there, fetch is never used; a literal private URL never even reaches it.
+	const pinned = [];
+	const pinnedPost = async (url, init) => {
+		pinned.push({ url, init });
+		return { status: 204 };
+	};
+	assert.deepEqual(await post("https://news.example/pinned", { pinnedPost }), { ok: true, status: 204 });
+	assert.deepEqual(await post("https://10.0.0.1/u", { pinnedPost }), { ok: false, reason: "refused_url" });
+	assert.equal(pinned.length, 1);
+	assert.equal(pinned[0].url, "https://news.example/pinned");
+	assert.equal(pinned[0].init.body, "List-Unsubscribe=One-Click");
+	assert.equal(pinned[0].init.headers["Content-Type"], "application/x-www-form-urlencoded");
+	assert.ok(pinned[0].init.signal instanceof AbortSignal);
 	assert.equal(calls.length, 1, "a refused URL is never fetched");
 	assert.equal((await post("http://127.0.0.1:4555/u", { allowLoopback: true })).ok, true);
 	assert.deepEqual(await post("http://localhost:4555/u", { allowLoopback: true }), {
@@ -257,13 +301,13 @@ test("the POST is RFC 8058's, never follows a redirect, and only a 2xx counts", 
 		ok: false,
 		reason: "timeout",
 	});
-	// One deadline covers the DNS check too: a lookup that never answers times out and never starts the POST.
+	// One deadline covers the pinned POST's DNS check too (tests/pinned-post.test.mjs checks it never connects late).
 	const keepAlive = setTimeout(() => {}, 5_000);
 	let fetched = false;
 	const never = () => new Promise(() => {});
 	assert.deepEqual(
 		await lists.postOneClickUnsubscribe("https://slow-dns.example/u", {
-			resolveHost: never,
+			pinnedPost: never,
 			timeoutMs: 20,
 			fetch: async () => {
 				fetched = true;

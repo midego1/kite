@@ -1,4 +1,5 @@
-import { assertPublicHttpUrl, OutboundUrlError } from "@/lib/security/outbound-url";
+import type { PinnedPost } from "@/lib/net/types";
+import { OutboundUrlError, parsePublicHttpUrl } from "@/lib/security/outbound-url";
 
 /** How long the sender's endpoint gets to answer; RFC 8058 asks it to act without further interaction. */
 const ONE_CLICK_TIMEOUT_MS = 10_000;
@@ -10,7 +11,11 @@ type OneClickOutcome =
 	| { ok: false; reason: "refused_url" | "timeout" | "network" | "redirect" | "http_error"; status?: number };
 
 type OneClickOptions = {
-	resolveHost?: CloudflareEnv["RESOLVE_HOST"];
+	/**
+	 * The Node server's `env.PINNED_POST`: resolves the name, refuses private addresses and connects only to the
+	 * addresses it checked. Without it (Workers, which cannot reach private networks) the literal check is enough.
+	 */
+	pinnedPost?: PinnedPost;
 	/** Dev and test only (`UNSUBSCRIBE_ALLOW_LOOPBACK`): an endpoint on 127.0.0.1, plain http allowed. */
 	allowLoopback?: boolean;
 	fetch?: typeof fetch;
@@ -32,13 +37,14 @@ function isLoopbackTarget(value: string): boolean {
 }
 
 /**
- * The URL the POST may go to, or null. Public `https` only, through the shared outbound guard (`assertPublicHttpUrl`):
- * no credentials, no private, local or metadata hosts, and on Node every address the name resolves to must be public.
+ * The URL the POST may go to, or null: public `https` only, through the shared literal guard (`parsePublicHttpUrl`):
+ * no credentials, no private, local or metadata hosts written into the URL. On Node `PINNED_POST` then checks every
+ * address the name resolves to and pins them for the connection.
  */
-async function oneClickTarget(value: string, options: OneClickOptions = {}): Promise<URL | null> {
+function oneClickTarget(value: string, options: OneClickOptions): URL | null {
 	if (options.allowLoopback && isLoopbackTarget(value)) return new URL(value);
 	try {
-		const url = await assertPublicHttpUrl({ RESOLVE_HOST: options.resolveHost }, value);
+		const url = parsePublicHttpUrl(value);
 		return url.protocol === "https:" ? url : null;
 	} catch (error) {
 		if (error instanceof OutboundUrlError) return null;
@@ -60,6 +66,23 @@ function failureReason(error: unknown): "timeout" | "network" {
 	return name === "TimeoutError" || name === "AbortError" ? "timeout" : "network";
 }
 
+const POST_HEADERS = { "Content-Type": "application/x-www-form-urlencoded", "User-Agent": USER_AGENT };
+const POST_BODY = "List-Unsubscribe=One-Click";
+
+/** The POST through `fetch` (Workers): no redirect followed, the body cancelled unread. */
+async function fetchStatus(url: URL, signal: AbortSignal, doFetch: typeof fetch): Promise<number> {
+	const response = await doFetch(url.href, {
+		method: "POST",
+		headers: POST_HEADERS,
+		body: POST_BODY,
+		redirect: "manual",
+		signal,
+	});
+	// The body is never read: nothing the sender answers reaches the reader.
+	await response.body?.cancel().catch(() => undefined);
+	return response.status;
+}
+
 /**
  * Sends the RFC 8058 one-click POST (`List-Unsubscribe=One-Click`, form-encoded). No cookies or referrer, never
  * follows a redirect (so a public URL cannot bounce the request to a private one), and gives up after the timeout,
@@ -67,32 +90,22 @@ function failureReason(error: unknown): "timeout" | "network" {
  * Only a 2xx counts: anything else leaves the reader with the link to open themselves.
  */
 export async function postOneClickUnsubscribe(value: string, options: OneClickOptions = {}): Promise<OneClickOutcome> {
-	const signal = AbortSignal.timeout(options.timeoutMs ?? ONE_CLICK_TIMEOUT_MS);
-	let url: URL | null;
-	try {
-		url = await untilAborted(oneClickTarget(value, options), signal);
-	} catch (error) {
-		return { ok: false, reason: failureReason(error) };
-	}
+	const url = oneClickTarget(value, options);
 	if (!url) return { ok: false, reason: "refused_url" };
-	if (signal.aborted) return { ok: false, reason: "timeout" };
-	const doFetch = options.fetch ?? fetch;
-	let response: Response;
+	const signal = AbortSignal.timeout(options.timeoutMs ?? ONE_CLICK_TIMEOUT_MS);
+	let status: number;
 	try {
-		response = await doFetch(url.href, {
-			method: "POST",
-			headers: { "Content-Type": "application/x-www-form-urlencoded", "User-Agent": USER_AGENT },
-			body: "List-Unsubscribe=One-Click",
-			redirect: "manual",
+		status = await untilAborted(
+			options.pinnedPost && !(options.allowLoopback && isLoopbackTarget(value))
+				? options.pinnedPost(url.href, { body: POST_BODY, headers: POST_HEADERS, signal }).then((r) => r.status)
+				: fetchStatus(url, signal, options.fetch ?? fetch),
 			signal,
-		});
+		);
 	} catch (error) {
+		if (error instanceof OutboundUrlError) return { ok: false, reason: "refused_url" };
 		return { ok: false, reason: failureReason(error) };
 	}
-	// The body is never read: nothing the sender answers reaches the reader.
-	await response.body?.cancel().catch(() => undefined);
-	if (response.status >= 200 && response.status < 300) return { ok: true, status: response.status };
-	if (response.status >= 300 && response.status < 400)
-		return { ok: false, reason: "redirect", status: response.status };
-	return { ok: false, reason: "http_error", status: response.status };
+	if (status >= 200 && status < 300) return { ok: true, status };
+	if (status >= 300 && status < 400) return { ok: false, reason: "redirect", status };
+	return { ok: false, reason: "http_error", status };
 }

@@ -31,6 +31,18 @@ export function useUnsubscribed(messageId: string): boolean {
 	);
 }
 
+function limitOf(status: number, code: UnsubscribeRouteResponse["code"]): "rate" | "duplicate" | null {
+	if (status !== 429) return null;
+	return code === "ALREADY_REQUESTED" ? "duplicate" : "rate";
+}
+
+/** What the reader is told about a failed run. */
+export function oneClickFailureText(run: Extract<OneClickRun, { status: "failed" }>): string {
+	if (run.limited === "duplicate") return t("Kite already sent this unsubscribe request a few minutes ago.");
+	if (run.limited === "rate") return t("Too many unsubscribe requests. Try again in a minute.");
+	return t("Kite couldn't unsubscribe you automatically.");
+}
+
 /**
  * Asks first (one-click acts at once and cannot be taken back here), then has Kite send the RFC 8058 POST.
  * `fallbackUrl` is the link to offer when the server does not answer one of its own.
@@ -53,21 +65,19 @@ export async function runOneClickUnsubscribe(messageId: string, fallbackUrl: str
 		}
 		toast.dismiss(loading);
 		const url = data.url === undefined ? fallbackUrl : data.url;
-		return { status: "failed", url, rateLimited: response.status === 429 };
+		return { status: "failed", url, limited: limitOf(response.status, data.code) };
 	} catch {
 		toast.dismiss(loading);
-		return { status: "failed", url: fallbackUrl, rateLimited: false };
+		return { status: "failed", url: fallbackUrl, limited: null };
 	}
 }
 
 /** The menu's way to report a failure: a toast, with the sender's own page one click away when there is one. */
 export function announceOneClickFailure(run: OneClickRun) {
 	if (run.status !== "failed") return;
-	const message = run.rateLimited
-		? t("Too many unsubscribe requests. Try again in a minute.")
-		: t("Kite couldn't unsubscribe you automatically.");
+	const message = oneClickFailureText(run);
 	const url = run.url;
-	if (!url || run.rateLimited) {
+	if (!url || run.limited) {
 		toast.error(message);
 		return;
 	}

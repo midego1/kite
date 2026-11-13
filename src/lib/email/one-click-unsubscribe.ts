@@ -4,7 +4,8 @@ import { messages } from "@/db/schema";
 import type { SessionUser } from "@/lib/auth/types";
 import { canUseOneClick, storedDkimPassed } from "@/lib/email/mailing-list-utils";
 import { isUnsubscribeLoopbackAllowed, postOneClickUnsubscribe } from "@/lib/email/one-click-unsubscribe-utils";
-import { getMailingListHeadersFromRawR2Key } from "@/lib/email/unsubscribe";
+import { completeOneClickAttempt, recordOneClickAttempt } from "@/lib/email/one-click-attempts";
+import { getOneClickHeadersFromRawR2Key } from "@/lib/email/unsubscribe";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { isHiddenDraft } from "@/lib/messages/draft-privacy-utils";
 import { SCREENING_STATUS } from "@/lib/screener/screener-utils";
@@ -14,32 +15,33 @@ type OneClickUnsubscribeResult =
 	| { kind: "not_found" }
 	| { kind: "forbidden" }
 	| { kind: "rate_limited" }
+	/** The same user already asked for this message a few minutes ago. */
+	| { kind: "duplicate" }
 	/** The message offers no verified one-click; `url` is the link the reader can still open. */
 	| { kind: "unavailable"; url: string | null }
 	| { kind: "failed"; url: string | null };
 
-/** Statuses whose mail is never unsubscribed from: confirming a spam address is live, or mail not yet let in. */
-const REFUSED_STATUSES = new Set(["spam", SCREENING_STATUS]);
-
 /**
- * A per-user budget on one-click POSTs, so an account cannot use Kite to fire requests at addresses it mails itself.
- * It shares the per-user outbound fetch limiter of the remote image proxy under its own key; a limiter error lets the
- * request through, as there.
+ * Statuses whose mail is never unsubscribed from: confirming a spam address is live, mail not yet let in, and Trash
+ * (where the reader shows no notice either).
  */
-async function allowOneClick(env: CloudflareEnv, userId: string): Promise<boolean> {
-	if (!env.REMOTE_IMAGE_RATE_LIMIT) return true;
+const REFUSED_STATUSES = new Set(["spam", "trash", SCREENING_STATUS]);
+
+/** The attempt's row, or the refusal; a limiter that cannot record or count refuses (fails closed). */
+async function admitAttempt(env: CloudflareEnv, input: { userId: string; mailboxId: string; messageId: string }) {
 	try {
-		return (await env.REMOTE_IMAGE_RATE_LIMIT.limit({ key: `unsubscribe:${userId}` })).success;
+		return await recordOneClickAttempt(env, input);
 	} catch (error) {
-		console.warn("Unsubscribe rate limiter unavailable", error);
-		return true;
+		console.warn("unsubscribe.one_click_limiter_failed", { messageId: input.messageId, error: String(error) });
+		return { allowed: false as const, id: null, reason: "rate_limited" as const };
 	}
 }
 
 /**
  * Unsubscribes `user` from the list `messageId` came from with the RFC 8058 one-click POST. Everything is read again
  * from the stored message: the URL comes only from its own `List-Unsubscribe` header, never from the request, and
- * only when `List-Unsubscribe-Post` asks for one-click and a DKIM signature that passed covers both headers.
+ * only when `List-Unsubscribe-Post` asks for one-click and every DKIM signature, one of which passed, covers both
+ * headers. One request per user and message every ten minutes (`recordOneClickAttempt`).
  */
 export async function unsubscribeOneClick(
 	env: CloudflareEnv,
@@ -64,16 +66,22 @@ export async function unsubscribeOneClick(
 	if (!access?.canRead) return { kind: "not_found" };
 	if (!access.canManage) return { kind: "forbidden" };
 
-	const headers = await getMailingListHeadersFromRawR2Key(env, row.rawR2Key);
+	const headers = await getOneClickHeadersFromRawR2Key(env, row.rawR2Key);
 	const url = headers?.unsubscribeUrl ?? null;
 	if (row.direction !== "inbound" || REFUSED_STATUSES.has(row.status)) return { kind: "unavailable", url: null };
 	if (!headers || !canUseOneClick(headers, storedDkimPassed(row.spamSignals))) return { kind: "unavailable", url };
-	if (!(await allowOneClick(env, user.id))) return { kind: "rate_limited" };
+	const attempt = await admitAttempt(env, { userId: user.id, mailboxId: row.mailboxId, messageId });
+	if (!attempt.allowed) return { kind: attempt.reason };
 
 	const outcome = await postOneClickUnsubscribe(headers.oneClickUrl!, {
-		resolveHost: env.RESOLVE_HOST,
+		pinnedPost: env.PINNED_POST,
 		allowLoopback: isUnsubscribeLoopbackAllowed(env.UNSUBSCRIBE_ALLOW_LOOPBACK, process.env.NODE_ENV),
 	});
+	await completeOneClickAttempt(
+		env,
+		attempt.id,
+		outcome.ok ? { outcome: "done", status: outcome.status } : { outcome: outcome.reason, status: outcome.status },
+	).catch(() => undefined);
 	// The host only: the path and query of an unsubscribe link usually identify the recipient.
 	const host = new URL(headers.oneClickUrl!).host;
 	if (outcome.ok) {

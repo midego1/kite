@@ -6,7 +6,7 @@ export type UnsubscribeRouteParams = {
 export type UnsubscribeRouteResponse = {
 	unsubscribed?: boolean;
 	error?: string;
-	code?: "RATE_LIMITED" | "ONE_CLICK_UNAVAILABLE" | "UNSUBSCRIBE_FAILED";
+	code?: "RATE_LIMITED" | "ALREADY_REQUESTED" | "ONE_CLICK_UNAVAILABLE" | "UNSUBSCRIBE_FAILED";
 	/** The link the reader can open instead, when Kite could not unsubscribe for them. */
 	url?: string | null;
 };

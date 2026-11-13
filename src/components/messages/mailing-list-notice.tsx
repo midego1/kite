@@ -17,7 +17,7 @@ import {
 	shouldOfferMailingListNotice,
 	updateDismissedKeys,
 } from "./mailing-list-notice-utils";
-import { runOneClickUnsubscribe, useUnsubscribed } from "./one-click-unsubscribe";
+import { oneClickFailureText, runOneClickUnsubscribe, useUnsubscribed } from "./one-click-unsubscribe";
 import type { OneClickRun } from "./one-click-unsubscribe-types";
 
 const NO_KEYS: unknown = [];
@@ -59,9 +59,8 @@ function NoticeStatus({ unsubscribed, failed }: { unsubscribed: boolean; failed:
 	const t = useT();
 	let text: string | null = null;
 	if (unsubscribed) text = t("You're unsubscribed. The sender may take a few days to stop.");
-	else if (failed?.rateLimited) text = t("Too many unsubscribe requests. Try again in a minute.");
-	else if (failed) text = t("Kite couldn't unsubscribe you automatically.");
-	const link = !unsubscribed && failed && !failed.rateLimited ? failed.url : null;
+	else if (failed) text = oneClickFailureText(failed);
+	const link = !unsubscribed && failed && !failed.limited ? failed.url : null;
 	return (
 		<p aria-live="polite" dir="auto">
 			{text}

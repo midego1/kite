@@ -21,14 +21,22 @@ function isAllowedUnsubscribeUrl(value: string): boolean {
 	}
 }
 
-/** Every URL a `List-Unsubscribe` value names: the bracketed ones (RFC 2369), then bare comma-separated ones. */
+/**
+ * The URLs a `List-Unsubscribe` value names in angle brackets (RFC 2369 §2), with any whitespace inside the brackets
+ * removed: a long link folded across lines keeps a space where the fold was, which is not part of it.
+ */
+function bracketedCandidates(value: string): string[] {
+	return [...value.matchAll(/<([^<>]*)>/g)].map((match) => (match[1] ?? "").replace(/\s+/g, ""));
+}
+
+/**
+ * Every URL a `List-Unsubscribe` value names: the bracketed ones, or, only for a value with no brackets at all (some
+ * senders leave them out), its comma-separated parts. A value that has brackets never falls back to fragments, so a
+ * piece of a refused bracketed URL can never be picked.
+ */
 function unsubscribeCandidates(values: readonly string[]): string[] {
 	return values
-		.flatMap((value) => {
-			const bracketed = [...value.matchAll(/<([^>]+)>/g)].map((match) => normalizeCandidate(match[1] ?? ""));
-			const bare = value.split(",").map(normalizeCandidate);
-			return [...bracketed, ...bare];
-		})
+		.flatMap((value) => (value.includes("<") ? bracketedCandidates(value) : value.split(",").map(normalizeCandidate)))
 		.filter(Boolean)
 		.filter(isAllowedUnsubscribeUrl);
 }
@@ -48,7 +56,7 @@ const LOOPBACK_HTTP = /^http:\/\/127\.0\.0\.1(?::\d+)?\//i;
 
 /**
  * The `https` URL for an RFC 8058 one-click POST, or null: exactly one `List-Unsubscribe` field naming an `https`
- * URI and exactly one `List-Unsubscribe-Post` field reading `List-Unsubscribe=One-Click` (§3.1). A second field of
+ * URI in angle brackets and exactly one `List-Unsubscribe-Post` field reading `List-Unsubscribe=One-Click` (§3.1). A second field of
  * either is refused: a DKIM signature covers only one instance, so a field prepended in transit would be unsigned.
  */
 function pickOneClickUrl(
@@ -58,10 +66,11 @@ function pickOneClickUrl(
 ): string | null {
 	if (unsubscribeValues.length !== 1 || postValues.length !== 1) return null;
 	if (postValues[0]!.trim().toLowerCase() !== "list-unsubscribe=one-click") return null;
+	// RFC 8058 §3.1 names the URI in angle brackets: one-click never uses an unbracketed one.
 	return (
-		unsubscribeCandidates(unsubscribeValues).find(
-			(candidate) => /^https:\/\//i.test(candidate) || (allowLoopback && LOOPBACK_HTTP.test(candidate)),
-		) ?? null
+		bracketedCandidates(unsubscribeValues[0]!)
+			.filter(isAllowedUnsubscribeUrl)
+			.find((candidate) => /^https:\/\//i.test(candidate) || (allowLoopback && LOOPBACK_HTTP.test(candidate))) ?? null
 	);
 }
 

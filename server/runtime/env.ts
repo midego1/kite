@@ -13,6 +13,7 @@ import { adoptQueueMessages, openQueue, type InProcessQueue } from "./queue";
 import { RealtimeHubRegistry } from "./realtime";
 import { openSqliteDatabase, type SqliteDatabase } from "./sqlite-database";
 import { SqliteVectorStore } from "./sqlite-vector-store";
+import { createPinnedPost } from "./pinned-post";
 import { createTcpConnect } from "./tcp-connect";
 import type { NodeRuntime } from "./types";
 
@@ -131,6 +132,8 @@ export function createNodeRuntime(): NodeRuntime {
 		EXTERNAL_ACCOUNTS_ALLOW_INSECURE_LOOPBACK: optional("EXTERNAL_ACCOUNTS_ALLOW_INSECURE_LOOPBACK"),
 		EXTERNAL_ACCOUNTS_ALLOW_PRIVATE_HOSTS: optional("EXTERNAL_ACCOUNTS_ALLOW_PRIVATE_HOSTS"),
 		EXTERNAL_ACCOUNTS_EXTRA_PORTS: optional("EXTERNAL_ACCOUNTS_EXTRA_PORTS"),
+		// One-click unsubscribe POSTs: DNS pinned, private addresses refused, no redirects.
+		PINNED_POST: createPinnedPost(),
 		// Mail server connections (IMAP import): DNS pinned, private addresses refused, certificates verified.
 		TCP_CONNECT: createTcpConnect({
 			allowPrivate: mailHosts.allowPrivate,

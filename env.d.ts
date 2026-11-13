@@ -162,6 +162,12 @@ interface CloudflareEnv {
 	 * Unset on Workers, where `src/lib/net/connect.ts` uses `cloudflare:sockets`.
 	 */
 	TCP_CONNECT?: import("./src/lib/net/types").TcpConnect;
+	/**
+	 * Self-hosted only: POSTs to a public http(s) URL with the checked addresses pinned for the connection, so DNS
+	 * rebinding cannot reach a private host (one-click unsubscribe; `server/runtime/pinned-post.ts`). Unset on Workers,
+	 * which cannot reach private networks.
+	 */
+	PINNED_POST?: import("./src/lib/net/types").PinnedPost;
 	/** Dev/test only: "1" or "true" lets mail server connections reach loopback hosts on any port without TLS (the fake IMAP server); ignored in production. */
 	EXTERNAL_ACCOUNTS_ALLOW_INSECURE_LOOPBACK?: string;
 	/** Node server only: "1" or "true" lets mail server connections reach LAN hosts (RFC 1918, IPv6 ULA; still over TLS, never loopback or link-local); ignored on Workers. */

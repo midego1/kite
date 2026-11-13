@@ -36,6 +36,11 @@ export async function POST(request: Request, { params }: UnsubscribeRouteParams)
 				{ error: "Too many unsubscribe requests. Try again in a minute.", code: "RATE_LIMITED" },
 				{ status: 429, headers: NO_STORE },
 			);
+		case "duplicate":
+			return NextResponse.json(
+				{ error: "Kite already sent this unsubscribe request a few minutes ago.", code: "ALREADY_REQUESTED" },
+				{ status: 429, headers: NO_STORE },
+			);
 		case "unavailable":
 			return NextResponse.json(
 				{ error: "This message does not offer one-click unsubscribe", code: "ONE_CLICK_UNAVAILABLE", url: result.url },

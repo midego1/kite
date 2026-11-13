@@ -22,3 +22,14 @@ export type TcpConnect = (
 export type MailSocketSecurity = "tls" | "starttls";
 
 export type MailServerTarget = { host: string; port: number; security: MailSocketSecurity };
+
+/**
+ * Node server only (`env.PINNED_POST`, `server/runtime/pinned-post.ts`): POSTs a small body to a public http(s) URL,
+ * resolving the name itself, refusing it when any address is private and connecting only to the addresses it
+ * checked, so a DNS answer cannot change between the check and the connection. Never follows a redirect; answers
+ * the status, never the body. Rejects with `OutboundUrlError` for a refused host.
+ */
+export type PinnedPost = (
+	url: string,
+	init: { body: string; headers: Record<string, string>; signal: AbortSignal },
+) => Promise<{ status: number }>;

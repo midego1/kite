@@ -109,6 +109,13 @@ test("a signed one-click list is left from the notice: Kite sends the RFC 8058 P
 			body: "List-Unsubscribe=One-Click",
 		},
 	]);
+
+	// A second request for the same message within the cooldown is refused on the server and sends nothing.
+	const message = await (await api.get(`/api/messages?${new URLSearchParams({ q: subject, limit: "1" })}`)).json();
+	const again = await api.post(`/api/messages/${message.messages[0].id}/unsubscribe`);
+	expect(again.status()).toBe(429);
+	expect((await again.json()).code).toBe("ALREADY_REQUESTED");
+	expect(received.filter((request) => request.path === `/u/${token}`)).toHaveLength(1);
 });
 
 test("when the sender's endpoint fails, the notice says so and offers the sender's own page", async ({ page }) => {
@@ -198,13 +205,13 @@ test("closing the notice hides it for that list in this browser, with Undo, and 
 	await expect(notice(page)).toBeVisible();
 });
 
-test("spam and Trash never show the notice, and one-click is refused for spam", async ({ page }) => {
+test("spam and Trash never show the notice, and one-click is refused for both", async ({ page }) => {
 	const token = uniqueToken("spam");
 	const spamSubject = `Weekly digest ${token}`;
 	const spam = await deliverList(token, spamSubject, { oneClick: true });
 	const trashToken = uniqueToken("trash");
 	const trashSubject = `Weekly digest ${trashToken}`;
-	const trash = await deliverList(trashToken, trashSubject);
+	const trash = await deliverList(trashToken, trashSubject, { oneClick: true });
 	for (const [id, action] of [
 		[spam.id, "spam"],
 		[trash.id, "trash"],
@@ -215,6 +222,10 @@ test("spam and Trash never show the notice, and one-click is refused for spam", 
 
 	const spamDetail = await (await api.get(`/api/messages/${spam.id}`)).json();
 	expect(spamDetail.mailingList.oneClick).toBe(false);
+	const trashDetail = await (await api.get(`/api/messages/${trash.id}`)).json();
+	expect(trashDetail.mailingList.oneClick).toBe(false);
+	expect((await api.post(`/api/messages/${trash.id}/unsubscribe`)).status()).toBe(409);
+	expect(received.some((request) => request.path === `/u/${trashToken}`)).toBe(false);
 	expect((await api.post(`/api/messages/${spam.id}/unsubscribe`)).status()).toBe(409);
 	expect(received.some((request) => request.path === `/u/${token}`)).toBe(false);
 

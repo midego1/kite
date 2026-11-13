@@ -178,8 +178,9 @@ function readerMailingList(
 	canManage: boolean,
 ) {
 	if (message.direction !== "inbound") return null;
-	// Unsubscribing from spam confirms the address is read; held mail is not let in yet (the endpoint agrees).
-	const oneClickStatus = message.status !== "spam" && message.status !== SCREENING_STATUS;
+	// Unsubscribing from spam confirms the address is read; held mail is not let in yet; Trash shows no notice either
+	// (the endpoint refuses all three).
+	const oneClickStatus = !["spam", "trash", SCREENING_STATUS].includes(message.status);
 	return mailingListInfo(listHeaders, {
 		dkimPassed: storedDkimPassed(message.spamSignals),
 		mayUnsubscribe: canManage && oneClickStatus,

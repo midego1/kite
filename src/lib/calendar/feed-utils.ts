@@ -1,23 +1,32 @@
 import { escapeIcsText, formatIcsLocal, formatIcsUtc, joinIcsLines } from "./ics-utils";
 import { parseCalendarRepeatDays, parseExcludedOccurrences } from "./recurrence";
 import { buildVtimezone } from "./vtimezone-utils";
+import { zonedWallClock } from "./zone-offset-utils";
 import type { FeedEvent, FeedOptions } from "./feed-types";
 
 const BYDAY = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"];
 /** How far ahead each VTIMEZONE describes the zone's offset changes. */
 const VTIMEZONE_YEARS_AHEAD = 10;
-const WEEKDAY_INDEX: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
 
 /** How the event's times are written: in UTC, as wall-clock times in a zone, or as whole dates. */
 type Timing = { kind: "utc" } | { kind: "zoned"; zone: string } | { kind: "date"; zone: string };
 
+const resolvedZones = new Map<string, string | null>();
+
+/** The zone's canonical name, or `null` when the runtime does not know it; remembered per name. */
 function validTimeZone(value: string | null | undefined): string | null {
 	if (!value) return null;
+	const known = resolvedZones.get(value);
+	if (known !== undefined) return known;
+	let resolved: string | null = null;
 	try {
-		return new Intl.DateTimeFormat("en-US", { timeZone: value }).resolvedOptions().timeZone;
+		resolved = new Intl.DateTimeFormat("en-US", { timeZone: value }).resolvedOptions().timeZone;
 	} catch {
-		return null;
+		resolved = null;
 	}
+	if (resolvedZones.size >= 256) resolvedZones.clear();
+	resolvedZones.set(value, resolved);
+	return resolved;
 }
 
 function isLocalMidnight(value: Date, zone: string): boolean {
@@ -25,7 +34,7 @@ function isLocalMidnight(value: Date, zone: string): boolean {
 }
 
 function weekdayIn(value: Date, zone: string): number {
-	return WEEKDAY_INDEX[new Intl.DateTimeFormat("en-US", { timeZone: zone, weekday: "short" }).format(value)] ?? 0;
+	return zonedWallClock(value.getTime(), zone).getUTCDay();
 }
 
 /**

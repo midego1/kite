@@ -1,3 +1,5 @@
+import { zonedWallClock } from "./zone-offset-utils";
+
 /** Shared iCalendar (RFC 5545) writing helpers for the subscription feed, outgoing invitations and invitation replies. */
 
 /**
@@ -15,14 +17,21 @@ export function escapeIcsText(value: string): string {
 }
 
 /** Folds a content line at 75 octets with CRLF + space (RFC 5545 section 3.1), never splitting a UTF-8 sequence. */
+const encoder = new TextEncoder();
+const NON_ASCII = /[^\u0000-\u007f]/;
+
+/** The UTF-8 length of a line, without encoding it when it is plain ASCII (nearly every line of a feed). */
+function octets(line: string): number {
+	return NON_ASCII.test(line) ? encoder.encode(line).length : line.length;
+}
+
 export function foldIcsLine(line: string): string {
-	const encoder = new TextEncoder();
-	if (encoder.encode(line).length <= 75) return line;
+	if (octets(line) <= 75) return line;
 	const parts: string[] = [];
 	let current = "";
 	let size = 0;
 	for (const char of line) {
-		const bytes = encoder.encode(char).length;
+		const bytes = octets(char);
 		// Continuation lines start with the folding space, so they carry 74 octets of content.
 		if (size + bytes > (parts.length ? 74 : 75)) {
 			parts.push(current);
@@ -46,18 +55,7 @@ export function formatIcsUtc(value: Date): string {
 
 /** A local DATE-TIME value (no `Z`) as the wall clock shows it in `timeZone`, for a `TZID=` property. */
 export function formatIcsLocal(value: Date, timeZone: string): string {
-	const parts = new Intl.DateTimeFormat("en-US", {
-		timeZone,
-		hourCycle: "h23",
-		year: "numeric",
-		month: "2-digit",
-		day: "2-digit",
-		hour: "2-digit",
-		minute: "2-digit",
-		second: "2-digit",
-	}).formatToParts(value);
-	const get = (type: string) => parts.find((part) => part.type === type)?.value ?? "00";
-	return `${get("year")}${get("month")}${get("day")}T${get("hour")}${get("minute")}${get("second")}`;
+	return formatIcsUtc(zonedWallClock(value.getTime(), timeZone)).slice(0, 15);
 }
 
 /** Folds every line and joins them with CRLF, ending with the trailing CRLF the RFC requires. */

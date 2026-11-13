@@ -1,8 +1,8 @@
-import { and, eq, gt, ne } from "drizzle-orm";
+import { and, eq, gt, ne, type SQL } from "drizzle-orm";
 import { newId } from "@/lib/ids";
 import { getDb } from "@/db";
 import { primaryDatabase } from "@/lib/d1-session-utils";
-import { sessions, users } from "@/db/schema";
+import { apiKeys, sessions, users } from "@/db/schema";
 import { findUser } from "./user-lookup";
 
 export const SESSION_COOKIE = "ep_session";
@@ -71,6 +71,25 @@ export async function deleteUserSessions(env: CloudflareEnv, userId: string, kee
 		return;
 	}
 	await db.delete(sessions).where(eq(sessions.userId, userId));
+}
+
+/**
+ * Deletes the user's calendar subscription links (`api_keys` of kind `calendar_feed`): credentials that outlive a
+ * session but must not outlive a password change, a password reset or an admin's sign-in reset. A statement, so a
+ * caller can add it to the batch that ends the sessions; `condition` narrows it the same way that batch does.
+ */
+export function revokeSubscriptionLinks(db: ReturnType<typeof getDb>, userId: string, condition?: SQL) {
+	return db.delete(apiKeys).where(and(eq(apiKeys.userId, userId), eq(apiKeys.kind, "calendar_feed"), condition));
+}
+
+/** After a new password: ends every session (except `keepToken`, the one that made the change) and every subscription link. */
+export async function endAccessAfterPasswordChange(
+	env: CloudflareEnv,
+	userId: string,
+	keepToken?: string,
+): Promise<void> {
+	await deleteUserSessions(env, userId, keepToken);
+	await revokeSubscriptionLinks(getDb(env), userId);
 }
 
 /** The session token a request carries, from the Bearer header or the cookie. */

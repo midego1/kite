@@ -42,7 +42,7 @@ await build({
 			export { hashPassword } from "./src/lib/auth/password.ts";
 			export { totp } from "./src/lib/auth/totp.ts";
 			export { completePasswordReset } from "./src/lib/auth/password-reset.ts";
-			export { hashSessionToken } from "./src/lib/auth/session.ts";
+			export { endAccessAfterPasswordChange, hashSessionToken } from "./src/lib/auth/session.ts";
 			export { noticeSignInChange } from "./src/lib/auth/sign-in-notice.ts";
 			export { POST as signInOptions } from "./src/app/api/auth/passkey/options/route.ts";
 			export { checkReauthentication } from "./src/lib/auth/passkey-http.ts";
@@ -830,6 +830,21 @@ test("register, sign in, refuse a replay and a foreign origin, then remove", asy
 	assert.equal((await kite.finishPasskeySignIn(env, request(), gone.token, afterRemoval)).code, "unknown_credential");
 });
 
+/** A calendar subscription link and a plain API key for usr_a, and a link for usr_b; returns what is left. */
+function seedSubscriptionLinks(db) {
+	db.exec(`
+		INSERT INTO api_keys (id, kind, user_id, name, prefix, key_hash, scopes, created_at) VALUES
+			('feed_a', 'calendar_feed', 'usr_a', 'Calendar subscription', 'kcf_aaaaaaaa', 'h1', '["calendar:read"]', 1),
+			('key_a', 'legacy', 'usr_a', 'Script', 'ep_aaaaaaaaa', 'h2', '["read"]', 1),
+			('feed_b', 'calendar_feed', 'usr_b', 'Calendar subscription', 'kcf_bbbbbbbb', 'h3', '["calendar:read"]', 1);
+	`);
+	return () =>
+		db
+			.prepare("SELECT id FROM api_keys ORDER BY id")
+			.all()
+			.map((row) => row.id);
+}
+
 test("an admin reset removes passkeys, TOTP and sessions", async (t) => {
 	const { env, db } = await database(t);
 	db.exec(`
@@ -838,7 +853,9 @@ test("an admin reset removes passkeys, TOTP and sessions", async (t) => {
 			('pk_1', 'usr_a', 'cred1', 'key', -7, 'Phone', 1), ('pk_2', 'usr_b', 'cred2', 'key', -7, 'Other', 1);
 		INSERT INTO sessions (id, user_id, token_hash, expires_at, created_at) VALUES ('s1', 'usr_a', 'h', 9999999999, 1);
 	`);
+	const keysLeft = seedSubscriptionLinks(db);
 	assert.deepEqual(await kite.resetUserSecondFactors(env, "usr_a"), { passkeysRemoved: 1 });
+	assert.deepEqual(keysLeft(), ["feed_b", "key_a"], "the account's subscription link ends; API keys stay");
 	assert.equal(db.prepare("SELECT totp_enabled FROM users WHERE id = 'usr_a'").get().totp_enabled, 0);
 	assert.deepEqual(
 		db
@@ -888,7 +905,9 @@ test("redeeming a password reset link removes the account's passkeys", async (t)
 	db.prepare(
 		"INSERT INTO password_reset_tokens (id, user_id, token_hash, expires_at, created_at) VALUES ('t1', 'usr_a', ?, ?, 1)",
 	).run(await kite.hashSessionToken(token), Math.floor(Date.now() / 1000) + 600);
+	const keysLeft = seedSubscriptionLinks(db);
 	assert.deepEqual(await kite.completePasswordReset(env, token, "a new password", request()), { ok: true });
+	assert.deepEqual(keysLeft(), ["feed_b", "key_a"], "the account's subscription link ends; API keys stay");
 	assert.deepEqual(
 		db
 			.prepare("SELECT id FROM passkeys")
@@ -1148,4 +1167,22 @@ test("backups carry passkeys with the accounts, never the ceremonies", async (t)
 	assert.ok(!covered.has("passkey_challenges"));
 	const accounts = kite.BACKUP_TABLE_GROUPS.find((group) => group.id === "accounts");
 	assert.ok(accounts.tables.includes("passkeys"));
+});
+
+test("a password change ends the other sessions and the account's calendar subscription link", async (t) => {
+	const { env, db } = await database(t);
+	const keep = "sess_keep";
+	db.prepare(
+		"INSERT INTO sessions (id, user_id, token_hash, expires_at, created_at) VALUES ('s1', 'usr_a', ?, 9999999999, 1), ('s2', 'usr_a', 'other', 9999999999, 1)",
+	).run(await kite.hashSessionToken(keep));
+	const keysLeft = seedSubscriptionLinks(db);
+	await kite.endAccessAfterPasswordChange(env, "usr_a", keep);
+	assert.deepEqual(
+		db
+			.prepare("SELECT id FROM sessions WHERE user_id = 'usr_a'")
+			.all()
+			.map((row) => row.id),
+		["s1"],
+	);
+	assert.deepEqual(keysLeft(), ["feed_b", "key_a"]);
 });

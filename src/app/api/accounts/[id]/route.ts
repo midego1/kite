@@ -7,7 +7,7 @@ import { requireAccountAdmin } from "../utils";
 import { canManageUsers, isPrimaryAdmin } from "@/lib/auth/admin";
 import type { AccountRouteParams } from "./types";
 import { selectAccountById, updateAccountCredentials } from "./utils";
-import { deleteUserSessions } from "@/lib/auth/session";
+import { endAccessAfterPasswordChange } from "@/lib/auth/session";
 
 export async function GET(request: Request, { params }: AccountRouteParams) {
 	const access = await requireAccountAdmin(request);
@@ -62,8 +62,8 @@ export async function PATCH(request: Request, { params }: AccountRouteParams) {
 		return NextResponse.json({ error: "Only the primary admin can change roles" }, { status: 403 });
 	}
 	await updateAccountCredentials(db, id, { name: parsed.data.name, password: parsed.data.password ?? null });
-	// A password set by an admin is a reset: whoever held the old one is signed out.
-	if (parsed.data.password) await deleteUserSessions(access.env, id);
+	// A password set by an admin is a reset: whoever held the old one is signed out and loses any subscription link.
+	if (parsed.data.password) await endAccessAfterPasswordChange(access.env, id);
 	// The primary admin always stays an enabled admin; only a transfer can move the role.
 	const role = account.isPrimaryAdmin ? "admin" : actorIsPrimary ? parsed.data.role : account.role;
 	const disabled = account.isPrimaryAdmin ? false : parsed.data.disabled;

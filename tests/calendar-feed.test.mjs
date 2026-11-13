@@ -287,3 +287,34 @@ test("every TZID in the feed has its VTIMEZONE, once, before the events", () => 
 	// UTC events and whole dates name no zone and need none.
 	assert.equal(lines(feed([base])).includes("BEGIN:VTIMEZONE"), false);
 });
+
+test("a 5,000-event feed builds well inside a Worker's CPU budget", () => {
+	const start = Date.parse("2026-01-05T08:00:00Z");
+	const events = Array.from({ length: 5000 }, (_, index) => {
+		const startsAt = new Date(start + index * 3_600_000);
+		const kind = index % 10;
+		const series = kind >= 7 && kind < 9;
+		return {
+			...base,
+			id: `evt_${index}`,
+			description: "Notes; line\nTwo",
+			location: "Room 1",
+			startsAt,
+			endsAt: new Date(startsAt.getTime() + 1_800_000),
+			repeat: kind < 7 ? "none" : series ? "weekly" : "weekdays",
+			repeatDays: "[1,3,5]",
+			timeZone: kind < 9 ? "Europe/Amsterdam" : "America/New_York",
+			excludedOccurrences: series
+				? `[${startsAt.getTime() + 7 * 86_400_000},${startsAt.getTime() + 14 * 86_400_000}]`
+				: "[]",
+		};
+	});
+	const build = () => feed(events, { timeZone: "Europe/Amsterdam" });
+	build(); // the zone tables and VTIMEZONEs are built once per isolate
+	const started = performance.now();
+	const ics = build();
+	const elapsed = performance.now() - started;
+	assert.equal(lines(ics).filter((line) => line === "BEGIN:VEVENT").length, 5000);
+	// About 75 ms on a developer machine; a formatter per call took over a second.
+	assert.ok(elapsed < 750, `building took ${Math.round(elapsed)} ms`);
+});

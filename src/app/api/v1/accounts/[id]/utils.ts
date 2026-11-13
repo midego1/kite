@@ -7,7 +7,7 @@ import { authenticateAdminApiKey } from "@/lib/api/admin-auth";
 import { canManageUsers, isPrimaryAdmin } from "@/lib/auth/admin";
 import { updateManagedAccountSchema } from "@/lib/validators";
 import { selectAccountById, updateAccountCredentials } from "@/app/api/accounts/[id]/utils";
-import { deleteUserSessions } from "@/lib/auth/session";
+import { endAccessAfterPasswordChange } from "@/lib/auth/session";
 import type { AdminAccountRouteParams } from "./types";
 
 export async function GET(request: Request, { params }: AdminAccountRouteParams) {
@@ -51,7 +51,7 @@ export async function PATCH(request: Request, { params }: AdminAccountRouteParam
 		return NextResponse.json({ error: "Only the primary admin can manage admin accounts" }, { status: 403 });
 	}
 	await updateAccountCredentials(db, id, { name: parsed.data.name, password: parsed.data.password ?? null });
-	if (parsed.data.password) await deleteUserSessions(env, id);
+	if (parsed.data.password) await endAccessAfterPasswordChange(env, id);
 	await db
 		.update(users)
 		.set({

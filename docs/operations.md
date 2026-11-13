@@ -68,7 +68,7 @@ A push to `main` deploys the main Worker through the Cloudflare Git integration.
    - `http.request_completed`: 5xx responses, 4xx responses and slow requests (over 1000 ms).
    - `http.request_failed`: an exception escaped a route.
    - `queue.processing_failed`: a queue message failed and will be retried.
-   - `inbound.enqueue_failed`: the email handler could not store or enqueue inbound mail.
+   - `inbound.enqueue_failed`: the email handler could not store or enqueue inbound mail. The handler then throws, so Email Routing answers the sender with a temporary failure and the sender's server retries later; it never bounces the message for this. Only oversized mail, mail over the attachment limits and routing-rule rejects are refused permanently.
    - `backup.scheduled_failed`: the scheduled backup failed.
    - `backup.stale_marked_failed`: a queued or running backup was interrupted and was marked failed.
    - `alerts.*`: the operational alert run (see [Operational alerts](#operational-alerts)).
@@ -82,9 +82,9 @@ A push to `main` deploys the main Worker through the Cloudflare Git integration.
 The relay is deployed manually by the self-hosting operator. It has no Workers Builds check.
 
 1. Dashboard → Workers & Pages → `kite-email-relay` → Deployments, and note the version id.
-2. In Observability look for `relay.request_failed` (the app call failed, so the message is rejected or retried) and `relay.forward_failed` (a forward decision could not be carried out). `relay.request_completed` is the success event.
+2. In Observability look for `relay.request_failed` (the app was unreachable, answered an error other than 413, or sent an unreadable decision; the relay throws, so Email Routing answers with a temporary failure and the sender's server retries later, instead of a bounce) and `relay.forward_failed` (a forward decision could not be carried out). `relay.request_completed` is the success event.
 3. `GET /health` on the relay is a liveness check only. It does not contact the app.
-4. Analytics Engine rows for the relay have `blob2 = 'kite-email-relay'`. The outcomes are `reject`, `store`, `forward`, `forward_failed`, `too_large`, `upstream_too_large` and `upstream_error`.
+4. Analytics Engine rows for the relay have `blob2 = 'kite-email-relay'`. The outcomes are `reject`, `store`, `forward`, `forward_failed`, `too_large`, `upstream_too_large` and `upstream_error`. Only `too_large`, `upstream_too_large` and `reject` bounce the message; `upstream_error` is a temporary failure the sender retries.
 5. The relay has no email alerts. Watch its logs and metrics yourself.
 
 ### Analytics Engine queries

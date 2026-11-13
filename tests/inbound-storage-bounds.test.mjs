@@ -526,6 +526,43 @@ test("the Worker refuses a definite no-route, and stores the message when the lo
 	assert.ok(await bucket.head(sent[0].rawR2Key), "the message waits in storage for the queue");
 });
 
+test("the Worker defers mail it cannot store or enqueue instead of bouncing it", async (t) => {
+	const { env, bucket } = await setup(t);
+	t.mock.method(console, "error", () => {});
+	// Throwing makes Email Routing answer with a temporary SMTP failure, so the sender retries; setReject would bounce.
+	const unqueued = liveMessage("a@example.com");
+	const queueDown = {
+		send: async () => {
+			throw new Error("Queue send failed");
+		},
+	};
+	await assert.rejects(worker.email(unqueued.message, { ...env, INBOUND_QUEUE: queueDown }, {}), /Queue send failed/);
+	assert.equal(unqueued.outcome.rejected, null);
+
+	const unstored = liveMessage("a@example.com");
+	const bucketDown = new Proxy(bucket, {
+		get(target, property) {
+			if (property === "put")
+				return async () => {
+					throw new Error("R2 put failed");
+				};
+			const value = target[property];
+			return typeof value === "function" ? value.bind(target) : value;
+		},
+	});
+	const sent = [];
+	await assert.rejects(
+		worker.email(
+			unstored.message,
+			{ ...env, BUCKET: bucketDown, INBOUND_QUEUE: { send: async (body) => sent.push(body) } },
+			{},
+		),
+		/R2 put failed/,
+	);
+	assert.equal(unstored.outcome.rejected, null);
+	assert.equal(sent.length, 0);
+});
+
 test("a forward without a copy that failed is kept: in the rule's mailbox, or as its raw object", async (t) => {
 	const { env, database, bucket, put, exists, row } = await setup(t);
 	database.db.exec(`

@@ -200,7 +200,8 @@ export default {
 			await env.INBOUND_QUEUE.send(payload);
 		} catch (err) {
 			logger.error("inbound.enqueue_failed", { stage, rawSize: message.rawSize, rawR2Key, error: err });
-			message.setReject("Processing failed");
+			// setReject bounces permanently; throwing is a temporary SMTP failure, so the sender retries.
+			throw err;
 		}
 	},
 

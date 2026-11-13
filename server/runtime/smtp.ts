@@ -77,7 +77,7 @@ export function startSmtpListener(
 		onData(stream, session: SMTPServerSession, callback) {
 			const data = createDataCollector(options.maxSize);
 			stream.on("data", (chunk: Buffer) => data.push(chunk));
-			stream.on("end", async () => {
+			const receive = async () => {
 				if (stream.sizeExceeded || data.exceeded) {
 					callback(smtpResponseError("Message exceeds size limit", 552));
 					return;
@@ -155,6 +155,13 @@ export function startSmtpListener(
 					return;
 				}
 				callback();
+			};
+			// Any failure past the size and attachment checks is temporary (451), so the sender retries rather than bounces.
+			stream.on("end", () => {
+				receive().catch((error) => {
+					console.error("SMTP delivery failed", error);
+					callback(smtpResponseError("Temporary failure, try again later", 451));
+				});
 			});
 		},
 	});

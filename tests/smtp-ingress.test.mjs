@@ -258,7 +258,7 @@ async function smtpClient(port) {
 	};
 }
 
-async function listener(t, { maxSize = 4096, verifyPrivateClients = true } = {}) {
+async function listener(t, { maxSize = 4096, verifyPrivateClients = true, queueSend } = {}) {
 	const sqlite = new SqliteDatabase(":memory:");
 	await applyMigrations(sqlite, join(root, "drizzle/migrations"));
 	sqlite.db.exec(`
@@ -271,7 +271,7 @@ async function listener(t, { maxSize = 4096, verifyPrivateClients = true } = {})
 	const env = {
 		DB: sqlite,
 		BUCKET: { put: async (key, value) => stored.set(key, Buffer.from(value)) },
-		INBOUND_QUEUE: { send: async (payload) => queued.push(payload) },
+		INBOUND_QUEUE: { send: queueSend ?? (async (payload) => queued.push(payload)) },
 	};
 	const mailer = { sendRaw: async () => true };
 	const server = startSmtpListener(env, mailer, {
@@ -478,6 +478,23 @@ test("the listener answers 552 to oversized DATA and keeps nothing", async (t) =
 	await client.close();
 	assert.equal(queued.length, 1);
 	assert.equal(stored.size, 1);
+});
+
+test("the listener answers 451 when it cannot queue the message, so the sender retries", async (t) => {
+	t.mock.method(console, "error", () => {});
+	const { port } = await listener(t, {
+		queueSend: async () => {
+			throw new Error("queue unavailable");
+		},
+	});
+	const client = await smtpClient(port);
+	await envelope(client);
+	assert.equal((await client.send("DATA")).code, 354);
+	client.write("Subject: hello\r\n\r\nhello\r\n.\r\n");
+	const reply = await client.read();
+	assert.equal(reply.code, 451);
+	assert.match(reply.text, /try again later/i);
+	await client.close();
 });
 
 test("the listener refuses an eleventh session from one address", async (t) => {

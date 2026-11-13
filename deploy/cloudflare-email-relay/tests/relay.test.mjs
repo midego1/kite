@@ -63,14 +63,14 @@ test("a relay deployed before the rename still reads its MAILFLARE_URL secret", 
 	assert.deepEqual(msg.rejections, []);
 });
 
-test("a relay without a server URL rejects with a retry hint", async (t) => {
+test("a relay without a server URL fails temporarily instead of bouncing", async (t) => {
 	t.mock.method(console, "error", () => {});
 	const fetch = t.mock.method(globalThis, "fetch", () => {
 		throw new Error("must not fetch");
 	});
 	const msg = message();
-	await relay.email(msg, { INBOUND_WEBHOOK_SECRET: "test-only-secret" });
-	assert.deepEqual(msg.rejections, ["Kite is temporarily unavailable, please retry"]);
+	await assert.rejects(relay.email(msg, { INBOUND_WEBHOOK_SECRET: "test-only-secret" }), /KITE_URL is not set/);
+	assert.deepEqual(msg.rejections, []);
 	assert.equal(fetch.mock.callCount(), 0);
 });
 
@@ -120,16 +120,18 @@ for (const [label, respond] of [
 			throw new Error("network failed");
 		},
 	],
-	["server error", async () => new Response(null, { status: 500 })],
+	...[401, 409, 500, 502, 503].map((status) => [`server error ${status}`, async () => new Response(null, { status })]),
 	["invalid JSON", async () => new Response("invalid")],
 ]) {
-	test(`${label} rejects with a retry hint and emits a structured log without mail or secrets`, async (t) => {
+	test(`${label} fails temporarily instead of bouncing and logs without mail or secrets`, async (t) => {
 		const lines = [];
 		t.mock.method(console, "error", (line) => lines.push(JSON.parse(line)));
 		t.mock.method(globalThis, "fetch", respond);
 		const msg = message();
-		await relay.email(msg, env);
-		assert.deepEqual(msg.rejections, ["Kite is temporarily unavailable, please retry"]);
+		// Throwing makes Email Routing answer with a temporary SMTP failure, so the sender retries.
+		await assert.rejects(relay.email(msg, env));
+		assert.deepEqual(msg.rejections, []);
+		assert.deepEqual(msg.forwards, []);
 		assert.equal(lines[0].event, "relay.request_failed");
 		assert.equal(lines[0].component, "email-relay");
 		assert.doesNotMatch(JSON.stringify(lines), /sender@example|test-only-secret|Subject:/);
@@ -172,8 +174,8 @@ test("relay receiving-server call has a cancellation signal and trace context", 
 	});
 	t.mock.method(console, "error", () => {});
 	const msg = message();
-	await relay.email(msg, env);
-	assert.deepEqual(msg.rejections, ["Kite is temporarily unavailable, please retry"]);
+	await assert.rejects(relay.email(msg, env), { name: "TimeoutError" });
+	assert.deepEqual(msg.rejections, []);
 });
 
 function metrics() {
@@ -190,7 +192,9 @@ async function relayOutcome(t, { rawSize, fetchResult, forward }) {
 		if (fetchResult instanceof Error) throw fetchResult;
 		return fetchResult;
 	});
-	await relay.email(msg, { ...env, METRICS: dataset });
+	await relay.email(msg, { ...env, METRICS: dataset }).catch((error) => {
+		if (!(fetchResult instanceof Error)) throw error;
+	});
 	return dataset.points;
 }
 

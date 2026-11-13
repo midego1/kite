@@ -103,9 +103,8 @@ export default {
 				error,
 			});
 			record("upstream_error");
-			// A rejection with a temporary-sounding reason makes most senders retry later.
-			message.setReject("Kite is temporarily unavailable, please retry");
-			return;
+			// setReject bounces permanently; throwing is a temporary SMTP failure, so the sender retries.
+			throw error;
 		}
 
 		if (decision.action === "reject") {

@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.11.13.0] - 2026-11-13
+
+### Fixed
+
+- Sent mail to a shared address, such as a no-reply used by several companies, keeps the name each message was sent to instead of the first name Kite learned. A name you set on the contact still wins. Ported from upstream Mailflare #266.
+
 ## [2026.11.11.2] - 2026-11-11
 
 ### Added

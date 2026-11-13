@@ -93,6 +93,8 @@ test("one-click needs exactly List-Unsubscribe=One-Click and an https URI", () =
 	assert.equal(oneClick(unsubscribe, ["List-Unsubscribe=One-Click", "List-Unsubscribe=One-Click"]), null);
 	assert.equal(oneClick(unsubscribe, ["List-Unsubscribe=Yes"]), null);
 	assert.equal(oneClick(["<http://x.example/plain>"], ["List-Unsubscribe=One-Click"]), null);
+	// A second List-Unsubscribe field (one prepended in transit is not signed) means no one-click.
+	assert.equal(oneClick(["<https://evil.example/u>", ...unsubscribe], ["List-Unsubscribe=One-Click"]), null);
 	const loopback = (allowLoopback) =>
 		lists.readMailingListHeaders(
 			new Map([
@@ -110,7 +112,15 @@ test("a DKIM signature must sign both List-Unsubscribe headers", () => {
 	assert.equal(covered(SIGNED.slice("DKIM-Signature: ".length)), true);
 	assert.equal(covered("v=1; h=From:List-Unsubscribe; b=x"), false);
 	assert.equal(covered("v=1; b=x"), false);
-	assert.equal(covered("v=1; h=From; b=x", "v=1; h=list-unsubscribe:list-unsubscribe-post; b=y"), true);
+	// Kite knows a signature passed, not which: one that does not cover the headers rules one-click out.
+	assert.equal(covered("v=1; h=From; b=x", "v=1; h=list-unsubscribe:list-unsubscribe-post; b=y"), false);
+	assert.equal(
+		covered(
+			"v=1; h=list-unsubscribe:list-unsubscribe-post:from; b=x",
+			"v=1; h=From:List-Unsubscribe:List-Unsubscribe-Post; b=y",
+		),
+		true,
+	);
 	assert.equal(covered(), false);
 });
 
@@ -247,6 +257,23 @@ test("the POST is RFC 8058's, never follows a redirect, and only a 2xx counts", 
 		ok: false,
 		reason: "timeout",
 	});
+	// One deadline covers the DNS check too: a lookup that never answers times out and never starts the POST.
+	const keepAlive = setTimeout(() => {}, 5_000);
+	let fetched = false;
+	const never = () => new Promise(() => {});
+	assert.deepEqual(
+		await lists.postOneClickUnsubscribe("https://slow-dns.example/u", {
+			resolveHost: never,
+			timeoutMs: 20,
+			fetch: async () => {
+				fetched = true;
+				return new Response(null, { status: 200 });
+			},
+		}),
+		{ ok: false, reason: "timeout" },
+	);
+	clearTimeout(keepAlive);
+	assert.equal(fetched, false);
 	// A body that cannot be cancelled does not change the outcome.
 	const stubborn = async () => ({ status: 202, body: { cancel: () => Promise.reject(new Error("locked")) } });
 	assert.deepEqual(await lists.postOneClickUnsubscribe("https://news.example/u", { fetch: stubborn }), {

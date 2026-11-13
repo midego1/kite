@@ -8,7 +8,7 @@ export type MailingListHeaders = {
 	unsubscribeUrl: string | null;
 	/** The `https` URL an RFC 8058 one-click POST goes to, when `List-Unsubscribe-Post` asks for one. */
 	oneClickUrl: string | null;
-	/** A `DKIM-Signature` lists both `List-Unsubscribe` and `List-Unsubscribe-Post` in its signed headers (`h=`). */
+	/** Every `DKIM-Signature` lists both `List-Unsubscribe` and `List-Unsubscribe-Post` in its signed headers (`h=`). */
 	dkimCoversUnsubscribe: boolean;
 };
 

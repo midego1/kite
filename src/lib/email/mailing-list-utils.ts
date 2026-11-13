@@ -47,15 +47,16 @@ export function pickUnsubscribeUrl(values: readonly string[]): string | null {
 const LOOPBACK_HTTP = /^http:\/\/127\.0\.0\.1(?::\d+)?\//i;
 
 /**
- * The `https` URL for an RFC 8058 one-click POST, or null: `List-Unsubscribe-Post` must be exactly
- * `List-Unsubscribe=One-Click` (one field, as §3.1 requires) and `List-Unsubscribe` must name an `https` URI.
+ * The `https` URL for an RFC 8058 one-click POST, or null: exactly one `List-Unsubscribe` field naming an `https`
+ * URI and exactly one `List-Unsubscribe-Post` field reading `List-Unsubscribe=One-Click` (§3.1). A second field of
+ * either is refused: a DKIM signature covers only one instance, so a field prepended in transit would be unsigned.
  */
 function pickOneClickUrl(
 	unsubscribeValues: readonly string[],
 	postValues: readonly string[],
 	allowLoopback: boolean,
 ): string | null {
-	if (postValues.length !== 1) return null;
+	if (unsubscribeValues.length !== 1 || postValues.length !== 1) return null;
 	if (postValues[0]!.trim().toLowerCase() !== "list-unsubscribe=one-click") return null;
 	return (
 		unsubscribeCandidates(unsubscribeValues).find(
@@ -79,12 +80,19 @@ function dkimSignedHeaders(signature: string): string[] {
 	return [];
 }
 
-/** Whether some `DKIM-Signature` signs both `List-Unsubscribe` and `List-Unsubscribe-Post` (RFC 8058 §4). */
+/**
+ * Whether every `DKIM-Signature` signs both `List-Unsubscribe` and `List-Unsubscribe-Post` (RFC 8058 §4). Kite
+ * stores that a signature passed, not which one, so only when all of them cover the headers is the one that passed
+ * sure to; a message with one that does not falls back to opening the link.
+ */
 function dkimCoversListUnsubscribe(signatures: readonly string[]): boolean {
-	return signatures.some((signature) => {
-		const signed = new Set(dkimSignedHeaders(signature));
-		return signed.has("list-unsubscribe") && signed.has("list-unsubscribe-post");
-	});
+	return (
+		signatures.length > 0 &&
+		signatures.every((signature) => {
+			const signed = new Set(dkimSignedHeaders(signature));
+			return signed.has("list-unsubscribe") && signed.has("list-unsubscribe-post");
+		})
+	);
 }
 
 function decodeQ(text: string): Uint8Array {
@@ -167,9 +175,8 @@ function isMailingList(headers: MailingListHeaders | null): headers is MailingLi
 }
 
 /**
- * Whether Kite may send the one-click POST: the message asks for it, a DKIM signature covers both headers and the
- * intake hop reported a DKIM pass (RFC 8058 §4). Kite stores the pass, not which signature passed, so a message
- * with several signatures counts when any passed and any covers the headers.
+ * Whether Kite may send the one-click POST: the message asks for it, every DKIM signature covers both headers and
+ * the intake hop reported a DKIM pass, so the signature that passed covers them (RFC 8058 §4).
  */
 export function canUseOneClick(headers: MailingListHeaders | null, dkimPassed: boolean): boolean {
 	return !!headers?.oneClickUrl && headers.dkimCoversUnsubscribe && dkimPassed;

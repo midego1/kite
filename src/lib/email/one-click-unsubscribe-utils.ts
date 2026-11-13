@@ -46,14 +46,36 @@ async function oneClickTarget(value: string, options: OneClickOptions = {}): Pro
 	}
 }
 
+/** `promise`, or a rejection with the signal's reason once it aborts, whichever comes first. */
+function untilAborted<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+	return new Promise<T>((resolve, reject) => {
+		if (signal.aborted) return reject(signal.reason);
+		signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+		promise.then(resolve, reject);
+	});
+}
+
+function failureReason(error: unknown): "timeout" | "network" {
+	const name = (error as { name?: string } | null)?.name;
+	return name === "TimeoutError" || name === "AbortError" ? "timeout" : "network";
+}
+
 /**
  * Sends the RFC 8058 one-click POST (`List-Unsubscribe=One-Click`, form-encoded). No cookies or referrer, never
- * follows a redirect (so a public URL cannot bounce the request to a private one), and gives up after the timeout.
+ * follows a redirect (so a public URL cannot bounce the request to a private one), and gives up after the timeout,
+ * which covers the DNS check on Node as well as the request: a lookup that answers late never starts the POST.
  * Only a 2xx counts: anything else leaves the reader with the link to open themselves.
  */
 export async function postOneClickUnsubscribe(value: string, options: OneClickOptions = {}): Promise<OneClickOutcome> {
-	const url = await oneClickTarget(value, options);
+	const signal = AbortSignal.timeout(options.timeoutMs ?? ONE_CLICK_TIMEOUT_MS);
+	let url: URL | null;
+	try {
+		url = await untilAborted(oneClickTarget(value, options), signal);
+	} catch (error) {
+		return { ok: false, reason: failureReason(error) };
+	}
 	if (!url) return { ok: false, reason: "refused_url" };
+	if (signal.aborted) return { ok: false, reason: "timeout" };
 	const doFetch = options.fetch ?? fetch;
 	let response: Response;
 	try {
@@ -62,11 +84,10 @@ export async function postOneClickUnsubscribe(value: string, options: OneClickOp
 			headers: { "Content-Type": "application/x-www-form-urlencoded", "User-Agent": USER_AGENT },
 			body: "List-Unsubscribe=One-Click",
 			redirect: "manual",
-			signal: AbortSignal.timeout(options.timeoutMs ?? ONE_CLICK_TIMEOUT_MS),
+			signal,
 		});
 	} catch (error) {
-		const name = (error as { name?: string } | null)?.name;
-		return { ok: false, reason: name === "TimeoutError" || name === "AbortError" ? "timeout" : "network" };
+		return { ok: false, reason: failureReason(error) };
 	}
 	// The body is never read: nothing the sender answers reaches the reader.
 	await response.body?.cancel().catch(() => undefined);

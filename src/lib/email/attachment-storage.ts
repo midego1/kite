@@ -190,6 +190,19 @@ export async function openAttachment(
 }
 
 /**
+ * Whether an attachment's content is in storage, without reading it: a HEAD of an 'object' row's object. A 'raw' row,
+ * or an object that is missing, is opened (which runs the lazy repair, as any read would) and the body cancelled.
+ * The repair can repoint the row, so read the row again before opening it afterwards.
+ */
+export async function isAttachmentStored(env: CloudflareEnv, row: AttachmentRef): Promise<boolean> {
+	if (!isRawAttachmentKey(row.r2Key) && (await env.BUCKET.head(row.r2Key))) return true;
+	const opened = await openAttachment(env, row);
+	if (!opened) return false;
+	await opened.body.cancel().catch(() => undefined);
+	return true;
+}
+
+/**
  * A whole 'raw' row in memory, checked against the size and digest recorded when it was verified at ingest. A range
  * that no longer decodes to them is never returned: the lazy repair materializes the bytes postal-mime decodes from the
  * raw when those match, and otherwise the row reads as not stored.

@@ -12,7 +12,7 @@ import { ContactAvatar } from "@/components/contacts/contact-avatar";
 import { MessageActions } from "@/components/message-actions/message-actions";
 import { READER_TOOLBAR_SPACER_ATTR } from "@/components/message-actions/use-reader-toolbar-overflow";
 import { MessageAttachmentViewer } from "@/components/message-attachment-viewer";
-import { MessageAttachmentCard } from "@/components/message-attachment-card";
+import { MessageAttachmentsSection } from "@/components/messages/message-attachments-section";
 import { MessageDetailSkeleton } from "@/components/page-skeletons";
 import { usePageLoading } from "@/components/page-loading";
 import { PreviousMessage } from "@/components/previous-message";
@@ -420,24 +420,12 @@ export default function MessageDetailPage() {
 								</div>
 							</section>
 						)}
-						{attachments.length > 0 && (
-							<section className="mt-6">
-								<h2 className="mb-2 text-sm text-neutral-500">
-									{t("Attachments ({count})", { count: attachments.length })}
-								</h2>
-								<div className="flex flex-wrap gap-2">
-									{attachments.map((attachment) => (
-										<MessageAttachmentCard
-											key={attachment.id}
-											attachment={attachment}
-											messageId={message.id}
-											mailboxId={message.mailboxId ?? null}
-											onPreview={setPreviewAttachment}
-										/>
-									))}
-								</div>
-							</section>
-						)}
+						<MessageAttachmentsSection
+							attachments={attachments}
+							messageId={message.id}
+							mailboxId={message.mailboxId ?? null}
+							onPreview={setPreviewAttachment}
+						/>
 						<MessageReplyButtons
 							mailboxId={message.mailboxId}
 							senderAddress={message.fromAddr}

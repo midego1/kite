@@ -796,5 +796,12 @@
 	"category|Health": "الصحة",
 	"category|Entertainment": "الترفيه",
 	"category|Education": "التعليم",
-	"category|Other": "أخرى"
+	"category|Other": "أخرى",
+	"Download flagged files?": "هل تريد تنزيل الملفات المُعلَّمة؟",
+	"{count, plural, one {# file is} other {# files are}} flagged as risky:": "{count, plural, zero {لا ملفات مُعلَّمة} one {ملف واحد مُعلَّم} two {ملفان مُعلَّمان} few {# ملفات مُعلَّمة} many {# ملفًا مُعلَّمًا} other {# ملف مُعلَّم}} على أنها خطرة:",
+	"Open them only if you expected them from someone you trust.": "افتحها فقط إذا كنت تتوقعها من شخص تثق به.",
+	"Download all": "تنزيل الكل",
+	"Some attachments are missing from storage: {names}": "بعض المرفقات غير موجودة في التخزين: {names}",
+	"These attachments are too large to download together.": "هذه المرفقات أكبر من أن تُنزَّل معًا.",
+	"The attachments could not be downloaded.": "تعذّر تنزيل المرفقات."
 }

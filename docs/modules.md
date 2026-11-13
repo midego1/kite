@@ -6,7 +6,7 @@ Kite's core is mail: mailboxes, domains, contacts, accounts, settings, backups, 
 
 | Module | What it is | Depends on |
 | --- | --- | --- |
-| **Calendar** | The personal calendar at `/calendar`, its API under `/api/calendar`, the calendar tools in assistant chat and MCP, calendar invitations in automatic reading, the Events section of the search dropdown and the `calendar.event.created`, `calendar.event.updated` and `calendar.event.deleted` webhook events. | nothing |
+| **Calendar** | The personal calendar at `/calendar`, its API under `/api/calendar`, the read-only subscription feed under `/api/public/calendar` (see [Subscribing from another calendar app](api.md#subscribing-from-another-calendar-app)), the calendar tools in assistant chat and MCP, calendar invitations in automatic reading, the Events section of the search dropdown and the `calendar.event.created`, `calendar.event.updated` and `calendar.event.deleted` webhook events. | nothing |
 | **Booking** | Booking pages: the settings page at `/booking`, the public pages at `/book/...` and `/c/...`, the APIs under `/api/booking` and `/api/public/booking`, and the `booking.appointment.created` webhook event. Booked appointments land in the host's calendar. | Calendar |
 | **Email templates** | The **Template** entry in the composer's send menu (insert a template, save a new one) and its API under `/api/templates`. There is no templates page. | nothing |
 | **Mail import** | Settings → Import (`/settings/import`): IMAP imports, mbox and eml uploads and background IMAP jobs, with the API under `/api/import`. | nothing |

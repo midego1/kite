@@ -1,4 +1,4 @@
-import { and, eq, lt, ne, or, isNull } from "drizzle-orm";
+import { and, eq, lt, notInArray, or, isNull } from "drizzle-orm";
 import { getDb } from "@/db";
 import { apiKeys, mcpKeyMailboxes, users } from "@/db/schema";
 import { parseScopes, verifyApiKey } from "@/lib/api-keys";
@@ -18,11 +18,12 @@ export async function authenticateApiKeyValue(env: CloudflareEnv, key: string): 
 	if (!trimmed) return null;
 	const prefix = trimmed.slice(0, 12);
 	const db = getDb(env);
-	// An OAuth grant (kind `oauth`) is an MCP-only credential and has no key; its tokens never reach this path.
+	// An OAuth grant (kind `oauth`) is an MCP-only credential and has no key; its tokens never reach this path. A calendar
+	// subscription link (kind `calendar_feed`) opens only its feed, so it is never an API key either.
 	const candidates = await db
 		.select()
 		.from(apiKeys)
-		.where(and(eq(apiKeys.prefix, prefix), ne(apiKeys.kind, "oauth")));
+		.where(and(eq(apiKeys.prefix, prefix), notInArray(apiKeys.kind, ["oauth", "calendar_feed"])));
 
 	for (const candidate of candidates) {
 		if (!verifyApiKey(trimmed, candidate.keyHash)) continue;

@@ -15,8 +15,8 @@ type OneClickUnsubscribeResult =
 	| { kind: "not_found" }
 	| { kind: "forbidden" }
 	| { kind: "rate_limited" }
-	/** The same user already asked for this message a few minutes ago. */
-	| { kind: "duplicate" }
+	/** The same user already asked for this message a few minutes ago; `url` is the link the reader can still open. */
+	| { kind: "duplicate"; url: string | null }
 	/** The message offers no verified one-click; `url` is the link the reader can still open. */
 	| { kind: "unavailable"; url: string | null }
 	| { kind: "failed"; url: string | null };
@@ -71,7 +71,7 @@ export async function unsubscribeOneClick(
 	if (row.direction !== "inbound" || REFUSED_STATUSES.has(row.status)) return { kind: "unavailable", url: null };
 	if (!headers || !canUseOneClick(headers, storedDkimPassed(row.spamSignals))) return { kind: "unavailable", url };
 	const attempt = await admitAttempt(env, { userId: user.id, mailboxId: row.mailboxId, messageId });
-	if (!attempt.allowed) return { kind: attempt.reason };
+	if (!attempt.allowed) return attempt.reason === "duplicate" ? { kind: "duplicate", url } : { kind: "rate_limited" };
 
 	const outcome = await postOneClickUnsubscribe(headers.oneClickUrl!, {
 		pinnedPost: env.PINNED_POST,

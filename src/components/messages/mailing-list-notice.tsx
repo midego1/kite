@@ -60,7 +60,7 @@ function NoticeStatus({ unsubscribed, failed }: { unsubscribed: boolean; failed:
 	let text: string | null = null;
 	if (unsubscribed) text = t("You're unsubscribed. The sender may take a few days to stop.");
 	else if (failed) text = oneClickFailureText(failed);
-	const link = !unsubscribed && failed && !failed.limited ? failed.url : null;
+	const link = !unsubscribed && failed && failed.limited !== "rate" ? failed.url : null;
 	return (
 		<p aria-live="polite" dir="auto">
 			{text}

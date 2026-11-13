@@ -77,7 +77,8 @@ export function announceOneClickFailure(run: OneClickRun) {
 	if (run.status !== "failed") return;
 	const message = oneClickFailureText(run);
 	const url = run.url;
-	if (!url || run.limited) {
+	// Over the rate limit the answer is to wait; after a duplicate the sender's own page is still worth offering.
+	if (!url || run.limited === "rate") {
 		toast.error(message);
 		return;
 	}

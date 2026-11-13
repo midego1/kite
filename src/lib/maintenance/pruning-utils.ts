@@ -35,6 +35,9 @@ export const PRUNING_POLICY: PruningPolicy = {
 	// One audit row per MCP tool call; a quarter of history is enough to trace what a key did. Pruned every five
 	// minutes by pruneMcpToolCallAudit (the rows that just expired) and by the daily run (any backlog).
 	mcpToolCallAuditDays: 90,
+	// One-click unsubscribe requests (`message.unsubscribe_one_click`): the limiter reads ten minutes, Activity shows
+	// recent history; older rows only tie a person to the lists they left.
+	unsubscribeAuditDays: 30,
 	assistantEmailRequestsDays: 30,
 	assistantEmailStaleRawDays: 7,
 };

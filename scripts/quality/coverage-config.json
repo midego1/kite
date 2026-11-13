@@ -74,6 +74,7 @@
 		"src/lib/remote-images/fetch-utils.ts",
 		"src/lib/email/mailing-list-utils.ts",
 		"src/lib/email/one-click-unsubscribe-utils.ts",
+		"src/lib/email/one-click-attempts-utils.ts",
 		"src/components/messages/mailing-list-notice-utils.ts",
 		"src/lib/remote-images/message-urls-utils.ts",
 		"src/lib/remote-images/proxy-url-utils.ts",

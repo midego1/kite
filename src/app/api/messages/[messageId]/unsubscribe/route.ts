@@ -38,7 +38,11 @@ export async function POST(request: Request, { params }: UnsubscribeRouteParams)
 			);
 		case "duplicate":
 			return NextResponse.json(
-				{ error: "Kite already sent this unsubscribe request a few minutes ago.", code: "ALREADY_REQUESTED" },
+				{
+					error: "Kite already sent this unsubscribe request a few minutes ago.",
+					code: "ALREADY_REQUESTED",
+					url: result.url,
+				},
 				{ status: 429, headers: NO_STORE },
 			);
 		case "unavailable":

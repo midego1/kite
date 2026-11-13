@@ -14,6 +14,9 @@ export type ActivityMetadata = {
 	previous?: string | null;
 	/** An edited provider got a new API key (never the key itself). */
 	keyReplaced?: boolean;
+	/** One-click unsubscribe: how the request ended and the sender's HTTP status (never the link). */
+	outcome?: string;
+	status?: number;
 };
 
 export type ActivityLog = {

@@ -14,6 +14,7 @@ await build({
 		contents: `
 			export * from "./src/lib/email/mailing-list-utils.ts";
 			export * from "./src/lib/email/one-click-unsubscribe-utils.ts";
+			export * from "./src/lib/email/one-click-attempts-utils.ts";
 			export { OutboundUrlError } from "./src/lib/security/outbound-url.ts";
 			export { parseRawHeaders } from "./src/lib/email/raw-headers.ts";
 			export { extractUnsubscribeUrlFromRaw } from "./src/lib/email/unsubscribe.ts";
@@ -335,6 +336,49 @@ test("the POST is RFC 8058's, never follows a redirect, and only a 2xx counts", 
 		ok: false,
 		reason: "network",
 	});
+});
+
+test("one request per message goes out: retries after a failure do, parallel twins and refused clicks do not hold", () => {
+	const now = Date.parse("2026-11-13T10:00:00Z");
+	const row = (id, messageId, secondsAgo, outcome = "pending") => ({
+		id,
+		messageId,
+		createdAt: now - secondsAgo * 1000,
+		outcome,
+	});
+	const decide = (rows, self) => lists.decideOneClickAttempt(rows, { id: self, messageId: "m1" }, now);
+	assert.equal(decide([row("a", "m1", 0)], "a"), null);
+	// A request that reached the sender (or is still going out) holds the message for ten minutes.
+	assert.equal(decide([row("a", "m1", 120, "done"), row("b", "m1", 0)], "b"), "duplicate");
+	assert.equal(decide([row("a", "m1", 60, "pending"), row("b", "m1", 0)], "b"), "duplicate");
+	assert.equal(decide([row("a", "m1", 11 * 60, "done"), row("b", "m1", 0)], "b"), null);
+	// A failed one does not: the retry goes out.
+	for (const failed of ["timeout", "network", "http_error", "redirect", "refused_url"])
+		assert.equal(decide([row("a", "m1", 60, failed), row("b", "m1", 0)], "b"), null, failed);
+	// Two parallel requests: the earliest goes out, ties broken by id, the same answer for both.
+	assert.equal(decide([row("a", "m1", 1), row("b", "m1", 0)], "a"), null);
+	assert.equal(decide([row("a", "m1", 1), row("b", "m1", 0)], "b"), "duplicate");
+	assert.equal(decide([row("x", "m1", 0), row("y", "m1", 0)], "x"), null);
+	assert.equal(decide([row("x", "m1", 0), row("y", "m1", 0)], "y"), "duplicate");
+	// Refused clicks never stretch the window or count toward the rate.
+	const refused = Array.from({ length: 20 }, (_, index) => row(`r${index}`, "m1", 30, "duplicate"));
+	assert.equal(decide([row("a", "m1", 11 * 60, "done"), ...refused, row("b", "m1", 0)], "b"), null);
+	// Other messages count toward the per-minute limit only: ten went out, the eleventh is refused.
+	const others = Array.from({ length: 10 }, (_, index) => row(`o${index}`, `other${index}`, 20, "done"));
+	assert.equal(decide([...others, row("b", "m1", 0)], "b"), "rate_limited");
+	assert.equal(decide([...others.slice(1), row("b", "m1", 0)], "b"), null);
+	const rateRefused = Array.from({ length: 10 }, (_, index) => row(`q${index}`, `other${index}`, 20, "rate_limited"));
+	assert.equal(decide([...rateRefused, row("b", "m1", 0)], "b"), null);
+	assert.equal(lists.UNSUBSCRIBE_ONE_CLICK_ACTION, "message.unsubscribe_one_click");
+});
+
+test("an attempt's outcome is read from its metadata, and anything unreadable is none", () => {
+	assert.equal(lists.attemptOutcome(JSON.stringify({ outcome: "done", status: 200 })), "done");
+	assert.equal(lists.attemptOutcome(JSON.stringify({ status: 200 })), null);
+	assert.equal(lists.attemptOutcome(JSON.stringify({ outcome: 3 })), null);
+	assert.equal(lists.attemptOutcome("null"), null);
+	assert.equal(lists.attemptOutcome("{oops"), null);
+	assert.equal(lists.attemptOutcome(null), null);
 });
 
 test("the notice shows on received mail only, never on spam, Trash or held mail", () => {

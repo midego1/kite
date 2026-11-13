@@ -557,6 +557,25 @@ test("the five-minute MCP audit pruning deletes the rows that just expired; the 
 	assert.deepEqual(ids().sort(), ["login", "recent"]);
 });
 
+test("the daily pruning deletes one-click unsubscribe audit rows after 30 days and keeps other audit rows", async (t) => {
+	const { env, database } = await fixture(t);
+	const now = new Date("2026-10-30T00:00:00Z");
+	const cutoff = Math.floor(now.getTime() / 1000) - 30 * 86_400;
+	const insert = database.db.prepare(
+		"INSERT INTO audit_logs (id, actor_user_id, action, metadata, created_at) VALUES (?, 'user-1', ?, '{}', ?)",
+	);
+	insert.run("old-unsubscribe", "message.unsubscribe_one_click", cutoff - 60);
+	insert.run("recent-unsubscribe", "message.unsubscribe_one_click", cutoff + 60);
+	insert.run("old-login", "auth.login", cutoff - 86_400);
+	const daily = await m.runDatabasePruning(env, now);
+	assert.equal(daily.unsubscribe_audit_logs, 1);
+	const ids = database.db
+		.prepare("SELECT id FROM audit_logs ORDER BY id")
+		.all()
+		.map((row) => row.id);
+	assert.deepEqual(ids, ["old-login", "recent-unsubscribe"]);
+});
+
 test("the five-minute MCP audit query reads a range of the action and created_at index, not the older history", async (t) => {
 	const { env, database } = await fixture(t);
 	const db = m.getDb(env);

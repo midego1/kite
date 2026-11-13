@@ -92,6 +92,18 @@ test("the connection goes to the address that was checked, even when the name la
 	assert.deepEqual(await failing(`http://fails.example:${port}/fail`, { ...POST, signal: signal() }), { status: 500 });
 });
 
+test("a requested IP family narrows the pinned addresses and never falls back to an unchecked one", async () => {
+	const before = received.length;
+	// Only an IPv6 address was checked; Node asked for IPv4 through the lookup, so nothing connects.
+	const post = createPinnedPost({ resolve: async () => ["::1"], allowLoopback: true });
+	const url = new URL(`http://v6only.example:${port}/u`);
+	await assert.rejects(
+		post(url.href, { ...POST, signal: signal() }),
+		(error) => error.code === "ENOTFOUND" || error.code === "ECONNREFUSED",
+	);
+	assert.equal(received.length, before);
+});
+
 test("a private answer is refused before anything connects, and one-click reports it as a refused URL", async () => {
 	const before = received.length;
 	const post = createPinnedPost({ resolve: async () => ["93.184.216.34", "127.0.0.1"] });

@@ -114,7 +114,9 @@ test("a signed one-click list is left from the notice: Kite sends the RFC 8058 P
 	const message = await (await api.get(`/api/messages?${new URLSearchParams({ q: subject, limit: "1" })}`)).json();
 	const again = await api.post(`/api/messages/${message.messages[0].id}/unsubscribe`);
 	expect(again.status()).toBe(429);
-	expect((await again.json()).code).toBe("ALREADY_REQUESTED");
+	const refused = await again.json();
+	expect(refused.code).toBe("ALREADY_REQUESTED");
+	expect(refused.url).toBe(`${origin}/u/${token}`);
 	expect(received.filter((request) => request.path === `/u/${token}`)).toHaveLength(1);
 });
 
@@ -133,6 +135,13 @@ test("when the sender's endpoint fails, the notice says so and offers the sender
 	const link = box.getByRole("link", { name: "Open the unsubscribe page" });
 	await expect(link).toHaveAttribute("href", `${origin}/u/${token}`);
 	await expect(link).toHaveAttribute("rel", "noopener noreferrer");
+
+	// A failed request does not hold the ten-minute window: once the sender works again, a retry goes out.
+	answers.set(`/u/${token}`, 200);
+	const stored = await (await api.get(`/api/messages?${new URLSearchParams({ q: subject, limit: "1" })}`)).json();
+	const retry = await api.post(`/api/messages/${stored.messages[0].id}/unsubscribe`);
+	expect(retry.status(), await retry.text()).toBe(200);
+	expect(received.filter((request) => request.path === `/u/${token}`)).toHaveLength(2);
 });
 
 test("without a DKIM signature over the headers, Unsubscribe opens the link instead and Kite posts nothing", async ({

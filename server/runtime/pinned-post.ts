@@ -40,12 +40,24 @@ async function vetPublicAddresses(
 	return addresses;
 }
 
-/** A `lookup` for `net`/`tls` that answers only the vetted addresses, whatever the name now resolves to. */
+/**
+ * A `lookup` for `net`/`tls` that answers only the vetted addresses, whatever the name now resolves to. A requested
+ * family (4 or 6) narrows them; when none of that family was vetted it fails like an unresolvable name.
+ */
 function pinnedLookup(addresses: readonly string[]): LookupFunction {
 	const entries = addresses.map((address) => ({ address, family: isIP(address) }));
-	return (_hostname, options, callback) => {
-		if (options.all) callback(null, entries);
-		else callback(null, entries[0]!.address, entries[0]!.family);
+	return (hostname, options, callback) => {
+		const family = options.family === 4 || options.family === 6 ? options.family : 0;
+		const matching = family ? entries.filter((entry) => entry.family === family) : entries;
+		if (!matching.length) {
+			const error = Object.assign(new Error(`No IPv${family} address was checked for ${hostname}`), {
+				code: "ENOTFOUND",
+			});
+			callback(error, options.all ? [] : "", 0);
+			return;
+		}
+		if (options.all) callback(null, matching);
+		else callback(null, matching[0]!.address, matching[0]!.family);
 	};
 }
 
@@ -70,9 +82,10 @@ export function createPinnedPost(options: PinnedPostOptions = {}): PinnedPost {
 					signal,
 				},
 				(response: IncomingMessage) => {
-					// Only the status matters; the body is discarded unread.
-					response.resume();
+					// Only the status matters: the connection is closed at once, the body never read.
 					resolveStatus({ status: response.statusCode ?? 0 });
+					response.on("error", () => undefined);
+					response.destroy();
 				},
 			);
 			request.on("error", reject);

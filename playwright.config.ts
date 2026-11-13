@@ -73,7 +73,8 @@ export default defineConfig({
 			EXTERNAL_ACCOUNTS_ALLOW_INSECURE_LOOPBACK: "1",
 			// Sends both abuse.ch APIs to the fake on 127.0.0.1 (e2e/support/fake-abuse-ch.ts); nothing reaches abuse.ch.
 			ABUSE_CH_TEST_ORIGIN: `http://127.0.0.1:${FAKE_ABUSE_CH_PORT}`,
-			// Sends Microsoft sign-in to the fake on 127.0.0.1 (e2e/100-microsoft-oauth.spec.ts); nothing reaches Microsoft.
+			// Sends Microsoft and Google sign-in to the fakes on 127.0.0.1 (e2e/100-microsoft-oauth.spec.ts,
+			// e2e/107-google-oauth.spec.ts); nothing reaches Microsoft or Google.
 			EXTERNAL_OAUTH_TEST_ORIGIN: `http://127.0.0.1:${FAKE_MICROSOFT_OAUTH_PORT}`,
 			// Sends the automatic R2 setup's Cloudflare API calls and its S3 endpoint to fakes the storage spec starts
 			// (e2e/93-storage-r2-auto-setup.spec.ts); nothing reaches Cloudflare.

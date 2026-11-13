@@ -83,7 +83,8 @@ type Account = ExternalAccountRow & { credential: AccountCredential };
  * The account a send goes through, checked again when the send runs (a scheduled or undoable send may wait): it must
  * still exist, belong to the sender and be allowed to send as `from`, its own address or one it verified with a code
  * (a removed code stops the sends still waiting). Its password (or OAuth access token) is opened here and nowhere
- * else; a Microsoft sign-in that cannot be renewed now is tried again later, one that was revoked needs a reconnect.
+ * else; a Microsoft or Google sign-in that cannot be renewed now is tried again later, one that was revoked needs a
+ * reconnect.
  */
 async function openAccount(
 	env: CloudflareEnv,
@@ -149,7 +150,7 @@ async function assertStillSendable(
 	if (!access?.canSendOnBehalf) throw refuse("You can no longer send from this mailbox.");
 }
 
-/** A refresh that failed during the send: Reconnect for a revoked sign-in, a later try when Microsoft was away. */
+/** A refresh that failed during the send: Reconnect for a revoked sign-in, a later try when the provider was away. */
 function credentialFailure(error: unknown, attempt: number): ReturnType<typeof classifySubmitFailure> | null {
 	if (!(error instanceof CredentialUnavailableError)) return null;
 	const base = { deliveryUnknown: false, message: error.message };

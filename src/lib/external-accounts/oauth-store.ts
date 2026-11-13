@@ -30,10 +30,21 @@ export function isOAuthMigrationPending(error: unknown): boolean {
 const toSeconds = (date: Date) => Math.floor(date.getTime() / 1000);
 const fromSeconds = (value: number | null | undefined) => (value == null ? null : new Date(Number(value) * 1000));
 
-/** The sealed app registration saved in Admin → General, or null; `undefined` before migration 0105. */
-export async function readStoredMicrosoftClient(env: StoreEnv): Promise<string | null | undefined> {
+/**
+ * Where each provider's sealed OAuth client lives in `app_settings`: Microsoft's since migration 0105, Google's since
+ * 0111. A fixed map, so no column name ever comes from input.
+ */
+const CLIENT_COLUMNS = { microsoft: "oauth_microsoft_client", google: "oauth_google_client" } as const;
+
+export type StoredClientProvider = keyof typeof CLIENT_COLUMNS;
+
+/** The sealed OAuth client saved in Admin → General, or null; `undefined` before the migration that adds its column. */
+export async function readStoredOAuthClient(
+	env: StoreEnv,
+	provider: StoredClientProvider,
+): Promise<string | null | undefined> {
 	try {
-		const row = await env.DB.prepare("SELECT oauth_microsoft_client AS value FROM app_settings WHERE id = ?")
+		const row = await env.DB.prepare(`SELECT ${CLIENT_COLUMNS[provider]} AS value FROM app_settings WHERE id = ?`)
 			.bind("default")
 			.first<{ value: string | null }>();
 		return row?.value ?? null;
@@ -43,10 +54,16 @@ export async function readStoredMicrosoftClient(env: StoreEnv): Promise<string |
 	}
 }
 
-/** Saves (or, with null, removes) the sealed app registration. Throws before migration 0105. */
-export async function writeStoredMicrosoftClient(env: StoreEnv, sealed: string | null, now: Date): Promise<void> {
+/** Saves (or, with null, removes) the sealed OAuth client. Throws before the migration that adds its column. */
+export async function writeStoredOAuthClient(
+	env: StoreEnv,
+	provider: StoredClientProvider,
+	sealed: string | null,
+	now: Date,
+): Promise<void> {
+	const column = CLIENT_COLUMNS[provider];
 	await env.DB.prepare(
-		"INSERT INTO app_settings (id, oauth_microsoft_client, updated_at) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET oauth_microsoft_client = excluded.oauth_microsoft_client, updated_at = excluded.updated_at",
+		`INSERT INTO app_settings (id, ${column}, updated_at) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET ${column} = excluded.${column}, updated_at = excluded.updated_at`,
 	)
 		.bind("default", sealed, toSeconds(now))
 		.run();
@@ -164,6 +181,8 @@ export async function capOAuthStates(env: StoreEnv, userId: string, keep: number
 
 /** An account's token state: the sealed refresh token (`secret`), the cached access token and the CAS version. */
 export type TokenState = {
+	/** `oauth_microsoft` or `oauth_google`: whose token endpoint renews it (`password` once switched to a password). */
+	authKind: string;
 	sealedRefreshToken: string;
 	sealedAccessToken: string | null;
 	expiresAt: Date | null;
@@ -172,10 +191,11 @@ export type TokenState = {
 
 export async function readTokenState(env: StoreEnv, accountId: string): Promise<TokenState | null> {
 	const row = await env.DB.prepare(
-		"SELECT secret, oauth_access_token, oauth_expires_at, oauth_token_version FROM external_accounts WHERE id = ?",
+		"SELECT auth_kind, secret, oauth_access_token, oauth_expires_at, oauth_token_version FROM external_accounts WHERE id = ?",
 	)
 		.bind(accountId)
 		.first<{
+			auth_kind: string;
 			secret: string;
 			oauth_access_token: string | null;
 			oauth_expires_at: number | null;
@@ -183,6 +203,7 @@ export async function readTokenState(env: StoreEnv, accountId: string): Promise<
 		}>();
 	if (!row) return null;
 	return {
+		authKind: row.auth_kind,
 		sealedRefreshToken: row.secret ?? "",
 		sealedAccessToken: row.oauth_access_token,
 		expiresAt: fromSeconds(row.oauth_expires_at),
@@ -191,7 +212,7 @@ export async function readTokenState(env: StoreEnv, accountId: string): Promise<
 }
 
 export type TokenWrite = {
-	/** A new sealed refresh token (Microsoft rotates it on each refresh); null keeps the stored one. */
+	/** A new sealed refresh token (Microsoft rotates it on each refresh, Google does not); null keeps the stored one. */
 	sealedRefreshToken: string | null;
 	sealedAccessToken: string;
 	expiresAt: Date;
@@ -202,7 +223,8 @@ export type TokenWrite = {
  * Stores refreshed tokens only while the account's version is still `expectedVersion`, bumping it (spec §15.3): of two
  * refreshes at once, one stores and the other learns it lost. A refresh token that changed meanwhile (a reconnect)
  * is never overwritten with an older one, and neither is the password of an account that has since been edited to
- * sign in with one (`auth_kind`, written in the same statement as that password).
+ * sign in with one (`auth_kind`, written in the same statement as that password). Switching between Microsoft and
+ * Google is not possible (their presets differ), and switching to one bumps the version (`writeAccountOAuth`).
  */
 export async function storeRefreshedTokens(
 	env: StoreEnv,
@@ -212,7 +234,7 @@ export async function storeRefreshedTokens(
 	now: Date,
 ): Promise<boolean> {
 	const result = await env.DB.prepare(
-		"UPDATE external_accounts SET secret = COALESCE(?, secret), oauth_access_token = ?, oauth_expires_at = ?, oauth_scopes = ?, oauth_token_version = oauth_token_version + 1, updated_at = ? WHERE id = ? AND oauth_token_version = ? AND auth_kind = 'oauth_microsoft' AND secret <> ''",
+		"UPDATE external_accounts SET secret = COALESCE(?, secret), oauth_access_token = ?, oauth_expires_at = ?, oauth_scopes = ?, oauth_token_version = oauth_token_version + 1, updated_at = ? WHERE id = ? AND oauth_token_version = ? AND auth_kind <> 'password' AND secret <> ''",
 	)
 		.bind(
 			tokens.sealedRefreshToken,
@@ -228,19 +250,28 @@ export async function storeRefreshedTokens(
 }
 
 /**
- * The tokens of a connect or reconnect, written after the row's own columns: the refresh token and the version bump
- * go in the same statement, so a refresh that started before the reconnect fails its compare-and-swap and can never
- * store its older token over this one.
+ * The tokens of a connect or reconnect, written after the row's own columns: the refresh token, the sign-in kind and
+ * the version bump go in the same statement, so a refresh that started before the reconnect fails its
+ * compare-and-swap and can never store its older token over this one, and a Gmail account that switches from an app
+ * password to Google sign-in is never seen with the one kind and the other's secret.
  */
 export async function writeAccountOAuth(
 	env: StoreEnv,
 	accountId: string,
-	values: { sealedRefreshToken: string; sealedAccessToken: string; expiresAt: Date; scopes: string; subject: string },
+	values: {
+		authKind: "oauth_microsoft" | "oauth_google";
+		sealedRefreshToken: string;
+		sealedAccessToken: string;
+		expiresAt: Date;
+		scopes: string;
+		subject: string;
+	},
 ): Promise<void> {
 	await env.DB.prepare(
-		"UPDATE external_accounts SET secret = ?, oauth_access_token = ?, oauth_expires_at = ?, oauth_scopes = ?, oauth_subject = ?, oauth_token_version = oauth_token_version + 1 WHERE id = ?",
+		"UPDATE external_accounts SET auth_kind = ?, secret = ?, oauth_access_token = ?, oauth_expires_at = ?, oauth_scopes = ?, oauth_subject = ?, oauth_token_version = oauth_token_version + 1 WHERE id = ?",
 	)
 		.bind(
+			values.authKind,
 			values.sealedRefreshToken,
 			values.sealedAccessToken,
 			toSeconds(values.expiresAt),
@@ -251,7 +282,7 @@ export async function writeAccountOAuth(
 		.run();
 }
 
-/** The `<tid>:<oid>` the account was connected as, or null (never recorded). */
+/** The user id the account was connected as (`<tid>:<oid>` at Microsoft, `sub` at Google), or null (never recorded). */
 export async function readOAuthSubject(env: StoreEnv, accountId: string): Promise<string | null> {
 	const row = await env.DB.prepare("SELECT oauth_subject AS subject FROM external_accounts WHERE id = ?")
 		.bind(accountId)

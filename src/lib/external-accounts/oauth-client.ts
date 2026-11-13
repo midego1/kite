@@ -1,7 +1,12 @@
 import { createLogger } from "@/lib/logger.mjs";
 import { openSetting, SecretBoxError, sealSetting } from "@/lib/security/secret-box";
 import { ExternalAccountRefusal } from "./errors";
-import { readStoredMicrosoftClient, replaceStoredMicrosoftClient, writeStoredMicrosoftClient } from "./oauth-store";
+import {
+	readStoredOAuthClient,
+	replaceStoredMicrosoftClient,
+	type StoredClientProvider,
+	writeStoredOAuthClient,
+} from "./oauth-store";
 import type { MicrosoftClientStatus } from "./types";
 import {
 	clientCheckVerdict,
@@ -18,7 +23,7 @@ import {
 
 const logger = createLogger("external");
 
-type ClientEnv = Pick<
+export type ClientEnv = Pick<
 	CloudflareEnv,
 	| "DB"
 	| "APP_ENCRYPTION_KEY"
@@ -26,6 +31,9 @@ type ClientEnv = Pick<
 	| "MICROSOFT_OAUTH_CLIENT_ID"
 	| "MICROSOFT_OAUTH_CLIENT_SECRET"
 	| "MICROSOFT_OAUTH_TENANT"
+	| "GOOGLE_OAUTH_CLIENT_ID"
+	| "GOOGLE_OAUTH_CLIENT_SECRET"
+	| "GOOGLE_OAUTH_HOSTED_DOMAIN"
 	| "EXTERNAL_OAUTH_TEST_ORIGIN"
 >;
 
@@ -38,33 +46,36 @@ function envClient(env: ClientEnv): MicrosoftClient | null {
 	return { clientId, clientSecret, tenant: isTenant(tenant) ? tenant : "common" };
 }
 
-type SavedClient = { client: MicrosoftClient | null; unreadable: boolean; migrationPending: boolean };
+export type SavedClient<T> = { client: T | null; unreadable: boolean; migrationPending: boolean };
 
-async function readSavedClient(env: ClientEnv): Promise<SavedClient> {
-	const stored = await readStoredMicrosoftClient(env);
+/** A provider's OAuth client saved in Admin → General, opened and parsed; unreadable when the key cannot open it. */
+export async function readSavedClient<T>(
+	env: ClientEnv,
+	provider: StoredClientProvider,
+	parse: (json: string | null) => T | null,
+): Promise<SavedClient<T>> {
+	const stored = await readStoredOAuthClient(env, provider);
 	if (stored === undefined) return { client: null, unreadable: false, migrationPending: true };
 	if (!stored) return { client: null, unreadable: false, migrationPending: false };
 	try {
-		return {
-			client: parseStoredMicrosoftClient(await openSetting(env, stored)),
-			unreadable: false,
-			migrationPending: false,
-		};
+		return { client: parse(await openSetting(env, stored)), unreadable: false, migrationPending: false };
 	} catch (error) {
 		if (!(error instanceof SecretBoxError)) throw error;
-		logger.warn("external.oauth_client_unreadable", {});
+		logger.warn("external.oauth_client_unreadable", { provider });
 		return { client: null, unreadable: true, migrationPending: false };
 	}
 }
 
+const readSavedMicrosoftClient = (env: ClientEnv) => readSavedClient(env, "microsoft", parseStoredMicrosoftClient);
+
 /** The registration sign-ins and refreshes use: the environment's, else the one saved in Admin → General. */
 export async function resolveMicrosoftClient(env: ClientEnv): Promise<MicrosoftClient | null> {
-	return envClient(env) ?? (await readSavedClient(env)).client;
+	return envClient(env) ?? (await readSavedMicrosoftClient(env)).client;
 }
 
 export async function microsoftClientStatus(env: ClientEnv, requestOrigin: string): Promise<MicrosoftClientStatus> {
 	const fromEnv = envClient(env);
-	const saved = await readSavedClient(env);
+	const saved = await readSavedMicrosoftClient(env);
 	const client = fromEnv ?? saved.client;
 	return {
 		source: fromEnv ? "env" : saved.client ? "settings" : null,
@@ -91,7 +102,7 @@ export async function pinMicrosoftTenant(
 	tenantId: string,
 ): Promise<string | null> {
 	if (envClient(env) || !isTenantDomain(client.tenant)) return null;
-	const stored = await readStoredMicrosoftClient(env);
+	const stored = await readStoredOAuthClient(env, "microsoft");
 	if (!stored) return null;
 	try {
 		const saved = parseStoredMicrosoftClient(await openSetting(env, stored));
@@ -104,7 +115,7 @@ export async function pinMicrosoftTenant(
 		if (!(error instanceof SecretBoxError)) throw error;
 		return null;
 	}
-	return (await readSavedClient(env)).client?.tenantId ?? null;
+	return (await readSavedMicrosoftClient(env)).client?.tenantId ?? null;
 }
 
 /** `fetch`, sent to the loopback stand-in for Microsoft when `EXTERNAL_OAUTH_TEST_ORIGIN` allows it. */
@@ -112,8 +123,39 @@ export function oauthTestOriginFor(env: Pick<CloudflareEnv, "EXTERNAL_OAUTH_TEST
 	return oauthTestOrigin(env.EXTERNAL_OAUTH_TEST_ORIGIN, process.env.NODE_ENV);
 }
 
-/** How long a request to Microsoft's token endpoint may take. */
+/** How long a request to a provider's token endpoint may take. */
 export const TOKEN_REQUEST_TIMEOUT_MS = 15_000;
+
+/**
+ * Redeems a made-up authorization code with an OAuth client at a token endpoint, which refuses it either way, and
+ * answers the status and body for the provider's verdict; null when the endpoint could not be reached. Nothing is
+ * created at the provider.
+ */
+export async function redeemMadeUpCode(
+	tokenUrl: string,
+	body: URLSearchParams,
+	fetcher: typeof fetch = fetch,
+): Promise<{ status: number; body: unknown } | null> {
+	try {
+		const response = await fetcher(tokenUrl, {
+			method: "POST",
+			headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
+			body,
+			redirect: "manual",
+			signal: AbortSignal.timeout(TOKEN_REQUEST_TIMEOUT_MS),
+		});
+		return { status: response.status, body: await response.json().catch(() => null) };
+	} catch {
+		return null;
+	}
+}
+
+/** The made-up code and PKCE verifier a check redeems; no provider ever issued them. */
+export const CHECK_GRANT = {
+	kind: "authorization_code",
+	code: "kite-registration-check",
+	verifier: "kite-registration-check-0000000000000000000000000",
+} as const;
 
 /**
  * Checks a registration before it is saved: redeems a made-up authorization code with it, which Microsoft refuses
@@ -126,37 +168,33 @@ export async function validateMicrosoftClient(
 	fetcher: typeof fetch = fetch,
 ): Promise<ClientCheck> {
 	const endpoints = microsoftEndpoints(client.tenant, oauthTestOriginFor(env));
-	const body = tokenRequestBody(client, {
-		kind: "authorization_code",
-		code: "kite-registration-check",
-		verifier: "kite-registration-check-0000000000000000000000000",
-		redirectUri,
-	});
-	try {
-		const response = await fetcher(endpoints.token, {
-			method: "POST",
-			headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
-			body,
-			redirect: "manual",
-			signal: AbortSignal.timeout(TOKEN_REQUEST_TIMEOUT_MS),
-		});
-		return clientCheckVerdict(response.status, await response.json().catch(() => null));
-	} catch {
-		return { verdict: "unverified" };
-	}
+	const answer = await redeemMadeUpCode(
+		endpoints.token,
+		tokenRequestBody(client, { ...CHECK_GRANT, redirectUri }),
+		fetcher,
+	);
+	return answer ? clientCheckVerdict(answer.status, answer.body) : { verdict: "unverified" };
 }
 
-/** Saves the registration sealed. Refused without APP_ENCRYPTION_KEY: the client secret is only ever stored sealed. */
-export async function saveMicrosoftClient(env: ClientEnv, client: MicrosoftClient): Promise<void> {
+/**
+ * Saves a provider's OAuth client sealed. Refused without APP_ENCRYPTION_KEY: the client secret is only ever stored
+ * sealed.
+ */
+export async function saveSealedClient(env: ClientEnv, provider: StoredClientProvider, client: object): Promise<void> {
 	if (!env.APP_ENCRYPTION_KEY?.trim())
 		throw new ExternalAccountRefusal(
 			409,
 			"Set APP_ENCRYPTION_KEY first. Kite only ever saves the client secret encrypted.",
 			"NO_KEY",
 		);
-	await writeStoredMicrosoftClient(env, await sealSetting(env, JSON.stringify(client)), new Date());
+	await writeStoredOAuthClient(env, provider, await sealSetting(env, JSON.stringify(client)), new Date());
+}
+
+/** Saves the registration sealed. Refused without APP_ENCRYPTION_KEY: the client secret is only ever stored sealed. */
+export function saveMicrosoftClient(env: ClientEnv, client: MicrosoftClient): Promise<void> {
+	return saveSealedClient(env, "microsoft", client);
 }
 
 export async function clearMicrosoftClient(env: ClientEnv): Promise<void> {
-	await writeStoredMicrosoftClient(env, null, new Date());
+	await writeStoredOAuthClient(env, "microsoft", null, new Date());
 }

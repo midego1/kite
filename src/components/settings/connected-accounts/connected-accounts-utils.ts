@@ -1,5 +1,6 @@
 import { authFetch } from "@/lib/auth/client";
-import type { ExternalAccountStatus, ExternalAccountView } from "@/lib/external-accounts/types";
+import type { OAuthProviderId } from "@/lib/external-accounts/oauth-provider-utils";
+import type { ExternalAccountStatus, ExternalAccountView, OAuthProviders } from "@/lib/external-accounts/types";
 import type { AccountFormState, ConnectedAccountsState, PresetOption } from "./connected-accounts-types";
 
 export const CONNECTED_ACCOUNTS_QUERY_KEY = ["external-accounts"];
@@ -172,17 +173,20 @@ export function statusHint(
 	if (account.statusReason === "restored") return "Restored from a backup without its password. Reconnect it.";
 	if (account.status === "disabled")
 		return "The saved password was erased after connected accounts were not allowed for 30 days. Reconnect it.";
-	if (account.status === "auth_failed")
-		return account.authKind === "oauth_microsoft"
-			? "Microsoft sign-in expired or was revoked. Reconnect to sign in with Microsoft again."
-			: "Sign-in failed. Reconnect with the current (app) password.";
+	if (account.status === "auth_failed") {
+		if (account.authKind === "oauth_microsoft")
+			return "Microsoft sign-in expired or was revoked. Reconnect to sign in with Microsoft again.";
+		if (account.authKind === "oauth_google")
+			return "Google sign-in expired or was revoked. Reconnect to sign in with Google again.";
+		return "Sign-in failed. Reconnect with the current (app) password.";
+	}
 	if (account.status === "tls_failed") return "The server's certificate is not valid. Edit the server to retry.";
 	return null;
 }
 
 /**
- * Whether the form is complete enough to send; a new account always needs both passwords. With Microsoft sign-in
- * (`oauth`) a new account needs only the Kite password, and an edit of a Microsoft account no password at all.
+ * Whether the form is complete enough to send; a new account always needs both passwords. With Microsoft or Google
+ * sign-in (`oauth`) a new account needs only the Kite password, and an edit of such an account no password at all.
  */
 export function canSubmitAccountForm(
 	form: AccountFormState,
@@ -199,28 +203,56 @@ export function canSubmitAccountForm(
 }
 
 /**
- * Whether the dialog signs in with Microsoft instead of a password: a new Microsoft account once the owner set it up
- * (`microsoftSignIn`), a connected one always.
+ * Whether the dialog moves a saved Google sign-in account to an app password (the person chose **Use an app
+ * password instead**): it then needs the new password, like a new account, and the form is not an ordinary edit.
  */
-export function usesMicrosoftSignIn(
+export function switchesToPassword(
+	account: Pick<ExternalAccountView, "authKind"> | null,
+	oauth: OAuthProviderId | null,
+): boolean {
+	return !!account && account.authKind !== "password" && !oauth;
+}
+
+/** The provider name on buttons and messages. */
+export const OAUTH_LABELS: Record<OAuthProviderId, string> = { microsoft: "Microsoft", google: "Google" };
+
+/**
+ * Which provider the dialog signs in with instead of a password, or null for a password. Microsoft: a new Microsoft
+ * account once the owner set it up, a connected one always. Google: a Gmail or Workspace account that signs in with
+ * Google, or a new one once the owner set it up, unless the person chose an app password (`preferPassword`); an
+ * account that uses an app password keeps its password fields (the dialog offers Sign in with Google next to them).
+ */
+export function oauthSignInFor(
 	preset: AccountFormState["preset"],
 	account: Pick<ExternalAccountView, "authKind"> | null,
-	microsoftSignIn: boolean,
-): boolean {
-	return preset === "microsoft" && (microsoftSignIn || account?.authKind === "oauth_microsoft");
+	providers: OAuthProviders,
+	preferPassword = false,
+): OAuthProviderId | null {
+	if (preset === "microsoft")
+		return providers.microsoft || account?.authKind === "oauth_microsoft" ? "microsoft" : null;
+	if (preset !== "gmail" && preset !== "google_workspace") return null;
+	if (preferPassword) return null;
+	if (account) return account.authKind === "oauth_google" ? "google" : null;
+	return providers.google ? "google" : null;
 }
 
 /**
- * Starts **Sign in with Microsoft** (spec §15.2) and answers the URL of Microsoft's sign-in page to open. With
- * `accountId` it reconnects that account; otherwise the form's mailbox, label and interval go with the new account.
+ * Starts **Sign in with Microsoft** or **Sign in with Google** (spec §15.2) and answers the URL of the provider's
+ * sign-in page to open. With `accountId` it reconnects that account; otherwise the form's mailbox, label and interval
+ * go with the new account.
  */
-export async function startMicrosoftSignIn(form: AccountFormState, accountId?: string): Promise<string> {
+export async function startProviderSignIn(
+	provider: OAuthProviderId,
+	form: AccountFormState,
+	accountId?: string,
+): Promise<string> {
 	const response = await authFetch("/api/external-accounts/oauth/start", {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify({
-			provider: "microsoft",
+			provider,
 			address: form.address.trim(),
+			preset: form.preset,
 			label: form.label.trim() || undefined,
 			mailboxId: form.mailboxId,
 			syncIntervalMinutes: Number(form.syncIntervalMinutes),
@@ -228,7 +260,7 @@ export async function startMicrosoftSignIn(form: AccountFormState, accountId?: s
 			...(accountId ? { accountId } : {}),
 		}),
 	});
-	return (await readJson<{ url: string }>(response, "Could not start the Microsoft sign-in")).url;
+	return (await readJson<{ url: string }>(response, `Could not start the ${OAUTH_LABELS[provider]} sign-in`)).url;
 }
 
 /** The intervals the owner can choose (spec §6.3, decision 9). */
@@ -321,16 +353,19 @@ export function sendingText(account: Pick<ExternalAccountView, "address" | "send
 	}
 }
 
-/** The dialog's submit button: what it is doing while it works (creating a mailbox, then testing the connection). */
+/**
+ * The dialog's submit button: what it is doing while it works (creating a mailbox, then testing the connection, or
+ * opening the provider's sign-in page for `oauth`).
+ */
 export function submitLabel(
-	saving: "mailbox" | "account" | "delete" | "microsoft" | null,
+	saving: "mailbox" | "account" | "delete" | "oauth" | null,
 	editing: boolean,
-	microsoft = false,
+	oauth: OAuthProviderId | null = null,
 ): string {
 	if (saving === "mailbox") return "Creating the mailbox…";
-	if (saving === "microsoft") return "Opening Microsoft…";
-	if (saving === "account") return microsoft ? "Saving…" : "Testing the connection…";
-	if (microsoft && !editing) return "Sign in with Microsoft";
+	if (saving === "oauth") return `Opening ${OAUTH_LABELS[oauth ?? "microsoft"]}…`;
+	if (saving === "account") return oauth ? "Saving…" : "Testing the connection…";
+	if (oauth && !editing) return `Sign in with ${OAUTH_LABELS[oauth]}`;
 	return editing ? "Save" : "Connect";
 }
 

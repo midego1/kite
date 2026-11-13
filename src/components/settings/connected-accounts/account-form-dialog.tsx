@@ -9,7 +9,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
-import type { ExternalAccountView } from "@/lib/external-accounts/types";
+import type { OAuthProviderId } from "@/lib/external-accounts/oauth-provider-utils";
+import type { ExternalAccountView, OAuthProviders } from "@/lib/external-accounts/types";
 import type { AccountFormState, PresetOption } from "./connected-accounts-types";
 import { forwardingProviderFor, type ForwardingProviderId } from "./forwarding-guide-utils";
 import { MailboxField, MailboxLeftBehind } from "./account-mailbox-field";
@@ -21,28 +22,33 @@ import {
 	submitLabel,
 	detectProvider,
 	emptyAccountForm,
+	OAUTH_LABELS,
+	oauthSignInFor,
 	SYNC_INTERVAL_OPTIONS,
 	saveAccount,
-	startMicrosoftSignIn,
-	usesMicrosoftSignIn,
+	startProviderSignIn,
+	switchesToPassword,
 } from "./connected-accounts-utils";
-import { MicrosoftLogo, MicrosoftSignInFields } from "./microsoft-sign-in";
+import { OAuthChoice, ProviderLogo } from "./oauth-sign-in";
 
 type FieldsProps = { form: AccountFormState; setForm: (form: AccountFormState) => void };
+
+const NO_PROVIDERS: OAuthProviders = { microsoft: false, google: false };
 
 const mailboxAddress = (mailbox: MailboxOption) => `${mailbox.localPart}@${mailbox.hostname}`;
 
 /**
  * Connect an account, or edit one (`account` set). A known provider brings its own servers; "Other" asks for them.
  * The Kite password is asked again because the account's password is saved (spec §11.5). Microsoft accounts sign in
- * with Microsoft instead (`microsoftSignIn`, spec §15): the dialog sends the browser to Microsoft's sign-in page.
+ * with Microsoft instead, and Gmail and Workspace accounts with Google unless the person picks an app password
+ * (`oauthProviders`, spec §15): the dialog sends the browser to the provider's sign-in page.
  */
 export function AccountFormDialog({
 	open,
 	onOpenChange,
 	account,
 	presets,
-	microsoftSignIn = false,
+	oauthProviders = NO_PROVIDERS,
 	onSaved,
 	onForwardInstead,
 	onMailboxLeftBehind,
@@ -51,8 +57,8 @@ export function AccountFormDialog({
 	onOpenChange: (open: boolean) => void;
 	account: ExternalAccountView | null;
 	presets: PresetOption[];
-	/** The owner set up Sign in with Microsoft, so Microsoft accounts can be connected. */
-	microsoftSignIn?: boolean;
+	/** The provider sign-ins the owner set up (Sign in with Microsoft, Sign in with Google). */
+	oauthProviders?: OAuthProviders;
 	/** Closes the dialog and opens the forwarding guide at this provider (where connecting is not possible). */
 	onForwardInstead?: (provider: ForwardingProviderId) => void;
 	/** `unusedMailbox`: the address of a mailbox Kite created for this try that the account was not connected to. */
@@ -67,7 +73,10 @@ export function AccountFormDialog({
 	);
 	// The mailboxes may arrive after the dialog opened; until one is chosen, the first one the user manages is used.
 	const chosenId = firstId(draft.mailboxId, managed[0]?.id);
-	const [saving, setSaving] = useState<"mailbox" | "account" | "delete" | "microsoft" | null>(null);
+	const [saving, setSaving] = useState<"mailbox" | "account" | "delete" | "oauth" | null>(null);
+	// The provider whose sign-in page is opening, and whether a Google account uses an app password after all.
+	const [opening, setOpening] = useState<OAuthProviderId | null>(null);
+	const [preferPassword, setPreferPassword] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	// With no mailbox to choose from (a new account of someone who may create mailboxes) the new mailbox is the choice.
 	const fresh = useNewMailbox({
@@ -87,7 +96,9 @@ export function AccountFormDialog({
 	};
 	const preset = presets.find((entry) => entry.id === form.preset);
 	const editing = !!account;
-	const microsoft = usesMicrosoftSignIn(form.preset, account, microsoftSignIn);
+	const oauth = oauthSignInFor(form.preset, account, oauthProviders, preferPassword);
+	// A Google account moving to an app password needs that password, so the form checks it as a new sign-in.
+	const passwordEdit = editing && !switchesToPassword(account, oauth);
 	const { created } = fresh;
 	const mailbox = managed.find((entry) => entry.id === form.mailboxId);
 
@@ -122,8 +133,8 @@ export function AccountFormDialog({
 		// From here on the dialog stands on the new mailbox, so a second try reuses it instead of making another.
 		const connecting = target ? { ...form, mailboxId: target.id } : form;
 		if (target) setForm(connecting);
-		if (microsoft && !editing) {
-			await signInWithMicrosoft(connecting);
+		if (oauth && !editing) {
+			await signInWith(oauth, connecting);
 			return;
 		}
 		setSaving("account");
@@ -140,15 +151,17 @@ export function AccountFormDialog({
 		}
 	}
 
-	/** Opens Microsoft's sign-in page; the callback brings the browser back to Connected accounts. */
-	async function signInWithMicrosoft(source: AccountFormState, accountId?: string) {
-		setSaving("microsoft");
+	/** Opens the provider's sign-in page; the callback brings the browser back to Connected accounts. */
+	async function signInWith(provider: OAuthProviderId, source: AccountFormState, accountId?: string) {
+		setSaving("oauth");
+		setOpening(provider);
 		setError(null);
 		try {
-			window.location.assign(await startMicrosoftSignIn(source, accountId));
+			window.location.assign(await startProviderSignIn(provider, source, accountId));
 		} catch (startError) {
-			setError(errorText(startError, "Could not start the Microsoft sign-in"));
+			setError(errorText(startError, `Could not start the ${OAUTH_LABELS[provider]} sign-in`));
 			setSaving(null);
+			setOpening(null);
 		}
 	}
 
@@ -172,7 +185,8 @@ export function AccountFormDialog({
 					<DialogTitle>{editing ? `Edit ${account.address}` : "Connect an account"}</DialogTitle>
 					<DialogDescription>
 						Kite signs in to the account over an encrypted connection and saves{" "}
-						{microsoft ? "its Microsoft sign-in" : "the password"} encrypted. Nothing at the provider is changed.
+						{oauth ? `its ${OAUTH_LABELS[oauth]} sign-in` : "the password"} encrypted. Nothing at the provider is
+						changed.
 					</DialogDescription>
 				</DialogHeader>
 				<form onSubmit={(event) => void submit(event)} className="space-y-4" aria-label="Account settings">
@@ -194,14 +208,13 @@ export function AccountFormDialog({
 						form={form}
 						setForm={setForm}
 						preset={preset}
-						editing={editing}
-						microsoft={microsoft}
+						account={account}
+						oauth={oauth}
+						googleSetUp={oauthProviders.google}
+						busy={saving !== null}
+						onSignIn={(provider, accountId) => void signInWith(provider, form, accountId)}
+						onPreferPassword={setPreferPassword}
 						onForwardInstead={onForwardInstead}
-						reconnect={
-							account?.authKind === "oauth_microsoft"
-								? { busy: saving !== null, onClick: () => void signInWithMicrosoft(form, account.id) }
-								: null
-						}
 					/>
 					<MailboxField form={form} setForm={setForm} mailboxes={managed} fresh={fresh} />
 					<IntervalField form={form} setForm={setForm} />
@@ -227,9 +240,11 @@ export function AccountFormDialog({
 						</Button>
 						<Button
 							type="submit"
-							disabled={saving !== null || !!fresh.problem || !canSubmitAccountForm(form, editing, preset, microsoft)}
+							disabled={
+								saving !== null || !!fresh.problem || !canSubmitAccountForm(form, passwordEdit, preset, !!oauth)
+							}
 						>
-							<SubmitLabel saving={saving} editing={editing} microsoft={microsoft} />
+							<SubmitLabel saving={saving} editing={editing} oauth={saving === "oauth" ? opening : oauth} />
 						</Button>
 					</div>
 				</form>
@@ -238,64 +253,94 @@ export function AccountFormDialog({
 	);
 }
 
-/** The submit button's text, with Microsoft's logo while it reads Sign in with Microsoft. */
+/** The submit button's text, with the provider's logo while it reads Sign in with Microsoft or Google. */
 function SubmitLabel({
 	saving,
 	editing,
-	microsoft,
+	oauth,
 }: {
 	saving: Parameters<typeof submitLabel>[0];
 	editing: boolean;
-	microsoft: boolean;
+	oauth: OAuthProviderId | null;
 }) {
 	return (
 		<>
-			{microsoft && !editing && saving === null && <MicrosoftLogo />}
-			{submitLabel(saving, editing, microsoft)}
+			{oauth && !editing && saving === null && <ProviderLogo provider={oauth} />}
+			{submitLabel(saving, editing, oauth)}
 		</>
 	);
 }
 
 /**
- * How the account signs in: the servers ("Other"), the password fields, Sign in with Microsoft, or, for a Microsoft
- * account on a Kite without Microsoft sign-in, the offer to forward its mail instead.
+ * How the account signs in: the servers ("Other"), the password fields, Sign in with Microsoft or Google, or, for a
+ * Microsoft account on a Kite without Microsoft sign-in, the offer to forward its mail instead. A saved OAuth account
+ * offers to sign in again; a Gmail or Workspace account can switch between an app password and Google sign-in.
  */
 function SignInFields({
 	form,
 	setForm,
 	preset,
-	editing,
-	microsoft,
+	account,
+	oauth,
+	googleSetUp,
+	busy,
+	onSignIn,
+	onPreferPassword,
 	onForwardInstead,
-	reconnect,
 }: FieldsProps & {
 	preset: PresetOption | undefined;
-	editing: boolean;
-	microsoft: boolean;
+	account: ExternalAccountView | null;
+	oauth: OAuthProviderId | null;
+	googleSetUp: boolean;
+	busy: boolean;
+	onSignIn: (provider: OAuthProviderId, accountId?: string) => void;
+	onPreferPassword: (prefer: boolean) => void;
 	onForwardInstead?: (provider: ForwardingProviderId) => void;
-	reconnect: { busy: boolean; onClick: () => void } | null;
 }) {
+	const editing = !!account && !switchesToPassword(account, oauth);
 	return (
 		<>
-			{preset?.passwordSignIn === false && !microsoft && onForwardInstead && (
-				<Notice tone="warning" compact icon={false} role="none">
-					{form.preset === "microsoft" && "Microsoft sign-in is not set up on this Kite yet; ask your admin. "}
-					Forward this account&apos;s mail to Kite instead: it needs no password.{" "}
-					<button
-						type="button"
-						className="font-medium underline underline-offset-2"
-						onClick={() => onForwardInstead(forwardingProviderFor(preset.id))}
-					>
-						Set up forwarding
-					</button>
-				</Notice>
+			{preset?.passwordSignIn === false && !oauth && onForwardInstead && (
+				<ForwardInstead preset={preset} onForwardInstead={onForwardInstead} />
 			)}
 			{form.preset === "other" && <ServerFields form={form} setForm={setForm} />}
-			{preset?.passwordSignIn !== false && (
+			{preset?.passwordSignIn !== false && !oauth && (
 				<CredentialFields form={form} setForm={setForm} preset={preset} editing={editing} />
 			)}
-			{microsoft && <MicrosoftSignInFields form={form} setForm={setForm} reconnect={reconnect} />}
+			<OAuthChoice
+				form={form}
+				setForm={setForm}
+				account={account}
+				oauth={oauth}
+				googleSetUp={googleSetUp}
+				busy={busy}
+				onSignIn={onSignIn}
+				onPreferPassword={onPreferPassword}
+			/>
 		</>
+	);
+}
+
+/** For a provider Kite cannot sign in to here (Microsoft without Microsoft sign-in): forward its mail instead. */
+function ForwardInstead({
+	preset,
+	onForwardInstead,
+}: {
+	preset: PresetOption;
+	onForwardInstead: (provider: ForwardingProviderId) => void;
+}) {
+	return (
+		<Notice tone="warning" compact icon={false} role="none">
+			{preset.id === "microsoft" && "Microsoft sign-in is not set up on this Kite yet; ask your admin. "}
+			Forward this account&apos;s mail to Kite instead: it needs no password.{" "}
+			<button
+				type="button"
+				className="font-medium underline underline-offset-2"
+				onClick={() => onForwardInstead(forwardingProviderFor(preset.id))}
+			>
+				Set up forwarding
+			</button>
+		</Notice>
 	);
 }
 

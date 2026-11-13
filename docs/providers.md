@@ -160,13 +160,104 @@ Kite connects the address the user signed in to Microsoft as: the sign-in name (
 
 The refresh token Microsoft issues is stored encrypted with `APP_ENCRYPTION_KEY` in place of a password, and the current access token is cached encrypted until five minutes before it expires; Microsoft hands out a new refresh token with each renewal, and Kite keeps the newest. Neither is ever shown, logged, sent to the browser or kept in a backup. A user who revokes Kite at <https://account.live.com/consent/Manage> (personal accounts) or <https://myapps.microsoft.com> (work or school), changes their password, or does not use the account for 90 days sees **Sign-in failed** with **Reconnect** on the account.
 
+## Google sign-in for connected accounts
+
+Gmail and Google Workspace accounts can connect with an app password, and that keeps working. **Sign in with Google** lets users skip the app password: they sign in on Google's own page instead. It is the only way for a Google Workspace organisation that does not allow app passwords. Kite ships no shared Google app, so the owner creates an OAuth client in their own Google Cloud project, once, and enters its Client ID and secret under **Admin → General → Connected accounts → Google sign-in**. Users then see **Sign in with Google** when they connect a Gmail or Google Workspace account. This takes about fifteen minutes and needs no billing account.
+
+Before you start:
+
+- `APP_URL` must be the public HTTPS address of Kite (for example `https://mail.example.com`), because Google sends the browser back to it. Google accepts plain `http` only for `localhost`.
+- `APP_ENCRYPTION_KEY` must be set: Kite saves the client secret encrypted and refuses to save it otherwise.
+- Apply the database update from the admin overview (migration 0111). Until then the card says "Apply the pending database update".
+- Open **Admin → General** in Kite and copy the **Authorized redirect URI** shown under **Google sign-in**. It is `APP_URL` followed by `/api/external-accounts/oauth/callback`, the same address as for Microsoft sign-in.
+
+### Who can sign in: Internal, Testing or In production
+
+Full Gmail access over IMAP and SMTP needs the scope `https://mail.google.com/`, which Google classes as **restricted**. That decides how far your app can go without Google's review:
+
+| Audience and status | Who can sign in | What to know |
+| --- | --- | --- |
+| **Internal** (Google Workspace only) | Users of your own Workspace organisation | No verification and no user limit. The best choice for one organisation. Set the **Workspace domain** in Kite too. |
+| **External**, publishing status **Testing** | Only the test users you list, at most 100 | Google shows a "Google hasn't verified this app" screen, and **refresh tokens of a Testing app expire after 7 days**: every account then shows **Sign-in failed** and needs **Reconnect** once a week. Good for trying it out, or for yourself and family; personal Gmail users can keep app passwords instead. |
+| **External**, **In production**, not verified | Any Google account, after the unverified-app warning | Google limits an unverified app with a restricted scope to 100 users in total. Refresh tokens do not expire after 7 days. |
+| **External**, **In production**, verified | Anyone | For a public install with many users. Needs Google's OAuth app verification for the restricted scope, which includes a yearly independent security assessment (CASA) and takes weeks; each install has to do this for its own app, and Kite cannot do it for you. |
+
+### 1. Create a Google Cloud project
+
+1. Open <https://console.cloud.google.com/projectcreate> and sign in with the Google account that should own the app. For an **Internal** app, use an account of your Workspace organisation.
+2. **Project name**: anything, for example `Kite mail`. For an Internal app, choose your organisation as **Location**.
+3. Choose **Create**, and make sure the new project is selected in the bar at the top of the console.
+
+### 2. Set up the consent screen
+
+1. Open the Google Auth Platform at <https://console.cloud.google.com/auth/overview> and choose **Get started**.
+2. **App information**: the **App name** your users will see on Google's consent screen (for example `Kite mail`) and a **User support email**. Choose **Next**.
+3. **Audience**: **Internal** (only your Workspace organisation) or **External** (any Google account; see the table above). Choose **Next**.
+4. **Contact information**: your address. Choose **Next**, agree to the Google API Services User Data Policy, and choose **Create**.
+
+### 3. Add the Gmail scope
+
+1. Open **Data Access** at <https://console.cloud.google.com/auth/scopes> and choose **Add or remove scopes**.
+2. Under **Manually add scopes**, enter `https://mail.google.com/` and choose **Add to table**. Make sure it is ticked, and tick `openid` and `.../auth/userinfo.email` in the list as well.
+3. Choose **Update**, then **Save**.
+
+Kite asks Google for `https://mail.google.com/`, `openid` and `email`, with offline access so it can stay signed in. It reads and sends over IMAP and SMTP, so the Gmail API itself does not have to be enabled; if the scope is not offered, enabling the Gmail API at <https://console.cloud.google.com/apis/library/gmail.googleapis.com> does no harm. Kite never asks for Drive, contacts or calendars.
+
+### 4. External apps: add test users, or publish
+
+Skip this for an **Internal** app.
+
+1. Open **Audience** at <https://console.cloud.google.com/auth/audience>.
+2. While the status is **Testing**: under **Test users**, choose **Add users** and enter the Gmail address of everyone who will connect an account (at most 100). Remember the 7-day refresh-token limit of Testing apps.
+3. To lift that limit, choose **Publish app** and confirm. Until Google has verified the app, users see the unverified-app warning and the app is limited to 100 users.
+
+### 5. Create the OAuth client
+
+1. Open **Clients** at <https://console.cloud.google.com/auth/clients/create>.
+2. **Application type**: **Web application**. **Name**: for example `Kite`.
+3. Under **Authorized redirect URIs**, choose **Add URI** and paste the redirect URI you copied from Kite, exactly (`https://mail.example.com/api/external-accounts/oauth/callback`). No JavaScript origins are needed.
+4. Choose **Create**. Copy the **Client ID** (it ends in `.apps.googleusercontent.com`) and the **Client secret** at once: Google may not show the secret again. You can add another secret on the client's page later.
+
+### 6. Enter it in Kite
+
+1. Open **Admin → General** in Kite (only the primary administrator can change this) and find **Google sign-in** in the **Connected accounts** card.
+2. Enter the **Client ID** and the **Client secret**.
+3. Optional: a **Workspace domain** such as `example.com`. Then only accounts of that Google Workspace domain can sign in (Kite checks the `hd` claim Google puts in a Workspace account's ID token), and Gmail addresses cannot. Use it with an Internal app. Setting or changing it applies to new sign-ins and reconnects; accounts connected before keep their access until they next have to reconnect.
+4. Choose **Save**. Kite checks the Client ID and secret with Google before saving: an unknown client or a wrong secret is refused with Google's reason. The secret is saved encrypted and never shown again; **Replace** and **Remove** are next to it.
+
+The client can also come from the `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET` and (optional) `GOOGLE_OAUTH_HOSTED_DOMAIN` secrets, which win over the saved one, as for Microsoft. When they are set but not valid (a Client ID that does not end in `.apps.googleusercontent.com`, a malformed domain), Google sign-in is off and the card says so; Kite does not fall back to the saved client.
+
+### 7. Google Workspace: allow IMAP and the app
+
+Gmail accounts need nothing here. In a Google Workspace organisation, an administrator checks two things in the Admin console at <https://admin.google.com>:
+
+1. **Apps → Google Workspace → Gmail → End user access → POP and IMAP access**: IMAP access must be on for the users who connect. Without it the sign-in ends with "Gmail refused Kite's IMAP sign-in".
+2. If your organisation restricts third-party apps: **Security → Access and data control → API controls → Manage Third-Party App Access → Configure new app**, search for the Client ID, and set it to **Trusted**. Without it users see that an administrator has to allow the app.
+
+### When the client secret changes
+
+Google refuses a deleted secret, so Kite cannot renew any connected Google account's access: their checks pause with "Google refused this Kite's app registration" and retry on their own. Add a new secret to the client and **Replace** it in Kite; the accounts carry on without anyone reconnecting.
+
+### Which account Kite connects
+
+Kite connects the address Google says the user signed in with, and only a verified one (`email` with `email_verified`). The ID token must come from Google (`iss`), be issued for this Kite's client (`aud`, and `azp` when present), not be expired, and, with a Workspace domain set, carry that domain as `hd`. Kite then signs in to Gmail's IMAP server with the new access before it saves anything. It records Google's user id (`sub`) with the account, and **Reconnect** only accepts the same address signed in as the same Google user. The address typed in the dialog is only a hint for Google's page.
+
+### App passwords keep working
+
+Gmail and Workspace accounts connected with an app password are not changed. To switch one to Google sign-in, open it in **Settings → Connected accounts**, enter your Kite password and choose **Sign in with Google**; **Use an app password instead** in the same dialog switches back. When Google sign-in is set up, a new Gmail account offers **Sign in with Google** first, with **Use an app password instead** one click away.
+
+### What Kite stores for Google
+
+The refresh token Google issues is stored encrypted with `APP_ENCRYPTION_KEY` in place of a password, and the current access token is cached encrypted until five minutes before it expires. Google keeps the same refresh token across renewals. Neither is ever shown, logged, sent to the browser or kept in a backup. A user who removes Kite at <https://myaccount.google.com/connections>, changes their Google password, or whose Testing app's token reached its 7 days sees **Sign-in failed** with **Reconnect** on the account.
+
 ## Configuration reference
 
 | Variable | Purpose |
 |---|---|
 | `RESEND_API_KEY` | Resend key used when none is saved in the app |
 | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION` | SES credentials used when none are saved in the app |
-| `APP_URL` | Public HTTPS address; required for Resend and SES receiving, because the providers call this app, and for Microsoft sign-in, whose redirect URI sits under it |
+| `APP_URL` | Public HTTPS address; required for Resend and SES receiving, because the providers call this app, and for Microsoft and Google sign-in, whose redirect URI sits under it |
 | `MICROSOFT_OAUTH_CLIENT_ID`, `MICROSOFT_OAUTH_CLIENT_SECRET`, `MICROSOFT_OAUTH_TENANT` | Microsoft sign-in for connected accounts, used instead of the registration saved in the app; the tenant defaults to `common` |
+| `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_OAUTH_HOSTED_DOMAIN` | Google sign-in for connected accounts, used instead of the OAuth client saved in the app; the Workspace domain is optional |
 
-Settings saved in the app take precedence over these variables, except Microsoft sign-in, where the variables win. Keys saved in the app are stored as plain text in the `app_settings` table (as the AI provider key already is), so protect database backups accordingly; the Microsoft client secret is the exception and is stored encrypted with `APP_ENCRYPTION_KEY`.
+Settings saved in the app take precedence over these variables, except Microsoft and Google sign-in, where the variables win. Keys saved in the app are stored as plain text in the `app_settings` table (as the AI provider key already is), so protect database backups accordingly; the Microsoft and Google client secrets are the exception and are stored encrypted with `APP_ENCRYPTION_KEY`.

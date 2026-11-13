@@ -8,7 +8,7 @@ import { resolveInboxRuleDestination } from "@/lib/email/routing";
 import type { ParsedEmail } from "@/lib/email/parse";
 import { dispatchWebhooks } from "@/lib/email/webhooks";
 import { upsertContactFromAddress } from "@/lib/contacts/service";
-import { getSenderDisplayName } from "@/lib/contacts/utils";
+import { getPartyDisplayName } from "@/lib/contacts/utils";
 import type { ContactDisplayName, ContactRow } from "@/lib/contacts/types";
 import { sendMailboxAutoReply } from "@/lib/email/auto-reply";
 import { storeMessageAttachments } from "@/lib/email/attachments";
@@ -555,7 +555,7 @@ export async function deliverInboundMessage(env: CloudflareEnv, input: InboundDe
 			status,
 			deliveredAddress: input.deliveredAddress,
 			fromAddr,
-			fromName: getSenderDisplayName(fromAddr, contactDisplayName(contact)),
+			fromName: getPartyDisplayName(fromAddr, contactDisplayName(contact)),
 			parsed,
 			headers: input.headers,
 			external,

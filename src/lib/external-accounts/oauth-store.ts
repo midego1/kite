@@ -1,5 +1,6 @@
 import { missingColumnFromError } from "@/lib/auth/user-lookup-utils";
 import { isNoSuchTableError } from "@/lib/modules/state-utils";
+import { databaseKey } from "@/lib/d1-session-utils";
 
 /**
  * The OAuth columns and table of migration 0105, read and written with plain SQL: none of them is mapped in Drizzle,
@@ -13,12 +14,12 @@ const readyDatabases = new WeakSet<object>();
 
 /** Whether migration 0105 has been applied (its table and columns arrive together). */
 export async function oauthTablesReady(env: StoreEnv): Promise<boolean> {
-	if (readyDatabases.has(env.DB)) return true;
+	if (readyDatabases.has(databaseKey(env.DB))) return true;
 	const row = await env.DB.prepare("SELECT count(*) AS present FROM sqlite_master WHERE type = 'table' AND name = ?")
 		.bind("oauth_states")
 		.first<{ present: number }>();
 	const ready = Number(row?.present ?? 0) === 1;
-	if (ready) readyDatabases.add(env.DB);
+	if (ready) readyDatabases.add(databaseKey(env.DB));
 	return ready;
 }
 

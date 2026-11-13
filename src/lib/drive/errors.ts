@@ -1,5 +1,6 @@
 import { isNoSuchTableError } from "@/lib/modules/state-utils";
 import type { DriveAnswer } from "./types";
+import { databaseKey } from "@/lib/d1-session-utils";
 
 const MIGRATION_PENDING_ERROR = "Apply the pending database update first";
 const MIGRATION_PENDING_CODE = "MIGRATION_PENDING";
@@ -37,14 +38,14 @@ const pending = (): DriveAnswer => fail(409, MIGRATION_PENDING_ERROR, MIGRATION_
  * statement never names a table that may be missing.
  */
 export async function driveTablesReady(env: CloudflareEnv): Promise<boolean> {
-	if (readyDatabases.has(env.DB)) return true;
+	if (readyDatabases.has(databaseKey(env.DB))) return true;
 	const row = await env.DB.prepare(
 		`SELECT count(*) AS present FROM sqlite_master WHERE type = 'table' AND name IN (${DRIVE_TABLES.map(() => "?").join(", ")})`,
 	)
 		.bind(...DRIVE_TABLES)
 		.first<{ present: number }>();
 	const ready = Number(row?.present ?? 0) === DRIVE_TABLES.length;
-	if (ready) readyDatabases.add(env.DB);
+	if (ready) readyDatabases.add(databaseKey(env.DB));
 	return ready;
 }
 

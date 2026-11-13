@@ -18,6 +18,7 @@ import { resolveMailboxAgentSettings } from "./settings-utils";
 import type { MailboxAgentSettingsState } from "./settings-types";
 import { buildStepInput } from "./step-input-utils";
 import { loadTriageContext } from "./triage-context";
+import { databaseKey } from "@/lib/d1-session-utils";
 
 /**
  * Backfill for module triage steps (spec money-watch §25.5): the inbound mail a step would have read had it been on,
@@ -58,8 +59,8 @@ function stepFor(moduleId: ModuleId, switchKey: string) {
 function eligibleMailboxes(env: CloudflareEnv, viewer: Viewer, moduleId: ModuleId, capability: string) {
 	const key = `${viewer.userId}\n${moduleId}\n${capability}`;
 	const now = Date.now();
-	let eligibleCache = eligibleCaches.get(env.DB);
-	if (!eligibleCache) eligibleCaches.set(env.DB, (eligibleCache = new Map()));
+	let eligibleCache = eligibleCaches.get(databaseKey(env.DB));
+	if (!eligibleCache) eligibleCaches.set(databaseKey(env.DB), (eligibleCache = new Map()));
 	const cached = eligibleCache.get(key);
 	if (cached && now - cached.at < ELIGIBLE_TTL_MS) return cached.value;
 	const value = resolveEligible(env, viewer, moduleId, capability);

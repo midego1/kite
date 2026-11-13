@@ -12,6 +12,7 @@ import { skipPendingMailboxJobs } from "./auto-read/install-settings";
 import { ensureMailboxAgentSettingsRow } from "./auto-read/mailbox-settings";
 import { notifySuggestionsQuietly } from "./auto-read/suggestion-events";
 import { MAILBOX_AI_OFF_REASON } from "./mailbox-ai-utils";
+import { databaseKey } from "@/lib/d1-session-utils";
 
 /** The audit action of turning "No AI for this mailbox" on or off. */
 const MAILBOX_AI_AUDIT_ACTION = "agent.mailbox_ai";
@@ -25,11 +26,11 @@ const appliedDatabases = new WeakSet<object>();
  * last settings save). Reads only the column list, never the columns themselves.
  */
 async function mailboxAiColumns(env: CloudflareEnv): Promise<{ disabled: boolean; disabledAt: boolean }> {
-	if (appliedDatabases.has(env.DB)) return { disabled: true, disabledAt: true };
+	if (appliedDatabases.has(databaseKey(env.DB))) return { disabled: true, disabledAt: true };
 	const { results } = await env.DB.prepare("PRAGMA table_info(mailbox_agent_settings)").all<{ name: string }>();
 	const names = new Set(results.map((column) => column.name));
 	const columns = { disabled: names.has("ai_disabled"), disabledAt: names.has("ai_disabled_at") };
-	if (columns.disabled && columns.disabledAt) appliedDatabases.add(env.DB);
+	if (columns.disabled && columns.disabledAt) appliedDatabases.add(databaseKey(env.DB));
 	return columns;
 }
 

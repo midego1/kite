@@ -104,6 +104,44 @@ test("a conversation row counts unread messages only among those it stands for i
 	assert.equal(all.threadMessageIds.length, 4);
 });
 
+test("Sent rows to a shared address keep each message's own To name unless the user named the contact", async (t) => {
+	const database = new m.SqliteDatabase(":memory:");
+	t.after(() => database.db.close());
+	await m.applyMigrations(database, join(root, "drizzle/migrations"));
+	database.db.exec(`
+		INSERT INTO users (id, email, password_hash, name, role, created_at) VALUES ('owner', 'owner@example.test', 'hash', 'Owner', 'admin', 1);
+		INSERT INTO domains (id, user_id, hostname, zone_id, status, created_at) VALUES ('domain', 'owner', 'example.test', 'zone', 'active', 1);
+		INSERT INTO mailboxes (id, user_id, domain_id, local_part, created_at) VALUES ('box', 'owner', 'domain', 'owner', 1);
+		INSERT INTO contacts (id, user_id, email, display_name, source, blocked, created_at) VALUES ('c1', 'owner', 'no-reply@ashbyhq.com', 'PostHog Team', 'outbound', 0, 1);
+		INSERT INTO messages (id, user_id, mailbox_id, direction, from_addr, to_addr, subject, status, read, created_at) VALUES
+			('posthog', 'owner', 'box', 'outbound', 'owner@example.test', '"PostHog Team" <no-reply@ashbyhq.com>', 'One', 'sent', 1, 1),
+			('livekit', 'owner', 'box', 'outbound', 'owner@example.test', '"LiveKit Hiring Team" <no-reply@ashbyhq.com>, bob@partner.test', 'Two', 'sent', 1, 2),
+			('plain', 'owner', 'box', 'outbound', 'owner@example.test', 'bob@partner.test, "LiveKit Hiring Team" <no-reply@ashbyhq.com>', 'Three', 'sent', 1, 3);
+	`);
+	globalThis.__kiteNodeEnv = { DB: database, KITE_RUNTIME: "node" };
+	t.after(() => {
+		delete globalThis.__kiteNodeEnv;
+	});
+	const session = await m.createSession(globalThis.__kiteNodeEnv, "owner");
+	const names = async () => {
+		const response = await m.listMessages(
+			new Request("https://kite.test/api/messages?mailboxId=box&status=sent", {
+				headers: { Authorization: `Bearer ${session}` },
+			}),
+		);
+		assert.equal(response.status, 200);
+		return new Map((await response.json()).messages.map((row) => [row.id, row.toContactName]));
+	};
+	const before = await names();
+	assert.equal(before.get("posthog"), "PostHog Team");
+	assert.equal(before.get("livekit"), "LiveKit Hiring Team", "the first recipient names a multi-recipient To");
+	assert.equal(before.get("plain"), null, "a first recipient without a name falls back to the address");
+	database.db.exec("UPDATE contacts SET display_name = 'Ashby', source = 'manual' WHERE id = 'c1'");
+	const manual = await names();
+	assert.equal(manual.get("posthog"), "Ashby");
+	assert.equal(manual.get("livekit"), "Ashby");
+});
+
 test("groupThreadMembers collects ids and counts only unread inbound messages", () => {
 	const threads = m.groupThreadMembers([
 		{ id: "a", key: "t", read: false, direction: "inbound" },

@@ -25,6 +25,7 @@ import {
 } from "./endpoint-utils";
 import { bucketHost } from "./s3-utils";
 import type { RoutableClass, S3Credentials, S3Location } from "./types";
+import { databaseKey } from "@/lib/d1-session-utils";
 
 const log = createLogger("storage");
 
@@ -135,9 +136,9 @@ async function tablesPresent(env: Pick<CloudflareEnv, "DB">, tables: readonly st
 
 /** Whether migration 0065 has been applied; reads only `sqlite_master`. */
 export async function storageTablesReady(env: Pick<CloudflareEnv, "DB">): Promise<boolean> {
-	if (readyDatabases.has(env.DB)) return true;
+	if (readyDatabases.has(databaseKey(env.DB))) return true;
 	const ready = await tablesPresent(env, STORAGE_TABLES);
-	if (ready) readyDatabases.add(env.DB);
+	if (ready) readyDatabases.add(databaseKey(env.DB));
 	return ready;
 }
 
@@ -147,9 +148,9 @@ export async function storageTablesReady(env: Pick<CloudflareEnv, "DB">): Promis
  * wave a cold rule save through onto tables that do not exist yet.
  */
 export async function coldStorageTablesReady(env: Pick<CloudflareEnv, "DB">): Promise<boolean> {
-	if (coldReadyDatabases.has(env.DB)) return true;
+	if (coldReadyDatabases.has(databaseKey(env.DB))) return true;
 	const ready = await tablesPresent(env, COLD_STORAGE_TABLES);
-	if (ready) coldReadyDatabases.add(env.DB);
+	if (ready) coldReadyDatabases.add(databaseKey(env.DB));
 	return ready;
 }
 
@@ -174,7 +175,7 @@ export async function readStorageConfig(env: StorageEnv): Promise<StorageConfig>
  */
 export function loadStorageConfig(env: StorageEnv): Promise<StorageConfig> {
 	const { entries } = sharedCache();
-	const entry = entries.get(env.DB);
+	const entry = entries.get(databaseKey(env.DB));
 	if (entry && Date.now() - entry.at < entry.ttl) return entry.value;
 	const next: Entry = {
 		at: Date.now(),
@@ -197,7 +198,7 @@ export function loadStorageConfig(env: StorageEnv): Promise<StorageConfig> {
 			return EMPTY_STORAGE_CONFIG;
 		},
 	);
-	entries.set(env.DB, next);
+	entries.set(databaseKey(env.DB), next);
 	return next.value;
 }
 

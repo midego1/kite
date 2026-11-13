@@ -27,5 +27,6 @@ export type ContactDisplayName = {
 export type MessageContactNames = {
 	/** The sender label: a name the user gave the contact, else this message's From name, else a learned name. */
 	fromContactName: string | null;
+	/** The recipient label, resolved the same way for the first To address of the message. */
 	toContactName: string | null;
 };

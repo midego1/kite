@@ -3,8 +3,9 @@ import { STORAGE_STATE } from "./support/constants";
 import { apiContext, setSendingSettings, uniqueToken } from "./support/helpers";
 
 // Typing keeps the caret where it is while something else changes attributes inside the editor, as browser extensions
-// (grammar checkers, password managers) do. The editor used to rewrite its HTML whenever it differed from the value it
-// had just emitted, which put the caret back at the start, so the text came out backwards (upstream Mailflare #267).
+// (grammar checkers, password managers) do. Upstream Mailflare #267: its editor rewrote the HTML whenever it differed
+// from the value, which put the caret back at the start, so the text came out backwards. Kite's editor also skips the
+// rewrite when the value is the one it emitted itself; this guards the behaviour.
 
 const RECIPIENT = "receiver@e2e.test";
 
@@ -40,8 +41,8 @@ test("typing keeps the caret in place while an extension adds attributes to the 
 	});
 
 	await body.pressSequentially("Hello world");
-	const paragraphs = body.locator("> div");
-	await expect(paragraphs.first()).toHaveText("First");
-	await expect(paragraphs.last()).toHaveText("Hello world");
-	expect(await paragraphs.last().getAttribute("data-extension-seen")).not.toBeNull();
+	// The first line may stay loose text or become a paragraph; either way the text reads in the order it was typed.
+	// A caret sent back to the start would have put the second line, backwards, in front of the first.
+	await expect(body).toHaveText("FirstHello world");
+	expect(await body.locator("div").last().getAttribute("data-extension-seen")).not.toBeNull();
 });

@@ -61,6 +61,8 @@ import { storageConnectOrigins } from "./src/lib/storage";
 import { withStorage } from "./src/lib/storage/router";
 import { trustedCloudflareAuthenticationResults } from "./src/lib/spam/authentication-results-utils";
 import { completeRawHeaderValues } from "./src/lib/email/raw-headers";
+import { openD1Session, withD1BookmarkCookie, withD1Session } from "./src/lib/d1-session-utils";
+import { runWithD1Session } from "./src/lib/d1-session-context";
 export { RealtimeHub } from "./src/lib/realtime/hub";
 
 const logger = createLogger("worker");
@@ -114,13 +116,29 @@ async function handleFetch(request: Request, env: CloudflareEnv, ctx: ExecutionC
 	return renderDocumentWithCsp(request, withStorage(env), ctx);
 }
 
+/**
+ * Runs the request on a D1 session anchored at the browser's bookmark cookie, so D1 can serve its reads from read
+ * replicas, and stores the session's newest bookmark on the response. The email, queue and scheduled handlers
+ * below keep the raw binding (the primary) on purpose.
+ */
+async function handleFetchWithD1Session(
+	request: Request,
+	rawEnv: CloudflareEnv,
+	ctx: ExecutionContext,
+): Promise<Response> {
+	const database = openD1Session(rawEnv, request);
+	if (!database) return handleFetch(request, rawEnv, ctx);
+	const response = await runWithD1Session(database, () => handleFetch(request, withD1Session(rawEnv, database), ctx));
+	return withD1BookmarkCookie(request, response, database);
+}
+
 export default {
 	async fetch(request: Request, env: CloudflareEnv, ctx: ExecutionContext) {
-		if (!new URL(request.url).pathname.startsWith("/api/")) return handleFetch(request, env, ctx);
+		if (!new URL(request.url).pathname.startsWith("/api/")) return handleFetchWithD1Session(request, env, ctx);
 		const name = routeTemplate(new URL(request.url).pathname);
 		return traceHttp(
 			request,
-			(traced) => handleFetch(traced, env, ctx),
+			(traced) => handleFetchWithD1Session(traced, env, ctx),
 			logger,
 			({ status, durationMs, failed }) =>
 				recordMetric(env.METRICS, {

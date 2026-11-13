@@ -62,6 +62,7 @@ import { SummarizeButton, ThreadSummaryCard } from "@/components/messages/thread
 import { useThreadSummary } from "@/components/messages/use-thread-summary";
 import { showsCurrentSummary } from "@/components/messages/thread-summary-utils";
 import { useT } from "@/lib/i18n/use-t";
+import { MailingListNotice } from "@/components/messages/mailing-list-notice";
 import { SenderAuthWarningNotice } from "@/components/messages/sender-auth-warning";
 import { SenderAuthBadge } from "@/components/messages/sender-auth-badge";
 import { deriveSenderAuthWarning } from "@/components/messages/sender-auth-warning-utils";
@@ -205,6 +206,7 @@ export default function MessageDetailPage() {
 					status={message.status}
 					read={message.read}
 					unsubscribeUrl={data.unsubscribeUrl}
+					mailingList={data.mailingList}
 					subject={message.subject}
 					bodyText={body?.textBody}
 					ownAddress={ownAddress}
@@ -251,6 +253,12 @@ export default function MessageDetailPage() {
 				<SendStateBanner message={message} alignWide={!isAnyPanelVisible} />
 				<ThreadSummaryCard key={message.id} controller={summary} />
 				<SenderAuthWarningNotice warning={senderAuthWarning} alignWide={!isAnyPanelVisible} />
+				<MailingListNotice
+					message={message}
+					mailingList={data.mailingList}
+					unsubscribeUrl={data.unsubscribeUrl}
+					alignWide={!isAnyPanelVisible}
+				/>
 				<ConversationThread
 					currentMessageId={message.id}
 					threadId={message.threadId}

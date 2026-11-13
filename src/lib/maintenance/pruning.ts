@@ -14,6 +14,7 @@ import { agentActions } from "@/db/schema/agent-auto-read";
 import { aiSummaries } from "@/db/schema/agent-summaries";
 import { assistantEmailRequests } from "@/db/schema/assistant-email";
 import { MCP_TOOL_CALL_ACTION } from "@/lib/mcp/audit";
+import { UNSUBSCRIBE_ONE_CLICK_ACTION } from "@/lib/email/one-click-attempts-utils";
 import { pruneMcpOAuth } from "@/lib/mcp/oauth/service";
 import type { PruningPolicy, PruningResult } from "./pruning-types";
 import {
@@ -176,6 +177,12 @@ export async function runDatabasePruning(
 			policy.mcpToolCallAuditDays,
 			(cutoff) => and(eq(auditLogs.action, MCP_TOOL_CALL_ACTION), lt(auditLogs.createdAt, cutoff)),
 			MCP_AUDIT_DAILY_MAX_BATCHES,
+		],
+		[
+			"unsubscribe_audit_logs",
+			auditLogs,
+			policy.unsubscribeAuditDays,
+			(cutoff) => and(eq(auditLogs.action, UNSUBSCRIBE_ONE_CLICK_ACTION), lt(auditLogs.createdAt, cutoff)),
 		],
 		["agent_actions", agentActions, policy.agentActionsDays, (cutoff) => lt(agentActions.createdAt, cutoff)],
 		[

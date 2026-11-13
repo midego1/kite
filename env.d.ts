@@ -115,6 +115,8 @@ interface CloudflareEnv {
 	AI_TEST_TIMEOUT_MS?: string;
 	/** Dev/test only: "1" lets the remote image proxy fetch http://127.0.0.1 on any port (the e2e image server); ignored in production. */
 	REMOTE_IMAGES_ALLOW_LOOPBACK?: string;
+	/** Dev/test only: "1" lets the one-click unsubscribe POST go to http(s)://127.0.0.1 on any port (the e2e receiver); ignored in production. */
+	UNSUBSCRIBE_ALLOW_LOOPBACK?: string;
 	/** Dev/test only: "1" or "true" lets an object store use plain http and loopback hosts (the fake S3, local MinIO); ignored in production. */
 	STORAGE_ALLOW_INSECURE_ENDPOINT?: string;
 	/** Node server only: "1" or "true" lets an object store be a private or LAN host, such as MinIO beside the server; ignored on Workers. */
@@ -160,6 +162,12 @@ interface CloudflareEnv {
 	 * Unset on Workers, where `src/lib/net/connect.ts` uses `cloudflare:sockets`.
 	 */
 	TCP_CONNECT?: import("./src/lib/net/types").TcpConnect;
+	/**
+	 * Self-hosted only: POSTs to a public http(s) URL with the checked addresses pinned for the connection, so DNS
+	 * rebinding cannot reach a private host (one-click unsubscribe; `server/runtime/pinned-post.ts`). Unset on Workers,
+	 * which cannot reach private networks.
+	 */
+	PINNED_POST?: import("./src/lib/net/types").PinnedPost;
 	/** Dev/test only: "1" or "true" lets mail server connections reach loopback hosts on any port without TLS (the fake IMAP server); ignored in production. */
 	EXTERNAL_ACCOUNTS_ALLOW_INSECURE_LOOPBACK?: string;
 	/** Node server only: "1" or "true" lets mail server connections reach LAN hosts (RFC 1918, IPv6 ULA; still over TLS, never loopback or link-local); ignored on Workers. */

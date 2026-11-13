@@ -35,6 +35,7 @@ await build({
 			export { previewDeletions, previewUpdates } from "./src/lib/calendar/tool-preview-utils.ts";
 			export { mcpAuditSliceCondition, pruneMcpToolCallAudit, runDatabasePruning } from "./src/lib/maintenance/pruning.ts";
 			export { auditLogs } from "./src/db/schema/index.ts";
+			export { completeOneClickAttempt, recordOneClickAttempt } from "./src/lib/email/one-click-attempts.ts";
 		`,
 		resolveDir: root,
 		sourcefile: "agent-guards-entry.ts",
@@ -555,6 +556,48 @@ test("the five-minute MCP audit pruning deletes the rows that just expired; the 
 	const daily = await m.runDatabasePruning(env, now);
 	assert.equal(daily.mcp_tool_call_audit_logs, 700);
 	assert.deepEqual(ids().sort(), ["login", "recent"]);
+});
+
+test("the daily pruning deletes one-click unsubscribe audit rows after 30 days and keeps other audit rows", async (t) => {
+	const { env, database } = await fixture(t);
+	const now = new Date("2026-10-30T00:00:00Z");
+	const cutoff = Math.floor(now.getTime() / 1000) - 30 * 86_400;
+	const insert = database.db.prepare(
+		"INSERT INTO audit_logs (id, actor_user_id, action, metadata, created_at) VALUES (?, 'user-1', ?, '{}', ?)",
+	);
+	insert.run("old-unsubscribe", "message.unsubscribe_one_click", cutoff - 60);
+	insert.run("recent-unsubscribe", "message.unsubscribe_one_click", cutoff + 60);
+	insert.run("old-login", "auth.login", cutoff - 86_400);
+	const daily = await m.runDatabasePruning(env, now);
+	assert.equal(daily.unsubscribe_audit_logs, 1);
+	const ids = database.db
+		.prepare("SELECT id FROM audit_logs ORDER BY id")
+		.all()
+		.map((row) => row.id);
+	assert.deepEqual(ids, ["old-login", "recent-unsubscribe"]);
+});
+
+test("one-click unsubscribe requests: one per message goes out, a failed one frees it, refusals never hold it", async (t) => {
+	const { env, database } = await fixture(t);
+	const input = { userId: "user-1", mailboxId: "mailbox-1", messageId: "anchor" };
+	const first = await m.recordOneClickAttempt(env, input);
+	assert.equal(first.allowed, true);
+	// Within the same second, while the first is pending, and after it reached the sender: refused.
+	const second = await m.recordOneClickAttempt(env, input);
+	assert.deepEqual({ allowed: second.allowed, reason: second.reason }, { allowed: false, reason: "duplicate" });
+	await m.completeOneClickAttempt(env, first.id, { outcome: "done", status: 200 });
+	assert.equal((await m.recordOneClickAttempt(env, input)).reason, "duplicate");
+	// A request whose sender failed does not hold the message: the retry goes out.
+	await m.completeOneClickAttempt(env, first.id, { outcome: "timeout" });
+	const retry = await m.recordOneClickAttempt(env, input);
+	assert.equal(retry.allowed, true);
+	// Another message is not affected.
+	assert.equal((await m.recordOneClickAttempt(env, { ...input, messageId: "sent" })).allowed, true);
+	const outcomes = database.db
+		.prepare("SELECT json_extract(metadata, '$.outcome') AS outcome FROM audit_logs WHERE action = ? ORDER BY rowid")
+		.all("message.unsubscribe_one_click")
+		.map((row) => row.outcome);
+	assert.deepEqual(outcomes, ["timeout", "duplicate", "duplicate", "pending", "pending"]);
 });
 
 test("the five-minute MCP audit query reads a range of the action and created_at index, not the older history", async (t) => {

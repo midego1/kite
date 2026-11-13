@@ -13,7 +13,10 @@ import { listMessageAttachments } from "@/lib/email/attachments";
 import { loadMessageBody } from "@/lib/email/bodies";
 import { deliverInboundMessage, recoverAgentWork, storedFromRaw } from "@/lib/email/inbound-deliver";
 import { processExternalInbound } from "@/lib/email/inbound-external";
-import { getUnsubscribeUrlFromRawR2Key } from "@/lib/email/unsubscribe";
+import { getMailingListHeadersFromRawR2Key, getUnsubscribeUrlFromRawR2Key } from "@/lib/email/unsubscribe";
+import { mailingListInfo, storedDkimPassed } from "@/lib/email/mailing-list-utils";
+import type { MailingListHeaders } from "@/lib/email/mailing-list-types";
+import { SCREENING_STATUS } from "@/lib/screener/screener-utils";
 import type { SessionUser } from "@/lib/auth/types";
 import { isHiddenDraft } from "@/lib/messages/draft-privacy-utils";
 import { loadSendStates } from "@/lib/messages/send-state";
@@ -179,6 +182,22 @@ export async function getMessageWithBody(env: CloudflareEnv, userId: string, mes
 	return { message: { ...message, ...contactNames }, body: message, attachments, unsubscribeUrl };
 }
 
+/** The list a received message came from, as the reader sees it; one-click only for who may manage the mailbox. */
+function readerMailingList(
+	message: { direction: string; status: string; spamSignals: string | null },
+	listHeaders: MailingListHeaders | null,
+	canManage: boolean,
+) {
+	if (message.direction !== "inbound") return null;
+	// Unsubscribing from spam confirms the address is read; held mail is not let in yet; Trash shows no notice either
+	// (the endpoint refuses all three).
+	const oneClickStatus = !["spam", "trash", SCREENING_STATUS].includes(message.status);
+	return mailingListInfo(listHeaders, {
+		dkimPassed: storedDkimPassed(message.spamSignals),
+		mayUnsubscribe: canManage && oneClickStatus,
+	});
+}
+
 export async function getMessageWithBodyForUser(env: CloudflareEnv, user: SessionUser, messageId: string) {
 	const db = getDb(env);
 	const [row] = await db.select().from(messages).where(eq(messages.id, messageId)).limit(1);
@@ -186,10 +205,10 @@ export async function getMessageWithBodyForUser(env: CloudflareEnv, user: Sessio
 	const access = await getMailboxAccessLevel(db, user, row.mailboxId);
 	if (!access?.canRead) return null;
 	const message = await loadMessageBody(env, row);
-	const [contactNames, attachments, unsubscribeUrl, sendStates, viaById, spoofedMatch] = await Promise.all([
+	const [contactNames, attachments, listHeaders, sendStates, viaById, spoofedMatch] = await Promise.all([
 		getMessageContactNames(env, message.userId, message.fromAddr, message.toAddr),
 		listMessageAttachments(env, messageId),
-		getUnsubscribeUrlFromRawR2Key(env, message.rawR2Key),
+		getMailingListHeadersFromRawR2Key(env, message.rawR2Key),
 		loadSendStates(db, [message], user.id),
 		loadMessageVia(env, [message]),
 		// A failed or slow contact scan must never keep the message itself from opening.
@@ -217,7 +236,8 @@ export async function getMessageWithBodyForUser(env: CloudflareEnv, user: Sessio
 		},
 		body: message,
 		attachments,
-		unsubscribeUrl,
+		unsubscribeUrl: listHeaders?.unsubscribeUrl ?? null,
+		mailingList: readerMailingList(message, listHeaders, access.canManage),
 	};
 }
 
@@ -229,6 +249,8 @@ export async function getMessageMetadataForUser(env: CloudflareEnv, user: Sessio
 			rawR2Key: messages.rawR2Key,
 			status: messages.status,
 			userId: messages.userId,
+			direction: messages.direction,
+			spamSignals: messages.spamSignals,
 		})
 		.from(messages)
 		.where(eq(messages.id, messageId))
@@ -236,9 +258,13 @@ export async function getMessageMetadataForUser(env: CloudflareEnv, user: Sessio
 	if (!message?.mailboxId || isHiddenDraft(message, user.id)) return null;
 	const access = await getMailboxAccessLevel(db, user, message.mailboxId);
 	if (!access?.canRead) return null;
-	const [attachments, unsubscribeUrl] = await Promise.all([
+	const [attachments, listHeaders] = await Promise.all([
 		listMessageAttachments(env, messageId),
-		getUnsubscribeUrlFromRawR2Key(env, message.rawR2Key),
+		getMailingListHeadersFromRawR2Key(env, message.rawR2Key),
 	]);
-	return { attachments, unsubscribeUrl };
+	return {
+		attachments,
+		unsubscribeUrl: listHeaders?.unsubscribeUrl ?? null,
+		mailingList: readerMailingList(message, listHeaders, access.canManage),
+	};
 }

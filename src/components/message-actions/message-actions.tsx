@@ -57,6 +57,7 @@ import {
 	openUnsubscribeUrl,
 	runSingleMessageAction,
 } from "./utils";
+import { announceOneClickFailure, runOneClickUnsubscribe } from "@/components/messages/one-click-unsubscribe";
 import { requestConfirmation } from "@/components/ui/confirm-dialog-utils";
 import { useT } from "@/lib/i18n/use-t";
 
@@ -68,6 +69,7 @@ export function MessageActions({
 	status,
 	read,
 	unsubscribeUrl,
+	mailingList,
 	subject,
 	bodyText,
 	ownAddress,
@@ -169,6 +171,10 @@ export function MessageActions({
 	async function onUnsubscribe() {
 		setMoreOpen(false);
 		setError(null);
+		if (mailingList?.oneClick) {
+			announceOneClickFailure(await runOneClickUnsubscribe(messageId, unsubscribeUrl ?? null));
+			return;
+		}
 		if (unsubscribeUrl) {
 			openUnsubscribeUrl(unsubscribeUrl);
 			return;

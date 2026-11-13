@@ -13,6 +13,8 @@ const DEV_ONLY_VARS = [
 	"AI_ALLOW_INSECURE_LOOPBACK",
 	"AI_TEST_TIMEOUT_MS",
 	"REMOTE_IMAGES_ALLOW_LOOPBACK",
+	// Lets e2e/108-mailing-list-notice.spec.ts send the one-click unsubscribe POST to its receiver on 127.0.0.1.
+	"UNSUBSCRIBE_ALLOW_LOOPBACK",
 	"STORAGE_ALLOW_INSECURE_ENDPOINT",
 	"ABUSE_CH_TEST_ORIGIN",
 	// Let e2e/93-storage-r2-auto-setup.spec.ts send the automatic R2 setup to its fake Cloudflare API and fake R2.

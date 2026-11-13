@@ -206,7 +206,10 @@ test("a note id from another conversation or mailbox does not resolve, so it can
 	assert.equal(edited.note.edited, true);
 	const unchanged = await notes.updateConversationNote(db, thread, "helper", threadNote.id, "Thread one, updated");
 	assert.equal(unchanged.note.updatedAt, edited.note.updatedAt, "saving the same text is not an edit");
-	assert.deepEqual(await notes.deleteConversationNote(db, manager, "manager", threadNote.id), { ok: true, authorUserId: "helper" });
+	assert.deepEqual(await notes.deleteConversationNote(db, manager, "manager", threadNote.id), {
+		ok: true,
+		authorUserId: "helper",
+	});
 	assert.deepEqual((await notes.listConversationNotes(db, thread, "helper")).notes, []);
 });
 

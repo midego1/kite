@@ -179,7 +179,7 @@ test("closing the notice hides it for that list in this browser, with Undo, and 
 	// The same list stays hidden after a reload; another list still shows its notice.
 	await page.goto("/inbox");
 	await openMessage(page, second);
-	await expect(page.getByRole("heading", { name: second }).or(page.getByText(second).first())).toBeVisible();
+	await expect(page.locator("[data-reader-scroll]").getByText(`news@${token}.invalid`).first()).toBeVisible();
 	await expect(notice(page)).toHaveCount(0);
 	await page.goto("/inbox");
 	await openMessage(page, otherSubject);

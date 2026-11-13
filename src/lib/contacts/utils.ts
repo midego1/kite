@@ -8,7 +8,9 @@ export function getContactId(userId: string, email: string): string {
 export function getContactNameFromAddress(address: string): string | null {
 	const name = parseEmailAddressParts(address).name?.trim();
 	if (!name) return null;
-	return name === normalizeEmailAddress(address) ? null : name;
+	// Outlook writes 'john@example.com' (single quotes) for a bare address, in any case.
+	const bare = name.replace(/^'+|'+$/g, "").trim();
+	return !bare || bare.toLowerCase() === normalizeEmailAddress(address) ? null : name;
 }
 
 export function getDisplayNameForAddress(address: string, contactName?: string | null): string {

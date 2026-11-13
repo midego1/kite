@@ -69,6 +69,33 @@ When you add attendees and choose a sending mailbox, Kite emails each attendee a
 
 These routes accept the dashboard session or an API key (`Authorization: Bearer <key>`) with the **Read calendar** (`calendar:read`) or **Manage calendar** (`calendar:write`) scope, which you choose when creating the key in **Settings → API keys**. A key can only send invitations if it also has the `send` scope for the chosen mailbox. MCP and the assistant use separate calendar tools, described in [Email assistant and MCP](email-assistant-and-mcp.md).
 
+#### Subscribing from another calendar app
+
+**Subscribe** in the calendar's header (the calendar icon next to the view switcher; on a phone, **Subscribe…** in the header's menu) makes a private link to a read-only copy of your calendar, so your Kite events show up in Google Calendar, Outlook, Apple Calendar or a phone. Copy the link when it appears: Kite stores only a hash of it and cannot show it again.
+
+- **Google Calendar** (on a computer): next to **Other calendars**, choose **+**, then **From URL**, and paste the link.
+- **Outlook**: **Add calendar**, then **Subscribe from web**, and paste the link.
+- **iPhone or iPad**: **Settings → Apps → Calendar → Calendar Accounts → Add Account → Other → Add Subscribed Calendar**. On a Mac, **File → New Calendar Subscription** in Calendar.
+
+The other app can only read. It fetches the link on its own schedule (Kite suggests every hour; Google Calendar can take up to a day), so a change in Kite shows up there later. The feed holds your events from the past year onward and every repeating series still running then (at most 5,000 entries; past that the oldest one-off events are left out), with its repeat rule, end date and skipped occurrences, in the series' own time zone so a weekly meeting keeps its local time across daylight saving changes. All-day events stay all-day. Titles, descriptions and locations are shared; attendees are not.
+
+A repeating event keeps the time zone it was created in (the zone sent with it over the API, or the creator's zone at the time), and the feed writes it in that zone with the zone's definition included. The calendar page in Kite draws every repeating event in the zone you have now. For a series whose stored zone differs from yours, for example one created over the API with another `timeZone`, the two can disagree by an hour around a daylight saving change, and an all-day event in another zone may show as timed.
+
+Anyone who has the link can read your events, so treat it like a password. Reopening the dialog shows when the link was made and last read, with **Replace link** (the old link stops working at once; subscribe again with the new one) and **Turn off link**. There is one link per account. It is not an API key and is not listed under **Settings → API keys**: it opens the feed and nothing else, and an API key does not open the feed.
+
+Changing your password (**Settings → Security**), resetting it with an emailed link, an admin setting a new password for you, and an admin's sign-in reset (second factors and passkeys) all end the link, together with your other sessions; turning on two-step sign-in does not. After a suspected compromise, change your password or use **Replace link**, then subscribe again with the new link. A backup restore brings back the link the backup had.
+
+The link is `/api/public/calendar/feed/<token>.ics` on your Kite address, so a deployment behind an access proxy (Cloudflare Access, a VPN-only host) must let that path through, since subscribing services cannot sign in. It answers 404 for an unknown, replaced or turned-off link, for a disabled account and while Calendar is off for its owner, and each link may be read 20 times a minute, with 60 requests a minute per address for the whole feed route. Responses are never cached (`Cache-Control: private, no-store`) and carry `X-Robots-Tag: noindex`.
+
+| Kite route | Purpose |
+| --- | --- |
+| `GET /api/calendar/feed` | Whether the signed-in user has a link (`{ feed: { active, createdAt, lastUsedAt } }`); the link itself is never returned again |
+| `POST /api/calendar/feed` | Create the link or replace it; answers `{ path, feed }` once |
+| `DELETE /api/calendar/feed` | Turn the link off |
+| `GET /api/public/calendar/feed/[token]` | The iCalendar feed (`text/calendar`, `METHOD:PUBLISH`); the token in the path is the only credential |
+
+The first three take the dashboard session only, not an API key.
+
 ### Booking pages
 
 Open **Booking** to create booking events: a name, link (slug), duration, location, weekdays, one or more daily time ranges, a time zone and an on/off switch. Two disabled templates (15 and 30 minute meetings) are offered to start from. Each user gets a booking username, derived from their email and unique across the instance; an administrator can change it. Booking events are served at `/book/<username>` (the list) and `/book/<username>/<event>` (one event), with no login.

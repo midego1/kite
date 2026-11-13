@@ -12,7 +12,6 @@ import {
 	ChevronRight,
 	Clock3,
 	MapPin,
-	MoreVertical,
 	Palette,
 	Plus,
 	Repeat2,
@@ -20,7 +19,6 @@ import {
 	UsersRound,
 	X,
 } from "lucide-react";
-import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { useStaleCommandCenterCards } from "@/components/command-center/use-card-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -37,7 +35,9 @@ import { useSelectedMailbox } from "@/components/mailbox-provider";
 import { CalendarPanels } from "../calendar-panels";
 import { DayEvents } from "./day-events";
 import { MonthView } from "./month-view";
-import { CalendarViewOptions, CalendarViewSelect } from "./view-selector";
+import { CalendarViewSelect } from "./view-selector";
+import { CalendarHeaderMenu } from "./header-menu";
+import { CalendarSubscribeDialog } from "./subscribe-dialog";
 import { useCalendarUrlActions } from "./use-url-actions";
 import type { CalendarEvent, CalendarView, EventDragPreview, EventResizeEdge, EventResizeSession } from "./types";
 import {
@@ -113,6 +113,7 @@ export default function CalendarPage() {
 	const [description, setDescription] = useState("");
 	const [editing, setEditing] = useState<CalendarEvent | null>(null);
 	const [pendingAction, setPendingAction] = useState<"save" | string | null>(null);
+	const [subscribeOpen, setSubscribeOpen] = useState(false);
 	const router = useRouter();
 	const eventFromUrl = useSearchParams().get("event");
 	const { selectedMailbox } = useSelectedMailbox();
@@ -653,35 +654,12 @@ export default function CalendarPage() {
 				>
 					Today
 				</button>
-				<DropdownMenu.Root>
-					<DropdownMenu.Trigger asChild>
-						<button
-							type="button"
-							aria-label="Calendar options"
-							className="flex h-8 w-8 items-center justify-center rounded-lg text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 @3xl:hidden pointer-coarse:h-11 pointer-coarse:w-11"
-						>
-							<MoreVertical className="h-5 w-5" />
-						</button>
-					</DropdownMenu.Trigger>
-					<DropdownMenu.Portal>
-						<DropdownMenu.Content
-							align="end"
-							sideOffset={4}
-							// Portalled to the body, so it cannot see the header's @container: the trigger above already
-							// gates whether this can open at all, so this needs no width class of its own.
-							className="z-[130] min-w-40 rounded-xl border border-neutral-200 bg-white p-1 text-sm shadow-xl"
-						>
-							<DropdownMenu.Item
-								onSelect={() => setVisibleDate(new Date())}
-								className="cursor-pointer rounded-lg px-3 py-2 text-neutral-700 outline-none data-[highlighted]:bg-neutral-100"
-							>
-								Today
-							</DropdownMenu.Item>
-							<DropdownMenu.Separator className="my-1 h-px bg-neutral-100" />
-							<CalendarViewOptions value={view} onChange={setView} />
-						</DropdownMenu.Content>
-					</DropdownMenu.Portal>
-				</DropdownMenu.Root>
+				<CalendarHeaderMenu
+					view={view}
+					onView={setView}
+					onToday={() => setVisibleDate(new Date())}
+					onSubscribe={() => setSubscribeOpen(true)}
+				/>
 				<CalendarViewSelect value={view} onChange={setView} />
 				{/* On phones, and whenever the header's own width is too narrow (a foldable's unfolded width next
 					to the sidebar and the Drive views panel), an icon button so nothing is clipped or floats over the grid. */}
@@ -1085,6 +1063,7 @@ export default function CalendarPage() {
 					</DialogFrame>
 				</div>
 			)}
+			<CalendarSubscribeDialog open={subscribeOpen} onOpenChange={setSubscribeOpen} />
 		</CalendarPanels>
 	);
 }

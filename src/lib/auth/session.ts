@@ -1,8 +1,8 @@
-import { and, eq, gt, ne } from "drizzle-orm";
+import { and, eq, gt, ne, type SQL } from "drizzle-orm";
 import { newId } from "@/lib/ids";
 import { getDb } from "@/db";
 import { primaryDatabase } from "@/lib/d1-session-utils";
-import { sessions, users } from "@/db/schema";
+import { apiKeys, sessions, users } from "@/db/schema";
 import { findUser } from "./user-lookup";
 
 export const SESSION_COOKIE = "ep_session";
@@ -71,6 +71,41 @@ export async function deleteUserSessions(env: CloudflareEnv, userId: string, kee
 		return;
 	}
 	await db.delete(sessions).where(eq(sessions.userId, userId));
+}
+
+/**
+ * Deletes the user's calendar subscription links (`api_keys` of kind `calendar_feed`): credentials that outlive a
+ * session but must not outlive a password change, a password reset or an admin's sign-in reset. A statement, so a
+ * caller can add it to the batch that ends the sessions; `condition` narrows it the same way that batch does.
+ */
+export function revokeSubscriptionLinks(db: ReturnType<typeof getDb>, userId: string, condition?: SQL) {
+	return db.delete(apiKeys).where(and(eq(apiKeys.userId, userId), eq(apiKeys.kind, "calendar_feed"), condition));
+}
+
+/**
+ * The statements that end access after a new password: every session except `keepToken` (the one that made the
+ * change) and every subscription link. Callers put them in the batch that sets the password, so a failure leaves
+ * the old password, the sessions and the links as they were.
+ */
+export async function endAccessStatements(db: ReturnType<typeof getDb>, userId: string, keepToken?: string) {
+	const ended = keepToken
+		? and(eq(sessions.userId, userId), ne(sessions.tokenHash, await hashSessionToken(keepToken)))
+		: eq(sessions.userId, userId);
+	return [db.delete(sessions).where(ended), revokeSubscriptionLinks(db, userId)] as const;
+}
+
+/** Sets a new password hash and ends access (see endAccessStatements) in one batch. */
+export async function setPasswordAndEndAccess(
+	env: CloudflareEnv,
+	userId: string,
+	passwordHash: string,
+	keepToken?: string,
+): Promise<void> {
+	const db = getDb(env);
+	await db.batch([
+		db.update(users).set({ passwordHash }).where(eq(users.id, userId)),
+		...(await endAccessStatements(db, userId, keepToken)),
+	]);
 }
 
 /** The session token a request carries, from the Bearer header or the cookie. */

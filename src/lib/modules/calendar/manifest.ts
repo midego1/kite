@@ -9,7 +9,8 @@ export const calendarManifest: ModuleManifest = {
 	dependsOn: [],
 	defaultEnabled: true,
 	pages: [{ prefix: "/calendar" }],
-	apiPrefixes: [{ prefix: "/api/calendar" }],
+	// The subscription feed is read by calendar apps without a session; its link is the credential.
+	apiPrefixes: [{ prefix: "/api/calendar" }, { prefix: "/api/public/calendar", public: true }],
 	nav: calendarClientData.nav,
 	commands: calendarClientData.commands,
 	composerSlots: [],

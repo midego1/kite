@@ -6,7 +6,7 @@ import { passkeys } from "@/db/schema/passkeys";
 import { isNoSuchTableError } from "@/lib/modules/state-utils";
 import { getBranding } from "@/lib/branding/service";
 import { consumeRecoveryCode, countUnusedRecoveryCodes, issueRecoveryCodes } from "@/lib/auth/recovery-codes";
-import { deleteUserSessions } from "@/lib/auth/session";
+import { deleteUserSessions, revokeSubscriptionLinks } from "@/lib/auth/session";
 import { buildOtpauthUrl, generateTotpSecret, matchTotpStep } from "@/lib/auth/totp";
 import { claimTotpStep } from "@/lib/auth/totp-steps";
 import type { MfaEnrollment, MfaStatus } from "@/lib/auth/mfa-types";
@@ -73,14 +73,15 @@ export async function disableMfa(env: CloudflareEnv, userId: string): Promise<vo
 }
 
 /**
- * An admin's reset for someone who lost their devices: signs the account out everywhere, turns TOTP off and deletes
- * the recovery codes and every passkey, in one batch, so either all of it happens or none does. Before migration
+ * An admin's reset for someone who lost their devices: signs the account out everywhere, ends calendar subscription
+ * links, turns TOTP off and deletes the recovery codes and every passkey, in one batch, so either all of it happens or none does. Before migration
  * 0112 there is no passkeys table and the batch runs without it.
  */
 export async function resetUserSecondFactors(env: CloudflareEnv, userId: string): Promise<{ passkeysRemoved: number }> {
 	const db = getDb(env);
 	const core = [
 		db.delete(sessions).where(eq(sessions.userId, userId)),
+		revokeSubscriptionLinks(db, userId),
 		db.update(users).set({ totpSecret: null, totpEnabled: false, totpConfirmedAt: null }).where(eq(users.id, userId)),
 		db.delete(mfaRecoveryCodes).where(eq(mfaRecoveryCodes.userId, userId)),
 	] as const;
@@ -89,7 +90,7 @@ export async function resetUserSecondFactors(env: CloudflareEnv, userId: string)
 			...core,
 			db.delete(passkeys).where(eq(passkeys.userId, userId)).returning({ id: passkeys.id }),
 		]);
-		return { passkeysRemoved: results[3].length };
+		return { passkeysRemoved: results[4].length };
 	} catch (error) {
 		if (!isNoSuchTableError(error)) throw error;
 		await db.batch([...core]);

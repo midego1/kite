@@ -332,7 +332,54 @@ async function openPasskeySignIn(page: Page): Promise<Page> {
 	return page;
 }
 
+/**
+ * The calendar's Subscribe dialog right after a link was made. The feed API is mocked with an obviously invented
+ * link, so no real token is ever in a picture. On a phone the dialog opens from the header's overflow menu.
+ */
+async function openCalendarSubscribe(page: Page): Promise<Locator> {
+	const feed = { active: true, createdAt: "2026-11-13T09:00:00Z", lastUsedAt: null };
+	await page.route("**/api/calendar/feed", (route) =>
+		route.fulfill({
+			json:
+				route.request().method() === "POST"
+					? { path: "/api/public/calendar/feed/kcf_ExampleLinkOnlyForThisPicture00.ics", feed }
+					: { feed: { active: false, createdAt: null, lastUsedAt: null } },
+		}),
+	);
+	await page.goto("/calendar");
+	await expect(page.getByRole("button", { name: "New event" })).toBeVisible();
+	const subscribe = page.getByRole("button", { name: "Subscribe from another calendar app" });
+	if (await subscribe.isVisible()) await subscribe.click();
+	else {
+		await page.getByRole("button", { name: "Calendar options" }).click();
+		await page.getByRole("menuitem", { name: "Subscribe…" }).click();
+	}
+	const dialog = page.getByRole("dialog", { name: "Subscribe from another calendar app" });
+	await dialog.getByRole("button", { name: "Create subscription link" }).click();
+	await expect(dialog.getByRole("textbox", { name: "Subscription link" })).toHaveValue(/kcf_Example/);
+	return dialog;
+}
+
 const SHOTS: Shot[] = [
+	...(["light", "dark"] as const).map(
+		(theme): Shot => ({
+			// Calendar → Subscribe: the new link with Copy and the steps for Google Calendar, Outlook and iPhone.
+			name: `2026-11-13-calendar-subscribe-${theme}`,
+			theme,
+			viewport: { width: 1280, height: 800 },
+			open: openCalendarSubscribe,
+		}),
+	),
+	{
+		// The same dialog on a phone (375 px), opened from the header's overflow menu.
+		name: "2026-11-13-calendar-subscribe-mobile-light",
+		theme: "light",
+		viewport: { width: 375, height: 812 },
+		open: async (page) => {
+			await openCalendarSubscribe(page);
+			return page;
+		},
+	},
 	{
 		// Passkeys in Settings → Security: one passkey with when it was added and last used, and Add a passkey.
 		name: "2026-11-10-passkeys-security-light",

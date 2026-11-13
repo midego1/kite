@@ -1,5 +1,6 @@
 import { D1TestVectorStore } from "./d1-test-vector-store";
 import { VectorizeStore } from "./vectorize-store";
+import { databaseKey } from "@/lib/d1-session-utils";
 
 /**
  * The vector store `indexer.ts` and `search.ts` use, implemented by `vectorize-store.ts` (Workers), the Node
@@ -40,10 +41,10 @@ export function getVectorStore(env: VectorStoreEnv): VectorStore {
 	if (env.VECTORIZE) return new VectorizeStore(env.VECTORIZE);
 	if (env.VECTORS) return env.VECTORS;
 	if (env.SEMANTIC_TEST_STORE === "1" && process.env.NODE_ENV !== "production") {
-		let store = testStores.get(env.DB);
+		let store = testStores.get(databaseKey(env.DB));
 		if (!store) {
 			store = new D1TestVectorStore(env.DB);
-			testStores.set(env.DB, store);
+			testStores.set(databaseKey(env.DB), store);
 		}
 		return store;
 	}

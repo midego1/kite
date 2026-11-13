@@ -61,8 +61,7 @@ import { storageConnectOrigins } from "./src/lib/storage";
 import { withStorage } from "./src/lib/storage/router";
 import { trustedCloudflareAuthenticationResults } from "./src/lib/spam/authentication-results-utils";
 import { completeRawHeaderValues } from "./src/lib/email/raw-headers";
-import { openD1Session, withD1BookmarkCookie, withD1Session } from "./src/lib/d1-session-utils";
-import { runWithD1Session } from "./src/lib/d1-session-context";
+import { fetchWithD1Session } from "./src/lib/d1-session";
 export { RealtimeHub } from "./src/lib/realtime/hub";
 
 const logger = createLogger("worker");
@@ -117,19 +116,11 @@ async function handleFetch(request: Request, env: CloudflareEnv, ctx: ExecutionC
 }
 
 /**
- * Runs the request on a D1 session anchored at the browser's bookmark cookie, so D1 can serve its reads from read
- * replicas, and stores the session's newest bookmark on the response. The email, queue and scheduled handlers
- * below keep the raw binding (the primary) on purpose.
+ * Browser requests run on a D1 session so D1 can serve their reads from read replicas (src/lib/d1-session.ts); the
+ * email, queue and scheduled handlers below keep the raw binding (the primary) on purpose.
  */
-async function handleFetchWithD1Session(
-	request: Request,
-	rawEnv: CloudflareEnv,
-	ctx: ExecutionContext,
-): Promise<Response> {
-	const database = openD1Session(rawEnv, request);
-	if (!database) return handleFetch(request, rawEnv, ctx);
-	const response = await runWithD1Session(database, () => handleFetch(request, withD1Session(rawEnv, database), ctx));
-	return withD1BookmarkCookie(request, response, database);
+function handleFetchWithD1Session(request: Request, env: CloudflareEnv, ctx: ExecutionContext): Promise<Response> {
+	return fetchWithD1Session(request, env, (sessionRequest, sessionEnv) => handleFetch(sessionRequest, sessionEnv, ctx));
 }
 
 export default {

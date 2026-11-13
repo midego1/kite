@@ -19,7 +19,7 @@ export function getCachedMessageDetailForDisplay(messageId: string): MessageDeta
 
 export async function fetchMessageMetadata(
 	messageId: string,
-): Promise<Pick<MessageDetailResponse, "attachments" | "unsubscribeUrl">> {
+): Promise<Pick<MessageDetailResponse, "attachments" | "unsubscribeUrl" | "mailingList">> {
 	return (await authFetch(`/api/messages/${messageId}/metadata`)).json();
 }
 

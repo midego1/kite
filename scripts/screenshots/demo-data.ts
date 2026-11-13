@@ -181,6 +181,33 @@ export const SENDER_AUTH_MAIL = {
 	html: `<p>Hello,</p><p>Your invoice for December is attached. Thanks for your business.</p>`,
 };
 
+/** A newsletter with a list name and an unsubscribe link, for the reader's mailing-list notice. */
+export const MAILING_LIST_MAIL = {
+	from: `"Northwind Weekly" <news@northwind-weekly.test>`,
+	subject: "This week at Northwind: the spring catalogue",
+	html: `<p>Hello,</p><p>The spring catalogue is out, with forty new products and a preview of the summer range.</p><p>Thanks for reading,<br>The Northwind team</p>`,
+};
+
+/** Delivers the newsletter demo mail once, with List-Id and List-Unsubscribe headers. */
+export async function seedMailingListDemo(): Promise<void> {
+	const api = await apiContext(STORAGE_STATE);
+	const found = await api.get(`/api/messages?${new URLSearchParams({ q: MAILING_LIST_MAIL.subject, limit: "20" })}`);
+	const { messages: existing } = (await found.json()) as { messages: { subject?: string }[] };
+	if (!existing.some((message) => message.subject === MAILING_LIST_MAIL.subject)) {
+		await postInbound(api, {
+			...MAILING_LIST_MAIL,
+			to: `"Support" <${SUPPORT_ADDRESS}>`,
+			text: plainText(MAILING_LIST_MAIL.html),
+			headers: {
+				"List-Id": "Northwind Weekly <weekly.northwind-weekly.test>",
+				"List-Unsubscribe": "<https://northwind-weekly.test/unsubscribe?u=demo>",
+			},
+		});
+		await waitForMessage(api, MAILING_LIST_MAIL.subject);
+	}
+	await api.dispose();
+}
+
 /** Delivers the right-to-left demo mail once, so the shot finds it in the Inbox. */
 export async function seedRtlMail(): Promise<void> {
 	await deliverOnce(RTL_MAIL);

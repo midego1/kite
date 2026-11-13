@@ -214,6 +214,7 @@
 	"/api/messages/[messageId]/summary",
 	"/api/messages/[messageId]/thread",
 	"/api/messages/[messageId]/translation",
+	"/api/messages/[messageId]/unsubscribe",
 	"/api/messages/bulk",
 	"/api/messages/counts",
 	"/api/messages/empty",

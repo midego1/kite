@@ -67,6 +67,8 @@ export default defineConfig({
 			AI_TEST_TIMEOUT_MS: "5000",
 			// Lets the remote image proxy fetch the in-spec image server on 127.0.0.1 (e2e/42-remote-images.spec.ts).
 			REMOTE_IMAGES_ALLOW_LOOPBACK: "1",
+			// Lets the one-click unsubscribe POST reach the in-spec receiver on 127.0.0.1 (e2e/108-mailing-list-notice.spec.ts).
+			UNSUBSCRIBE_ALLOW_LOOPBACK: "1",
 			// Lets specs add the fake S3 store on http://localhost (e2e/48-storage-s3.spec.ts).
 			STORAGE_ALLOW_INSECURE_ENDPOINT: "1",
 			// Lets specs import from the fake IMAP server on 127.0.0.1 in plain text (tests/support/fake-imap.mjs).

@@ -20,6 +20,8 @@ import {
 	seedRtlAttachmentMail,
 	seedRtlMail,
 	seedSenderAuthDemo,
+	seedMailingListDemo,
+	MAILING_LIST_MAIL,
 	seedThaiMail,
 	SENDER_AUTH_MAIL,
 	THAI_MAIL,
@@ -228,6 +230,13 @@ async function openSenderAuthMail(page: Page) {
 	await page.goto("/inbox");
 	await page.getByRole("main").getByText(SENDER_AUTH_MAIL.subject, { exact: true }).first().click();
 	await expect(page.locator("[data-sender-auth-warning]")).toBeVisible();
+}
+
+async function openMailingListMail(page: Page) {
+	await seedMailingListDemo();
+	await page.goto("/inbox");
+	await page.getByRole("main").getByText(MAILING_LIST_MAIL.subject, { exact: true }).first().click();
+	await expect(page.getByRole("region", { name: "Mailing list" })).toBeVisible();
 }
 
 /** The Admin → Storage overview's leftover cleanup state with nothing tracked and the defaults. */
@@ -525,6 +534,27 @@ const SHOTS: Shot[] = [
 			return page.locator("[data-reader-scroll]");
 		},
 	},
+	...(["light", "dark"] as const).flatMap((theme): Shot[] => [
+		{
+			// The reader's mailing-list notice with Unsubscribe and the close button (upstream Mailflare #279).
+			name: `2026-11-13-mailing-list-notice-${theme}`,
+			theme,
+			viewport: { width: 1280, height: 640 },
+			open: async (page) => {
+				await openMailingListMail(page);
+				return page.locator("[data-reader-scroll]");
+			},
+		},
+		{
+			name: `2026-11-13-mailing-list-notice-mobile-${theme}`,
+			theme,
+			viewport: { width: 390, height: 760 },
+			open: async (page) => {
+				await openMailingListMail(page);
+				return page;
+			},
+		},
+	]),
 	{
 		// The reader's calm warning for a sender that failed SPF, DKIM and DMARC, with its thread badge.
 		name: "2026-11-08-sender-auth-warning-light",

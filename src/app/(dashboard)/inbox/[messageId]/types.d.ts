@@ -1,4 +1,5 @@
 import type { Message } from "@/hooks/types";
+import type { MailingListInfo } from "@/lib/email/mailing-list-types";
 import type { ReplyContentParts } from "@/lib/email/reply-content-types";
 
 export type MessageDetailResponse = {
@@ -9,6 +10,8 @@ export type MessageDetailResponse = {
 	} | null;
 	attachments?: MessageAttachment[];
 	unsubscribeUrl?: string | null;
+	/** The list an inbound message came from; null or absent when it is not from one. */
+	mailingList?: MailingListInfo | null;
 	error?: string;
 };
 

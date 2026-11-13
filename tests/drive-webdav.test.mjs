@@ -11,6 +11,7 @@ const dav = await bundleModules("kite-drive-webdav-", [
 		"src/lib/drive/webdav-path-utils.ts",
 	],
 	["WebdavClient, WebdavError, WEBDAV_LIMITS, timedBody", "src/lib/drive/webdav-client.ts"],
+	["proxiedFile", "src/lib/drive/mount-response-utils.ts"],
 	[
 		"labelFromUrl, parseMountCredentials, webdavFailure, toMountItemDto, sortMountItems, parseMountUpload, parseMountMove, WEBDAV_MAX_UPLOAD_BYTES",
 		"src/lib/drive/mount-utils.ts",
@@ -674,9 +675,116 @@ test("a download that stalls or runs too long is cut off, and the upstream body 
 	await new Promise((resolve) => setTimeout(resolve, 350));
 	assert.ok(stalled.state.cancelled && slow.state.cancelled, "the upstream bodies were cancelled");
 
+	// A reader that stops reading does not hold the upstream open past the total: the timer runs without pulls.
+	const endless = chunks(1000, 5);
+	const unread = dav.timedBody(endless.stream, { idleMs: 1000, totalMs: 100 });
+	const reader = unread.getReader();
+	await reader.read();
+	await new Promise((resolve) => setTimeout(resolve, 250));
+	assert.ok(endless.state.cancelled, "the upstream body was cancelled while nobody read");
+	await assert.rejects(reader.read(), /stopped sending/);
+	// A finished download leaves no timer behind that could error the stream later.
+	const done = dav.timedBody(chunks(2, 1).stream, { idleMs: 1000, totalMs: 60 });
+	assert.deepEqual([...(await read(done))], [0, 1]);
+	await new Promise((resolve) => setTimeout(resolve, 100));
+
 	const server = await fake({ files: { "/a.txt": "hello" } });
 	await client(server)
 		.get("/a.txt")
 		.then((response) => response.text());
 	assert.equal(server.requests.at(-1).headers["accept-encoding"], "identity");
+});
+
+test("a compressed part of a file is refused, a compressed whole file loses its stated length", async () => {
+	let cancelled = false;
+	const body = () =>
+		new ReadableStream({
+			pull(controller) {
+				controller.enqueue(new TextEncoder().encode("hello"));
+				controller.close();
+			},
+			cancel() {
+				cancelled = true;
+			},
+		});
+	const partial = dav.proxiedFile(
+		new Response(body(), {
+			status: 206,
+			headers: { "content-encoding": "gzip", "content-type": "text/plain", "content-length": "3" },
+		}),
+		"a.txt",
+		false,
+		"GET",
+	);
+	assert.equal(partial.status, 502);
+	assert.equal(partial.headers.get("content-range"), null);
+	await new Promise((resolve) => setTimeout(resolve, 10));
+	assert.ok(cancelled, "the upstream body was cancelled");
+
+	const whole = dav.proxiedFile(
+		new Response(body(), {
+			status: 200,
+			headers: {
+				"content-encoding": "gzip",
+				"content-type": "text/plain",
+				"content-length": "3",
+				"accept-ranges": "bytes",
+				etag: '"e1"',
+			},
+		}),
+		"a.txt",
+		false,
+		"GET",
+	);
+	assert.equal(whole.status, 200);
+	assert.equal(whole.headers.get("content-length"), null);
+	assert.equal(whole.headers.get("accept-ranges"), null, "a decoded body offers no byte ranges");
+	assert.equal(whole.headers.get("etag"), '"e1"');
+	assert.equal(await whole.text(), "hello");
+
+	const ranged = dav.proxiedFile(
+		new Response(body(), {
+			status: 206,
+			headers: { "content-type": "text/plain", "content-length": "5", "content-range": "bytes 0-4/10" },
+		}),
+		"a.txt",
+		true,
+		"GET",
+	);
+	assert.equal(ranged.status, 206);
+	assert.equal(ranged.headers.get("content-range"), "bytes 0-4/10");
+	assert.equal(await ranged.text(), "hello");
+
+	// HEAD sends no body and lets go of the server's; a server that sends none, no ETag and no ranges is passed on.
+	cancelled = false;
+	const head = dav.proxiedFile(
+		new Response(body(), { status: 200, headers: { etag: '"e2"' } }),
+		"a.txt",
+		false,
+		"HEAD",
+	);
+	assert.equal(head.body, null);
+	assert.equal(head.headers.get("etag"), '"e2"');
+	await new Promise((resolve) => setTimeout(resolve, 10));
+	assert.ok(cancelled, "the upstream body was cancelled for HEAD");
+	// A body whose cancel fails is let go of all the same, for HEAD and for a refused compressed part.
+	const failingCancel = () =>
+		new ReadableStream({
+			cancel() {
+				throw new Error("already gone");
+			},
+		});
+	assert.equal(dav.proxiedFile(new Response(failingCancel()), "a.txt", false, "HEAD").body, null);
+	const refused = dav.proxiedFile(
+		new Response(failingCancel(), { status: 206, headers: { "content-encoding": "br" } }),
+		"a.txt",
+		false,
+		"GET",
+	);
+	assert.equal(refused.status, 502);
+	await new Promise((resolve) => setTimeout(resolve, 10));
+	const empty = dav.proxiedFile(new Response(null, { status: 200 }), "a.txt", false, "GET");
+	assert.equal(empty.headers.get("etag"), null);
+	assert.equal(empty.headers.get("accept-ranges"), null);
+	assert.equal(await empty.text(), "");
 });

@@ -67,6 +67,7 @@
 		"src/lib/drive/settings-utils.ts",
 		"src/lib/drive/list-utils.ts",
 		"src/lib/drive/mount-utils.ts",
+		"src/lib/drive/mount-response-utils.ts",
 		"src/lib/drive/webdav-path-utils.ts",
 		"src/lib/drive/webdav-xml-utils.ts",
 		"src/lib/drive/category-names-utils.ts",

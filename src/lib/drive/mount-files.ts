@@ -4,10 +4,10 @@ import { attachmentRiskRefusal, readableAttachment, sizedBody } from "./attachme
 import { withMountUploadSlot } from "./mount-uploads";
 import { answerDrive, DriveRefusal, fail, notFound, ok } from "./errors";
 import { normalizeDriveName } from "./name-utils";
-import { driveContentHeaders } from "./range-utils";
+import { proxiedFile } from "./mount-response-utils";
 import type { DriveAnswer, DriveUser } from "./types";
 import { normalizeUploadContentType } from "./upload-utils";
-import { timedBody, WebdavError, type WebdavClient } from "./webdav-client";
+import { WebdavError, type WebdavClient } from "./webdav-client";
 import { joinMountPath, mountPathName, normalizeMountPath, type MountPath } from "./webdav-path-utils";
 import {
 	mountCredentials,
@@ -136,26 +136,6 @@ export async function mountFileResponse(
 		url.searchParams.get("disposition") === "attachment",
 		request.method,
 	);
-}
-
-function proxiedFile(upstream: Response, name: string, download: boolean, method: string): Response {
-	const contentType = upstream.headers.get("content-type") ?? "application/octet-stream";
-	const headers = driveContentHeaders({ id: "webdav", name, contentType, size: 0, updatedAt: new Date(0) }, !download);
-	const etag = upstream.headers.get("etag");
-	if (etag) headers.set("ETag", etag);
-	else headers.delete("ETag");
-	// Kite asks for identity; a server that compresses anyway has its body decoded by the runtime, and then its
-	// stated length no longer matches the bytes passed on.
-	const encoding = upstream.headers.get("content-encoding")?.trim().toLowerCase();
-	const decoded = !!encoding && encoding !== "identity";
-	for (const header of decoded ? ["last-modified"] : ["content-length", "content-range", "last-modified"]) {
-		const value = upstream.headers.get(header);
-		if (value) headers.set(header, value);
-	}
-	if (upstream.headers.get("accept-ranges") !== "bytes" && upstream.status !== 206) headers.delete("Accept-Ranges");
-	const body = method === "HEAD" || !upstream.body ? null : timedBody(upstream.body);
-	if (!body) void upstream.body?.cancel().catch(() => undefined);
-	return new Response(body, { status: upstream.status, headers });
 }
 
 /** `PUT /api/drive/mounts/[id]/content?parent=&name=`: the request body is streamed to the server. */

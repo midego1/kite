@@ -1,7 +1,7 @@
 import { AwsError } from "@/lib/aws/client";
 import { assertStoreEndpoint, type StorageEnv } from "./config";
 import { probeKey, StorageTestError, testStorage } from "./health";
-import { S3Bucket } from "./s3-bucket";
+import { S3Bucket, storeFetch } from "./s3-bucket";
 import { presetFor } from "./s3-presets-utils";
 import type { KiteBucket, S3Credentials, S3Location, S3Provider } from "./types";
 import {
@@ -158,7 +158,7 @@ async function checkObjects(steps: Steps, bucket: S3Bucket, limit: Limit): Promi
 				disposition: "attachment",
 				contentType: "text/plain",
 			});
-			const response = await fetch(url, probeInit(limit));
+			const response = await storeFetch()(url, probeInit(limit));
 			if (!response.ok) {
 				const text = await response.text().catch(() => "");
 				const code = /<Code>([^<]+)<\/Code>/.exec(text)?.[1] ?? `HTTP${response.status}`;
@@ -184,7 +184,7 @@ async function checkCors(
 	const fix = corsFix(provider, !!presetFor(provider)?.applyCors);
 	const probe = probeKey("cors");
 	try {
-		const preflight = await fetch(bucket.objectUrl(probe), {
+		const preflight = await storeFetch()(bucket.objectUrl(probe), {
 			...probeInit(limit),
 			method: "OPTIONS",
 			headers: {
@@ -207,7 +207,7 @@ async function checkCors(
 			contentLength: body.length,
 			contentType: "text/plain",
 		});
-		const upload = await fetch(url, {
+		const upload = await storeFetch()(url, {
 			...probeInit(limit),
 			method: "PUT",
 			headers: { Origin: appOrigin, "Content-Type": "text/plain" },

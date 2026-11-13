@@ -336,7 +336,8 @@ export class WebdavClient {
 
 /**
  * A download body with deadlines after the headers arrived: each chunk must come within `idleMs`, and the whole body
- * within `totalMs`. Past either, the upstream body is cancelled and the stream errors.
+ * within `totalMs`, also when the reader stopped reading. Past either, the upstream body is cancelled and the stream
+ * errors.
  */
 export function timedBody(
 	body: ReadableStream<Uint8Array>,
@@ -346,19 +347,41 @@ export function timedBody(
 	},
 ): ReadableStream<Uint8Array> {
 	const reader = body.getReader();
-	const started = Date.now();
+	const started = performance.now();
+	let finished = false;
+	let total: ReturnType<typeof setTimeout> | undefined;
+	const finish = () => {
+		finished = true;
+		clearTimeout(total);
+	};
+	const timeout = () => new WebdavError("timeout", "The server stopped sending the file");
 	return new ReadableStream<Uint8Array>({
+		start(controller) {
+			// The total runs whether or not anyone reads: a browser that stops reading never pulls again, and without
+			// this the upstream connection would stay open for as long as the platform allows.
+			total = setTimeout(() => {
+				if (finished) return;
+				finish();
+				void reader.cancel().catch(() => undefined);
+				controller.error(timeout());
+			}, limits.totalMs);
+		},
 		async pull(controller) {
-			const wait = Math.max(0, Math.min(limits.idleMs, limits.totalMs - (Date.now() - started)));
+			const wait = Math.max(0, Math.min(limits.idleMs, limits.totalMs - (performance.now() - started)));
 			let timer: ReturnType<typeof setTimeout> | undefined;
 			const deadline = new Promise<never>((_, reject) => {
-				timer = setTimeout(() => reject(new WebdavError("timeout", "The server stopped sending the file")), wait);
+				timer = setTimeout(() => reject(timeout()), wait);
 			});
 			try {
 				const { done, value } = await Promise.race([reader.read(), deadline]);
-				if (done) controller.close();
-				else controller.enqueue(value);
+				if (finished) return;
+				if (done) {
+					finish();
+					controller.close();
+				} else controller.enqueue(value);
 			} catch (error) {
+				if (finished) return;
+				finish();
 				void reader.cancel().catch(() => undefined);
 				controller.error(error);
 			} finally {
@@ -366,6 +389,7 @@ export function timedBody(
 			}
 		},
 		cancel(reason) {
+			finish();
 			return reader.cancel(reason);
 		},
 	});

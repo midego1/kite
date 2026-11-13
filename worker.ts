@@ -49,6 +49,7 @@ import { runSemanticBackfillTick } from "./src/lib/semantic/backfill";
 import { runTrashRetention } from "./src/lib/email/trash-retention";
 import { sweepOrphanedRawMail } from "./src/lib/email/raw-sweeper";
 import { pruneMcpToolCallAudit, runDatabasePruning } from "./src/lib/maintenance/pruning";
+import { clearMcpOAuthSuccessors } from "./src/lib/mcp/oauth/service";
 import { runOperationalAlerts } from "./src/lib/alerts/run";
 import { runTelemetryHeartbeat } from "./src/lib/telemetry/heartbeat";
 import { eraseIdleExternalCredentials } from "./src/lib/external-accounts/retention";
@@ -314,6 +315,10 @@ export default {
 			// One audit row per MCP tool call: pruned in bounded batches every five minutes so heavy use cannot outgrow it.
 			ctx.waitUntil(
 				pruneMcpToolCallAudit(env, now).catch((error) => logger.error("mcp.audit_pruning_failed", { error })),
+			);
+			// MCP over OAuth: a refresh's sealed grace pair is dropped within minutes of its one-minute window.
+			ctx.waitUntil(
+				clearMcpOAuthSuccessors(env, now).catch((error) => logger.error("mcp.oauth_successor_clear_failed", { error })),
 			);
 			ctx.waitUntil(
 				runStorageMigrationMaintenance(env, now).catch((error) =>

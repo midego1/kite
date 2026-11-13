@@ -4,9 +4,11 @@ import { driveMounts } from "@/db/schema/drive";
 import { newId } from "@/lib/ids";
 import { createLogger } from "@/lib/logger.mjs";
 import { createAuditLog } from "@/lib/mailboxes/audit";
+import { outboundFetch } from "@/lib/security/outbound-fetch";
 import { assertPublicHttpUrl } from "@/lib/security/outbound-url";
 import { openSetting, sealSetting } from "@/lib/security/secret-box";
 import { endpointPolicyFor } from "@/lib/storage/config";
+import { storageFetchPolicy } from "@/lib/storage/endpoint-utils";
 import { DriveRefusal, fail, ok } from "./errors";
 import { allowMountCheck } from "./rate-limit";
 import type { DriveAnswer, DriveMountDto, DriveUser } from "./types";
@@ -51,7 +53,7 @@ function webdavGuard(env: CloudflareEnv): (url: URL) => Promise<void> {
 export function webdavClient(env: CloudflareEnv, credentials: MountCredentials): WebdavClient {
 	return new WebdavClient(
 		{ url: credentials.url, username: credentials.username, password: credentials.password },
-		{ guard: webdavGuard(env) },
+		{ guard: webdavGuard(env), fetch: outboundFetch(env, storageFetchPolicy(endpointPolicyFor(env))) },
 	);
 }
 

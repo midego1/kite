@@ -218,6 +218,9 @@ export const financeReceipts = sqliteTable(
 	(t) => [
 		uniqueIndex("finance_receipts_source_idx").on(t.sourceTable, t.sourceId),
 		index("finance_receipts_user_idx").on(t.userId, t.createdAt),
+		// The sweep's owner rotation reads each owner's latest `updated_at` (`ownerLastServed`): a seek with this index
+		// (migration 0114) instead of a scan of all of that owner's rows.
+		index("finance_receipts_user_updated_idx").on(t.userId, t.updatedAt),
 	],
 );
 

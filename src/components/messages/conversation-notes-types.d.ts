@@ -10,6 +10,8 @@ export type ConversationNotesController = {
 	/** The first load finished (or failed): until then the button shows no count. */
 	loaded: boolean;
 	canWrite: boolean;
+	/** A new note may be pinned to the open email (it is not a draft). */
+	canPin: boolean;
 	/** Migration 0115 is not applied: the reader shows no notes and no button. */
 	unavailable: boolean;
 	/** The notes band is shown. */

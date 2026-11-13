@@ -34,7 +34,7 @@ const target = { mailboxId: z.string().min(1), messageId: z.string().min(1) };
 
 /**
  * The conversation-notes tools (ported from upstream Mailflare #237). Reading needs `mcp:read`, every write
- * `mcp:organize` and more than read-only access to the mailbox. Note text is written by people with access to the
+ * `mcp:organize` and more than read-only access to the mailbox (deleting your own note needs only `mcp:organize`). Note text is written by people with access to the
  * mailbox, so results are marked untrusted like mail; held Screener mail is not found, as in the other tools.
  */
 export function registerNoteMcpTools(
@@ -106,6 +106,8 @@ export function registerNoteMcpTools(
 				if (!canWriteNotes(found.conversation.permission)) return denied();
 				const parsed = parseNoteBody(args.body);
 				if (!parsed.ok) return output({ error: parsed.error }, true);
+				if (args.aboutMessage && !found.conversation.pinnable)
+					return output({ error: "A note cannot be pinned to a draft" }, true);
 				try {
 					const note = await addConversationNote(found.db, found.conversation, principal.user.id, {
 						body: parsed.body,
@@ -174,7 +176,6 @@ export function registerNoteMcpTools(
 				if (!has("mcp:organize") || !principal.mailboxIds.includes(args.mailboxId)) return denied();
 				const found = await find(args.mailboxId, args.messageId);
 				if (!found) return output({ error: "Email not found" }, true);
-				if (!canWriteNotes(found.conversation.permission)) return denied();
 				try {
 					const result = await deleteConversationNote(found.db, found.conversation, principal.user.id, args.noteId);
 					if (result.ok) return output({ messageId: args.messageId, noteId: args.noteId, deleted: true });

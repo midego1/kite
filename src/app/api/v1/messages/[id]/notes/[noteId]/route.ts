@@ -14,7 +14,7 @@ export async function PATCH(request: Request, { params }: RouteParams) {
 	const { id, noteId } = await params;
 	return respondUpdateNote(
 		env,
-		{ user: auth.user, mailboxIds: auth.mailboxIds, hideScreening: true },
+		{ user: auth.user, mailboxIds: auth.mailboxIds, hideScreening: true, via: "api_key" },
 		id,
 		noteId,
 		request,
@@ -28,5 +28,10 @@ export async function DELETE(request: Request, { params }: RouteParams) {
 	if (!auth || !requireScope(auth.scopes, "notes"))
 		return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 	const { id, noteId } = await params;
-	return respondDeleteNote(env, { user: auth.user, mailboxIds: auth.mailboxIds, hideScreening: true }, id, noteId);
+	return respondDeleteNote(
+		env,
+		{ user: auth.user, mailboxIds: auth.mailboxIds, hideScreening: true, via: "api_key" },
+		id,
+		noteId,
+	);
 }

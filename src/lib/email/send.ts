@@ -365,10 +365,12 @@ async function deliverEmail(
 		return "sent";
 	}
 	await recordConnectedSend(env, delivery, response);
-	// Notes written while the message was its own conversation follow it onto the thread key the send just set.
-	await runPostDeliveryStep(`conversation notes for ${messageId}`, () =>
-		rekeyConversationNotes(db, mailboxId, messageId, threadId),
-	);
+	// Notes written while the message was its own conversation follow it onto the thread key the send just set; only
+	// once that write landed, or they would sit under a key the message never got.
+	if (markedSent)
+		await runPostDeliveryStep(`conversation notes for ${messageId}`, () =>
+			rekeyConversationNotes(db, mailboxId, messageId, threadId),
+		);
 	// Search by meaning: the status trigger already queued the message, so it is searchable before the next cron tick.
 	await runPostDeliveryStep(`search embedding drain for ${messageId}`, () => triggerEmbeddingDrain(env));
 	await runPostDeliveryStep(`agent reply suggestions for ${messageId}`, () => supersedeOlderReplies(env, messageId));

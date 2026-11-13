@@ -3,7 +3,10 @@ import { getDb } from "@/db";
 import type { SessionUser } from "@/lib/auth/types";
 import { RequestBodyTooLargeError } from "@/lib/http/errors";
 import { readJsonBody } from "@/lib/http/request";
-import type { NoteChangeError } from "./notes-types";
+import { allowAgentRequest } from "@/lib/agent/rate-limit";
+import { createLogger } from "@/lib/logger.mjs";
+import { createAuditLog } from "@/lib/mailboxes/audit";
+import type { NoteChangeError, NoteConversation } from "./notes-types";
 import { canWriteNotes, NOTE_MAX_LENGTH, parseNoteBody } from "./note-utils";
 import {
 	addConversationNote,
@@ -22,7 +25,11 @@ export type NotesViewer = {
 	mailboxIds: readonly string[] | null;
 	/** API keys never see mail the Screener holds, as everywhere else in `/api/v1`. */
 	hideScreening: boolean;
+	/** Recorded on the audit row of a write. */
+	via: "session" | "api_key";
 };
+
+const log = createLogger("notes");
 
 const NO_STORE = { "Cache-Control": "no-store" };
 /** The JSON a note write may carry: the text (with room for escaping) and a flag. */
@@ -70,20 +77,58 @@ export async function respondListNotes(env: CloudflareEnv, viewer: NotesViewer, 
 	return json(await listConversationNotes(db, conversation, viewer.user.id));
 }
 
+type NoteAuditAction = "note.added" | "note.edited" | "note.deleted";
+
+/**
+ * One audit row per note write (who, which note, through what), never the text. Deleting someone else's note names
+ * them as the target. A failing write is logged and never fails the request.
+ */
+async function auditNote(
+	env: CloudflareEnv,
+	viewer: NotesViewer,
+	conversation: NoteConversation,
+	action: NoteAuditAction,
+	note: { id: string; authorUserId: string | null },
+) {
+	const ofOther = note.authorUserId !== viewer.user.id;
+	try {
+		await createAuditLog(env, {
+			actorUserId: viewer.user.id,
+			targetUserId: ofOther ? note.authorUserId : null,
+			mailboxId: conversation.mailboxId,
+			messageId: conversation.messageId,
+			action,
+			metadata: { noteId: note.id, via: viewer.via, ...(ofOther ? { ofOtherAuthor: true } : {}) },
+		});
+	} catch (error) {
+		log.warn("notes.audit_failed", { action, error });
+	}
+}
+
+/** Loads the conversation for a write, refusing a missing message, (for `requireWrite`) read-only access and a burst. */
+async function loadForWrite(env: CloudflareEnv, viewer: NotesViewer, messageId: string, requireWrite: boolean) {
+	const { db, conversation } = await load(env, viewer, messageId);
+	if (!conversation) return { error: notFound() };
+	if (requireWrite && !canWriteNotes(conversation.permission)) return { error: readOnly() };
+	if (!(await allowAgentRequest(env, `notes:${viewer.user.id}`)))
+		return { error: json({ error: "Too many note changes; try again in a minute", code: "RATE_LIMITED" }, 429) };
+	return { db, conversation };
+}
+
 /** `POST …/notes` with `{ body, aboutMessage? }`: adds a note; `aboutMessage: true` pins it to this email. */
 export async function respondAddNote(env: CloudflareEnv, viewer: NotesViewer, messageId: string, request: Request) {
-	const { db, conversation } = await load(env, viewer, messageId);
-	if (!conversation) return notFound();
-	if (!canWriteNotes(conversation.permission)) return readOnly();
+	const loaded = await loadForWrite(env, viewer, messageId, true);
+	if ("error" in loaded) return loaded.error;
+	const { db, conversation } = loaded;
 	const input = await readBody(request);
 	if ("error" in input) return input.error;
 	const parsed = parseNoteBody(input.body.body);
 	if (!parsed.ok) return json({ error: parsed.error }, 400);
+	const aboutMessage = input.body.aboutMessage === true;
+	if (aboutMessage && !conversation.pinnable) return json({ error: "A note cannot be pinned to a draft" }, 400);
 	try {
-		const note = await addConversationNote(db, conversation, viewer.user.id, {
-			body: parsed.body,
-			aboutMessage: input.body.aboutMessage === true,
-		});
+		const note = await addConversationNote(db, conversation, viewer.user.id, { body: parsed.body, aboutMessage });
+		await auditNote(env, viewer, conversation, "note.added", { id: note.id, authorUserId: viewer.user.id });
 		return json({ note }, 201);
 	} catch (error) {
 		return writeFailed(error);
@@ -98,29 +143,36 @@ export async function respondUpdateNote(
 	noteId: string,
 	request: Request,
 ) {
-	const { db, conversation } = await load(env, viewer, messageId);
-	if (!conversation) return notFound();
-	if (!canWriteNotes(conversation.permission)) return readOnly();
+	const loaded = await loadForWrite(env, viewer, messageId, true);
+	if ("error" in loaded) return loaded.error;
+	const { db, conversation } = loaded;
 	const input = await readBody(request);
 	if ("error" in input) return input.error;
 	const parsed = parseNoteBody(input.body.body);
 	if (!parsed.ok) return json({ error: parsed.error }, 400);
 	try {
 		const result = await updateConversationNote(db, conversation, viewer.user.id, noteId, parsed.body);
-		return result.ok ? json({ note: result.note }) : changeRefused(result.error);
+		if (!result.ok) return changeRefused(result.error);
+		await auditNote(env, viewer, conversation, "note.edited", { id: noteId, authorUserId: viewer.user.id });
+		return json({ note: result.note });
 	} catch (error) {
 		return writeFailed(error);
 	}
 }
 
-/** `DELETE …/notes/[noteId]`: the author, or someone with full access to the mailbox, deletes a note. */
+/**
+ * `DELETE …/notes/[noteId]`: the author (also after their access was lowered to read-only), or someone with full
+ * access to the mailbox, deletes a note.
+ */
 export async function respondDeleteNote(env: CloudflareEnv, viewer: NotesViewer, messageId: string, noteId: string) {
-	const { db, conversation } = await load(env, viewer, messageId);
-	if (!conversation) return notFound();
-	if (!canWriteNotes(conversation.permission)) return readOnly();
+	const loaded = await loadForWrite(env, viewer, messageId, false);
+	if ("error" in loaded) return loaded.error;
+	const { db, conversation } = loaded;
 	try {
 		const result = await deleteConversationNote(db, conversation, viewer.user.id, noteId);
-		return result.ok ? json({ ok: true }) : changeRefused(result.error);
+		if (!result.ok) return changeRefused(result.error);
+		await auditNote(env, viewer, conversation, "note.deleted", { id: noteId, authorUserId: result.authorUserId });
+		return json({ ok: true });
 	} catch (error) {
 		return writeFailed(error);
 	}

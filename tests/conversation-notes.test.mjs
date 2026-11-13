@@ -105,7 +105,7 @@ const request = (body, method = "POST") =>
 		body: JSON.stringify(body),
 	});
 
-const session = (viewer) => ({ user: viewer, mailboxIds: null, hideScreening: false });
+const session = (viewer) => ({ user: viewer, mailboxIds: null, hideScreening: false, via: "session" });
 
 test("read-only access reads notes; writing needs more; only the author edits; a full-access member deletes any", () => {
 	assert.equal(notes.canWriteNotes("read_only"), false);
@@ -119,7 +119,8 @@ test("read-only access reads notes; writing needs more; only the author edits; a
 	assert.equal(notes.canDeleteNote(null, "owner", "full_access"), true);
 	assert.equal(notes.canDeleteNote("helper", "helper", "send_on_behalf"), true);
 	assert.equal(notes.canDeleteNote("owner", "helper", "send_on_behalf"), false);
-	assert.equal(notes.canDeleteNote("reader", "reader", "read_only"), false);
+	assert.equal(notes.canDeleteNote("reader", "reader", "read_only"), true, "a lowered author still deletes their own");
+	assert.equal(notes.canDeleteNote("helper", "reader", "read_only"), false);
 });
 
 test("a note body is trimmed plain text with normalised line endings, never empty or over the limit", () => {
@@ -152,6 +153,7 @@ test("everyone with access sees the same notes from any email of the conversatio
 		threadKey: "thread-1",
 		messageId: "m1",
 		permission: "send_on_behalf",
+		pinnable: true,
 	});
 	const first = await notes.addConversationNote(db, fromM1, "helper", { body: "Maya is a VIP" });
 	const pinned = await notes.addConversationNote(db, fromM1, "helper", { body: "Refund done", aboutMessage: true });
@@ -204,7 +206,7 @@ test("a note id from another conversation or mailbox does not resolve, so it can
 	assert.equal(edited.note.edited, true);
 	const unchanged = await notes.updateConversationNote(db, thread, "helper", threadNote.id, "Thread one, updated");
 	assert.equal(unchanged.note.updatedAt, edited.note.updatedAt, "saving the same text is not an edit");
-	assert.deepEqual(await notes.deleteConversationNote(db, manager, "manager", threadNote.id), { ok: true });
+	assert.deepEqual(await notes.deleteConversationNote(db, manager, "manager", threadNote.id), { ok: true, authorUserId: "helper" });
 	assert.deepEqual((await notes.listConversationNotes(db, thread, "helper")).notes, []);
 });
 
@@ -343,6 +345,7 @@ test("before migration 0115 reads answer no notes and writes 409 MIGRATION_PENDI
 	assert.deepEqual(await notes.listConversationNotes(db, thread, "helper"), {
 		notes: [],
 		canWrite: false,
+		canPin: false,
 		migrationPending: true,
 	});
 	await assert.rejects(notes.addConversationNote(db, thread, "helper", { body: "x" }), notes.NotesUnavailableError);
@@ -466,4 +469,149 @@ test("MCP: listing needs mcp:read, writes mcp:organize and write access; results
 	);
 	const audit = env.DB.db.prepare("SELECT count(*) AS calls FROM audit_logs WHERE action = 'mcp.tool_call'").get();
 	assert.ok(audit.calls >= 8, "every call leaves an audit row");
+});
+
+test("a conversation's notes go when its last email is deleted for good, not before", async (t) => {
+	const { db, database } = await fixture(t);
+	const thread = await conversation(db, HELPER, "m1");
+	await notes.addConversationNote(db, thread, "helper", { body: "About the thread" });
+	await notes.addConversationNote(db, await conversation(db, OWNER, "lone"), "owner", { body: "About the lone email" });
+	await notes.addConversationNote(db, await conversation(db, OWNER, "s1"), "owner", { body: "Sales" });
+	const bodies = () =>
+		database.db
+			.prepare("SELECT body FROM conversation_notes ORDER BY body")
+			.all()
+			.map((row) => row.body);
+
+	database.db.exec("DELETE FROM messages WHERE id = 'm1'");
+	assert.deepEqual(bodies(), ["About the lone email", "About the thread", "Sales"], "m2 still holds the thread");
+	database.db.exec("UPDATE messages SET status = 'trash' WHERE id = 'm2'");
+	assert.equal(bodies().length, 3, "moving to Trash keeps them");
+	database.db.exec("DELETE FROM messages WHERE id = 'm2'");
+	database.db.exec("DELETE FROM messages WHERE id = 'lone'");
+	assert.deepEqual(bodies(), ["Sales"]);
+
+	// A note still under a fresh message's own id goes with that message when it is never sent.
+	database.db.exec(
+		"INSERT INTO messages (id, user_id, mailbox_id, direction, from_addr, to_addr, subject, status, thread_id, created_at) VALUES ('fresh', 'owner', 'support', 'outbound', 'support@example.com', 'x@acme.test', 'New', 'queued', NULL, 80)",
+	);
+	await notes.addConversationNote(db, await conversation(db, OWNER, "fresh"), "owner", { body: "Unsent" });
+	database.db.exec("DELETE FROM messages WHERE id = 'fresh'");
+	assert.deepEqual(bodies(), ["Sales"]);
+});
+
+test("a note cannot be pinned to a draft, and a pin to an email that became a draft is hidden from others", async (t) => {
+	const { env, db, database } = await fixture(t);
+	database.db.exec(
+		"INSERT INTO messages (id, user_id, mailbox_id, direction, from_addr, to_addr, subject, status, thread_id, created_at) VALUES ('reply-draft', 'helper', 'support', 'outbound', 'support@example.com', 'maya@acme.test', 'Re: Help', 'draft', 'thread-1', 25)",
+	);
+	const fromDraft = await conversation(db, HELPER, "reply-draft");
+	assert.equal(fromDraft.pinnable, false);
+	assert.equal((await notes.listConversationNotes(db, fromDraft, "helper")).canPin, false);
+	const refused = await notes.respondAddNote(
+		env,
+		session(HELPER),
+		"reply-draft",
+		request({ body: "x", aboutMessage: true }),
+	);
+	assert.equal(refused.status, 400);
+	// Without the pin the note is about the conversation, which everyone sees.
+	assert.equal(
+		(await notes.respondAddNote(env, session(HELPER), "reply-draft", request({ body: "Drafting" }))).status,
+		201,
+	);
+
+	// A sent email the owner pinned is taken back to Drafts (a cancelled send): only its writer still sees the pin.
+	database.db.exec(
+		"INSERT INTO messages (id, user_id, mailbox_id, direction, from_addr, to_addr, subject, status, thread_id, created_at) VALUES ('out', 'owner', 'support', 'outbound', 'support@example.com', 'maya@acme.test', 'Re: Help', 'sent', 'thread-1', 30)",
+	);
+	await notes.addConversationNote(db, await conversation(db, OWNER, "out"), "owner", {
+		body: "Pinned",
+		aboutMessage: true,
+	});
+	database.db.exec("UPDATE messages SET status = 'draft' WHERE id = 'out'");
+	const pinOf = async (viewer) =>
+		(await notes.listConversationNotes(db, await conversation(db, viewer, "m1"), viewer.id)).notes.find(
+			(note) => note.body === "Pinned",
+		).messageId;
+	assert.equal(await pinOf(OWNER), "out");
+	assert.equal(await pinOf(MANAGER), null);
+});
+
+test("note writes leave audit rows, naming the author when someone else's note is deleted", async (t) => {
+	const { env, database } = await fixture(t);
+	const { note } = await (await notes.respondAddNote(env, session(HELPER), "m1", request({ body: "One" }))).json();
+	await notes.respondUpdateNote(env, session(HELPER), "m1", note.id, request({ body: "Two" }, "PATCH"));
+	await notes.respondDeleteNote(env, session(MANAGER), "m1", note.id);
+	const audits = database.db
+		.prepare(
+			"SELECT action, actor_user_id AS actor, target_user_id AS target, mailbox_id AS mailbox, metadata FROM audit_logs WHERE action LIKE 'note.%' ORDER BY rowid",
+		)
+		.all()
+		.map((row) => ({ ...row, metadata: JSON.parse(row.metadata) }));
+	assert.deepEqual(audits, [
+		{
+			action: "note.added",
+			actor: "helper",
+			target: null,
+			mailbox: "support",
+			metadata: { noteId: note.id, via: "session" },
+		},
+		{
+			action: "note.edited",
+			actor: "helper",
+			target: null,
+			mailbox: "support",
+			metadata: { noteId: note.id, via: "session" },
+		},
+		{
+			action: "note.deleted",
+			actor: "manager",
+			target: "helper",
+			mailbox: "support",
+			metadata: { noteId: note.id, via: "session", ofOtherAuthor: true },
+		},
+	]);
+	assert.doesNotMatch(JSON.stringify(audits), /One|Two/, "never the text");
+});
+
+test("note writes are rate limited per user; reads are not", async (t) => {
+	const { env } = await fixture(t);
+	const keys = [];
+	env.AGENT_RATE_LIMIT = { limit: async ({ key }) => (keys.push(key), { success: false }) };
+	const refused = await notes.respondAddNote(env, session(HELPER), "m1", request({ body: "x" }));
+	assert.equal(refused.status, 429);
+	assert.equal((await refused.json()).code, "RATE_LIMITED");
+	assert.deepEqual(keys, ["notes:helper"]);
+	assert.equal((await notes.respondDeleteNote(env, session(HELPER), "m1", "n1")).status, 429);
+	assert.equal((await notes.respondListNotes(env, session(HELPER), "m1")).status, 200);
+});
+
+test("a member lowered to read-only can still delete their own note, but not add, edit or delete others'", async (t) => {
+	const { env, database } = await fixture(t);
+	const mine = (await (await notes.respondAddNote(env, session(HELPER), "m1", request({ body: "Mine" }))).json()).note;
+	const owners = (await (await notes.respondAddNote(env, session(OWNER), "m1", request({ body: "Owner's" }))).json())
+		.note;
+	database.db.exec(
+		"UPDATE mailbox_access SET permission = 'read_only' WHERE user_id = 'helper' AND mailbox_id = 'support'",
+	);
+	const listed = await (await notes.respondListNotes(env, session(HELPER), "m1")).json();
+	assert.deepEqual(
+		listed.notes.map((note) => [note.body, note.canEdit, note.canDelete]),
+		[
+			["Mine", false, true],
+			["Owner's", false, false],
+		],
+	);
+	assert.equal(
+		(await notes.respondUpdateNote(env, session(HELPER), "m1", mine.id, request({ body: "x" }, "PATCH"))).status,
+		403,
+	);
+	assert.equal((await notes.respondDeleteNote(env, session(HELPER), "m1", owners.id)).status, 403);
+	assert.equal((await notes.respondDeleteNote(env, session(HELPER), "m1", mine.id)).status, 200);
+	const { call } = mcpTools(env, ["mcp:organize"], ["support"], HELPER);
+	assert.equal(
+		(await call("add_conversation_note", { mailboxId: "support", messageId: "m1", body: "x" })).error,
+		"Permission denied",
+	);
 });

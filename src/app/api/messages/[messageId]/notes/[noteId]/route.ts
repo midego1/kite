@@ -14,7 +14,7 @@ export async function PATCH(request: Request, { params }: RouteParams) {
 	const { messageId, noteId } = await params;
 	return respondUpdateNote(
 		env,
-		{ user: auth.user, mailboxIds: null, hideScreening: false },
+		{ user: auth.user, mailboxIds: null, hideScreening: false, via: "session" },
 		messageId,
 		noteId,
 		request,
@@ -28,5 +28,10 @@ export async function DELETE(request: Request, { params }: RouteParams) {
 	if (auth.error) return auth.error;
 	if (!hasValidSessionMutationOrigin(request)) return Response.json({ error: "Invalid origin" }, { status: 403 });
 	const { messageId, noteId } = await params;
-	return respondDeleteNote(env, { user: auth.user, mailboxIds: null, hideScreening: false }, messageId, noteId);
+	return respondDeleteNote(
+		env,
+		{ user: auth.user, mailboxIds: null, hideScreening: false, via: "session" },
+		messageId,
+		noteId,
+	);
 }

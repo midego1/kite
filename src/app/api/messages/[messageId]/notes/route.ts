@@ -13,7 +13,11 @@ export async function GET(request: Request, { params }: RouteParams) {
 	const env = getEnv();
 	const auth = await requireSessionUser(env, request);
 	if (auth.error) return auth.error;
-	return respondListNotes(env, { user: auth.user, mailboxIds: null, hideScreening: false }, (await params).messageId);
+	return respondListNotes(
+		env,
+		{ user: auth.user, mailboxIds: null, hideScreening: false, via: "session" },
+		(await params).messageId,
+	);
 }
 
 /** Adds a note (`{ body, aboutMessage? }`); read-only access answers 403, before migration 0115 409 `MIGRATION_PENDING`. */
@@ -24,7 +28,7 @@ export async function POST(request: Request, { params }: RouteParams) {
 	if (!hasValidSessionMutationOrigin(request)) return Response.json({ error: "Invalid origin" }, { status: 403 });
 	return respondAddNote(
 		env,
-		{ user: auth.user, mailboxIds: null, hideScreening: false },
+		{ user: auth.user, mailboxIds: null, hideScreening: false, via: "session" },
 		(await params).messageId,
 		request,
 	);

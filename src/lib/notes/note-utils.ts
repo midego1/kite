@@ -8,8 +8,8 @@ export const NOTE_MAX_PER_CONVERSATION = 200;
 
 /**
  * Anyone who can read the mailbox reads its notes. Writing needs more than read-only access: "read-only" keeps its
- * meaning of adding nothing other people see, so a read-only member of a shared mailbox reads notes but cannot add,
- * edit or delete one (not even one written before their access was lowered).
+ * meaning of adding nothing other people see, so a read-only member of a shared mailbox reads notes but cannot add
+ * or edit one; they can still delete a note they wrote before their access was lowered.
  */
 export function canWriteNotes(permission: MailboxPermission): boolean {
 	return permission !== "read_only";
@@ -20,9 +20,12 @@ export function canEditNote(authorUserId: string | null, viewerId: string, permi
 	return canWriteNotes(permission) && authorUserId !== null && authorUserId === viewerId;
 }
 
-/** The author may delete their note, and so may anyone with full access to the mailbox (to tidy a shared mailbox). */
+/**
+ * The author may delete their note, also after their access was lowered to read-only (taking back your own words
+ * changes nothing others wrote), and so may anyone with full access to the mailbox, to tidy a shared mailbox.
+ */
 export function canDeleteNote(authorUserId: string | null, viewerId: string, permission: MailboxPermission): boolean {
-	return permission === "full_access" || canEditNote(authorUserId, viewerId, permission);
+	return permission === "full_access" || (authorUserId !== null && authorUserId === viewerId);
 }
 
 export type NoteBodyResult = { ok: true; body: string } | { ok: false; error: string };

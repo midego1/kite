@@ -12,7 +12,7 @@ export async function GET(request: Request, { params }: RouteParams) {
 	if (!auth || !requireScope(auth.scopes, "read")) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 	return respondListNotes(
 		env,
-		{ user: auth.user, mailboxIds: auth.mailboxIds, hideScreening: true },
+		{ user: auth.user, mailboxIds: auth.mailboxIds, hideScreening: true, via: "api_key" },
 		(await params).id,
 	);
 }
@@ -25,7 +25,7 @@ export async function POST(request: Request, { params }: RouteParams) {
 		return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 	return respondAddNote(
 		env,
-		{ user: auth.user, mailboxIds: auth.mailboxIds, hideScreening: true },
+		{ user: auth.user, mailboxIds: auth.mailboxIds, hideScreening: true, via: "api_key" },
 		(await params).id,
 		request,
 	);

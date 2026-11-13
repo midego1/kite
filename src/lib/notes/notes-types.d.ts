@@ -15,7 +15,7 @@ export type ConversationNote = {
 	edited: boolean;
 	/** The viewer may change the text: only its author, while they may still write notes in the mailbox. */
 	canEdit: boolean;
-	/** The viewer may delete it: its author (while they may write), or anyone with full access to the mailbox. */
+	/** The viewer may delete it: its author (also after their access was lowered), or anyone with full access. */
 	canDelete: boolean;
 };
 
@@ -24,6 +24,8 @@ export type ConversationNotesAnswer = {
 	notes: ConversationNote[];
 	/** The viewer may add notes; false for read-only access and before the database update. */
 	canWrite: boolean;
+	/** A note may be pinned to the email the notes were listed from (not to a draft, which only its writer sees). */
+	canPin: boolean;
 	/** Migration 0115 has not been applied yet: there are no notes and none can be written. */
 	migrationPending?: true;
 };
@@ -36,6 +38,8 @@ export type NoteConversation = {
 	/** The email the conversation was looked up from; a note pinned "to this email" names it. */
 	messageId: string;
 	permission: MailboxPermission;
+	/** The email may carry a pin: every reader of the conversation can open it (it is not a draft). */
+	pinnable: boolean;
 };
 
 export type NoteChangeError = "not_found" | "forbidden";

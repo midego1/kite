@@ -8,25 +8,31 @@ import type { ConversationNotesController } from "./conversation-notes-types";
 import { notesUrl, noteUrl } from "./conversation-notes-utils";
 
 const JSON_HEADERS = { "Content-Type": "application/json" };
+/** Coming back to the window reloads the notes only when the last load is older than this. */
+const FOCUS_STALE_MS = 60_000;
 
 /**
- * The notes of the open conversation: loaded with the reader (no count until then), reloaded when the window
- * regains focus or mail changes (`kite:messages-changed`), so a colleague's note shows up without a reload. The
+ * The notes of the open conversation: loaded with the reader (no count until then), reloaded when mail changes
+ * (`kite:messages-changed`) and when the window regains focus after a minute or more, so a colleague's note shows up
+ * without a reload and without a request on every tab switch. The
  * band opens by itself when the conversation has notes; answers for a message the reader left are dropped.
  */
 export function useConversationNotes(messageId: string): ConversationNotesController {
 	const [notes, setNotes] = useState<ConversationNote[]>([]);
 	const [loaded, setLoaded] = useState(false);
 	const [canWrite, setCanWrite] = useState(false);
+	const [canPin, setCanPin] = useState(false);
 	const [unavailable, setUnavailable] = useState(false);
 	const [open, setOpen] = useState<boolean | null>(null);
 	const [composeRequest, setComposeRequest] = useState(0);
 	const [refresh, setRefresh] = useState(0);
 	const shown = useRef(messageId);
+	const loadedAt = useRef(0);
 	if (useKeyChanged(messageId)) {
 		setNotes([]);
 		setLoaded(false);
 		setCanWrite(false);
+		setCanPin(false);
 		setUnavailable(false);
 		setOpen(null);
 		setComposeRequest(0);
@@ -34,11 +40,14 @@ export function useConversationNotes(messageId: string): ConversationNotesContro
 
 	useEffect(() => {
 		const bump = () => setRefresh((value) => value + 1);
+		const focused = () => {
+			if (Date.now() - loadedAt.current >= FOCUS_STALE_MS) bump();
+		};
 		window.addEventListener("kite:messages-changed", bump);
-		window.addEventListener("focus", bump);
+		window.addEventListener("focus", focused);
 		return () => {
 			window.removeEventListener("kite:messages-changed", bump);
-			window.removeEventListener("focus", bump);
+			window.removeEventListener("focus", focused);
 		};
 	}, []);
 
@@ -51,8 +60,10 @@ export function useConversationNotes(messageId: string): ConversationNotesContro
 				if (!live) return;
 				setLoaded(true);
 				if (!answer) return;
+				loadedAt.current = Date.now();
 				setNotes(answer.notes);
 				setCanWrite(answer.canWrite);
+				setCanPin(answer.canPin);
 				setUnavailable(!!answer.migrationPending);
 			})
 			.catch(() => {
@@ -110,6 +121,7 @@ export function useConversationNotes(messageId: string): ConversationNotesContro
 		notes,
 		loaded,
 		canWrite,
+		canPin,
 		unavailable,
 		open: isOpen,
 		composeRequest,

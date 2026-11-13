@@ -253,14 +253,14 @@ Internal notes on a conversation (see [Notes on conversations](conversation-note
 
 | Route | Auth | What it does |
 | ----- | ---- | ------------ |
-| `GET /api/messages/{messageId}/notes` | session | `{ notes, canWrite }`, oldest first; `migrationPending: true` with an empty list before migration 0115 |
-| `POST /api/messages/{messageId}/notes` | session | `{ body, aboutMessage? }` adds a note (201 `{ note }`); `aboutMessage: true` pins it to that email |
+| `GET /api/messages/{messageId}/notes` | session | `{ notes, canWrite, canPin }`, oldest first; `migrationPending: true` with an empty list before migration 0115 |
+| `POST /api/messages/{messageId}/notes` | session | `{ body, aboutMessage? }` adds a note (201 `{ note }`); `aboutMessage: true` pins it to that email (400 for a draft, see `canPin`) |
 | `PATCH /api/messages/{messageId}/notes/{noteId}` | session | `{ body }` replaces the text of your own note |
-| `DELETE /api/messages/{messageId}/notes/{noteId}` | session | deletes your note, or anyone's with full access to the mailbox |
+| `DELETE /api/messages/{messageId}/notes/{noteId}` | session | deletes your note (also after your access was lowered to read-only), or anyone's with full access to the mailbox |
 | `GET /api/v1/messages/{id}/notes` | API key, `read` | as above |
 | `POST`, `PATCH`, `DELETE` under `/api/v1/messages/{id}/notes` | API key, `notes` | as above, as the key's user |
 
-A note is `{ id, body, messageId, author: { id, name } | null, createdAt, updatedAt, edited, canEdit, canDelete }`; `author` is null once the account is deleted and `messageId` null for a note about the whole conversation. Errors: 404 for a message the caller cannot read (another user's draft, a mailbox a key does not name, and for API keys mail the Screener holds) and for a note id of another conversation or mailbox; 403 `READ_ONLY` for read-only access to the mailbox; 403 `FORBIDDEN` for someone else's note; 400 for an empty or too long note; 409 `NOTE_LIMIT` once a conversation holds 200 notes; 409 `MIGRATION_PENDING` before migration 0115.
+A note is `{ id, body, messageId, author: { id, name } | null, createdAt, updatedAt, edited, canEdit, canDelete }`; `author` is null once the account is deleted and `messageId` null for a note about the whole conversation. Errors: 404 for a message the caller cannot read (another user's draft, a mailbox a key does not name, and for API keys mail the Screener holds) and for a note id of another conversation or mailbox; 403 `READ_ONLY` for read-only access to the mailbox; 403 `FORBIDDEN` for someone else's note; 400 for an empty or too long note; 409 `NOTE_LIMIT` once a conversation holds 200 notes (checked in the same statement as the insert); 429 `RATE_LIMITED` past the per-user write allowance (`AGENT_RATE_LIMIT`, key `notes:<user id>`); 409 `MIGRATION_PENDING` before migration 0115. A pin to an email that is a draft the caller cannot open comes back as `messageId: null`. Every write leaves a `note.added`, `note.edited` or `note.deleted` audit row; a conversation's notes are deleted with its last email.
 
 ## Webhooks
 

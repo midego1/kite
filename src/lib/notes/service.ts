@@ -1,11 +1,12 @@
-import { and, asc, count, eq, or, sql } from "drizzle-orm";
+import { and, asc, eq, or, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/sqlite-core";
 import type { AppDatabase } from "@/db";
 import { messages, users } from "@/db/schema";
 import { conversationNotes } from "@/db/schema/conversation-notes";
 import type { SessionUser } from "@/lib/auth/types";
 import { newId } from "@/lib/ids";
 import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
-import { isHiddenDraft } from "@/lib/messages/draft-privacy-utils";
+import { DRAFT_STATUS, isHiddenDraft } from "@/lib/messages/draft-privacy-utils";
 import { isNoSuchTableError } from "@/lib/modules/state-utils";
 import { SCREENING_STATUS } from "@/lib/screener/screener-utils";
 import type {
@@ -73,6 +74,8 @@ export async function conversationForUser(
 		threadKey: message.threadId ?? message.id,
 		messageId: message.id,
 		permission: access.permission,
+		// A draft is its writer's alone: a note pinned to it would show the others an email they cannot open.
+		pinnable: message.status !== DRAFT_STATUS,
 	};
 }
 
@@ -93,10 +96,15 @@ function conversationCondition(conversation: NoteConversation) {
 	);
 }
 
+/** The email a note is pinned to, for its status and writer: a pin to a draft is shown only to that draft's writer. */
+const pinned = alias(messages, "pinned_message");
+
 const noteColumns = {
 	id: conversationNotes.id,
 	body: conversationNotes.body,
 	messageId: conversationNotes.messageId,
+	pinnedStatus: pinned.status,
+	pinnedUserId: pinned.userId,
 	authorUserId: conversationNotes.authorUserId,
 	authorName: users.name,
 	createdAt: conversationNotes.createdAt,
@@ -107,17 +115,29 @@ type NoteRow = {
 	id: string;
 	body: string;
 	messageId: string | null;
+	pinnedStatus: string | null;
+	pinnedUserId: string | null;
 	authorUserId: string | null;
 	authorName: string | null;
 	createdAt: Date;
 	updatedAt: Date;
 };
 
+/** The pinned email's id, unless it is (or became, after a send was taken back) a draft the viewer cannot open. */
+function visiblePin(row: NoteRow, viewerId: string): string | null {
+	if (!row.messageId) return null;
+	const hidden =
+		row.pinnedStatus !== null &&
+		row.pinnedUserId !== null &&
+		isHiddenDraft({ status: row.pinnedStatus, userId: row.pinnedUserId }, viewerId);
+	return hidden ? null : row.messageId;
+}
+
 function toNote(row: NoteRow, conversation: NoteConversation, viewerId: string): ConversationNote {
 	return {
 		id: row.id,
 		body: row.body,
-		messageId: row.messageId,
+		messageId: visiblePin(row, viewerId),
 		author: row.authorUserId ? { id: row.authorUserId, name: row.authorName ?? "" } : null,
 		createdAt: row.createdAt.toISOString(),
 		updatedAt: row.updatedAt.toISOString(),
@@ -133,6 +153,7 @@ async function selectNotes(db: AppDatabase, conversation: NoteConversation, note
 			.select(noteColumns)
 			.from(conversationNotes)
 			.leftJoin(users, eq(conversationNotes.authorUserId, users.id))
+			.leftJoin(pinned, eq(conversationNotes.messageId, pinned.id))
 			.where(
 				noteId
 					? and(conversationCondition(conversation), eq(conversationNotes.id, noteId))
@@ -155,16 +176,18 @@ export async function listConversationNotes(
 		return {
 			notes: rows.map((row) => toNote(row, conversation, viewerId)),
 			canWrite: canWriteNotes(conversation.permission),
+			canPin: conversation.pinnable,
 		};
 	} catch (error) {
-		if (isNoSuchTableError(error)) return { notes: [], canWrite: false, migrationPending: true };
+		if (isNoSuchTableError(error)) return { notes: [], canWrite: false, canPin: false, migrationPending: true };
 		throw error;
 	}
 }
 
 /**
  * Adds a note by `viewerId`; with `aboutMessage` it is about the email the conversation was looked up from rather
- * than the whole conversation. The caller must have checked `canWriteNotes`.
+ * than the whole conversation; the caller must have checked `canWriteNotes` and, for a pin, `pinnable`. The count
+ * and the insert are one statement, so concurrent writes cannot push a conversation past the limit.
  */
 export async function addConversationNote(
 	db: AppDatabase,
@@ -173,23 +196,17 @@ export async function addConversationNote(
 	input: { body: string; aboutMessage?: boolean },
 ): Promise<ConversationNote> {
 	return writing(async () => {
-		const [{ total }] = await db
-			.select({ total: count() })
-			.from(conversationNotes)
-			.where(conversationCondition(conversation));
-		if (total >= NOTE_MAX_PER_CONVERSATION) throw new NoteLimitError();
-		const now = new Date();
 		const id = newId("note");
-		await db.insert(conversationNotes).values({
-			id,
-			mailboxId: conversation.mailboxId,
-			threadKey: conversation.threadKey,
-			messageId: input.aboutMessage ? conversation.messageId : null,
-			body: input.body,
-			authorUserId: viewerId,
-			createdAt: now,
-			updatedAt: now,
-		});
+		// Timestamps are whole seconds, as Drizzle's timestamp mode stores them.
+		const now = Math.floor(Date.now() / 1000);
+		const pin = input.aboutMessage && conversation.pinnable ? conversation.messageId : null;
+		const inserted = await db.all<{ id: string }>(sql`
+			insert into ${conversationNotes} (id, mailbox_id, thread_key, message_id, body, author_user_id, created_at, updated_at)
+			select ${id}, ${conversation.mailboxId}, ${conversation.threadKey}, ${pin}, ${input.body}, ${viewerId}, ${now}, ${now}
+			where (select count(*) from ${conversationNotes} where ${conversationCondition(conversation)}) < ${NOTE_MAX_PER_CONVERSATION}
+			returning id
+		`);
+		if (inserted.length === 0) throw new NoteLimitError();
 		const [row] = await selectNotes(db, conversation, id);
 		if (!row) throw new Error("The note was not saved");
 		return toNote(row, conversation, viewerId);
@@ -226,13 +243,13 @@ export async function deleteConversationNote(
 	conversation: NoteConversation,
 	viewerId: string,
 	noteId: string,
-): Promise<{ ok: true } | { ok: false; error: NoteChangeError }> {
+): Promise<{ ok: true; authorUserId: string | null } | { ok: false; error: NoteChangeError }> {
 	return writing(async () => {
 		const row = await noteInConversation(db, conversation, noteId);
 		if (!row) return refused("not_found");
 		if (!canDeleteNote(row.authorUserId, viewerId, conversation.permission)) return refused("forbidden");
 		await db.delete(conversationNotes).where(eq(conversationNotes.id, noteId));
-		return { ok: true };
+		return { ok: true, authorUserId: row.authorUserId };
 	});
 }
 

@@ -232,14 +232,16 @@ function Composer({ controller }: { controller: ConversationNotesController }) {
 			/>
 			{expanded && (
 				<div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2">
-					<label
-						htmlFor={pinId}
-						onMouseDown={(event) => event.preventDefault()}
-						className="flex items-center gap-2 text-xs text-neutral-700"
-					>
-						<Checkbox id={pinId} checked={aboutMessage} onChange={(event) => setAboutMessage(event.target.checked)} />
-						{t("About this email only")}
-					</label>
+					{controller.canPin && (
+						<label
+							htmlFor={pinId}
+							onMouseDown={(event) => event.preventDefault()}
+							className="flex items-center gap-2 text-xs text-neutral-700"
+						>
+							<Checkbox id={pinId} checked={aboutMessage} onChange={(event) => setAboutMessage(event.target.checked)} />
+							{t("About this email only")}
+						</label>
+					)}
 					<Button
 						size="sm"
 						className="ms-auto"

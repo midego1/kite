@@ -136,14 +136,15 @@ type ThinkingChoice = {
 function anthropicThinking(settings: ModelCallSettings): ThinkingChoice {
 	const hint = settings.reasoningEffort;
 	const room = settings.thinkingRoomTokens ?? THINKING_ROOM_TOKENS;
-	if (settings.plainThinking) return { options: {}, thinking: "default", effort: null, room };
-	if (hint && hint !== "minimal") return { options: { effort: hint }, thinking: "on", effort: hint, room };
 	const mode = claudeThinkingDefault(settings.modelId);
-	// A chat step keeps the model's own thinking, which helps it choose tools; it only gets the room for it.
-	if (settings.kind === "chat" && !hint)
+	// A chat step sends no thinking setting, as before: the model keeps its own thinking, which helps it choose
+	// tools, and the step only gets the room for it.
+	if (settings.kind === "chat")
 		return mode === "off"
 			? { options: {}, thinking: "off", effort: null, room: 0 }
 			: { options: {}, thinking: "default", effort: null, room };
+	if (settings.plainThinking) return { options: {}, thinking: "default", effort: null, room };
+	if (hint && hint !== "minimal") return { options: { effort: hint }, thinking: "on", effort: hint, room };
 	if (mode === "always") return { options: { effort: "low" }, thinking: "on", effort: "low", room };
 	// Sonnet 5.5 rejects `disabled`; `between_tools` is its lowest setting and, without tools, means no thinking.
 	if (mode === "between_tools")
@@ -235,14 +236,13 @@ function buildOptions(settings: ModelCallSettings, jsonMode: boolean): ModelCall
 
 /**
  * The options and output cap of every step of a turn with tools (assistant chat, the assistant by email): 1,200
- * tokens for the step's own answer plus `INTERACTIVE_THINKING_ROOM_TOKENS` for a model that may think, with the saved
- * reasoning effort sent as is.
+ * tokens for the step's own answer plus `INTERACTIVE_THINKING_ROOM_TOKENS` for a model that may think. No thinking or
+ * effort parameter is sent, as before, so a provider that refuses one cannot end a turn that has no fallback.
  */
 export function chatStepOptions(selection: {
 	providerKind: AgentProviderKind;
 	preset?: AgentProviderPreset;
 	modelId?: string | null;
-	reasoningEffort?: unknown;
 }): ModelCallOptions {
 	return buildModelCallOptions({
 		provider: selection.providerKind,
@@ -250,7 +250,6 @@ export function chatStepOptions(selection: {
 		kind: "chat",
 		modelId: selection.modelId,
 		thinkingRoomTokens: INTERACTIVE_THINKING_ROOM_TOKENS,
-		reasoningEffort: selection.reasoningEffort,
 	});
 }
 

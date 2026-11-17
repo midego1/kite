@@ -19,7 +19,7 @@ import { spendCapMessage } from "./chat-spend-utils";
 import { streamComposeAnswer } from "./compose-stream";
 import { buildComposePrompt, composeMaxOutputTokens } from "./compose-prompt-utils";
 import type { ComposeAction, ComposeMode, ComposeSource } from "./compose-types";
-import { selectInteractiveModel } from "./interactive-model";
+import { interactiveRefusalFor, InteractiveModelRefusedError, selectInteractiveModel } from "./interactive-model";
 import { INTERACTIVE_THINKING_ROOM_TOKENS } from "./output-budget-utils";
 import { personalInstructionsFor } from "./user-ai-settings";
 import { styleDescriptionFor } from "./writing-style";
@@ -218,6 +218,9 @@ export async function createComposeStream(
 		send,
 		// The retry is a new request: reserved against the caps like the first.
 		reserve: async (current) => {
+			// The retry is a new request: the switch, the opt-in and "No AI for this mailbox" are checked again.
+			const refusal = await interactiveRefusalFor(env, request.mailboxId, selection.providerKind);
+			if (refusal) return reportAiFailure(new InteractiveModelRefusedError(refusal), failure);
 			const next = await reserveAiSpend(reserveFor(current));
 			return next ?? (await refusedAtCap(reserveFor(current)));
 		},

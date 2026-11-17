@@ -263,9 +263,17 @@ async function ensureDemoModel() {
 	}
 }
 
-/** Write with Kite after an answer was cut off twice, with Details open on the budget. */
+/**
+ * Write with Kite after an answer was cut off twice, with Details open on the budget. The mailbox-no-ai shot leaves
+ * "No AI for this mailbox" on, so AI is turned back on for the admin's mailboxes first.
+ */
 async function openComposeCutOff(page: Page) {
 	await ensureDemoModel();
+	const api = await apiContext(STORAGE_STATE);
+	const { mailboxes } = (await (await api.get("/api/mailboxes")).json()) as { mailboxes: { id: string }[] };
+	for (const mailbox of mailboxes)
+		await api.put("/api/agent/settings/ai", { data: { mailboxId: mailbox.id, aiDisabled: false } });
+	await api.dispose();
 	await page.goto("/inbox");
 	await page.getByRole("button", { name: "Compose" }).click();
 	await expect(page.getByLabel("Subject")).toBeEditable();

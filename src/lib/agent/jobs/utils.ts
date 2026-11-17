@@ -87,7 +87,10 @@ async function generateRecordedDraft(
 						finishReason = reason;
 					},
 				}),
-			async () => {
+			async (first, cut) => {
+				// The retry is a new request: with the opt-in turned off since, the cut-off answer is the outcome.
+				if (await externalProviderRefused(env, selection.providerKind))
+					throw new ModelOutputTruncatedError(outputBudgetOf(cut, first));
 				await record("cut_off");
 				usage = undefined;
 				finishReason = null;

@@ -42,6 +42,7 @@ let requests;
 let answer;
 let finish;
 let signals;
+let onRequest;
 after(() => {
 	globalThis.fetch = realFetch;
 });
@@ -50,10 +51,12 @@ beforeEach(() => {
 	signals = [];
 	answer = "Tuesday at ten works for me.";
 	finish = "stop";
+	onRequest = null;
 	globalThis.fetch = async (url, init) => {
 		const body = JSON.parse(init.body);
 		requests.push(body);
 		signals.push(init.signal);
+		onRequest?.();
 		// A list gives each request its own finish reason, for a cut-off answer and its retry.
 		const reason = Array.isArray(finish) ? (finish[requests.length - 1] ?? "stop") : finish;
 		if (answer instanceof Error) return Response.json({ error: { message: answer.message } }, { status: 400 });
@@ -318,6 +321,25 @@ test("an answer cut off twice is refused with its budget under Details, every re
 	]);
 	for (const row of db.db.prepare("SELECT status, error_code, finish_reason, cost_estimated FROM ai_usage").all())
 		assert.deepEqual(row, { status: "failed", error_code: "cut_off", finish_reason: "length", cost_estimated: 0 });
+});
+
+test("the retry of a cut-off answer is a new request: with the opt-in turned off meanwhile it is refused", async (t) => {
+	const { db, env, user } = await setup(t);
+	finish = "length";
+	onRequest = () => db.db.exec("UPDATE app_settings SET agent_external_auto_read_allowed = 0");
+	const result = await events(await createComposeStream(env, user, write()));
+	assert.equal(requests.length, 1, "nothing more reaches the external provider");
+	assert.deepEqual(
+		result.map((event) => event.type),
+		["text", "error"],
+	);
+	assert.equal(result.at(-1).code, "external_provider_not_allowed");
+	assert.deepEqual(outcome(db), {
+		status: "failed",
+		error_code: "cut_off",
+		finish_reason: "length",
+		cost_estimated: 0,
+	});
 });
 
 test("the retry of a cut-off answer is reserved against the caps and refused at one", async (t) => {

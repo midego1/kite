@@ -286,8 +286,9 @@ test.describe("chat spend", () => {
 	test("a turn ends at the cap after the steps that fit, and every step's usage is reconciled", async () => {
 		const account = await newAccount("csq");
 		try {
-			// One step's estimate fits; the first step's long answer uses more than the rest of the cap.
-			await saveMailboxFields(account.api, account.mailboxId, { dailySpendCapMicros: 1_000 });
+			// One step's estimate fits (its 4,200-token cap, thinking room included, at $0.30 per million is 1,260
+			// micros plus the prompt); the first step's long answer uses more than the rest of the cap.
+			await saveMailboxFields(account.api, account.mailboxId, { dailySpendCapMicros: 2_000 });
 			fake.scriptChat(
 				{ content: "w".repeat(20_000), toolCalls: [{ name: "count_emails", arguments: {} }] },
 				{ content: "This step must never run." },

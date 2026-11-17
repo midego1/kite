@@ -87,14 +87,16 @@ function budgetFix(input: CutOffInput, budget: AiOutputBudget): string {
 	)
 		return `${model} always thinks, even at effort low, which is the lowest Kite sends. Choose a model that can answer without thinking (Claude Haiku 5.5, for example)${triage ? " as the triage model under automatic reading" : ""} in Admin → Agent.`;
 	if (budget.thinking === "on") {
-		const without =
-			anthropic && claudeThinkingDefault(input.model) === "always"
+		// Without an effort Kite sends nothing to a compatible provider, which then thinks as it does by default.
+		const without = !anthropic
+			? "sends no reasoning setting and the provider decides"
+			: claudeThinkingDefault(input.model) === "always"
 				? "sends effort low, the least this model allows"
-				: `switches thinking off${anthropic ? "" : " where the provider allows it"}`;
+				: "switches thinking off";
 		return `Clear ${model}'s reasoning effort, or set it to minimal, under the provider's models in Admin → Agent. Without an effort, Kite ${without}.`;
 	}
 	if (budget.thinking === "default" && input.feature === "chat")
-		return `In chat ${model} thinks as ${input.provider} sets it. Set its reasoning effort to low or minimal under the provider's models in Admin → Agent to leave more of the cap for the reply, or ask a narrower question.`;
+		return `In chat Kite sends no thinking setting: ${model} thinks as ${input.provider} sets it, within the cap's room for thinking. If replies are often cut off, ask a narrower question, or choose a model that thinks less in Admin → Agent.`;
 	if (budget.thinking === "default")
 		return `${input.provider} decides whether ${model} thinks, and Kite cannot switch that off there. If it is a reasoning model, set its reasoning effort to minimal in Admin → Agent, or choose a model that does not reason${triage ? " as the triage model" : ""}.`;
 	const retried = budget.retried ? ", even at double the cap" : "";

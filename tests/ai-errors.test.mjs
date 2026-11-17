@@ -339,9 +339,11 @@ test("refusals before any provider call are never kept and logged once a minute 
 const realFetch = globalThis.fetch;
 let requests;
 let reply;
+let onRequest;
 beforeEach(() => {
 	requests = [];
 	reply = null;
+	onRequest = null;
 });
 after(() => {
 	globalThis.fetch = realFetch;
@@ -352,6 +354,7 @@ function provider() {
 	globalThis.fetch = async (_url, init) => {
 		const body = JSON.parse(init.body);
 		requests.push(body);
+		onRequest?.();
 		if (reply === "hang")
 			return new Promise((_, reject) =>
 				init.signal.addEventListener("abort", () => reject(init.signal.reason), { once: true }),
@@ -487,6 +490,20 @@ test("a summary cut off once is asked again with double the budget and saved, th
 			{ status: "ok", error_code: null, finish_reason: "stop" },
 		],
 	);
+});
+
+test("a summary's retry after a cut-off is refused when the opt-in was turned off meanwhile", async (t) => {
+	const { db, env, user } = await longThread(t);
+	captureLogs(t);
+	provider();
+	reply = `{"language": "en", "overview": "${"The plan is blocked. ".repeat(380)}", "points": []}`;
+	onRequest = () => db.db.exec("UPDATE app_settings SET agent_external_auto_read_allowed = 0");
+	await assert.rejects(createSummary(env, user, "m11", { scope: "thread", language: "en" }), (error) => {
+		assert.ok(error instanceof SummaryRefusal);
+		assert.equal(error.code, "external_provider_not_allowed");
+		return true;
+	});
+	assert.equal(requests.length, 1, "nothing more reaches the external provider");
 });
 
 test("a summary that times out, an unusable one and a provider error each get their own code", async (t) => {

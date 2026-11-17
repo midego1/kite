@@ -129,6 +129,8 @@ export function streamComposeAnswer(input: ComposeStreamInput) {
 					if (!widened || input.abort.signal.aborted) break;
 					const reservation = await input.reserve(widened);
 					if ("error" in reservation) emit({ type: "error", ...reservation });
+					// Cancelled while the retry was being reserved: it never starts, and its estimate stays as the spend.
+					else if (input.abort.signal.aborted) await input.keepEstimate(reservation).catch(() => undefined);
 					else {
 						emit({ type: "restart" });
 						attempt = { options: widened, reservation };

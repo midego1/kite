@@ -803,6 +803,20 @@ test("an agent draft cut off twice is refused like Write with Kite's, with each 
 	assert.equal(jobOf(db, retried.jobId).status, "completed");
 	assert.deepEqual(usageOf(retried.jobId), [cutOff, answered]);
 	assert.equal(db.db.prepare("SELECT count(*) AS n FROM agent_draft_metadata").get().n, 2, "both whole drafts");
+
+	// The retry is a new request: with the opt-in turned off during the first, the cut-off answer is the outcome.
+	const refused = insertJob(db, { kind: "draft" });
+	requests = [];
+	replies = [
+		() => {
+			db.db.exec("UPDATE app_settings SET agent_external_auto_read_allowed = 0");
+			return reply("Here are the figures for the quarter, as", "length");
+		},
+	];
+	await processAgentDraftJob(env, refused.jobId);
+	assert.equal(requests.length, 1, "nothing more reaches the external provider");
+	assert.deepEqual(usageOf(refused.jobId), [cutOff]);
+	assert.notEqual(jobOf(db, refused.jobId).status, "completed");
 });
 
 for (const [kind, processJob] of [

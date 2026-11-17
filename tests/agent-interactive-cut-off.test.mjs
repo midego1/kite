@@ -293,23 +293,105 @@ test("chat and the assistant by email: the model keeps its thinking, the step ca
 	const claude4 = anthropic("claude-haiku-4-5");
 	assert.deepEqual(claude4.providerOptions, { anthropic: {} });
 	assert.equal(claude4.maxOutputTokens, 1_200);
-	// A saved effort is sent as is; minimal is as little thinking as the model allows.
-	assert.deepEqual(anthropic("claude-sonnet-5-5", "low").providerOptions, { anthropic: { effort: "low" } });
-	assert.equal(anthropic("claude-sonnet-5-5", "low").maxOutputTokens, 4_200);
-	assert.deepEqual(anthropic("claude-sonnet-5-5", "minimal").providerOptions, {
-		anthropic: { thinking: { type: "between_tools" } },
-	});
-	assert.equal(anthropic("claude-sonnet-5-5", "minimal").maxOutputTokens, 1_200);
+	// No thinking or effort parameter is sent, as before: a turn has no fallback for a provider that refuses one.
+	for (const effort of ["low", "minimal", "high"])
+		assert.deepEqual(anthropic("claude-sonnet-5-5", effort).providerOptions, { anthropic: {} }, effort);
 	const compatible = chatStepOptions({ providerKind: "compatible", preset: "openai", modelId: "gpt-x" });
 	assert.deepEqual(compatible.providerOptions, { kite: {} });
 	assert.equal(compatible.maxOutputTokens, 4_200);
 	assert.deepEqual(
 		chatStepOptions({ providerKind: "compatible", preset: "openai", modelId: "gpt-x", reasoningEffort: "low" })
 			.providerOptions,
-		{ kite: { reasoningEffort: "low" } },
+		{ kite: {} },
 	);
 	// Workers AI chat is sent as before.
 	const workers = chatStepOptions({ providerKind: "cloudflare", modelId: "@cf/x" });
 	assert.deepEqual(workers.providerOptions, {});
 	assert.equal(workers.maxOutputTokens, 1_200);
+});
+
+test("budget helpers: thinking defaults, a stored budget read back defensively, and the words Details uses", () => {
+	const {
+		claudeThinkingDefault,
+		describeOutputCap,
+		describeThinking,
+		describeUsage,
+		readAiOutputBudget,
+		thinksByDefault,
+	} = kite;
+	assert.equal(claudeThinkingDefault("claude-opus-5-5"), "always");
+	assert.equal(claudeThinkingDefault("claude-fable-5-2"), "always");
+	assert.equal(claudeThinkingDefault("claude-sonnet-5-5"), "between_tools");
+	assert.equal(claudeThinkingDefault("claude-haiku-5-5"), "adaptive");
+	assert.equal(claudeThinkingDefault("claude-haiku-4-5"), "off");
+	assert.equal(claudeThinkingDefault("claude-3-haiku"), "off");
+	assert.equal(claudeThinkingDefault(null), "adaptive", "an unknown, newer Claude thinks");
+	assert.equal(thinksByDefault("anthropic", "claude-sonnet-5-5"), true);
+	assert.equal(thinksByDefault("anthropic", "claude-haiku-4-5"), false);
+	assert.equal(thinksByDefault("anthropic", null), null);
+	assert.equal(thinksByDefault("openai", "gpt-x"), null);
+
+	assert.equal(readAiOutputBudget(null), null);
+	assert.equal(readAiOutputBudget("4000"), null);
+	assert.equal(readAiOutputBudget({ cap: "4000" }), null);
+	assert.deepEqual(readAiOutputBudget({ cap: 900, thinking: "weird", used: Number.NaN }), {
+		cap: 900,
+		thinkingRoom: 0,
+		extensionRoom: 0,
+		thinking: "default",
+		effort: null,
+		retried: false,
+		used: null,
+		thinkingUsed: null,
+	});
+	for (const thinking of ["off", "between_tools", "on"])
+		assert.equal(readAiOutputBudget({ cap: 1, thinking }).thinking, thinking);
+	assert.deepEqual(
+		readAiOutputBudget({
+			cap: 10_000,
+			thinkingRoom: 6_000,
+			effort: "high",
+			retried: true,
+			used: 10_000,
+			thinkingUsed: 9_000,
+		}),
+		{
+			cap: 10_000,
+			thinkingRoom: 6_000,
+			extensionRoom: 0,
+			thinking: "default",
+			effort: "high",
+			retried: true,
+			used: 10_000,
+			thinkingUsed: 9_000,
+		},
+	);
+
+	const budget = (extra) => ({
+		cap: 2_000,
+		thinkingRoom: 0,
+		extensionRoom: 0,
+		used: null,
+		thinkingUsed: null,
+		...extra,
+	});
+	assert.equal(describeOutputCap(budget()), "2,000 tokens");
+	assert.equal(
+		describeOutputCap(budget({ cap: 5_000, thinkingRoom: 3_000 })),
+		"5,000 tokens (2,000 for the answer + 3,000 for thinking)",
+	);
+	assert.equal(
+		describeOutputCap(budget({ cap: 1_600, thinkingRoom: 1_100, extensionRoom: 100 })),
+		"1,600 tokens (400 for the answer + 1,100 for thinking + 100 for module extensions)",
+	);
+	assert.equal(describeThinking({ thinking: "off", effort: null }), "off");
+	assert.equal(describeThinking({ thinking: "on", effort: "low" }), "on at effort low");
+	assert.equal(describeThinking({ thinking: "on", effort: null }), "on");
+	assert.equal(describeThinking({ thinking: "default", effort: null }), "left to the provider's default");
+	assert.equal(describeUsage(budget()), null);
+	assert.equal(describeUsage(budget({ used: 2_000, thinkingUsed: 0 })), "used 2,000 output tokens");
+	assert.equal(
+		describeUsage(budget({ used: 5_000, thinkingUsed: 4_200 })),
+		"used 5,000 output tokens, 4,200 of them thinking",
+	);
 });

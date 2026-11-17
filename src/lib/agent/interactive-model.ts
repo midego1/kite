@@ -34,6 +34,20 @@ export async function interactiveRefusal(env: CloudflareEnv, mailboxId?: string)
 }
 
 /**
+ * Whether a further request with a model already chosen (the retry of a cut-off answer) may still run: the same
+ * checks as `selectInteractiveModel`, with the opt-in checked for the chosen model's provider.
+ */
+export async function interactiveRefusalFor(
+	env: CloudflareEnv,
+	mailboxId: string,
+	providerKind: Parameters<typeof externalProviderRefused>[1],
+): Promise<InteractiveRefusal | null> {
+	const refusal = await interactiveRefusal(env, mailboxId);
+	if (refusal) return refusal;
+	return (await externalProviderRefused(env, providerKind)) ? "external_provider_not_allowed" : null;
+}
+
+/**
  * The model for one chat turn, composer or summary request. The switch, the provider and the opt-in are read again
  * on every request, Try again included, so turning any of them off applies at once.
  */

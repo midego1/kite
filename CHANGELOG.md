@@ -6,6 +6,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.11.17.0] - 2026-11-17
+
+### Added
+
+- Subscribe to your Kite calendar from Google Calendar, Outlook or your phone with a private, read-only link from **Subscribe** in the calendar's header, and replace or turn off the link there at any time. See [Subscribing from another calendar app](https://github.com/midego1/kite/blob/main/docs/api.md#subscribing-from-another-calendar-app). Ported from upstream Mailflare #247.
+  ![The Subscribe dialog with a new link, a Copy button and the steps for Google Calendar, Outlook and iPhone](/changelog/2026-11-13-calendar-subscribe-light.webp)
+  ![The same dialog in dark mode](/changelog/2026-11-13-calendar-subscribe-dark.webp)
+  ![The same dialog on a phone](/changelog/2026-11-13-calendar-subscribe-mobile-light.webp)
+- A message with two or more attachments has a Download all button next to its attachments that saves them as one ZIP file, named after the subject. Flagged files are named first and only included after you confirm, and a file missing from storage is reported instead of being left out. Ported from upstream Mailflare #269.
+  ![Download all next to a message's three attachments](/changelog/2026-11-13-download-all-attachments-light.webp)
+  ![Download all in dark mode](/changelog/2026-11-13-download-all-attachments-dark.webp)
+  ![Download all on a phone](/changelog/2026-11-13-download-all-attachments-mobile-light.webp)
+  ![The confirmation naming a flagged installer before the archive downloads](/changelog/2026-11-13-download-all-attachments-flagged-light.webp)
+- Gmail and Google Workspace accounts can be connected with Sign in with Google instead of an app password, once the owner sets up Google sign-in in [Admin → General](/general). Accounts with an app password keep working and can switch either way. Apply the database update first; see [Google sign-in](https://github.com/midego1/kite/blob/main/docs/providers.md#google-sign-in-for-connected-accounts).
+  ![Admin → General with Google sign-in set up and the redirect URI to register](/changelog/2026-11-11-google-sign-in-admin-light.webp)
+  ![The connect dialog for a Gmail account with the Sign in with Google button](/changelog/2026-11-11-sign-in-with-google-light.webp)
+
+### Changed
+
+- The database update notice is now a compact card: a short title, one line of status, a thin progress bar and a single **Update now** button. It no longer scrolls or cuts words off in the sidebar, shows updates in plain words under **Details** instead of file names, and says clearly when an update failed, with **Retry** and a link to the Admin overview.
+  ![Before: the old notice squeezed into the sidebar with scrollbars, a cut-off title and file names, in dark mode](/changelog/2026-11-10-database-update-before-dark.webp)
+  ![After: the compact notice with its status line and progress, in dark mode](/changelog/2026-11-10-database-update-after-dark.webp)
+  ![Before: the old notice in light mode](/changelog/2026-11-10-database-update-before-light.webp)
+  ![After: the compact notice in light mode](/changelog/2026-11-10-database-update-after-light.webp)
+- Mail in a mailbox shared with you read-only can no longer be answered or forwarded, in All mailboxes or one mailbox at a time: Reply, Reply all and Forward are off, the reply box says why, and Block contact, Unsubscribe and Report phishing are off too. Before, the buttons were there but failed.
+  ![A read-only shared email in All mailboxes with Reply and Move turned off and a note instead of the reply box](/changelog/2026-11-10-read-only-shared-mail-light.webp)
+  ![The same email on a phone](/changelog/2026-11-10-read-only-shared-mail-phone-light.webp)
+
 ## [2026.11.13.2] - 2026-11-13
 
 ### Fixed

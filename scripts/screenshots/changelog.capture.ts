@@ -12,8 +12,11 @@ import { turnScreenerOff } from "../../e2e/support/screener";
 import { chooseOption } from "../../e2e/support/select";
 import { addVirtualAuthenticator } from "../../e2e/support/passkeys";
 import {
+	ATTACHMENTS_ZIP_FLAGGED_MAIL,
+	ATTACHMENTS_ZIP_MAIL,
 	RTL_ATTACHMENT_MAIL,
 	RTL_MAIL,
+	seedAttachmentsZipMail,
 	seedDemoData,
 	seedPagedMail,
 	seedPaymentsDemo,
@@ -1814,6 +1817,39 @@ const SHOTS: Shot[] = [
 		},
 	]),
 	{
+		// Download all: one ZIP of every attachment, next to the attachments heading.
+		name: "2026-11-13-download-all-attachments-light",
+		theme: "light",
+		viewport: { width: 1280, height: 800 },
+		open: (page) => attachmentsShot(page, ATTACHMENTS_ZIP_MAIL.subject),
+	},
+	{
+		name: "2026-11-13-download-all-attachments-dark",
+		theme: "dark",
+		viewport: { width: 1280, height: 800 },
+		open: (page) => attachmentsShot(page, ATTACHMENTS_ZIP_MAIL.subject),
+	},
+	{
+		// The same on a phone (375 px).
+		name: "2026-11-13-download-all-attachments-mobile-light",
+		theme: "light",
+		viewport: { width: 375, height: 760 },
+		open: (page) => attachmentsShot(page, ATTACHMENTS_ZIP_MAIL.subject),
+	},
+	{
+		// A flagged file among them: Download all names it and asks first.
+		name: "2026-11-13-download-all-attachments-flagged-light",
+		theme: "light",
+		viewport: { width: 1280, height: 800 },
+		open: async (page) => {
+			const section = await openAttachmentsSection(page, ATTACHMENTS_ZIP_FLAGGED_MAIL.subject);
+			await section.getByRole("button", { name: "Download all" }).click();
+			const dialog = page.getByRole("alertdialog", { name: "Download flagged files?" });
+			await expect(dialog).toContainText("setup.exe");
+			return dialog;
+		},
+	},
+	{
 		// Read-only shared mail in All mailboxes: the note instead of the reply box, Reply and Move turned off.
 		name: "2026-11-10-read-only-shared-mail-light",
 		theme: "light",
@@ -1833,6 +1869,27 @@ const SHOTS: Shot[] = [
 		},
 	},
 ];
+
+/** Opens a "Download all" demo mail and returns its attachments section. */
+async function openAttachmentsSection(page: Page, subject: string): Promise<Locator> {
+	await seedAttachmentsZipMail();
+	await page.goto("/inbox");
+	await page.getByRole("main").getByText(subject, { exact: true }).first().click();
+	await expect(page.getByRole("heading", { level: 1, name: subject })).toBeVisible();
+	const section = page
+		.getByRole("heading", { level: 2, name: /^Attachments \(/ })
+		.locator("xpath=ancestor::section[1]");
+	await expect(section.getByRole("button", { name: "Download all" })).toBeVisible();
+	await expect(section).toBeVisible();
+	return section;
+}
+
+/** The open message's body and attachments: the part of the reader the "Download all" shots crop to. */
+async function attachmentsShot(page: Page, subject: string): Promise<Locator> {
+	const section = await openAttachmentsSection(page, subject);
+	await section.scrollIntoViewIfNeeded();
+	return page.locator("article").filter({ has: section }).first();
+}
 
 /** A message in the demo Team mailbox, delivered once, that the read-only shots open. */
 const READ_ONLY_SUBJECT = "Shift handover for the weekend";

@@ -205,6 +205,7 @@
 	"/api/mailboxes/[id]",
 	"/api/mailboxes",
 	"/api/messages/[messageId]/attachments/[attachmentId]",
+	"/api/messages/[messageId]/attachments/zip",
 	"/api/messages/[messageId]/metadata",
 	"/api/messages/[messageId]/notes/[noteId]",
 	"/api/messages/[messageId]/notes",

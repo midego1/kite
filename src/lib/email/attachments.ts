@@ -394,6 +394,18 @@ export async function listMessageAttachments(env: CloudflareEnv, messageId: stri
 	}));
 }
 
+/** The message when the user may read it (and with it its attachments): mailbox access, never another's draft. */
+async function readableMessage(env: CloudflareEnv, user: SessionUser, messageId: string) {
+	const db = getDb(env);
+	const [message] = await db.select().from(messages).where(eq(messages.id, messageId)).limit(1);
+	if (!message || isHiddenDraft(message, user.id)) return null;
+	if (message.mailboxId) {
+		const access = await getMailboxAccessLevel(db, user, message.mailboxId);
+		return access?.canRead ? message : null;
+	}
+	return message.userId === user.id ? message : null;
+}
+
 /** The attachment row when the user may read its message, by the rule every attachment reader shares; else null. */
 export async function findAttachmentForUser(
 	env: CloudflareEnv,
@@ -402,15 +414,7 @@ export async function findAttachmentForUser(
 	attachmentId: string,
 ): Promise<AttachmentRow | null> {
 	const db = getDb(env);
-	const [message] = await db.select().from(messages).where(eq(messages.id, messageId)).limit(1);
-	if (!message || isHiddenDraft(message, user.id)) return null;
-
-	if (message.mailboxId) {
-		const access = await getMailboxAccessLevel(db, user, message.mailboxId);
-		if (!access?.canRead) return null;
-	} else if (message.userId !== user.id) {
-		return null;
-	}
+	if (!(await readableMessage(env, user, messageId))) return null;
 
 	const [attachment] = await db
 		.select(ATTACHMENT_ROW_COLUMNS)
@@ -430,4 +434,33 @@ export async function getAttachmentForUser(
 	const attachment = await findAttachmentForUser(env, user, messageId, attachmentId);
 	const file = attachment ? await openAttachment(env, attachment) : null;
 	return attachment && file ? { attachment, file } : null;
+}
+
+/**
+ * Every attachment row of a message, in the order the reader lists them, with its subject, when the user may read it by the same rule as
+ * one attachment (`findAttachmentForUser`); null otherwise. Used by the "Download all" archive.
+ */
+export async function findMessageAttachmentsForUser(
+	env: CloudflareEnv,
+	user: SessionUser,
+	messageId: string,
+): Promise<{ subject: string | null; attachments: AttachmentRow[] } | null> {
+	const message = await readableMessage(env, user, messageId);
+	if (!message) return null;
+	const attachments = await getDb(env)
+		.select(ATTACHMENT_ROW_COLUMNS)
+		.from(messageAttachments)
+		.where(eq(messageAttachments.messageId, messageId))
+		.orderBy(sql`rowid`);
+	return { subject: message.subject, attachments };
+}
+
+/** Opens one attachment of `messageId` from its current row (a repair may have repointed it); null when gone. */
+export async function openMessageAttachment(env: CloudflareEnv, messageId: string, attachmentId: string) {
+	const [row] = await getDb(env)
+		.select(ATTACHMENT_ROW_COLUMNS)
+		.from(messageAttachments)
+		.where(and(eq(messageAttachments.id, attachmentId), eq(messageAttachments.messageId, messageId)))
+		.limit(1);
+	return row ? openAttachment(env, row) : null;
 }

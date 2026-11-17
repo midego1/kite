@@ -840,6 +840,13 @@
 	"The note could not be saved. Try again.": "De notitie kon niet worden opgeslagen. Probeer het opnieuw.",
 	"The note could not be deleted. Try again.": "De notitie kon niet worden verwijderd. Probeer het opnieuw.",
 	"Write a note…": "Schrijf een notitie…",
+	"Download flagged files?": "Gemarkeerde bestanden downloaden?",
+	"{count, plural, one {# file is} other {# files are}} flagged as risky:": "{count, plural, one {# bestand is} other {# bestanden zijn}} gemarkeerd als riskant:",
+	"Open them only if you expected them from someone you trust.": "Open ze alleen als je ze verwachtte van iemand die je vertrouwt.",
+	"Download all": "Alles downloaden",
+	"Some attachments are missing from storage: {names}": "Sommige bijlagen ontbreken in de opslag: {names}",
+	"These attachments are too large to download together.": "Deze bijlagen zijn te groot om samen te downloaden.",
+	"The attachments could not be downloaded.": "De bijlagen konden niet worden gedownload.",
 	"Read-only mail can't be answered or forwarded.": "Op alleen-lezen mail kun je niet antwoorden en je kunt die niet doorsturen.",
 	"You can read this shared mailbox but not reply or forward from it.": "Je kunt deze gedeelde mailbox lezen, maar er niet vanuit antwoorden of doorsturen."
 }

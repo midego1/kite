@@ -840,6 +840,13 @@
 	"The note could not be saved. Try again.": "تعذّر حفظ الملاحظة. حاول مرة أخرى.",
 	"The note could not be deleted. Try again.": "تعذّر حذف الملاحظة. حاول مرة أخرى.",
 	"Write a note…": "اكتب ملاحظة…",
+	"Download flagged files?": "هل تريد تنزيل الملفات المُعلَّمة؟",
+	"{count, plural, one {# file is} other {# files are}} flagged as risky:": "{count, plural, zero {لا ملفات مُعلَّمة} one {ملف واحد مُعلَّم} two {ملفان مُعلَّمان} few {# ملفات مُعلَّمة} many {# ملفًا مُعلَّمًا} other {# ملف مُعلَّم}} على أنها خطرة:",
+	"Open them only if you expected them from someone you trust.": "افتحها فقط إذا كنت تتوقعها من شخص تثق به.",
+	"Download all": "تنزيل الكل",
+	"Some attachments are missing from storage: {names}": "بعض المرفقات غير موجودة في التخزين: {names}",
+	"These attachments are too large to download together.": "هذه المرفقات أكبر من أن تُنزَّل معًا.",
+	"The attachments could not be downloaded.": "تعذّر تنزيل المرفقات.",
 	"Read-only mail can't be answered or forwarded.": "لا يمكن الرد على البريد المخصص للقراءة فقط أو إعادة توجيهه.",
 	"You can read this shared mailbox but not reply or forward from it.": "يمكنك قراءة صندوق البريد المشترك هذا، لكن لا يمكنك الرد أو إعادة التوجيه منه."
 }

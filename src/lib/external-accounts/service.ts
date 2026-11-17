@@ -389,9 +389,10 @@ export async function updateExternalAccount(
 		if (isUniqueViolation(error)) throw addressConflict(input.preset);
 		throw error;
 	}
-	// A Microsoft account edited to a password at another provider is no longer an OAuth account. Cleared after the
-	// password is written, not before: the write above also turns the account into a password one, which a refresh
-	// still in flight can no longer store its token over, and this bump then fences one that started in between.
+	// An OAuth account edited to a password (Gmail with an app password, or another provider) is no longer one.
+	// Cleared after the password is written, not before: the write above also turns the account into a password one,
+	// which a refresh still in flight can no longer store its token over, and this bump then fences one that started
+	// in between.
 	if (signIn && current.authKind !== "password") await clearAccountOAuth(env, id);
 	await auditExternalAccount(env, {
 		actorUserId: actor.id,

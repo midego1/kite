@@ -2,6 +2,7 @@ import { and, eq, ne } from "drizzle-orm";
 import type { getDb } from "@/db";
 import { mailboxes, users } from "@/db/schema";
 import { hashPassword } from "@/lib/auth/password";
+import { endAccessStatements } from "@/lib/auth/session";
 
 type Db = ReturnType<typeof getDb>;
 
@@ -24,18 +25,22 @@ export async function updateAccountCredentials(
 	id: string,
 	input: { email?: string; name: string; password: string | null; disabled?: boolean },
 ) {
-	await db
-		.update(users)
-		.set({
-			...(input.email ? { email: input.email.trim().toLowerCase() } : {}),
-			name: input.name,
-			...(typeof input.disabled === "boolean" ? { disabled: input.disabled } : {}),
-			...(input.password ? { passwordHash: hashPassword(input.password) } : {}),
-		})
-		.where(eq(users.id, id));
-
-	await db
-		.update(mailboxes)
-		.set({ displayName: input.name })
-		.where(and(eq(mailboxes.userId, id), eq(mailboxes.type, "personal")));
+	// A password set here is a reset: in the same batch, whoever held the old one is signed out everywhere and the
+	// account's calendar subscription links end.
+	await db.batch([
+		db
+			.update(users)
+			.set({
+				...(input.email ? { email: input.email.trim().toLowerCase() } : {}),
+				name: input.name,
+				...(typeof input.disabled === "boolean" ? { disabled: input.disabled } : {}),
+				...(input.password ? { passwordHash: hashPassword(input.password) } : {}),
+			})
+			.where(eq(users.id, id)),
+		db
+			.update(mailboxes)
+			.set({ displayName: input.name })
+			.where(and(eq(mailboxes.userId, id), eq(mailboxes.type, "personal"))),
+		...(input.password ? await endAccessStatements(db, id) : []),
+	]);
 }

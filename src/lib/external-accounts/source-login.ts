@@ -86,7 +86,7 @@ export async function externalSourceLogin(
 		credential = await accountCredential(env, account);
 	} catch (error) {
 		if (!(error instanceof CredentialUnavailableError)) throw error;
-		// Microsoft could not be reached: the run stops and the job tries again, the account stays as it is.
+		// The provider could not be reached: the run stops and the job tries again, the account stays as it is.
 		if (error.kind === "transient") return { ok: false, reason: "unavailable", message: error.message };
 		await db
 			.update(externalAccounts)

@@ -7,7 +7,7 @@ import { restoreModules, setModuleState } from "./support/modules";
 
 // The empty reading pane's command center (src/components/command-center/): a greeting with the date, the
 // counts as tiles, the connected accounts, quick actions and what needs attention (admins), as cards. The
-// database notice keeps its place inside the pane (19-updates covers Apply now and its progress).
+// database notice keeps its place inside the pane (19-updates covers Update now and its progress).
 
 const PENDING_API = "/api/migrations/pending";
 
@@ -163,7 +163,7 @@ test("quick actions open the composer and focus the search", async ({ page }) =>
 	await expect(page.locator('input[placeholder*="Search"]')).toBeFocused();
 });
 
-test("waiting database updates stay in the notice with Apply now, not twice in the list", async ({ page }) => {
+test("waiting database updates stay in the notice with Update now, not twice in the list", async ({ page }) => {
 	await page.route(`**${PENDING_API}`, (route) =>
 		route.fulfill({ json: { pending: 1, names: ["0001_add_column.sql"] } }),
 	);
@@ -171,8 +171,8 @@ test("waiting database updates stay in the notice with Apply now, not twice in t
 	const center = pane(page);
 	const notice = center.getByRole("region", { name: "Database updates" });
 	await expect(notice).toBeVisible();
-	await expect(notice).toContainText("Kite was updated, but the database still needs 1 update");
-	await expect(notice.getByRole("button", { name: "Apply now" })).toBeVisible();
+	await expect(notice).toContainText("1 update waiting");
+	await expect(notice.getByRole("button", { name: "Update now" })).toBeVisible();
 	await expect(center.getByTestId("command-center-attention")).toBeVisible();
 	await expect(center.getByTestId("command-center-attention-migrations")).toHaveCount(0);
 });
@@ -187,7 +187,7 @@ test("a member gets the greeting and the counts but no admin card, and cannot ap
 	await expect(center.getByTestId("command-center-attention")).toHaveCount(0);
 	const notice = center.getByRole("region", { name: "Database updates" });
 	await expect(notice).toBeVisible();
-	await expect(notice.getByRole("button", { name: "Apply now" })).toHaveCount(0);
+	await expect(notice.getByRole("button", { name: "Update now" })).toHaveCount(0);
 });
 
 test("connected accounts are listed with their state, failures first with a way to fix them", async ({ page }) => {

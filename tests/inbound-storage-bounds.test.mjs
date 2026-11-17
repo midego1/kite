@@ -659,6 +659,12 @@ test("only an earlier copy received through intake in the last six days, and not
 		["spam", "status = 'spam'", 2],
 		["suspicious", "spam_verdict = 'suspicious'", 2],
 		["dmarc", `spam_signals = '[{"id":"dmarc_failed","score":3}]'`, 2],
+		// A domain without DMARC still fails SPF or DKIM, and the phishing pattern is suspect whatever the score.
+		["spf", `spam_signals = '[{"id":"spf_failed","score":2}]'`, 2],
+		["dkim", `spam_signals = '[{"id":"dkim_failed","score":2}]'`, 2],
+		["phishing", `spam_signals = '[{"id":"credential_phishing_pattern","score":2}]'`, 2],
+		// Signals are matched by id: passed checks, and text that only mentions phishing, leave the copy trusted.
+		["trusted", `spam_signals = '[{"id":"dmarc_passed","score":-2,"reason":"not phishing, spf_failed earlier"}]'`, 1],
 	];
 	let expected = 0;
 	for (const [id, change, rows] of cases) {
@@ -668,6 +674,64 @@ test("only an earlier copy received through intake in the last six days, and not
 		expected += rows;
 		assert.equal(count(), expected, id);
 	}
+});
+
+test("a message without a Date is never taken for a retry", async (t) => {
+	const { count, deliver } = await redeliveries(t);
+	const undated = message("Message-ID: <undated@partner.test>\r\n", "Backup completed");
+	await deliver(undated);
+	await deliver(undated);
+	assert.equal(count(), 2);
+});
+
+test("the newest copies are compared first, past the five-candidate cap", async (t) => {
+	const { database, count, deliver } = await redeliveries(t);
+	const now = Math.floor(Date.now() / 1000);
+	// A sender reusing one Message-ID sent seven messages over the last hour; the newest one is then retried.
+	for (let index = 0; index < 7; index += 1) {
+		await deliver(dated("fixed", `Mon, 2 Nov 2026 1${index}:00:00 +0000`));
+		database.db
+			.prepare("UPDATE messages SET created_at = ? WHERE id = (SELECT id FROM messages ORDER BY rowid DESC LIMIT 1)")
+			.run(now - 3600 + index * 60);
+	}
+	assert.equal(count(), 7);
+	await deliver(dated("fixed", "Mon, 2 Nov 2026 16:00:00 +0000"));
+	assert.equal(count(), 7, "the retry of the newest is recognised");
+});
+
+test("intakeIncomingMail stores the fingerprint for the relay, SMTP and provider paths", async (t) => {
+	const { env, bucket, count } = await redeliveries(t);
+	const sent = [];
+	const options = [];
+	const queued = {
+		...env,
+		INBOUND_QUEUE: {
+			send: async (body, sendOptions) => {
+				sent.push(body);
+				options.push(sendOptions);
+			},
+		},
+	};
+	const intake = (text) =>
+		intakeIncomingMail(
+			queued,
+			{ from: "x@partner.test", to: "a@example.com", raw: encoder.encode(text).buffer, headers: {} },
+			{},
+		);
+	const text = dated("relay-1", DATE);
+	await intake(text);
+	await intake(`Received: from smtp.partner.test\r\n${text}`);
+	await intake(message("Message-ID: <undated-2@partner.test>\r\n"));
+	const fingerprints = await Promise.all(
+		sent.map(async (payload) => (await bucket.head(payload.rawR2Key)).customMetadata.fingerprint),
+	);
+	assert.match(fingerprints[0], /^[0-9a-f]{64}$/);
+	assert.equal(fingerprints[1], fingerprints[0]);
+	assert.equal(fingerprints[2], "none", "a message without a Date is marked as never compared");
+	// JSON, so the queue stores exactly the bytes the size check measured.
+	assert.deepEqual(options, [{ contentType: "json" }, { contentType: "json" }, { contentType: "json" }]);
+	for (const payload of sent) await processInboundMessage(env, payload);
+	assert.equal(count(), 2);
 });
 
 test("intake stores the fingerprint, so a retry is recognised without reading the earlier message", async (t) => {
@@ -925,7 +989,7 @@ test("a repeated provider delivery reaches each mailbox once, and a forward that
 	`);
 	const sent = [];
 	const queued = { ...env, INBOUND_QUEUE: { send: async (body) => sent.push(body) } };
-	const raw = encoder.encode(message("Message-ID: <one@partner.test>\r\n")).buffer;
+	const raw = encoder.encode(dated("one", DATE, "Hello there")).buffer;
 	const email = {
 		id: "e1",
 		from: "sender@partner.test",

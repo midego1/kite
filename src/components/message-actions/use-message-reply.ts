@@ -4,6 +4,8 @@ import { useCallback, useMemo, useState } from "react";
 import { useCompose, type InlineDraftKind } from "@/components/compose/compose-context";
 import { requestConfirmation } from "@/components/ui/confirm-dialog-utils";
 import { useInlineComposerHost } from "@/components/compose/inline-composer-host";
+import { reportReadOnlyAnswer } from "@/components/messages/list-action-toast";
+import { useMessageAccess } from "@/components/messages/use-message-access";
 import { useIsMobile } from "@/components/sidebar-mobile-utils";
 import type { MessageActionsProps, ReplyMode } from "./types";
 import {
@@ -31,7 +33,9 @@ export type MessageReplyInput = Pick<
 
 /**
  * Reply, reply all and forward for one message: each creates a draft and opens it in the composer. Shared by
- * the reader toolbar, its keyboard shortcuts and the quick-reply box under the message.
+ * the reader toolbar, its keyboard shortcuts and the quick-reply box under the message. Mail in a mailbox the
+ * user may only read is never answered or forwarded (its mailbox cannot send for them; the server refuses the
+ * draft too): `cannotAnswer` lets the buttons say so, and the actions show a notice instead.
  */
 export function useMessageReply({
 	mailboxId,
@@ -53,6 +57,7 @@ export function useMessageReply({
 	const inlineFor = inlineHost && !isMobile ? inlineHost.messageId : null;
 	const [pending, setPending] = useState<ReplyMode | "forward" | null>(null);
 	const [error, setError] = useState<string | null>(null);
+	const cannotAnswer = !useMessageAccess().canSend(mailboxId);
 	const replyable = useMemo(
 		() =>
 			message ?? {
@@ -93,6 +98,7 @@ export function useMessageReply({
 
 	const reply = useCallback(
 		async (mode: ReplyMode) => {
+			if (cannotAnswer) return reportReadOnlyAnswer();
 			const resume = resumable(mode);
 			if (!(await mayReplaceComposer())) return;
 			if (resume) {
@@ -122,6 +128,7 @@ export function useMessageReply({
 		},
 		[
 			t,
+			cannotAnswer,
 			mailboxId,
 			senderAddress,
 			ownAddress,
@@ -142,6 +149,7 @@ export function useMessageReply({
 	const canForward = !!message && !!messageMeta;
 	const forward = useCallback(async () => {
 		if (!message || !messageMeta) return;
+		if (cannotAnswer) return reportReadOnlyAnswer();
 		const resume = resumable("forward");
 		if (!(await mayReplaceComposer())) return;
 		if (resume) {
@@ -166,6 +174,7 @@ export function useMessageReply({
 		}
 	}, [
 		t,
+		cannotAnswer,
 		message,
 		messageMeta,
 		mailboxId,
@@ -179,5 +188,5 @@ export function useMessageReply({
 		mayReplaceComposer,
 	]);
 
-	return { reply, forward, canReplyAll, canForward, pending, error };
+	return { reply, forward, canReplyAll, canForward, cannotAnswer, pending, error };
 }

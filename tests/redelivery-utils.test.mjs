@@ -9,16 +9,22 @@ const {
 	messageBody,
 	toHex,
 	fingerprintInput,
+	signalIdPattern,
+	SUSPECT_SIGNAL_IDS,
 	REDELIVERY_WINDOW_MS,
 	INBOUND_QUEUE_PAYLOAD_TOO_LARGE_REASON,
 	inboundQueuePayloadTooLarge,
 } = await bundleModules("kite-redelivery-utils-", [
-	["messageBody, toHex, fingerprintInput, REDELIVERY_WINDOW_MS", "src/lib/email/redelivery-utils.ts"],
+	[
+		"messageBody, toHex, fingerprintInput, signalIdPattern, SUSPECT_SIGNAL_IDS, REDELIVERY_WINDOW_MS",
+		"src/lib/email/redelivery-utils.ts",
+	],
 	["INBOUND_QUEUE_PAYLOAD_TOO_LARGE_REASON, inboundQueuePayloadTooLarge", "src/lib/email/inbound-queue-utils.ts"],
 ]);
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
+const DATE = "Mon, 2 Nov 2026 10:00:00 +0000";
 const body = (text) => decoder.decode(messageBody(encoder.encode(text)));
 
 test("the body starts after the first empty line, whichever line ends the message uses", () => {
@@ -36,8 +42,16 @@ test("the fingerprint input keeps Date, Subject and the body digest apart", () =
 	assert.notEqual(base, fingerprintInput(["Mon, 2 Nov 2026 11:00:00 +0000"], ["Backup done"], "ab"));
 	assert.notEqual(base, fingerprintInput(["Mon, 2 Nov 2026 10:00:00 +0000"], ["Backup failed"], "ab"));
 	assert.notEqual(base, fingerprintInput(["Mon, 2 Nov 2026 10:00:00 +0000"], ["Backup done"], "cd"));
-	// A header block that could not be read whole is not the same as one without the field.
-	assert.notEqual(fingerprintInput(null, [], "ab"), fingerprintInput([], [], "ab"));
+	// Without a Date (or with a header block that could not be read whole) a message is never compared.
+	assert.equal(fingerprintInput([], ["Backup done"], "ab"), null);
+	assert.equal(fingerprintInput(null, ["Backup done"], "ab"), null);
+	// A Subject that could not be read is kept apart from no Subject.
+	assert.notEqual(fingerprintInput([DATE], null, "ab"), fingerprintInput([DATE], [], "ab"));
+});
+
+test("suspect signals are matched by their id, not by any text that mentions them", () => {
+	assert.ok(SUSPECT_SIGNAL_IDS.includes("dmarc_failed") && SUSPECT_SIGNAL_IDS.includes("spf_failed"));
+	assert.equal(signalIdPattern("spf_failed"), '%"id":"spf_failed"%');
 });
 
 test("retries are recognised for longer than senders keep retrying", () => {

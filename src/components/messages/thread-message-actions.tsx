@@ -23,10 +23,14 @@ import { toggleMessageStar } from "./message-list-row-actions-utils";
 import { MessageTranslateItem } from "./message-translate-item";
 import { PrintMenuItems } from "./print/print-menu-items";
 import { useLoadRemoteImages } from "./use-load-remote-images";
+import { useMessageAccess } from "./use-message-access";
 import { confirmReportSpam } from "./spam-report";
 import type { ThreadMessageActionsProps } from "./thread-message-actions-types";
 import type { ReplyMode } from "@/components/message-actions/types";
 import { useT } from "@/lib/i18n/use-t";
+
+const MENU_ITEM_CLASS =
+	"flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm hover:bg-neutral-100 pointer-coarse:py-3 disabled:cursor-not-allowed disabled:text-neutral-400 disabled:hover:bg-transparent";
 
 export function ThreadMessageActions({
 	message,
@@ -50,6 +54,10 @@ export function ThreadMessageActions({
 	const canReplyAll = hasAdditionalRecipients(message, ownAddresses);
 	const moveActions = getMoveMessageActions(message.status, message.direction);
 	const replyFromAddress = ownAddresses.length > 0 ? getOwnAddressForMessage(message, ownAddresses) : ownAddress;
+	// As in the reader: mail the user may only read is never answered, moved or deleted (the server refuses it too).
+	const access = useMessageAccess();
+	const cannotAnswer = !access.canSend(mailboxId);
+	const cannotManage = access.cannotManage(mailboxId);
 
 	if (starOnly && moreOpen) setMoreOpen(false);
 
@@ -168,7 +176,7 @@ export function ThreadMessageActions({
 							size="sm"
 							className="h-8 w-8 px-0 pointer-coarse:h-11 pointer-coarse:w-11"
 							aria-label={t("Reply")}
-							disabled={pending}
+							disabled={pending || cannotAnswer}
 							onClick={() => void onReply("reply")}
 						>
 							<Reply className="h-4 w-4 rtl:-scale-x-100" />
@@ -194,7 +202,8 @@ export function ThreadMessageActions({
 							<div className="absolute end-0 z-30 mt-1 max-h-[min(70vh,24rem)] w-56 overflow-y-auto rounded-xl border border-neutral-200 bg-white p-2 text-neutral-700 shadow-lg">
 								<button
 									type="button"
-									className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm hover:bg-neutral-100 pointer-coarse:py-3"
+									className={MENU_ITEM_CLASS}
+									disabled={cannotAnswer}
 									onClick={() => void onReply("reply")}
 								>
 									<Reply className="h-4 w-4 rtl:-scale-x-100" /> {t("Reply")}
@@ -202,7 +211,8 @@ export function ThreadMessageActions({
 								{canReplyAll && (
 									<button
 										type="button"
-										className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm hover:bg-neutral-100 pointer-coarse:py-3"
+										className={MENU_ITEM_CLASS}
+										disabled={cannotAnswer}
 										onClick={() => void onReply("replyAll")}
 									>
 										<ReplyAll className="h-4 w-4 rtl:-scale-x-100" /> {t("Reply all")}
@@ -210,14 +220,15 @@ export function ThreadMessageActions({
 								)}
 								<button
 									type="button"
-									className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm hover:bg-neutral-100 pointer-coarse:py-3"
+									className={MENU_ITEM_CLASS}
+									disabled={cannotAnswer}
 									onClick={() => void onForward()}
 								>
 									<Forward className="h-4 w-4 rtl:-scale-x-100" /> {t("Forward")}
 								</button>
 								<button
 									type="button"
-									className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm hover:bg-neutral-100 pointer-coarse:py-3"
+									className={MENU_ITEM_CLASS}
 									onClick={() => {
 										setMoreOpen(false);
 										setSourceOpen(true);
@@ -238,7 +249,7 @@ export function ThreadMessageActions({
 								<hr className="my-1 border-neutral-100" />
 								<button
 									type="button"
-									className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm hover:bg-neutral-100 pointer-coarse:py-3"
+									className={MENU_ITEM_CLASS}
 									onClick={() => void onMessageAction(message.read ? "unread" : "read")}
 								>
 									{message.read ? <Mail className="h-4 w-4" /> : <MailOpen className="h-4 w-4" />}
@@ -248,7 +259,8 @@ export function ThreadMessageActions({
 									<button
 										key={item.action}
 										type="button"
-										className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm hover:bg-neutral-100 pointer-coarse:py-3"
+										className={MENU_ITEM_CLASS}
+										disabled={cannotManage}
 										onClick={() => void onMessageAction(item.action)}
 									>
 										{createElement(item.icon, { size: 16 })} {item.label}
@@ -259,7 +271,8 @@ export function ThreadMessageActions({
 										<hr className="my-1 border-neutral-100" />
 										<button
 											type="button"
-											className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm hover:bg-neutral-100 pointer-coarse:py-3"
+											className={MENU_ITEM_CLASS}
+											disabled={cannotManage}
 											onClick={() => void onBlock()}
 										>
 											<Ban className="h-4 w-4" /> {t("Block contact")}

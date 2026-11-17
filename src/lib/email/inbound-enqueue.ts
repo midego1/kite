@@ -7,7 +7,9 @@ import type { InboundQueueMessage } from "@/lib/email/inbound";
  */
 export async function enqueueOrDiscard(env: CloudflareEnv, payload: InboundQueueMessage): Promise<void> {
 	try {
-		await env.INBOUND_QUEUE.send(payload);
+		// JSON, so the queue stores exactly the UTF-8 that `inboundQueuePayloadTooLarge` measured. The consumer gets the
+		// parsed object either way; the Node queue always stores JSON.
+		await env.INBOUND_QUEUE.send(payload, { contentType: "json" });
 	} catch (error) {
 		await env.BUCKET.delete(payload.rawR2Key).catch((cleanup: unknown) =>
 			console.error(`Raw cleanup failed for ${payload.rawR2Key}`, cleanup),

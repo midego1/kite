@@ -155,9 +155,9 @@ test("every module's scopes stay registered whether the module is on or off", ()
 		"mcp:calendar-write",
 		"mcp:finance-read",
 	]);
-	assert.deepEqual(allKeyScopes(decls, "api"), ["send", "read", "jmap", "calendar:read", "calendar:write"]);
+	assert.deepEqual(allKeyScopes(decls, "api"), ["send", "read", "jmap", "notes", "calendar:read", "calendar:write"]);
 	assert.deepEqual(CORE_MCP_SCOPES, ["mcp:read", "mcp:draft", "mcp:organize", "mcp:request-send"]);
-	assert.deepEqual(CORE_API_KEY_SCOPES, ["send", "read", "jmap"]);
+	assert.deepEqual(CORE_API_KEY_SCOPES, ["send", "read", "jmap", "notes"]);
 	assert.equal(scopeOwner(decls, "mcp", "mcp:calendar-read"), "calendar");
 	assert.equal(scopeOwner(decls, "api", "calendar:write"), "calendar");
 	assert.equal(scopeOwner(decls, "mcp", "mcp:finance-read"), "finance");

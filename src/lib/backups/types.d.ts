@@ -60,6 +60,7 @@ export type DatabaseBackupTable =
 	| "mfa_recovery_codes"
 	| "login_challenges"
 	| "passkeys"
+	| "conversation_notes"
 	| "mailbox_agent_settings"
 	| "user_ai_settings"
 	| "writing_style_profiles"

@@ -1,7 +1,8 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { Blocks, LogIn, LogOut } from "lucide-react";
+import { BellOff, Blocks, LogIn, LogOut } from "lucide-react";
+import { UNSUBSCRIBE_ONE_CLICK_ACTION } from "@/lib/email/one-click-attempts-utils";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -11,10 +12,18 @@ import {
 	formatActivityDate,
 	getActivityLabel,
 	getActivityMetadata,
+	describeUnsubscribeActivity,
+	isDevicelessActivity,
 	isModuleActivity,
 } from "./utils";
 import { TABLE_HEAD_CLASS } from "@/components/ui/page-utils";
 import { PageHeader } from "@/components/ui/page";
+
+function activityIcon(action: string) {
+	if (isModuleActivity(action)) return Blocks;
+	if (action === UNSUBSCRIBE_ONE_CLICK_ACTION) return BellOff;
+	return action === "auth.logout" ? LogOut : LogIn;
+}
 
 export default function ActivityPage() {
 	const activity = useQuery({
@@ -76,9 +85,12 @@ export default function ActivityPage() {
 						)}
 						{(activity.data ?? []).map((log) => {
 							const metadata = getActivityMetadata(log);
-							const moduleChange = isModuleActivity(log.action);
-							const summary = describeModuleActivity(log, metadata) ?? describeAgentProviderActivity(log, metadata);
-							const Icon = moduleChange ? Blocks : log.action === "auth.logout" ? LogOut : LogIn;
+							const deviceless = isDevicelessActivity(log.action);
+							const summary =
+								describeModuleActivity(log, metadata) ??
+								describeAgentProviderActivity(log, metadata) ??
+								describeUnsubscribeActivity(log, metadata);
+							const Icon = activityIcon(log.action);
 							return (
 								<tr key={log.id} className="align-top hover:bg-neutral-50/70">
 									<td className="px-5 py-4">
@@ -100,7 +112,7 @@ export default function ActivityPage() {
 										)}
 									</td>
 									<td className="px-5 py-4">
-										{moduleChange ? (
+										{deviceless ? (
 											<p className="text-sm text-neutral-500">—</p>
 										) : (
 											<>

@@ -8,6 +8,7 @@ export default defineConfig({
 		"./src/db/schema/agent-writing.ts",
 		"./src/db/schema/modules.ts",
 		"./src/db/schema/passkeys.ts",
+		"./src/db/schema/conversation-notes.ts",
 		"./src/db/schema/finance.ts",
 		"./src/db/schema/drive.ts",
 		"./src/db/schema/storage.ts",

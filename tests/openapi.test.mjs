@@ -47,7 +47,7 @@ test("document operations equal the /api/v1 route methods", async () => {
 		[],
 		"extra in docs/openapi.json",
 	);
-	assert.equal(expected.length, 17);
+	assert.equal(expected.length, 21);
 });
 
 test("every operation has one scope, a 401 and a success response; path parameters are declared", () => {

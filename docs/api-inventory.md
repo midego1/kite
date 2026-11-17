@@ -220,6 +220,8 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/messages/[messageId]/attachments/[attachmentId]`       | GET                    | [source](../src/app/api/messages/[messageId]/attachments/[attachmentId]/route.ts)       |
 | `/api/messages/[messageId]/attachments/zip`                  | GET                    | [source](../src/app/api/messages/[messageId]/attachments/zip/route.ts)                  |
 | `/api/messages/[messageId]/metadata`                         | GET                    | [source](../src/app/api/messages/[messageId]/metadata/route.ts)                         |
+| `/api/messages/[messageId]/notes/[noteId]`                   | DELETE, PATCH          | [source](../src/app/api/messages/[messageId]/notes/[noteId]/route.ts)                   |
+| `/api/messages/[messageId]/notes`                            | GET, POST              | [source](../src/app/api/messages/[messageId]/notes/route.ts)                            |
 | `/api/messages/[messageId]/original`                         | GET                    | [source](../src/app/api/messages/[messageId]/original/route.ts)                         |
 | `/api/messages/[messageId]/read`                             | POST                   | [source](../src/app/api/messages/[messageId]/read/route.ts)                             |
 | `/api/messages/[messageId]`                                  | GET                    | [source](../src/app/api/messages/[messageId]/route.ts)                                  |
@@ -230,6 +232,7 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/messages/[messageId]/summary`                          | GET, POST              | [source](../src/app/api/messages/[messageId]/summary/route.ts)                          |
 | `/api/messages/[messageId]/thread`                           | GET                    | [source](../src/app/api/messages/[messageId]/thread/route.ts)                           |
 | `/api/messages/[messageId]/translation`                      | GET, POST              | [source](../src/app/api/messages/[messageId]/translation/route.ts)                      |
+| `/api/messages/[messageId]/unsubscribe`                      | POST                   | [source](../src/app/api/messages/[messageId]/unsubscribe/route.ts)                      |
 | `/api/messages/bulk`                                         | POST                   | [source](../src/app/api/messages/bulk/route.ts)                                         |
 | `/api/messages/counts`                                       | GET                    | [source](../src/app/api/messages/counts/route.ts)                                       |
 | `/api/messages/empty`                                        | POST                   | [source](../src/app/api/messages/empty/route.ts)                                        |
@@ -300,6 +303,8 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/v1/domains`                                            | GET, POST              | [source](../src/app/api/v1/domains/route.ts)                                            |
 | `/api/v1/mailboxes/[id]`                                     | DELETE, GET, PATCH     | [source](../src/app/api/v1/mailboxes/[id]/route.ts)                                     |
 | `/api/v1/mailboxes`                                          | GET, POST              | [source](../src/app/api/v1/mailboxes/route.ts)                                          |
+| `/api/v1/messages/[id]/notes/[noteId]`                       | DELETE, PATCH          | [source](../src/app/api/v1/messages/[id]/notes/[noteId]/route.ts)                       |
+| `/api/v1/messages/[id]/notes`                                | GET, POST              | [source](../src/app/api/v1/messages/[id]/notes/route.ts)                                |
 | `/api/v1/messages`                                           | GET                    | [source](../src/app/api/v1/messages/route.ts)                                           |
 | `/api/v1/send`                                               | POST                   | [source](../src/app/api/v1/send/route.ts)                                               |
 | `/api/version`                                               | GET                    | [source](../src/app/api/version/route.ts)                                               |

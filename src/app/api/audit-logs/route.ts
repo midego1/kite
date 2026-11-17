@@ -7,8 +7,15 @@ import { authorizeActivityRead } from "@/lib/auth/activity-access";
 import { MODULE_AUDIT_ACTIONS } from "@/lib/modules/admin-utils";
 import { TELEMETRY_AUDIT_ACTIONS } from "@/lib/telemetry/telemetry-utils";
 import { MCP_TOOL_CALL_ACTION } from "@/lib/mcp/audit";
+import { UNSUBSCRIBE_ONE_CLICK_ACTION } from "@/lib/email/one-click-attempts-utils";
 
-const LISTED_ACTIONS = ["auth.login", "auth.logout", ...MODULE_AUDIT_ACTIONS, ...TELEMETRY_AUDIT_ACTIONS];
+const LISTED_ACTIONS = [
+	"auth.login",
+	"auth.logout",
+	...MODULE_AUDIT_ACTIONS,
+	...TELEMETRY_AUDIT_ACTIONS,
+	UNSUBSCRIBE_ONE_CLICK_ACTION,
+];
 
 export async function GET(request: Request) {
 	const access = await authorizeActivityRead(request);

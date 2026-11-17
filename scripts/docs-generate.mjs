@@ -225,7 +225,7 @@ export async function renderOpenApi() {
 					type: "http",
 					scheme: "bearer",
 					description:
-						"API key from Settings → API keys (personal scopes: send, read, jmap, calendar:read, calendar:write) or Admin → API keys (admin scopes: domains, accounts, mailboxes; owner must keep the admin role). Scope lists: src/lib/api/scopes.ts.",
+						"API key from Settings → API keys (personal scopes: send, read, jmap, notes, calendar:read, calendar:write) or Admin → API keys (admin scopes: domains, accounts, mailboxes; owner must keep the admin role). Scope lists: src/lib/api/scopes.ts.",
 				},
 			},
 			responses: {

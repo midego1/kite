@@ -48,6 +48,8 @@ Mail in a mailbox shared with you as read-only can be read, starred and marked r
 
 The server checks all of this on every request. Access to send as or on behalf of a shared mailbox answers its mail (from that mailbox) but, like read-only access, does not move or delete it.
 
+Read-only members read the [notes on a conversation](conversation-notes.md) but cannot add or edit them, or delete other people's; they can still delete notes they wrote themselves before their access was lowered.
+
 ## Everything else stays per mailbox
 
 Live updates, notifications, the For you page, automatic reading suggestions, rules, signatures, auto-replies and Settings work per mailbox, as before. Settings pages use the mailbox you chose last.

@@ -82,6 +82,26 @@ export function claudeThinkingDefault(
 	return "adaptive";
 }
 
+/**
+ * The most a Workers AI request is widened to when its cut-off answer is asked once more: some Workers AI models
+ * refuse a larger `max_tokens`. A first request above it keeps its own cap.
+ */
+export const WORKERS_AI_RETRY_MAX_TOKENS = 4_000;
+
+/**
+ * Whether a model behind an OpenAI-compatible endpoint is known to reason before it answers, from its id: OpenAI's
+ * o-series and GPT-5, DeepSeek R1 and its reasoner, QwQ and Qwen3, Kimi K2, GLM 4.5 and later, Grok 3 and 4, Gemini
+ * 2.5 and later, Magistral, any id that says it reasons or thinks, and Claude 5 through a router. Only these get the
+ * thinking room in a chat step, so a small model behind such an endpoint keeps the cap it always had.
+ */
+export function knownToReason(modelId: string | null | undefined): boolean {
+	const id = (modelId ?? "").toLowerCase();
+	if (/claude/.test(id)) return claudeThinkingDefault(id.replace(/^.*\//, "")) !== "off";
+	return /(^|[/:._-])(o[1-9]([-.]|$)|gpt-5|deepseek-(r1|reasoner)|qwq|qwen3|kimi-k2|glm-(4\.[5-9]|[5-9])|grok-[34]|gemini-(2\.5|[3-9])|magistral)|reason|think/.test(
+		id,
+	);
+}
+
 /** Whether a recorded provider and model think by default, or null when Kite cannot tell (any other provider). */
 export function thinksByDefault(provider: string | null, model: string | null): boolean | null {
 	if (provider !== "anthropic" || !model) return null;

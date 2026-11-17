@@ -52,6 +52,8 @@ const {
 	INTERACTIVE_THINKING_ROOM_TOKENS,
 	ModelOutputTruncatedError,
 	readAiErrorBody,
+	retriesAfterCutOff,
+	widenedAfterCutOff,
 } = kite;
 
 const prompt = { system: "s", messages: [{ role: "user", content: "a long thread" }] };
@@ -296,18 +298,45 @@ test("chat and the assistant by email: the model keeps its thinking, the step ca
 	// No thinking or effort parameter is sent, as before: a turn has no fallback for a provider that refuses one.
 	for (const effort of ["low", "minimal", "high"])
 		assert.deepEqual(anthropic("claude-sonnet-5-5", effort).providerOptions, { anthropic: {} }, effort);
-	const compatible = chatStepOptions({ providerKind: "compatible", preset: "openai", modelId: "gpt-x" });
-	assert.deepEqual(compatible.providerOptions, { kite: {} });
-	assert.equal(compatible.maxOutputTokens, 4_200);
-	assert.deepEqual(
-		chatStepOptions({ providerKind: "compatible", preset: "openai", modelId: "gpt-x", reasoningEffort: "low" })
-			.providerOptions,
-		{ kite: {} },
-	);
+	// An OpenAI-compatible model gets the room only when its id shows it reasons; any other keeps 1,200.
+	const compatible = (modelId, extra = {}) =>
+		chatStepOptions({ providerKind: "compatible", preset: "openai", modelId, ...extra });
+	for (const modelId of [
+		"o3-mini",
+		"gpt-5",
+		"deepseek/deepseek-r1",
+		"qwen/qwq-32b",
+		"moonshotai/kimi-k2-thinking",
+		"anthropic/claude-sonnet-5-5",
+	]) {
+		assert.deepEqual(compatible(modelId).providerOptions, { kite: {} }, modelId);
+		assert.equal(compatible(modelId).maxOutputTokens, 4_200, modelId);
+	}
+	for (const modelId of ["gpt-4o-mini", "llama-3.1-8b-instant", "mistral-small", "anthropic/claude-3-haiku", null])
+		assert.equal(compatible(modelId).maxOutputTokens, 1_200, String(modelId));
+	assert.deepEqual(compatible("gpt-5", { reasoningEffort: "low" }).providerOptions, { kite: {} });
 	// Workers AI chat is sent as before.
 	const workers = chatStepOptions({ providerKind: "cloudflare", modelId: "@cf/x" });
 	assert.deepEqual(workers.providerOptions, {});
 	assert.equal(workers.maxOutputTokens, 1_200);
+});
+
+test("Workers AI: a retry is widened to at most 4,000 tokens, and one already at the limit is not asked again", () => {
+	const workers = (answerTokens) =>
+		buildModelCallOptions({ provider: "cloudflare", kind: "draft", modelId: "@cf/x", answerTokens });
+	assert.equal(widenedAfterCutOff(workers(2_000)).maxOutputTokens, 4_000);
+	assert.equal(widenedAfterCutOff(workers(1_600)).maxOutputTokens, 3_200);
+	const rewrite = workers(4_000);
+	assert.equal(rewrite.maxOutputTokens, 4_000);
+	assert.equal(widenedAfterCutOff(rewrite).maxOutputTokens, 4_000);
+	assert.equal(retriesAfterCutOff("length", rewrite), false, "the same cap would only be cut off again");
+	assert.equal(retriesAfterCutOff("length", workers(2_000)), true);
+	// A first request above the limit (a message translation part) keeps its own cap and is not asked again.
+	const part = workers(4_500);
+	assert.equal(part.maxOutputTokens, 4_500);
+	assert.equal(retriesAfterCutOff("length", part), false);
+	// Other providers still double, thinking room included.
+	assert.equal(widenedAfterCutOff(writeOptions("claude-opus-5-5")).maxOutputTokens, 10_000);
 });
 
 test("budget helpers: thinking defaults, a stored budget read back defensively, and the words Details uses", () => {

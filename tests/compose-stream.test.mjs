@@ -342,6 +342,21 @@ test("the retry of a cut-off answer is a new request: with the opt-in turned off
 	});
 });
 
+test("a retry whose check fails with an error answers an error event instead of closing silently", async (t) => {
+	const { db, env, user } = await setup(t);
+	finish = "length";
+	// The retry's checks read app_settings; without the table they throw, as a database error would.
+	onRequest = () => db.db.exec("ALTER TABLE app_settings RENAME TO app_settings_gone");
+	const result = await events(await createComposeStream(env, user, write()));
+	assert.equal(requests.length, 1);
+	assert.deepEqual(
+		result.map((event) => event.type),
+		["text", "error"],
+	);
+	assert.equal(typeof result.at(-1).code, "string");
+	assert.equal(result.at(-1).details.feature, "compose");
+});
+
 test("the retry of a cut-off answer is reserved against the caps and refused at one", async (t) => {
 	const { db, env, user } = await setup(t);
 	finish = "length";

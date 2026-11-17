@@ -127,7 +127,14 @@ export function streamComposeAnswer(input: ComposeStreamInput) {
 					const widened = await streamAttempt(input, attempt, emit);
 					attempt = null;
 					if (!widened || input.abort.signal.aborted) break;
-					const reservation = await input.reserve(widened);
+					let reservation: SpendReservation | AiErrorBody;
+					try {
+						reservation = await input.reserve(widened);
+					} catch (error) {
+						// A failed check or reservation (a database error) is answered and logged like a failed attempt.
+						emit({ type: "error", ...(await input.reportError(error, { startedAt: Date.now(), usage: null })) });
+						break;
+					}
 					if ("error" in reservation) emit({ type: "error", ...reservation });
 					// Cancelled while the retry was being reserved: it never starts, and its estimate stays as the spend.
 					else if (input.abort.signal.aborted) await input.keepEstimate(reservation).catch(() => undefined);

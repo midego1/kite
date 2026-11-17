@@ -7,8 +7,10 @@ import {
 	CUT_OFF_RETRY_FACTOR,
 	DRAFT_ANSWER_TOKENS,
 	INTERACTIVE_THINKING_ROOM_TOKENS,
+	knownToReason,
 	THINKING_ROOM_TOKENS,
 	TRIAGE_ANSWER_TOKENS,
+	WORKERS_AI_RETRY_MAX_TOKENS,
 	type AiOutputBudget,
 	type AiThinkingSetting,
 } from "../output-budget-utils";
@@ -195,11 +197,14 @@ function buildOptions(settings: ModelCallSettings, jsonMode: boolean): ModelCall
 	const factor = settings.retried ? CUT_OFF_RETRY_FACTOR : 1;
 	const common = commonOptions(settings, jsonMode, extension);
 	if (settings.provider === "cloudflare")
-		// No thinking room: a Workers AI model's output limit might refuse it.
+		// No thinking room, and a retry widened at most to `WORKERS_AI_RETRY_MAX_TOKENS`: a Workers AI model's output
+		// limit might refuse more.
 		return {
 			...common,
 			provider: "cloudflare",
-			maxOutputTokens: answer * factor,
+			maxOutputTokens: settings.retried
+				? Math.min(answer * factor, Math.max(answer, WORKERS_AI_RETRY_MAX_TOKENS))
+				: answer,
 			...workersAiOptions(settings.kind, jsonMode),
 			reasoningEffort: null,
 			effort: null,
@@ -217,8 +222,10 @@ function buildOptions(settings: ModelCallSettings, jsonMode: boolean): ModelCall
 		};
 	}
 	const effort = settings.reasoningEffort;
-	// A chat step leaves a reasoning model to think as its provider sets it, so it gets the room either way.
-	const room = effort || settings.kind === "chat" ? (settings.thinkingRoomTokens ?? THINKING_ROOM_TOKENS) : 0;
+	// A chat step leaves a reasoning model to think as its provider sets it, so a model known to reason gets the
+	// room; any other keeps the 1,200 it always had, which a small endpoint is known to accept.
+	const thinks = effort || (settings.kind === "chat" && knownToReason(settings.modelId));
+	const room = thinks ? (settings.thinkingRoomTokens ?? THINKING_ROOM_TOKENS) : 0;
 	return {
 		...common,
 		maxOutputTokens: (answer + room) * factor,
@@ -379,7 +386,12 @@ export function widenedAfterCutOff(options: ModelCallOptions): ModelCallOptions 
 
 /** Whether an answer was cut off and may still be asked once more with a larger budget. */
 export function retriesAfterCutOff(finishReason: string | null | undefined, options: ModelCallOptions): boolean {
-	return finishReason === "length" && !options.retried;
+	// A retry that could not get a larger cap (Workers AI already at its retry limit) would only be cut off again.
+	return (
+		finishReason === "length" &&
+		!options.retried &&
+		widenedAfterCutOff(options).maxOutputTokens > options.maxOutputTokens
+	);
 }
 
 /**

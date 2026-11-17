@@ -46,10 +46,12 @@ export function parseNoteBody(value: unknown): NoteBodyResult {
 
 /**
  * Timestamps keep whole seconds, so an edit made in the note's own second would look unedited; the stored
- * `updated_at` is always at least a second after `created_at` once the text changed.
+ * `updated_at` is always at least a second after `created_at` once the text changed. The value is whole seconds
+ * too, so the note an edit answers with carries the same `updatedAt` a later read of the stored row does.
  */
 export function editedAt(createdAt: Date, now: Date): Date {
-	return new Date(Math.max(now.getTime(), createdAt.getTime() + 1000));
+	const seconds = Math.floor(Math.max(now.getTime(), createdAt.getTime() + 1000) / 1000);
+	return new Date(seconds * 1000);
 }
 
 /** Whether a note's text changed after it was written. */

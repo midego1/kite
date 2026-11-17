@@ -132,6 +132,8 @@ test("a note body is trimmed plain text with normalised line endings, never empt
 	const created = new Date("2026-11-13T10:00:00Z");
 	assert.equal(notes.editedAt(created, created).getTime(), created.getTime() + 1000);
 	assert.equal(notes.isEdited(created, notes.editedAt(created, created)), true);
+	// Whole seconds, like the column: an edit at 10:00:07.005 is stored, and answered, as 10:00:07.
+	assert.equal(notes.editedAt(created, new Date("2026-11-13T10:00:07.005Z")).toISOString(), "2026-11-13T10:00:07.000Z");
 	assert.equal(notes.isEdited(created, created), false);
 });
 
@@ -206,6 +208,9 @@ test("a note id from another conversation or mailbox does not resolve, so it can
 	assert.equal(edited.note.edited, true);
 	const unchanged = await notes.updateConversationNote(db, thread, "helper", threadNote.id, "Thread one, updated");
 	assert.equal(unchanged.note.updatedAt, edited.note.updatedAt, "saving the same text is not an edit");
+	// The edit's answer matches what a later read of the stored row says, to the millisecond.
+	const [stored] = (await notes.listConversationNotes(db, thread, "helper")).notes;
+	assert.equal(stored.updatedAt, edited.note.updatedAt);
 	assert.deepEqual(await notes.deleteConversationNote(db, manager, "manager", threadNote.id), {
 		ok: true,
 		authorUserId: "helper",

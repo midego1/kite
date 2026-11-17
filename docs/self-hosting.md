@@ -179,7 +179,7 @@ and the DNS page shows what to set by hand.
 
 Files live in `DATA_DIR/blobs` unless you route them elsewhere. **Admin → Storage** adds S3-compatible stores and picks, per class (Mail, Drive, Backups), where new objects go, with the same checks, CORS help and migrations as on Workers (see [Deployment](deployment.md#object-storage-optional)). It needs `APP_ENCRYPTION_KEY`.
 
-MinIO (or another S3 service) next to Kite usually has a private address, which the endpoint guard refuses unless `STORAGE_ALLOW_PRIVATE_ENDPOINTS=1` is set. Use path-style addressing for MinIO. For Drive, the browser must reach the store too: its address must be one the users' browsers can open, and its CORS rule must allow Kite's origin (**Apply CORS** sets it on MinIO).
+MinIO (or another S3 service) next to Kite usually has a private address, which the endpoint guard refuses unless `STORAGE_ALLOW_PRIVATE_ENDPOINTS=1` is set. Requests to an address a user or admin entered (stores, linked WebDAV folders, webhooks, alert webhooks and remote images) resolve the host once, check every address it resolves to under the same rules, and connect to the checked address, so a name that later resolves to a private address (DNS rebinding) is refused at the connection too. Use path-style addressing for MinIO. For Drive, the browser must reach the store too: its address must be one the users' browsers can open, and its CORS rule must allow Kite's origin (**Apply CORS** sets it on MinIO).
 
 To set a store without the UI, define it in the environment:
 

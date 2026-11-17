@@ -224,7 +224,15 @@ export async function fileOneReceipt(candidate: ReceiptCandidate): Promise<FileR
 				? "skipped"
 				: "pending";
 		}
-		// Transient (timeout, an uncaught quota or read error): the claim was already backed off by claimReceipt
+		// A timeout does not stop the Drive call (the invoker only stops waiting for it), so it may still be filing:
+		// the claim stays live instead of being marked as given up, which would let the button release it and a new
+		// run file the same row next to the one still going. Its lease runs out on its own, as after a crash.
+		if (result.error.code === "timeout") {
+			log.warn("finance.receipt_file_timed_out", { sourceTable: candidate.sourceTable, sourceId: candidate.sourceId });
+			await commitClaim(claim, {});
+			return "pending";
+		}
+		// Transient (an uncaught quota or read error): the claim was already backed off by claimReceipt
 		// (a fresh claim) or the earlier take-over that won it this time; its lease expires or grows and the row
 		// is picked up again by a later sweep tick or backfill batch.
 		log.warn("finance.receipt_file_failed", {
@@ -266,9 +274,10 @@ export async function fileOneReceipt(candidate: ReceiptCandidate): Promise<FileR
 	return committed ? "filed" : "pending";
 }
 
-/** A claim nobody has touched for this long is not a run in progress: a filing is bounded by Drive's own 20 s
- * timeout and the backfill's 20 s run budget, so two minutes is well past either. It lets the button free claims
- * written before failures were marked (`markClaimFailed`). */
+/** A claim nobody has touched for this long is not a run in progress: a filing normally ends within Drive's own
+ * 20 s timeout and the backfill's 20 s run budget, and one that outlives the timeout touches its claim then
+ * without marking it failed, so the two minutes count from there. It lets the button free claims written before
+ * failures were marked (`markClaimFailed`). */
 const LIVE_CLAIM_MS = 2 * 60_000;
 
 /**

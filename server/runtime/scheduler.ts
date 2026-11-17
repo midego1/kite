@@ -7,6 +7,7 @@ import { runAgentMaintenance } from "@/lib/agent/maintenance";
 import { runTrashRetention } from "@/lib/email/trash-retention";
 import { sweepOrphanedRawMail } from "@/lib/email/raw-sweeper";
 import { pruneMcpToolCallAudit, runDatabasePruning } from "@/lib/maintenance/pruning";
+import { clearMcpOAuthSuccessors } from "@/lib/mcp/oauth/service";
 import { runOperationalAlerts } from "@/lib/alerts/run";
 import { runModuleCronTasks } from "@/lib/modules/background";
 import { runStorageMigrationMaintenance } from "@/lib/storage/migration";
@@ -55,6 +56,7 @@ export function startScheduler(env: CloudflareEnv) {
 			);
 			// MCP tool call audit rows, matching worker.ts.
 			pruneMcpToolCallAudit(env, now).catch((error) => logger.error("mcp.audit_pruning_failed", { error }));
+			clearMcpOAuthSuccessors(env, now).catch((error) => logger.error("mcp.oauth_successor_clear_failed", { error }));
 			// Connected accounts, matching worker.ts.
 			planExternalSync(env, now).catch((error) => logger.error("external.sync_plan_failed", { error }));
 			resumeAuthRechecks(env, now).catch((error) =>

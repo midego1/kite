@@ -9,6 +9,7 @@ import {
 } from "@/lib/remote-images/fetch-utils";
 import { canProxyMessageImage } from "@/lib/remote-images/message-access";
 import { allowRemoteImageRequest } from "@/lib/remote-images/rate-limit";
+import { outboundFetch } from "@/lib/security/outbound-fetch";
 import { assertPublicHttpUrl, OutboundUrlError } from "@/lib/security/outbound-url";
 
 const IMAGE_HEADERS = {
@@ -41,8 +42,8 @@ async function checkPublicHop(env: CloudflareEnv, url: URL, policy: { allowLoopb
  * images whose host sends `Cross-Origin-Resource-Policy: same-origin` still show once the reader
  * has allowed remote images. Every hop, the first URL and each redirect, goes through
  * `assertPublicHttpUrl`, which on the self-hosted server also resolves the name and refuses a
- * private address (fetch cannot pin the address, so a small rebinding window remains). Adapted
- * from upstream Mailflare #220.
+ * private address, and the fetch itself (`outboundFetch`) connects only to an address it checked,
+ * so the name cannot rebind in between. Adapted from upstream Mailflare #220.
  */
 export async function GET(request: Request) {
 	const env = getEnv();
@@ -63,7 +64,11 @@ export async function GET(request: Request) {
 		parseRemoteImageUrl(imageUrl, policy);
 		if (!(await canProxyMessageImage(env, auth.user, messageId, imageUrl, requestUrl.origin)))
 			return failure("Image not found", 404);
-		const image = await fetchRemoteImage(imageUrl, { ...policy, checkHop: (url) => checkPublicHop(env, url, policy) });
+		const image = await fetchRemoteImage(imageUrl, {
+			...policy,
+			checkHop: (url) => checkPublicHop(env, url, policy),
+			fetch: outboundFetch(env, { allowLoopback: policy.allowLoopback }),
+		});
 		return new Response(image.body, { headers: { ...IMAGE_HEADERS, "Content-Type": image.contentType } });
 	} catch (error) {
 		if (error instanceof RemoteImageError) return failure(error.message, error.status);

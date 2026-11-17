@@ -883,19 +883,24 @@ test("a cleanup that stalls after its confirm keeps its copy, which a second cle
 	markLeftover(env, "sto_c", KEY);
 	markLeftover(env, "default", KEY);
 	const realNow = Date.now;
-	t.after(() => {
+	// The 30-second limit is timed with the monotonic clock, so the stall moves both.
+	const realPerformanceNow = performance.now;
+	const restore = () => {
 		Date.now = realNow;
-	});
+		performance.now = realPerformanceNow;
+	};
+	t.after(restore);
 	let inner = null;
 	// Right after the outer cleanup's confirm passed: the claim it extended runs out (a stall of more than 15
 	// minutes), and a second cleanup settles the other leftover, relying on the outer one's copy.
 	const fired = onStatementAfter(env, "claimed_until >= ? AND store_id = ?", async () => {
 		lapse(env, KEY);
 		Date.now = () => realNow() + 16 * 60 * 1000;
+		performance.now = () => realPerformanceNow.call(performance) + 16 * 60 * 1000;
 		inner = await cleanup(env, { storeId: "default" });
 	});
 	const outer = await cleanup(env, { storeId: "sto_c" });
-	Date.now = realNow;
+	restore();
 	assert.equal(fired(), true);
 	assert.equal(inner.deleted, 1, `the second cleanup deleted the default copy: ${JSON.stringify(inner)}`);
 	assert.deepEqual(outer.kept, { lease_lost: 1 }, "the stalled cleanup gave up instead of deleting");
@@ -1198,4 +1203,84 @@ test("before migration 0108 the cleanup does nothing and says so, and marking st
 	const overview = await leftoverState.leftoverOverview(env);
 	assert.equal(overview.available, false);
 	assert.equal(overview.total, 2);
+});
+
+test("equal multipart ETags (-N) are no proof of equal bytes: the leftover is kept (review 3 of #479, n6)", async (t) => {
+	const { env } = await setup(t);
+	addMessageRow(env, "m", KEY);
+	const live = "y".repeat(9 * 1024 * 1024);
+	const old = "z".repeat(9 * 1024 * 1024);
+	await put(env, "sto_d", KEY, live);
+	setLocation(env, KEY, "sto_d", { size: live.length });
+	await put(env, "sto_c", KEY, old);
+	markLeftover(env, "sto_c", KEY);
+	for (const storeId of ["sto_c", "sto_d"])
+		fake.buckets.get(BUCKETS[storeId]).objects.get(KEY).etag = "0123456789abcdef0123456789abcdef-2";
+	const run = await cleanup(env);
+	assert.deepEqual(run.kept, { unverified: 1 }, JSON.stringify(run));
+	assert.equal(await text(env, "sto_c", KEY), old);
+	assert.equal(coldLeftovers.md5Etag({ etag: '"0123456789abcdef0123456789abcdef-2"' }), null);
+	assert.equal(
+		coldLeftovers.md5Etag({ etag: 'W/"0123456789ABCDEF0123456789ABCDEF"' }),
+		"0123456789abcdef0123456789abcdef",
+	);
+	assert.equal(coldLeftovers.md5Etag({ etag: "" }), null);
+});
+
+test("hashing stops at the limit while streaming, whatever size the store states, and reads the body once (n6, n7)", async () => {
+	const chunk = new Uint8Array(1024 * 1024);
+	const streamed = (chunks) => {
+		const state = { sent: 0, cancelled: false };
+		const body = new ReadableStream({
+			pull(controller) {
+				if (state.sent === chunks) return controller.close();
+				state.sent += 1;
+				controller.enqueue(chunk);
+			},
+			cancel() {
+				state.cancelled = true;
+			},
+		});
+		return { body, state };
+	};
+	const storeOf = (object) => {
+		let reads = 0;
+		const store = {
+			bucket: {
+				get: async () =>
+					object && {
+						size: object.size,
+						get body() {
+							reads += 1;
+							return object.body;
+						},
+					},
+			},
+		};
+		return { store, reads: () => reads };
+	};
+	const limit = 8 * 1024 * 1024;
+
+	// The store says 100 bytes, the body would stream 20 MiB: the hash gives up past 8 MiB and cancels the rest.
+	const lying = streamed(20);
+	const liar = storeOf({ size: 100, body: lying.body });
+	assert.equal(await coldLeftovers.sha256Of(liar.store, KEY, limit), null);
+	assert.ok(lying.state.sent <= 10 && lying.state.cancelled, JSON.stringify(lying.state));
+	assert.equal(liar.reads(), 1, "the body getter is read once");
+
+	// A stated size over the limit is refused before reading, and the body it opened is cancelled.
+	const large = streamed(9);
+	const big = storeOf({ size: 9 * 1024 * 1024, body: large.body });
+	assert.equal(await coldLeftovers.sha256Of(big.store, KEY, limit), null);
+	// At most the one chunk a stream queues by itself on creation; the hash read none.
+	assert.ok(large.state.sent <= 1, JSON.stringify(large.state));
+	assert.ok(large.state.cancelled);
+	assert.equal(big.reads(), 1);
+
+	// Within the limit it hashes, from one read of the body.
+	const small = streamed(2);
+	const fine = storeOf({ size: 2 * 1024 * 1024, body: small.body });
+	assert.match(await coldLeftovers.sha256Of(fine.store, KEY, limit), /^[0-9a-f]{64}$/);
+	assert.equal(fine.reads(), 1);
+	assert.equal(await coldLeftovers.sha256Of(storeOf(null).store, KEY, limit), null);
 });

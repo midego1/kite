@@ -476,14 +476,62 @@ test("a refresh that fails to save leaves the old refresh token usable", async (
 	assert.ok(await m.authenticateMcpRequest(env, bearer(retried.access_token), RESOURCE));
 });
 
-test("successor pairs are sealed with the rotated token and open with nothing else", async () => {
+test("successor pairs are sealed with the rotated token, bound to their grant, and open with nothing else", async () => {
 	const pair = { accessToken: "kite_at_a", refreshToken: "kite_rt_b", accessExpiresAt: 123 };
-	const sealed = await m.sealSuccessor("kite_rt_old", pair);
+	const sealed = await m.sealSuccessor("kite_rt_old", "key_1", pair);
 	assert.equal(sealed.includes("kite_rt_b"), false);
-	assert.deepEqual(await m.openSuccessor("kite_rt_old", sealed), pair);
-	assert.equal(await m.openSuccessor("kite_rt_other", sealed), null);
-	assert.equal(await m.openSuccessor(await m.hashOAuthToken("kite_rt_old"), sealed), null);
-	assert.equal(await m.openSuccessor("kite_rt_old", "garbage"), null);
+	assert.deepEqual(await m.openSuccessor("kite_rt_old", "key_1", sealed), pair);
+	assert.equal(await m.openSuccessor("kite_rt_other", "key_1", sealed), null);
+	assert.equal(await m.openSuccessor(await m.hashOAuthToken("kite_rt_old"), "key_1", sealed), null);
+	assert.equal(await m.openSuccessor("kite_rt_old", "key_1", "garbage"), null);
+	// The additional data binds it to the grant: the right token on another grant's row does not open it.
+	assert.equal(await m.openSuccessor("kite_rt_old", "key_2", sealed), null);
+	// Stripping the marker does not downgrade a bound value to one opened without additional data.
+	assert.ok(sealed.startsWith("v2."));
+	assert.equal(await m.openSuccessor("kite_rt_old", "key_1", sealed.slice(3)), null);
+	// A pair sealed before the binding (no marker, no additional data) still opens during its minute after a deploy.
+	const key = await crypto.subtle.importKey(
+		"raw",
+		await crypto.subtle.digest("SHA-256", new TextEncoder().encode("kite-mcp-successor:kite_rt_old")),
+		"AES-GCM",
+		false,
+		["encrypt"],
+	);
+	const iv = crypto.getRandomValues(new Uint8Array(12));
+	const ciphertext = new Uint8Array(
+		await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(JSON.stringify(pair))),
+	);
+	const legacy = Buffer.concat([iv, ciphertext]).toString("base64url");
+	assert.deepEqual(await m.openSuccessor("kite_rt_old", "key_2", legacy), pair);
+	assert.equal(await m.openSuccessor("kite_rt_other", "key_2", legacy), null);
+});
+
+test("the sealed grace pair is dropped by the five-minute run once its minute is over", async (t) => {
+	const { env, database } = await fixture(t);
+	const { client, code } = await connect(env);
+	const first = await exchange(env, client, code);
+	const now = new Date();
+	await m.refreshTokens(env, { clientId: client.id, refreshToken: first.refresh_token }, now);
+	const sealedCount = () =>
+		database.db.prepare("SELECT count(*) AS n FROM mcp_oauth_tokens WHERE successor IS NOT NULL").get().n;
+	await m.clearMcpOAuthSuccessors(env, new Date(now.getTime() + 30_000));
+	assert.equal(sealedCount(), 1);
+	// Migration 0114's partial index keeps the scan to the rows that still hold a pair.
+	const plan = database.db
+		.prepare(
+			"EXPLAIN QUERY PLAN UPDATE mcp_oauth_tokens SET successor = NULL WHERE successor IS NOT NULL AND rotated_at < ?",
+		)
+		.all(0)
+		.map((row) => row.detail)
+		.join("\n");
+	assert.match(plan, /mcp_oauth_tokens_successor_idx/);
+	await m.clearMcpOAuthSuccessors(env, new Date(now.getTime() + 61_000));
+	assert.equal(sealedCount(), 0);
+	// The rotated token itself stays, so presenting it again is still recognised as a replay.
+	await rejects(
+		m.refreshTokens(env, { clientId: client.id, refreshToken: first.refresh_token }, new Date(now.getTime() + 62_000)),
+		"invalid_grant",
+	);
 });
 
 test("an expired refresh token is refused, and a disabled user cannot refresh", async (t) => {
@@ -645,6 +693,64 @@ test("registrations stop at the cap of recent unused clients, which empties with
 	assert.equal(database.db.prepare("SELECT count(*) AS n FROM mcp_oauth_clients").get().n, 1);
 });
 
+test("a registration keeps only a keyed hash of its network, and only until it is used", async (t) => {
+	const { env, database } = await fixture(t);
+	const network = () =>
+		database.db
+			.prepare("SELECT network FROM mcp_oauth_clients")
+			.all()
+			.map((row) => row.network);
+	const plain = createHash("sha256").update("198.51.100.0/24").digest("hex");
+	env.APP_ENCRYPTION_KEY = "server-secret";
+	try {
+		const client = await m.registerClient(env, { name: "Keyed", redirectUris: [REDIRECT] }, new Date(), "198.51.100.7");
+		const [stored] = network();
+		assert.equal(stored, await m.networkHash("198.51.100.0/24", "server-secret"));
+		assert.notEqual(stored, plain);
+		assert.notEqual(stored, await m.networkHash("198.51.100.0/24", "another-secret"));
+		// The cap still counts registrations from that network under the keyed hash.
+		for (let index = 1; index < m.OAUTH_MAX_UNUSED_CLIENTS_PER_NETWORK; index++)
+			await m.registerClient(env, { name: "Keyed", redirectUris: [REDIRECT] }, new Date(), `198.51.100.${index}`);
+		await assert.rejects(
+			m.registerClient(env, { name: "Keyed", redirectUris: [REDIRECT] }, new Date(), "198.51.100.200"),
+			(error) => error.status === 429,
+		);
+		// Once a grant uses the registration, its network is gone.
+		const code = await m.createAuthorizationCode(
+			env,
+			{
+				clientId: client.id,
+				userId: "user-1",
+				redirectUri: REDIRECT,
+				redirectUriSent: true,
+				codeChallenge: CHALLENGE,
+				resource: RESOURCE,
+				scopes: ["mcp:read"],
+				mailboxIds: ["mailbox-1"],
+			},
+			new Date(),
+		);
+		await exchange(env, client, code);
+		assert.equal(
+			database.db.prepare("SELECT network FROM mcp_oauth_clients WHERE id = ?").get(client.id).network,
+			null,
+		);
+		// A registration used before that change kept its network; the daily pruning clears it.
+		database.db
+			.prepare("UPDATE mcp_oauth_clients SET network = 'old-unkeyed-hash', last_used_at = ? WHERE id = ?")
+			.run(Math.floor(Date.now() / 1000), client.id);
+		await m.pruneMcpOAuth(env, new Date());
+		assert.equal(
+			database.db.prepare("SELECT network FROM mcp_oauth_clients WHERE id = ?").get(client.id).network,
+			null,
+		);
+	} finally {
+		delete env.APP_ENCRYPTION_KEY;
+	}
+	// Without any server secret it falls back to the plain hash.
+	assert.equal(await m.networkHash("198.51.100.0/24", null), plain);
+});
+
 test("one network cannot use up the registrations: a /24 or /48 has its own cap", async (t) => {
 	const { env } = await fixture(t);
 	const now = new Date();
@@ -717,6 +823,7 @@ test("before migration 0106 reads fall back and writes report the pending migrat
 	const { env } = await fixture(t, copyMigrationsBefore(scratch, 106));
 	assert.equal(await m.authenticateMcpRequest(env, bearer("kite_at_whatever"), RESOURCE), null);
 	assert.equal(await m.pruneMcpOAuth(env, new Date()), 0);
+	await m.clearMcpOAuthSuccessors(env, new Date());
 	const result = await m.runDatabasePruning(env, new Date());
 	assert.equal(result.mcp_oauth_grants, 0);
 	await assert.rejects(m.registerClient(env, { name: "Early", redirectUris: [REDIRECT] }, new Date()), (error) =>

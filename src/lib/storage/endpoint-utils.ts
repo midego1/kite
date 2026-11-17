@@ -1,4 +1,5 @@
 import { canonicalHost, isBlockedHost, isIpAddressLiteral, isPrivateIpAddress } from "@/lib/security/outbound-url";
+import type { OutboundAddressPolicy } from "@/lib/security/outbound-fetch";
 import type { S3Location } from "./types";
 
 /** What the endpoint guard lets through beyond public https hosts. */
@@ -26,6 +27,11 @@ export function storageEndpointPolicy(
 		allowInsecure: isOn(env.STORAGE_ALLOW_INSECURE_ENDPOINT) && nodeEnv !== "production",
 		allowPrivate: isOn(env.STORAGE_ALLOW_PRIVATE_ENDPOINTS) && env.KITE_RUNTIME === "node",
 	};
+}
+
+/** What a connection to a store or a linked folder may reach under the same flags as the address check. */
+export function storageFetchPolicy(policy: EndpointPolicy): OutboundAddressPolicy {
+	return { allowLoopback: policy.allowInsecure, allowPrivate: policy.allowPrivate };
 }
 
 /** `storage_stores.endpoint` keeps the host alone, with an `http://` prefix only for a store a flag allowed. */

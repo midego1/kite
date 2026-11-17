@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import test, { after } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -97,6 +97,28 @@ test("the Worker bundle and the Node runtime apply the same migrations in the sa
 			.map((row) => row.name);
 		assert.deepEqual(recorded, bundled);
 		assert.deepEqual(await applyMigrations(database, migrationsDir), [], "a second start must not re-apply anything");
+	} finally {
+		database.db.close();
+	}
+});
+
+test("a migration merged after a higher-numbered one already applied is still applied, by name", async () => {
+	// Production applied 0115 before 0114 existed; the runner applies whatever name `d1_migrations` lacks.
+	const late = "0114_add_followup_indexes.sql";
+	const early = join(directory, "without-0114");
+	mkdirSync(early, { recursive: true });
+	for (const name of files.filter((file) => file !== late)) copyFileSync(join(migrationsDir, name), join(early, name));
+	const database = new SqliteDatabase(":memory:");
+	try {
+		const first = await applyMigrations(database, early);
+		assert.ok(first.includes("0115_add_conversation_notes.sql"));
+		assert.deepEqual(await applyMigrations(database, migrationsDir), [late]);
+		assert.ok(
+			database.db
+				.prepare("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'finance_receipts_user_updated_idx'")
+				.get(),
+		);
+		assert.deepEqual(await applyMigrations(database, migrationsDir), []);
 	} finally {
 		database.db.close();
 	}

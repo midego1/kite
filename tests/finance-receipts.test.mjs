@@ -1281,3 +1281,114 @@ test("the backfill's pending count follows the owner's unresolved claims, not th
 		.run(otherId, otherMessage, now + 300, now, now);
 	assert.equal((await ownerBackfill("owner")).pending, 1);
 });
+
+/** Holds the first Drive `fileReceipt` call until `open()`, so a second real run can interleave with it; every call
+ * still reaches the real Drive module. `calls` counts them. */
+function gateDrive(t, { timeOutFirst = false } = {}) {
+	const invoke = moduleHost.invoke;
+	t.after(() => {
+		moduleHost.invoke = invoke;
+	});
+	let open;
+	const gate = new Promise((resolve) => {
+		open = resolve;
+	});
+	let entered;
+	const inside = new Promise((resolve) => {
+		entered = resolve;
+	});
+	const state = { calls: 0, orphan: null };
+	moduleHost.invoke = async (ctx, moduleId, name, input) => {
+		if (moduleId !== "drive" || name !== "fileReceipt") return invoke(ctx, moduleId, name, input);
+		state.calls += 1;
+		if (state.calls > 1) return invoke(ctx, moduleId, name, input);
+		entered();
+		const call = gate.then(() => invoke(ctx, moduleId, name, input));
+		if (!timeOutFirst) return call;
+		// What the invoker does on a timeout: it stops waiting and answers `timeout`, while the handler runs on.
+		state.orphan = call;
+		await new Promise((resolve) => setTimeout(resolve, 5));
+		return { ok: false, error: { code: "timeout" } };
+	};
+	return { open: () => open(), inside, state };
+}
+
+test("a run inside Drive keeps its claim: the button, the sweep and a second run all leave it alone (S7, interleaved)", async (t) => {
+	const { db, env } = await setup(t);
+	const messageId = await insertMessage(db, env);
+	const paymentId = insertPayment(db, { messageId });
+	const drive = gateDrive(t);
+	const [candidate] = await receiptCandidates(10, "owner");
+	const runA = fileOneReceipt(candidate);
+	await drive.inside;
+
+	await startReceiptBackfill("owner");
+	assert.ok(receiptRow(db, paymentId).lease_until, "the button leaves run A's lease alone");
+	assert.deepEqual(await receiptCandidates(10, "owner"), [], "the sweep sees nothing due");
+	assert.equal(await fileOneReceipt(candidate), "pending", "a second real run does not get the claim");
+	assert.equal(drive.state.calls, 1, "and never reaches Drive");
+
+	drive.open();
+	assert.equal(await runA, "filed");
+	const row = receiptRow(db, paymentId);
+	assert.equal(row.status, "done");
+	assert.equal(drive.state.calls, 1, "exactly one Drive call filed the row");
+	const files = db.db.prepare("SELECT count(*) AS n FROM drive_items WHERE kind = 'file'").get().n;
+	assert.equal(files, 3, "one set of copies (eml, html, pdf)");
+});
+
+test("a run whose lease ran out inside Drive loses to the run that took over, which keeps its own files (S7, interleaved)", async (t) => {
+	const { db, env } = await setup(t);
+	const messageId = await insertMessage(db, env);
+	const paymentId = insertPayment(db, { messageId });
+	const drive = gateDrive(t);
+	const [candidate] = await receiptCandidates(10, "owner");
+	const runA = fileOneReceipt(candidate);
+	await drive.inside;
+
+	// Time passes past run A's lease (rather than waiting five minutes for it).
+	db.db.prepare("UPDATE finance_receipts SET lease_until = 0 WHERE source_id = ?").run(paymentId);
+	const [due] = await receiptCandidates(10, "owner");
+	assert.equal(await fileOneReceipt(due), "filed", "run B takes the claim over and files");
+	const filedByB = receiptRow(db, paymentId);
+	assert.equal(filedByB.status, "done");
+
+	drive.open();
+	assert.equal(await runA, "pending", "run A's late write matches nothing");
+	const row = receiptRow(db, paymentId);
+	assert.equal(row.status, "done");
+	assert.equal(row.eml_file_id, filedByB.eml_file_id, "run B's files stay on the row");
+	assert.equal(row.attempts, filedByB.attempts);
+	assert.equal(drive.state.calls, 2);
+});
+
+test("a Drive call that timed out but is still running keeps its claim from the button and the sweep (N2)", async (t) => {
+	const { db, env } = await setup(t);
+	const messageId = await insertMessage(db, env);
+	const paymentId = insertPayment(db, { messageId });
+	const drive = gateDrive(t, { timeOutFirst: true });
+	const [candidate] = await receiptCandidates(10, "owner");
+	assert.equal(await fileOneReceipt(candidate), "pending", "the run stops waiting on a timeout");
+	const claimed = receiptRow(db, paymentId);
+	assert.equal(claimed.status, "pending");
+	assert.equal(claimed.skipped_reason, null, "a timeout is not recorded as a failure the button may release");
+
+	await startReceiptBackfill("owner");
+	assert.equal(receiptRow(db, paymentId).lease_until, claimed.lease_until, "the button leaves the claim alone");
+	assert.deepEqual(await receiptCandidates(10, "owner"), [], "nothing is due while the orphaned call may still file");
+	assert.equal(await fileOneReceipt(candidate), "pending");
+	assert.equal(drive.state.calls, 1, "no second Drive call next to the one still running");
+
+	drive.open();
+	await drive.state.orphan;
+});
+
+test("the owner rotation reads each owner's latest update through an index (N4, migration 0114)", async (t) => {
+	const { db } = await setup(t);
+	const plan = db.db
+		.prepare("EXPLAIN QUERY PLAN SELECT max(updated_at) FROM finance_receipts WHERE user_id = ?")
+		.all("owner")
+		.map((row) => row.detail)
+		.join("\n");
+	assert.match(plan, /finance_receipts_user_updated_idx/);
+});

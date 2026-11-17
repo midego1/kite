@@ -3,6 +3,9 @@ import { sha256ChecksumHeaders } from "@/lib/aws/s3";
 import { presignAwsUrl } from "@/lib/aws/sigv4";
 import { xmlTag } from "@/lib/aws/xml";
 import { getContentDisposition } from "@/lib/http/content-disposition-utils";
+import { getNodeEnv } from "@/lib/runtime";
+import { outboundFetch } from "@/lib/security/outbound-fetch";
+import { storageEndpointPolicy, storageFetchPolicy } from "./endpoint-utils";
 import {
 	abortIncompleteLifecycleXml,
 	bucketHost,
@@ -170,6 +173,14 @@ export class S3Object {
 
 type RequestInit = Omit<AwsRequest, "config" | "service" | "host" | "scheme" | "path" | "fetch">;
 
+/**
+ * fetch for a store's endpoint: on the Node server it connects only to an address checked under the storage flags,
+ * so an endpoint name cannot rebind to a private address after `assertStoreEndpoint` checked it.
+ */
+export function storeFetch(): typeof fetch {
+	return outboundFetch(null, storageFetchPolicy(storageEndpointPolicy(getNodeEnv() ?? {}, process.env.NODE_ENV)));
+}
+
 export type S3BucketOptions = {
 	fetch?: typeof fetch;
 	/** Opens the credentials on first use, so a configured store costs nothing until something reads from it. */
@@ -201,7 +212,7 @@ export class S3Bucket {
 			host: bucketHost(this.config),
 			scheme: this.config.scheme,
 			path: key === null ? bucketPath(this.config) : objectPath(this.config, key),
-			fetch: this.options.fetch,
+			fetch: this.options.fetch ?? storeFetch(),
 			timeoutMs: typeof this.options.timeoutMs === "function" ? this.options.timeoutMs() : this.options.timeoutMs,
 			...init,
 		});

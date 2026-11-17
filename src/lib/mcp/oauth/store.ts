@@ -180,7 +180,8 @@ export async function insertGrant(env: StoreEnv, grant: NewGrant, now: Date): Pr
 		db.prepare(INSERT_TOKEN).bind(grant.accessHash, grant.keyId, "access", grant.accessExpiresAt, at),
 		db.prepare(INSERT_TOKEN).bind(grant.refreshHash, grant.keyId, "refresh", grant.refreshExpiresAt, at),
 		db.prepare("UPDATE mcp_oauth_codes SET key_id = ? WHERE code_hash = ?").bind(grant.keyId, grant.codeHash),
-		db.prepare("UPDATE mcp_oauth_clients SET last_used_at = ? WHERE id = ?").bind(at, grant.clientId),
+		// A used registration no longer counts toward the per-network cap, so it stops keeping its network.
+		db.prepare("UPDATE mcp_oauth_clients SET last_used_at = ?, network = NULL WHERE id = ?").bind(at, grant.clientId),
 	]);
 }
 
@@ -260,7 +261,7 @@ export async function rotateRefreshToken(
 		// A client that keeps refreshing is in use, so the pruning keeps its registration.
 		db
 			.prepare(
-				"UPDATE mcp_oauth_clients SET last_used_at = ? WHERE id = (SELECT client_id FROM mcp_oauth_grants WHERE key_id = ?)",
+				"UPDATE mcp_oauth_clients SET last_used_at = ?, network = NULL WHERE id = (SELECT client_id FROM mcp_oauth_grants WHERE key_id = ?)",
 			)
 			.bind(at, keyId),
 	]);
@@ -348,6 +349,13 @@ export async function ownsGrant(env: StoreEnv, userId: string, keyId: string): P
 	return !!row;
 }
 
+/** Past the grace window a rotated token's successor is never opened again, so it is dropped. */
+export async function clearExpiredSuccessors(env: StoreEnv, now: Date, graceSeconds: number): Promise<void> {
+	await env.DB.prepare("UPDATE mcp_oauth_tokens SET successor = NULL WHERE successor IS NOT NULL AND rotated_at < ?")
+		.bind(toSeconds(now) - graceSeconds)
+		.run();
+}
+
 const PRUNE_BATCH = 200;
 
 /**
@@ -367,7 +375,9 @@ export async function pruneMcpOAuthRows(
 	await db.batch([
 		db.prepare("DELETE FROM mcp_oauth_codes WHERE expires_at < ?").bind(at - 24 * 60 * 60),
 		db.prepare("DELETE FROM mcp_oauth_tokens WHERE expires_at < ?").bind(at),
-		// Past the grace window a rotated token's successor is never opened again.
+		// A registration in use keeps no network; this also clears ones used before the first grant cleared it.
+		db.prepare("UPDATE mcp_oauth_clients SET network = NULL WHERE network IS NOT NULL AND last_used_at IS NOT NULL"),
+		// The five-minute run (clearExpiredSuccessors) normally got there first.
 		db
 			.prepare("UPDATE mcp_oauth_tokens SET successor = NULL WHERE successor IS NOT NULL AND rotated_at < ?")
 			.bind(at - graceSeconds),

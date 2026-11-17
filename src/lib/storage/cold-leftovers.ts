@@ -291,9 +291,10 @@ async function deleteUnderClaim(
 	if (changed) return changed;
 	// Timed from before the confirm is sent: a cleanup that stalled after it gives up rather than delete a copy a
 	// second cleanup or a mover may since have relied on (the claim it extended outlasts both limits by far).
-	const confirmedFrom = Date.now();
+	// A monotonic clock, so a wall-clock step back cannot stretch the 30 seconds.
+	const confirmedFrom = performance.now();
 	if (!(await confirmLeftoverClaim(env, candidate.key, claim))) return "lease_lost";
-	if (Date.now() - confirmedFrom > CONFIRM_TO_DELETE_MS) return "lease_lost";
+	if (performance.now() - confirmedFrom > CONFIRM_TO_DELETE_MS) return "lease_lost";
 	// A store's own client honours the deadline; the R2 binding and the Node file bucket ignore the option.
 	try {
 		await (store.bucket as { delete(key: string, options?: { timeoutMs?: number }): Promise<void> }).delete(
@@ -317,19 +318,32 @@ async function deleteUnderClaim(
 	return "deleted";
 }
 
-/** A single-part MD5 ETag (32 hex digits, no `-N` part count), the only form that is the object's own digest. */
-function md5Etag(head: { etag?: string | null }): string | null {
+/**
+ * @public Exercised by the unit tests. A single-part MD5 ETag (32 hex digits, no `-N` part count), the only form that
+ * is the object's own digest.
+ */
+export function md5Etag(head: { etag?: string | null }): string | null {
 	const etag = (head.etag ?? "").replace(/^W\//, "").replace(/"/g, "").trim().toLowerCase();
 	return /^[0-9a-f]{32}$/.test(etag) ? etag : null;
 }
 
-/** The SHA-256 of an object, streamed, or null when it is missing, has no body or turns out larger than `limit`. */
-async function sha256Of(store: ObjectStore, key: string, limit: number): Promise<string | null> {
+/**
+ * @public Exercised by the unit tests. The SHA-256 of an object, streamed, or null when it is missing, has no body or
+ * turns out larger than `limit` (counted while reading, whatever its stated size). `body` is read once: on the Node
+ * file bucket every read of it opens a new file stream, and one never read would stay open.
+ */
+export async function sha256Of(store: Pick<ObjectStore, "bucket">, key: string, limit: number): Promise<string | null> {
 	const object = await store.bucket.get(key);
-	if (!object || !("body" in object) || !object.body || object.size > limit) return null;
+	if (!object || !("body" in object)) return null;
+	const body = object.body as ReadableStream<Uint8Array> | null;
+	if (!body) return null;
+	if (object.size > limit) {
+		await body.cancel().catch(() => undefined);
+		return null;
+	}
 	const hash = createHash("sha256");
 	let read = 0;
-	const reader = (object.body as ReadableStream<Uint8Array>).getReader();
+	const reader = body.getReader();
 	try {
 		for (;;) {
 			const { done, value } = await reader.read();

@@ -163,6 +163,12 @@ interface CloudflareEnv {
 	 */
 	TCP_CONNECT?: import("./src/lib/net/types").TcpConnect;
 	/**
+	 * Self-hosted only: fetch for user-supplied addresses that resolves each host once, refuses private addresses the
+	 * caller's policy does not allow and connects to the address it checked (`server/runtime/pinned-fetch.ts`). Unset
+	 * on Workers, which cannot reach private networks; `outboundFetch` (`src/lib/security/outbound-fetch.ts`) picks.
+	 */
+	PINNED_FETCH?: import("./src/lib/security/outbound-fetch").PinnedFetch;
+	/**
 	 * Self-hosted only: POSTs to a public http(s) URL with the checked addresses pinned for the connection, so DNS
 	 * rebinding cannot reach a private host (one-click unsubscribe; `server/runtime/pinned-post.ts`). Unset on Workers,
 	 * which cannot reach private networks.

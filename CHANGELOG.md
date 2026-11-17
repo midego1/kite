@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.11.17.2] - 2026-11-17
+
+### Changed
+
+- Two background jobs, the receipt sweep and the clean-up of connected MCP apps, read less of the database with new indexes. This needs a database update, applied from the [Admin overview](/admin) as described in the [update instructions](https://github.com/midego1/kite/blob/main/docs/deployment.md#updating-kite); without it both keep working, only slower.
+
+### Fixed
+
+- Linked folders: a download from a server that compresses part of a file now fails with a clear error instead of passing on the wrong bytes, and the one-hour download limit also holds when the browser stops reading.
+- Money Watch "Keep receipts": a filing that runs past its time limit is no longer filed a second time when you press "Save receipts for existing payments" while it is still finishing.
+
+### Security
+
+- Apps connected over MCP with OAuth leave less behind: the network a new app registered from is kept only as a keyed hash until its first connection, and the short-lived copy of a refreshed sign-in is removed within minutes. See [Privacy](docs/privacy.md).
+- Self-hosted (Node and Docker): webhooks, alert webhooks, remote images, object storage stores and linked folders now connect only to an address Kite checked, so a server name cannot switch to a private address between the check and the request. See [Self-hosting](docs/self-hosting.md#object-storage-optional).
+
 ## [2026.11.17.1] - 2026-11-17
 
 ### Fixed

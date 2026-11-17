@@ -44,6 +44,8 @@ export const FINANCE_RECEIPT_RENEWAL_DAYS = 30;
 /** Write with Kite answers (e2e/55-write-with-kite.spec.ts). */
 export const COMPOSE_WRITE_BODY =
 	"Hi Sam,\n\nThanks for your note. Tuesday at ten works for me.\n\n- Agenda first\n- Then the budget\n\nSee you then.";
+/** What a cut-off compose answer streams before it stops; never inserted. */
+export const COMPOSE_CUT_OFF_PARTIAL = "Hi Sam,\n\nFollowing up on my email from last week, I still";
 export const COMPOSE_SHORTER_BODY = "Tuesday at ten works.";
 export const COMPOSE_TRANSLATE_BODY = "Dinsdag om tien uur past mij goed.";
 const COMPOSE_HOSTILE_BODY =
@@ -180,6 +182,16 @@ export const FAKE_SCENARIOS: Record<string, FakeScenario> = {
 	"compose-shorter": { triage: () => json(benignTriage), compose: () => text(COMPOSE_SHORTER_BODY) },
 	"compose-translate": { triage: () => json(benignTriage), compose: () => text(COMPOSE_TRANSLATE_BODY) },
 	"compose-hostile": { triage: () => json(benignTriage), compose: () => text(COMPOSE_HOSTILE_BODY) },
+	// Cut off at the output budget: once (the retry at double the budget fits), or every time.
+	"compose-cut-off-once": {
+		triage: () => json(benignTriage),
+		compose: ({ callNumber }) =>
+			callNumber === 1 ? { content: COMPOSE_CUT_OFF_PARTIAL, finishReason: "length" } : text(COMPOSE_WRITE_BODY),
+	},
+	"compose-cut-off": {
+		triage: () => json(benignTriage),
+		compose: () => ({ content: COMPOSE_CUT_OFF_PARTIAL, finishReason: "length" }),
+	},
 	"compose-meta": {
 		triage: () => json(benignTriage),
 		compose: () => text(`Here is your email:\n\n${COMPOSE_WRITE_BODY}`),

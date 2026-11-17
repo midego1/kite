@@ -405,6 +405,53 @@ test.describe("Write with Kite", () => {
 		}
 	});
 
+	test("a cut-off answer is asked again with double the budget; cut off twice, Details shows the budget", async ({
+		browser,
+	}) => {
+		const account = await newAccount("wwo");
+		const { context, page } = await signedInPage(browser, account);
+		try {
+			const body = await openComposer(page);
+			const before = await body.innerHTML();
+			let panel = await openPanel(page);
+			await panel
+				.getByLabel("What should this email say?")
+				.fill("Follow up, we still have no answer [[scenario:compose-cut-off-once]]");
+			await panel.getByRole("button", { name: "Write" }).click();
+			// The cut-off start of the first answer is cleared; the retry's whole answer is the preview.
+			const preview = panel.getByRole("region", { name: "Preview" });
+			await expect(preview).toContainText("Tuesday at ten works for me.");
+			await expect(preview).not.toContainText("Following up on my email from last week");
+			await expect(panel.getByRole("button", { name: "Insert", exact: true })).toBeVisible();
+			expect(composeRequests().map((request) => (request.body as { max_tokens?: number }).max_tokens)).toEqual([
+				2_000, 4_000,
+			]);
+			await panel.getByRole("button", { name: "Discard" }).click();
+			await expect(panel).toHaveCount(0);
+
+			fake.clearRequests();
+			panel = await openPanel(page);
+			await panel
+				.getByLabel("What should this email say?")
+				.fill("Follow up, we still have no answer [[scenario:compose-cut-off]]");
+			await panel.getByRole("button", { name: "Write" }).click();
+			await expect(panel.getByRole("alert")).toContainText("The AI's answer was cut off before it was finished.");
+			expect(composeRequests()).toHaveLength(2);
+			await panel.getByText("Details").click();
+			const details = panel.locator('[data-ai-error="cut_off"]');
+			await expect(details).toContainText("Output cap4,000 tokens");
+			await expect(details).toContainText("Retrycut off again at double the cap");
+			await expect(panel.getByRole("button", { name: "Try again" })).toBeVisible();
+			await page.keyboard.press("Escape");
+			await expect(panel).toHaveCount(0);
+			// Nothing of either cut-off answer entered the message.
+			expect(await body.innerHTML()).toBe(before);
+		} finally {
+			await context.close();
+			await account.api.dispose();
+		}
+	});
+
 	test("over the mailbox's spend cap the panel says which cap and nothing reaches the model", async ({ browser }) => {
 		const account = await newAccount("wwc");
 		await okJson(

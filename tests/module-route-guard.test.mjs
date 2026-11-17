@@ -71,6 +71,8 @@ test("the scan finds the route files of every module with routes", () => {
 	for (const expected of [
 		"calendar/events/route.ts",
 		"calendar/events/[eventId]/route.ts",
+		"calendar/feed/route.ts",
+		"public/calendar/feed/[token]/route.ts",
 		"booking/route.ts",
 		"booking/settings/route.ts",
 		"booking/[eventId]/route.ts",

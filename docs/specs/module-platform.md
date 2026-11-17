@@ -48,7 +48,7 @@ Export and import share nothing that gating could hide by accident: separate pag
 
 | Module | Id | Depends on | Default | Owns |
 | --- | --- | --- | --- | --- |
-| Calendar | `calendar` | none | enabled | Pages `/calendar`; API `/api/calendar/*`; table `calendar_events`; calendar assistant and MCP tools; the `calendar_invite` suggestion kind and invite actions; the Events search section; `calendar.event.*` webhook events; `calendar_events_fts` |
+| Calendar | `calendar` | none | enabled | Pages `/calendar`; API `/api/calendar/*`, `/api/public/calendar*` (the subscription feed); table `calendar_events`; calendar assistant and MCP tools; the `calendar_invite` suggestion kind and invite actions; the Events search section; `calendar.event.*` webhook events; `calendar_events_fts` |
 | Booking | `booking` | `calendar` | enabled | Pages `/booking`, `/book/*`, `/c/*`; API `/api/booking/*`, `/api/public/booking*`; tables `booking_events`, `booking_appointments`; booking usernames; the `booking.appointment.created` webhook event; the `workingHours` service |
 | Email templates | `templates` | none | enabled | API `/api/templates/*` (`route.ts` and `[id]/route.ts`); template rows in `messages` (`status = "template"`); the composer send-menu slot (Template submenu and New template dialog); record kind `templates:template`. No page, no queue, no cron. |
 | Mail import | `import` | none | enabled | Page `/settings/import` and its Settings nav item; API `/api/import/*` (`messages`, `imap`, `imap/folders`, `jobs`, `jobs/[id]`); table `import_jobs`; queue message type `import.imap` (on `AGENT_QUEUE`); cron task `resumeStalledImports`; record kind `import:job`; the IMAP raw-socket client in `src/lib/import/imap.ts` |

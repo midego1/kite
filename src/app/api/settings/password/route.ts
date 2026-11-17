@@ -1,10 +1,7 @@
-import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
-import { getDb } from "@/db";
-import { users } from "@/db/schema";
 import { requireSessionUser } from "@/lib/api/auth";
-import { deleteUserSessions, getSessionTokenFromRequestHeaders } from "@/lib/auth/session";
+import { getSessionTokenFromRequestHeaders, setPasswordAndEndAccess } from "@/lib/auth/session";
 import { hashPassword, verifyPassword } from "@/lib/auth/password";
 import { getEnv } from "@/lib/cloudflare";
 import type { ChangePasswordInput } from "./types";
@@ -33,13 +30,13 @@ export async function PATCH(request: Request) {
 		return NextResponse.json({ error: "New password must be different from the current password" }, { status: 400 });
 	}
 
-	const db = getDb(env);
-	await db
-		.update(users)
-		.set({ passwordHash: hashPassword(parsed.newPassword) })
-		.where(eq(users.id, user.id));
-	// Anyone else holding a session for this account is signed out; this one stays.
-	await deleteUserSessions(env, user.id, getSessionTokenFromRequestHeaders(request));
+	// In one batch: the new password, every other session signed out (this one stays) and calendar subscription links ended.
+	await setPasswordAndEndAccess(
+		env,
+		user.id,
+		hashPassword(parsed.newPassword),
+		getSessionTokenFromRequestHeaders(request),
+	);
 
 	return NextResponse.json({ ok: true });
 }

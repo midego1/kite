@@ -1,5 +1,6 @@
 import { and, eq, gt, inArray } from "drizzle-orm";
 import { getDb } from "@/db";
+import { primaryDatabase } from "@/lib/d1-session-utils";
 import { sessions, users } from "@/db/schema";
 import { hashSessionToken, SESSION_COOKIE } from "@/lib/auth/session";
 
@@ -55,7 +56,8 @@ export type AccountSummary = {
 /** Resolve tokens to live, enabled users; dead tokens are dropped. */
 export async function resolveAccounts(env: CloudflareEnv, tokens: string[]): Promise<AccountSummary[]> {
 	if (tokens.length === 0) return [];
-	const db = getDb(env);
+	// The primary, like `getUserFromSession`: a replica could still list a revoked session or a disabled account.
+	const db = getDb({ DB: primaryDatabase(env.DB) });
 	const hashes = await Promise.all(tokens.map((token) => hashSessionToken(token)));
 	const rows = await db
 		.select({ tokenHash: sessions.tokenHash, user: users })

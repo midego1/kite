@@ -8,6 +8,7 @@ import { createAuditLog } from "@/lib/mailboxes/audit";
 import type { MailboxAccessLevel } from "@/lib/mailboxes/types";
 import { isNoSuchTableError } from "@/lib/modules/state-utils";
 import { clearMailboxSemanticIndex, requeueMailboxSemanticIndex } from "./admin-actions";
+import { databaseKey } from "@/lib/d1-session-utils";
 
 /** "Include this mailbox in search by meaning" (Settings -> Assistant, `canManage`), migration 0099. */
 const SEMANTIC_INDEX_AUDIT_ACTION = "search.mailbox_semantic_index";
@@ -17,10 +18,10 @@ const appliedDatabases = new WeakSet<object>();
 
 /** Whether `mailbox_agent_settings.semantic_index` exists: false before migration 0099, when a save must not try it. */
 async function semanticIndexColumnReady(env: CloudflareEnv): Promise<boolean> {
-	if (appliedDatabases.has(env.DB)) return true;
+	if (appliedDatabases.has(databaseKey(env.DB))) return true;
 	const { results } = await env.DB.prepare("PRAGMA table_info(mailbox_agent_settings)").all<{ name: string }>();
 	const ready = results.some((column) => column.name === "semantic_index");
-	if (ready) appliedDatabases.add(env.DB);
+	if (ready) appliedDatabases.add(databaseKey(env.DB));
 	return ready;
 }
 

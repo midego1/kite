@@ -258,7 +258,7 @@ async function smtpClient(port) {
 	};
 }
 
-async function listener(t, { maxSize = 4096, verifyPrivateClients = true } = {}) {
+async function listener(t, { maxSize = 4096, verifyPrivateClients = true, queueSend, sql = "", sendRaw } = {}) {
 	const sqlite = new SqliteDatabase(":memory:");
 	await applyMigrations(sqlite, join(root, "drizzle/migrations"));
 	sqlite.db.exec(`
@@ -271,9 +271,10 @@ async function listener(t, { maxSize = 4096, verifyPrivateClients = true } = {})
 	const env = {
 		DB: sqlite,
 		BUCKET: { put: async (key, value) => stored.set(key, Buffer.from(value)) },
-		INBOUND_QUEUE: { send: async (payload) => queued.push(payload) },
+		INBOUND_QUEUE: { send: queueSend ?? (async (payload) => queued.push(payload)) },
 	};
-	const mailer = { sendRaw: async () => true };
+	if (sql) sqlite.db.exec(sql);
+	const mailer = { sendRaw: sendRaw ?? (async () => true) };
 	const server = startSmtpListener(env, mailer, {
 		port: 0,
 		host: "127.0.0.1",
@@ -478,6 +479,51 @@ test("the listener answers 552 to oversized DATA and keeps nothing", async (t) =
 	await client.close();
 	assert.equal(queued.length, 1);
 	assert.equal(stored.size, 1);
+});
+
+// A copy kept by a forward rule, for the two tests below.
+const KEEP_COPY_RULE = `
+	INSERT INTO routing_rules (id, user_id, domain_id, scope, pattern, match_field, match_operator, action, forward_to, mailbox_id, keep_copy, priority, created_at)
+		VALUES ('fwd-copy', 'owner', 'domain-1', 'domain', 'copy@example.com', 'recipient', 'exact', 'forward', 'elsewhere@partner.test', 'mailbox-a', 1, 5, 1);
+`;
+
+test("the listener answers 451 when it cannot queue the message, and forwards nothing first", async (t) => {
+	t.mock.method(console, "error", () => {});
+	const forwarded = [];
+	const { port } = await listener(t, {
+		sql: KEEP_COPY_RULE,
+		sendRaw: async (_from, destination) => forwarded.push(destination),
+		queueSend: async () => {
+			throw new Error("queue unavailable");
+		},
+	});
+	const client = await smtpClient(port);
+	await envelope(client, ["copy@example.com"]);
+	assert.equal((await client.send("DATA")).code, 354);
+	client.write("Subject: hello\r\n\r\nhello\r\n.\r\n");
+	const reply = await client.read();
+	// Intake's error reaches the listener's wrapper, which answers with a temporary failure so the sender retries.
+	assert.equal(reply.code, 451);
+	assert.match(reply.text, /try again later/i);
+	await client.close();
+	assert.deepEqual(forwarded, [], "a retry will not forward the message a second time");
+});
+
+test("a kept copy whose forward fails is still accepted, since the message is already queued", async (t) => {
+	t.mock.method(console, "error", () => {});
+	const { port, queued } = await listener(t, {
+		sql: KEEP_COPY_RULE,
+		sendRaw: async () => {
+			throw new Error("relay down");
+		},
+	});
+	const client = await smtpClient(port);
+	await envelope(client, ["copy@example.com"]);
+	assert.equal((await client.send("DATA")).code, 354);
+	client.write("Subject: hello\r\n\r\nhello\r\n.\r\n");
+	assert.equal((await client.read()).code, 250);
+	await client.close();
+	assert.equal(queued.length, 1);
 });
 
 test("the listener refuses an eleventh session from one address", async (t) => {

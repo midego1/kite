@@ -44,6 +44,8 @@ const BACKUP_TABLES: DatabaseBackupTable[] = [
 	"ai_assisted_drafts",
 	"shared_attachment_links",
 	"outbound_jobs",
+	// Notes on conversations (migration 0115), after `messages` and `users`, which they reference.
+	"conversation_notes",
 	"routing_rules",
 	// One assistant address per domain (migration 0096), after routing_rules since it references domains the same way.
 	"assistant_addresses",

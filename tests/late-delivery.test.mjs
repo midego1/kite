@@ -223,3 +223,36 @@ test("a worker whose job was taken back before the provider call does not delive
 	assert.equal(rows(database).job.status, "failed");
 	assert.deepEqual(webhookEvents(database), []);
 });
+
+/** A scheduled send with a conversation note written while it waits, keyed by the message's own id. */
+async function scheduledWithNote(env, database) {
+	const result = await sendEmail(env, { ...input, scheduledAt: new Date(Date.now() + 3_600_000) });
+	const { id } = database.db.prepare("SELECT id FROM messages").get();
+	database.db.exec(
+		`INSERT INTO conversation_notes (id, mailbox_id, thread_key, body, author_user_id, created_at, updated_at) VALUES ('note-1', 'mb', '${id}', 'Sent at the client''s request', 'admin', 1, 1)`,
+	);
+	assert.equal(result.scheduled, true);
+	return id;
+}
+const noteKey = (database) => database.db.prepare("SELECT thread_key AS key FROM conversation_notes").get().key;
+
+test("a send moves the notes written while it waited onto the thread key it set", async (t) => {
+	const { database, env, queued } = await fixture(t, async () => ({ messageId: "<keyed@one.test>" }));
+	await scheduledWithNote(env, database);
+	await processOutboundQueue(env, { ...queued[0], scheduledAt: new Date(Date.now() - 1_000).toISOString() });
+	const { threadId } = database.db.prepare("SELECT thread_id AS threadId FROM messages").get();
+	assert.equal(noteKey(database), threadId);
+	assert.notEqual(threadId, null);
+});
+
+test("when the sent write fails, the notes stay under the key the message still has", async (t) => {
+	const { database, env, queued } = await fixture(t, async () => ({ messageId: "<unkeyed@one.test>" }));
+	const id = await scheduledWithNote(env, database);
+	database.db.exec(`
+		CREATE TRIGGER flaky_sent_write BEFORE UPDATE OF status ON messages WHEN NEW.status = 'sent'
+		BEGIN SELECT RAISE(ABORT, 'transient D1 error'); END;
+	`);
+	await processOutboundQueue(env, { ...queued[0], scheduledAt: new Date(Date.now() - 1_000).toISOString() });
+	assert.equal(database.db.prepare("SELECT thread_id AS threadId FROM messages").get().threadId, null);
+	assert.equal(noteKey(database), id);
+});

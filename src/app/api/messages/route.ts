@@ -22,7 +22,7 @@ import { getCurrentUser } from "@/lib/auth/cookies";
 import { getDb, type AppDatabase } from "@/db";
 import { messages } from "@/db/schema";
 import { getContactDisplayNameMap } from "@/lib/contacts/service";
-import { getSenderDisplayName } from "@/lib/contacts/utils";
+import { getPartyDisplayName } from "@/lib/contacts/utils";
 import { getFirstEmailAddressEntry, normalizeEmailAddress } from "@/lib/email/address";
 import { listAccessibleMailboxes } from "@/lib/mailboxes/access";
 import { tracksAccountIdentity } from "@/lib/profile/identity-utils";
@@ -449,6 +449,7 @@ export async function GET(request: Request) {
 	const enrichedRows = rows.map(({ rawR2Key: _rawR2Key, ...message }) => {
 		const contactMap = contactMapsByUserId.get(message.userId);
 		const accountName = message.mailboxId ? mailboxNameMap.get(message.mailboxId) : null;
+		const firstTo = getFirstEmailAddressEntry(message.toAddr);
 		const key = rowConversationKey(message);
 		const threadCount = message.threadId ? threadCounts.get(key) : undefined;
 		return {
@@ -456,9 +457,8 @@ export async function GET(request: Request) {
 			snippet: message.snippet,
 			fromContactName:
 				(message.direction === "outbound" ? accountName : null) ??
-				getSenderDisplayName(message.fromAddr, contactMap?.get(normalizeEmailAddress(message.fromAddr))),
-			toContactName:
-				contactMap?.get(normalizeEmailAddress(getFirstEmailAddressEntry(message.toAddr)))?.displayName ?? null,
+				getPartyDisplayName(message.fromAddr, contactMap?.get(normalizeEmailAddress(message.fromAddr))),
+			toContactName: getPartyDisplayName(firstTo, contactMap?.get(normalizeEmailAddress(firstTo))),
 			threadCount: threadCount?.total || 1,
 			// A conversation row is unread only when a message it stands for in this folder is.
 			threadUnread: (groupByThread ? scopedThreads.unread.get(key) : threadCount?.unread) || 0,

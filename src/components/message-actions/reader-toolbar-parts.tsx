@@ -1,11 +1,12 @@
 "use client";
 
 import clsx from "clsx";
-import { Archive, Forward, Mail, MailOpen, Reply, ReplyAll, ShieldAlert } from "lucide-react";
+import { Archive, Ban, BellOff, Forward, Mail, MailOpen, Reply, ReplyAll, ShieldAlert, StickyNote } from "lucide-react";
 import type { ReactNode } from "react";
 import type { BulkMessageAction } from "@/app/api/messages/bulk/types";
 import { OVERFLOW_FIXED_ATTR, OVERFLOW_ID_ATTR } from "./use-reader-toolbar-overflow";
-import type { ReplyMode } from "./types";
+import { ReportPhishingItem } from "./report-phishing-item";
+import type { ReaderToolbarNotes, ReplyMode } from "./types";
 import { useT } from "@/lib/i18n/use-t";
 
 export const MORE_ITEM_CLASS =
@@ -34,6 +35,42 @@ export function ToolbarSlot({
 	);
 }
 
+/** The conversation's Notes button as an overflowable action; nothing where the conversation offers no notes. */
+export function NotesToolbarSlot({ notes, visible }: { notes?: ReaderToolbarNotes; visible: boolean }) {
+	if (!notes) return null;
+	return (
+		<ToolbarSlot id="notes" visible={visible}>
+			{notes.button}
+		</ToolbarSlot>
+	);
+}
+
+/** Notes in "More actions", once the button has moved there; `onSelect` closes the menu first. */
+export function NotesMoreItem({
+	notes,
+	overflowed,
+	onSelect,
+}: {
+	notes?: ReaderToolbarNotes;
+	overflowed: boolean;
+	onSelect: () => void;
+}) {
+	if (!notes || !overflowed) return null;
+	return (
+		<button
+			type="button"
+			className={MORE_ITEM_CLASS}
+			onClick={() => {
+				onSelect();
+				notes.onOpen();
+			}}
+		>
+			<StickyNote className="h-4 w-4" />
+			{notes.label}
+		</button>
+	);
+}
+
 type LeadItemsProps = {
 	isMobile: boolean;
 	/** Whether a toolbar action moved into the menu because the row had no room for it. */
@@ -42,6 +79,8 @@ type LeadItemsProps = {
 	canForward: boolean;
 	read: boolean;
 	disabled: boolean;
+	/** Reply, reply all and forward: off while busy and for mail the user may only read. */
+	answerDisabled: boolean;
 	archiveDisabled: boolean;
 	spamDisabled: boolean;
 	onReply: (mode: ReplyMode) => void;
@@ -64,7 +103,7 @@ export function ReaderMoreLeadItems(props: LeadItemsProps) {
 				<button
 					type="button"
 					className={MORE_ITEM_CLASS}
-					disabled={props.disabled}
+					disabled={props.answerDisabled}
 					onClick={() => props.onReply("reply")}
 				>
 					<Reply className="h-4 w-4 rtl:-scale-x-100" />
@@ -86,7 +125,7 @@ export function ReaderMoreLeadItems(props: LeadItemsProps) {
 				<button
 					type="button"
 					className={MORE_ITEM_CLASS}
-					disabled={props.disabled}
+					disabled={props.answerDisabled}
 					onClick={() => props.onReply("replyAll")}
 				>
 					<ReplyAll className="h-4 w-4 rtl:-scale-x-100" />
@@ -94,7 +133,7 @@ export function ReaderMoreLeadItems(props: LeadItemsProps) {
 				</button>
 			)}
 			{isMobile && props.canForward && (
-				<button type="button" className={MORE_ITEM_CLASS} onClick={props.onForward}>
+				<button type="button" className={MORE_ITEM_CLASS} disabled={props.answerDisabled} onClick={props.onForward}>
 					<Forward className="h-4 w-4 rtl:-scale-x-100" />
 					{t("Forward")}
 				</button>
@@ -122,6 +161,41 @@ export function ReaderMoreLeadItems(props: LeadItemsProps) {
 				</button>
 			)}
 			{any && <hr className="my-1 border-neutral-100" />}
+		</>
+	);
+}
+
+/**
+ * Unsubscribe, Block contact and Report phishing in "More actions" for received mail. Each acts for the whole
+ * mailbox, so mail the user may only read (`manageDisabled`) offers none of them; Unsubscribe without a link
+ * trashes the sender's mail, which is already done in Trash.
+ */
+export function ReaderSenderItems(props: {
+	manageDisabled: boolean;
+	hasUnsubscribeUrl: boolean;
+	trashed: boolean;
+	onUnsubscribe: () => void;
+	onBlock: () => void;
+	onReportPhishing: () => void;
+}) {
+	const t = useT();
+	return (
+		<>
+			<button
+				type="button"
+				className={MORE_ITEM_CLASS}
+				disabled={props.manageDisabled || (!props.hasUnsubscribeUrl && props.trashed)}
+				onClick={props.onUnsubscribe}
+			>
+				<BellOff className="h-4 w-4 shrink-0" />
+				{t("Unsubscribe")}
+			</button>
+			<button type="button" className={MORE_ITEM_CLASS} disabled={props.manageDisabled} onClick={props.onBlock}>
+				<Ban className="h-4 w-4" />
+				{t("Block contact")}
+			</button>
+			<ReportPhishingItem disabled={props.manageDisabled} onSelect={props.onReportPhishing} />
+			<hr className="my-1 border-neutral-100" />
 		</>
 	);
 }

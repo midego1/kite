@@ -5,6 +5,7 @@ import { messageBodyKeys } from "@/db/schema/message-bodies";
 import { missingColumnFromError } from "@/lib/auth/user-lookup-utils";
 import { createLogger } from "@/lib/logger.mjs";
 import { htmlBodyObjectKey, isHtmlBodyObjectKey, withoutDerivedText, type HtmlBodyOffload } from "./bodies-utils";
+import { databaseKey } from "@/lib/d1-session-utils";
 
 const logger = createLogger("bodies");
 
@@ -136,10 +137,10 @@ const offloadReady = new WeakSet<object>();
  * stays in the row. A positive answer is kept for the database binding; a negative one is asked again.
  */
 export async function canOffloadHtmlBodies(env: CloudflareEnv): Promise<boolean> {
-	if (offloadReady.has(env.DB)) return true;
+	if (offloadReady.has(databaseKey(env.DB))) return true;
 	try {
 		await getDb(env).select({ key: keyColumn }).from(messageBodyKeys).limit(0);
-		offloadReady.add(env.DB);
+		offloadReady.add(databaseKey(env.DB));
 		return true;
 	} catch (error) {
 		if (isMissingKeyColumn(error)) return false;

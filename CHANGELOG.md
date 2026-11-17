@@ -6,6 +6,75 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2026.11.17.0] - 2026-11-17
+
+### Added
+
+- Subscribe to your Kite calendar from Google Calendar, Outlook or your phone with a private, read-only link from **Subscribe** in the calendar's header, and replace or turn off the link there at any time. See [Subscribing from another calendar app](https://github.com/midego1/kite/blob/main/docs/api.md#subscribing-from-another-calendar-app). Ported from upstream Mailflare #247.
+  ![The Subscribe dialog with a new link, a Copy button and the steps for Google Calendar, Outlook and iPhone](/changelog/2026-11-13-calendar-subscribe-light.webp)
+  ![The same dialog in dark mode](/changelog/2026-11-13-calendar-subscribe-dark.webp)
+  ![The same dialog on a phone](/changelog/2026-11-13-calendar-subscribe-mobile-light.webp)
+- Notes on conversations: internal notes above a conversation for everyone with access to the mailbox, never sent. Pin one to an email; edit or delete your own, and with full access anyone's. Read-only members can't add or edit notes. Ported from upstream Mailflare #237. Needs a [database update](/admin); see [Notes](https://github.com/midego1/kite/blob/main/docs/conversation-notes.md).
+  ![The notes band above a conversation, with a note about the whole conversation and one pinned to an email](/changelog/2026-11-13-conversation-notes-light.webp)
+  ![The same notes in dark mode](/changelog/2026-11-13-conversation-notes-dark.webp)
+  ![The notes on a phone](/changelog/2026-11-13-conversation-notes-mobile-light.webp)
+  ![The notes on a phone in dark mode](/changelog/2026-11-13-conversation-notes-mobile-dark.webp)
+- A message with two or more attachments has a Download all button next to its attachments that saves them as one ZIP file, named after the subject. Flagged files are named first and only included after you confirm, and a file missing from storage is reported instead of being left out. Ported from upstream Mailflare #269.
+  ![Download all next to a message's three attachments](/changelog/2026-11-13-download-all-attachments-light.webp)
+  ![Download all in dark mode](/changelog/2026-11-13-download-all-attachments-dark.webp)
+  ![Download all on a phone](/changelog/2026-11-13-download-all-attachments-mobile-light.webp)
+  ![The confirmation naming a flagged installer before the archive downloads](/changelog/2026-11-13-download-all-attachments-flagged-light.webp)
+- Gmail and Google Workspace accounts can be connected with Sign in with Google instead of an app password, once the owner sets up Google sign-in in [Admin → General](/general). Accounts with an app password keep working and can switch either way. Apply the database update first; see [Google sign-in](https://github.com/midego1/kite/blob/main/docs/providers.md#google-sign-in-for-connected-accounts).
+  ![Admin → General with Google sign-in set up and the redirect URI to register](/changelog/2026-11-11-google-sign-in-admin-light.webp)
+  ![The connect dialog for a Gmail account with the Sign in with Google button](/changelog/2026-11-11-sign-in-with-google-light.webp)
+- A message from a mailing list or newsletter now shows a small notice with **Unsubscribe**. When the sender supports signed one-click unsubscribe, Kite leaves the list for you without opening a page; close the notice to hide it for that list (ported from upstream Mailflare #279). See [Mailing lists](https://github.com/midego1/kite/blob/main/docs/mailing-lists.md).
+  ![The reader's mailing-list notice with Unsubscribe and the button that hides it](/changelog/2026-11-13-mailing-list-notice-light.webp)
+  ![The same notice in the dark theme](/changelog/2026-11-13-mailing-list-notice-dark.webp)
+  ![The notice on a phone](/changelog/2026-11-13-mailing-list-notice-mobile-light.webp)
+  ![The notice on a phone in the dark theme](/changelog/2026-11-13-mailing-list-notice-mobile-dark.webp)
+
+### Changed
+
+- The database update notice is now a compact card: a short title, one line of status, a thin progress bar and a single **Update now** button. It no longer scrolls or cuts words off in the sidebar, shows updates in plain words under **Details** instead of file names, and says clearly when an update failed, with **Retry** and a link to the Admin overview.
+  ![Before: the old notice squeezed into the sidebar with scrollbars, a cut-off title and file names, in dark mode](/changelog/2026-11-10-database-update-before-dark.webp)
+  ![After: the compact notice with its status line and progress, in dark mode](/changelog/2026-11-10-database-update-after-dark.webp)
+  ![Before: the old notice in light mode](/changelog/2026-11-10-database-update-before-light.webp)
+  ![After: the compact notice in light mode](/changelog/2026-11-10-database-update-after-light.webp)
+- Mail in a mailbox shared with you read-only can no longer be answered or forwarded, in All mailboxes or one mailbox at a time: Reply, Reply all and Forward are off, the reply box says why, and Block contact, Unsubscribe and Report phishing are off too. Before, the buttons were there but failed.
+  ![A read-only shared email in All mailboxes with Reply and Move turned off and a note instead of the reply box](/changelog/2026-11-10-read-only-shared-mail-light.webp)
+  ![The same email on a phone](/changelog/2026-11-10-read-only-shared-mail-phone-light.webp)
+
+## [2026.11.13.2] - 2026-11-13
+
+### Fixed
+
+- Mail that arrives while Kite briefly cannot store it, or while a self-hosted server is unreachable from the email relay, is now deferred so the sender's server tries again later, instead of being bounced. A retried message is stored once, and a kept copy is forwarded once (ported from upstream Mailflare #281).
+
+## [2026.11.13.1] - 2026-11-13
+
+### Changed
+
+- Kite can now read from Cloudflare D1 read replicas near you, so pages can load faster once read replication is switched on for the database, while you still see your own changes at once. It is off until you enable it; see [Operations](https://github.com/midego1/kite/blob/main/docs/operations.md#d1-read-replication). Ported from upstream Mailflare #268.
+
+## [2026.11.13.0] - 2026-11-13
+
+### Fixed
+
+- Sent mail to a shared address, such as a no-reply used by several companies, keeps the name each message was sent to instead of the first name Kite learned. A name you set on the contact still wins. Ported from upstream Mailflare #266.
+
+## [2026.11.11.2] - 2026-11-11
+
+### Added
+
+- Sign in with a passkey: your fingerprint, face, device PIN or a security key instead of your password. A passkey also counts as your second step, so no authenticator code is asked for. It needs a database update from the Admin overview; see [Passkeys](https://github.com/midego1/kite/blob/main/docs/passkeys.md).
+  ![The sign-in page with a Sign in with a passkey button under the password form](/changelog/2026-11-10-passkey-sign-in-light.webp)
+  ![The same sign-in page on a phone](/changelog/2026-11-10-passkey-sign-in-mobile-light.webp)
+- [Settings → Security](/settings/security) lists your passkeys with when they were added and last used. Adding or removing one asks for your password again, or a code from your authenticator app when two-factor is on.
+  ![Settings → Security with one passkey, when it was added and last used, and Add a passkey](/changelog/2026-11-10-passkeys-security-light.webp)
+  ![The passkeys on a phone](/changelog/2026-11-10-passkeys-security-mobile-light.webp)
+- Kite emails you when a passkey is added to or removed from your account, and resetting your password with a reset link removes your passkeys.
+- Administrators can reset an account's two-factor sign-in and passkeys for someone who lost their devices, after confirming with their own password or authenticator code.
+
 ## [2026.11.11.1] - 2026-11-11
 
 ### Fixed

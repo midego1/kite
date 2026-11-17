@@ -79,6 +79,12 @@ export const PUBLIC_ROUTES: PublicRoute[] = [
 		status: 404,
 		reason: "Public booking request; unknown slug",
 	},
+	{
+		method: "GET",
+		path: "/api/public/calendar/feed/e2e_probe",
+		status: 404,
+		reason: "Calendar subscription feed; the token in the path is the credential",
+	},
 	{ method: "GET", path: "/api/public/drive/e2e_probe", status: 404, reason: "Drive public link; unknown token" },
 	{
 		method: "GET",

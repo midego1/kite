@@ -163,6 +163,27 @@ export const RTL_ATTACHMENT_MAIL = {
 	],
 };
 
+/** A message with three attachments, for the "Download all" shots; the second one with a program among them. */
+export const ATTACHMENTS_ZIP_MAIL = {
+	from: `"Priya Raman" <priya@acme.test>`,
+	subject: "Q3 board pack",
+	html: `<p>Hi,</p><p>The board pack for Thursday is attached: the slides, the budget and the minutes.</p><p>Priya</p>`,
+	attachments: [
+		{ filename: "Q3 slides.pdf", contentType: "application/pdf", content: "%PDF-1.7 demo slides" },
+		{ filename: "Budget 2027.xlsx", contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", content: "demo budget" },
+		{ filename: "Minutes.txt", contentType: "text/plain", content: "Demo minutes" },
+	],
+};
+export const ATTACHMENTS_ZIP_FLAGGED_MAIL = {
+	from: `"Tom Okafor" <tom@adventure-works.test>`,
+	subject: "Installer and notes",
+	html: `<p>Here is the installer we talked about, and my notes.</p><p>Tom</p>`,
+	attachments: [
+		{ filename: "setup.exe", contentType: "application/octet-stream", content: "MZ demo installer" },
+		{ filename: "notes.txt", contentType: "text/plain", content: "Demo notes" },
+	],
+};
+
 /** A message in Thai and what the translation shot shows for it, with the same markup. */
 export const THAI_MAIL = {
 	from: `"สมชาย ใจดี" <somchai@wingtip.test>`,
@@ -181,6 +202,33 @@ export const SENDER_AUTH_MAIL = {
 	html: `<p>Hello,</p><p>Your invoice for December is attached. Thanks for your business.</p>`,
 };
 
+/** A newsletter with a list name and an unsubscribe link, for the reader's mailing-list notice. */
+export const MAILING_LIST_MAIL = {
+	from: `"Northwind Weekly" <news@northwind-weekly.test>`,
+	subject: "This week at Northwind: the spring catalogue",
+	html: `<p>Hello,</p><p>The spring catalogue is out, with forty new products and a preview of the summer range.</p><p>Thanks for reading,<br>The Northwind team</p>`,
+};
+
+/** Delivers the newsletter demo mail once, with List-Id and List-Unsubscribe headers. */
+export async function seedMailingListDemo(): Promise<void> {
+	const api = await apiContext(STORAGE_STATE);
+	const found = await api.get(`/api/messages?${new URLSearchParams({ q: MAILING_LIST_MAIL.subject, limit: "20" })}`);
+	const { messages: existing } = (await found.json()) as { messages: { subject?: string }[] };
+	if (!existing.some((message) => message.subject === MAILING_LIST_MAIL.subject)) {
+		await postInbound(api, {
+			...MAILING_LIST_MAIL,
+			to: `"Support" <${SUPPORT_ADDRESS}>`,
+			text: plainText(MAILING_LIST_MAIL.html),
+			headers: {
+				"List-Id": "Northwind Weekly <weekly.northwind-weekly.test>",
+				"List-Unsubscribe": "<https://northwind-weekly.test/unsubscribe?u=demo>",
+			},
+		});
+		await waitForMessage(api, MAILING_LIST_MAIL.subject);
+	}
+	await api.dispose();
+}
+
 /** Delivers the right-to-left demo mail once, so the shot finds it in the Inbox. */
 export async function seedRtlMail(): Promise<void> {
 	await deliverOnce(RTL_MAIL);
@@ -188,6 +236,11 @@ export async function seedRtlMail(): Promise<void> {
 
 export async function seedRtlAttachmentMail(): Promise<void> {
 	await deliverOnce([RTL_ATTACHMENT_MAIL]);
+}
+
+/** Delivers the "Download all" demo mails once. */
+export async function seedAttachmentsZipMail(): Promise<void> {
+	await deliverOnce([ATTACHMENTS_ZIP_MAIL, ATTACHMENTS_ZIP_FLAGGED_MAIL]);
 }
 
 /** Delivers the sender authentication demo mail once, with headers that fail every check. */

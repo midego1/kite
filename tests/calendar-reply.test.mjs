@@ -115,3 +115,28 @@ test("invitations still carry the @mailflare suffix", () => {
 		).includes("METHOD:CANCEL"),
 	);
 });
+
+test("outgoing invitations fold long lines at 75 octets and keep event text on its own property", () => {
+	const description = `Agenda: ${"Überblick und nächste Schritte, ".repeat(8)}🙂 end`;
+	const body = text(
+		createCalendarInvitation({
+			title: "Planning\r\nATTENDEE:mailto:evil@example.com",
+			description,
+			location: "Room 1; floor 2",
+			startsAt: new Date("2026-04-15T13:00:00Z"),
+			endsAt: new Date("2026-04-15T14:00:00Z"),
+			uid: "event-1",
+		}),
+	);
+	const lines = body.split("\r\n");
+	for (const line of lines) assert.ok(new TextEncoder().encode(line).length <= 75, line);
+	assert.ok(
+		lines.some((line) => line.startsWith(" ")),
+		"the description is folded",
+	);
+	const unfolded = unfold(body).split("\r\n");
+	assert.ok(unfolded.includes(`DESCRIPTION:Agenda: ${"Überblick und nächste Schritte\\, ".repeat(8)}🙂 end`));
+	assert.ok(unfolded.includes("SUMMARY:Planning\\nATTENDEE:mailto:evil@example.com"));
+	assert.ok(unfolded.includes("LOCATION:Room 1\\; floor 2"));
+	assert.equal(unfolded.filter((line) => line.startsWith("ATTENDEE")).length, 0);
+});

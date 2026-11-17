@@ -12,7 +12,7 @@ import { ContactAvatar } from "@/components/contacts/contact-avatar";
 import { MessageActions } from "@/components/message-actions/message-actions";
 import { READER_TOOLBAR_SPACER_ATTR } from "@/components/message-actions/use-reader-toolbar-overflow";
 import { MessageAttachmentViewer } from "@/components/message-attachment-viewer";
-import { MessageAttachmentCard } from "@/components/message-attachment-card";
+import { MessageAttachmentsSection } from "@/components/messages/message-attachments-section";
 import { MessageDetailSkeleton } from "@/components/page-skeletons";
 import { usePageLoading } from "@/components/page-loading";
 import { PreviousMessage } from "@/components/previous-message";
@@ -59,9 +59,12 @@ import { MessageTranslationBar } from "@/components/messages/message-translation
 import { translationAvailability } from "@/components/messages/message-translation-utils";
 import { useMessageTranslation } from "@/components/messages/use-message-translation";
 import { SummarizeButton, ThreadSummaryCard } from "@/components/messages/thread-summary-card";
+import { ConversationNotes, useReaderNotesAction } from "@/components/messages/conversation-notes";
+import { useConversationNotes } from "@/components/messages/use-conversation-notes";
 import { useThreadSummary } from "@/components/messages/use-thread-summary";
 import { showsCurrentSummary } from "@/components/messages/thread-summary-utils";
 import { useT } from "@/lib/i18n/use-t";
+import { MailingListNotice } from "@/components/messages/mailing-list-notice";
 import { SenderAuthWarningNotice } from "@/components/messages/sender-auth-warning";
 import { SenderAuthBadge } from "@/components/messages/sender-auth-badge";
 import { deriveSenderAuthWarning } from "@/components/messages/sender-auth-warning-utils";
@@ -86,6 +89,8 @@ export default function MessageDetailPage() {
 	const isAnyPanelVisible = messageListVisible || assistantVisible;
 	const { scrollRef, handleScroll } = useMessageContentScroll(messageId, loading);
 	const summary = useThreadSummary(messageId, "thread");
+	const notes = useConversationNotes(messageId);
+	const notesAction = useReaderNotesAction(notes);
 	const hideTriageSummary = showsCurrentSummary(summary.state, summary.hidden);
 	const threadTranslationState = translationAvailability(summary.state);
 	const translation = useMessageTranslation({
@@ -205,6 +210,7 @@ export default function MessageDetailPage() {
 					status={message.status}
 					read={message.read}
 					unsubscribeUrl={data.unsubscribeUrl}
+					mailingList={data.mailingList}
 					subject={message.subject}
 					bodyText={body?.textBody}
 					ownAddress={ownAddress}
@@ -215,6 +221,7 @@ export default function MessageDetailPage() {
 					onSummarizeMessage={summary.summarizeMessage}
 					translate={translation.menu}
 					print={print}
+					notes={notesAction}
 				/>
 				<AssistantButton testId="assistant-button-reader" />
 			</div>
@@ -250,7 +257,24 @@ export default function MessageDetailPage() {
 				<ScreenerBanner message={message} mailbox={messageMailbox} alignWide={!isAnyPanelVisible} />
 				<SendStateBanner message={message} alignWide={!isAnyPanelVisible} />
 				<ThreadSummaryCard key={message.id} controller={summary} />
+				<ConversationNotes
+					controller={notes}
+					emails={[
+						...thread.messages.map((threadMessage) => ({
+							id: threadMessage.id,
+							sender: getConversationSender(threadMessage, currentAccountName),
+							createdAt: threadMessage.createdAt,
+						})),
+						{ id: message.id, sender: fromName, createdAt: message.createdAt },
+					]}
+				/>
 				<SenderAuthWarningNotice warning={senderAuthWarning} alignWide={!isAnyPanelVisible} />
+				<MailingListNotice
+					message={message}
+					mailingList={data.mailingList}
+					unsubscribeUrl={data.unsubscribeUrl}
+					alignWide={!isAnyPanelVisible}
+				/>
 				<ConversationThread
 					currentMessageId={message.id}
 					threadId={message.threadId}
@@ -270,7 +294,7 @@ export default function MessageDetailPage() {
 					translationAvailability={threadTranslationState}
 				/>
 				{/* Every message of the conversation is a section under a hairline, as in Zero's reader. */}
-				<article className="border-t border-neutral-200 px-4 py-6 sm:px-7">
+				<article data-message-id={message.id} className="border-t border-neutral-200 px-4 py-6 sm:px-7">
 					<div className="w-full">
 						<div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1 pb-5">
 							<div className="flex min-w-0 items-start gap-3">
@@ -420,24 +444,12 @@ export default function MessageDetailPage() {
 								</div>
 							</section>
 						)}
-						{attachments.length > 0 && (
-							<section className="mt-6">
-								<h2 className="mb-2 text-sm text-neutral-500">
-									{t("Attachments ({count})", { count: attachments.length })}
-								</h2>
-								<div className="flex flex-wrap gap-2">
-									{attachments.map((attachment) => (
-										<MessageAttachmentCard
-											key={attachment.id}
-											attachment={attachment}
-											messageId={message.id}
-											mailboxId={message.mailboxId ?? null}
-											onPreview={setPreviewAttachment}
-										/>
-									))}
-								</div>
-							</section>
-						)}
+						<MessageAttachmentsSection
+							attachments={attachments}
+							messageId={message.id}
+							mailboxId={message.mailboxId ?? null}
+							onPreview={setPreviewAttachment}
+						/>
 						<MessageReplyButtons
 							mailboxId={message.mailboxId}
 							senderAddress={message.fromAddr}

@@ -269,6 +269,7 @@ export function ConversationMessageCard({
 
 	return (
 		<article
+			data-message-id={message.id}
 			className={cn(
 				// Each message is a section under a hairline, like the open one, as in Zero's reader.
 				"border-t border-neutral-200 bg-white px-4 transition-colors sm:px-7",

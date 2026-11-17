@@ -1,6 +1,7 @@
 import { authFetch } from "@/lib/auth/client";
 import { CLIENT_MODULES } from "@/lib/modules/client-data";
 import { formatUserDate } from "@/lib/time/utils";
+import { UNSUBSCRIBE_ONE_CLICK_ACTION } from "@/lib/email/one-click-attempts-utils";
 import type { ActivityLog, ActivityMetadata } from "./types";
 
 export async function fetchActivity(): Promise<ActivityLog[]> {
@@ -32,7 +33,34 @@ export function getActivityLabel(action: string): string {
 	if (action === "agent.provider_updated") return "AI provider edited";
 	if (action === "agent.provider_switched") return "AI provider switched";
 	if (action === "agent.provider_deleted") return "AI provider deleted";
+	if (action === UNSUBSCRIBE_ONE_CLICK_ACTION) return "One-click unsubscribe";
 	return action;
+}
+
+const UNSUBSCRIBE_OUTCOMES: Record<string, string> = {
+	done: "Sent; the sender confirmed",
+	pending: "Sending",
+	duplicate: "Not sent: already sent for this message a few minutes before",
+	rate_limited: "Not sent: too many requests",
+	refused_url: "Not sent: the link is not a public https address",
+	timeout: "Sent; the sender did not answer in time",
+	network: "Could not reach the sender",
+	redirect: "Sent; the sender answered with a redirect",
+	http_error: "Sent; the sender answered with an error",
+};
+
+/** One plain sentence for a one-click unsubscribe request, or null for any other activity. Never the link. */
+export function describeUnsubscribeActivity(log: ActivityLog, metadata: ActivityMetadata): string | null {
+	if (log.action !== UNSUBSCRIBE_ONE_CLICK_ACTION) return null;
+	const outcome = UNSUBSCRIBE_OUTCOMES[metadata.outcome ?? "pending"] ?? "Sent";
+	return typeof metadata.status === "number" && metadata.outcome !== "done"
+		? `${outcome} (HTTP ${metadata.status})`
+		: outcome;
+}
+
+/** Activities about something other than a sign-in, which have no device, place or IP address to show. */
+export function isDevicelessActivity(action: string): boolean {
+	return isModuleActivity(action) || action === UNSUBSCRIBE_ONE_CLICK_ACTION;
 }
 
 /** One plain sentence for a saved AI provider change, or null for any other activity. */

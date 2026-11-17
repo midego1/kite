@@ -14,6 +14,7 @@ import { RealtimeHubRegistry } from "./realtime";
 import { openSqliteDatabase, type SqliteDatabase } from "./sqlite-database";
 import { SqliteVectorStore } from "./sqlite-vector-store";
 import { createPinnedFetch } from "./pinned-fetch";
+import { createPinnedPost } from "./pinned-post";
 import { createTcpConnect } from "./tcp-connect";
 import type { NodeRuntime } from "./types";
 
@@ -103,6 +104,9 @@ export function createNodeRuntime(): NodeRuntime {
 		MICROSOFT_OAUTH_CLIENT_ID: optional("MICROSOFT_OAUTH_CLIENT_ID"),
 		MICROSOFT_OAUTH_CLIENT_SECRET: optional("MICROSOFT_OAUTH_CLIENT_SECRET"),
 		MICROSOFT_OAUTH_TENANT: optional("MICROSOFT_OAUTH_TENANT"),
+		GOOGLE_OAUTH_CLIENT_ID: optional("GOOGLE_OAUTH_CLIENT_ID"),
+		GOOGLE_OAUTH_CLIENT_SECRET: optional("GOOGLE_OAUTH_CLIENT_SECRET"),
+		GOOGLE_OAUTH_HOSTED_DOMAIN: optional("GOOGLE_OAUTH_HOSTED_DOMAIN"),
 		ABUSE_CH_AUTH_KEY: optional("ABUSE_CH_AUTH_KEY"),
 		OPERATIONAL_ALERTS: optional("OPERATIONAL_ALERTS"),
 		ATTACHMENT_SHARING: optional("ATTACHMENT_SHARING"),
@@ -134,6 +138,8 @@ export function createNodeRuntime(): NodeRuntime {
 		EXTERNAL_ACCOUNTS_ALLOW_INSECURE_LOOPBACK: optional("EXTERNAL_ACCOUNTS_ALLOW_INSECURE_LOOPBACK"),
 		EXTERNAL_ACCOUNTS_ALLOW_PRIVATE_HOSTS: optional("EXTERNAL_ACCOUNTS_ALLOW_PRIVATE_HOSTS"),
 		EXTERNAL_ACCOUNTS_EXTRA_PORTS: optional("EXTERNAL_ACCOUNTS_EXTRA_PORTS"),
+		// One-click unsubscribe POSTs: DNS pinned, private addresses refused, no redirects.
+		PINNED_POST: createPinnedPost(),
 		// Mail server connections (IMAP import): DNS pinned, private addresses refused, certificates verified.
 		TCP_CONNECT: createTcpConnect({
 			allowPrivate: mailHosts.allowPrivate,

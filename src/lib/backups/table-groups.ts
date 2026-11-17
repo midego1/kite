@@ -36,6 +36,7 @@ export const BACKUP_TABLE_GROUPS: { id: BackupTableGroupId; label: string; table
 			"message_attachments",
 			"shared_attachment_links",
 			"outbound_jobs",
+			"conversation_notes",
 			"email_templates",
 			"calendar_events",
 			"booking_events",

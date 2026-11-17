@@ -1,6 +1,7 @@
 import { authFetch, getClientSessionKey } from "@/lib/auth/client";
 import type { MailboxOption } from "./mailbox-provider";
 import { clearStoredState } from "@/hooks/use-stored-state";
+import { MAILING_LIST_NOTICE_STORAGE_KEY } from "@/components/messages/mailing-list-notice-utils";
 
 let mailboxesCache: MailboxOption[] | null = null;
 let mailboxesCacheSessionToken: string | null = null;
@@ -44,8 +45,13 @@ export function clearMailboxClientState() {
 	clearMailboxesCache();
 	if (typeof window !== "undefined") {
 		localStorage.removeItem(SELECTED_MAILBOX_STORAGE_KEY);
-		// The All mailboxes view, its filter and the last From belong to the account that signed out.
-		clearStoredState([ALL_MAILBOXES_STORAGE_KEY, ALL_MAILBOXES_HIDDEN_STORAGE_KEY, LAST_FROM_STORAGE_KEY]);
+		// The All mailboxes view, its filter, the last From and hidden list notices belong to the account that signed out.
+		clearStoredState([
+			ALL_MAILBOXES_STORAGE_KEY,
+			ALL_MAILBOXES_HIDDEN_STORAGE_KEY,
+			LAST_FROM_STORAGE_KEY,
+			MAILING_LIST_NOTICE_STORAGE_KEY,
+		]);
 	}
 }
 

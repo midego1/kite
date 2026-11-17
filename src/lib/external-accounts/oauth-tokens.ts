@@ -1,16 +1,16 @@
 import { createLogger } from "@/lib/logger.mjs";
 import { openSetting, SecretBoxError, sealSetting } from "@/lib/security/secret-box";
-import { oauthTestOriginFor, resolveMicrosoftClient, TOKEN_REQUEST_TIMEOUT_MS } from "./oauth-client";
+import { type OAuthApp, resolveOAuthApp } from "./oauth-app";
+import { type ClientEnv, TOKEN_REQUEST_TIMEOUT_MS } from "./oauth-client";
+import { OAUTH_PROVIDERS, oauthProviderOf } from "./oauth-provider-utils";
 import { readTokenState, storeRefreshedTokens, type TokenState } from "./oauth-store";
 import {
-	type MicrosoftClient,
-	microsoftEndpoints,
 	needsRefresh,
 	type OAuthTokens,
 	OAuthTokenError,
 	parseTokenResponse,
 	tokenFailure,
-	tokenRequestBody,
+	type TokenGrant,
 } from "./oauth-utils";
 
 const logger = createLogger("external");
@@ -29,41 +29,35 @@ export class CredentialUnavailableError extends Error {
 	}
 }
 
-type TokenEnv = Parameters<typeof resolveMicrosoftClient>[0];
+type TokenEnv = ClientEnv;
 
-/** One request to Microsoft's token endpoint; its failures are `OAuthTokenError`s and never contain a token. */
-async function tokenRequest(
-	env: TokenEnv,
-	client: MicrosoftClient,
-	grant: Parameters<typeof tokenRequestBody>[1],
-	fetcher: typeof fetch = fetch,
-): Promise<OAuthTokens> {
-	const endpoints = microsoftEndpoints(client.tenant, oauthTestOriginFor(env));
+/** One request to the provider's token endpoint; its failures are `OAuthTokenError`s and never contain a token. */
+async function tokenRequest(app: OAuthApp, grant: TokenGrant, fetcher: typeof fetch = fetch): Promise<OAuthTokens> {
+	const label = app.provider.label;
 	let response: Response;
 	try {
-		response = await fetcher(endpoints.token, {
+		response = await fetcher(app.endpoints.token, {
 			method: "POST",
 			headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
-			body: tokenRequestBody(client, grant),
+			body: app.tokenBody(grant),
 			redirect: "manual",
 			signal: AbortSignal.timeout(TOKEN_REQUEST_TIMEOUT_MS),
 		});
 	} catch {
-		throw new OAuthTokenError("transient", "Microsoft could not be reached. Kite tries again later.");
+		throw new OAuthTokenError("transient", `${label} could not be reached. Kite tries again later.`);
 	}
 	const body = await response.json().catch(() => null);
-	if (!response.ok) throw tokenFailure(response.status, body);
-	return parseTokenResponse(body, new Date());
+	if (!response.ok) throw tokenFailure(response.status, body, label);
+	return parseTokenResponse(body, new Date(), label);
 }
 
 /** Redeems the code the callback received, with the PKCE verifier of its state (spec §15.2). */
 export function exchangeAuthorizationCode(
-	env: TokenEnv,
-	client: MicrosoftClient,
+	app: OAuthApp,
 	input: { code: string; verifier: string; redirectUri: string },
 	fetcher?: typeof fetch,
 ): Promise<OAuthTokens> {
-	return tokenRequest(env, client, { kind: "authorization_code", ...input }, fetcher);
+	return tokenRequest(app, { kind: "authorization_code", ...input }, fetcher);
 }
 
 async function openCachedAccessToken(env: TokenEnv, state: TokenState): Promise<string | null> {
@@ -89,8 +83,10 @@ export async function oauthAccessToken(
 ): Promise<string> {
 	const now = options.now ?? new Date();
 	const state = await readTokenState(env, accountId);
-	if (!state?.sealedRefreshToken)
-		throw new CredentialUnavailableError("auth", "The Microsoft sign-in is no longer saved. Reconnect the account.");
+	if (!state?.sealedRefreshToken) {
+		const label = OAUTH_PROVIDERS[oauthProviderOf(state?.authKind ?? "") ?? "microsoft"].label;
+		throw new CredentialUnavailableError("auth", `The ${label} sign-in is no longer saved. Reconnect the account.`);
+	}
 	if (!options.forceRefresh && !needsRefresh(state.expiresAt, now, !!state.sealedAccessToken)) {
 		const cached = await openCachedAccessToken(env, state);
 		if (cached) return cached;
@@ -105,11 +101,15 @@ async function refreshAccessToken(
 	now: Date,
 	fetcher?: typeof fetch,
 ): Promise<string> {
-	const client = await resolveMicrosoftClient(env);
-	if (!client)
+	const provider = oauthProviderOf(state.authKind);
+	if (!provider)
+		throw new CredentialUnavailableError("auth", "The account no longer signs in with a provider. Reconnect it.");
+	const label = OAUTH_PROVIDERS[provider].label;
+	const app = await resolveOAuthApp(env, provider);
+	if (!app)
 		throw new CredentialUnavailableError(
 			"auth",
-			"Microsoft sign-in is no longer set up on this Kite. Ask your admin, then reconnect the account.",
+			`${label} sign-in is no longer set up on this Kite. Ask your admin, then reconnect the account.`,
 		);
 	let refreshToken: string | null;
 	try {
@@ -121,14 +121,14 @@ async function refreshAccessToken(
 	if (!refreshToken)
 		throw new CredentialUnavailableError(
 			"auth",
-			"The saved Microsoft sign-in can no longer be opened. Reconnect the account.",
+			`The saved ${label} sign-in can no longer be opened. Reconnect the account.`,
 		);
 	let tokens: OAuthTokens;
 	try {
-		tokens = await tokenRequest(env, client, { kind: "refresh_token", refreshToken }, fetcher);
+		tokens = await tokenRequest(app, { kind: "refresh_token", refreshToken }, fetcher);
 	} catch (error) {
 		if (!(error instanceof OAuthTokenError)) throw error;
-		logger.warn("external.oauth.refresh_failed", { accountId, kind: error.kind, code: error.code });
+		logger.warn("external.oauth.refresh_failed", { accountId, provider, kind: error.kind, code: error.code });
 		// Only a revoked or expired sign-in needs the user. A refused app registration is the owner's to fix (an expired
 		// client secret), so the account keeps retrying with backoff and recovers on its own once it is fixed.
 		throw new CredentialUnavailableError(error.kind === "reauth" ? "auth" : "transient", error.message);
@@ -146,7 +146,7 @@ async function refreshAccessToken(
 		now,
 	);
 	if (stored) {
-		logger.info("external.oauth.refreshed", { accountId });
+		logger.info("external.oauth.refreshed", { accountId, provider });
 		return tokens.accessToken;
 	}
 	// Another refresh stored first; its token is the one the account keeps, and this one stays valid meanwhile.

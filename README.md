@@ -165,7 +165,7 @@ Kite has a light and a dark theme, and this page shows both: GitHub serves the d
 - **Mailboxes**: Create personal or shared mailboxes and give other people access to them.
 - **All mailboxes**: Read and answer the mail of every mailbox you can open in one Inbox, with a label on each email, added-up counts and a filter to leave some mailboxes out. Replies go out from the mailbox the email arrived in, and read-only shared mail stays read-only. See [All mailboxes](docs/all-mailboxes.md).
 - **Email**: Send and receive mail with attachments, rich text, signatures, and automatic replies.
-- **Calendar**: Day, week and month views. Schedule repeating events with time zones and attendees, who receive email invitations.
+- **Calendar**: Day, week and month views. Schedule repeating events with time zones and attendees, who receive email invitations. Subscribe to it from Google Calendar, Outlook or a phone with a private, read-only link; see [Subscribing from another calendar app](docs/api.md#subscribing-from-another-calendar-app).
 - **Booking pages**: Share a public link so anyone can book a free time on your calendar.
 - **Reading layout**: Read with the list beside or above the open email, or full width, in default, comfortable or compact density. The layout follows your account to your other devices, unless a browser keeps its own.
 - **Dyslexia-friendly font**: Under Settings → Appearance, choose **Dyslexia-friendly (OpenDyslexic)** as the font for the whole app, the composer and plain-text emails, with a little more room between letters and words, and optionally for HTML emails too. The font is bundled with Kite and loaded only while chosen.
@@ -173,6 +173,7 @@ Kite has a light and a dark theme, and this page shows both: GitHub serves the d
 - **Print and PDF**: Print an email, or a whole conversation, from the reader's ⋯ menu (or Ctrl/Cmd+P) as a clean page with its headers, attachment names and body, in light colours and with remote images still hidden unless you showed them. **Download PDF** saves the same as a text PDF named after the subject; Print → Save as PDF keeps the layout and images.
 - **Organization**: Keep your inbox tidy with search, folders (rename or delete one from its **⋯** menu in the sidebar; its messages move to Archive or the Inbox, never get lost), stars, snooze, archive, spam, and trash, with undo for archive and trash. After a bulk action you return to the message list with the selection cleared.
 - **Spam and phishing protection**: A local spam filter that learns from you, plus phishing warnings for misleading links, failed sender checks and risky attachments. Mark a warning **Not phishing** to trust that sender, and manage trusted and muted senders in Settings. With a free abuse.ch key, risky mail is also checked against URLhaus and ThreatFox, and a **Test key** button on Admin → General shows whether the key works. See [Spam protection](docs/spam-protection.md).
+- **Mailing lists**: A newsletter or list message shows a small notice with **Unsubscribe**; when the sender supports signed one-click unsubscribe, Kite leaves the list for you without opening any page. Hide the notice per list. See [Mailing lists](docs/mailing-lists.md).
 - **Routing rules**: Store, forward, reject, or sort incoming mail automatically.
 - **Screener**: Decide once whether you want mail from someone new. Their first messages wait in the Screener (or arrive in the Inbox marked as a new sender) until you approve or deny them; people you write to are approved automatically. On for new mailboxes, per mailbox. See [Screener](docs/screener.md).
 - **Notifications**: Get live inbox updates and alerts when new mail arrives, and copy a one-time code straight from the notification.
@@ -362,12 +363,14 @@ CI runs on every pull request and on pushes to `main`, with the browser tests sp
 - [Sending and deliverability: who can send, abuse protection, SPF, DKIM and DMARC](docs/sending-and-deliverability.md)
 - [Spam protection for incoming mail](docs/spam-protection.md)
 - [Screener: approving new senders](docs/screener.md)
+- [Mailing lists and unsubscribing](docs/mailing-lists.md)
 - [Translations: interface languages and adding one](docs/translations.md)
 - [API and integrations](docs/api.md), including the [calendar and booking APIs](docs/api.md#calendar-and-booking)
 - [Email assistant and MCP](docs/email-assistant-and-mcp.md)
 - [Modules: turning Calendar, Booking, templates, import, Money Watch and Drive off](docs/modules.md)
 - [Drive: files, sharing and public links](docs/drive.md)
 - [Passkeys: signing in without a password](docs/passkeys.md)
+- [Notes on conversations: internal notes in shared mailboxes](docs/conversation-notes.md)
 - [Object storage: S3-compatible stores for mail, Drive and backups](docs/deployment.md#object-storage-optional) and [how to operate it](docs/operations.md#object-storage)
 - [Operations](docs/operations.md), including [after a deploy](docs/operations.md#after-a-deploy)
 - [Troubleshooting](docs/troubleshooting.md)

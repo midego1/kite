@@ -13,6 +13,8 @@ const DEV_ONLY_VARS = [
 	"AI_ALLOW_INSECURE_LOOPBACK",
 	"AI_TEST_TIMEOUT_MS",
 	"REMOTE_IMAGES_ALLOW_LOOPBACK",
+	// Lets e2e/108-mailing-list-notice.spec.ts send the one-click unsubscribe POST to its receiver on 127.0.0.1.
+	"UNSUBSCRIBE_ALLOW_LOOPBACK",
 	"STORAGE_ALLOW_INSECURE_ENDPOINT",
 	"ABUSE_CH_TEST_ORIGIN",
 	// Let e2e/93-storage-r2-auto-setup.spec.ts send the automatic R2 setup to its fake Cloudflare API and fake R2.
@@ -20,7 +22,8 @@ const DEV_ONLY_VARS = [
 	"R2_S3_TEST_ENDPOINT",
 	// Lets e2e/60-imap-import.spec.ts import from the fake IMAP server on 127.0.0.1 without TLS.
 	"EXTERNAL_ACCOUNTS_ALLOW_INSECURE_LOOPBACK",
-	// Lets e2e/100-microsoft-oauth.spec.ts send Microsoft sign-in to its fake OAuth server on 127.0.0.1.
+	// Lets e2e/100-microsoft-oauth.spec.ts and e2e/107-google-oauth.spec.ts send sign-in to their fake OAuth servers on
+	// 127.0.0.1.
 	"EXTERNAL_OAUTH_TEST_ORIGIN",
 	"DATABASE_SIZE_TEST_HEADER",
 	// Lets scripts/attachment-storage-check.mjs kill an attachment storage job part way.

@@ -35,6 +35,11 @@ export function reportReadOnlySkipped(skipped: number, nothingAllowed: boolean) 
 	toast(message, { id: "list-action-read-only" });
 }
 
+/** Read-only shared mail is never answered or forwarded: its mailbox cannot send for this user. */
+export function reportReadOnlyAnswer() {
+	toast(t("Read-only mail can't be answered or forwarded."), { id: "list-action-read-only" });
+}
+
 /** "Select all in folder" stopped at its cap instead of resolving the whole folder. */
 export function reportSelectAllTruncated(max: number) {
 	toast(t("Only the first {max} were selected. Narrow your search to select the rest.", { max }), {

@@ -35,7 +35,8 @@ const MCP_KEY_SCOPES: { value: McpKeyScope; label: string; description: string }
 	{
 		value: "mcp:organize",
 		label: "Organize mail",
-		description: "Mark messages read or unread, move them, and create folders and file mail in them.",
+		description:
+			"Mark messages read or unread, move them, create folders and file mail in them, and write notes on conversations.",
 	},
 	{
 		value: "mcp:request-send",
@@ -47,6 +48,11 @@ const MCP_KEY_SCOPES: { value: McpKeyScope; label: string; description: string }
 const STANDARD_KEY_SCOPES: { value: ApiKeyScope; label: string; description: string }[] = [
 	{ value: "read", label: "Read mail", description: "Read messages through the API." },
 	{ value: "send", label: "Send mail", description: "Send messages directly through the API." },
+	{
+		value: "notes",
+		label: "Write notes",
+		description: "Add, edit and delete internal notes on conversations. Notes are never sent.",
+	},
 ];
 
 type ApiKeysResponse = { error?: unknown; key?: string; apiKeys?: ManagedApiKey[] };

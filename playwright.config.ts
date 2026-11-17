@@ -67,13 +67,16 @@ export default defineConfig({
 			AI_TEST_TIMEOUT_MS: "5000",
 			// Lets the remote image proxy fetch the in-spec image server on 127.0.0.1 (e2e/42-remote-images.spec.ts).
 			REMOTE_IMAGES_ALLOW_LOOPBACK: "1",
+			// Lets the one-click unsubscribe POST reach the in-spec receiver on 127.0.0.1 (e2e/108-mailing-list-notice.spec.ts).
+			UNSUBSCRIBE_ALLOW_LOOPBACK: "1",
 			// Lets specs add the fake S3 store on http://localhost (e2e/48-storage-s3.spec.ts).
 			STORAGE_ALLOW_INSECURE_ENDPOINT: "1",
 			// Lets specs import from the fake IMAP server on 127.0.0.1 in plain text (tests/support/fake-imap.mjs).
 			EXTERNAL_ACCOUNTS_ALLOW_INSECURE_LOOPBACK: "1",
 			// Sends both abuse.ch APIs to the fake on 127.0.0.1 (e2e/support/fake-abuse-ch.ts); nothing reaches abuse.ch.
 			ABUSE_CH_TEST_ORIGIN: `http://127.0.0.1:${FAKE_ABUSE_CH_PORT}`,
-			// Sends Microsoft sign-in to the fake on 127.0.0.1 (e2e/100-microsoft-oauth.spec.ts); nothing reaches Microsoft.
+			// Sends Microsoft and Google sign-in to the fakes on 127.0.0.1 (e2e/100-microsoft-oauth.spec.ts,
+			// e2e/107-google-oauth.spec.ts); nothing reaches Microsoft or Google.
 			EXTERNAL_OAUTH_TEST_ORIGIN: `http://127.0.0.1:${FAKE_MICROSOFT_OAUTH_PORT}`,
 			// Sends the automatic R2 setup's Cloudflare API calls and its S3 endpoint to fakes the storage spec starts
 			// (e2e/93-storage-r2-auto-setup.spec.ts); nothing reaches Cloudflare.

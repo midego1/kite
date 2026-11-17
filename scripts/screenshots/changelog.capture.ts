@@ -30,6 +30,7 @@ import {
 } from "./demo-data";
 import { mockConnectedAccountAuthRecheck, mockForYou, mockForYouPreview } from "./demo-mocks";
 import { sampleMessage, startFakeImap } from "../../tests/support/fake-imap.mjs";
+import { startFakeGoogleOAuth } from "../../tests/support/fake-google-oauth.mjs";
 import { startFakeMicrosoftOAuth } from "../../tests/support/fake-microsoft-oauth.mjs";
 import { startFakeWebdav } from "../../tests/support/fake-webdav.mjs";
 
@@ -86,6 +87,44 @@ async function saveDemoMicrosoftClient(): Promise<void> {
 		data: { clientId: demoMicrosoft.clientId, clientSecret: demoMicrosoft.clientSecret, tenant: "common" },
 	});
 	expect(response.ok(), await response.text()).toBe(true);
+}
+
+/** A fake Google token endpoint on the same test origin (under /google), for the demo OAuth client's check. */
+let demoGoogle: Awaited<ReturnType<typeof startFakeGoogleOAuth>> | null = null;
+
+/** Saves an invented Google OAuth client in Admin → General, checked against the fake, unless one is saved. */
+async function saveDemoGoogleClient(): Promise<void> {
+	const api = await apiContext(STORAGE_STATE);
+	const status = (await (await api.get("/api/admin/external-accounts/google")).json()) as { source: string | null };
+	if (status.source) return;
+	// The Microsoft fake holds the same port; its registration is saved already, so it is not needed any more.
+	await demoMicrosoft?.close();
+	demoMicrosoft = null;
+	demoGoogle ??= await startFakeGoogleOAuth({
+		port: FAKE_MICROSOFT_OAUTH_PORT,
+		clientId: "804215379961-k1t3d3m0cl13nt0000000000000000.apps.googleusercontent.com",
+	});
+	const response = await api.put("/api/admin/external-accounts/google", {
+		data: { clientId: demoGoogle.clientId, clientSecret: demoGoogle.clientSecret, hostedDomain: "" },
+	});
+	expect(response.ok(), await response.text()).toBe(true);
+}
+
+/** The e2e server has no APP_URL; show the redirect URI a real install registers. */
+async function showPublicRedirectUri(page: Page, provider: "microsoft" | "google"): Promise<void> {
+	await page.route(`**/api/admin/external-accounts/${provider}`, async (route) => {
+		if (route.request().method() !== "GET") return route.continue();
+		const response = await route.fetch();
+		const status = (await response.json()) as Record<string, unknown>;
+		await route.fulfill({
+			response,
+			json: {
+				...status,
+				redirectUri: "https://mail.example.com/api/external-accounts/oauth/callback",
+				appUrlSet: true,
+			},
+		});
+	});
 }
 
 /** The demo admin's All mailboxes view with mail through a connected account; once, so a kept server is not doubled. */
@@ -306,6 +345,28 @@ async function connectDemoMcpApp(name: string): Promise<void> {
 	await session.dispose();
 }
 
+/**
+ * The sidebar of a short window while two database updates are being applied: the status and the apply request are
+ * mocked (the second never answers, so the run stays on screen), in the Kite classic style the owner reported it in.
+ */
+async function openDatabaseUpdateSidebar(page: Page): Promise<Locator> {
+	const names = ["0106_add_mcp_oauth_clients.sql", "0107_add_mcp_oauth_grants.sql"];
+	await page.context().addInitScript(() => {
+		localStorage.setItem("kite-style", "classic");
+		localStorage.setItem("kite-column-width:sidebar", "260");
+	});
+	await page.route("**/api/migrations/pending", (route) => route.fulfill({ json: { pending: names.length, names } }));
+	await page.route("**/api/admin/migrations", async (route) => {
+		if (route.request().method() !== "POST") return route.fulfill({ json: { ready: false, pending: names, unknown: [] } });
+		await new Promise(() => undefined);
+	});
+	await page.goto("/drafts");
+	const nav = page.getByRole("navigation", { name: "Kite" });
+	await nav.getByRole("button", { name: /^(Update now|Apply now)$/ }).click();
+	await expect(nav.getByRole("button", { name: /^Updating/ })).toBeVisible();
+	return nav;
+}
+
 /** Adds a demo passkey for the demo admin through the Security page, with Chromium's virtual authenticator. */
 async function openPasskeySettings(page: Page): Promise<Locator> {
 	await addVirtualAuthenticator(page);
@@ -341,7 +402,82 @@ async function openPasskeySignIn(page: Page): Promise<Page> {
 	return page;
 }
 
+/**
+ * The calendar's Subscribe dialog right after a link was made. The feed API is mocked with an obviously invented
+ * link, so no real token is ever in a picture. On a phone the dialog opens from the header's overflow menu.
+ */
+async function openCalendarSubscribe(page: Page): Promise<Locator> {
+	const feed = { active: true, createdAt: "2026-11-13T09:00:00Z", lastUsedAt: null };
+	await page.route("**/api/calendar/feed", (route) =>
+		route.fulfill({
+			json:
+				route.request().method() === "POST"
+					? { path: "/api/public/calendar/feed/kcf_ExampleLinkOnlyForThisPicture00.ics", feed }
+					: { feed: { active: false, createdAt: null, lastUsedAt: null } },
+		}),
+	);
+	await page.goto("/calendar");
+	await expect(page.getByRole("button", { name: "New event" })).toBeVisible();
+	const subscribe = page.getByRole("button", { name: "Subscribe from another calendar app" });
+	if (await subscribe.isVisible()) await subscribe.click();
+	else {
+		await page.getByRole("button", { name: "Calendar options" }).click();
+		await page.getByRole("menuitem", { name: "Subscribe…" }).click();
+	}
+	const dialog = page.getByRole("dialog", { name: "Subscribe from another calendar app" });
+	await dialog.getByRole("button", { name: "Create subscription link" }).click();
+	await expect(dialog.getByRole("textbox", { name: "Subscription link" })).toHaveValue(/kcf_Example/);
+	return dialog;
+}
+
 const SHOTS: Shot[] = [
+	...(["light", "dark"] as const).map(
+		(theme): Shot => ({
+			// Calendar → Subscribe: the new link with Copy and the steps for Google Calendar, Outlook and iPhone.
+			name: `2026-11-13-calendar-subscribe-${theme}`,
+			theme,
+			viewport: { width: 1280, height: 800 },
+			open: openCalendarSubscribe,
+		}),
+	),
+	{
+		// The same dialog on a phone (375 px), opened from the header's overflow menu.
+		name: "2026-11-13-calendar-subscribe-mobile-light",
+		theme: "light",
+		viewport: { width: 375, height: 812 },
+		open: async (page) => {
+			await openCalendarSubscribe(page);
+			return page;
+		},
+	},
+	{
+		// The database update notice while it applies, in the sidebar of a short window (after the redesign).
+		name: "2026-11-10-database-update-after-dark",
+		theme: "dark",
+		viewport: { width: 1000, height: 820 },
+		open: openDatabaseUpdateSidebar,
+	},
+	{
+		// The database update notice while it applies, in the sidebar of a short window (after the redesign).
+		name: "2026-11-10-database-update-after-light",
+		theme: "light",
+		viewport: { width: 1000, height: 820 },
+		open: openDatabaseUpdateSidebar,
+	},
+	{
+		// The database update notice while it applies, in the sidebar of a short window (before the redesign).
+		name: "2026-11-10-database-update-before-dark",
+		theme: "dark",
+		viewport: { width: 1000, height: 820 },
+		open: openDatabaseUpdateSidebar,
+	},
+	{
+		// The database update notice while it applies, in the sidebar of a short window (before the redesign).
+		name: "2026-11-10-database-update-before-light",
+		theme: "light",
+		viewport: { width: 1000, height: 820 },
+		open: openDatabaseUpdateSidebar,
+	},
 	{
 		// Passkeys in Settings → Security: one passkey with when it was added and last used, and Add a passkey.
 		name: "2026-11-10-passkeys-security-light",
@@ -1518,20 +1654,7 @@ const SHOTS: Shot[] = [
 		viewport: { width: 1280, height: 1100 },
 		open: async (page) => {
 			await saveDemoMicrosoftClient();
-			// The e2e server has no APP_URL; show the redirect URI a real install registers.
-			await page.route("**/api/admin/external-accounts/microsoft", async (route) => {
-				if (route.request().method() !== "GET") return route.continue();
-				const response = await route.fetch();
-				const status = (await response.json()) as Record<string, unknown>;
-				await route.fulfill({
-					response,
-					json: {
-						...status,
-						redirectUri: "https://mail.example.com/api/external-accounts/oauth/callback",
-						appUrlSet: true,
-					},
-				});
-			});
+			await showPublicRedirectUri(page, "microsoft");
 			await page.goto("/general");
 			const card = page.locator("[data-connected-accounts-switch]");
 			await expect(card.locator("[data-microsoft-sign-in-status]")).toContainText("On: application");
@@ -1552,6 +1675,36 @@ const SHOTS: Shot[] = [
 			await chooseOption(dialog.locator("#external-provider"), "microsoft");
 			await dialog.getByLabel("Your Kite password").fill("demo-password");
 			await expect(dialog.getByRole("button", { name: "Sign in with Microsoft" })).toBeEnabled();
+			return dialog;
+		},
+	},
+	{
+		// Admin → General: Google sign-in set up in the Connected accounts card, with the redirect URI to register.
+		name: "2026-11-11-google-sign-in-admin-light",
+		viewport: { width: 1280, height: 1000 },
+		open: async (page) => {
+			await saveDemoGoogleClient();
+			await showPublicRedirectUri(page, "google");
+			await page.goto("/general");
+			const section = page.locator("[data-google-sign-in-settings]");
+			await expect(section.locator("[data-google-sign-in-status]")).toContainText("On: client");
+			await section.scrollIntoViewIfNeeded();
+			return section;
+		},
+	},
+	{
+		// The connect dialog for a Gmail account once Google sign-in is set up: Sign in with Google, no app password.
+		name: "2026-11-11-sign-in-with-google-light",
+		viewport: { width: 1280, height: 900 },
+		open: async (page) => {
+			await saveDemoGoogleClient();
+			await page.goto("/settings/connected-accounts");
+			await page.getByRole("button", { name: "Connect account" }).click();
+			const dialog = page.getByRole("dialog", { name: "Connect an account" });
+			await dialog.getByLabel("Email address").fill("jordan.lee@gmail.com");
+			await chooseOption(dialog.locator("#external-provider"), "gmail");
+			await dialog.getByLabel("Your Kite password").fill("demo-password");
+			await expect(dialog.getByRole("button", { name: "Sign in with Google", exact: true })).toBeEnabled();
 			return dialog;
 		},
 	},
@@ -1647,7 +1800,66 @@ const SHOTS: Shot[] = [
 			return dialog;
 		},
 	},
+	{
+		// Read-only shared mail in All mailboxes: the note instead of the reply box, Reply and Move turned off.
+		name: "2026-11-10-read-only-shared-mail-light",
+		theme: "light",
+		viewport: { width: 1280, height: 800 },
+		open: async (page) => {
+			await openReadOnlyMessage(page);
+			return page;
+		},
+	},
+	{
+		name: "2026-11-10-read-only-shared-mail-phone-light",
+		theme: "light",
+		viewport: { width: 375, height: 812 },
+		open: async (page) => {
+			await openReadOnlyMessage(page);
+			return page;
+		},
+	},
 ];
+
+/** A message in the demo Team mailbox, delivered once, that the read-only shots open. */
+const READ_ONLY_SUBJECT = "Shift handover for the weekend";
+
+/**
+ * Opens the read-only shot's message in All mailboxes. Demo data has one account, the owner, who has full access
+ * to every mailbox: the shot borrows that session and only marks the Team mailbox read-only in the mailbox list,
+ * which is all the reader's buttons look at (the server refuses the same actions for a real read-only share).
+ */
+async function openReadOnlyMessage(page: Page): Promise<void> {
+	const api = await apiContext(STORAGE_STATE);
+	const found = await api.get(`/api/messages?${new URLSearchParams({ q: READ_ONLY_SUBJECT, limit: "1" })}`);
+	const { messages } = (await found.json()) as { messages: { id: string }[] };
+	if (!messages[0]) {
+		const { mailboxes } = (await (await api.get("/api/mailboxes")).json()) as {
+			mailboxes: { id: string; localPart: string }[];
+		};
+		// A new sender would wait in the Team mailbox's Screener instead of reaching its Inbox.
+		await turnScreenerOff(api, mailboxes.find((mailbox) => mailbox.localPart === "team")!.id);
+	}
+	const message =
+		messages[0] ??
+		(await deliverInbound(api, {
+			from: `"Priya Raman" <priya@acme.test>`,
+			to: `"Team" <team@${SUPPORT_ADDRESS.split("@")[1]}>`,
+			subject: READ_ONLY_SUBJECT,
+			text: "Hi team, Tom covers the queue on Saturday and I take Sunday. The two open escalations are in the shared notes.",
+		}));
+	await api.dispose();
+	await page.route("**/api/mailboxes", async (route) => {
+		const response = await route.fetch();
+		const body = (await response.json()) as { mailboxes: { localPart: string; permission?: string }[] };
+		for (const mailbox of body.mailboxes) if (mailbox.localPart === "team") mailbox.permission = "read_only";
+		await route.fulfill({ response, json: body });
+	});
+	await page.addInitScript(() => localStorage.setItem("kite-all-mailboxes", "true"));
+	await page.goto(`/inbox/${message.id}`);
+	await expect(page.getByRole("heading", { level: 1, name: READ_ONLY_SUBJECT })).toBeVisible();
+	await expect(page.getByText("You can read this shared mailbox but not reply or forward from it.")).toBeVisible();
+}
 
 async function openPage(browser: Browser, { theme = "light", viewport }: Shot) {
 	const context = await browser.newContext({
@@ -1686,6 +1898,8 @@ test.describe("changelog screenshots", () => {
 		demoTwoWay = null;
 		await demoMicrosoft?.close();
 		demoMicrosoft = null;
+		await demoGoogle?.close();
+		demoGoogle = null;
 		await demoWebdav?.close();
 		demoWebdav = null;
 	});

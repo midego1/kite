@@ -1,14 +1,17 @@
 import { and, desc, eq, gte, inArray, isNull, like, ne, notLike, or } from "drizzle-orm";
 import { getDb } from "@/db";
 import { messages } from "@/db/schema";
-import { completeRawHeaderValues } from "@/lib/email/raw-headers";
+import { completeRawHeaderValueLists } from "@/lib/email/raw-headers";
 import { normalizeMessageId } from "@/lib/email/thread-lookup";
 import {
 	FINGERPRINT_METADATA,
 	fingerprintInput,
 	messageBody,
+	NO_FINGERPRINT,
 	REDELIVERY_CANDIDATES,
 	REDELIVERY_WINDOW_MS,
+	signalIdPattern,
+	SUSPECT_SIGNAL_IDS,
 	toHex,
 } from "@/lib/email/redelivery-utils";
 
@@ -19,18 +22,16 @@ async function sha256Hex(bytes: Uint8Array<ArrayBuffer>): Promise<string> {
 }
 
 /**
- * A received message's fingerprint: the digest of its Date and Subject fields and its body (`fingerprintInput`). Every
- * hop adds header fields on the way in, so the rest of the header block is left out. Intake stores it in the raw
- * object's metadata (`FINGERPRINT_METADATA`), so a later delivery compares without reading the earlier message.
+ * A received message's fingerprint: the digest of its Date and Subject fields and its body (`fingerprintInput`), or
+ * `NO_FINGERPRINT` for a message without a Date. Every hop adds header fields on the way in, so the rest of the header
+ * block is left out. Intake stores it in the raw object's metadata (`FINGERPRINT_METADATA`), so a later delivery
+ * compares without reading the earlier message.
  */
 async function redeliveryFingerprint(raw: ArrayBuffer): Promise<string> {
-	const bodyDigest = await sha256Hex(messageBody(new Uint8Array(raw)));
-	const input = fingerprintInput(
-		completeRawHeaderValues(raw, "date"),
-		completeRawHeaderValues(raw, "subject"),
-		bodyDigest,
-	);
-	return sha256Hex(encoder.encode(input));
+	const [date, subject] = completeRawHeaderValueLists(raw, ["date", "subject"]);
+	if (!date?.length) return NO_FINGERPRINT;
+	const input = fingerprintInput(date, subject, await sha256Hex(messageBody(new Uint8Array(raw))));
+	return input === null ? NO_FINGERPRINT : sha256Hex(encoder.encode(input));
 }
 
 /**
@@ -75,7 +76,7 @@ export async function redeliveryOf(
 				or(isNull(messages.spamVerdict), eq(messages.spamVerdict, "inbox")),
 				or(
 					isNull(messages.spamSignals),
-					and(notLike(messages.spamSignals, '%"dmarc_failed"%'), notLike(messages.spamSignals, "%phishing%")),
+					and(...SUSPECT_SIGNAL_IDS.map((id) => notLike(messages.spamSignals, signalIdPattern(id)))),
 				),
 			),
 		)
@@ -89,12 +90,15 @@ export async function redeliveryOf(
 		if (metadata.from !== input.from || metadata.to !== input.to) continue;
 		// Raw objects stored before fingerprints were kept are read and fingerprinted here.
 		let stored: string | undefined = metadata[FINGERPRINT_METADATA];
+		if (stored === NO_FINGERPRINT) continue;
+		fingerprint ??= await redeliveryFingerprint(input.raw);
+		// A message without a Date is never taken for a retry.
+		if (fingerprint === NO_FINGERPRINT) return null;
 		if (!stored) {
 			const object = await env.BUCKET.get(candidate.rawR2Key);
 			if (!object) continue;
 			stored = await redeliveryFingerprint(await object.arrayBuffer());
 		}
-		fingerprint ??= await redeliveryFingerprint(input.raw);
 		if (stored === fingerprint) return candidate.id;
 	}
 	return null;

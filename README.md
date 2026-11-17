@@ -165,7 +165,7 @@ Kite has a light and a dark theme, and this page shows both: GitHub serves the d
 - **Mailboxes**: Create personal or shared mailboxes and give other people access to them.
 - **All mailboxes**: Read and answer the mail of every mailbox you can open in one Inbox, with a label on each email, added-up counts and a filter to leave some mailboxes out. Replies go out from the mailbox the email arrived in, and read-only shared mail stays read-only. See [All mailboxes](docs/all-mailboxes.md).
 - **Email**: Send and receive mail with attachments, rich text, signatures, and automatic replies.
-- **Calendar**: Day, week and month views. Schedule repeating events with time zones and attendees, who receive email invitations.
+- **Calendar**: Day, week and month views. Schedule repeating events with time zones and attendees, who receive email invitations. Subscribe to it from Google Calendar, Outlook or a phone with a private, read-only link; see [Subscribing from another calendar app](docs/api.md#subscribing-from-another-calendar-app).
 - **Booking pages**: Share a public link so anyone can book a free time on your calendar.
 - **Reading layout**: Read with the list beside or above the open email, or full width, in default, comfortable or compact density. The layout follows your account to your other devices, unless a browser keeps its own.
 - **Dyslexia-friendly font**: Under Settings → Appearance, choose **Dyslexia-friendly (OpenDyslexic)** as the font for the whole app, the composer and plain-text emails, with a little more room between letters and words, and optionally for HTML emails too. The font is bundled with Kite and loaded only while chosen.

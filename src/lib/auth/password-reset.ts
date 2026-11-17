@@ -5,7 +5,7 @@ import { passkeys } from "@/db/schema/passkeys";
 import { isNoSuchTableError } from "@/lib/modules/state-utils";
 import { newId } from "@/lib/ids";
 import { hashPassword } from "@/lib/auth/password";
-import { hashSessionToken } from "@/lib/auth/session";
+import { hashSessionToken, revokeSubscriptionLinks } from "@/lib/auth/session";
 import { getBranding } from "@/lib/branding/service";
 import { sendSystemEmail } from "@/lib/email/system-mail";
 import { createAuditLog } from "@/lib/mailboxes/audit";
@@ -99,7 +99,7 @@ export async function completePasswordReset(
 /**
  * One batch, so either all of it happens or none does: claim the link (only while it is unused, by replacing its hash
  * with a value unique to this redemption), then set the password, end every session and delete every passkey, each
- * only if this batch made that claim. A second redemption racing this one claims nothing and changes nothing.
+ * only if this batch made that claim, and end every calendar subscription link the same way. A second redemption racing this one claims nothing and changes nothing.
  * Someone who once had the password could have added a passkey; after a reset only the new password opens the
  * account until the owner adds their passkeys again. Before migration 0112 the batch runs without the passkeys.
  */
@@ -128,9 +128,10 @@ async function redeemResetLink(
 			.set({ passwordHash })
 			.where(and(eq(users.id, row.userId), claimed)),
 		db.delete(sessions).where(and(eq(sessions.userId, row.userId), claimed)),
+		revokeSubscriptionLinks(db, row.userId, claimed),
 	] as const;
 	try {
-		const [won, , , removed] = await db.batch([
+		const [won, , , , removed] = await db.batch([
 			...core,
 			db
 				.delete(passkeys)

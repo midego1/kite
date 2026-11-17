@@ -9,6 +9,8 @@ export type ImapLogin = {
 	password: string;
 	/** An OAuth access token (spec §15.4): when set, the session signs in with XOAUTH2 and `password` is not used. */
 	accessToken?: string;
+	/** Whose token it is, only to word a refused sign-in ("Reconnect to sign in with Google again"). */
+	oauthProvider?: "microsoft" | "google";
 };
 
 export type ImapTlsPlan = { action: "none" } | { action: "starttls" } | { action: "refuse"; reason: string };

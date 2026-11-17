@@ -34,7 +34,7 @@ export type ExternalAccountPreset = {
 export type ConnectRefusal = "no_key" | "install_off" | "not_permitted" | "migration_pending";
 
 /** Which OAuth sign-ins this Kite offers (`/api/external-accounts`): set up by the owner in Admin → General. */
-export type OAuthProviders = { microsoft: boolean };
+export type OAuthProviders = { microsoft: boolean; google: boolean };
 
 /** An account as the API returns it: never the password, never the cursors. */
 export type ExternalAccountView = {
@@ -48,7 +48,7 @@ export type ExternalAccountView = {
 	imap: MailServerSettings;
 	smtp: MailServerSettings | null;
 	username: string;
-	/** How Kite signs in: the saved password, or Sign in with Microsoft (spec §15), whose Reconnect starts it again. */
+	/** How Kite signs in: the saved password, or Sign in with Microsoft or Google (spec §15), whose Reconnect starts it again. */
 	authKind: ExternalAccountAuthKind;
 	status: ExternalAccountStatus;
 	statusReason: string | null;
@@ -173,4 +173,10 @@ export type MicrosoftClientStatus = {
 	/** APP_ENCRYPTION_KEY is set, so a registration can be saved here. */
 	keyConfigured: boolean;
 	migrationPending: boolean;
+};
+
+/** What Admin → General shows about Google sign-in. The client secret is never part of it. */
+export type GoogleClientStatus = Omit<MicrosoftClientStatus, "tenant"> & {
+	/** The Google Workspace domain sign-in is restricted to, or null for any Google account. */
+	hostedDomain: string | null;
 };

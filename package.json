@@ -121,7 +121,7 @@
 		"lucide-react": "^1.16.0",
 		"mailauth": "^8.0.4",
 		"nanoid": "^6.0.2",
-		"next": "16.4.3",
+		"next": "16.4.6",
 		"nodemailer": "^10.2.1",
 		"postal-mime": "~4.2.0",
 		"qrcode": "^1.5.4",

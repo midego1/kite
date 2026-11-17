@@ -31,6 +31,7 @@ These are names, written in Latin letters in every language and never translated
 | Attachment | Bijlage | مرفق | |
 | Composer | Schrijfvenster | نافذة الكتابة | |
 | Unsubscribe | Uitschrijven | إلغاء الاشتراك | Not "Afmelden", which is Sign out. |
+| Mailing list | Mailinglijst | قائمة بريدية | The reader notice for mail with List-Id or List-Unsubscribe. |
 | Booking, Bookings | Afspraken | الحجز، الحجوزات | One Dutch word for the module and its pages. |
 | Mark as read, Mark as unread | Markeer als gelezen, Markeer als ongelezen | تعليم كمقروءة، تعليم كغير مقروءة | The same words on every mark action. |
 | Good night | Goedenacht | مساء الخير | A greeting on arrival; the usual Arabic phrase is a goodbye. |

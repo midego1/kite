@@ -132,7 +132,8 @@ test("a chat step aborted mid-stream keeps its estimate and releases the reserva
 	assert.equal(rows[0].source, "chat");
 	assert.equal(rows[0].mailbox_id, "mailbox-a");
 	assert.equal(rows[0].reserved, 0, "the reservation is closed");
-	// The estimate stays: 1,200 output tokens at 2 micros plus the prompt's input tokens.
+	// The estimate stays: 1,200 output tokens at 2 micros plus the prompt's input tokens (a model not known to
+	// reason gets no thinking room).
 	assert.equal(rows[0].output_tokens, 1_200);
 	assert.ok(rows[0].cost_usd_micros > 2_400);
 	// Stopped by the person, not failed with the error the abort surfaced as; the cost is the estimate.

@@ -5,7 +5,7 @@ import { agentDraftMetadata, agentJobs, mailboxAgentSettings, mailboxes, message
 import { readMailboxAgentSettingsRow } from "../auto-read/mailbox-settings";
 import {
 	buildModelCallOptions,
-	callWithFallback,
+	callWithCutOffRetry,
 	ModelOutputTruncatedError,
 	outputBudgetOf,
 } from "../auto-read/model-call-utils";
@@ -37,8 +37,9 @@ type DraftJob = { id: string; mailboxId: string };
 type DraftSelection = NonNullable<Awaited<ReturnType<typeof getAgentModel>>>;
 
 /**
- * Writes the legacy auto-draft and records its one usage row once the outcome is known: answered, failed with the
- * shared error code, or unusable when the draft is not clean. This job is not reserved against the daily caps.
+ * Writes the legacy auto-draft and records a usage row per request once its outcome is known: answered, failed with
+ * the shared error code, or unusable when the draft is not clean; a cut-off first answer gets its own `cut_off` row
+ * before the one retry. This job is not reserved against the daily caps.
  */
 async function generateRecordedDraft(
 	env: CloudflareEnv,
@@ -56,7 +57,7 @@ async function generateRecordedDraft(
 		reasoningEffort: selection.reasoningEffort,
 	});
 	let sent = options;
-	const startedAt = Date.now();
+	let startedAt = Date.now();
 	let usage: LanguageModelUsage | undefined;
 	let finishReason: string | null = null;
 	const record = (errorCode?: string) =>
@@ -73,18 +74,35 @@ async function generateRecordedDraft(
 		});
 	let generated: Awaited<ReturnType<typeof generateReplyDraft>>;
 	try {
-		generated = await callWithFallback(options, (current) => {
-			sent = current;
-			return generateReplyDraft({
-				...input,
-				maxOutputTokens: current.maxOutputTokens,
-				providerOptions: current.providerOptions,
-				onUsage: async (reported, reason) => {
-					usage = reported;
-					finishReason = reason;
-				},
-			});
-		});
+		// A cut-off draft is recorded as such and asked once more with double the budget, in a row of its own.
+		const answer = await callWithCutOffRetry(
+			options,
+			(current) =>
+				generateReplyDraft({
+					...input,
+					maxOutputTokens: current.maxOutputTokens,
+					providerOptions: current.providerOptions,
+					onUsage: async (reported, reason) => {
+						usage = reported;
+						finishReason = reason;
+					},
+				}),
+			async (first, cut) => {
+				// The retry is a new request: with the assistant, the mailbox's AI or the opt-in turned off since, the
+				// cut-off answer is the outcome.
+				const refused =
+					!(await getAgentEnabled(env)) ||
+					(await mailboxAiOff(env, job.mailboxId)) ||
+					(await externalProviderRefused(env, selection.providerKind));
+				if (refused) throw new ModelOutputTruncatedError(outputBudgetOf(cut, first));
+				await record("cut_off");
+				usage = undefined;
+				finishReason = null;
+				startedAt = Date.now();
+			},
+		);
+		generated = answer.result;
+		sent = answer.sent;
 	} catch (error) {
 		await record(classifyAiError(error).code);
 		throw traceAiError(error, trace);

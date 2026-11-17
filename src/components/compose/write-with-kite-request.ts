@@ -40,8 +40,9 @@ export async function streamCompose(
 		buffer = parsed.rest;
 		for (const event of parsed.events) {
 			if (event.type === "text") onPreview((preview += event.text));
+			else if (event.type === "restart") onPreview((preview = ""));
 			else if (event.type === "done") answer = { ok: true, text: event.text, warnings: event.warnings };
-			else answer = { ok: false, message: event.error, error: readAiErrorBody(event) };
+			else if (event.type === "error") answer = { ok: false, message: event.error, error: readAiErrorBody(event) };
 		}
 	}
 }

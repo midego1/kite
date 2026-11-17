@@ -153,6 +153,7 @@ export async function reportAiErrorClass(
 			at: new Date().toISOString(),
 			retryable: aiErrorRetryable(code),
 			config: aiErrorIsConfig(code),
+			...(failure.budget ? { budget: failure.budget } : {}),
 		},
 	};
 }

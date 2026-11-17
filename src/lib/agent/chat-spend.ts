@@ -36,6 +36,8 @@ type ChatSpendInput = {
 	source?: AutoSpendSource;
 	/** The job a non-interactive caller's spend belongs to (the assistant-by-email request id); null for chat. */
 	jobId?: string | null;
+	/** Each step's output cap, thinking room included; `CHAT_STEP_MAX_OUTPUT_TOKENS` when not given. */
+	maxOutputTokens?: number;
 };
 
 /**
@@ -66,7 +68,7 @@ export function createChatSpend(input: ChatSpendInput) {
 				source: input.source ?? "chat",
 				jobId: input.jobId ?? null,
 				promptChars,
-				maxOutputTokens: CHAT_STEP_MAX_OUTPUT_TOKENS,
+				maxOutputTokens: input.maxOutputTokens ?? CHAT_STEP_MAX_OUTPUT_TOKENS,
 			};
 			const reservation = await reserveAiSpend(request);
 			if (!reservation) {

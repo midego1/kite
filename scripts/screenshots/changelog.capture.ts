@@ -255,12 +255,42 @@ async function seedSpamSelectionDemo(): Promise<void> {
 /** A model for the shots that need the assistant: nothing it answers appears in them. */
 let demoModel: { fake: FakeModel; restore: () => Promise<void> } | null = null;
 
-async function openThaiMail(page: Page) {
+async function ensureDemoModel() {
 	if (!demoModel) {
 		const api = await apiContext(STORAGE_STATE);
 		const fake = await startFakeModel();
 		demoModel = { fake, restore: await connectFakeProvider(api, fake) };
 	}
+}
+
+/**
+ * Write with Kite after an answer was cut off twice, with Details open on the budget. The mailbox-no-ai shot leaves
+ * "No AI for this mailbox" on, so AI is turned back on for the admin's mailboxes first.
+ */
+async function openComposeCutOff(page: Page) {
+	await ensureDemoModel();
+	const api = await apiContext(STORAGE_STATE);
+	const { mailboxes } = (await (await api.get("/api/mailboxes")).json()) as { mailboxes: { id: string }[] };
+	for (const mailbox of mailboxes)
+		await api.put("/api/agent/settings/ai", { data: { mailboxId: mailbox.id, aiDisabled: false } });
+	await api.dispose();
+	await page.goto("/inbox");
+	await page.getByRole("button", { name: "Compose" }).click();
+	await expect(page.getByLabel("Subject")).toBeEditable();
+	await page.getByRole("button", { name: "Write with Kite" }).click();
+	const panel = page.getByRole("dialog", { name: "Write with Kite" });
+	await panel
+		.getByLabel("What should this email say?")
+		.fill("Write a follow up email that we still have not gotten any response. [[scenario:compose-cut-off]]");
+	await panel.getByRole("button", { name: "Write" }).click();
+	await expect(panel.getByRole("alert")).toContainText("cut off");
+	await panel.getByText("Details").click();
+	await expect(panel.locator('[data-ai-error="cut_off"]')).toContainText("Output cap");
+	return panel;
+}
+
+async function openThaiMail(page: Page) {
+	await ensureDemoModel();
 	await seedThaiMail();
 	await page.goto("/inbox");
 	await page.getByRole("main").getByText(THAI_MAIL.subject, { exact: true }).first().click();
@@ -1878,6 +1908,19 @@ const SHOTS: Shot[] = [
 			await expect(dialog).toContainText("setup.exe");
 			return dialog;
 		},
+	},
+	{
+		// Write with Kite cut off twice: Details lists the output cap, how thinking was set, the tokens and the retry.
+		name: "2026-11-17-write-with-kite-cut-off-light",
+		theme: "light",
+		viewport: { width: 1280, height: 800 },
+		open: openComposeCutOff,
+	},
+	{
+		name: "2026-11-17-write-with-kite-cut-off-dark",
+		theme: "dark",
+		viewport: { width: 1280, height: 800 },
+		open: openComposeCutOff,
 	},
 	{
 		// Read-only shared mail in All mailboxes: the note instead of the reply box, Reply and Move turned off.

@@ -86,6 +86,8 @@ export function translateLanguages(browserLanguage: string | undefined): string[
 
 export type ComposeStreamEvent =
 	| { type: "text"; text: string }
+	/** The answer was cut off and is asked once more with a larger budget: the preview starts over. */
+	| { type: "restart" }
 	| { type: "done"; text: string; warnings: string[] }
 	| { type: "error"; error: string; code?: string; details?: unknown };
 

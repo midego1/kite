@@ -1,4 +1,10 @@
 import { COMPOSE_SYSTEM_MARKER } from "./auto-read/request-markers";
+import {
+	REWRITE_MAX_ANSWER_TOKENS,
+	REWRITE_MIN_ANSWER_TOKENS,
+	SHORTER_MAX_ANSWER_TOKENS,
+	WRITE_ANSWER_TOKENS,
+} from "./output-budget-utils";
 import type { ComposeAction, ComposePrompt, ComposePromptInput } from "./compose-types";
 import { cleanGeneralInstructions, draftPreferenceText } from "./instruction-utils";
 import { createNonce, markUntrustedLinks, stripDelimiters, wrapUntrusted } from "./untrusted-utils";
@@ -8,10 +14,6 @@ export const COMPOSE_CUSTOM_MAX_CHARS = 300;
 export const COMPOSE_TEXT_MAX_CHARS = 12_000;
 export const COMPOSE_LANGUAGE_MAX_CHARS = 40;
 const SOURCE_BODY_MAX_CHARS = 8_000;
-const WRITE_MAX_OUTPUT_TOKENS = 900;
-// Shorter never needs more than a new email; any other rewrite of up to 12,000 characters may need up to 3,000.
-const SHORTER_MAX_OUTPUT_TOKENS = 900;
-const REWRITE_MAX_OUTPUT_TOKENS = 3_000;
 
 const FIXED_RULES = [
 	'Output only the body as plain text, with normal paragraphs separated by blank lines; a list may use lines that start with "- ".',
@@ -107,12 +109,15 @@ export function buildComposePrompt(input: ComposePromptInput): ComposePrompt {
 }
 
 /**
- * The output budget: 900 tokens to write; for a rewrite about twice the input's tokens plus 100, half again for
- * Longer, within 900 for Shorter and 3,000 for every other rewrite. An answer that still runs out is refused.
+ * The answer's output budget, before any thinking room: 2,000 tokens to write; for a rewrite about twice the input's
+ * tokens plus 100, half again for Longer, at least 400 (a short text translated into a script that takes many tokens
+ * per character), within 900 for Shorter and 4,000 for every other rewrite. A cut-off answer is asked once more with
+ * double the budget; one that still runs out is refused.
  */
 export function composeMaxOutputTokens(input: Pick<ComposePromptInput, "mode" | "action" | "text">): number {
-	if (input.mode === "write") return WRITE_MAX_OUTPUT_TOKENS;
+	if (input.mode === "write") return WRITE_ANSWER_TOKENS;
 	const base = 2 * Math.ceil((input.text ?? "").length / 4) + 100;
-	if (input.action === "shorter") return Math.min(SHORTER_MAX_OUTPUT_TOKENS, base);
-	return Math.min(REWRITE_MAX_OUTPUT_TOKENS, input.action === "longer" ? Math.ceil(base * 1.5) : base);
+	const sized = input.action === "longer" ? Math.ceil(base * 1.5) : base;
+	const max = input.action === "shorter" ? SHORTER_MAX_ANSWER_TOKENS : REWRITE_MAX_ANSWER_TOKENS;
+	return Math.min(max, Math.max(REWRITE_MIN_ANSWER_TOKENS, sized));
 }

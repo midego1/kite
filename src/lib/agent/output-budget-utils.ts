@@ -5,8 +5,17 @@
 
 /** Automatic reading's own answer, before module extensions, the one-line summary and thinking room. */
 export const TRIAGE_ANSWER_TOKENS = 400;
-/** A draft, a one-line summary's base and Write with Kite's base budget. */
+/** A draft and a one-line summary's base. */
 export const DRAFT_ANSWER_TOKENS = 900;
+/** A new email from Write with Kite: a follow-up on a long thread can run to several hundred words. */
+export const WRITE_ANSWER_TOKENS = 2_000;
+/** The most a Write with Kite rewrite gets, and the least, whatever the length of the text. */
+export const REWRITE_MAX_ANSWER_TOKENS = 4_000;
+export const REWRITE_MIN_ANSWER_TOKENS = 400;
+/** Shorter never needs more than the new text it asks for. */
+export const SHORTER_MAX_ANSWER_TOKENS = 900;
+/** One step of an assistant chat turn or an assistant-by-email request (`CHAT_STEP_MAX_OUTPUT_TOKENS`). */
+export const CHAT_STEP_ANSWER_TOKENS = 1_200;
 /** A summary or its translation (`SUMMARY_MAX_OUTPUT_TOKENS`). */
 export const SUMMARY_ANSWER_TOKENS = 1_600;
 /**
@@ -16,6 +25,11 @@ export const SUMMARY_ANSWER_TOKENS = 1_600;
 export const TRANSLATION_ANSWER_TOKENS = 4_500;
 /** Added when a request thinks: a reasoning effort was set, or the model cannot stop thinking. */
 export const THINKING_ROOM_TOKENS = 1_100;
+/**
+ * The thinking room of a request a person waits for (Write with Kite, assistant chat, the assistant by email): a
+ * long thread takes more thinking than one message, and the cap is only reserved, never charged unless used.
+ */
+export const INTERACTIVE_THINKING_ROOM_TOKENS = 3_000;
 /** The most module extensions add to a triage request (`MODULE_EXTENSION_MAX_OUTPUT_TOKENS`). */
 export const TRIAGE_EXTENSION_MAX_TOKENS = 200;
 /** What the one-line summary adds when it rides on the triage request (`ONE_LINE_OUTPUT_TOKENS`). */
@@ -66,6 +80,26 @@ export function claudeThinkingDefault(
 	if (/claude-(haiku|sonnet|opus)-5/.test(id)) return "adaptive";
 	if (/claude-(haiku|sonnet|opus)-4|claude-(3|2|instant)/.test(id)) return "off";
 	return "adaptive";
+}
+
+/**
+ * The most a Workers AI request is widened to when its cut-off answer is asked once more: some Workers AI models
+ * refuse a larger `max_tokens`. A first request above it keeps its own cap.
+ */
+export const WORKERS_AI_RETRY_MAX_TOKENS = 4_000;
+
+/**
+ * Whether a model behind an OpenAI-compatible endpoint is known to reason before it answers, from its id: OpenAI's
+ * o-series and GPT-5, DeepSeek R1 and its reasoner, QwQ and Qwen3, Kimi K2, GLM 4.5 and later, Grok 3 and 4, Gemini
+ * 2.5 and later, Magistral, any id that says it reasons or thinks, and Claude 5 through a router. Only these get the
+ * thinking room in a chat step, so a small model behind such an endpoint keeps the cap it always had.
+ */
+export function knownToReason(modelId: string | null | undefined): boolean {
+	const id = (modelId ?? "").toLowerCase();
+	if (/claude/.test(id)) return claudeThinkingDefault(id.replace(/^.*\//, "")) !== "off";
+	return /(^|[/:._-])(o[1-9]([-.]|$)|gpt-5|deepseek-(r1|reasoner)|qwq|qwen3|kimi-k2|glm-(4\.[5-9]|[5-9])|grok-[34]|gemini-(2\.5|[3-9])|magistral)|reason|think/.test(
+		id,
+	);
 }
 
 /** Whether a recorded provider and model think by default, or null when Kite cannot tell (any other provider). */

@@ -1,7 +1,11 @@
 import type { SpendCapKind } from "./auto-read/spend-types";
+import { CHAT_STEP_ANSWER_TOKENS } from "./output-budget-utils";
 
-/** The output budget of every chat step, which its spend reservation assumes. */
-export const CHAT_STEP_MAX_OUTPUT_TOKENS = 1_200;
+/**
+ * The answer budget of every chat step, which a spend reservation assumes when the caller does not pass the step's
+ * whole cap (`chatStepOptions`: this plus the thinking room).
+ */
+export const CHAT_STEP_MAX_OUTPUT_TOKENS = CHAT_STEP_ANSWER_TOKENS;
 
 /** The caps a refusal message names. */
 export type SpendCapLimits = { installCapMicros: number; mailboxCapMicros: number | null; tokenCap: number };

@@ -54,6 +54,7 @@ const AI_SDK_IMPORTERS = [
 	"src/lib/agent/chat-spend.ts",
 	"src/lib/agent/chat-tools.ts",
 	"src/lib/agent/chat.ts",
+	"src/lib/agent/compose-stream.ts",
 	"src/lib/agent/compose.ts",
 	"src/lib/agent/email/email-tools.ts",
 	"src/lib/agent/email/process.ts",

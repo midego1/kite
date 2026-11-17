@@ -12,6 +12,7 @@ import { agentSystemPrompt } from "../system-prompt-utils";
 import { readMailboxAgentSettingsRow } from "../auto-read/mailbox-settings";
 import { getAutoReadInstallSettings } from "../auto-read/install-settings";
 import { ExternalProviderNotAllowedError, selectAutoReadModel } from "../auto-read/auto-read-model";
+import { chatStepOptions } from "../auto-read/model-call-utils";
 import { InteractiveModelRefusedError } from "../interactive-model";
 import { MailboxAiOffError } from "../mailbox-ai-utils";
 import { chatSpendCapError, createChatSpend } from "../chat-spend";
@@ -28,7 +29,6 @@ import type { AgentToolContext } from "../types";
 
 /** The chat engine's own cap is per-user; email never runs more steps than this regardless (spec §8.3). */
 const EMAIL_MAX_STEPS = 8;
-const EMAIL_STEP_MAX_OUTPUT_TOKENS = 1_200;
 const MAX_REQUEST_TEXT_CHARS = 8_000;
 /** At most one "could not answer" reply per user per hour (spec §7). */
 const COULD_NOT_ANSWER_COOLDOWN_MS = 60 * 60_000;
@@ -390,6 +390,8 @@ async function runModelTurn(
 	await db.insert(agentChatMessages).values({ id: newId("chat"), conversationId, role: "user", content: userTurn });
 
 	const maxSteps = Math.min(clampAgentMaxSteps(user.agentMaxSteps), EMAIL_MAX_STEPS);
+	// The same step cap as chat: room for the model's thinking, which counts against it.
+	const stepOptions = chatStepOptions(selection);
 	const spend = createChatSpend({
 		env,
 		details: selection,
@@ -399,6 +401,7 @@ async function runModelTurn(
 		tokenCap: install.autoReadTokenCap,
 		source: "assistant_email",
 		jobId: request.id,
+		maxOutputTokens: stepOptions.maxOutputTokens,
 	});
 
 	let errorCode: string | null = null;
@@ -414,7 +417,8 @@ async function runModelTurn(
 				await spend.beforeStep(stepPromptChars(step?.instructions ?? system, stepMessages));
 				return step;
 			},
-			maxOutputTokens: EMAIL_STEP_MAX_OUTPUT_TOKENS,
+			maxOutputTokens: stepOptions.maxOutputTokens,
+			providerOptions: stepOptions.providerOptions,
 			onStepFinish: async ({ usage, finishReason }) => {
 				await spend.afterStep(usage, finishReason);
 			},

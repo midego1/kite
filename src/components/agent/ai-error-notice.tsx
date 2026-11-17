@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { AI_FEATURE_LABELS, type AiErrorBody } from "@/lib/agent/ai-error-utils";
+import { cutOffFacts } from "@/lib/agent/cut-off-utils";
 import { cn } from "@/lib/utils";
 
 type AiErrorNoticeProps = {
@@ -21,10 +22,23 @@ function formatTime(iso: string): string {
 	return Number.isNaN(date.getTime()) ? iso : date.toLocaleString();
 }
 
+/** A cut-off answer's cap, thinking setting, usage and retry, when the server sent its budget. */
+function budgetRows(details: NonNullable<AiErrorBody["details"]>): [string, string][] {
+	if (!details.budget) return [];
+	const facts = cutOffFacts({
+		provider: details.provider ?? "",
+		providerId: null,
+		model: details.model,
+		feature: details.feature,
+		budget: details.budget,
+	});
+	return facts.map((fact) => [fact.label, fact.value]);
+}
+
 /**
  * A failed AI request: the message (the only part read out as the alert), Try again where retrying can help, a link
  * to Admin → Agent for the primary admin when a setting is the cause, and a Details disclosure with the code, the
- * model, the provider and the time. Never anything from the prompt or the answer.
+ * model, the provider, a cut-off answer's budget and the time. Never anything from the prompt or the answer.
  */
 export function AiErrorNotice({ message, error, onRetry, className }: AiErrorNoticeProps) {
 	const user = useCurrentUser();
@@ -38,6 +52,7 @@ export function AiErrorNotice({ message, error, onRetry, className }: AiErrorNot
 				["Model", details.model ?? "Not chosen yet"],
 				["Provider", details.provider ?? "Not chosen yet"],
 				...(details.status ? ([["HTTP status", String(details.status)]] as [string, string][]) : []),
+				...budgetRows(details),
 				["Time", formatTime(details.at)],
 			]
 		: [];

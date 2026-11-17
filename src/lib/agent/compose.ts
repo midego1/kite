@@ -10,16 +10,17 @@ import { SCREENING_STATUS } from "@/lib/screener/screener-utils";
 import type { SessionUser } from "@/lib/auth/types";
 import { getAutoReadInstallSettings } from "./auto-read/install-settings";
 import { readMailboxAgentSettingsRow } from "./auto-read/mailbox-settings";
-import { buildModelCallOptions } from "./auto-read/model-call-utils";
+import { buildModelCallOptions, type ModelCallOptions } from "./auto-read/model-call-utils";
 import { reportAiErrorClass, reportAiFailure, type AiFailureContext } from "./ai-errors";
 import { classifyAiError, type AiErrorDetails } from "./ai-error-utils";
 import { keepReservedEstimate, reconcileAiSpend, refusedSpendCap, reserveAiSpend } from "./auto-read/spend";
-import type { ReserveAiSpendInput, SpendReservation } from "./auto-read/spend-types";
+import type { ReserveAiSpendInput } from "./auto-read/spend-types";
 import { spendCapMessage } from "./chat-spend-utils";
-import { checkComposeOutput } from "./compose-output-utils";
+import { streamComposeAnswer } from "./compose-stream";
 import { buildComposePrompt, composeMaxOutputTokens } from "./compose-prompt-utils";
 import type { ComposeAction, ComposeMode, ComposeSource } from "./compose-types";
 import { selectInteractiveModel } from "./interactive-model";
+import { INTERACTIVE_THINKING_ROOM_TOKENS } from "./output-budget-utils";
 import { personalInstructionsFor } from "./user-ai-settings";
 import { styleDescriptionFor } from "./writing-style";
 
@@ -123,8 +124,9 @@ const recipientNames = (to: string[] = []) =>
 /**
  * Prepares one composer request: mailbox access (404 so ids do not leak), the email being answered, the model with
  * the external opt-in checked again, the prompt and a spend reservation against the mailbox and install caps. The
- * returned stream sends `text` deltas for the preview and one checked `done` text, or an `error`; nothing but the
- * `ai_usage` row is stored.
+ * returned stream (`streamComposeAnswer`) sends `text` deltas for the preview and one checked `done` text, or an
+ * `error`; a cut-off first answer is asked once more with double the budget after a `restart` event. Nothing but the
+ * `ai_usage` rows is stored.
  */
 export async function createComposeStream(
 	env: CloudflareEnv,
@@ -155,22 +157,22 @@ export async function createComposeStream(
 		modelId: selection.modelId,
 		// This request's own budget; a thinking request's room comes on top.
 		answerTokens: composeMaxOutputTokens(request),
+		thinkingRoomTokens: INTERACTIVE_THINKING_ROOM_TOKENS,
 		reasoningEffort: selection.reasoningEffort,
 	});
-	const { maxOutputTokens } = options;
 	const install = await getAutoReadInstallSettings(env);
-	const reserve: ReserveAiSpendInput = {
+	const reserveFor = (current: ModelCallOptions): ReserveAiSpendInput => ({
 		env,
 		details: selection,
 		source: "compose",
 		mailboxId: request.mailboxId,
 		jobId: null,
 		promptChars: prompt.system.length + prompt.messages[0].content.length,
-		maxOutputTokens,
+		maxOutputTokens: current.maxOutputTokens,
 		installCapMicros: install.dailySpendCapMicros,
 		mailboxCapMicros: settings?.dailySpendCapMicros ?? null,
 		tokenCap: install.chatTokenCap,
-	};
+	});
 	const failure: AiFailureContext = {
 		env,
 		feature: "compose",
@@ -179,109 +181,51 @@ export async function createComposeStream(
 		userId: user.id,
 		mailboxId: request.mailboxId,
 	};
-	const reservation = await reserveAiSpend(reserve);
-	if (!reservation) {
+	const refusedAtCap = async (reserve: ReserveAiSpendInput) => {
 		const cap = await refusedSpendCap(reserve);
 		const message = spendCapMessage(cap, { ...reserve, tokenCap: install.chatTokenCap });
-		const body = await reportAiErrorClass({ code: "spend_cap", status: null, message }, failure);
+		return reportAiErrorClass({ code: "spend_cap", status: null, message }, failure);
+	};
+	const reservation = await reserveAiSpend(reserveFor(options));
+	if (!reservation) {
+		const body = await refusedAtCap(reserveFor(options));
 		throw new ComposeRefusal(429, body.error, body.code, body.details);
 	}
 	// One abort for the request and for a reader that cancels the stream, so either stops the provider call.
 	const abort = new AbortController();
 	signal?.addEventListener("abort", () => abort.abort(), { once: true });
-	const result = streamText({
-		model: selection.model,
-		system: prompt.system,
-		messages: prompt.messages,
-		maxOutputTokens,
-		maxRetries: 0,
-		providerOptions: options.providerOptions,
-		abortSignal: abort.signal,
-		onError: () => undefined,
-	});
+	const send = (current: ModelCallOptions) =>
+		streamText({
+			model: selection.model,
+			system: prompt.system,
+			messages: prompt.messages,
+			maxOutputTokens: current.maxOutputTokens,
+			maxRetries: 0,
+			providerOptions: current.providerOptions,
+			abortSignal: abort.signal,
+			onError: () => undefined,
+		});
 	// The subject and recipients are not references: a link in them would otherwise authorize itself.
-	return streamComposeAnswer(env, result, reservation, selection.rates, abort, failure, {
-		mode: request.mode,
-		input: (request.mode === "rewrite" ? request.text : request.instruction) ?? "",
-		userReferences: [request.text, request.instruction],
-		sourceReferences: [source?.body, source?.from],
-	});
-}
-
-function streamComposeAnswer(
-	env: CloudflareEnv,
-	result: ReturnType<typeof streamText>,
-	reservation: SpendReservation,
-	rates: ReserveAiSpendInput["details"]["rates"],
-	abort: AbortController,
-	failure: AiFailureContext,
-	check: Parameters<typeof checkComposeOutput>[1],
-) {
-	const startedAt = Date.now();
-	const encoder = new TextEncoder();
-	let closed = false;
-	return new ReadableStream<Uint8Array>({
-		async start(controller) {
-			// Nothing is written after the reader cancelled.
-			const emit = (event: unknown) => {
-				if (!closed) controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
-			};
-			let settled = false;
-			let usage: Awaited<typeof result.totalUsage> | null = null;
-			let errorCode: string | null = null;
-			// The client gets a fixed message, a code and the details; the provider's own text, which may echo
-			// content, is neither sent nor logged.
-			const fail = async (body: ReturnType<typeof reportAiFailure>) => emit({ type: "error", ...(await body) });
-			const context = () => ({ ...failure, startedAt, usage });
-			try {
-				let text = "";
-				for await (const part of result.fullStream) {
-					if (part.type === "text-delta") {
-						text += part.text;
-						emit({ type: "text", text: part.text });
-					} else if (part.type === "error") throw part.error;
-				}
-				if (abort.signal.aborted) return;
-				usage = await result.totalUsage;
-				const finishReason = await result.finishReason;
-				// An answer that ran out of tokens ends mid-sentence; none of it may be inserted. The usage row records it
-				// as cut off (`settledOutcome`), and an answer that fails Kite's checks as unusable.
-				const cutOff = finishReason === "length";
-				const checked = cutOff ? null : checkComposeOutput(text, check);
-				await reconcileAiSpend({
-					env,
-					reservation,
-					rates,
-					usage,
-					outcome:
-						checked && !checked.ok
-							? { status: "failed", errorCode: "unusable_answer", finishReason }
-							: { status: "ok", finishReason },
-				});
-				settled = true;
-				if (!checked)
-					return await fail(
-						reportAiErrorClass({ code: "cut_off", status: null }, { ...context(), finishReason: "length" }),
-					);
-				if (checked.ok) emit({ type: "done", text: checked.text, warnings: checked.warnings });
-				else
-					await fail(reportAiErrorClass({ code: "unusable_answer", status: null, reason: checked.error }, context()));
-			} catch (error) {
-				if (!abort.signal.aborted) {
-					errorCode = classifyAiError(error).code;
-					await fail(reportAiFailure(error, context()));
-				}
-			} finally {
-				// Aborted, cancelled or failed before the provider reported usage: the estimate stays as the spend.
-				const outcome = errorCode ? ({ status: "failed", errorCode } as const) : undefined;
-				if (!settled) await keepReservedEstimate(env, reservation, outcome).catch(() => undefined);
-				if (!closed) controller.close();
-				closed = true;
-			}
+	return streamComposeAnswer({
+		abort,
+		check: {
+			mode: request.mode,
+			input: (request.mode === "rewrite" ? request.text : request.instruction) ?? "",
+			userReferences: [request.text, request.instruction],
+			sourceReferences: [source?.body, source?.from],
 		},
-		cancel() {
-			closed = true;
-			abort.abort();
+		first: { options, reservation },
+		send,
+		// The retry is a new request: reserved against the caps like the first.
+		reserve: async (current) => {
+			const next = await reserveAiSpend(reserveFor(current));
+			return next ?? (await refusedAtCap(reserveFor(current)));
 		},
+		settle: (held, usage, outcome) =>
+			reconcileAiSpend({ env, reservation: held, rates: selection.rates, usage, outcome }),
+		keepEstimate: (held, outcome) => keepReservedEstimate(env, held, outcome),
+		report: (failed, context) => reportAiErrorClass(failed, { ...failure, ...context }),
+		reportError: (error, context) => reportAiFailure(error, { ...failure, ...context }),
+		classify: classifyAiError,
 	});
 }

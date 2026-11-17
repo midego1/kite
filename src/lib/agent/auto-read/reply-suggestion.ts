@@ -11,7 +11,7 @@ import { ExternalProviderNotAllowedError, selectAutoReadModel } from "./auto-rea
 import { guardDraft, collectThreadReferences } from "./draft-guard-utils";
 import { executeAction, recordBlockedAction } from "./execute";
 import type { MessageFacts } from "./facts-types";
-import { buildModelCallOptions, callWithFallback, completedText } from "./model-call-utils";
+import { buildModelCallOptions, callWithCutOffRetry, completedText } from "./model-call-utils";
 import type { MailboxAgentSettingsState } from "./settings-types";
 import { withReservedSpend } from "./spend";
 import type { PlannedSuggestion } from "./suggestion-types";
@@ -60,9 +60,8 @@ export async function generateDraft(
 		modelId: selection.modelId,
 		reasoningEffort: selection.reasoningEffort,
 	});
-	let sent = options;
-	const generated = await callWithFallback(options, async (current) => {
-		sent = current;
+	// A cut-off draft is asked once more with double the budget, reserved as its own request.
+	const { result: generated, sent } = await callWithCutOffRetry(options, async (current) => {
 		// A parameter fallback is a new request, so the opt-in is checked again.
 		const model = await selectAutoReadModel(env, { mailboxId: job.mailboxId, modelId: settings.modelId });
 		const reply = await withReservedSpend(

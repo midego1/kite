@@ -164,15 +164,19 @@ test("the composer's system prompt ends with the writing style, never the user t
 	assert.doesNotMatch(buildComposePrompt({ ...base, mode: "write", instruction: "Hi" }).system, /Writing style/);
 });
 
-test("the output budget: 900 to write, about twice the input to rewrite within 900 for Shorter and 3,000 otherwise", () => {
-	assert.equal(composeMaxOutputTokens({ mode: "write" }), 900);
-	assert.equal(composeMaxOutputTokens({ mode: "rewrite", action: "shorter", text: "x".repeat(400) }), 300);
+test("the output budget: 2,000 to write, about twice the input to rewrite, at least 400, within 900 for Shorter and 4,000 otherwise", () => {
+	assert.equal(composeMaxOutputTokens({ mode: "write" }), 2_000);
+	assert.equal(composeMaxOutputTokens({ mode: "rewrite", action: "shorter", text: "x".repeat(400) }), 400);
+	assert.equal(composeMaxOutputTokens({ mode: "rewrite", action: "shorter", text: "x".repeat(1_200) }), 700);
 	assert.equal(composeMaxOutputTokens({ mode: "rewrite", action: "shorter", text: "x".repeat(12_000) }), 900);
 	assert.equal(composeMaxOutputTokens({ mode: "rewrite", action: "longer", text: "x".repeat(400) }), 450);
-	assert.equal(composeMaxOutputTokens({ mode: "rewrite", action: "longer", text: "x".repeat(4_000) }), 3_000);
+	assert.equal(composeMaxOutputTokens({ mode: "rewrite", action: "longer", text: "x".repeat(4_000) }), 3_150);
+	assert.equal(composeMaxOutputTokens({ mode: "rewrite", action: "longer", text: "x".repeat(12_000) }), 4_000);
 	for (const action of ["formal", "casual", "grammar", "translate", "custom"]) {
+		// A short text translated into a script that takes many tokens per character still has room.
+		assert.equal(composeMaxOutputTokens({ mode: "rewrite", action, text: "x".repeat(40) }), 400, action);
 		assert.equal(composeMaxOutputTokens({ mode: "rewrite", action, text: "x".repeat(4_000) }), 2_100, action);
-		assert.equal(composeMaxOutputTokens({ mode: "rewrite", action, text: "x".repeat(12_000) }), 3_000, action);
+		assert.equal(composeMaxOutputTokens({ mode: "rewrite", action, text: "x".repeat(12_000) }), 4_000, action);
 	}
 });
 

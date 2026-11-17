@@ -10,7 +10,7 @@ import { getAutoReadInstallSettings } from "../auto-read/install-settings";
 import { readMailboxAgentSettingsRow } from "../auto-read/mailbox-settings";
 import {
 	buildModelCallOptions,
-	callWithFallback,
+	callWithCutOffRetry,
 	chooseTriageModelId,
 	completedText,
 } from "../auto-read/model-call-utils";
@@ -82,7 +82,6 @@ async function writeLine(
 		answerTokens: LINE_MAX_OUTPUT_TOKENS,
 		reasoningEffort: selection.reasoningEffort,
 	});
-	let sent = options;
 	// A failure keeps the model and provider, so the job's failure handler reports it under the shared codes.
 	const trace = {
 		feature: "line_summary" as const,
@@ -91,8 +90,8 @@ async function writeLine(
 		startedAt: Date.now(),
 		timeoutMs: LINE_CALL_TIMEOUT_MS,
 	};
-	const reply = await callWithFallback(options, async (current) => {
-		sent = current;
+	// A cut-off line is asked once more with double the budget, reserved as its own request.
+	const { result: reply, sent } = await callWithCutOffRetry(options, async (current) => {
 		const model = await selectAutoReadModel(env, { mailboxId: job.mailboxId, modelId: requested });
 		return withReservedSpend(
 			{

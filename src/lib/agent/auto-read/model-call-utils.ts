@@ -2,9 +2,11 @@ import type { JSONValue } from "ai";
 import type { JsonSchemaObject } from "@/lib/modules/module-types";
 import type { AgentModelRates, AgentProviderKind, AgentProviderPreset, AgentReasoningEffort } from "../provider-types";
 import {
+	CHAT_STEP_ANSWER_TOKENS,
 	claudeThinkingDefault,
 	CUT_OFF_RETRY_FACTOR,
 	DRAFT_ANSWER_TOKENS,
+	INTERACTIVE_THINKING_ROOM_TOKENS,
 	THINKING_ROOM_TOKENS,
 	TRIAGE_ANSWER_TOKENS,
 	type AiOutputBudget,
@@ -17,7 +19,12 @@ import { buildTriageRepairPrompt, parseTriageOutput } from "./triage-utils";
 /** The `name` given to `createOpenAICompatible`; its provider options are read from this key. */
 export const COMPATIBLE_PROVIDER_NAME = "kite";
 
-type ModelCallKind = "triage" | "draft";
+/**
+ * `triage` and `draft` ask for one answer with thinking off where the model allows it; `chat` is a step of a turn
+ * with tools (assistant chat, the assistant by email), where the model keeps thinking as its provider sets it and
+ * the budget makes room for that.
+ */
+type ModelCallKind = "triage" | "draft" | "chat";
 
 /** What active module extensions add to a triage request: extra output tokens and the merged provider schema. */
 export type ModelCallExtension = {
@@ -34,6 +41,8 @@ export type ModelCallOptions = {
 	modelId: string | null;
 	/** The request's own answer budget when it is not the kind's (a summary, a one-line summary, Write with Kite). */
 	answerTokens?: number;
+	/** The request's own thinking room when it is not `THINKING_ROOM_TOKENS` (requests a person waits for). */
+	thinkingRoomTokens?: number;
 	maxOutputTokens: number;
 	providerOptions: Record<string, Record<string, JSONValue>>;
 	/** The per-model reasoning effort hint the options were built from, if any. */
@@ -60,6 +69,8 @@ type ModelCallInput = {
 	modelId?: string | null;
 	/** Replaces the kind's answer budget; the thinking room still comes on top, and a fallback keeps it. */
 	answerTokens?: number;
+	/** Replaces `THINKING_ROOM_TOKENS` as the room added when the request thinks; a fallback and the retry keep it. */
+	thinkingRoomTokens?: number;
 	/** The per-model hint saved with the provider settings (`rates[modelId].reasoningEffort`). */
 	reasoningEffort?: unknown;
 	extension?: ModelCallExtension;
@@ -72,6 +83,7 @@ type ModelCallSettings = Pick<
 	| "kind"
 	| "modelId"
 	| "answerTokens"
+	| "thinkingRoomTokens"
 	| "reasoningEffort"
 	| "extension"
 	| "retried"
@@ -123,12 +135,16 @@ type ThinkingChoice = {
  */
 function anthropicThinking(settings: ModelCallSettings): ThinkingChoice {
 	const hint = settings.reasoningEffort;
-	if (settings.plainThinking) return { options: {}, thinking: "default", effort: null, room: THINKING_ROOM_TOKENS };
-	if (hint && hint !== "minimal")
-		return { options: { effort: hint }, thinking: "on", effort: hint, room: THINKING_ROOM_TOKENS };
+	const room = settings.thinkingRoomTokens ?? THINKING_ROOM_TOKENS;
+	if (settings.plainThinking) return { options: {}, thinking: "default", effort: null, room };
+	if (hint && hint !== "minimal") return { options: { effort: hint }, thinking: "on", effort: hint, room };
 	const mode = claudeThinkingDefault(settings.modelId);
-	if (mode === "always")
-		return { options: { effort: "low" }, thinking: "on", effort: "low", room: THINKING_ROOM_TOKENS };
+	// A chat step keeps the model's own thinking, which helps it choose tools; it only gets the room for it.
+	if (settings.kind === "chat" && !hint)
+		return mode === "off"
+			? { options: {}, thinking: "off", effort: null, room: 0 }
+			: { options: {}, thinking: "default", effort: null, room };
+	if (mode === "always") return { options: { effort: "low" }, thinking: "on", effort: "low", room };
 	// Sonnet 5.5 rejects `disabled`; `between_tools` is its lowest setting and, without tools, means no thinking.
 	if (mode === "between_tools")
 		return { options: { thinking: { type: "between_tools" } }, thinking: "between_tools", effort: null, room: 0 };
@@ -140,7 +156,7 @@ function buildOptions(settings: ModelCallSettings, jsonMode: boolean): ModelCall
 	const answer =
 		settings.kind === "triage"
 			? TRIAGE_ANSWER_TOKENS + (extension?.outputTokens ?? 0)
-			: (settings.answerTokens ?? DRAFT_ANSWER_TOKENS);
+			: (settings.answerTokens ?? (settings.kind === "chat" ? CHAT_STEP_ANSWER_TOKENS : DRAFT_ANSWER_TOKENS));
 	const factor = settings.retried ? CUT_OFF_RETRY_FACTOR : 1;
 	const json: Record<string, JSONValue> = jsonMode ? { response_format: { type: "json_object" } } : {};
 	const common = {
@@ -149,12 +165,25 @@ function buildOptions(settings: ModelCallSettings, jsonMode: boolean): ModelCall
 		kind: settings.kind,
 		modelId: settings.modelId,
 		...(settings.answerTokens === undefined ? {} : { answerTokens: settings.answerTokens }),
+		...(settings.thinkingRoomTokens === undefined ? {} : { thinkingRoomTokens: settings.thinkingRoomTokens }),
 		reasoningEffort: settings.reasoningEffort,
 		jsonMode,
 		...(extension ? { extension } : {}),
 		...(settings.retried ? { retried: true } : {}),
 		...(settings.plainThinking ? { plainThinking: true } : {}),
 	};
+	if (settings.provider === "cloudflare" && settings.kind === "chat")
+		// Chat on Workers AI is sent as before: no options, and no room a model's output limit might refuse.
+		return {
+			...common,
+			provider: "cloudflare",
+			maxOutputTokens: answer * factor,
+			providerOptions: {},
+			reasoningEffort: null,
+			effort: null,
+			thinking: "default",
+			thinkingRoom: 0,
+		};
 	if (settings.provider === "cloudflare") {
 		// Kimi K2.5 ignores reasoning_effort; only switching thinking off keeps it fast and inside the budget.
 		const options = { chat_template_kwargs: { thinking: false }, ...json };
@@ -182,7 +211,8 @@ function buildOptions(settings: ModelCallSettings, jsonMode: boolean): ModelCall
 		};
 	}
 	const effort = settings.reasoningEffort;
-	const room = effort ? THINKING_ROOM_TOKENS : 0;
+	// A chat step leaves a reasoning model to think as its provider sets it, so it gets the room either way.
+	const room = effort || settings.kind === "chat" ? (settings.thinkingRoomTokens ?? THINKING_ROOM_TOKENS) : 0;
 	return {
 		...common,
 		maxOutputTokens: (answer + room) * factor,
@@ -198,6 +228,27 @@ function buildOptions(settings: ModelCallSettings, jsonMode: boolean): ModelCall
 	};
 }
 
+/**
+ * The options and output cap of every step of a turn with tools (assistant chat, the assistant by email): 1,200
+ * tokens for the step's own answer plus `INTERACTIVE_THINKING_ROOM_TOKENS` for a model that may think, with the saved
+ * reasoning effort sent as is.
+ */
+export function chatStepOptions(selection: {
+	providerKind: AgentProviderKind;
+	preset?: AgentProviderPreset;
+	modelId?: string | null;
+	reasoningEffort?: unknown;
+}): ModelCallOptions {
+	return buildModelCallOptions({
+		provider: selection.providerKind,
+		preset: selection.preset,
+		kind: "chat",
+		modelId: selection.modelId,
+		thinkingRoomTokens: INTERACTIVE_THINKING_ROOM_TOKENS,
+		reasoningEffort: selection.reasoningEffort,
+	});
+}
+
 /** Provider-aware options and output budget for one automatic model call (never any tools). */
 export function buildModelCallOptions(input: ModelCallInput): ModelCallOptions {
 	const reasoningEffort = parseAgentReasoningEffort(input.reasoningEffort) ?? null;
@@ -208,6 +259,7 @@ export function buildModelCallOptions(input: ModelCallInput): ModelCallOptions {
 			kind: input.kind,
 			modelId: input.modelId ?? null,
 			answerTokens: input.answerTokens,
+			thinkingRoomTokens: input.thinkingRoomTokens,
 			reasoningEffort,
 			extension: input.extension,
 		},
@@ -319,6 +371,36 @@ export function completedText(result: ModelCallResult, options?: ModelCallOption
 /** The same request with `CUT_OFF_RETRY_FACTOR` times the budget, for the one retry after a cut-off answer. */
 export function widenedAfterCutOff(options: ModelCallOptions): ModelCallOptions {
 	return buildOptions({ ...options, retried: true }, options.jsonMode);
+}
+
+/** Whether an answer was cut off and may still be asked once more with a larger budget. */
+export function retriesAfterCutOff(finishReason: string | null | undefined, options: ModelCallOptions): boolean {
+	return finishReason === "length" && !options.retried;
+}
+
+/**
+ * One request with its parameter fallbacks, asked once more with `CUT_OFF_RETRY_FACTOR` times the budget when the
+ * answer was cut off. Each attempt is its own call, so `call` reserves and settles its own spend (the cut-off one
+ * is recorded as `cut_off` with its usage); `onCutOff` runs between the two for a caller that records usage itself.
+ * Returns the last result (null when `call` refused) and the options it was sent with; `completedText` then fails a
+ * second cut-off with the budget of the retry.
+ */
+export async function callWithCutOffRetry<T extends { finishReason: string } | null>(
+	options: ModelCallOptions,
+	call: (options: ModelCallOptions) => Promise<T>,
+	onCutOff?: (result: NonNullable<T>, sent: ModelCallOptions) => Promise<void>,
+): Promise<{ result: T; sent: ModelCallOptions }> {
+	let sent = options;
+	const attempt = (start: ModelCallOptions) =>
+		callWithFallback(start, (current) => {
+			sent = current;
+			return call(current);
+		});
+	const first = await attempt(options);
+	if (!first || !retriesAfterCutOff(first.finishReason, sent)) return { result: first, sent };
+	await onCutOff?.(first as NonNullable<T>, sent);
+	const second = await attempt(widenedAfterCutOff(sent));
+	return { result: second, sent };
 }
 
 type Generate = (prompt: TriagePrompt, options: ModelCallOptions) => Promise<ModelCallResult>;

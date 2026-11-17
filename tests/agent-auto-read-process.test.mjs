@@ -753,7 +753,7 @@ test("the install spend cap counts spend from every mailbox and source", async (
 	assert.equal(requests.length, 1);
 });
 
-test("an agent draft cut off at the output limit is refused like Write with Kite's, with its usage recorded", async (t) => {
+test("an agent draft cut off twice is refused like Write with Kite's, with each request's usage recorded", async (t) => {
 	const { db, env } = await setup(t);
 	db.db.exec(
 		"UPDATE mailbox_agent_settings SET auto_draft_enabled = 1, autonomy = 'off' WHERE mailbox_id = 'mailbox-a'",
@@ -765,21 +765,44 @@ test("an agent draft cut off at the output limit is refused like Write with Kite
 			)
 			.all(jobId);
 
+	const cutOff = {
+		source: "auto_draft",
+		status: "failed",
+		errorCode: "cut_off",
+		finishReason: "length",
+		inputTokens: 120,
+	};
 	const cut = insertJob(db, { kind: "draft" });
-	replies = [reply("Here are the figures for the quarter, as", "length")];
+	replies = [
+		reply("Here are the figures for the quarter, as", "length"),
+		reply("Here are the figures for the quarter, as", "length"),
+	];
 	await processAgentDraftJob(env, cut.jobId);
-	assert.deepEqual(usageOf(cut.jobId), [
-		{ source: "auto_draft", status: "failed", errorCode: "cut_off", finishReason: "length", inputTokens: 120 },
-	]);
+	// Asked once more with double the budget, then refused; each request has its own row.
+	assert.deepEqual(
+		requests.map((request) => request.body.max_tokens),
+		[900, 1_800],
+	);
+	assert.deepEqual(usageOf(cut.jobId), [cutOff, cutOff]);
 	assert.notEqual(jobOf(db, cut.jobId).status, "completed");
 	assert.equal(db.db.prepare("SELECT count(*) AS n FROM agent_draft_metadata").get().n, 0, "no draft is saved");
 
 	const whole = insertJob(db, { kind: "draft" });
 	replies = [reply("Here are the figures for the quarter.")];
 	await processAgentDraftJob(env, whole.jobId);
-	assert.deepEqual(usageOf(whole.jobId), [
-		{ source: "auto_draft", status: "ok", errorCode: null, finishReason: "stop", inputTokens: 120 },
-	]);
+	const answered = { source: "auto_draft", status: "ok", errorCode: null, finishReason: "stop", inputTokens: 120 };
+	assert.deepEqual(usageOf(whole.jobId), [answered]);
+
+	// Cut off once, then whole at double the budget: the draft is saved, and the cut-off request still counts.
+	const retried = insertJob(db, { kind: "draft" });
+	replies = [
+		reply("Here are the figures for the quarter, as", "length"),
+		reply("Here are the figures for the quarter."),
+	];
+	await processAgentDraftJob(env, retried.jobId);
+	assert.equal(jobOf(db, retried.jobId).status, "completed");
+	assert.deepEqual(usageOf(retried.jobId), [cutOff, answered]);
+	assert.equal(db.db.prepare("SELECT count(*) AS n FROM agent_draft_metadata").get().n, 2, "both whole drafts");
 });
 
 for (const [kind, processJob] of [

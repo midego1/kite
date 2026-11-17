@@ -15,7 +15,8 @@ import { externalProviderRefused } from "./external-provider";
 import { readMailboxAgentSettingsRow } from "./auto-read/mailbox-settings";
 import { getAutoReadInstallSettings } from "./auto-read/install-settings";
 import { chatSpendCapError, createChatSpend } from "./chat-spend";
-import { CHAT_STEP_MAX_OUTPUT_TOKENS, stepPromptChars } from "./chat-spend-utils";
+import { stepPromptChars } from "./chat-spend-utils";
+import { chatStepOptions, outputBudgetOf, type ModelCallResult } from "./auto-read/model-call-utils";
 import { personalInstructionsFor } from "./user-ai-settings";
 import { styleDescriptionFor } from "./writing-style";
 import { attachHistoryRefs, buildChatTools, resolveToolResultRefs } from "./chat-tools";
@@ -170,6 +171,8 @@ export async function createAgentChatStream(
 		mailboxId: context.mailboxId,
 		modelId: settings?.modelId,
 	});
+	// Each step's cap makes room for the model's thinking, which counts against it (a Claude 5 model thinks by default).
+	const stepOptions = chatStepOptions(selection);
 	const currentEmailId = await resolveCurrentEmailId(context, currentMessageId);
 	let conversation = conversationId ? await getAgentConversation(context, conversationId) : null;
 	if (conversationId && !conversation) throw new Error("Conversation not found");
@@ -213,6 +216,7 @@ export async function createAgentChatStream(
 		installCapMicros: install.dailySpendCapMicros,
 		mailboxCapMicros: settings?.dailySpendCapMicros ?? null,
 		tokenCap: install.chatTokenCap,
+		maxOutputTokens: stepOptions.maxOutputTokens,
 	});
 	const result = streamText({
 		model: selection.model,
@@ -231,7 +235,8 @@ export async function createAgentChatStream(
 			await spend.beforeStep(stepPromptChars(step?.instructions ?? system, messages));
 			return step;
 		},
-		maxOutputTokens: CHAT_STEP_MAX_OUTPUT_TOKENS,
+		maxOutputTokens: stepOptions.maxOutputTokens,
+		providerOptions: stepOptions.providerOptions,
 		abortSignal: signal,
 		onStepFinish: async ({ usage, finishReason }) => {
 			await spend.afterStep(usage, finishReason);
@@ -267,6 +272,7 @@ export async function createAgentChatStream(
 			let stepText = "";
 			let reasoning = "";
 			let lastFinishReason: string | null = null;
+			let lastStepUsage: ModelCallResult["usage"];
 			let toolChoiceIgnored = false;
 			let capReached = false;
 			let errorCode: string | null = null;
@@ -283,6 +289,7 @@ export async function createAgentChatStream(
 						emit({ type: "reasoning", text: part.text });
 					} else if (part.type === "finish-step") {
 						lastFinishReason = part.finishReason;
+						lastStepUsage = part.usage;
 						usage = addUsage(usage, part.usage);
 						if (part.finishReason === "tool-calls" && stepText) {
 							response = response.slice(0, -stepText.length);
@@ -329,7 +336,10 @@ export async function createAgentChatStream(
 					emit({ type: "text", text: response });
 				}
 				// A reply that ran out of tokens ends mid-sentence; the text stays, with a note that it was cut off.
-				if (lastFinishReason === "length") emit(await chatError({ code: "cut_off", status: null }, failure("length")));
+				if (lastFinishReason === "length") {
+					const budget = outputBudgetOf(stepOptions, { text: "", finishReason: "length", usage: lastStepUsage });
+					emit(await chatError({ code: "cut_off", status: null, budget }, failure("length")));
+				}
 				await saveTurnText(db, id, response, reasoning);
 				await db.update(agentConversations).set({ updatedAt: new Date() }).where(eq(agentConversations.id, id));
 				emit({ type: "done" });

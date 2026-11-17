@@ -132,9 +132,10 @@ test("a chat step aborted mid-stream keeps its estimate and releases the reserva
 	assert.equal(rows[0].source, "chat");
 	assert.equal(rows[0].mailbox_id, "mailbox-a");
 	assert.equal(rows[0].reserved, 0, "the reservation is closed");
-	// The estimate stays: 1,200 output tokens at 2 micros plus the prompt's input tokens.
-	assert.equal(rows[0].output_tokens, 1_200);
-	assert.ok(rows[0].cost_usd_micros > 2_400);
+	// The estimate stays: the step's cap (1,200 for the reply plus 3,000 of room for a model that may think) at 2
+	// micros plus the prompt's input tokens.
+	assert.equal(rows[0].output_tokens, 4_200);
+	assert.ok(rows[0].cost_usd_micros > 8_400);
 	// Stopped by the person, not failed with the error the abort surfaced as; the cost is the estimate.
 	assert.deepEqual(outcomes(db), [{ status: "stopped", error_code: null, finish_reason: null, cost_estimated: 1 }]);
 });
@@ -154,7 +155,7 @@ test("a chat step the provider refuses keeps its estimate, closes the reservatio
 	const rows = usageRows(db);
 	assert.equal(rows.length, 1);
 	assert.equal(rows[0].reserved, 0);
-	assert.equal(rows[0].output_tokens, 1_200);
+	assert.equal(rows[0].output_tokens, 4_200);
 	assert.deepEqual(outcomes(db), [
 		{ status: "failed", error_code: "provider_rejected", finish_reason: null, cost_estimated: 1 },
 	]);

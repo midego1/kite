@@ -65,6 +65,8 @@ export type AiErrorDetails = {
 	retryable: boolean;
 	/** A setting in Admin → Agent can fix it. */
 	config: boolean;
+	/** A cut-off answer's output cap, thinking setting, usage and retry: numbers and settings, never content. */
+	budget?: AiOutputBudget;
 };
 
 /** The JSON body (or stream event fields) of a failed AI request. */
@@ -340,8 +342,14 @@ export function readAiErrorBody(value: unknown): AiErrorBody | null {
 			at: text("at") ?? new Date().toISOString(),
 			retryable: aiErrorRetryable(code),
 			config: aiErrorIsConfig(code),
+			...budgetField(details.budget),
 		},
 	};
+}
+
+function budgetField(value: unknown): Pick<AiErrorDetails, "budget"> {
+	const budget = readAiOutputBudget(value);
+	return budget ? { budget } : {};
 }
 
 /** What went wrong, as the end of a sentence in Activity ("… because it took too long"). */

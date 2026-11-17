@@ -4,7 +4,7 @@ import { reportAiErrorClass } from "../ai-errors";
 import { aiErrorHttpStatus, classifyAiError, UnusableAnswerError, type AiErrorDetails } from "../ai-error-utils";
 import { getAutoReadInstallSettings } from "../auto-read/install-settings";
 import { readMailboxAgentSettingsRow } from "../auto-read/mailbox-settings";
-import { buildModelCallOptions, callWithFallback, completedText } from "../auto-read/model-call-utils";
+import { buildModelCallOptions, callWithCutOffRetry, completedText } from "../auto-read/model-call-utils";
 import {
 	finishReasonOf,
 	keepReservedEstimate,
@@ -121,7 +121,8 @@ type CheckedModelRequest<T> = {
 /**
  * One answer from the model: the model chosen and the opt-in checked again for every request (the repair turn too),
  * each request's estimate reserved against the mailbox and install caps and settled with its usage, the answer
- * checked by code. An unusable answer gets one repair turn; a second one is an error. Every failure is logged once
+ * checked by code. A cut-off answer is asked once more with double the budget, and an unusable one gets one repair
+ * turn; a second of either is an error. Every failure is logged once
  * and answered with its own code and message (`ai-error-utils.ts`).
  */
 export async function checkedModelAnswer<T>(input: CheckedModelRequest<T>): Promise<{ value: T; modelId: string }> {
@@ -147,10 +148,9 @@ export async function checkedModelAnswer<T>(input: CheckedModelRequest<T>): Prom
 			answerTokens: input.answerTokens,
 			reasoningEffort: selection.reasoningEffort,
 		});
-		let sent = options;
-		const result = await callWithFallback(options, (current) => {
-			sent = current;
-			return reserved(
+		// A cut-off answer is asked once more with double the budget, reserved and settled as its own request.
+		const { result, sent } = await callWithCutOffRetry(options, (current) =>
+			reserved(
 				{
 					env: input.env,
 					details: selection,
@@ -173,8 +173,8 @@ export async function checkedModelAnswer<T>(input: CheckedModelRequest<T>): Prom
 						maxRetries: 0,
 						abortSignal: AbortSignal.timeout(timeoutMs),
 					}),
-			);
-		});
+			),
+		);
 		trace.usage = result.usage ?? null;
 		trace.finishReason = result.finishReason;
 		return { text: completedText(result, sent), modelId: selection.modelId };

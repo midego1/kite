@@ -419,7 +419,8 @@ test("a summary cut off at the budget says so, with the model, tokens and finish
 	const { db, env, user } = await longThread(t);
 	captureLogs(t);
 	provider();
-	reply = `{"language": "en", "overview": "${"x".repeat(8_000)}"}`;
+	// Over 3,200 tokens: cut off at the summary's 1,600 and again when asked once more with double that.
+	reply = `{"language": "en", "overview": "${"x".repeat(16_000)}"}`;
 	await assert.rejects(createSummary(env, user, "m11", { scope: "thread", language: "en" }), (error) => {
 		assert.ok(error instanceof SummaryRefusal);
 		assert.equal(error.status, 502);
@@ -427,8 +428,13 @@ test("a summary cut off at the budget says so, with the model, tokens and finish
 		assert.match(error.message, /^The AI's answer was cut off before it was finished\./);
 		assert.equal(error.details.model, "kimi");
 		assert.equal(error.details.provider, "custom");
+		assert.equal(error.details.budget.cap, 3_200);
 		return true;
 	});
+	assert.deepEqual(
+		requests.map((request) => request.max_tokens),
+		[1_600, 3_200],
+	);
 	const [row] = auditRows(db);
 	assert.equal(row.actor_user_id, "owner");
 	assert.equal(row.mailbox_id, "mailbox-a");
@@ -442,20 +448,44 @@ test("a summary cut off at the budget says so, with the model, tokens and finish
 			status: null,
 			durationMs: 0,
 			inputTokens: 6000,
-			outputTokens: 1600,
+			outputTokens: 3200,
 			finishReason: "length",
-			// The summary's own cap, kept by Why? and Ask AI; this custom provider decides thinking itself.
+			// The retry's cap, twice the summary's own, kept by Why? and Ask AI; this custom provider decides thinking.
 			budget: {
-				cap: 1600,
+				cap: 3200,
 				thinkingRoom: 0,
 				extensionRoom: 0,
 				thinking: "default",
 				effort: null,
-				retried: false,
-				used: 1600,
+				retried: true,
+				used: 3200,
 				thinkingUsed: 0,
 			},
 		},
+	);
+});
+
+test("a summary cut off once is asked again with double the budget and saved, the cut-off request still counted", async (t) => {
+	const { db, env, user } = await longThread(t);
+	captureLogs(t);
+	provider();
+	// About 2,000 tokens: over the summary's 1,600, within the 3,200 of the retry.
+	reply = `{"language": "en", "overview": "${"The plan is blocked. ".repeat(380)}", "points": []}`;
+	const state = await createSummary(env, user, "m11", { scope: "thread", language: "en" });
+	assert.ok(state.summary.overview.startsWith("The plan is blocked."));
+	assert.deepEqual(
+		requests.map((request) => request.max_tokens),
+		[1_600, 3_200],
+	);
+	assert.equal(auditRows(db).length, 0, "no failure is recorded");
+	assert.deepEqual(
+		db.db
+			.prepare("SELECT status, error_code, finish_reason FROM ai_usage WHERE source = 'summary' ORDER BY rowid")
+			.all(),
+		[
+			{ status: "failed", error_code: "cut_off", finish_reason: "length" },
+			{ status: "ok", error_code: null, finish_reason: "stop" },
+		],
 	);
 });
 

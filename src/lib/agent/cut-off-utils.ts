@@ -5,6 +5,9 @@ import {
 	describeThinking,
 	describeUsage,
 	DRAFT_ANSWER_TOKENS,
+	INTERACTIVE_THINKING_ROOM_TOKENS,
+	REWRITE_MAX_ANSWER_TOKENS,
+	REWRITE_MIN_ANSWER_TOKENS,
 	SUMMARY_ANSWER_TOKENS,
 	TRANSLATION_ANSWER_TOKENS,
 	THINKING_ROOM_TOKENS,
@@ -12,6 +15,7 @@ import {
 	TRIAGE_ANSWER_TOKENS,
 	TRIAGE_EXTENSION_MAX_TOKENS,
 	TRIAGE_LINE_TOKENS,
+	WRITE_ANSWER_TOKENS,
 	type AiOutputBudget,
 } from "./output-budget-utils";
 
@@ -40,7 +44,7 @@ const FEATURE_CAPS: Partial<Record<AiFeature, string>> = {
 	summary: `${count(SUMMARY_ANSWER_TOKENS)} tokens${thinkingRoom}`,
 	summary_translation: `${count(SUMMARY_ANSWER_TOKENS)} tokens${thinkingRoom}`,
 	message_translation: `${count(TRANSLATION_ANSWER_TOKENS)} tokens per part of the message${thinkingRoom}`,
-	compose: `${count(DRAFT_ANSWER_TOKENS)} to 3,000 tokens depending on the request${thinkingRoom}`,
+	compose: `${count(WRITE_ANSWER_TOKENS)} tokens for a new email, ${count(REWRITE_MIN_ANSWER_TOKENS)} to ${count(REWRITE_MAX_ANSWER_TOKENS)} for a rewrite, plus ${count(INTERACTIVE_THINKING_ROOM_TOKENS)} for thinking when the request thinks`,
 };
 
 /** Features whose cut-off failures record their budget, so one without it was recorded by an older Kite. */
@@ -58,7 +62,7 @@ export const AI_FEATURE_NOTES: Partial<Record<AiFeature, string>> = {
 	auto_triage: `Automatic reading makes one request per incoming message, with no tools, and expects a small JSON object (category, whether a reply is needed, a short summary; active modules add a few fields). Output cap: ${FEATURE_CAPS.auto_triage}. Thinking tokens count against the cap. Without a saved reasoning effort, Kite switches thinking off for Anthropic models that allow it (Claude Sonnet 5.5: its lowest setting, between_tools), sends effort low with ${count(THINKING_ROOM_TOKENS)} tokens of room to ones that always think, and retries a cut-off answer once with double the cap.`,
 	auto_draft: `Agent drafts write one plain-text reply per message, with no tools. Output cap: ${FEATURE_CAPS.auto_draft}.`,
 	line_summary: `One-line summaries ask for one line of at most 140 characters. Output cap: ${FEATURE_CAPS.line_summary}.`,
-	compose: `Write with Kite writes or rewrites one email. Output cap: ${FEATURE_CAPS.compose}.`,
+	compose: `Write with Kite writes or rewrites one email. Output cap: ${FEATURE_CAPS.compose}; a cut-off answer is asked once more with double the cap.`,
 };
 
 function modelName(input: CutOffInput): string {
@@ -73,6 +77,7 @@ function featureLabel(input: CutOffInput): string {
 function budgetFix(input: CutOffInput, budget: AiOutputBudget): string {
 	const model = modelName(input);
 	const anthropic = input.providerId === "anthropic";
+	const triage = input.feature === "auto_triage";
 	// Only effort low, the lowest Kite sends, leaves no setting to lower; a saved higher effort can be cleared.
 	if (
 		budget.thinking === "on" &&
@@ -80,7 +85,7 @@ function budgetFix(input: CutOffInput, budget: AiOutputBudget): string {
 		anthropic &&
 		claudeThinkingDefault(input.model) === "always"
 	)
-		return `${model} always thinks, even at effort low, which is the lowest Kite sends. Choose a model that can answer without thinking (Claude Haiku 5.5, for example) as the triage model under automatic reading in Admin → Agent.`;
+		return `${model} always thinks, even at effort low, which is the lowest Kite sends. Choose a model that can answer without thinking (Claude Haiku 5.5, for example)${triage ? " as the triage model under automatic reading" : ""} in Admin → Agent.`;
 	if (budget.thinking === "on") {
 		const without =
 			anthropic && claudeThinkingDefault(input.model) === "always"
@@ -88,8 +93,10 @@ function budgetFix(input: CutOffInput, budget: AiOutputBudget): string {
 				: `switches thinking off${anthropic ? "" : " where the provider allows it"}`;
 		return `Clear ${model}'s reasoning effort, or set it to minimal, under the provider's models in Admin → Agent. Without an effort, Kite ${without}.`;
 	}
+	if (budget.thinking === "default" && input.feature === "chat")
+		return `In chat ${model} thinks as ${input.provider} sets it. Set its reasoning effort to low or minimal under the provider's models in Admin → Agent to leave more of the cap for the reply, or ask a narrower question.`;
 	if (budget.thinking === "default")
-		return `${input.provider} decides whether ${model} thinks, and Kite cannot switch that off there. If it is a reasoning model, set its reasoning effort to minimal in Admin → Agent, or choose a model that does not reason as the triage model.`;
+		return `${input.provider} decides whether ${model} thinks, and Kite cannot switch that off there. If it is a reasoning model, set its reasoning effort to minimal in Admin → Agent, or choose a model that does not reason${triage ? " as the triage model" : ""}.`;
 	const retried = budget.retried ? ", even at double the cap" : "";
 	const lowest =
 		budget.thinking === "between_tools" ? "Thinking was already at its lowest setting" : "Thinking was already off";

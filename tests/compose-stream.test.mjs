@@ -54,6 +54,8 @@ beforeEach(() => {
 		const body = JSON.parse(init.body);
 		requests.push(body);
 		signals.push(init.signal);
+		// A list gives each request its own finish reason, for a cut-off answer and its retry.
+		const reason = Array.isArray(finish) ? (finish[requests.length - 1] ?? "stop") : finish;
 		if (answer instanceof Error) return Response.json({ error: { message: answer.message } }, { status: 400 });
 		if (answer === "hang")
 			return new Response(
@@ -75,7 +77,7 @@ beforeEach(() => {
 			[
 				chunk({ role: "assistant", content: "" }),
 				chunk({ content: answer }),
-				chunk({}, finish),
+				chunk({}, reason),
 				chunk(null, null, { usage: { prompt_tokens: 500, completion_tokens: 10, total_tokens: 510 } }),
 				"data: [DONE]\n\n",
 			].join(""),
@@ -264,19 +266,76 @@ test("a mailbox the user cannot send from answers 404, and a failed call keeps i
 const write = (overrides = {}) => ({ mailboxId: "mailbox-a", mode: "write", instruction: "Answer", ...overrides });
 const emailBlock = () => requests[0].messages.at(-1).content.match(/<<<EMAIL id=([\w-]+) /)?.[1] ?? null;
 
-test("an answer cut off at the output budget is refused, with its spend settled", async (t) => {
+test("a cut-off answer is asked once more with double the budget, after a restart, each request settled", async (t) => {
+	const { db, env, user } = await setup(t);
+	finish = ["length", "stop"];
+	const result = await events(await createComposeStream(env, user, write()));
+	assert.deepEqual(result, [
+		{ type: "text", text: "Tuesday at ten works for me." },
+		{ type: "restart" },
+		{ type: "text", text: "Tuesday at ten works for me." },
+		{ type: "done", text: "Tuesday at ten works for me.", warnings: [] },
+	]);
+	// A new email gets 2,000 tokens; the retry twice that.
+	assert.deepEqual(
+		requests.map((request) => request.max_tokens),
+		[2_000, 4_000],
+	);
+	assert.deepEqual(
+		db.db.prepare("SELECT status, error_code, finish_reason, reserved FROM ai_usage ORDER BY created_at, rowid").all(),
+		[
+			{ status: "failed", error_code: "cut_off", finish_reason: "length", reserved: 0 },
+			{ status: "ok", error_code: null, finish_reason: "stop", reserved: 0 },
+		],
+	);
+});
+
+test("an answer cut off twice is refused with its budget under Details, every request's spend settled", async (t) => {
 	const { db, env, user } = await setup(t);
 	finish = "length";
 	const result = await events(await createComposeStream(env, user, write()));
-	assert.equal(result.at(-1).code, "cut_off");
-	assert.match(result.at(-1).error, /^The AI's answer was cut off before it was finished\./);
+	const failure = result.at(-1);
+	assert.equal(failure.code, "cut_off");
+	assert.match(failure.error, /^The AI's answer was cut off before it was finished\./);
 	assert.equal(
 		result.some((event) => event.type === "done"),
 		false,
 	);
+	assert.equal(result.filter((event) => event.type === "restart").length, 1, "asked once more, never twice");
+	assert.deepEqual(failure.details.budget, {
+		cap: 4_000,
+		thinkingRoom: 0,
+		extensionRoom: 0,
+		thinking: "default",
+		effort: null,
+		retried: true,
+		used: 10,
+		thinkingUsed: 0,
+	});
 	assert.deepEqual(usage(db), [
 		{ source: "compose", mailbox_id: "mailbox-a", reserved: 0, input_tokens: 500, output_tokens: 10 },
+		{ source: "compose", mailbox_id: "mailbox-a", reserved: 0, input_tokens: 500, output_tokens: 10 },
 	]);
+	for (const row of db.db.prepare("SELECT status, error_code, finish_reason, cost_estimated FROM ai_usage").all())
+		assert.deepEqual(row, { status: "failed", error_code: "cut_off", finish_reason: "length", cost_estimated: 0 });
+});
+
+test("the retry of a cut-off answer is reserved against the caps and refused at one", async (t) => {
+	const { db, env, user } = await setup(t);
+	finish = "length";
+	// $0.007: the first request's estimate (its prompt plus 2,000 output tokens at $2 per million) fits, the retry's
+	// 4,000 on top of the first request's spend does not.
+	db.db.exec(
+		"INSERT INTO mailbox_agent_settings (mailbox_id, enabled, daily_spend_cap_micros, updated_at) VALUES ('mailbox-a', 1, 7000, 1)",
+	);
+	const result = await events(await createComposeStream(env, user, write()));
+	assert.equal(requests.length, 1);
+	assert.deepEqual(
+		result.map((event) => event.type),
+		["text", "error"],
+	);
+	assert.equal(result.at(-1).code, "spend_cap");
+	assert.match(result.at(-1).error, /^Daily AI spend cap reached: this mailbox's/);
 	assert.deepEqual(outcome(db), {
 		status: "failed",
 		error_code: "cut_off",

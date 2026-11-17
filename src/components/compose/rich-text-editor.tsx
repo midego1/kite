@@ -112,11 +112,16 @@ export function RichTextEditor({
 	const [linkUrl, setLinkUrl] = useState("");
 	const [showQuoted, setShowQuoted] = useState(false);
 	const savedRange = useRef<Range | null>(null);
+	// The last value the editor emitted itself. When it comes back as the value, the DOM already holds it, even if a
+	// browser extension added attributes since, so rewriting it would only move the caret to the start.
+	const lastEmitted = useRef<string | null>(null);
 
 	// Keep the DOM in step with the value without resetting the caret on every keystroke.
 	useEffect(() => {
 		const element = editorRef.current;
-		if (element && element.innerHTML !== value) {
+		if (!element || (lastEmitted.current !== null && value === lastEmitted.current)) return;
+		lastEmitted.current = null;
+		if (element.innerHTML !== value) {
 			element.innerHTML = value;
 			// Text that arrives from a template, a draft or the assistant flows from the right straight away too.
 			wrapLooseRuns(element);
@@ -148,7 +153,9 @@ export function RichTextEditor({
 	function emit() {
 		const element = editorRef.current;
 		if (element) applyAutoDirection(element);
-		onChange(element?.innerHTML ?? "");
+		const output = element?.innerHTML ?? "";
+		lastEmitted.current = output;
+		onChange(output);
 	}
 
 	function cycleDirection() {

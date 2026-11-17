@@ -106,6 +106,38 @@ async function openSwitcher(page: Page) {
 	return page.getByRole("dialog", { name: "Switch mailbox" });
 }
 
+/** Opens "Move to" from the bulk toolbar, inline when it fits or through "More actions" (keyboard: no pointer path). */
+async function openBulkMoveMenu(page: Page) {
+	const moveInline = toolbar(page).getByRole("button", { name: "Move to", exact: true });
+	if (await moveInline.isVisible()) {
+		await moveInline.click();
+		return page.getByRole("menu").last();
+	}
+	await toolbar(page).getByRole("button", { name: "More actions" }).click();
+	await page.getByRole("menu").getByRole("menuitem", { name: "Move to", exact: true }).press("ArrowRight");
+	return page.getByRole("menu").last();
+}
+
+/** The composer docked under the open message (replies and forwards open there on a wide screen). */
+function dockedComposer(page: Page) {
+	return page
+		.getByRole("main")
+		.getByRole("region", { name: "Compose message" })
+		.filter({ has: page.getByRole("button", { name: "Pop out composer" }) });
+}
+
+async function sendDocked(page: Page, body: string) {
+	const composer = dockedComposer(page);
+	await composer.getByRole("textbox", { name: "Message body" }).click();
+	await page.keyboard.type(body);
+	const sent = page.waitForResponse(
+		(response) => response.url().endsWith("/api/send") && response.request().method() === "POST",
+	);
+	await composer.getByRole("button", { name: "Send", exact: true }).click();
+	expect((await sent).ok()).toBe(true);
+	await expect(composer).toHaveCount(0);
+}
+
 async function showAllMailboxes(page: Page) {
 	await page.goto("/inbox");
 	const switcher = await openSwitcher(page);
@@ -298,6 +330,98 @@ test("a reply goes out from the mailbox the message arrived in, and a new messag
 	await page.context().close();
 });
 
+test("reply all and forward from the combined view go out from the mailbox the message arrived in", async ({
+	browser,
+}) => {
+	const subjects = { replyAll: `Reply all work ${token}`, forward: `Forward home ${token}` };
+	await deliverInbound(user, {
+		from: `"Outside Sender" <sender@outside.test>`,
+		to: work.address,
+		subject: subjects.replyAll,
+		headers: { Cc: "colleague@outside.test" },
+	});
+	await deliver(home, subjects.forward);
+	const page = await openPage(browser);
+	await showAllMailboxes(page);
+
+	await row(page, subjects.replyAll).getByRole("link").first().click();
+	await expect(page.getByRole("heading", { level: 1, name: subjects.replyAll })).toBeVisible();
+	await page.keyboard.press("a");
+	await expect(dockedComposer(page).getByLabel("Subject")).toHaveValue(`Re: ${subjects.replyAll}`, {
+		timeout: 30_000,
+	});
+	await sendDocked(page, "Answer to everyone.");
+
+	await row(page, subjects.forward).getByRole("link").first().click();
+	await expect(page.getByRole("heading", { level: 1, name: subjects.forward })).toBeVisible();
+	await page.keyboard.press("f");
+	const composer = dockedComposer(page);
+	await expect(composer.getByLabel("Subject")).toHaveValue(`Fwd: ${subjects.forward}`, { timeout: 30_000 });
+	const to = composer.getByLabel("To", { exact: true });
+	await to.fill("friend@outside.test");
+	await to.press("Enter");
+	await sendDocked(page, "Have a look.");
+
+	type SentMessage = ListedMessage & { toAddr: string; ccAddr: string | null };
+	const sentIn = async (box: Box, subject: string) =>
+		(await listMessages(`direction=outbound&status=sent&mailboxId=${box.id}`)).filter(
+			(message) => message.subject === subject,
+		) as SentMessage[];
+	await expect.poll(async () => (await sentIn(work, `Re: ${subjects.replyAll}`)).length).toBe(1);
+	const [replyAll] = await sentIn(work, `Re: ${subjects.replyAll}`);
+	expect(replyAll.fromAddr.toLowerCase()).toContain(work.address);
+	expect(`${replyAll.toAddr},${replyAll.ccAddr ?? ""}`).toContain("colleague@outside.test");
+	await expect.poll(async () => (await sentIn(home, `Fwd: ${subjects.forward}`)).length).toBe(1);
+	const [forward] = await sentIn(home, `Fwd: ${subjects.forward}`);
+	expect(forward.fromAddr.toLowerCase()).toContain(home.address);
+	expect(await sentIn(home, `Re: ${subjects.replyAll}`)).toEqual([]);
+	expect(await sentIn(work, `Fwd: ${subjects.forward}`)).toEqual([]);
+	await expect(page.getByRole("button", { name: "Switch mailbox, current: All mailboxes" })).toBeVisible();
+	await page.context().close();
+});
+
+test("Move to offers only the folders of the selected mail's own mailbox", async ({ browser }) => {
+	const folders = { home: `Home folder ${token}`, work: `Work folder ${token}` };
+	await json(await user.post("/api/folders", { data: { mailboxId: home.id, name: folders.home } }));
+	const workFolder = await json<{ id: string }>(
+		await user.post("/api/folders", { data: { mailboxId: work.id, name: folders.work } }),
+	);
+	const subjects = { one: `Move work one ${token}`, two: `Move work two ${token}`, home: `Move home ${token}` };
+	await deliver(work, subjects.one);
+	await deliver(work, subjects.two);
+	await deliver(home, subjects.home);
+	const page = await openPage(browser);
+	await showAllMailboxes(page);
+
+	await row(page, subjects.one).getByRole("checkbox").click();
+	await row(page, subjects.two).getByRole("checkbox").click();
+	const menu = await openBulkMoveMenu(page);
+	await expect(menu.getByRole("menuitem", { name: folders.work })).toBeVisible();
+	await expect(menu.getByRole("menuitem", { name: folders.home })).toHaveCount(0);
+	await menu.getByRole("menuitem", { name: folders.work }).click();
+	await expect(row(page, subjects.one)).toHaveCount(0);
+	await expect(row(page, subjects.two)).toHaveCount(0);
+	const filed = await listMessages(`mailboxId=${work.id}&folderId=${workFolder.id}`);
+	expect(filed.map((message) => message.subject).sort()).toEqual([subjects.one, subjects.two].sort());
+
+	// The reader's Move menu lists the open message's mailbox's folders, not the other mailbox's.
+	await row(page, subjects.home).getByRole("link").first().click();
+	await expect(page.getByRole("heading", { level: 1, name: subjects.home })).toBeVisible();
+	const toolbarMove = page.locator(".reader-toolbar").getByRole("button", { name: "Move to", exact: true });
+	if (await toolbarMove.first().isVisible()) {
+		await toolbarMove.first().click();
+		await expect(page.getByRole("menuitem", { name: folders.home })).toBeVisible();
+		await expect(page.getByRole("menuitem", { name: folders.work })).toHaveCount(0);
+	} else {
+		await page.locator(".reader-toolbar").getByRole("button", { name: "More actions" }).click();
+		const more = page.getByRole("dialog", { name: "More actions" });
+		await expect(more.getByRole("button", { name: folders.home })).toBeVisible();
+		await expect(more.getByRole("button", { name: folders.work })).toHaveCount(0);
+	}
+	await page.keyboard.press("Escape");
+	await page.context().close();
+});
+
 test("bulk archive works across mailboxes and leaves read-only shared mail where it is", async ({ browser }) => {
 	const subjects = { home: `Bulk home ${token}`, work: `Bulk work ${token}`, desk: `Bulk desk ${token}` };
 	await deliver(home, subjects.home);
@@ -360,6 +484,63 @@ test("read-only shared mail cannot be archived or deleted from the combined view
 	expect((await user.post("/api/messages/bulk", { data: { action: "trash", messageIds: [stored.id] } })).status()).toBe(
 		404,
 	);
+	await page.context().close();
+});
+
+test("read-only shared mail cannot be answered or forwarded, in the reader or its conversation", async ({
+	browser,
+}) => {
+	const first = `Read only thread ${token}`;
+	const firstMessageId = `<ro-first-${token}@outside.test>`;
+	await deliverInbound(user, {
+		from: `"Outside Sender" <sender@outside.test>`,
+		to: desk.address,
+		subject: first,
+		messageId: firstMessageId,
+	});
+	await deliverInbound(user, {
+		from: `"Outside Sender" <sender@outside.test>`,
+		to: desk.address,
+		subject: `Re: ${first}`,
+		inReplyTo: firstMessageId,
+		headers: { References: firstMessageId },
+	});
+	const page = await openPage(browser);
+	await showAllMailboxes(page);
+	await row(page, `Re: ${first}`).getByRole("link").first().click();
+	await expect(page.getByRole("heading", { level: 1, name: `Re: ${first}` })).toBeVisible();
+
+	await expect(page.getByText("You can read this shared mailbox but not reply or forward from it.")).toBeVisible();
+	await expect(page.getByRole("button", { name: /^Reply \(r\)$/ })).toHaveCount(0);
+	await expect(page.getByRole("button", { name: "Forward", exact: true })).toHaveCount(0);
+	const replyButtons = page.getByRole("main").getByRole("button", { name: "Reply", exact: true });
+	await expect(replyButtons.first()).toBeVisible();
+	for (const button of await replyButtons.all()) await expect(button).toBeDisabled();
+
+	await page.keyboard.press("r");
+	await expect(page.getByText("Read-only mail can't be answered or forwarded.")).toBeVisible();
+	await page.keyboard.press("f");
+	await expect(dockedComposer(page)).toHaveCount(0);
+
+	await page.locator(".reader-toolbar").getByRole("button", { name: "More actions" }).click();
+	const more = page.getByRole("dialog", { name: "More actions" });
+	await expect(more.getByRole("button", { name: "Block contact" })).toBeDisabled();
+	await expect(more.getByRole("button", { name: "Report phishing" })).toBeDisabled();
+	await page.keyboard.press("Escape");
+
+	// The open message's own actions in the conversation say the same.
+	const messageMenu = page.getByRole("main").getByRole("button", { name: "More actions", exact: true }).last();
+	await messageMenu.click();
+	for (const name of ["Reply", "Forward", "Block contact", "Archived", "Trash"]) {
+		const item = page.getByRole("main").getByRole("button", { name, exact: true }).last();
+		await expect(item, name).toBeDisabled();
+	}
+	await expect(
+		page.getByRole("main").getByRole("button", { name: "Mark as unread", exact: true }).last(),
+	).toBeEnabled();
+
+	const drafts = await listMessages(`status=draft&mailboxId=${desk.id}`);
+	expect(drafts).toEqual([]);
 	await page.context().close();
 });
 
@@ -443,5 +624,33 @@ test("Empty Trash in the combined view empties only the mailboxes it may manage,
 	await expect(list.getByText(subjects.home, { exact: true })).toHaveCount(0);
 	await expect(list.getByText(subjects.desk, { exact: true })).toBeVisible();
 	expect((await listMessages(`status=trash&mailboxId=${desk.id}`)).some((m) => m.id === deskMessage.id)).toBe(true);
+	await page.context().close();
+});
+
+// Runs last: its deleted mail stays in Trash, which the Empty Trash test above counts.
+test("bulk mark as read and delete work across mailboxes, each email staying in its own", async ({ browser }) => {
+	const subjects = { home: `Read home ${token}`, work: `Read work ${token}` };
+	await deliver(home, subjects.home);
+	await deliver(work, subjects.work);
+	const page = await openPage(browser);
+	await showAllMailboxes(page);
+
+	for (const subject of Object.values(subjects)) await row(page, subject).getByRole("checkbox").click();
+	await clickBulkAction(page, "Mark as read");
+	type ReadMessage = ListedMessage & { read: boolean };
+	const find = async (query: string, subject: string) =>
+		((await listMessages(query)) as ReadMessage[]).find((message) => message.subject === subject);
+	await expect.poll(async () => (await find(`mailboxId=${home.id}`, subjects.home))?.read).toBe(true);
+	await expect.poll(async () => (await find(`mailboxId=${work.id}`, subjects.work))?.read).toBe(true);
+
+	for (const subject of Object.values(subjects)) {
+		const checkbox = row(page, subject).getByRole("checkbox");
+		if (!(await checkbox.isChecked())) await checkbox.click();
+	}
+	await clickBulkAction(page, "Delete");
+	await expect(row(page, subjects.home)).toHaveCount(0);
+	await expect(row(page, subjects.work)).toHaveCount(0);
+	expect((await find(`status=trash&mailboxId=${home.id}`, subjects.home))?.mailboxId).toBe(home.id);
+	expect((await find(`status=trash&mailboxId=${work.id}`, subjects.work))?.mailboxId).toBe(work.id);
 	await page.context().close();
 });

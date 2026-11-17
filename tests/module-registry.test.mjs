@@ -87,7 +87,7 @@ test("page and API prefixes never overlap and never cover export", () => {
 		allPrefixes("apiPrefixes")
 			.filter((item) => item.public)
 			.map((item) => item.prefix),
-		["/api/public/booking", "/api/public/drive"],
+		["/api/public/calendar", "/api/public/booking", "/api/public/drive"],
 	);
 });
 

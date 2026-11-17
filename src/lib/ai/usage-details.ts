@@ -1,5 +1,6 @@
 import { missingColumnFromError } from "@/lib/auth/user-lookup-utils";
 import type { AiUsageOutcome } from "./usage-types";
+import { databaseKey } from "@/lib/d1-session-utils";
 
 /** The columns migration 0078 adds to `ai_usage`. */
 const AI_USAGE_DETAIL_COLUMNS = [
@@ -71,7 +72,7 @@ export async function updateAiUsage(
 	} catch (error) {
 		// The columns went away (a restore of an older database): forget the answer and settle without them.
 		if (!isMissingUsageDetailColumn(error)) throw error;
-		readiness.delete(env.DB);
+		readiness.delete(databaseKey(env.DB));
 		await base();
 	}
 }
@@ -84,16 +85,16 @@ const readiness = new WeakMap<object, true | number>();
  * negative one for a minute, so settling before the update costs one extra query a minute rather than one per call.
  */
 export async function aiUsageDetailsReady(env: CloudflareEnv, now = Date.now()): Promise<boolean> {
-	const known = readiness.get(env.DB);
+	const known = readiness.get(databaseKey(env.DB));
 	if (known === true) return true;
 	if (typeof known === "number" && now < known) return false;
 	try {
 		await env.DB.prepare(`SELECT ${AI_USAGE_DETAIL_COLUMNS.join(", ")} FROM ai_usage LIMIT 0`).all();
-		readiness.set(env.DB, true);
+		readiness.set(databaseKey(env.DB), true);
 		return true;
 	} catch (error) {
 		if (!isMissingUsageDetailColumn(error)) throw error;
-		readiness.set(env.DB, now + NOT_READY_RECHECK_MS);
+		readiness.set(databaseKey(env.DB), now + NOT_READY_RECHECK_MS);
 		return false;
 	}
 }

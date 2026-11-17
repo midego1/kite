@@ -1,4 +1,5 @@
 import { authFetch } from "@/lib/auth/client";
+import { D1_PRIMARY_READ_HEADER } from "@/lib/d1-session-utils";
 import { parseSearchQuery } from "@/lib/search/query-utils";
 import { getUserTimeZone } from "@/lib/time/utils";
 import { setCachedMessageRead } from "@/lib/messages/detail-cache";
@@ -118,10 +119,24 @@ export function markMessagesReadInCaches(messageIds: string[], read: boolean) {
 // Caches must drop on every change, including ones made while no list is mounted
 // (e.g. reading a message from the popup on a page without the inbox list).
 if (typeof window !== "undefined") {
-	window.addEventListener("kite:messages-changed", () => {
+	window.addEventListener("kite:messages-changed", (event) => {
 		clearMessageListCache();
 		clearMessageCountsCache();
+		if ((event as CustomEvent<{ realtime?: boolean }>).detail?.realtime)
+			primaryReadsUntil = Date.now() + PRIMARY_READ_MS;
 	});
+}
+
+/**
+ * How long list and count refetches read the database primary after a realtime notice. The change it announces (new
+ * mail, a queue job) was written outside this browser's D1 session, so its bookmark does not cover it and a read
+ * replica could still be behind (docs/operations.md#d1-read-replication).
+ */
+const PRIMARY_READ_MS = 5_000;
+let primaryReadsUntil = 0;
+
+function freshReadHeaders(): Record<string, string> | undefined {
+	return Date.now() < primaryReadsUntil ? { [D1_PRIMARY_READ_HEADER]: "1" } : undefined;
 }
 
 export function clearMessageClientState() {
@@ -144,7 +159,9 @@ export async function fetchMessageCounts(mailboxId?: string | null, force = fals
 		const params = new URLSearchParams();
 		setMailboxScopeParam(params, mailboxId);
 		const query = params.toString();
-		const res = await authFetch(`/api/messages/counts${query ? `?${query}` : ""}`);
+		const res = await authFetch(`/api/messages/counts${query ? `?${query}` : ""}`, {
+			headers: freshReadHeaders(),
+		});
 		const data = (await res.json()) as { counts?: MessageCounts };
 		const counts = data.counts;
 		if (counts && requestGeneration === messageCacheGeneration && countsGeneration === messageCountsGeneration) {
@@ -171,7 +188,7 @@ export async function fetchMessageList(params: URLSearchParams, force = false): 
 	if (!force && messageListRequests.has(key)) return messageListRequests.get(key) ?? {};
 
 	const requestGeneration = messageCacheGeneration;
-	const request = authFetch(`/api/messages?${key}`)
+	const request = authFetch(`/api/messages?${key}`, { headers: freshReadHeaders() })
 		.then((res) => res.json())
 		.then((data) => {
 			const response = data as MessageListResponse;

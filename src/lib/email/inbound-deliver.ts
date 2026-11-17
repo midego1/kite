@@ -8,7 +8,7 @@ import { resolveInboxRuleDestination } from "@/lib/email/routing";
 import type { ParsedEmail } from "@/lib/email/parse";
 import { dispatchWebhooks } from "@/lib/email/webhooks";
 import { upsertContactFromAddress } from "@/lib/contacts/service";
-import { getSenderDisplayName } from "@/lib/contacts/utils";
+import { getPartyDisplayName } from "@/lib/contacts/utils";
 import type { ContactDisplayName, ContactRow } from "@/lib/contacts/types";
 import { sendMailboxAutoReply } from "@/lib/email/auto-reply";
 import { storeMessageAttachments } from "@/lib/email/attachments";
@@ -21,6 +21,7 @@ import { exceedsOneTimeCodeRawLength, extractOneTimeCode } from "@/lib/email/one
 import { getLatestEmailContent, htmlToReadableText } from "@/lib/email/reply-content-utils";
 import { resolveThreadId } from "@/lib/email/threading";
 import { normalizeMessageId } from "@/lib/email/thread-lookup";
+import { redeliveryOf } from "@/lib/email/redelivery";
 import { senderDmarc } from "@/lib/email/thread-join-utils";
 import { analyzeSpam } from "@/lib/spam/engine";
 import { configuredSpamIntelligenceProvider } from "@/lib/spam/providers/abuse-ch-key";
@@ -519,8 +520,14 @@ export async function deliverInboundMessage(env: CloudflareEnv, input: InboundDe
 		await env.BUCKET.delete(input.rawR2Key);
 		return { delivered: false, reason: "attachment_limit", detail: attachmentLimitReason };
 	}
-	const duplicate = external ? await duplicateOf(env, target.mailboxId, external.accountId, parsed.messageId) : null;
+	// A synced message is matched against its account's copies, a received one against an earlier attempt of the same
+	// delivery that the sender retried.
+	const duplicate = external
+		? await duplicateOf(env, target.mailboxId, external.accountId, parsed.messageId)
+		: await redeliveryOf(env, { ...input, mailboxId: target.mailboxId }, parsed.messageId);
 	if (duplicate) {
+		if (!external)
+			console.warn(`Inbound message for mailbox ${target.mailboxId} repeats ${duplicate}; not stored again`);
 		await env.BUCKET.delete(input.rawR2Key);
 		return { delivered: false, reason: "duplicate", duplicateOf: duplicate };
 	}
@@ -555,7 +562,7 @@ export async function deliverInboundMessage(env: CloudflareEnv, input: InboundDe
 			status,
 			deliveredAddress: input.deliveredAddress,
 			fromAddr,
-			fromName: getSenderDisplayName(fromAddr, contactDisplayName(contact)),
+			fromName: getPartyDisplayName(fromAddr, contactDisplayName(contact)),
 			parsed,
 			headers: input.headers,
 			external,

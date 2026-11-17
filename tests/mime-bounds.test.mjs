@@ -207,12 +207,14 @@ out.ok.digestEdge = await inboundAttachmentLimitReasonFromRaw(encoder.encode(dig
 const file = (type) => ({ filename: "f", type, content: new ArrayBuffer(10), disposition: "attachment", contentId: null });
 out.ok.ninePlusTwoForwards = inboundAttachmentLimitReason([...Array(9)].map(() => file("application/pdf")).concat([file("message/rfc822"), file("MESSAGE/RFC822")]));
 out.ok.elevenFiles = inboundAttachmentLimitReason([...Array(11)].map(() => file("application/pdf")));
-// A parse error that is not a limit (here a body stream that breaks) is thrown, so the sender or the queue tries again.
-try {
-	await inboundAttachmentLimitReasonFromRaw({ getReader() { throw new Error("the stream broke"); } });
-	out.ok.otherError = "returned";
-} catch (error) {
-	out.ok.otherError = error instanceof MimeLimitError ? "limit" : "thrown";
+// A parse error that is not a limit repeats on every retry, so it is refused; only running out of memory (a
+// RangeError, which a fresh isolate may not hit) is thrown, so the sender tries again.
+for (const [name, error] of [["otherError", new Error("unreadable")], ["memoryError", new RangeError("Array buffer allocation failed")]]) {
+	try {
+		out.ok[name] = await inboundAttachmentLimitReasonFromRaw({ getReader() { throw error; } });
+	} catch (thrown) {
+		out.ok[name] = thrown instanceof MimeLimitError ? "limit" : "thrown";
+	}
 }
 out.ok.plain = (await parseRawMime(encoder.encode(header + "\\r\\nhello\\r\\n").buffer)).text?.trim();
 const replyTo = await parseRawMime(encoder.encode(header + "Reply-To: Desk <desk@b.example>\\r\\n\\r\\nhi\\r\\n").buffer);
@@ -306,7 +308,8 @@ test("hostile MIME is refused cheaply and legitimate mail still parses, inside a
 	assert.equal(out.ok.digestEdge, null, "a 25-post digest is not refused");
 	assert.equal(out.ok.ninePlusTwoForwards, null);
 	assert.match(out.ok.elevenFiles, /more than 10 attachments/);
-	assert.equal(out.ok.otherError, "thrown");
+	assert.equal(out.ok.otherError, "Message rejected: the message could not be read as MIME.");
+	assert.equal(out.ok.memoryError, "thrown");
 	assert.equal(out.ok.plain, "hello");
 	assert.equal(out.ok.replyTo, '"Desk" <desk@b.example>');
 	assert.deepEqual(out.ok.forwardAttachments, ["message/rfc822"]);

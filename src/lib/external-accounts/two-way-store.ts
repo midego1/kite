@@ -25,6 +25,7 @@ import {
 	type ReconcilePlan,
 	type WindowRef,
 } from "./two-way-utils";
+import { databaseKey } from "@/lib/d1-session-utils";
 
 type StoreEnv = Pick<CloudflareEnv, "DB">;
 export type TwoWayState = typeof externalTwoWayState.$inferSelect;
@@ -35,12 +36,12 @@ const readyDatabases = new WeakSet<object>();
 
 /** Whether migration 0093 has been applied; reads only `sqlite_master`. Every path of two-way sync asks first. */
 export async function twoWayReady(env: StoreEnv): Promise<boolean> {
-	if (readyDatabases.has(env.DB)) return true;
+	if (readyDatabases.has(databaseKey(env.DB))) return true;
 	const row = await env.DB.prepare("SELECT count(*) AS present FROM sqlite_master WHERE type = 'table' AND name = ?")
 		.bind("external_provider_actions")
 		.first<{ present: number }>();
 	const ready = Number(row?.present ?? 0) === 1;
-	if (ready) readyDatabases.add(env.DB);
+	if (ready) readyDatabases.add(databaseKey(env.DB));
 	return ready;
 }
 

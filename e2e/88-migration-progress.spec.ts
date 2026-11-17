@@ -56,7 +56,7 @@ async function expectBusy(panel: ReturnType<Page["getByRole"]>, busyName: string
 	const button = panel.getByRole("button", { name: busyName });
 	await expect(button).toBeDisabled();
 	await expect(button).toHaveAttribute("aria-busy", "true");
-	await expect(button).toHaveText("Updating database…");
+	await expect(button).toHaveText(busyName);
 }
 
 test("the admin card shows the steps, progress and elapsed time while the update runs, then what was applied", async ({
@@ -113,14 +113,14 @@ test("the mailbox notice shows the same steps and ends with the result", async (
 	const server = await mockMigrations(page);
 	await page.goto("/inbox");
 	const notice = page.getByRole("region", { name: "Database updates" });
-	await expect(notice).toContainText("still needs 4 updates");
-	await notice.getByRole("button", { name: "Apply now" }).click();
+	await expect(notice).toContainText("4 updates waiting");
+	await notice.getByRole("button", { name: "Update now" }).click();
 
-	await expectBusy(notice, "Updating database…");
-	await expect(notice.getByTestId("migration-progress")).toContainText("Saving a safety backup, then applying…");
-	await expect(notice.getByTestId("migration-progress")).toContainText(/Elapsed: [1-9]\d* s/);
+	await expectBusy(notice, "Updating…");
+	await expect(notice).toContainText("Saving a backup…");
+	await expect(notice).toContainText(/[1-9]\d* s/);
 	server.landTwo();
-	await expect(notice.getByTestId("migration-progress")).toContainText("2 of 4 done");
+	await expect(notice).toContainText("Applying 2 of 4…");
 
 	server.finish();
 	await expect(notice).toContainText("Database updated");
@@ -153,13 +153,13 @@ test("a restore in progress is explained, in the notice as well", async ({ page 
 	server.state.outcome = "restore";
 	await page.goto("/inbox");
 	const notice = page.getByRole("region", { name: "Database updates" });
-	await notice.getByRole("button", { name: "Apply now" }).click();
-	await expectBusy(notice, "Updating database…");
+	await notice.getByRole("button", { name: "Update now" }).click();
+	await expectBusy(notice, "Updating…");
 	server.finish();
 
 	await expect(notice.getByRole("alert")).toContainText("The database was not changed: a backup restore is running.");
-	await expect(notice.getByRole("button", { name: "Apply now" })).toBeEnabled();
-	await expect(notice).toContainText("still needs 4 updates");
+	await expect(notice).toContainText("Update failed");
+	await expect(notice.getByRole("button", { name: "Retry" })).toBeEnabled();
 });
 
 test("a gateway timeout keeps the button busy and the run is followed until the updates have landed", async ({
@@ -169,19 +169,18 @@ test("a gateway timeout keeps the button busy and the run is followed until the 
 	server.state.outcome = "timeout";
 	await page.goto("/inbox");
 	const notice = page.getByRole("region", { name: "Database updates" });
-	await notice.getByRole("button", { name: "Apply now" }).click();
-	await expectBusy(notice, "Updating database…");
+	await notice.getByRole("button", { name: "Update now" }).click();
+	await expectBusy(notice, "Updating…");
 	// The 524 answers; the Worker is still migrating, so nothing is reported as a failure.
 	server.finish();
-	const progress = notice.getByTestId("migration-progress");
-	await expect(progress).toContainText("The connection timed out; the update may still be running — checking…");
-	await expectBusy(notice, "Updating database…");
+	await expect(notice).toContainText("Connection lost, checking…");
+	await expectBusy(notice, "Updating…");
 	await expect(notice.getByRole("alert")).toHaveCount(0);
 
 	server.landTwo();
-	await expect(progress).toContainText("2 of 4 done");
-	await expect(progress).toContainText("The connection timed out");
-	await expectBusy(notice, "Updating database…");
+	await expect(notice).toContainText("Applying 2 of 4…");
+	await expect(notice).toContainText("Connection lost, checking…");
+	await expectBusy(notice, "Updating…");
 
 	server.landAll();
 	await expect(notice).toContainText("Database updated");
@@ -220,8 +219,8 @@ test("a request that never answers is cut off once the list is empty, and the ru
 	const server = await mockMigrations(page);
 	await page.goto("/inbox");
 	const notice = page.getByRole("region", { name: "Database updates" });
-	await notice.getByRole("button", { name: "Apply now" }).click();
-	await expectBusy(notice, "Updating database…");
+	await notice.getByRole("button", { name: "Update now" }).click();
+	await expectBusy(notice, "Updating…");
 
 	// Every update has landed but the POST stays open (the gate is never released).
 	server.landAll();

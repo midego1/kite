@@ -172,6 +172,12 @@ interface CloudflareEnv {
 	MICROSOFT_OAUTH_CLIENT_SECRET?: string;
 	/** The Entra tenant: common (default), organizations, consumers, a tenant ID or a tenant domain. */
 	MICROSOFT_OAUTH_TENANT?: string;
-	/** Dev/test only: an http loopback origin that stands in for Microsoft's sign-in and token endpoints (e2e); ignored in production. */
+	/** Google sign-in for connected accounts: the Google Cloud OAuth client's Client ID; with the secret, wins over Admin → General. */
+	GOOGLE_OAUTH_CLIENT_ID?: string;
+	/** The OAuth client's secret; set as a secret, never in wrangler.jsonc. */
+	GOOGLE_OAUTH_CLIENT_SECRET?: string;
+	/** Optional: only Google Workspace accounts of this domain may sign in (the ID token's hd). */
+	GOOGLE_OAUTH_HOSTED_DOMAIN?: string;
+	/** Dev/test only: an http loopback origin that stands in for Microsoft's and Google's sign-in and token endpoints (e2e); ignored in production. */
 	EXTERNAL_OAUTH_TEST_ORIGIN?: string;
 }

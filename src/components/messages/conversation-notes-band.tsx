@@ -148,10 +148,13 @@ function NoteItem({
 							value={draft}
 							maxLength={NOTE_MAX_LENGTH}
 							autoFocus
+							readOnly={busy}
 							onChange={(event) => setDraft(event.target.value)}
 							onKeyDown={editorKeys(
 								() => void save(),
-								() => setEditing(false),
+								() => {
+									if (!busy) setEditing(false);
+								},
 							)}
 							className="min-h-[72px] bg-white"
 						/>
@@ -159,7 +162,7 @@ function NoteItem({
 							<Button size="sm" disabled={busy || !draft.trim()} onClick={() => void save()}>
 								{t("Save")}
 							</Button>
-							<Button size="sm" variant="ghost" onClick={() => setEditing(false)}>
+							<Button size="sm" variant="ghost" disabled={busy} onClick={() => setEditing(false)}>
 								{t("Cancel")}
 							</Button>
 						</div>
@@ -226,6 +229,7 @@ function Composer({ controller }: { controller: ConversationNotesController }) {
 				value={body}
 				maxLength={NOTE_MAX_LENGTH}
 				rows={expanded ? 3 : 1}
+				readOnly={busy}
 				onChange={(event) => setBody(event.target.value)}
 				onKeyDown={editorKeys(() => void add())}
 				className={expanded ? "min-h-[72px] bg-white" : "min-h-0 resize-none bg-white"}

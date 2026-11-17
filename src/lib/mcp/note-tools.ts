@@ -29,7 +29,14 @@ export const NOTE_TOOL_NAMES = [
 	"delete_conversation_note",
 ] as const;
 
-const noteBody = z.string().min(1).max(NOTE_MAX_LENGTH);
+/**
+ * A transport limit only: `parseNoteBody` applies NOTE_MAX_LENGTH to the normalised text (CRLF counts as one
+ * character there), so a note that fits once normalised is not refused for its line endings.
+ */
+const noteBody = z
+	.string()
+	.min(1)
+	.max(NOTE_MAX_LENGTH * 2);
 const target = { mailboxId: z.string().min(1), messageId: z.string().min(1) };
 
 /**

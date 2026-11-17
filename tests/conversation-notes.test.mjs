@@ -618,3 +618,22 @@ test("a member lowered to read-only can still delete their own note, but not add
 		"Permission denied",
 	);
 });
+
+test("a note still under a deleted email's own id moves to its thread when other emails remain", async (t) => {
+	const { db, database } = await fixture(t);
+	// A send set m1's thread but its re-key never ran: the note is still keyed by m1's own id.
+	database.db.exec(
+		"INSERT INTO conversation_notes (id, mailbox_id, thread_key, body, author_user_id, created_at, updated_at) VALUES ('n-own', 'support', 'm1', 'Before the send', 'owner', 1, 1)",
+	);
+	database.db.exec("DELETE FROM messages WHERE id = 'm1'");
+	assert.deepEqual(database.db.prepare("SELECT thread_key AS key FROM conversation_notes").all(), [
+		{ key: "thread-1" },
+	]);
+	const fromM2 = await notes.listConversationNotes(db, await conversation(db, OWNER, "m2"), "owner");
+	assert.deepEqual(
+		fromM2.notes.map((note) => note.body),
+		["Before the send"],
+	);
+	database.db.exec("DELETE FROM messages WHERE id = 'm2'");
+	assert.equal(database.db.prepare("SELECT count(*) AS n FROM conversation_notes").get().n, 0);
+});

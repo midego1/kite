@@ -28,6 +28,8 @@ export function useConversationNotes(messageId: string): ConversationNotesContro
 	const [refresh, setRefresh] = useState(0);
 	const shown = useRef(messageId);
 	const loadedAt = useRef(0);
+	// Bumped by every write that changed the list: a list read started before it would show the list as it was.
+	const writes = useRef(0);
 	if (useKeyChanged(messageId)) {
 		setNotes([]);
 		setLoaded(false);
@@ -54,12 +56,18 @@ export function useConversationNotes(messageId: string): ConversationNotesContro
 	useEffect(() => {
 		shown.current = messageId;
 		let live = true;
+		const writesAtStart = writes.current;
 		void fetch(notesUrl(messageId), { cache: "no-store" })
 			.then((response) => (response.ok ? (response.json() as Promise<ConversationNotesAnswer>) : null))
 			.then((answer) => {
 				if (!live) return;
 				setLoaded(true);
 				if (!answer) return;
+				// A write finished while this read was under way: read again rather than show the older list.
+				if (writes.current !== writesAtStart) {
+					setRefresh((value) => value + 1);
+					return;
+				}
 				loadedAt.current = Date.now();
 				setNotes(answer.notes);
 				setCanWrite(answer.canWrite);
@@ -80,9 +88,12 @@ export function useConversationNotes(messageId: string): ConversationNotesContro
 			const key = messageId;
 			try {
 				const response = await fetch(url, init);
+				if (!response.ok) return shown.current === key ? failed : null;
+				const body = (await response.json().catch(() => ({}))) as { note?: ConversationNote };
+				// Checked after the body arrived: the reader may have moved to another conversation in the meantime.
 				if (shown.current !== key) return null;
-				if (!response.ok) return failed;
-				apply((await response.json().catch(() => ({}))) as { note?: ConversationNote });
+				writes.current += 1;
+				apply(body);
 				return null;
 			} catch {
 				return failed;

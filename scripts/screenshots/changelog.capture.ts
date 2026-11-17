@@ -344,18 +344,21 @@ async function openConversationNotes(page: Page): Promise<Page> {
 	const first = messages.find((message) => message.subject === THREAD[0]!.subject);
 	expect(first, "the demo launch-plan thread").toBeDefined();
 	const notesUrl = `/api/messages/${first!.id}/notes`;
-	const { notes } = (await (await api.get(notesUrl)).json()) as { notes: unknown[] };
-	if (notes.length === 0) {
-		for (const data of [
-			{ body: "Legal signed off on the beta date. Reply to Sofia by Friday with the final list of 200 accounts." },
-			{ body: "The waitlist numbers here are from the old plan; use Daniel's sheet from Tuesday.", aboutMessage: true },
-		])
+	const { notes } = (await (await api.get(notesUrl)).json()) as { notes: { body: string }[] };
+	// Each fixture is added only when it is missing, so a run that stopped halfway is completed, never doubled.
+	for (const data of [
+		{ body: "Legal signed off on the beta date. Reply to Sofia by Friday with the final list of 200 accounts." },
+		{ body: "The waitlist numbers here are from the old plan; use Daniel's sheet from Tuesday.", aboutMessage: true },
+	]) {
+		if (!notes.some((note) => note.body === data.body))
 			expect((await api.post(notesUrl, { data })).status()).toBe(201);
 	}
 	await api.dispose();
 	await page.goto(`/inbox/${first!.id}`);
 	await expect(page.getByRole("heading", { level: 1, name: THREAD[0]!.subject })).toBeVisible();
-	await expect(page.getByRole("region", { name: "Notes" }).getByText("Legal signed off")).toBeVisible();
+	const band = page.getByRole("region", { name: "Notes" });
+	await expect(band.getByText("Legal signed off")).toBeVisible();
+	await expect(band.getByText("The waitlist numbers here")).toBeVisible();
 	return page;
 }
 

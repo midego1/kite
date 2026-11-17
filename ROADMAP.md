@@ -115,14 +115,14 @@ Phases 1 to 3 are specified in [docs/specs/external-accounts.md](docs/specs/exte
 
 | Provider | Sign-in | Works today |
 | --- | --- | --- |
-| Gmail (personal) | App password, needs 2-Step Verification | Yes |
+| Gmail (personal) | App password, needs 2-Step Verification; or OAuth | Yes; also with **Sign in with Google** once the owner sets up the install's Google OAuth client (item 4) |
 | iCloud, Yahoo, AOL, Fastmail | App-specific password | Yes |
 | Other IMAP hosts | Account password | Yes |
-| Google Workspace | OAuth. Password sign-in ended in 2025; app passwords work only where the admin allows them | Partly |
+| Google Workspace | OAuth. Password sign-in ended in 2025; app passwords work only where the admin allows them | Yes, with **Sign in with Google** once the owner sets up the install's Google OAuth client (item 4); with an app password where allowed |
 | Outlook.com and Microsoft 365 | OAuth only. Microsoft retired password sign-in for IMAP (Outlook.com in 2024) | Yes, with **Sign in with Microsoft** once the owner registers the install's Entra app (item 4) |
 | Proton Mail | Proton Mail Bridge, which runs on the user's own computer and cannot be reached from a Worker | No, out of scope |
 
-Google treats full Gmail access (`https://mail.google.com/`) as a restricted scope: a public app needs Google's verification and a yearly security assessment. Kite does not ship one shared Google app. Each install registers its own in Google Cloud, which needs no verification when it is internal to a Workspace organisation or used by a few test users.
+Google treats full Gmail access (`https://mail.google.com/`) as a restricted scope: a public app needs Google's verification and a yearly security assessment. Kite does not ship one shared Google app. Each install registers its own in Google Cloud, which needs no verification when it is internal to a Workspace organisation or used by a few test users; see [Google sign-in for connected accounts](docs/providers.md#google-sign-in-for-connected-accounts).
 
 1. **Better import** (about 2 to 4 days)
    - Keep the read and starred state from the IMAP `\Seen` and `\Flagged` flags.
@@ -142,7 +142,8 @@ Google treats full Gmail access (`https://mail.google.com/`) as a restricted sco
    - Sign in with Microsoft (Outlook.com and Microsoft 365) or Google, then use XOAUTH2 for IMAP and SMTP. Refresh tokens are encrypted with `APP_ENCRYPTION_KEY` like the other stored secrets.
    - Admin settings take the client ID and secret of the install's own app registration, with setup steps in `docs/providers.md`.
    - Test: unit tests for the XOAUTH2 string and token refresh; manual check against a real test account, since CI has no provider credentials.
-   - **Microsoft: built (November 2026, migration 0105).** Admin → General → Connected accounts → Microsoft sign-in takes the Entra registration (checked with Microsoft, sealed; `MICROSOFT_OAUTH_*` variables win); **Sign in with Microsoft** in the connect dialog uses the authorization-code flow with PKCE and a single-use state; tokens are renewed before they expire with compare-and-swap, a revoked sign-in shows **Reconnect**; sync, import, send-as and Test connection sign in with XOAUTH2 on Workers and Node. Tests: `tests/external-oauth.test.mjs`, `tests/external-oauth-node.test.mjs`, `e2e/100-microsoft-oauth.spec.ts` against `tests/support/fake-microsoft-oauth.mjs`. Still open: a check against a real Outlook.com and Microsoft 365 account, and Google.
+   - **Microsoft: built (November 2026, migration 0105).** Admin → General → Connected accounts → Microsoft sign-in takes the Entra registration (checked with Microsoft, sealed; `MICROSOFT_OAUTH_*` variables win); **Sign in with Microsoft** in the connect dialog uses the authorization-code flow with PKCE and a single-use state; tokens are renewed before they expire with compare-and-swap, a revoked sign-in shows **Reconnect**; sync, import, send-as and Test connection sign in with XOAUTH2 on Workers and Node. Tests: `tests/external-oauth.test.mjs`, `tests/external-oauth-node.test.mjs`, `e2e/100-microsoft-oauth.spec.ts` against `tests/support/fake-microsoft-oauth.mjs`. Still open: a check against a real Outlook.com and Microsoft 365 account.
+   - **Google: built (November 2026, migration 0111).** Admin → General → Connected accounts → Google sign-in takes the install's own Google Cloud OAuth client (Client ID, secret, optional Workspace domain; checked with Google by redeeming a made-up code, sealed; `GOOGLE_OAUTH_*` variables win). **Sign in with Google** for Gmail and Google Workspace accounts asks for `https://mail.google.com/`, `openid` and `email` with `access_type=offline`, `prompt=consent` and PKCE S256; the ID token must be Google's, for this client, current and with a verified address (and the Workspace domain's `hd` when one is set); the account is keyed by Google's `sub`, and Reconnect must match both `sub` and address. App-password accounts keep working and can switch either way. The flow, tokens and admin card are shared with Microsoft through a small provider layer (`oauth-app.ts`, `oauth-provider-utils.ts`). Docs: [Google sign-in for connected accounts](docs/providers.md#google-sign-in-for-connected-accounts), with the Internal, Testing (100 test users, 7-day refresh tokens) and verification trade-offs. Tests: `tests/external-google-oauth.test.mjs`, `tests/external-google-oauth-node.test.mjs`, `e2e/107-google-oauth.spec.ts` against `tests/support/fake-google-oauth.mjs`. Still open: a check against a real Gmail and Google Workspace account.
 
 **Two-way sync is opt-in and bounded.** Mirroring reads, moves and deletes back to the provider is a per-account choice ([Two-way sync](docs/external-accounts.md#two-way-sync), since November 2026): it polls like the rest of sync, needs no always-open connection, and stops at the settings it lists instead of mirroring every folder.
 
@@ -221,24 +222,20 @@ Taken ahead of the proposed milestones 9–18 in the [complete-suite roadmap](do
 
 ## Milestone 20: Unified mailbox
 
-One Inbox, Sent, Drafts and Archive for every mailbox you can open, so someone with several addresses (their own, shared ones and, after milestone 6, external accounts) reads and answers everything in one place. A single mailbox stays one click away.
+Shipped in [#125](https://github.com/midego1/kite/pull/125), with follow-ups in [#146](https://github.com/midego1/kite/pull/146), [#176](https://github.com/midego1/kite/pull/176), [#373](https://github.com/midego1/kite/pull/373), [#434](https://github.com/midego1/kite/pull/434) and [#450](https://github.com/midego1/kite/pull/450), and finished in [#488](https://github.com/midego1/kite/pull/488) (read-only shared mail is never answered or forwarded). One Inbox, Sent, Drafts and Archive for every mailbox you can open, so someone with several addresses (their own, shared ones and external accounts) reads and answers everything in one place. A single mailbox stays one click away. User docs: [All mailboxes](docs/all-mailboxes.md).
 
-**Where it stands today.** Done: the mailbox selector's **All mailboxes** entry ([docs](docs/all-mailboxes.md)). The list, counts and navigation APIs take `mailboxIds` for the filter, and the browser keeps the view and the filter (`kite-all-mailboxes`, `kite-all-mailboxes-hidden`).
-
-1. **All mailboxes view**
-   - An **All mailboxes** entry at the top of the mailbox selector. It opens combined folders: Inbox, Starred, Snoozed, Sent, Drafts, Archive, Spam and Trash, with the sidebar counts summed across mailboxes. User folders stay per mailbox and are grouped under each mailbox's name.
-   - Each row shows which mailbox it belongs to, as a small coloured label with the mailbox name or avatar (`src/lib/avatar-colors.ts`), so mail from different addresses is easy to tell apart. Conversation view groups threads per mailbox, never across them.
-   - A filter narrows the view to some mailboxes, and the choice is remembered per browser (`appearance-preferences.ts`). Search, the command palette and keyboard navigation work in the combined view.
-   - Test: e2e seeds two mailboxes, opens All mailboxes and checks both mailboxes' messages, labels and summed counts; filters to one mailbox and checks the other disappears.
-2. **Acting on mail**
-   - Reply, reply all and forward go out from the mailbox the message arrived in. A new message from the combined view asks for the From address, defaulting to the last one used. Bulk actions (read, archive, move, delete) work across mailboxes and move mail only within its own mailbox.
-   - Moving to a user folder offers only the folders of that message's mailbox.
-   - Test: e2e replies from the combined view and checks the From address and the Sent copy land in the right mailbox; a bulk archive over two mailboxes.
-3. **Access and the rest of Kite**
-   - The view contains only mailboxes the user can open (`listAccessibleMailboxes`), with each mailbox's access level applied per message: read-only shared mail cannot be moved or deleted from the combined view either. Admins see only the mailboxes they could open one by one.
-   - Realtime updates, notifications, the For you page, automatic reading suggestions and rules keep working per mailbox. JMAP already lists every mailbox and needs no change.
-   - No new table: the selection and filter are browser preferences. Works on Workers and the Node runtime.
-   - Test: unit tests for the count summing and the per-message permission rules; an e2e test with a read-only shared mailbox.
+1. **All mailboxes view (shipped)**
+   - An **All mailboxes** entry at the top of the mailbox selector opens combined Inbox, Starred, Snoozed, Sent, Drafts, Archive, Spam and Trash, with the sidebar counts summed across mailboxes (`sumMailboxCounts`, `buildMessageCounts`). User folders stay per mailbox and are grouped under each mailbox's name.
+   - Each row carries a mailbox mark (a coloured square by default, or the full label; colours from `src/lib/avatar-colors.ts`). Conversation view groups threads per mailbox, never across them.
+   - The **Show** filter narrows the view and is remembered per browser (`kite-all-mailboxes`, `kite-all-mailboxes-hidden`). The list, counts and navigation APIs take `mailboxIds` (`resolveMailboxScope`, bound as one JSON parameter so 120 mailboxes stay under D1's 100-parameter limit). Search, the command palette and keyboard navigation work in the combined view.
+   - Tests: `e2e/56-all-mailboxes.spec.ts` (three mailboxes, labels, summed counts, the filter, `j`/`k`/`e`/`#`, phone layout); `tests/unified-mailbox.test.mjs` (scope, counts, conversations, navigation, held mail, D1 limit).
+2. **Acting on mail (shipped)**
+   - Reply, reply all and forward go out from the mailbox the message arrived in and land in its Sent. A new message from the combined view asks for the From address, defaulting to the last one used (`kite-compose-last-from`). Bulk read, archive, move and delete work across mailboxes and move mail only within its own mailbox; Move to offers only the folders of the selection's one mailbox (`singleMailboxOf`), in the reader too. Empty Trash and Empty Spam empty only the mailboxes the user may manage.
+   - Tests: e2e reply, reply all and forward from the combined view (From and Sent copy per mailbox), Move to listing only one mailbox's folders, bulk archive, mark read and delete over two mailboxes.
+3. **Access and the rest of Kite (shipped)**
+   - Only mailboxes the user can open (`listAccessibleMailboxes`); admins get no extra mailboxes. Each mailbox's access level applies per message (`splitByMailboxAccess`, `useMessageAccess`): read-only shared mail is never moved, deleted, answered or forwarded, from the list, the reader, its keys or a conversation's per-message menu, and the server refuses the same (bulk 404, draft 403). Send as and Send on behalf answer but do not move.
+   - Realtime updates, notifications, the For you page, automatic reading suggestions and rules keep working per mailbox. JMAP already lists every mailbox. No new table or migration; works on Workers and the Node runtime.
+   - Tests: unit tests for the count summing and the per-message permission rules; e2e with a read-only shared mailbox (bulk actions skip it, the reader cannot archive, delete, answer or forward it).
 
 ## Milestone 27: AI writing (proposed)
 

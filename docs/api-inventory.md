@@ -39,6 +39,7 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/admin/attachment-storage`                              | GET, POST              | [source](../src/app/api/admin/attachment-storage/route.ts)                              |
 | `/api/admin/aws`                                             | DELETE, GET, POST, PUT | [source](../src/app/api/admin/aws/route.ts)                                             |
 | `/api/admin/database-size`                                   | GET                    | [source](../src/app/api/admin/database-size/route.ts)                                   |
+| `/api/admin/external-accounts/google`                        | DELETE, GET, PUT       | [source](../src/app/api/admin/external-accounts/google/route.ts)                        |
 | `/api/admin/external-accounts/microsoft`                     | DELETE, GET, PUT       | [source](../src/app/api/admin/external-accounts/microsoft/route.ts)                     |
 | `/api/admin/external-accounts`                               | GET, PUT               | [source](../src/app/api/admin/external-accounts/route.ts)                               |
 | `/api/admin/general`                                         | GET, PUT               | [source](../src/app/api/admin/general/route.ts)                                         |
@@ -125,6 +126,7 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/branding`                                              | GET, PUT               | [source](../src/app/api/branding/route.ts)                                              |
 | `/api/calendar/events/[eventId]`                             | DELETE, PATCH          | [source](../src/app/api/calendar/events/[eventId]/route.ts)                             |
 | `/api/calendar/events`                                       | GET, POST              | [source](../src/app/api/calendar/events/route.ts)                                       |
+| `/api/calendar/feed`                                         | DELETE, GET, POST      | [source](../src/app/api/calendar/feed/route.ts)                                         |
 | `/api/contacts/avatar`                                       | DELETE, GET, POST      | [source](../src/app/api/contacts/avatar/route.ts)                                       |
 | `/api/contacts/block`                                        | POST                   | [source](../src/app/api/contacts/block/route.ts)                                        |
 | `/api/contacts`                                              | GET, PATCH             | [source](../src/app/api/contacts/route.ts)                                              |
@@ -216,6 +218,7 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/mailboxes/[id]`                                        | DELETE, GET, PATCH     | [source](../src/app/api/mailboxes/[id]/route.ts)                                        |
 | `/api/mailboxes`                                             | GET, POST              | [source](../src/app/api/mailboxes/route.ts)                                             |
 | `/api/messages/[messageId]/attachments/[attachmentId]`       | GET                    | [source](../src/app/api/messages/[messageId]/attachments/[attachmentId]/route.ts)       |
+| `/api/messages/[messageId]/attachments/zip`                  | GET                    | [source](../src/app/api/messages/[messageId]/attachments/zip/route.ts)                  |
 | `/api/messages/[messageId]/metadata`                         | GET                    | [source](../src/app/api/messages/[messageId]/metadata/route.ts)                         |
 | `/api/messages/[messageId]/original`                         | GET                    | [source](../src/app/api/messages/[messageId]/original/route.ts)                         |
 | `/api/messages/[messageId]/read`                             | POST                   | [source](../src/app/api/messages/[messageId]/read/route.ts)                             |
@@ -241,6 +244,7 @@ Implicit framework HEAD/OPTIONS behavior is not listed. The relay has a separate
 | `/api/profile/avatar`                                        | DELETE, GET, POST      | [source](../src/app/api/profile/avatar/route.ts)                                        |
 | `/api/public/booking/[eventId]`                              | GET, POST              | [source](../src/app/api/public/booking/[eventId]/route.ts)                              |
 | `/api/public/booking`                                        | GET                    | [source](../src/app/api/public/booking/route.ts)                                        |
+| `/api/public/calendar/feed/[token]`                          | GET                    | [source](../src/app/api/public/calendar/feed/[token]/route.ts)                          |
 | `/api/public/drive/[token]/content`                          | GET                    | [source](../src/app/api/public/drive/[token]/content/route.ts)                          |
 | `/api/public/drive/[token]`                                  | GET                    | [source](../src/app/api/public/drive/[token]/route.ts)                                  |
 | `/api/public/drive/[token]/unlock`                           | POST                   | [source](../src/app/api/public/drive/[token]/unlock/route.ts)                           |

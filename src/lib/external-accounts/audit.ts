@@ -38,17 +38,18 @@ export async function auditExternalAccount(
 	await createAuditLog(env, input);
 }
 
-/** The owner saved or removed the Microsoft app registration; the metadata never carries the client secret. */
-export async function auditMicrosoftClient(
+/** The owner saved or removed a provider's OAuth client; the metadata never carries the client secret. */
+export async function auditOAuthClient(
 	env: CloudflareEnv,
 	actorUserId: string,
+	provider: "microsoft" | "google",
 	change: "saved" | "removed",
-	details: { clientId?: string; tenant?: string },
+	details: { clientId?: string; tenant?: string; hostedDomain?: string | null },
 ): Promise<void> {
 	await auditExternalAccount(env, {
 		actorUserId,
 		action: "external_account.oauth_client_changed",
-		metadata: { provider: "microsoft", change, ...details },
+		metadata: { provider, change, ...details },
 	});
 }
 

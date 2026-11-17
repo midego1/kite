@@ -228,7 +228,9 @@ export const jmapMailboxRevisions = sqliteTable("jmap_mailbox_revisions", {
 export const apiKeys = sqliteTable("api_keys", {
 	id: text("id").primaryKey(),
 	// `oauth`: an MCP client connected with OAuth (migration 0106); it has no usable key, only tokens in mcp_oauth_tokens.
-	kind: text("kind", { enum: ["legacy", "mcp", "oauth"] })
+	// `calendar_feed`: a calendar subscription link (`src/lib/calendar/feed.ts`); `key_hash` is the token's SHA-256 and
+	// only the feed route accepts it. The column has no CHECK constraint, so the new value needed no migration.
+	kind: text("kind", { enum: ["legacy", "mcp", "oauth", "calendar_feed"] })
 		.notNull()
 		.default("legacy"),
 	userId: text("user_id")

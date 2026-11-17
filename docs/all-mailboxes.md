@@ -23,7 +23,7 @@ While **All mailboxes** is on, the mailbox selector shows a **Show** list with a
 
 ## Reading and answering
 
-- **Reply, reply all and forward** go out from the mailbox the email arrived in, whichever mailbox you were in before.
+- **Reply, reply all and forward** go out from the mailbox the email arrived in, whichever mailbox you were in before, and the copy is saved in that mailbox's Sent. Mail in a mailbox shared with you read-only can't be answered or forwarded (see [below](#shared-mailboxes-with-read-only-access)).
 - **A new email** (Compose) asks for the From address and starts from the one you used last.
 - **Search, the keyboard shortcuts** (`j`/`k`, `e`, `#`, `x`, Shift+↑/↓, Shift-click and Cmd/Ctrl-click on rows, Cmd/Ctrl+A to select every loaded row, Escape to clear, and `r`/`a`/`f` in an open email) and the command palette work as in a single mailbox.
 - **Bulk actions** (mark read, archive, spam, delete, move) work on a selection across mailboxes, and each email stays within its own mailbox. **Move to** a folder lists folders when the selection is from one mailbox; with mail from several, it says to select mail from one mailbox. Once every loaded row is checked and the folder (or the combined view) holds more, "Select all N in …" resolves the rest from the server across every mailbox in view, skipping a read-only one the same way a manual selection would, up to 1,000 messages; past that the selection stops there and says so, and a conversation view row still carries every message of its thread regardless of the cap.
@@ -40,7 +40,13 @@ Drafts are private to the person who wrote them, in a shared mailbox too. Drafts
 
 ## Shared mailboxes with read-only access
 
-Mail in a mailbox shared with you as read-only can be read and marked read or unread, never archived, moved or deleted, in the combined view as anywhere else. Its rows have no archive or delete buttons, the reader's buttons for those are off, and `e` or `#` say that read-only mail can't be moved or deleted. When a bulk action includes read-only mail, the rest is done and a notice says how many read-only emails were left as they were. The server checks this on every request.
+Mail in a mailbox shared with you as read-only can be read, starred and marked read or unread, never archived, moved, deleted, answered or forwarded, in the combined view as anywhere else.
+
+- Its rows have no archive or delete buttons, and `e` or `#` say that read-only mail can't be moved or deleted.
+- In the reader, Reply, Reply all, Forward and the Move and Delete buttons are off, and the reply box under the message says "You can read this shared mailbox but not reply or forward from it". `r`, `a` and `f` say that read-only mail can't be answered or forwarded. Block contact, Unsubscribe and Report phishing, which act for the whole mailbox, are off too, and so are the same entries in each message's own menu inside a conversation.
+- When a bulk action includes read-only mail, the rest is done and a notice says how many read-only emails were left as they were.
+
+The server checks all of this on every request. Access to send as or on behalf of a shared mailbox answers its mail (from that mailbox) but, like read-only access, does not move or delete it.
 
 ## Everything else stays per mailbox
 

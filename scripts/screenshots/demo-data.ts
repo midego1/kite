@@ -163,6 +163,27 @@ export const RTL_ATTACHMENT_MAIL = {
 	],
 };
 
+/** A message with three attachments, for the "Download all" shots; the second one with a program among them. */
+export const ATTACHMENTS_ZIP_MAIL = {
+	from: `"Priya Raman" <priya@acme.test>`,
+	subject: "Q3 board pack",
+	html: `<p>Hi,</p><p>The board pack for Thursday is attached: the slides, the budget and the minutes.</p><p>Priya</p>`,
+	attachments: [
+		{ filename: "Q3 slides.pdf", contentType: "application/pdf", content: "%PDF-1.7 demo slides" },
+		{ filename: "Budget 2027.xlsx", contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", content: "demo budget" },
+		{ filename: "Minutes.txt", contentType: "text/plain", content: "Demo minutes" },
+	],
+};
+export const ATTACHMENTS_ZIP_FLAGGED_MAIL = {
+	from: `"Tom Okafor" <tom@adventure-works.test>`,
+	subject: "Installer and notes",
+	html: `<p>Here is the installer we talked about, and my notes.</p><p>Tom</p>`,
+	attachments: [
+		{ filename: "setup.exe", contentType: "application/octet-stream", content: "MZ demo installer" },
+		{ filename: "notes.txt", contentType: "text/plain", content: "Demo notes" },
+	],
+};
+
 /** A message in Thai and what the translation shot shows for it, with the same markup. */
 export const THAI_MAIL = {
 	from: `"สมชาย ใจดี" <somchai@wingtip.test>`,
@@ -188,6 +209,11 @@ export async function seedRtlMail(): Promise<void> {
 
 export async function seedRtlAttachmentMail(): Promise<void> {
 	await deliverOnce([RTL_ATTACHMENT_MAIL]);
+}
+
+/** Delivers the "Download all" demo mails once. */
+export async function seedAttachmentsZipMail(): Promise<void> {
+	await deliverOnce([ATTACHMENTS_ZIP_MAIL, ATTACHMENTS_ZIP_FLAGGED_MAIL]);
 }
 
 /** Delivers the sender authentication demo mail once, with headers that fail every check. */

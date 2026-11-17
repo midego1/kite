@@ -297,6 +297,28 @@ async function connectDemoMcpApp(name: string): Promise<void> {
 	await session.dispose();
 }
 
+/**
+ * The sidebar of a short window while two database updates are being applied: the status and the apply request are
+ * mocked (the second never answers, so the run stays on screen), in the Kite classic style the owner reported it in.
+ */
+async function openDatabaseUpdateSidebar(page: Page): Promise<Locator> {
+	const names = ["0106_add_mcp_oauth_clients.sql", "0107_add_mcp_oauth_grants.sql"];
+	await page.context().addInitScript(() => {
+		localStorage.setItem("kite-style", "classic");
+		localStorage.setItem("kite-column-width:sidebar", "260");
+	});
+	await page.route("**/api/migrations/pending", (route) => route.fulfill({ json: { pending: names.length, names } }));
+	await page.route("**/api/admin/migrations", async (route) => {
+		if (route.request().method() !== "POST") return route.fulfill({ json: { ready: false, pending: names, unknown: [] } });
+		await new Promise(() => undefined);
+	});
+	await page.goto("/drafts");
+	const nav = page.getByRole("navigation", { name: "Kite" });
+	await nav.getByRole("button", { name: /^(Update now|Apply now)$/ }).click();
+	await expect(nav.getByRole("button", { name: /^Updating/ })).toBeVisible();
+	return nav;
+}
+
 /** Adds a demo passkey for the demo admin through the Security page, with Chromium's virtual authenticator. */
 async function openPasskeySettings(page: Page): Promise<Locator> {
 	await addVirtualAuthenticator(page);
@@ -333,6 +355,34 @@ async function openPasskeySignIn(page: Page): Promise<Page> {
 }
 
 const SHOTS: Shot[] = [
+	{
+		// The database update notice while it applies, in the sidebar of a short window (after the redesign).
+		name: "2026-11-10-database-update-after-dark",
+		theme: "dark",
+		viewport: { width: 1000, height: 820 },
+		open: openDatabaseUpdateSidebar,
+	},
+	{
+		// The database update notice while it applies, in the sidebar of a short window (after the redesign).
+		name: "2026-11-10-database-update-after-light",
+		theme: "light",
+		viewport: { width: 1000, height: 820 },
+		open: openDatabaseUpdateSidebar,
+	},
+	{
+		// The database update notice while it applies, in the sidebar of a short window (before the redesign).
+		name: "2026-11-10-database-update-before-dark",
+		theme: "dark",
+		viewport: { width: 1000, height: 820 },
+		open: openDatabaseUpdateSidebar,
+	},
+	{
+		// The database update notice while it applies, in the sidebar of a short window (before the redesign).
+		name: "2026-11-10-database-update-before-light",
+		theme: "light",
+		viewport: { width: 1000, height: 820 },
+		open: openDatabaseUpdateSidebar,
+	},
 	{
 		// Passkeys in Settings → Security: one passkey with when it was added and last used, and Add a passkey.
 		name: "2026-11-10-passkeys-security-light",

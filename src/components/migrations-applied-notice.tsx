@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type FocusEvent } from "react";
 import { createPortal } from "react-dom";
 import { CheckCircle2, X } from "lucide-react";
+import { useT } from "@/lib/i18n/use-t";
 import { KiteGlyph } from "./kite-glyph";
 import { noticeClass } from "./ui/notice-utils";
 import { once, prefersReducedMotion } from "./reload-flight-utils";
@@ -58,6 +59,7 @@ interface AppliedNoticeProps {
  * the notice sits still. Reduced motion gets a short fade instead.
  */
 export function AppliedNotice({ summary, onDismiss, className, compact = false }: AppliedNoticeProps) {
+	const t = useT();
 	const section = useRef<HTMLElement>(null);
 	const timer = useRef<DismissTimer | null>(null);
 	const [exit, setExit] = useState<{ plan: AppliedNoticeExit; origin: AppliedNoticeOrigin } | null>(null);
@@ -111,7 +113,7 @@ export function AppliedNotice({ summary, onDismiss, className, compact = false }
 		<>
 			<section
 				ref={section}
-				aria-label="Database updates"
+				aria-label={t("Database updates")}
 				data-applied-notice={exit ? "leaving" : "shown"}
 				style={exit ? appliedNoticeExitStyle(exit.plan) : undefined}
 				className={`flex items-start ${noticeClass("success", compact)} ${className ?? ""} ${leaving}`}
@@ -123,12 +125,12 @@ export function AppliedNotice({ summary, onDismiss, className, compact = false }
 			>
 				<CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
 				<div role="status" className="min-w-0 flex-1">
-					<p className="font-medium">Database updated</p>
+					<p className="font-medium">{t("Database updated")}</p>
 					<p className="mt-1">{summary}</p>
 				</div>
 				<button
 					type="button"
-					aria-label="Dismiss"
+					aria-label={t("Dismiss")}
 					onClick={leave}
 					disabled={Boolean(exit)}
 					className={`-me-1 -mt-0.5 shrink-0 rounded-md p-1 opacity-70 hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-current ${compact ? "" : "p-1.5"}`}

@@ -11,7 +11,7 @@ import type { SpendReservation } from "./auto-read/spend-types";
 import { checkComposeOutput } from "./compose-output-utils";
 
 /** What one failure report knows besides the code: when the attempt started, its usage and finish reason. */
-export type ComposeFailureContext = {
+type ComposeFailureContext = {
 	startedAt: number;
 	usage: LanguageModelUsage | null;
 	finishReason?: string | null;
@@ -42,7 +42,7 @@ export type ComposeStreamInput = {
 	classify: (error: unknown) => AiErrorClass;
 };
 
-export type ComposeAttempt = { options: ModelCallOptions; reservation: SpendReservation };
+type ComposeAttempt = { options: ModelCallOptions; reservation: SpendReservation };
 
 type Emit = (event: unknown) => void;
 

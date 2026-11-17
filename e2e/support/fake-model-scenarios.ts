@@ -45,7 +45,7 @@ export const FINANCE_RECEIPT_RENEWAL_DAYS = 30;
 export const COMPOSE_WRITE_BODY =
 	"Hi Sam,\n\nThanks for your note. Tuesday at ten works for me.\n\n- Agenda first\n- Then the budget\n\nSee you then.";
 /** What a cut-off compose answer streams before it stops; never inserted. */
-export const COMPOSE_CUT_OFF_PARTIAL = "Hi Sam,\n\nFollowing up on my email from last week, I still";
+const COMPOSE_CUT_OFF_PARTIAL = "Hi Sam,\n\nFollowing up on my email from last week, I still";
 export const COMPOSE_SHORTER_BODY = "Tuesday at ten works.";
 export const COMPOSE_TRANSLATE_BODY = "Dinsdag om tien uur past mij goed.";
 const COMPOSE_HOSTILE_BODY =

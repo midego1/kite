@@ -151,15 +151,14 @@ function anthropicThinking(settings: ModelCallSettings): ThinkingChoice {
 	return { options: { thinking: { type: "disabled" } }, thinking: "off", effort: null, room: 0 };
 }
 
-function buildOptions(settings: ModelCallSettings, jsonMode: boolean): ModelCallOptions {
-	const extension = settings.kind === "triage" ? settings.extension : undefined;
-	const answer =
-		settings.kind === "triage"
-			? TRIAGE_ANSWER_TOKENS + (extension?.outputTokens ?? 0)
-			: (settings.answerTokens ?? (settings.kind === "chat" ? CHAT_STEP_ANSWER_TOKENS : DRAFT_ANSWER_TOKENS));
-	const factor = settings.retried ? CUT_OFF_RETRY_FACTOR : 1;
-	const json: Record<string, JSONValue> = jsonMode ? { response_format: { type: "json_object" } } : {};
-	const common = {
+function answerTokensOf(settings: ModelCallSettings, extension: ModelCallExtension | undefined): number {
+	if (settings.kind === "triage") return TRIAGE_ANSWER_TOKENS + (extension?.outputTokens ?? 0);
+	return settings.answerTokens ?? (settings.kind === "chat" ? CHAT_STEP_ANSWER_TOKENS : DRAFT_ANSWER_TOKENS);
+}
+
+/** What every request's options carry over from its settings, so a fallback or the retry rebuilds the same request. */
+function commonOptions(settings: ModelCallSettings, jsonMode: boolean, extension: ModelCallExtension | undefined) {
+	return {
 		provider: settings.provider,
 		preset: settings.preset,
 		kind: settings.kind,
@@ -172,33 +171,39 @@ function buildOptions(settings: ModelCallSettings, jsonMode: boolean): ModelCall
 		...(settings.retried ? { retried: true } : {}),
 		...(settings.plainThinking ? { plainThinking: true } : {}),
 	};
-	if (settings.provider === "cloudflare" && settings.kind === "chat")
-		// Chat on Workers AI is sent as before: no options, and no room a model's output limit might refuse.
+}
+
+/**
+ * Workers AI's options. Chat is sent as before: no options. Everything else switches thinking off, since Kimi K2.5
+ * ignores reasoning_effort and only that keeps it fast and inside the budget.
+ */
+function workersAiOptions(
+	kind: ModelCallKind,
+	jsonMode: boolean,
+): Pick<ModelCallOptions, "providerOptions" | "thinking"> {
+	if (kind === "chat") return { providerOptions: {}, thinking: "default" };
+	const json: Record<string, JSONValue> = jsonMode ? { response_format: { type: "json_object" } } : {};
+	const options = { chat_template_kwargs: { thinking: false }, ...json };
+	// workers-ai-provider 4 reads "workers-ai"; "workersAi" is the camel-cased key newer versions read.
+	return { providerOptions: { workersAi: options, "workers-ai": options }, thinking: "off" };
+}
+
+function buildOptions(settings: ModelCallSettings, jsonMode: boolean): ModelCallOptions {
+	const extension = settings.kind === "triage" ? settings.extension : undefined;
+	const answer = answerTokensOf(settings, extension);
+	const factor = settings.retried ? CUT_OFF_RETRY_FACTOR : 1;
+	const common = commonOptions(settings, jsonMode, extension);
+	if (settings.provider === "cloudflare")
+		// No thinking room: a Workers AI model's output limit might refuse it.
 		return {
 			...common,
 			provider: "cloudflare",
 			maxOutputTokens: answer * factor,
-			providerOptions: {},
+			...workersAiOptions(settings.kind, jsonMode),
 			reasoningEffort: null,
 			effort: null,
-			thinking: "default",
 			thinkingRoom: 0,
 		};
-	if (settings.provider === "cloudflare") {
-		// Kimi K2.5 ignores reasoning_effort; only switching thinking off keeps it fast and inside the budget.
-		const options = { chat_template_kwargs: { thinking: false }, ...json };
-		// workers-ai-provider 4 reads "workers-ai"; "workersAi" is the camel-cased key newer versions read.
-		return {
-			...common,
-			provider: "cloudflare",
-			maxOutputTokens: answer * factor,
-			providerOptions: { workersAi: options, "workers-ai": options },
-			reasoningEffort: null,
-			effort: null,
-			thinking: "off",
-			thinkingRoom: 0,
-		};
-	}
 	if (settings.preset === "anthropic") {
 		const choice = anthropicThinking(settings);
 		return {

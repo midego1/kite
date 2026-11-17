@@ -6,7 +6,12 @@ import { TOAST_ACTION_CLASS } from "./toast-styles";
 const UNDO_TOAST_DURATION_MS = 8000;
 
 /** A toast with one action button; failures of the action itself are reported in a follow-up toast. */
-function showActionToast(message: string, actionLabel: string, onAction: () => Promise<void>, failureMessage: string) {
+export function showActionToast(
+	message: string,
+	actionLabel: string,
+	onAction: () => Promise<void>,
+	failureMessage: string,
+) {
 	toast(
 		(current) => (
 			<span className="flex items-center gap-4 text-sm">

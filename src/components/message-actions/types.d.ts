@@ -1,6 +1,7 @@
 import type { BulkMessageAction } from "@/app/api/messages/bulk/types";
 import type { Message, MessageDirection } from "@/hooks/types";
 import type { LucideIcon } from "lucide-react";
+import type { MailingListInfo } from "@/lib/email/mailing-list-types";
 import type { ReaderPrint } from "@/components/messages/print/print-menu-types";
 import type { MessageTranslateMenu } from "@/components/messages/message-translation-types";
 
@@ -12,6 +13,8 @@ export type MessageActionsProps = {
 	status: string;
 	read: boolean;
 	unsubscribeUrl?: string | null;
+	/** With `oneClick`, Unsubscribe sends the signed RFC 8058 one-click POST instead of opening the link. */
+	mailingList?: MailingListInfo | null;
 	subject?: string | null;
 	bodyText?: string | null;
 	ownAddress?: string | null;

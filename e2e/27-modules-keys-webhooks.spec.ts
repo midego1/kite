@@ -262,7 +262,7 @@ test("the key forms list calendar scopes only while Calendar is on, and existing
 		created.api.push(((await rest.json()) as { id: string }).id);
 
 		const on = await optionNames();
-		expect(on.standard).toEqual(["Read mail", "Send mail", "Read calendar", "Manage calendar"]);
+		expect(on.standard).toEqual(["Read mail", "Send mail", "Write notes", "Read calendar", "Manage calendar"]);
 		expect(on.mcp).toEqual([
 			"Read mail",
 			"Manage drafts",
@@ -275,7 +275,7 @@ test("the key forms list calendar scopes only while Calendar is on, and existing
 
 		await setModuleState(api, { modules: { calendar: false } });
 		const off = await optionNames();
-		expect(off.standard).toEqual(["Read mail", "Send mail"]);
+		expect(off.standard).toEqual(["Read mail", "Send mail", "Write notes"]);
 		expect(off.mcp).toEqual([
 			"Read mail",
 			"Manage drafts",

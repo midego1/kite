@@ -119,7 +119,7 @@
 		"drizzle-orm": "^0.45.4",
 		"htmlparser2": "~12.0.0",
 		"lucide-react": "^1.16.0",
-		"mailauth": "^8.0.4",
+		"mailauth": "^8.0.6",
 		"nanoid": "^6.0.2",
 		"next": "16.4.3",
 		"nodemailer": "^10.2.1",
